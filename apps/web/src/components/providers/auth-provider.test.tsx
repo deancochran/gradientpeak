@@ -2,6 +2,7 @@
 
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { useEffect } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -38,10 +39,16 @@ const thirdUser = { id: "third", email: "third@example.test", emailVerified: tru
 const firstViewer = { version: 1 as const, user: firstUser };
 const secondViewer = { version: 1 as const, user: secondUser };
 const thirdViewer = { version: 1 as const, user: thirdUser };
+const anonymousViewer = { version: 1 as const, user: null };
 
 function AuthState() {
   const { isLoading, user } = useAuth();
   return <output>{isLoading ? "loading" : (user?.email ?? "signed-out")}</output>;
+}
+
+function RouteChild({ label, onMount }: { label: string; onMount?: () => void }) {
+  useEffect(() => onMount?.(), [onMount]);
+  return <>{label}</>;
 }
 
 function deferred<T>() {
@@ -217,6 +224,37 @@ describe("AuthProvider", () => {
     expect(queryClient.getQueryData(["private"])).toEqual({ secret: "must-clear" });
   });
 
+  it("keeps initially authorized protected children available during an unknown refresh", () => {
+    const queryClient = new QueryClient();
+    const { rerender } = render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider initialViewer={firstViewer}>
+          <AuthSessionRouteInvalidator>
+            <AuthenticatedViewerBoundary>Private A content</AuthenticatedViewerBoundary>
+          </AuthSessionRouteInvalidator>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+    mocks.session = {
+      data: null,
+      error: new TypeError("network unavailable"),
+      isPending: false,
+      refetch: vi.fn(),
+    };
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider initialViewer={firstViewer}>
+          <AuthSessionRouteInvalidator>
+            <AuthenticatedViewerBoundary>Private A content</AuthenticatedViewerBoundary>
+          </AuthSessionRouteInvalidator>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByText("Private A content")).toBeTruthy();
+    expect(mocks.router.invalidate).not.toHaveBeenCalled();
+  });
+
   it("does not resurrect A after an authoritative logout followed by a transport failure", () => {
     const { queryClient, rerender } = renderAuth();
     mocks.session = { data: null, error: null, isPending: false, refetch: vi.fn() };
@@ -243,6 +281,239 @@ describe("AuthProvider", () => {
 
     expect(screen.getByRole("status").textContent).toBe("signed-out");
     expect(queryClient.getQueryData(["private"])).toBeUndefined();
+  });
+
+  it.each([
+    ["a different account", { user: secondUser }],
+    ["an authoritative logout", null],
+  ])("retains the %s fence through pending and failed session refreshes", async (_label, sessionData) => {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(["private"], { secret: "A" });
+    const invalidation = deferred<void>();
+    const recorderMounts = vi.fn();
+    mocks.router.invalidate.mockReturnValueOnce(invalidation.promise);
+    function PrivateRecorder() {
+      useEffect(() => recorderMounts(), []);
+      return <>Private A content</>;
+    }
+    const { rerender } = render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider initialViewer={firstViewer}>
+          <AuthSessionRouteInvalidator>
+            <AuthenticatedViewerBoundary>
+              <PrivateRecorder />
+            </AuthenticatedViewerBoundary>
+          </AuthSessionRouteInvalidator>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    mocks.session = { data: sessionData, error: null, isPending: false, refetch: vi.fn() };
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider initialViewer={firstViewer}>
+          <AuthSessionRouteInvalidator>
+            <AuthenticatedViewerBoundary>
+              <PrivateRecorder />
+            </AuthenticatedViewerBoundary>
+          </AuthSessionRouteInvalidator>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(mocks.router.invalidate).toHaveBeenCalledOnce());
+    expect(screen.queryByText("Private A content")).toBeNull();
+    expect(queryClient.getQueryData(["private"])).toBeUndefined();
+    expect(recorderMounts).toHaveBeenCalledOnce();
+
+    mocks.session = { data: null, error: null, isPending: true, refetch: vi.fn() };
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider initialViewer={firstViewer}>
+          <AuthSessionRouteInvalidator>
+            <AuthenticatedViewerBoundary>
+              <PrivateRecorder />
+            </AuthenticatedViewerBoundary>
+          </AuthSessionRouteInvalidator>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByText("Private A content")).toBeNull();
+    expect(mocks.router.invalidate).toHaveBeenCalledOnce();
+    expect(recorderMounts).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      invalidation.reject(new TypeError("reauthorization unavailable"));
+      await invalidation.promise.catch(() => undefined);
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Retry access refresh" })).toBeTruthy(),
+    );
+
+    mocks.session = {
+      data: null,
+      error: new TypeError("session unavailable"),
+      isPending: false,
+      refetch: vi.fn(),
+    };
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider initialViewer={firstViewer}>
+          <AuthSessionRouteInvalidator>
+            <AuthenticatedViewerBoundary>
+              <PrivateRecorder />
+            </AuthenticatedViewerBoundary>
+          </AuthSessionRouteInvalidator>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByText("Private A content")).toBeNull();
+    expect(screen.getByRole("button", { name: "Retry access refresh" })).toBeTruthy();
+    expect(mocks.router.invalidate).toHaveBeenCalledOnce();
+    expect(recorderMounts).toHaveBeenCalledOnce();
+  });
+
+  it("does not release a newer C fence when a stale B bootstrap arrives during an unknown refresh", async () => {
+    const queryClient = new QueryClient();
+    const bMounts = vi.fn();
+    const cMounts = vi.fn();
+    mocks.router.invalidate.mockResolvedValue(undefined);
+    const { rerender } = render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider initialViewer={firstViewer}>
+          <AuthSessionRouteInvalidator>
+            <AuthenticatedViewerBoundary>
+              <RouteChild label="Private A content" />
+            </AuthenticatedViewerBoundary>
+          </AuthSessionRouteInvalidator>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+    mocks.session = { data: { user: secondUser }, error: null, isPending: false, refetch: vi.fn() };
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider initialViewer={firstViewer}>
+          <AuthSessionRouteInvalidator>
+            <AuthenticatedViewerBoundary>
+              <RouteChild label="Private A content" />
+            </AuthenticatedViewerBoundary>
+          </AuthSessionRouteInvalidator>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(mocks.router.invalidate).toHaveBeenCalledOnce());
+    mocks.session = { data: { user: thirdUser }, error: null, isPending: false, refetch: vi.fn() };
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider initialViewer={firstViewer}>
+          <AuthSessionRouteInvalidator>
+            <AuthenticatedViewerBoundary>
+              <RouteChild label="Private A content" />
+            </AuthenticatedViewerBoundary>
+          </AuthSessionRouteInvalidator>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(mocks.router.invalidate).toHaveBeenCalledTimes(2));
+
+    mocks.session = { data: null, error: null, isPending: true, refetch: vi.fn() };
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider initialViewer={secondViewer}>
+          <AuthSessionRouteInvalidator>
+            <AuthenticatedViewerBoundary>
+              <RouteChild label="Private B content" onMount={bMounts} />
+            </AuthenticatedViewerBoundary>
+          </AuthSessionRouteInvalidator>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByText("Private B content")).toBeNull();
+    expect(bMounts).not.toHaveBeenCalled();
+
+    mocks.session = {
+      data: null,
+      error: new TypeError("session unavailable"),
+      isPending: false,
+      refetch: vi.fn(),
+    };
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider initialViewer={secondViewer}>
+          <AuthSessionRouteInvalidator>
+            <AuthenticatedViewerBoundary>
+              <RouteChild label="Private B content" onMount={bMounts} />
+            </AuthenticatedViewerBoundary>
+          </AuthSessionRouteInvalidator>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByText("Private B content")).toBeNull();
+    expect(bMounts).not.toHaveBeenCalled();
+
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider initialViewer={thirdViewer}>
+          <AuthSessionRouteInvalidator>
+            <AuthenticatedViewerBoundary>
+              <RouteChild label="Private C content" onMount={cMounts} />
+            </AuthenticatedViewerBoundary>
+          </AuthSessionRouteInvalidator>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+    expect(screen.getByText("Private C content")).toBeTruthy();
+    expect(cMounts).toHaveBeenCalledOnce();
+  });
+
+  it("does not release an anonymous fence for a stale authenticated bootstrap", async () => {
+    const queryClient = new QueryClient();
+    const bMounts = vi.fn();
+    mocks.router.invalidate.mockResolvedValue(undefined);
+    const { rerender } = render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider initialViewer={firstViewer}>
+          <AuthSessionRouteInvalidator>
+            <AuthenticatedViewerBoundary>Private A content</AuthenticatedViewerBoundary>
+          </AuthSessionRouteInvalidator>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+    mocks.session = { data: null, error: null, isPending: false, refetch: vi.fn() };
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider initialViewer={firstViewer}>
+          <AuthSessionRouteInvalidator>
+            <AuthenticatedViewerBoundary>Private A content</AuthenticatedViewerBoundary>
+          </AuthSessionRouteInvalidator>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(mocks.router.invalidate).toHaveBeenCalledOnce());
+    mocks.session = { data: null, error: null, isPending: true, refetch: vi.fn() };
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider initialViewer={secondViewer}>
+          <AuthSessionRouteInvalidator>
+            <AuthenticatedViewerBoundary>
+              <RouteChild label="Private B content" onMount={bMounts} />
+            </AuthenticatedViewerBoundary>
+          </AuthSessionRouteInvalidator>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByText("Private B content")).toBeNull();
+    expect(bMounts).not.toHaveBeenCalled();
+
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider initialViewer={anonymousViewer}>
+          <AuthSessionRouteInvalidator>
+            <AuthenticatedViewerBoundary>Anonymous route content</AuthenticatedViewerBoundary>
+          </AuthSessionRouteInvalidator>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+    expect(screen.getByText("Anonymous route content")).toBeTruthy();
   });
 
   it("keeps A fenced after reauthorization failure, retries, then renders only fresh B", async () => {

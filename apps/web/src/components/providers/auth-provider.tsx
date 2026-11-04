@@ -43,18 +43,36 @@ export function AuthProvider({
   const { data, isPending, error, refetch } = authClient.useSession();
   const queryClient = useQueryClient();
   const lastValidatedUser = useRef<AuthUser | null>(initialViewer.user);
+  const bootstrapTarget = initialViewer.user?.id ?? "anonymous";
+  const bootstrapTargetRef = useRef(bootstrapTarget);
+  const transitionLatch = useRef<string | null>(null);
+
+  // A fresh route bootstrap is authoritative even while Better Auth is still
+  // refreshing, but only when it confirms the identity currently fenced. A
+  // stale B bootstrap must not release a newer C fence while the client is
+  // unknown; the subsequent C bootstrap reconciles and releases it.
+  if (bootstrapTargetRef.current !== bootstrapTarget) {
+    bootstrapTargetRef.current = bootstrapTarget;
+    if (!transitionLatch.current || transitionLatch.current === bootstrapTarget) {
+      lastValidatedUser.current = initialViewer.user;
+      transitionLatch.current = null;
+    }
+  }
 
   const session = normalizeWebAuthSession(data);
   const authoritativeViewer = isPending || error ? null : toPublicAuthViewer(session);
+  if (authoritativeViewer !== null) {
+    const authoritativeTarget = authoritativeViewer.user?.id ?? "anonymous";
+    transitionLatch.current = authoritativeTarget === bootstrapTarget ? null : authoritativeTarget;
+  }
   // The server rendered this request for initialUser. Do not replace that
   // identity with the client's empty pending value during hydration. A
   // transport failure is unknown freshness, not proof of logout: retain only
   // the last server/client-validated identity until an authoritative null or
   // a different user arrives.
   const user = authoritativeViewer ? authoritativeViewer.user : lastValidatedUser.current;
-  const isTransitioning =
-    authoritativeViewer !== null && authoritativeViewer.user?.id !== initialViewer.user?.id;
-  const transitionTarget = isTransitioning ? (authoritativeViewer?.user?.id ?? "anonymous") : null;
+  const transitionTarget = transitionLatch.current;
+  const isTransitioning = transitionTarget !== null;
   const isAuthenticated = Boolean(user);
 
   useBrowserLayoutEffect(() => {
@@ -67,7 +85,7 @@ export function AuthProvider({
     if (!isTransitioning) return;
     void queryClient.cancelQueries();
     queryClient.clear();
-  }, [isTransitioning, queryClient]);
+  }, [queryClient, transitionTarget]);
 
   const refreshSession = useCallback(async () => {
     await refetch();
