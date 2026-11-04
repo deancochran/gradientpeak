@@ -59,7 +59,11 @@ export function createOrganizationLifecycleRepository(db: DrizzleQueryExecutor) 
         .limit(1);
       return row ?? null;
     },
-    async staffCursorBelongsToOrganization(organizationId: string, cursor: string) {
+    async staffCursorBelongsToOrganization(
+      organizationId: string,
+      cursor: string,
+      status: "active" | "suspended",
+    ) {
       const [row] = await db
         .select({ id: organizationMemberships.id })
         .from(organizationMemberships)
@@ -69,13 +73,21 @@ export function createOrganizationLifecycleRepository(db: DrizzleQueryExecutor) 
             eq(organizationMemberships.organization_id, organizationId),
             eq(organizationMemberships.id, cursor),
             activeOrganization,
-            activeMembership,
+            isNull(organizationMemberships.ended_at),
+            status === "active"
+              ? isNull(organizationMemberships.suspended_at)
+              : sql`${organizationMemberships.suspended_at} is not null`,
           ),
         )
         .limit(1);
       return row !== undefined;
     },
-    listCurrentStaff(organizationId: string, limit: number, cursor: string | null) {
+    listCurrentStaff(
+      organizationId: string,
+      limit: number,
+      cursor: string | null,
+      status: "active" | "suspended",
+    ) {
       return db
         .select({
           membershipId: organizationMemberships.id,
@@ -83,6 +95,7 @@ export function createOrganizationLifecycleRepository(db: DrizzleQueryExecutor) 
           profileId: profiles.id,
           displayName: profiles.full_name,
           username: profiles.username,
+          suspendedAt: organizationMemberships.suspended_at,
           roleKeys: sql<
             string[]
           >`array_agg(${organizationMembershipRoleGrants.role_key} order by ${organizationMembershipRoleGrants.role_key})`,
@@ -102,7 +115,10 @@ export function createOrganizationLifecycleRepository(db: DrizzleQueryExecutor) 
           and(
             eq(organizationMemberships.organization_id, organizationId),
             activeOrganization,
-            activeMembership,
+            isNull(organizationMemberships.ended_at),
+            status === "active"
+              ? isNull(organizationMemberships.suspended_at)
+              : sql`${organizationMemberships.suspended_at} is not null`,
             ...(cursor ? [gt(organizationMemberships.id, cursor)] : []),
           ),
         )

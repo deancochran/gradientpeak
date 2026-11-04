@@ -76,16 +76,26 @@ export async function listOrganizationStaff(input: {
   organizationId: string;
   limit: number;
   cursor: string | null;
+  status: "active" | "suspended";
 }) {
   const repository = createOrganizationLifecycleRepository(input.db);
   const actor = await requireAdmin(repository, input.organizationId, input.actorProfileId);
   if (
     input.cursor !== null &&
-    !(await repository.staffCursorBelongsToOrganization(input.organizationId, input.cursor))
+    !(await repository.staffCursorBelongsToOrganization(
+      input.organizationId,
+      input.cursor,
+      input.status,
+    ))
   )
     throw new OrganizationLifecycleError("invalid_cursor");
   const result = page(
-    await repository.listCurrentStaff(input.organizationId, input.limit, input.cursor),
+    await repository.listCurrentStaff(
+      input.organizationId,
+      input.limit,
+      input.cursor,
+      input.status,
+    ),
     input.limit,
   );
   return {
