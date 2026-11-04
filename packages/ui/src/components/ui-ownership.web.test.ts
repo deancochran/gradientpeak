@@ -92,8 +92,12 @@ describe("UI ownership guardrails", () => {
       "coaching/athletes/administrative-athlete-roster.tsx",
       "coaching/coach-access-denied.tsx",
       "coaching/coach-shell.tsx",
+      // Recipient-bound response and group roster workflows own web server-function recovery state.
+      "coaching/invitation-response/invitation-response.tsx",
       // Web-only organization creation and API-backed administrative composition.
       "coaching/organization-create-form.tsx",
+      "coaching/organization-group-athletes/organization-group-athletes.tsx",
+      "coaching/organization-group-coaches/organization-group-coaches.tsx",
       "coaching/organization-groups/organization-group-detail.tsx",
       "coaching/organization-groups/organization-group-list.tsx",
       // Invitation mutations and pagination compose app-owned server functions and route state.

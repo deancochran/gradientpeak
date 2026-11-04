@@ -44,7 +44,7 @@ export function InvitationResponse({
       const generationAtStart = ++inboxGeneration.current;
       const actorIdAtStart = currentActorId.current;
       inboxInFlight.current = true;
-      setInbox({ cursor, page: previousPage, status: "loading" });
+      setInbox({ cursor, ...(previousPage ? { page: previousPage } : {}), status: "loading" });
       void loadMyOrganizationInvitations({ data: { limit: 20, cursor } })
         .then((page) => {
           if (
@@ -59,7 +59,7 @@ export function InvitationResponse({
             inboxGeneration.current === generationAtStart &&
             currentActorId.current === actorIdAtStart
           ) {
-            setInbox({ cursor, page: previousPage, status: "error" });
+            setInbox({ cursor, ...(previousPage ? { page: previousPage } : {}), status: "error" });
           }
         })
         .finally(() => {
