@@ -38,6 +38,7 @@ import {
   type OrganizationAccessRepository,
 } from "../repositories/organization-access-repository";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { organizationCoachingAssignmentsRouter } from "./organization-coaching-assignments";
 import { organizationGroupsRouter } from "./organization-groups";
 import { organizationLifecycleRouter } from "./organization-lifecycle";
 
@@ -447,6 +448,7 @@ export function createOrganizationsRouter(
         }),
     }),
     organizationGroups: organizationGroupsRouter,
+    coachingAssignments: organizationCoachingAssignmentsRouter,
     lifecycle: organizationLifecycleRouter,
     listMine: protectedProcedure
       .input(organizationListInputSchema)
