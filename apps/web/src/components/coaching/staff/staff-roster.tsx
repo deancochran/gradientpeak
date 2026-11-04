@@ -359,7 +359,7 @@ function StaffRosterContents({
       <StaffPagination
         organizationId={organizationId}
         status={status}
-        cursor={cursor}
+        {...(cursor === undefined ? {} : { cursor })}
         hasMore={page.hasMore}
         nextCursor={page.nextCursor}
       />
