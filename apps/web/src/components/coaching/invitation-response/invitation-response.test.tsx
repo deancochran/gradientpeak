@@ -97,6 +97,84 @@ describe("InvitationResponse", () => {
     );
   });
 
+  it("previews a one-time handoff token without accepting it", async () => {
+    render(<InvitationResponse actorId="actor-a" initialInvitationToken={firstToken} />);
+
+    await screen.findByRole("button", { name: "Accept invitation" });
+    expect(mocks.preview).toHaveBeenCalledWith({ data: { token: firstToken } });
+    expect(mocks.accept).not.toHaveBeenCalled();
+    expect(mocks.decline).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["Accept", "accept", "accepted"],
+    ["Decline", "decline", "declined"],
+  ] as const)("keeps the handoff secret for explicit %s under StrictMode", async (label, command, status) => {
+    render(
+      <StrictMode>
+        <InvitationResponse actorId="actor-a" initialInvitationToken={firstToken} />
+      </StrictMode>,
+    );
+    await screen.findByRole("button", { name: `${label} invitation` });
+    fireEvent.click(screen.getByRole("button", { name: `${label} invitation` }));
+    await waitFor(() =>
+      expect(mocks[command]).toHaveBeenCalledWith({ data: { token: firstToken } }),
+    );
+    expect(await screen.findByText(new RegExp(`Invitation ${status}`))).toBeTruthy();
+  });
+
+  it.each([
+    "accept",
+    "decline",
+  ] as const)("retries a lost handoff %s with the exact secret in StrictMode", async (choice) => {
+    mocks[choice].mockRejectedValueOnce(new Error("connection lost"));
+    render(
+      <StrictMode>
+        <InvitationResponse actorId="actor-a" initialInvitationToken={firstToken} />
+      </StrictMode>,
+    );
+    const label = choice === "accept" ? "Accept invitation" : "Decline invitation";
+    fireEvent.click(await screen.findByRole("button", { name: label }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: `Retry ${choice} invitation to reconcile` }),
+    );
+    await waitFor(() => expect(mocks[choice]).toHaveBeenCalledTimes(2));
+    expect(mocks[choice].mock.calls).toEqual([
+      [{ data: { token: firstToken } }],
+      [{ data: { token: firstToken } }],
+    ]);
+  });
+
+  it.each([
+    "preview",
+    "accept",
+  ] as const)("fences a pending handoff %s after actor replacement", async (phase) => {
+    const pendingPreview = deferred<typeof readyPreview>();
+    const pendingAccept = deferred<{ status: "accepted" }>();
+    if (phase === "preview") mocks.preview.mockReturnValueOnce(pendingPreview.promise);
+    else mocks.accept.mockReturnValueOnce(pendingAccept.promise);
+    const view = render(
+      <StrictMode>
+        <InvitationResponse actorId="actor-a" initialInvitationToken={firstToken} />
+      </StrictMode>,
+    );
+    if (phase === "accept")
+      fireEvent.click(await screen.findByRole("button", { name: "Accept invitation" }));
+    view.rerender(
+      <StrictMode>
+        <InvitationResponse actorId="actor-b" initialInvitationToken={firstToken} />
+      </StrictMode>,
+    );
+    pendingPreview.resolve(readyPreview);
+    pendingAccept.resolve({ status: "accepted" });
+    await waitFor(() => {
+      expect((screen.getByLabelText("Invitation token") as HTMLInputElement).value).toBe("");
+      expect(screen.queryByRole("button", { name: "Accept invitation" })).toBeNull();
+      expect(screen.queryByText(/Invitation accepted/)).toBeNull();
+    });
+    expect(mocks.preview).toHaveBeenCalledTimes(1);
+  });
+
   it("clears the preview and ignores an older deferred preview when the token changes", async () => {
     const preview = deferred<typeof readyPreview>();
     mocks.preview.mockReturnValueOnce(preview.promise);

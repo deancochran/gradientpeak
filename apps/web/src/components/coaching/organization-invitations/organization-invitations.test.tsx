@@ -109,21 +109,20 @@ describe("organization invitations", () => {
       "person@example.test",
     );
   });
-  it("copies a returned token once and clears it from the rendered UI", async () => {
+  it("copies a returned fragment invitation link without clearing the selectable fallback", async () => {
     renderPage();
     await submit();
-    expect(screen.getByText("one-time-token")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Copy token" }));
-    await waitFor(() =>
-      expect(navigator.clipboard.writeText).toHaveBeenCalledWith("one-time-token"),
-    );
-    expect(screen.queryByText("one-time-token")).toBeNull();
+    const link = screen.getByLabelText("Invitation link") as HTMLInputElement;
+    expect(link.value).toContain("/organization-invitation#invitation=one-time-token");
+    fireEvent.click(screen.getByRole("button", { name: "Copy invitation link" }));
+    await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith(link.value));
+    expect((screen.getByLabelText("Invitation link") as HTMLInputElement).value).toBe(link.value);
   });
   it("retains the token but locks actions when refresh fails after a committed create", async () => {
     mocks.invalidate.mockRejectedValue(new Error("refresh failed"));
     renderPage();
     await submit();
-    await waitFor(() => expect(screen.getByText("one-time-token")).toBeTruthy());
+    await waitFor(() => expect(screen.getByLabelText("Invitation link")).toBeTruthy());
     expect(screen.getByRole("button", { name: "Create invitation" }).hasAttribute("disabled")).toBe(
       true,
     );
@@ -137,9 +136,8 @@ describe("organization invitations", () => {
     );
     renderPage();
     await submit();
-    await waitFor(() => expect(screen.getByText("one-time-token")).toBeTruthy());
-    fireEvent.click(screen.getByRole("button", { name: "Copy token" }));
-    await waitFor(() => expect(screen.queryByText("one-time-token")).toBeNull());
+    await waitFor(() => expect(screen.getByLabelText("Invitation link")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Copy invitation link" }));
     await act(async () => {
       rejectRefresh(new Error("refresh failed"));
     });
@@ -161,7 +159,7 @@ describe("organization invitations", () => {
         page={page}
       />,
     );
-    expect(screen.queryByText("one-time-token")).toBeNull();
+    expect(screen.queryByLabelText("Invitation link")).toBeNull();
   });
   it("fences a late create completion after actor replacement", async () => {
     let resolve!: (value: typeof created) => void;
@@ -182,7 +180,7 @@ describe("organization invitations", () => {
     );
     resolve(created);
     await Promise.resolve();
-    expect(screen.queryByText("one-time-token")).toBeNull();
+    expect(screen.queryByLabelText("Invitation link")).toBeNull();
   });
   it("allows coach invitation revocation but restricts administrator actions for non-root admins", () => {
     renderPage(
@@ -286,8 +284,9 @@ describe("organization invitations", () => {
       await waitFor(() => expect(mocks.revoke).toHaveBeenCalledOnce());
     } else {
       await submit();
-      await waitFor(() => expect(screen.getByText("one-time-token")).toBeTruthy());
-      if (operation === "copy") fireEvent.click(screen.getByRole("button", { name: "Copy token" }));
+      await waitFor(() => expect(screen.getByLabelText("Invitation link")).toBeTruthy());
+      if (operation === "copy")
+        fireEvent.click(screen.getByRole("button", { name: "Copy invitation link" }));
     }
     view.rerender(
       <OrganizationInvitations
@@ -301,7 +300,7 @@ describe("organization invitations", () => {
       settle();
       await delayed;
     });
-    expect(screen.queryByText("one-time-token")).toBeNull();
+    expect(screen.queryByLabelText("Invitation link")).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.queryByText(/Invitation revoked|token copied|could not refresh/i)).toBeNull();
     expect(screen.getByRole("button", { name: "Create invitation" }).hasAttribute("disabled")).toBe(
