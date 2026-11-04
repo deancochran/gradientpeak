@@ -1,5 +1,31 @@
 # Web route loading migration
 
+## Follow-up: perceived loading remains unresolved
+
+User feedback rejects navigation correctness alone as performance acceptance.
+The preview contains the original migration, but real-user loading and missing
+Common Load history remain separate unresolved outcomes.
+
+Disposable Chromium measurements (development runtime, local connection, athlete
+without activity history) found ~1.4s repeat-document hydration in the normal
+configuration. Disabling the Vite inspector plugin alone measured ~1.25s; making
+both instrumentation and lazy inspector UI opt-in measured ~1.2–1.36s, reducing
+decoded resource totals from ~41 MB to ~26 MB. These are single-run diagnostic
+comparisons, not network transfer sizes or proof of phone/user-data performance.
+Resource counts initially hit the browser's 250-entry buffer; the diagnostic
+now expands it to 5000 and records exact hydration separately from test polling.
+
+One run recorded 106s Activities hydration; Vite also logged dependency reload
+and a failed dynamic import, without proven causality. A repeat without concurrent
+typechecking did not reproduce the stall. This remains unexplained, not erased by
+a passing test. Actual served dashboard code confirms automatic component splitting.
+
+The bounded improvement makes inspectors opt-in with `VITE_ENABLE_DEVTOOLS=true`;
+production excludes the lazy factory. Both default absence and enabled inspector
+navigation need browser verification. This does not alter auth, queries, recorder
+ownership, or stored history. Useful preview delivery must not be called resolution
+of the broader performance report.
+
 ## Contract
 
 Router starts route-critical reads; Query owns their cache. The router, loaders and

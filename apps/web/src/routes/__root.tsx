@@ -7,7 +7,6 @@ import {
   CardTitle,
 } from "@repo/ui/components/card";
 import { Toaster } from "@repo/ui/components/sonner";
-import { TanStackDevtools } from "@tanstack/react-devtools";
 import {
   createRootRouteWithContext,
   type ErrorComponentProps,
@@ -15,8 +14,7 @@ import {
   Link,
   Scripts,
 } from "@tanstack/react-router";
-import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
-import { type ReactNode, useEffect, useState } from "react";
+import { lazy, type ReactNode, Suspense, useEffect, useState } from "react";
 
 import type { WebRouterContext } from "../lib/api/router-context";
 
@@ -120,21 +118,37 @@ function RootDocument({ children }: { children: ReactNode }) {
   );
 }
 
-function DevelopmentTools() {
-  if (!import.meta.env.DEV) return null;
+const LazyDevelopmentTools =
+  import.meta.env.DEV && import.meta.env.VITE_ENABLE_DEVTOOLS === "true"
+    ? lazy(async () => {
+        const [{ TanStackDevtools }, { TanStackRouterDevtoolsPanel }] = await Promise.all([
+          import("@tanstack/react-devtools"),
+          import("@tanstack/react-router-devtools"),
+        ]);
+        return {
+          default: () => (
+            <TanStackDevtools
+              config={{
+                position: "bottom-right",
+              }}
+              plugins={[
+                {
+                  name: "TanStack Router",
+                  render: <TanStackRouterDevtoolsPanel />,
+                },
+              ]}
+            />
+          ),
+        };
+      })
+    : null;
 
+function DevelopmentTools() {
+  if (!LazyDevelopmentTools) return null;
   return (
-    <TanStackDevtools
-      config={{
-        position: "bottom-right",
-      }}
-      plugins={[
-        {
-          name: "TanStack Router",
-          render: <TanStackRouterDevtoolsPanel />,
-        },
-      ]}
-    />
+    <Suspense fallback={null}>
+      <LazyDevelopmentTools />
+    </Suspense>
   );
 }
 
