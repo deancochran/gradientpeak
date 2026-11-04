@@ -39,6 +39,9 @@ function OrganizationsPage() {
             <Link to="/organizations/new">Create organization</Link>
           </Button>
           <Button asChild variant="outline" className="border-slate-700 text-slate-100">
+            <Link to="/organization-invitations">My organization invitations</Link>
+          </Button>
+          <Button asChild variant="outline" className="border-slate-700 text-slate-100">
             <Link to="/">Personal workspace</Link>
           </Button>
         </div>

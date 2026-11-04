@@ -16,6 +16,7 @@ import {
   coachingEngagements,
   groups,
   manualTrainingDiaryOperations,
+  organizationAuditEvents,
   organizationMemberships,
   plannedSessions,
   profiles,
@@ -269,6 +270,16 @@ export class E2EActorPool {
             .where(eq(coachingEngagements.athlete_profile_id, userId))
             .limit(1);
           if (retainedEngagement.length) return;
+          // Organization audit rows are intentionally append-only and restrict their
+          // actor identity. Preserve an exact actor referenced by an E2E-created
+          // audit row; the disposable database owner tears down that retained
+          // history with its target rather than weakening audit protection here.
+          const retainedAudit = await database.db
+            .select({ id: organizationAuditEvents.id })
+            .from(organizationAuditEvents)
+            .where(eq(organizationAuditEvents.actor_profile_id, userId))
+            .limit(1);
+          if (retainedAudit.length) return;
           await database.typedTransaction(async (transaction) => {
             await transaction
               .delete(manualTrainingDiaryOperations)

@@ -18,6 +18,7 @@ import { Route as ProtectedGoalsRouteImport } from './routes/_protected/goals'
 import { Route as ProtectedIntegrationsRouteImport } from './routes/_protected/integrations'
 import { Route as ProtectedMessagesRouteImport } from './routes/_protected/messages'
 import { Route as ProtectedNotificationsRouteImport } from './routes/_protected/notifications'
+import { Route as ProtectedOrganizationInvitationsRouteImport } from './routes/_protected/organization-invitations'
 import { Route as ProtectedPlanRouteImport } from './routes/_protected/plan'
 import { Route as ProtectedRecordRouteImport } from './routes/_protected/record'
 import { Route as ProtectedSearchRouteImport } from './routes/_protected/search'
@@ -99,6 +100,8 @@ import { Route as ApiInternalProviderSyncStravaDrainRouteImport } from './routes
 import { Route as ApiInternalProviderSyncWahooDrainRouteImport } from './routes/api/internal/provider-sync/wahoo/drain'
 import { Route as ApiInternalProviderSyncWahooRetryRouteImport } from './routes/api/internal/provider-sync/wahoo/retry'
 import { Route as ApiInternalProviderSyncWahooStatusRouteImport } from './routes/api/internal/provider-sync/wahoo/status'
+import { Route as CoachingOrganizationsOrganizationIdGroupsGroupIdAthletesRouteImport } from './routes/_coaching/organizations/$organizationId/groups/$groupId/athletes'
+import { Route as CoachingOrganizationsOrganizationIdGroupsGroupIdCoachesRouteImport } from './routes/_coaching/organizations/$organizationId/groups/$groupId/coaches'
 
 const CoachingRoute = CoachingRouteImport.update({
   id: '/_coaching',
@@ -143,6 +146,12 @@ const ProtectedNotificationsRoute = ProtectedNotificationsRouteImport.update({
   path: '/notifications',
   getParentRoute: () => ProtectedRoute,
 } as any)
+const ProtectedOrganizationInvitationsRoute =
+  ProtectedOrganizationInvitationsRouteImport.update({
+    id: '/organization-invitations',
+    path: '/organization-invitations',
+    getParentRoute: () => ProtectedRoute,
+  } as any)
 const ProtectedPlanRoute = ProtectedPlanRouteImport.update({
   id: '/plan',
   path: '/plan',
@@ -595,6 +604,18 @@ const ApiInternalProviderSyncWahooStatusRoute =
     path: '/api/internal/provider-sync/wahoo/status',
     getParentRoute: () => rootRouteImport,
   } as any)
+const CoachingOrganizationsOrganizationIdGroupsGroupIdAthletesRoute =
+  CoachingOrganizationsOrganizationIdGroupsGroupIdAthletesRouteImport.update({
+    id: '/athletes',
+    path: '/athletes',
+    getParentRoute: () => CoachingOrganizationsOrganizationIdGroupsGroupIdRoute,
+  } as any)
+const CoachingOrganizationsOrganizationIdGroupsGroupIdCoachesRoute =
+  CoachingOrganizationsOrganizationIdGroupsGroupIdCoachesRouteImport.update({
+    id: '/coaches',
+    path: '/coaches',
+    getParentRoute: () => CoachingOrganizationsOrganizationIdGroupsGroupIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof ProtectedIndexRoute
@@ -604,6 +625,7 @@ export interface FileRoutesByFullPath {
   '/integrations': typeof ProtectedIntegrationsRoute
   '/messages': typeof ProtectedMessagesRoute
   '/notifications': typeof ProtectedNotificationsRoute
+  '/organization-invitations': typeof ProtectedOrganizationInvitationsRoute
   '/plan': typeof ProtectedPlanRoute
   '/record': typeof ProtectedRecordRouteWithChildren
   '/search': typeof ProtectedSearchRoute
@@ -673,7 +695,7 @@ export interface FileRoutesByFullPath {
   '/routes/$routeId/': typeof ProtectedRoutesRouteIdIndexRoute
   '/training-plans/$planId/': typeof ProtectedTrainingPlansPlanIdIndexRoute
   '/user/$userId/': typeof ProtectedUserUserIdIndexRoute
-  '/organizations/$organizationId/groups/$groupId': typeof CoachingOrganizationsOrganizationIdGroupsGroupIdRoute
+  '/organizations/$organizationId/groups/$groupId': typeof CoachingOrganizationsOrganizationIdGroupsGroupIdRouteWithChildren
   '/calendar/events/$eventId/edit': typeof ProtectedCalendarEventsEventIdEditRoute
   '/groups/$groupId/events/new': typeof ProtectedGroupsGroupIdEventsNewRoute
   '/groups/events/$groupEventId/edit': typeof ProtectedGroupsEventsGroupEventIdEditRoute
@@ -685,6 +707,8 @@ export interface FileRoutesByFullPath {
   '/organizations/$organizationId/groups/': typeof CoachingOrganizationsOrganizationIdGroupsIndexRoute
   '/calendar/events/$eventId/': typeof ProtectedCalendarEventsEventIdIndexRoute
   '/groups/events/$groupEventId/': typeof ProtectedGroupsEventsGroupEventIdIndexRoute
+  '/organizations/$organizationId/groups/$groupId/athletes': typeof CoachingOrganizationsOrganizationIdGroupsGroupIdAthletesRoute
+  '/organizations/$organizationId/groups/$groupId/coaches': typeof CoachingOrganizationsOrganizationIdGroupsGroupIdCoachesRoute
 }
 export interface FileRoutesByTo {
   '/': typeof ProtectedIndexRoute
@@ -692,6 +716,7 @@ export interface FileRoutesByTo {
   '/integrations': typeof ProtectedIntegrationsRoute
   '/messages': typeof ProtectedMessagesRoute
   '/notifications': typeof ProtectedNotificationsRoute
+  '/organization-invitations': typeof ProtectedOrganizationInvitationsRoute
   '/plan': typeof ProtectedPlanRoute
   '/search': typeof ProtectedSearchRoute
   '/settings': typeof ProtectedSettingsRoute
@@ -758,7 +783,7 @@ export interface FileRoutesByTo {
   '/routes/$routeId': typeof ProtectedRoutesRouteIdIndexRoute
   '/training-plans/$planId': typeof ProtectedTrainingPlansPlanIdIndexRoute
   '/user/$userId': typeof ProtectedUserUserIdIndexRoute
-  '/organizations/$organizationId/groups/$groupId': typeof CoachingOrganizationsOrganizationIdGroupsGroupIdRoute
+  '/organizations/$organizationId/groups/$groupId': typeof CoachingOrganizationsOrganizationIdGroupsGroupIdRouteWithChildren
   '/calendar/events/$eventId/edit': typeof ProtectedCalendarEventsEventIdEditRoute
   '/groups/$groupId/events/new': typeof ProtectedGroupsGroupIdEventsNewRoute
   '/groups/events/$groupEventId/edit': typeof ProtectedGroupsEventsGroupEventIdEditRoute
@@ -770,6 +795,8 @@ export interface FileRoutesByTo {
   '/organizations/$organizationId/groups': typeof CoachingOrganizationsOrganizationIdGroupsIndexRoute
   '/calendar/events/$eventId': typeof ProtectedCalendarEventsEventIdIndexRoute
   '/groups/events/$groupEventId': typeof ProtectedGroupsEventsGroupEventIdIndexRoute
+  '/organizations/$organizationId/groups/$groupId/athletes': typeof CoachingOrganizationsOrganizationIdGroupsGroupIdAthletesRoute
+  '/organizations/$organizationId/groups/$groupId/coaches': typeof CoachingOrganizationsOrganizationIdGroupsGroupIdCoachesRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -781,6 +808,7 @@ export interface FileRoutesById {
   '/_protected/integrations': typeof ProtectedIntegrationsRoute
   '/_protected/messages': typeof ProtectedMessagesRoute
   '/_protected/notifications': typeof ProtectedNotificationsRoute
+  '/_protected/organization-invitations': typeof ProtectedOrganizationInvitationsRoute
   '/_protected/plan': typeof ProtectedPlanRoute
   '/_protected/record': typeof ProtectedRecordRouteWithChildren
   '/_protected/search': typeof ProtectedSearchRoute
@@ -851,7 +879,7 @@ export interface FileRoutesById {
   '/_protected/routes/$routeId/': typeof ProtectedRoutesRouteIdIndexRoute
   '/_protected/training-plans/$planId/': typeof ProtectedTrainingPlansPlanIdIndexRoute
   '/_protected/user/$userId/': typeof ProtectedUserUserIdIndexRoute
-  '/_coaching/organizations/$organizationId/groups/$groupId': typeof CoachingOrganizationsOrganizationIdGroupsGroupIdRoute
+  '/_coaching/organizations/$organizationId/groups/$groupId': typeof CoachingOrganizationsOrganizationIdGroupsGroupIdRouteWithChildren
   '/_protected/calendar/events/$eventId/edit': typeof ProtectedCalendarEventsEventIdEditRoute
   '/_protected/groups/$groupId/events/new': typeof ProtectedGroupsGroupIdEventsNewRoute
   '/_protected/groups/events/$groupEventId/edit': typeof ProtectedGroupsEventsGroupEventIdEditRoute
@@ -863,6 +891,8 @@ export interface FileRoutesById {
   '/_coaching/organizations/$organizationId/groups/': typeof CoachingOrganizationsOrganizationIdGroupsIndexRoute
   '/_protected/calendar/events/$eventId/': typeof ProtectedCalendarEventsEventIdIndexRoute
   '/_protected/groups/events/$groupEventId/': typeof ProtectedGroupsEventsGroupEventIdIndexRoute
+  '/_coaching/organizations/$organizationId/groups/$groupId/athletes': typeof CoachingOrganizationsOrganizationIdGroupsGroupIdAthletesRoute
+  '/_coaching/organizations/$organizationId/groups/$groupId/coaches': typeof CoachingOrganizationsOrganizationIdGroupsGroupIdCoachesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -874,6 +904,7 @@ export interface FileRouteTypes {
     | '/integrations'
     | '/messages'
     | '/notifications'
+    | '/organization-invitations'
     | '/plan'
     | '/record'
     | '/search'
@@ -955,6 +986,8 @@ export interface FileRouteTypes {
     | '/organizations/$organizationId/groups/'
     | '/calendar/events/$eventId/'
     | '/groups/events/$groupEventId/'
+    | '/organizations/$organizationId/groups/$groupId/athletes'
+    | '/organizations/$organizationId/groups/$groupId/coaches'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -962,6 +995,7 @@ export interface FileRouteTypes {
     | '/integrations'
     | '/messages'
     | '/notifications'
+    | '/organization-invitations'
     | '/plan'
     | '/search'
     | '/settings'
@@ -1040,6 +1074,8 @@ export interface FileRouteTypes {
     | '/organizations/$organizationId/groups'
     | '/calendar/events/$eventId'
     | '/groups/events/$groupEventId'
+    | '/organizations/$organizationId/groups/$groupId/athletes'
+    | '/organizations/$organizationId/groups/$groupId/coaches'
   id:
     | '__root__'
     | '/_coaching'
@@ -1050,6 +1086,7 @@ export interface FileRouteTypes {
     | '/_protected/integrations'
     | '/_protected/messages'
     | '/_protected/notifications'
+    | '/_protected/organization-invitations'
     | '/_protected/plan'
     | '/_protected/record'
     | '/_protected/search'
@@ -1132,6 +1169,8 @@ export interface FileRouteTypes {
     | '/_coaching/organizations/$organizationId/groups/'
     | '/_protected/calendar/events/$eventId/'
     | '/_protected/groups/events/$groupEventId/'
+    | '/_coaching/organizations/$organizationId/groups/$groupId/athletes'
+    | '/_coaching/organizations/$organizationId/groups/$groupId/coaches'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -1229,6 +1268,13 @@ declare module '@tanstack/react-router' {
       path: '/notifications'
       fullPath: '/notifications'
       preLoaderRoute: typeof ProtectedNotificationsRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/_protected/organization-invitations': {
+      id: '/_protected/organization-invitations'
+      path: '/organization-invitations'
+      fullPath: '/organization-invitations'
+      preLoaderRoute: typeof ProtectedOrganizationInvitationsRouteImport
       parentRoute: typeof ProtectedRoute
     }
     '/_protected/plan': {
@@ -1798,18 +1844,50 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiInternalProviderSyncWahooStatusRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_coaching/organizations/$organizationId/groups/$groupId/athletes': {
+      id: '/_coaching/organizations/$organizationId/groups/$groupId/athletes'
+      path: '/athletes'
+      fullPath: '/organizations/$organizationId/groups/$groupId/athletes'
+      preLoaderRoute: typeof CoachingOrganizationsOrganizationIdGroupsGroupIdAthletesRouteImport
+      parentRoute: typeof CoachingOrganizationsOrganizationIdGroupsGroupIdRoute
+    }
+    '/_coaching/organizations/$organizationId/groups/$groupId/coaches': {
+      id: '/_coaching/organizations/$organizationId/groups/$groupId/coaches'
+      path: '/coaches'
+      fullPath: '/organizations/$organizationId/groups/$groupId/coaches'
+      preLoaderRoute: typeof CoachingOrganizationsOrganizationIdGroupsGroupIdCoachesRouteImport
+      parentRoute: typeof CoachingOrganizationsOrganizationIdGroupsGroupIdRoute
+    }
   }
 }
 
+interface CoachingOrganizationsOrganizationIdGroupsGroupIdRouteChildren {
+  CoachingOrganizationsOrganizationIdGroupsGroupIdAthletesRoute: typeof CoachingOrganizationsOrganizationIdGroupsGroupIdAthletesRoute
+  CoachingOrganizationsOrganizationIdGroupsGroupIdCoachesRoute: typeof CoachingOrganizationsOrganizationIdGroupsGroupIdCoachesRoute
+}
+
+const CoachingOrganizationsOrganizationIdGroupsGroupIdRouteChildren: CoachingOrganizationsOrganizationIdGroupsGroupIdRouteChildren =
+  {
+    CoachingOrganizationsOrganizationIdGroupsGroupIdAthletesRoute:
+      CoachingOrganizationsOrganizationIdGroupsGroupIdAthletesRoute,
+    CoachingOrganizationsOrganizationIdGroupsGroupIdCoachesRoute:
+      CoachingOrganizationsOrganizationIdGroupsGroupIdCoachesRoute,
+  }
+
+const CoachingOrganizationsOrganizationIdGroupsGroupIdRouteWithChildren =
+  CoachingOrganizationsOrganizationIdGroupsGroupIdRoute._addFileChildren(
+    CoachingOrganizationsOrganizationIdGroupsGroupIdRouteChildren,
+  )
+
 interface CoachingOrganizationsOrganizationIdGroupsRouteChildren {
-  CoachingOrganizationsOrganizationIdGroupsGroupIdRoute: typeof CoachingOrganizationsOrganizationIdGroupsGroupIdRoute
+  CoachingOrganizationsOrganizationIdGroupsGroupIdRoute: typeof CoachingOrganizationsOrganizationIdGroupsGroupIdRouteWithChildren
   CoachingOrganizationsOrganizationIdGroupsIndexRoute: typeof CoachingOrganizationsOrganizationIdGroupsIndexRoute
 }
 
 const CoachingOrganizationsOrganizationIdGroupsRouteChildren: CoachingOrganizationsOrganizationIdGroupsRouteChildren =
   {
     CoachingOrganizationsOrganizationIdGroupsGroupIdRoute:
-      CoachingOrganizationsOrganizationIdGroupsGroupIdRoute,
+      CoachingOrganizationsOrganizationIdGroupsGroupIdRouteWithChildren,
     CoachingOrganizationsOrganizationIdGroupsIndexRoute:
       CoachingOrganizationsOrganizationIdGroupsIndexRoute,
   }
@@ -1934,6 +2012,7 @@ interface ProtectedRouteChildren {
   ProtectedIntegrationsRoute: typeof ProtectedIntegrationsRoute
   ProtectedMessagesRoute: typeof ProtectedMessagesRoute
   ProtectedNotificationsRoute: typeof ProtectedNotificationsRoute
+  ProtectedOrganizationInvitationsRoute: typeof ProtectedOrganizationInvitationsRoute
   ProtectedPlanRoute: typeof ProtectedPlanRoute
   ProtectedRecordRoute: typeof ProtectedRecordRouteWithChildren
   ProtectedSearchRoute: typeof ProtectedSearchRoute
@@ -1972,6 +2051,7 @@ const ProtectedRouteChildren: ProtectedRouteChildren = {
   ProtectedIntegrationsRoute: ProtectedIntegrationsRoute,
   ProtectedMessagesRoute: ProtectedMessagesRoute,
   ProtectedNotificationsRoute: ProtectedNotificationsRoute,
+  ProtectedOrganizationInvitationsRoute: ProtectedOrganizationInvitationsRoute,
   ProtectedPlanRoute: ProtectedPlanRoute,
   ProtectedRecordRoute: ProtectedRecordRouteWithChildren,
   ProtectedSearchRoute: ProtectedSearchRoute,
