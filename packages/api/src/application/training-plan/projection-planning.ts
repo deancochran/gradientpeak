@@ -82,9 +82,9 @@ const trainingPlanPreviewSessionResultSchema = z.discriminatedUnion("status", [
 
 const editableTemplatePreviewDraftSchema = z
   .object({
-    // A title is not needed to simulate an in-progress draft. Keep the literal
-    // value here so the preview fingerprint changes when the author names it.
-    name: z.string().max(255),
+    // A title is not needed to simulate an in-progress draft. Preserve the
+    // existing name normalization so preview and commit fingerprints agree.
+    name: z.string().trim().max(255),
     description: z.string().max(1000).nullable().optional(),
     contentVisibility: contentVisibilitySchema.optional(),
     structure: trainingPlanCreateSchema,

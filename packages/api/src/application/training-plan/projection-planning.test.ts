@@ -216,7 +216,10 @@ describe("projection planning", () => {
     };
 
     expect(trainingPlanPreviewInputSchema.parse(createPreview)).toEqual(createPreview);
-    expect(trainingPlanPreviewInputSchema.parse(updatePreview)).toEqual(updatePreview);
+    expect(trainingPlanPreviewInputSchema.parse(updatePreview)).toEqual({
+      ...updatePreview,
+      draft: { ...updatePreview.draft, name: "" },
+    });
     expect(
       trainingPlanCommitInputSchema.safeParse({ ...createPreview, ...commitFields }).success,
     ).toBe(false);
@@ -229,6 +232,20 @@ describe("projection planning", () => {
       ...commitFields,
     };
     expect(trainingPlanCommitInputSchema.parse(namedUpdateCommit)).toEqual(namedUpdateCommit);
+
+    const spacedNamePreview = {
+      ...createPreview,
+      draft: { ...createPreview.draft, name: "  Base plan  " },
+    };
+    const normalizedName = {
+      ...spacedNamePreview,
+      draft: { ...spacedNamePreview.draft, name: "Base plan" },
+    };
+    expect(trainingPlanPreviewInputSchema.parse(spacedNamePreview)).toEqual(normalizedName);
+    expect(trainingPlanCommitInputSchema.parse({ ...spacedNamePreview, ...commitFields })).toEqual({
+      ...normalizedName,
+      ...commitFields,
+    });
   });
 
   it("accepts duplicate drafts by source identity without client-authored persistence data", () => {
