@@ -75,7 +75,7 @@ export function BuilderActivityAssignmentSheetContent({
 
   return (
     <SearchableList
-      {...omitUndefined({ hasNextPage })}
+      {...omitUndefined({ hasNextPage, presentation })}
       data={activityPlanItemsWithEstimates}
       emptyMessage="No matching activities."
       headerInLayout
@@ -86,7 +86,6 @@ export function BuilderActivityAssignmentSheetContent({
       onFetchNextPage={onFetchNextPage}
       pluralLabel="activities"
       renderItem={renderActivityPlan}
-      presentation={presentation}
       sectionLabel="Tap to assign"
       singularLabel="activity"
     />

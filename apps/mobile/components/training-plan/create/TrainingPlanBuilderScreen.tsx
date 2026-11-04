@@ -1,6 +1,6 @@
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
-import { Stack, useFocusEffect, useGlobalSearchParams, usePathname } from "expo-router";
+import { Stack, useFocusEffect, useGlobalSearchParams, usePathname, useRouter } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { ActivityIndicator, BackHandler, View } from "react-native";
 import { TrainingPlanBuilderSheets } from "@/components/training-plan/create/TrainingPlanBuilderSheets";
@@ -49,6 +49,7 @@ function TrainingPlanBuilderScreenSession({
   isFlowCurrent,
 }: TrainingPlanBuilderScreenProps & { isFlowCurrent: () => boolean }) {
   const [isDirty, setIsDirty] = useState(false);
+  const router = useRouter();
   const allowNavigationRef = useRef(false);
   const controller = useTrainingPlanBuilderController(
     omitUndefined({
@@ -147,26 +148,24 @@ function TrainingPlanBuilderScreenSession({
       <Stack.Screen
         options={{
           title: surfaceTitle,
-          headerLeft: isChildSurface
-            ? () => (
-                <Button
-                  accessibilityLabel="Back"
-                  disabled={builder.derived.savePlan.isLocked}
-                  onPress={leaveSurface}
-                  size="sm"
-                  variant="ghost"
-                >
-                  <Text>Back</Text>
-                </Button>
-              )
-            : undefined,
+          headerLeft: () => (
+            <Button
+              accessibilityLabel={isChildSurface ? "Back" : "Go back"}
+              disabled={builder.derived.savePlan.isLocked}
+              onPress={isChildSurface ? leaveSurface : () => router.back()}
+              size="sm"
+              variant="ghost"
+            >
+              <Text>Back</Text>
+            </Button>
+          ),
           gestureEnabled: !(
             activeSurface === "activityAssignment" ||
             activeSurface === "activityFilters" ||
             activeSurface === "session"
           ),
           headerRight: isChildSurface
-            ? undefined
+            ? () => null
             : () => (
                 <Button
                   accessibilityLabel={controller.header.primaryLabel}

@@ -30,6 +30,7 @@ const activityPlanCardProps: Array<{
 const trainingPathChartProps: unknown[] = [];
 const preventRemoveMock = jest.fn();
 const dispatchMock = jest.fn();
+const mockRouterBack = jest.fn();
 let mockPathname = "/training-plan-create";
 let mockFocused = true;
 let mockNestedGoal = false;
@@ -296,7 +297,7 @@ jest.mock("expo-router", () => ({
   usePathname: () => mockPathname,
   useFocusEffect: (effect: () => undefined | (() => void)) => React.useEffect(effect, [effect]),
   useGlobalSearchParams: () => ({ returnToTrainingPlanCreate: mockNestedGoal ? "1" : undefined }),
-  useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
+  useRouter: () => ({ push: jest.fn(), replace: jest.fn(), back: mockRouterBack }),
 }));
 
 jest.mock("@repo/ui/components/button", () => ({
@@ -658,6 +659,7 @@ describe("TrainingPlanBuilderScreen", () => {
     jest.setSystemTime(FIXTURE_NOW);
     preventRemoveMock.mockClear();
     dispatchMock.mockClear();
+    mockRouterBack.mockClear();
     activityPlanCardProps.length = 0;
     trainingPathChartProps.length = 0;
     mockAuthoritativePreviewData = undefined;
@@ -1214,6 +1216,8 @@ describe("TrainingPlanBuilderScreen", () => {
     expect(screen.queryByTestId("builder-session-editor-modal")).toBeNull();
     expect(alert).not.toHaveBeenCalled();
     expect(dispatchMock).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByLabelText("Go back"));
+    expect(mockRouterBack).toHaveBeenCalledTimes(1);
     subscription.mockRestore();
     alert.mockRestore();
   });
