@@ -19,7 +19,7 @@ import {
   requireFreshBaseline,
   withDisposableDatabase,
 } from "@repo/db/testing/disposable-database";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { organizationsRouter } from "../organizations";
 
@@ -82,7 +82,11 @@ describe("organization staff suspension API against a fresh disposable PostgreSQ
           const foreignOwner = await person(client.db, "foreign-owner");
           const admin = await person(client.db, "admin");
           const coach = await person(client.db, "coach");
+          const otherCoach = await person(client.db, "other-coach");
+          const endedCoach = await person(client.db, "ended-coach");
+          const failureCoach = await person(client.db, "failure-coach");
           const athlete = await person(client.db, "athlete");
+          const failureAthlete = await person(client.db, "failure-athlete");
           const organizationId = randomUUID();
           const foreignOrganizationId = randomUUID();
           const ownerCaller = caller(client.db, owner);
@@ -92,7 +96,7 @@ describe("organization staff suspension API against a fresh disposable PostgreSQ
             slug: `staff-suspension-${organizationId}`,
             timezone: "UTC",
           });
-          await caller(client.db, foreignOwner).create({
+          const foreignCreated = await caller(client.db, foreignOwner).create({
             organizationId: foreignOrganizationId,
             name: "Foreign staff suspension",
             slug: `foreign-staff-suspension-${foreignOrganizationId}`,
@@ -100,6 +104,28 @@ describe("organization staff suspension API against a fresh disposable PostgreSQ
           });
           await staff(client.db, organizationId, admin, "admin");
           const coachMembershipId = await staff(client.db, organizationId, coach, "coach");
+          const otherCoachMembershipId = await staff(
+            client.db,
+            organizationId,
+            otherCoach,
+            "coach",
+          );
+          const endedCoachMembershipId = await staff(
+            client.db,
+            organizationId,
+            endedCoach,
+            "coach",
+          );
+          const failureCoachMembershipId = await staff(
+            client.db,
+            organizationId,
+            failureCoach,
+            "coach",
+          );
+          await client.db
+            .update(organizationMemberships)
+            .set({ ended_at: new Date() })
+            .where(eq(organizationMemberships.id, endedCoachMembershipId));
           const engagementId = randomUUID();
           await client.db.insert(coachingEngagements).values({
             id: engagementId,
@@ -110,6 +136,18 @@ describe("organization staff suspension API against a fresh disposable PostgreSQ
             organization_id: organizationId,
             engagement_id: engagementId,
             coach_membership_id: coachMembershipId,
+            assignment_kind: "primary",
+          });
+          const failureEngagementId = randomUUID();
+          await client.db.insert(coachingEngagements).values({
+            id: failureEngagementId,
+            organization_id: organizationId,
+            athlete_profile_id: failureAthlete,
+          });
+          await client.db.insert(coachingAssignments).values({
+            organization_id: organizationId,
+            engagement_id: failureEngagementId,
+            coach_membership_id: failureCoachMembershipId,
             assignment_kind: "primary",
           });
           const groupId = randomUUID();
@@ -123,6 +161,12 @@ describe("organization staff suspension API against a fresh disposable PostgreSQ
             organization_id: organizationId,
             group_id: groupId,
             coach_membership_id: coachMembershipId,
+            assigned_by_membership_id: created.membershipId,
+          });
+          await client.db.insert(organizationGroupCoachAssignments).values({
+            organization_id: organizationId,
+            group_id: groupId,
+            coach_membership_id: failureCoachMembershipId,
             assigned_by_membership_id: created.membershipId,
           });
           const policyId = randomUUID();
@@ -153,7 +197,30 @@ describe("organization staff suspension API against a fresh disposable PostgreSQ
               reason: "administrative_review",
             }),
           ).rejects.toMatchObject({ code: "FORBIDDEN" });
+          await expect(
+            ownerCaller.lifecycle.suspendMembership({
+              organizationId,
+              membershipId: created.membershipId,
+              operationId: randomUUID(),
+              reason: "administrative_review",
+            }),
+          ).rejects.toMatchObject({ code: "FORBIDDEN" });
+          await expect(
+            ownerCaller.lifecycle.suspendMembership({
+              organizationId: foreignOrganizationId,
+              membershipId: foreignCreated.membershipId,
+              operationId: randomUUID(),
+              reason: "administrative_review",
+            }),
+          ).rejects.toMatchObject({ code: "FORBIDDEN" });
           const operationId = randomUUID();
+          // Deliberately discard the first completed response, as a client that lost its ACK would.
+          await ownerCaller.lifecycle.suspendMembership({
+            organizationId,
+            membershipId: coachMembershipId,
+            operationId,
+            reason: "administrative_review",
+          });
           await expect(
             ownerCaller.lifecycle.suspendMembership({
               organizationId,
@@ -167,13 +234,29 @@ describe("organization staff suspension API against a fresh disposable PostgreSQ
               organizationId,
               membershipId: coachMembershipId,
               operationId,
-              reason: "administrative_review",
+              reason: "different_reason",
             }),
-          ).resolves.toEqual({ membershipId: coachMembershipId, operationId, status: "suspended" });
+          ).rejects.toMatchObject({ code: "CONFLICT" });
           await expect(
             ownerCaller.lifecycle.resumeMembership({
               organizationId,
               membershipId: coachMembershipId,
+              operationId,
+              reason: "administrative_review",
+            }),
+          ).rejects.toMatchObject({ code: "CONFLICT" });
+          await expect(
+            caller(client.db, admin).lifecycle.suspendMembership({
+              organizationId,
+              membershipId: coachMembershipId,
+              operationId,
+              reason: "administrative_review",
+            }),
+          ).rejects.toMatchObject({ code: "CONFLICT" });
+          await expect(
+            ownerCaller.lifecycle.suspendMembership({
+              organizationId,
+              membershipId: otherCoachMembershipId,
               operationId,
               reason: "administrative_review",
             }),
@@ -244,13 +327,31 @@ describe("organization staff suspension API against a fresh disposable PostgreSQ
           ).resolves.toEqual([{ endedAt: null }]);
           await expect(
             client.db
+              .select({
+                endedAt: coachingEngagements.ended_at,
+                pausedAt: coachingEngagements.paused_at,
+              })
+              .from(coachingEngagements)
+              .where(eq(coachingEngagements.id, engagementId)),
+          ).resolves.toEqual([{ endedAt: null, pausedAt: null }]);
+          await expect(
+            client.db
               .select({ revokedAt: organizationMembershipRoleGrants.revoked_at })
               .from(organizationMembershipRoleGrants)
               .where(eq(organizationMembershipRoleGrants.membership_id, coachMembershipId)),
           ).resolves.toEqual([{ revokedAt: null }]);
           await expect(
             client.db
-              .select({ id: organizationAuditEvents.id })
+              .select({
+                action: organizationAuditEvents.action,
+                actorMembershipId: organizationAuditEvents.actor_membership_id,
+                actorProfileId: organizationAuditEvents.actor_profile_id,
+                correlationId: organizationAuditEvents.correlation_id,
+                details: organizationAuditEvents.details,
+                organizationId: organizationAuditEvents.organization_id,
+                resourceId: organizationAuditEvents.resource_id,
+                resourceType: organizationAuditEvents.resource_type,
+              })
               .from(organizationAuditEvents)
               .where(
                 and(
@@ -258,9 +359,74 @@ describe("organization staff suspension API against a fresh disposable PostgreSQ
                   eq(organizationAuditEvents.action, "organization.membership_suspended"),
                 ),
               ),
-          ).resolves.toHaveLength(1);
+          ).resolves.toEqual([
+            {
+              action: "organization.membership_suspended",
+              actorMembershipId: created.membershipId,
+              actorProfileId: owner,
+              correlationId: operationId,
+              details: { reason_code: "administrative_review" },
+              organizationId,
+              resourceId: coachMembershipId,
+              resourceType: "organization_membership",
+            },
+          ]);
 
           const resumeOperationId = randomUUID();
+          await expect(
+            ownerCaller.lifecycle.resumeMembership({
+              organizationId,
+              membershipId: coachMembershipId,
+              operationId: resumeOperationId,
+              reason: "administrative_review",
+            }),
+          ).resolves.toEqual({
+            membershipId: coachMembershipId,
+            operationId: resumeOperationId,
+            status: "resumed",
+          });
+          // A delayed suspend retry is only a receipt replay; it cannot undo the resume.
+          await expect(
+            ownerCaller.lifecycle.suspendMembership({
+              organizationId,
+              membershipId: coachMembershipId,
+              operationId,
+              reason: "administrative_review",
+            }),
+          ).resolves.toEqual({ membershipId: coachMembershipId, operationId, status: "suspended" });
+          await expect(
+            client.db
+              .select({ suspendedAt: organizationMemberships.suspended_at })
+              .from(organizationMemberships)
+              .where(eq(organizationMemberships.id, coachMembershipId)),
+          ).resolves.toEqual([{ suspendedAt: null }]);
+          // Resume never recreates assignments or revives consents.
+          await expect(
+            client.db
+              .select({ endedAt: coachingAssignments.ended_at })
+              .from(coachingAssignments)
+              .where(eq(coachingAssignments.coach_membership_id, coachMembershipId)),
+          ).resolves.toEqual([expect.objectContaining({ endedAt: expect.any(Date) })]);
+          await expect(
+            client.db
+              .select({ endedAt: organizationGroupCoachAssignments.ended_at })
+              .from(organizationGroupCoachAssignments)
+              .where(eq(organizationGroupCoachAssignments.coach_membership_id, coachMembershipId)),
+          ).resolves.toEqual([expect.objectContaining({ endedAt: expect.any(Date) })]);
+          const laterSuspendOperationId = randomUUID();
+          await expect(
+            ownerCaller.lifecycle.suspendMembership({
+              organizationId,
+              membershipId: coachMembershipId,
+              operationId: laterSuspendOperationId,
+              reason: "administrative_review",
+            }),
+          ).resolves.toEqual({
+            membershipId: coachMembershipId,
+            operationId: laterSuspendOperationId,
+            status: "suspended",
+          });
+          // A delayed resume retry is likewise historical and cannot unsuspend a later suspension.
           await expect(
             ownerCaller.lifecycle.resumeMembership({
               organizationId,
@@ -278,14 +444,125 @@ describe("organization staff suspension API against a fresh disposable PostgreSQ
               .select({ suspendedAt: organizationMemberships.suspended_at })
               .from(organizationMemberships)
               .where(eq(organizationMemberships.id, coachMembershipId)),
-          ).resolves.toEqual([{ suspendedAt: null }]);
-          // Resume never recreates assignments or revives consents.
+          ).resolves.toEqual([expect.objectContaining({ suspendedAt: expect.any(Date) })]);
+          const noOpSuspendOperationId = randomUUID();
+          await expect(
+            ownerCaller.lifecycle.suspendMembership({
+              organizationId,
+              membershipId: coachMembershipId,
+              operationId: noOpSuspendOperationId,
+              reason: "administrative_review",
+            }),
+          ).resolves.toEqual({
+            membershipId: coachMembershipId,
+            operationId: noOpSuspendOperationId,
+            status: "suspended",
+          });
           await expect(
             client.db
-              .select({ endedAt: coachingAssignments.ended_at })
-              .from(coachingAssignments)
-              .where(eq(coachingAssignments.coach_membership_id, coachMembershipId)),
-          ).resolves.toEqual([expect.objectContaining({ endedAt: expect.any(Date) })]);
+              .select({
+                action: organizationAuditEvents.action,
+                correlationId: organizationAuditEvents.correlation_id,
+                resourceId: organizationAuditEvents.resource_id,
+              })
+              .from(organizationAuditEvents)
+              .where(eq(organizationAuditEvents.correlation_id, noOpSuspendOperationId)),
+          ).resolves.toEqual([
+            {
+              action: "organization.membership_suspended",
+              correlationId: noOpSuspendOperationId,
+              resourceId: coachMembershipId,
+            },
+          ]);
+          const otherSuspendOperationId = randomUUID();
+          await ownerCaller.lifecycle.suspendMembership({
+            organizationId,
+            membershipId: otherCoachMembershipId,
+            operationId: otherSuspendOperationId,
+            reason: "administrative_review",
+          });
+          const firstSuspendedPage = await ownerCaller.lifecycle.staff.list({
+            organizationId,
+            status: "suspended",
+            limit: 1,
+          });
+          expect(firstSuspendedPage).toMatchObject({
+            hasMore: true,
+            nextCursor: expect.any(String),
+          });
+          const secondSuspendedPage = await ownerCaller.lifecycle.staff.list({
+            organizationId,
+            status: "suspended",
+            cursor: firstSuspendedPage.nextCursor,
+            limit: 1,
+          });
+          expect([...firstSuspendedPage.items, ...secondSuspendedPage.items]).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({ membershipId: coachMembershipId, status: "suspended" }),
+              expect.objectContaining({
+                membershipId: otherCoachMembershipId,
+                status: "suspended",
+              }),
+            ]),
+          );
+          expect([...firstSuspendedPage.items, ...secondSuspendedPage.items]).not.toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({ membershipId: endedCoachMembershipId }),
+            ]),
+          );
+
+          // This constraint is created inside and rolled back with the outer disposable-test
+          // transaction. It fails only the target membership update, after assignment endings,
+          // proving the nested application transaction restores all three durable effects.
+          const faultOperationId = randomUUID();
+          const faultConstraint = `staff_suspension_fault_${randomUUID().replaceAll("-", "")}`;
+          await expect(
+            client.db.transaction(async (tx) => {
+              await tx.execute(
+                sql.raw(
+                  `alter table organization_memberships add constraint ${faultConstraint} check (id <> '${failureCoachMembershipId}'::uuid or suspended_at is null) not valid`,
+                ),
+              );
+              await expect(
+                caller(tx as unknown as DrizzleDbClient, owner).lifecycle.suspendMembership({
+                  organizationId,
+                  membershipId: failureCoachMembershipId,
+                  operationId: faultOperationId,
+                  reason: "administrative_review",
+                }),
+              ).rejects.toMatchObject({ code: "INTERNAL_SERVER_ERROR" });
+              await expect(
+                tx
+                  .select({ suspendedAt: organizationMemberships.suspended_at })
+                  .from(organizationMemberships)
+                  .where(eq(organizationMemberships.id, failureCoachMembershipId)),
+              ).resolves.toEqual([{ suspendedAt: null }]);
+              await expect(
+                tx
+                  .select({ endedAt: coachingAssignments.ended_at })
+                  .from(coachingAssignments)
+                  .where(eq(coachingAssignments.coach_membership_id, failureCoachMembershipId)),
+              ).resolves.toEqual([{ endedAt: null }]);
+              await expect(
+                tx
+                  .select({ endedAt: organizationGroupCoachAssignments.ended_at })
+                  .from(organizationGroupCoachAssignments)
+                  .where(
+                    eq(
+                      organizationGroupCoachAssignments.coach_membership_id,
+                      failureCoachMembershipId,
+                    ),
+                  ),
+              ).resolves.toEqual([{ endedAt: null }]);
+              await expect(
+                tx
+                  .select({ id: organizationAuditEvents.id })
+                  .from(organizationAuditEvents)
+                  .where(eq(organizationAuditEvents.correlation_id, faultOperationId)),
+              ).resolves.toHaveLength(0);
+              throw new Error("rollback transaction-scoped fault harness");
+            }),
+          ).rejects.toThrow("rollback transaction-scoped fault harness");
         } finally {
           await client.close();
         }
