@@ -12,7 +12,7 @@ describe("projection parity fixtures", () => {
       input: Parameters<typeof buildDeterministicProjectionPayload>[0];
       expected: {
         readiness_score: number;
-        weekly_tss: number[];
+        weekly_load: number[];
         load_resolution_summary: NonNullable<
           ReturnType<typeof buildDeterministicProjectionPayload>["load_resolution_summary"]
         >;
@@ -31,7 +31,7 @@ describe("projection parity fixtures", () => {
               phase: "build",
               start_date: "2026-04-06",
               end_date: "2026-06-28",
-              target_weekly_tss_range: { min: 260, max: 360 },
+              target_weekly_load_range: { min: 260, max: 360 },
             },
           ],
           goals: [
@@ -50,39 +50,39 @@ describe("projection parity fixtures", () => {
               ],
             },
           ],
-          starting_ctl: 18,
+          starting_longTermLoad: 18,
           creation_config: {
             optimization_profile: "balanced",
-            max_weekly_tss_ramp_pct: 7,
-            max_ctl_ramp_per_week: 3,
+            max_weekly_load_ramp_pct: 7,
+            max_longTermLoad_ramp_per_week: 3,
           },
         },
         expected: {
-          readiness_score: 39,
-          weekly_tss: [
-            200.1, 214.1, 229.1, 241.5, 258.4, 276.5, 276.6, 275.6, 294.9, 289.9, 272.3, 234.6,
+          readiness_score: 33,
+          weekly_load: [
+            262.8, 281.2, 300.9, 281.2, 300.9, 322, 302.6, 286.2, 306.2, 298.1, 276.9, 236.7,
           ],
           load_resolution_summary: {
             week_count: 12,
             capped_weeks: 6,
-            tss_ramp_capped_weeks: 5,
-            ctl_ramp_capped_weeks: 1,
+            load_ramp_capped_weeks: 5,
+            longTermLoad_ramp_capped_weeks: 1,
             demand_floor_weeks: 0,
             demand_floor_override_weeks: 0,
             recovery_adjusted_weeks: 0,
             recovery_weeks: 0,
-            average_baseline_to_final_delta_tss: -25.7,
-            average_requested_to_final_delta_tss: -20.1,
-            average_mpc_to_final_delta_tss: 0,
-            max_requested_to_final_delta_tss: 89.4,
-            limiting_constraints: ["weekly_tss_ramp_cap", "weekly_ctl_ramp_cap"],
+            average_baseline_to_final_delta_load: -12.5,
+            average_requested_to_final_delta_load: -7.1,
+            average_mpc_to_final_delta_load: 0,
+            max_requested_to_final_delta_load: 27.2,
+            limiting_constraints: ["weekly_load_ramp_cap", "weekly_longTermLoad_ramp_cap"],
             confidence: "low",
             confidence_reasons: ["low_evidence_confidence", "frequent_safety_caps"],
           },
         },
       },
       {
-        key: "high-ctl-taper",
+        key: "high-longTermLoad-taper",
         input: {
           timeline: {
             start_date: "2026-04-06",
@@ -94,14 +94,14 @@ describe("projection parity fixtures", () => {
               phase: "peak",
               start_date: "2026-04-06",
               end_date: "2026-05-03",
-              target_weekly_tss_range: { min: 520, max: 620 },
+              target_weekly_load_range: { min: 520, max: 620 },
             },
             {
               name: "Taper",
               phase: "taper",
               start_date: "2026-05-04",
               end_date: "2026-05-17",
-              target_weekly_tss_range: { min: 320, max: 440 },
+              target_weekly_load_range: { min: 320, max: 440 },
             },
           ],
           goals: [
@@ -120,31 +120,31 @@ describe("projection parity fixtures", () => {
               ],
             },
           ],
-          starting_ctl: 72,
-          starting_atl: 80,
+          starting_longTermLoad: 72,
+          starting_recentLoad: 80,
           creation_config: {
             optimization_profile: "balanced",
-            max_weekly_tss_ramp_pct: 7,
-            max_ctl_ramp_per_week: 3,
+            max_weekly_load_ramp_pct: 7,
+            max_longTermLoad_ramp_per_week: 3,
           },
         },
         expected: {
-          readiness_score: 48,
-          weekly_tss: [513.9, 529.9, 567, 489.6, 394, 421.6],
+          readiness_score: 50,
+          weekly_load: [513.9, 529.9, 567, 489.6, 394, 421.6],
           load_resolution_summary: {
             week_count: 6,
             capped_weeks: 1,
-            tss_ramp_capped_weeks: 1,
-            ctl_ramp_capped_weeks: 0,
+            load_ramp_capped_weeks: 1,
+            longTermLoad_ramp_capped_weeks: 0,
             demand_floor_weeks: 0,
             demand_floor_override_weeks: 0,
             recovery_adjusted_weeks: 0,
             recovery_weeks: 0,
-            average_baseline_to_final_delta_tss: -23.1,
-            average_requested_to_final_delta_tss: 32.2,
-            average_mpc_to_final_delta_tss: 0,
-            max_requested_to_final_delta_tss: 148.2,
-            limiting_constraints: ["weekly_tss_ramp_cap"],
+            average_baseline_to_final_delta_load: -23.1,
+            average_requested_to_final_delta_load: 32.2,
+            average_mpc_to_final_delta_load: 0,
+            max_requested_to_final_delta_load: 148.2,
+            limiting_constraints: ["weekly_load_ramp_cap"],
             confidence: "low",
             confidence_reasons: ["low_evidence_confidence"],
           },
@@ -163,7 +163,7 @@ describe("projection parity fixtures", () => {
               phase: "build",
               start_date: "2026-04-06",
               end_date: "2026-05-17",
-              target_weekly_tss_range: { min: 300, max: 380 },
+              target_weekly_load_range: { min: 300, max: 380 },
             },
           ],
           goals: [
@@ -196,30 +196,30 @@ describe("projection parity fixtures", () => {
               ],
             },
           ],
-          starting_ctl: 45,
+          starting_longTermLoad: 45,
           creation_config: {
             optimization_profile: "balanced",
             post_goal_recovery_days: 5,
-            max_weekly_tss_ramp_pct: 7,
-            max_ctl_ramp_per_week: 3,
+            max_weekly_load_ramp_pct: 7,
+            max_longTermLoad_ramp_per_week: 3,
           },
         },
         expected: {
-          readiness_score: 48,
-          weekly_tss: [302.9, 278.3, 236.5, 234.4, 217.8, 173.9],
+          readiness_score: 51,
+          weekly_load: [313, 283.5, 238.9, 236.6, 218.8, 174.3],
           load_resolution_summary: {
             week_count: 6,
             capped_weeks: 0,
-            tss_ramp_capped_weeks: 0,
-            ctl_ramp_capped_weeks: 0,
+            load_ramp_capped_weeks: 0,
+            longTermLoad_ramp_capped_weeks: 0,
             demand_floor_weeks: 0,
             demand_floor_override_weeks: 0,
             recovery_adjusted_weeks: 2,
             recovery_weeks: 2,
-            average_baseline_to_final_delta_tss: -56.3,
-            average_requested_to_final_delta_tss: 15.6,
-            average_mpc_to_final_delta_tss: 0,
-            max_requested_to_final_delta_tss: 93.7,
+            average_baseline_to_final_delta_load: -54.9,
+            average_requested_to_final_delta_load: 17.5,
+            average_mpc_to_final_delta_load: 0,
+            max_requested_to_final_delta_load: 95.1,
             limiting_constraints: ["recovery_segment"],
             confidence: "low",
             confidence_reasons: ["low_evidence_confidence"],
@@ -230,12 +230,11 @@ describe("projection parity fixtures", () => {
 
     for (const fixture of fixtures) {
       const result = buildDeterministicProjectionPayload(fixture.input);
-
       expect(result.readiness_score, fixture.key).toBe(fixture.expected.readiness_score);
       expect(
-        result.microcycles.map((microcycle) => microcycle.planned_weekly_tss),
+        result.microcycles.map((microcycle) => microcycle.planned_weekly_load),
         fixture.key,
-      ).toEqual(fixture.expected.weekly_tss);
+      ).toEqual(fixture.expected.weekly_load);
       expect(result.load_resolution_summary, fixture.key).toEqual(
         fixture.expected.load_resolution_summary,
       );
@@ -257,7 +256,7 @@ describe("projection parity fixtures", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-01-25",
-          target_weekly_tss_range: { min: 280, max: 320 },
+          target_weekly_load_range: { min: 280, max: 320 },
         },
       ],
       goals: [
@@ -268,7 +267,7 @@ describe("projection parity fixtures", () => {
           priority: 1,
         },
       ],
-      starting_ctl: 35,
+      starting_longTermLoad: 35,
     });
 
     expect(result.points.slice(0, 3).map((point) => point.date)).toEqual([
@@ -283,21 +282,21 @@ describe("projection parity fixtures", () => {
       normalized_creation_config: {
         optimization_profile: "balanced",
         post_goal_recovery_days: 5,
-        max_weekly_tss_ramp_pct: 7,
-        max_ctl_ramp_per_week: 3,
+        max_weekly_load_ramp_pct: 7,
+        max_longTermLoad_ramp_per_week: 3,
         learned_ramp_rate: {
           max_safe_ramp_rate: 40,
           confidence: "low",
           source: "default",
         },
       },
-      tss_ramp_clamp_weeks: 0,
-      ctl_ramp_clamp_weeks: 0,
+      load_ramp_clamp_weeks: 0,
+      longTermLoad_ramp_clamp_weeks: 0,
       recovery_weeks: 0,
       starting_state: {
-        starting_ctl: 35,
-        starting_atl: 35,
-        starting_tsb: 0,
+        starting_longTermLoad: 35,
+        starting_recentLoad: 35,
+        starting_loadBalance: 0,
         starting_state_is_prior: false,
       },
     });
@@ -326,7 +325,7 @@ describe("projection parity fixtures", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-03-15",
-          target_weekly_tss_range: { min: 220, max: 280 },
+          target_weekly_load_range: { min: 220, max: 280 },
         },
       ],
       goals: [
@@ -345,11 +344,11 @@ describe("projection parity fixtures", () => {
           ],
         },
       ],
-      starting_ctl: 32,
+      starting_longTermLoad: 32,
       creation_config: {
         optimization_profile: "balanced",
-        max_weekly_tss_ramp_pct: 7,
-        max_ctl_ramp_per_week: 3,
+        max_weekly_load_ramp_pct: 7,
+        max_longTermLoad_ramp_per_week: 3,
       },
     };
 
@@ -371,7 +370,7 @@ describe("projection parity fixtures", () => {
             evidence_weight: 0.1,
           },
           readiness_timeline: {
-            target_tsb: 10,
+            target_loadBalance: 10,
             form_tolerance: 16,
             fatigue_overflow_scale: 0.65,
             feasibility_blend_weight: 0.25,
@@ -418,7 +417,7 @@ describe("projection parity fixtures", () => {
             evidence_weight: 0.08,
           },
           readiness_timeline: {
-            target_tsb: 4,
+            target_loadBalance: 4,
             form_tolerance: 28,
             fatigue_overflow_scale: 0.2,
             feasibility_blend_weight: 0.05,
@@ -472,14 +471,14 @@ describe("projection parity fixtures", () => {
         ...baseInput,
         creation_config: {
           ...baseInput.creation_config,
-          calibration: preset.calibration,
+          ...(preset.calibration === undefined ? {} : { calibration: preset.calibration }),
         },
       });
       const runB = buildDeterministicProjectionPayload({
         ...baseInput,
         creation_config: {
           ...baseInput.creation_config,
-          calibration: preset.calibration,
+          ...(preset.calibration === undefined ? {} : { calibration: preset.calibration }),
         },
       });
 
@@ -488,7 +487,7 @@ describe("projection parity fixtures", () => {
         readiness_score: runA.readiness_score,
         readiness_confidence: runA.readiness_confidence,
         envelope_score: runA.capacity_envelope?.envelope_score,
-        first_weeks: runA.microcycles.slice(0, 4).map((week) => week.planned_weekly_tss),
+        first_weeks: runA.microcycles.slice(0, 4).map((week) => week.planned_weekly_load),
       };
 
       expect(observed.readiness_score).toBeGreaterThanOrEqual(0);
@@ -508,9 +507,12 @@ describe("projection parity fixtures", () => {
       });
     }
 
-    const balanced = byPreset.get("balanced_default")!;
-    const conservative = byPreset.get("conservative_durability")!;
-    const aggressive = byPreset.get("aggressive_target_attainment")!;
+    const balanced = byPreset.get("balanced_default");
+    const conservative = byPreset.get("conservative_durability");
+    const aggressive = byPreset.get("aggressive_target_attainment");
+    if (!balanced || !conservative || !aggressive) {
+      throw new Error("Expected every calibration preset to produce an observation");
+    }
 
     expect(conservative.readiness_score).toBeLessThanOrEqual(balanced.readiness_score);
     expect(aggressive.readiness_score).toBeGreaterThanOrEqual(balanced.readiness_score);
@@ -521,7 +523,7 @@ describe("projection parity fixtures", () => {
   it("keeps local-preview and server recompute payload assembly in parity for low/sparse/rich/no-history fixtures", () => {
     const fixtures: Array<{
       key: "low" | "sparse" | "rich" | "no-history";
-      input: any;
+      input: Parameters<typeof buildProjectionEngineInput>[0];
     }> = [
       {
         key: "low",
@@ -535,7 +537,7 @@ describe("projection parity fixtures", () => {
                 phase: "base",
                 start_date: "2026-01-05",
                 end_date: "2026-03-15",
-                target_weekly_tss_range: { min: 150, max: 190 },
+                target_weekly_load_range: { min: 150, max: 190 },
               },
             ],
             goals: [
@@ -547,12 +549,12 @@ describe("projection parity fixtures", () => {
               },
             ],
           },
-          starting_ctl: 16,
-          starting_atl: 19,
+          starting_longTermLoad: 16,
+          starting_recentLoad: 19,
           normalized_creation_config: {
             optimization_profile: "sustainable",
             post_goal_recovery_days: 7,
-            behavior_controls_v1: {
+            behavior_controls: {
               aggressiveness: 0.2,
               variability: 0.25,
               spike_frequency: 0.15,
@@ -576,7 +578,7 @@ describe("projection parity fixtures", () => {
                 phase: "build",
                 start_date: "2026-01-05",
                 end_date: "2026-04-05",
-                target_weekly_tss_range: { min: 210, max: 260 },
+                target_weekly_load_range: { min: 210, max: 260 },
               },
             ],
             goals: [
@@ -588,12 +590,12 @@ describe("projection parity fixtures", () => {
               },
             ],
           },
-          starting_ctl: 33,
-          starting_atl: 36,
+          starting_longTermLoad: 33,
+          starting_recentLoad: 36,
           normalized_creation_config: {
             optimization_profile: "balanced",
             post_goal_recovery_days: 5,
-            behavior_controls_v1: {
+            behavior_controls: {
               aggressiveness: 0.45,
               variability: 0.45,
               spike_frequency: 0.35,
@@ -617,7 +619,7 @@ describe("projection parity fixtures", () => {
                 phase: "build",
                 start_date: "2026-01-05",
                 end_date: "2026-05-03",
-                target_weekly_tss_range: { min: 260, max: 340 },
+                target_weekly_load_range: { min: 260, max: 340 },
               },
             ],
             goals: [
@@ -629,12 +631,12 @@ describe("projection parity fixtures", () => {
               },
             ],
           },
-          starting_ctl: 58,
-          starting_atl: 62,
+          starting_longTermLoad: 58,
+          starting_recentLoad: 62,
           normalized_creation_config: {
             optimization_profile: "outcome_first",
             post_goal_recovery_days: 3,
-            behavior_controls_v1: {
+            behavior_controls: {
               aggressiveness: 0.8,
               variability: 0.75,
               spike_frequency: 0.75,
@@ -658,7 +660,7 @@ describe("projection parity fixtures", () => {
                 phase: "build",
                 start_date: "2026-01-05",
                 end_date: "2026-09-06",
-                target_weekly_tss_range: { min: 220, max: 280 },
+                target_weekly_load_range: { min: 220, max: 280 },
               },
             ],
             goals: [
@@ -692,7 +694,7 @@ describe("projection parity fixtures", () => {
           normalized_creation_config: {
             optimization_profile: "balanced",
             post_goal_recovery_days: 5,
-            behavior_controls_v1: {
+            behavior_controls: {
               aggressiveness: 0.45,
               variability: 0.45,
               spike_frequency: 0.35,
@@ -716,8 +718,11 @@ describe("projection parity fixtures", () => {
       expect(serverPath.points.map((point) => point.date)).toEqual(localDates);
 
       for (let i = 0; i < localPath.points.length; i += 1) {
-        const localPoint = localPath.points[i]!;
-        const serverPoint = serverPath.points[i]!;
+        const localPoint = localPath.points[i];
+        const serverPoint = serverPath.points[i];
+        if (!localPoint || !serverPoint) {
+          throw new Error(`Expected matching projection points at index ${i}`);
+        }
 
         expect(localPoint.date, `${fixture.key} point ${i} date`).toBe(serverPoint.date);
         expect(
@@ -725,12 +730,14 @@ describe("projection parity fixtures", () => {
           `${fixture.key} point ${i} readiness_score`,
         ).toBeLessThanOrEqual(tolerance);
         expect(
-          Math.abs(localPoint.predicted_load_tss - serverPoint.predicted_load_tss),
-          `${fixture.key} point ${i} predicted_load_tss`,
+          Math.abs(localPoint.predicted_load - serverPoint.predicted_load),
+          `${fixture.key} point ${i} predicted_load`,
         ).toBeLessThanOrEqual(tolerance);
         expect(
-          Math.abs(localPoint.predicted_fatigue_atl - serverPoint.predicted_fatigue_atl),
-          `${fixture.key} point ${i} predicted_fatigue_atl`,
+          Math.abs(
+            localPoint.predicted_fatigue_recentLoad - serverPoint.predicted_fatigue_recentLoad,
+          ),
+          `${fixture.key} point ${i} predicted_fatigue_recentLoad`,
         ).toBeLessThanOrEqual(tolerance);
       }
 
