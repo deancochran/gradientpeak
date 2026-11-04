@@ -78,6 +78,7 @@ export function useScheduleEditorController(controller: TrainingPlanBuilderContr
         });
       },
       onPressSession: (sessionId: string) => {
+        builder.actions.selectSession(sessionId);
         selection.setSessionId(sessionId);
         sheetStack.openSheet("session");
       },

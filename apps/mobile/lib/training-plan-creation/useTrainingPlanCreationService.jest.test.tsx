@@ -3,6 +3,8 @@ import { simulateTrainingPlan } from "@repo/core";
 import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import { act, renderHook, waitFor } from "@testing-library/react-native";
 import { createPrescriptionQuantificationBundleFixture } from "@/components/shared/__tests__/activityQuantificationFixture";
+import { useScheduleEditorController } from "@/components/training-plan/create/useScheduleEditorController";
+import type { TrainingPlanBuilderController } from "@/components/training-plan/create/useTrainingPlanBuilderController";
 import { createDefaultTrainingPlanBuilderState } from "./defaults";
 
 let mockAccountId: string | null = "11111111-1111-4111-8111-111111111111";
@@ -238,6 +240,36 @@ describe("useTrainingPlanCreationService performance target hydration", () => {
 });
 
 describe("useTrainingPlanCreationService authoritative projection", () => {
+  it("focuses the existing session being edited instead of the last-added session", async () => {
+    const setSessionId = jest.fn();
+    const hook = await renderHook(() => {
+      const builder = useTrainingPlanCreationService();
+      const controller = {
+        builder,
+        actions: { addSessionAtOffset: jest.fn(), confirmRemoveSession: jest.fn() },
+        selection: { setSessionId },
+        sheetStack: { openSheet: jest.fn() },
+        chartReview: { selectedWeekIndex: 0 },
+      } as unknown as TrainingPlanBuilderController;
+      return { builder, schedule: useScheduleEditorController(controller) };
+    });
+    await act(() => hook.result.current.builder.actions.addSession(0));
+    await act(() => hook.result.current.builder.actions.addSession(14));
+    expect(hook.result.current.schedule.focusOffsetDays).toBe(14);
+    const existing = hook.result.current.builder.state.structure.sessions[0];
+    if (!existing) throw new Error("Expected existing activity");
+    await act(() => hook.result.current.schedule.onPressSession(existing.localId));
+    expect(setSessionId).toHaveBeenCalledWith(existing.localId);
+    await act(() =>
+      hook.result.current.builder.actions.updateSession({ ...existing, offsetDays: 7 }),
+    );
+    setSessionId(null);
+    expect(hook.result.current.schedule.focusOffsetDays).toBe(7);
+    expect(hook.result.current.builder.state.selection).toEqual({
+      type: "session",
+      sessionId: existing.localId,
+    });
+  });
   beforeEach(() => {
     jest.clearAllMocks();
     mockQueries = createQueryState();
