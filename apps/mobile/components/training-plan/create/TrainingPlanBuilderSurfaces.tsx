@@ -23,6 +23,7 @@ export function TrainingPlanBuilderSurfaces({ controller }: TrainingPlanBuilderS
   const contextQueries = [controller.builder.queries.creationContext];
   const hasContextError = contextQueries.some((query) => query.isError);
   const previewError = controller.builder.derived.backendPlanningPreview.error;
+  const previewStatus = controller.builder.derived.savePlan.previewLifecycle.status;
   if (controller.sheetStack.activeSheet === "activityAssignment") {
     const { activityPicker } = controller;
     const { activityPlansQuery, activityPlanItems } = controller.builder;
@@ -128,10 +129,11 @@ export function TrainingPlanBuilderSurfaces({ controller }: TrainingPlanBuilderS
   return (
     <ScrollView className="flex-1 bg-background" contentContainerClassName="gap-5 px-4 py-3 pb-10">
       <View className="gap-5">
+        <BuilderStrategyComposer {...strategyComposer} />
         {hasContextError ? (
           <QueryNotice
-            detail="Some athlete context could not be loaded. You can keep editing the plan."
-            label="Athlete context unavailable"
+            detail="Your training history couldn’t load. You can keep editing."
+            label="Training history unavailable"
             onRetry={() => {
               for (const query of contextQueries) void query.refetch();
             }}
@@ -139,8 +141,8 @@ export function TrainingPlanBuilderSurfaces({ controller }: TrainingPlanBuilderS
         ) : null}
         {previewError ? (
           <QueryNotice
-            detail="The authoritative server preview could not refresh. Saving waits for a current server projection."
-            label="Preview unavailable"
+            detail="Your draft is still here. Keep editing, then retry before creating the plan."
+            label="Couldn’t check this plan"
             onRetry={() => void controller.builder.backendPlanningPreviewQuery.refetch()}
           />
         ) : null}
@@ -151,21 +153,39 @@ export function TrainingPlanBuilderSurfaces({ controller }: TrainingPlanBuilderS
             onRetry={() => void controller.actions.handleSave()}
           />
         ) : null}
-        <BuilderStrategyComposer {...strategyComposer} />
         {controller.numericDrafts.hasInvalid ? (
           <Text accessibilityRole="alert" className="text-sm text-destructive">
             Some activity or plan settings contain invalid values. Reopen the edited activity or
             settings to correct them before saving.
           </Text>
         ) : null}
-        <BuilderScheduleEditor {...scheduleEditor} />
-        <BuilderAuthoritativeProjectionCard
-          onRetry={() => {
-            void controller.builder.queries.publishedState.refetch();
-            void controller.builder.backendPlanningPreviewQuery.refetch();
-          }}
-          projection={controller.builder.derived.authoritativeProjectionState}
-        />
+        <BuilderScheduleEditor {...scheduleEditor} scheduleOnly={controller.mode === "create"} />
+        {controller.mode === "create" && previewStatus === "backend_preview_pending" ? (
+          <Text accessibilityLiveRegion="polite" className="text-sm text-muted-foreground">
+            Checking plan before creating…
+          </Text>
+        ) : null}
+        {controller.mode === "create" && previewStatus === "backend_input_unavailable" ? (
+          <Text className="text-sm text-muted-foreground">
+            Enter a plan name and add an activity to continue.
+          </Text>
+        ) : null}
+        {controller.mode === "create" && previewStatus === "backend_preview_unavailable" ? (
+          <QueryNotice
+            label="Plan check unavailable"
+            detail="We couldn’t check this plan against your training history. Your draft is unchanged; try again before creating."
+            onRetry={() => void controller.builder.backendPlanningPreviewQuery.refetch()}
+          />
+        ) : null}
+        {controller.mode === "edit" ? (
+          <BuilderAuthoritativeProjectionCard
+            onRetry={() => {
+              void controller.builder.queries.publishedState.refetch();
+              void controller.builder.backendPlanningPreviewQuery.refetch();
+            }}
+            projection={controller.builder.derived.authoritativeProjectionState}
+          />
+        ) : null}
       </View>
     </ScrollView>
   );

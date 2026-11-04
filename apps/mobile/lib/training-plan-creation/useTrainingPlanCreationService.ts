@@ -335,6 +335,9 @@ export function useTrainingPlanCreationService({
   const authoritativePreviewInput = useMemo(() => {
     try {
       const draft = buildCanonicalTrainingPlanDraft(state);
+      // An unfinished form is not a failed server preview. Match the required name
+      // boundary before querying; never weaken commit validation or invent a name.
+      if (!draft.name || draft.name.length > 255) return null;
       const commonDraft = {
         ...draft,
         previewStartDate: state.scheduling.startDate,

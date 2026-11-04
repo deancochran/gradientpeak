@@ -6,6 +6,7 @@ import { createPrescriptionQuantificationBundleFixture } from "@/components/shar
 import { createDefaultTrainingPlanBuilderState } from "./defaults";
 
 let mockAccountId: string | null = "11111111-1111-4111-8111-111111111111";
+let mockDebouncedValue: string | undefined;
 jest.mock("@/lib/stores/auth-store", () => {
   const state = () => ({
     session: mockAccountId ? { user: { id: mockAccountId } } : null,
@@ -46,8 +47,11 @@ const previewResult = {
   status: "available",
 };
 const mockFetchPreview = jest.fn();
+const mockUsePreviewQuery = jest.fn((_input: unknown, _options: unknown) => mockPreviewQuery);
 const mockInvalidate = jest.fn();
 beforeEach(() => {
+  mockDebouncedValue = undefined;
+  mockPreviewQuery.isFetching = false;
   mockAccountId = "11111111-1111-4111-8111-111111111111";
   mockFetchPreview.mockReset().mockResolvedValue(previewResult);
   mockInvalidate.mockReset().mockResolvedValue(undefined);
@@ -65,14 +69,16 @@ jest.mock("@/lib/api", () => ({
       },
     }),
     trainingPlans: {
-      preview: { useQuery: () => mockPreviewQuery },
+      preview: {
+        useQuery: (input: unknown, options: unknown) => mockUsePreviewQuery(input, options),
+      },
     },
   },
 }));
 
 jest.mock("@/lib/hooks/useDebouncedValue", () => ({
   __esModule: true,
-  useDebouncedValue: (value: unknown) => value,
+  useDebouncedValue: (value: unknown) => mockDebouncedValue ?? value,
 }));
 
 jest.mock("./goalCreationHandoff", () => ({
@@ -257,6 +263,82 @@ describe("useTrainingPlanCreationService authoritative projection", () => {
     if (projection.status !== "available") throw new Error("Expected available projection");
     expect(projection.simulation.projectedState.recentLoad).not.toBe(30);
     expect(projection.simulation.projectedState.stateRevision).toBe(4);
+  });
+
+  it("copies session content to another week with fresh identity and unchanged prescription overrides", async () => {
+    const hook = await renderHook(() => useTrainingPlanCreationService());
+    await act(() => hook.result.current.actions.addSession(2));
+    const source = hook.result.current.state.structure.sessions[0];
+    if (!source) throw new Error("Expected source session");
+    const authored = {
+      ...source,
+      activityPlan: projectedActivityPlan(),
+      demand: { ...source.demand, target_duration_minutes: 75, target_common_load: 60 },
+      eventOverrides: { title: "Long ride", start_time: "08:30" },
+    };
+    await act(() => hook.result.current.actions.updateSession(authored));
+    await act(() => hook.result.current.actions.duplicateSession(authored.localId, 9));
+    const copied = hook.result.current.state.structure.sessions[1];
+    expect(copied).toEqual({
+      ...authored,
+      offsetDays: 9,
+      id: expect.any(String),
+      localId: expect.any(String),
+    });
+    expect(copied?.id).not.toBe(authored.id);
+    expect(copied?.localId).toBe(copied?.id);
+    expect(hook.result.current.state.structure.sessions[0]).toEqual(authored);
+  });
+
+  it("does not allow an old preview to enable Create while an edited draft is debouncing or fetching", async () => {
+    const hook = await renderHook(() => useTrainingPlanCreationService());
+    await act(() => {
+      hook.result.current.actions.updateDetails({ name: "First draft" });
+      hook.result.current.actions.addSession(0);
+    });
+    expect(hook.result.current.derived.savePlan.canSave).toBe(true);
+    mockDebouncedValue = JSON.stringify(mockUsePreviewQuery.mock.calls.at(-1)?.[0]);
+    await act(() => hook.result.current.actions.updateDetails({ name: "Edited draft" }));
+    expect(hook.result.current.derived.savePlan.canSave).toBe(false);
+    expect(hook.result.current.derived.savePlan.previewLifecycle.status).toBe(
+      "backend_preview_pending",
+    );
+    mockDebouncedValue = undefined;
+    mockPreviewQuery.isFetching = true;
+    await hook.rerender({});
+    expect(hook.result.current.derived.savePlan.canSave).toBe(false);
+    mockPreviewQuery.isFetching = false;
+    await hook.rerender({});
+    expect(hook.result.current.derived.savePlan.canSave).toBe(true);
+  });
+
+  it("skips preview for unfinished names and resumes only for a valid name", async () => {
+    const hook = await renderHook(() => useTrainingPlanCreationService());
+    await act(() => hook.result.current.actions.addSession(0));
+    expect(mockUsePreviewQuery).toHaveBeenLastCalledWith(
+      expect.any(Symbol),
+      expect.objectContaining({ enabled: false }),
+    );
+    for (const name of ["   ", "x".repeat(256)]) {
+      await act(() => hook.result.current.actions.updateDetails({ name }));
+      expect(mockUsePreviewQuery).toHaveBeenLastCalledWith(
+        expect.any(Symbol),
+        expect.objectContaining({ enabled: false }),
+      );
+    }
+    await act(() => hook.result.current.actions.updateDetails({ name: "Base building" }));
+    expect(mockUsePreviewQuery).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        kind: "create",
+        draft: expect.objectContaining({ name: "Base building" }),
+      }),
+      expect.objectContaining({ enabled: true }),
+    );
+    await act(() => hook.result.current.actions.updateDetails({ name: "" }));
+    expect(mockUsePreviewQuery).toHaveBeenLastCalledWith(
+      expect.any(Symbol),
+      expect.objectContaining({ enabled: false }),
+    );
   });
 
   it("refuses to commit without a current authoritative preview", async () => {

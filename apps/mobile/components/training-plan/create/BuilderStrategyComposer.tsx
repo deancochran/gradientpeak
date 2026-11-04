@@ -90,30 +90,34 @@ export const BuilderStrategyComposer = memo(function BuilderStrategyComposer({
           </View>
         </View>
       ) : null}
-      <View
-        className={
-          useVerticalLayout
-            ? "min-h-11 gap-1"
-            : "min-h-11 flex-row items-center justify-between gap-3"
-        }
-        testID="builder-readiness"
-      >
-        <Text className="text-sm text-muted-foreground">Plan readiness</Text>
-        <Text
-          className="text-sm font-semibold text-foreground"
-          numberOfLines={useVerticalLayout ? undefined : 1}
+      {showEditConfiguration ? (
+        <View
+          className={
+            useVerticalLayout
+              ? "min-h-11 gap-1"
+              : "min-h-11 flex-row items-center justify-between gap-3"
+          }
+          testID="builder-readiness"
         >
-          {saveReadiness.label}
-        </Text>
-      </View>
-      <View
-        className={useVerticalLayout ? "gap-2" : "flex-row gap-2"}
-        testID="builder-schedule-actions"
-      >
-        <Button className="min-h-11 w-full" onPress={onAddActivity} testID="builder-add-activity">
-          <Text>Add activity</Text>
-        </Button>
-      </View>
+          <Text className="text-sm text-muted-foreground">Plan readiness</Text>
+          <Text
+            className="text-sm font-semibold text-foreground"
+            numberOfLines={useVerticalLayout ? undefined : 1}
+          >
+            {saveReadiness.label}
+          </Text>
+        </View>
+      ) : null}
+      {showEditConfiguration ? (
+        <View
+          className={useVerticalLayout ? "gap-2" : "flex-row gap-2"}
+          testID="builder-schedule-actions"
+        >
+          <Button className="min-h-11 w-full" onPress={onAddActivity} testID="builder-add-activity">
+            <Text>Add activity</Text>
+          </Button>
+        </View>
+      ) : null}
     </View>
   );
 });
@@ -138,15 +142,12 @@ function BuilderPlanDetailsFields({
 
   return (
     <Form {...form}>
-      <View
-        className="gap-3 rounded-2xl border border-border bg-card p-4"
-        testID="builder-plan-details"
-      >
+      <View className="gap-3" testID="builder-plan-details">
         <FormTextField
           control={form.control}
           label="Plan name"
           name="name"
-          placeholder="Base builder, race prep, return to training..."
+          placeholder="e.g. Base building"
           testId="builder-plan-name-input"
         />
         <FormTextareaField

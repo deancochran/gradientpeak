@@ -2,7 +2,7 @@ import type { ActivityPlanPlanningEstimate } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
 import { Plus } from "lucide-react-native";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
 import type { DailyTrainingAdjustmentPoint } from "@/components/plan/training-path/DailyTrainingAdjustmentChart";
 import { TrainingPathSelectedDayPanel } from "@/components/plan/training-path/TrainingPathSelectedDayPanel";
@@ -25,6 +25,8 @@ type BuilderScheduleEditorProps = {
   onRemoveSession: (sessionId: string) => void;
   selectedDayPointOverride?: DailyTrainingAdjustmentPoint | null;
   showChart?: boolean;
+  scheduleOnly?: boolean;
+  focusOffsetDays?: number;
   weekSummary?: string;
 };
 
@@ -51,11 +53,22 @@ export function BuilderScheduleEditor({
   onRemoveSession,
   selectedDayPointOverride,
   showChart = true,
+  scheduleOnly = false,
+  focusOffsetDays,
   estimateBySessionId,
   viewModel,
   weekSummary,
 }: BuilderScheduleEditorProps) {
-  const selectedWeekIndex = chartReview.selectedWeekIndex;
+  const [scheduleWeekIndex, setScheduleWeekIndex] = useState(
+    Math.floor((focusOffsetDays ?? 0) / 7),
+  );
+  useEffect(() => {
+    if (focusOffsetDays !== undefined) setScheduleWeekIndex(Math.floor(focusOffsetDays / 7));
+  }, [focusOffsetDays]);
+  const lastScheduleWeek = Math.max(0, ...viewModel.timelineWeeks.map((week) => week.weekIndex));
+  const selectedWeekIndex = scheduleOnly
+    ? Math.min(scheduleWeekIndex, lastScheduleWeek)
+    : chartReview.selectedWeekIndex;
   const selectedTimelineWeek =
     viewModel.timelineWeeks.find((week) => week.weekIndex === selectedWeekIndex) ?? null;
   const activeWeekStartOffset = selectedWeekIndex * 7;
@@ -85,6 +98,74 @@ export function BuilderScheduleEditor({
       sessions={selectedDaySessions}
     />
   );
+
+  if (scheduleOnly) {
+    const previousWeek = selectedWeekIndex > 0;
+    const nextWeek = selectedWeekIndex < lastScheduleWeek;
+    const sessions = selectedTimelineWeek?.sessions ?? [];
+    return (
+      <View className="gap-3" testID="builder-sessions-workspace">
+        <Text className="text-lg font-semibold">Schedule</Text>
+        <View className="flex-row items-center justify-between gap-2">
+          <Button
+            accessibilityLabel="Previous schedule week"
+            disabled={!previousWeek}
+            size="sm"
+            variant="ghost"
+            onPress={() => setScheduleWeekIndex(selectedWeekIndex - 1)}
+          >
+            <Text>Previous</Text>
+          </Button>
+          <Text className="font-semibold">Week {selectedWeekIndex + 1}</Text>
+          <Button
+            accessibilityLabel="Next schedule week"
+            disabled={!nextWeek}
+            size="sm"
+            variant="ghost"
+            onPress={() => setScheduleWeekIndex(selectedWeekIndex + 1)}
+          >
+            <Text>Next</Text>
+          </Button>
+        </View>
+        {sessions.length === 0 ? (
+          <Text className="text-sm text-muted-foreground">
+            No activities this week. Add an activity to get started.
+          </Text>
+        ) : (
+          sessions.map(({ session }) => (
+            <View key={session.localId} className="gap-1">
+              <Text className="text-sm text-muted-foreground">
+                Day {(session.offsetDays % 7) + 1}
+              </Text>
+              <TrainingPlanBuilderEventCard
+                event={session}
+                estimate={estimateBySessionId.get(session.localId) ?? null}
+                onDuplicate={() => onDuplicateSession(session.localId)}
+                onEdit={() => onPressSession(session.localId)}
+                onMoveByDays={(days) => onMoveSessionByDays(session.localId, days)}
+                onRemove={() => onRemoveSession(session.localId)}
+              />
+            </View>
+          ))
+        )}
+        <Button
+          testID="builder-add-activity"
+          onPress={() => onAddSessionAtOffset(activeWeekStartOffset)}
+        >
+          <Text>Add activity</Text>
+        </Button>
+        {sessions.length > 0 ? (
+          <Button
+            variant="ghost"
+            testID="builder-copy-week"
+            onPress={() => onCopyWeek(selectedWeekIndex, selectedWeekIndex + 1)}
+          >
+            <Text>Copy to week {selectedWeekIndex + 2}</Text>
+          </Button>
+        ) : null}
+      </View>
+    );
+  }
 
   return (
     <View className="gap-4" testID="builder-sessions-workspace">

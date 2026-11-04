@@ -1,5 +1,12 @@
 # Form UX standards and remediation coverage
 
+## Mobile training-plan creation runtime recovery — 2026-11-03
+
+- Creation uses an authored week-by-week schedule, independent of server fitness charts. Plan details remain first; readiness panels and fitness projections remain edit-only. One Add activity action belongs to the schedule. Compact checking/unavailable messages explain disabled creation without hiding server validation.
+- Incomplete names do not issue preview requests. Cached previews cannot enable creation while an edited draft is debouncing or fetching. Transport failures keep the draft and expose retry.
+- Week copy uses the existing native Expo Crypto provider, may extend the authored schedule, preserves session content with fresh identities, and rejects the 366-session boundary without partial copies. Scheduling returns to the focused activity’s week, including sparse schedules.
+- Focused native screen, service, schedule, composer and copy-boundary regressions plus mobile typecheck passed. Device screenshots and Metro logs established the original crypto exception and repeated preview 400s; post-fix physical-device interaction remains unverified. Preview disposition is recorded separately.
+
 ## Mobile training-plan creation pages — 2026-11-03
 
 - Inline name/description and visibility precede the schedule. New plans use the signed-in athlete context without Athlete/Goals/Preferences setup tiles; existing edit-mode settings remain available.

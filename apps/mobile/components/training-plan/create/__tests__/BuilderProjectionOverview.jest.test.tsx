@@ -143,10 +143,11 @@ describe("BuilderProjectionOverview", () => {
     });
   });
 
-  it("keeps schedule setup visible and wires its primary actions", async () => {
+  it("retains advanced readiness and actions for existing plan editing", async () => {
     const onAddActivity = jest.fn();
     const props = {
       chartReview,
+      showEditConfiguration: true,
       saveReadiness: { detail: "Ready to review", label: "Review plan", status: "review" },
       onAddActivity,
       onUpdateDetails: jest.fn(),
@@ -176,9 +177,9 @@ describe("BuilderProjectionOverview", () => {
     const { rerender } = await render(<BuilderStrategyComposer {...props} />);
 
     expect(screen.queryByTestId("builder-configuration-grid")).toBeNull();
-    expect(screen.queryByText("Athlete")).toBeNull();
-    expect(screen.queryByText("Goals")).toBeNull();
-    expect(screen.queryByText("Preferences")).toBeNull();
+    expect(screen.getByText("Athlete")).toBeTruthy();
+    expect(screen.getByText("Goals")).toBeTruthy();
+    expect(screen.getByText("Preferences")).toBeTruthy();
     expect(screen.getByTestId("builder-readiness")).toBeTruthy();
     expect(screen.getByText("Review plan")).toBeTruthy();
     await fireEvent.press(screen.getByText("Add activity"));

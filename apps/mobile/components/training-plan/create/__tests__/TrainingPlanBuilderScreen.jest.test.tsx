@@ -107,6 +107,7 @@ const activityPlan = createActivityPlanSummary({
 
 let mockAuthoritativePreviewData: unknown;
 let mockAuthoritativePreviewError: Error | null;
+let mockAuthoritativePreviewFetching = false;
 let mockEditPlanError: Error | null;
 let mockPerformanceModelError: Error | null;
 let mockQueryRefresh = 0;
@@ -447,11 +448,19 @@ jest.mock("../BuilderScheduleEditor", () => ({
     onAddSessionAtOffset,
     onPressSession,
     onDuplicateSession,
+    scheduleOnly,
+    onCopyWeek,
     viewModel,
   }: React.ComponentProps<typeof import("../BuilderScheduleEditor").BuilderScheduleEditor>) => (
     <View testID="builder-sessions-workspace">
-      <Pressable onPress={() => onAddSessionAtOffset(0)} testID="builder-sessions-workspace-add">
+      <Pressable
+        onPress={() => onAddSessionAtOffset(0)}
+        testID={scheduleOnly ? "builder-add-activity" : "builder-sessions-workspace-add"}
+      >
         <Text>Activity</Text>
+      </Pressable>
+      <Pressable testID="builder-copy-week" onPress={() => onCopyWeek(0, 1)}>
+        <Text>Copy week</Text>
       </Pressable>
       {viewModel.timelineWeeks.flatMap((week) =>
         week.sessions.map(({ session }) => (
@@ -581,7 +590,7 @@ jest.mock("@/lib/api", () => ({
         useQuery: () => ({
           data: mockAuthoritativePreviewData,
           error: mockAuthoritativePreviewError,
-          isFetching: false,
+          isFetching: mockAuthoritativePreviewFetching,
           isLoading: false,
           refetch: jest.fn(),
         }),
@@ -664,6 +673,7 @@ describe("TrainingPlanBuilderScreen", () => {
     trainingPathChartProps.length = 0;
     mockAuthoritativePreviewData = undefined;
     mockAuthoritativePreviewError = null;
+    mockAuthoritativePreviewFetching = false;
     mockEditPlanError = null;
     mockPerformanceModelError = null;
     mockQueryRefresh = 0;
@@ -893,9 +903,7 @@ describe("TrainingPlanBuilderScreen", () => {
     await renderNative(<TrainingPlanBuilderScreen />);
 
     expect(screen.getByTestId("builder-strategy-composer")).toBeTruthy();
-    expect(
-      screen.getByPlaceholderText("Base builder, race prep, return to training..."),
-    ).toBeTruthy();
+    expect(screen.getByLabelText("Plan name")).toBeTruthy();
     expect(screen.getByPlaceholderText("What this plan is designed to do")).toBeTruthy();
   });
 
@@ -987,6 +995,57 @@ describe("TrainingPlanBuilderScreen", () => {
     expect(screen.queryByText("Athlete")).toBeNull();
     expect(screen.queryByText("Goals")).toBeNull();
     expect(screen.queryByText("Preferences")).toBeNull();
+    expect(screen.queryByTestId("published-projection-card")).toBeNull();
+    expect(screen.queryByTestId("builder-readiness")).toBeNull();
+    expect(screen.getAllByTestId("builder-add-activity")).toHaveLength(1);
+  });
+
+  it("explains a pending or unavailable plan check without showing fitness panels", async () => {
+    mockAuthoritativePreviewFetching = true;
+    const rendered = await renderNative(<TrainingPlanBuilderScreen />);
+    await fireEvent.changeText(screen.getByLabelText("Plan name"), "Draft plan");
+    await fireEvent.press(screen.getByTestId("builder-add-activity"));
+    await fireEvent.press(
+      screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`),
+    );
+    await fireEvent.press(screen.getByLabelText("Add to plan"));
+    expect(screen.getByText("Checking plan before creating…")).toBeTruthy();
+    expect(screen.getByTestId("training-plan-save-button").props.disabled).toBe(true);
+    mockAuthoritativePreviewFetching = false;
+    mockAuthoritativePreviewData = undefined;
+    await rendered.rerender(<TrainingPlanBuilderScreen />);
+    expect(screen.getByText("Plan check unavailable")).toBeTruthy();
+    expect(screen.getByLabelText("Retry plan check unavailable")).toBeTruthy();
+    expect(screen.getByTestId("training-plan-save-button").props.disabled).toBe(true);
+    expect(screen.queryByTestId("published-projection-card")).toBeNull();
+  });
+
+  it("copies a week on native without browser crypto and extends a one-week plan", async () => {
+    const nativeCrypto = jest.requireMock<typeof import("expo-crypto")>("expo-crypto");
+    let sequence = 0;
+    const uuid = jest
+      .spyOn(nativeCrypto, "randomUUID")
+      .mockImplementation(() => `00000000-0000-4000-8000-${String(++sequence).padStart(12, "0")}`);
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "crypto");
+    Object.defineProperty(globalThis, "crypto", { configurable: true, value: undefined });
+    try {
+      await renderNative(<TrainingPlanBuilderScreen />);
+      await fireEvent.press(screen.getByTestId("builder-add-activity"));
+      await fireEvent.press(
+        screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`),
+      );
+      await fireEvent.press(screen.getByLabelText("Add to plan"));
+      await fireEvent.press(screen.getByTestId("builder-copy-week"));
+      expect(screen.getAllByTestId(/builder-timeline-activity-/)).toHaveLength(2);
+      const copied = screen.getAllByTestId(/builder-timeline-activity-/)[1];
+      if (!copied) throw new Error("Expected copied activity");
+      await fireEvent.press(copied);
+      expect(screen.getByText("Week 2")).toBeTruthy();
+    } finally {
+      uuid.mockImplementation(() => "00000000-0000-4000-8000-000000000000");
+      if (descriptor) Object.defineProperty(globalThis, "crypto", descriptor);
+      else Reflect.deleteProperty(globalThis, "crypto");
+    }
   });
 
   it("creates a full plan-local goal without using profile goal creation in edit mode", async () => {
@@ -1030,7 +1089,7 @@ describe("TrainingPlanBuilderScreen", () => {
 
   it("schedules a prescription with week and day without exposing demand authoring", async () => {
     await renderNative(<TrainingPlanBuilderScreen />);
-    await fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
+    await fireEvent.press(screen.getByTestId("builder-add-activity"));
     await fireEvent.press(
       screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`),
     );
@@ -1079,9 +1138,7 @@ describe("TrainingPlanBuilderScreen", () => {
   it("opens date-free plan settings from the strategy composer", async () => {
     await renderNative(<TrainingPlanBuilderScreen />);
 
-    expect(
-      screen.getByPlaceholderText("Base builder, race prep, return to training..."),
-    ).toBeTruthy();
+    expect(screen.getByLabelText("Plan name")).toBeTruthy();
     expect(screen.queryByPlaceholderText("YYYY-MM-DD")).toBeNull();
     expect(screen.queryByText("Start date")).toBeNull();
   });
@@ -1091,7 +1148,7 @@ describe("TrainingPlanBuilderScreen", () => {
 
     expect(screen.getByTestId("builder-sessions-workspace")).toBeTruthy();
 
-    await fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
+    await fireEvent.press(screen.getByTestId("builder-add-activity"));
 
     expect(screen.getByTestId("training-plan-builder-activity-picker-search")).toBeTruthy();
     expect(screen.getByTestId("training-plan-builder-activity-picker-filter")).toBeTruthy();
@@ -1119,15 +1176,12 @@ describe("TrainingPlanBuilderScreen", () => {
     mockAuthoritativePreviewData = { status: "available", simulation: authoritativeSimulation };
     await renderNative(<TrainingPlanBuilderScreen />);
 
-    await fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
+    await fireEvent.press(screen.getByTestId("builder-add-activity"));
     await fireEvent.press(screen.getByLabelText("Back"));
     expect(screen.queryByTestId("builder-activity-picker-screen")).toBeNull();
 
-    await fireEvent.changeText(
-      screen.getByPlaceholderText("Base builder, race prep, return to training..."),
-      "No phantom session",
-    );
-    await fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
+    await fireEvent.changeText(screen.getByLabelText("Plan name"), "No phantom session");
+    await fireEvent.press(screen.getByTestId("builder-add-activity"));
     await fireEvent.press(
       screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`),
     );
@@ -1281,12 +1335,9 @@ describe("TrainingPlanBuilderScreen", () => {
         },
       }),
     );
-    await fireEvent.changeText(
-      screen.getByPlaceholderText("Base builder, race prep, return to training..."),
-      "FTP build",
-    );
+    await fireEvent.changeText(screen.getByLabelText("Plan name"), "FTP build");
     await fireEvent.press(screen.getByLabelText("Followers training plan"));
-    await fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
+    await fireEvent.press(screen.getByTestId("builder-add-activity"));
     await fireEvent.press(
       screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`),
     );
@@ -1329,11 +1380,8 @@ describe("TrainingPlanBuilderScreen", () => {
     mockAuthoritativePreviewError = new Error("offline");
     await renderNative(<TrainingPlanBuilderScreen />);
 
-    await fireEvent.changeText(
-      screen.getByPlaceholderText("Base builder, race prep, return to training..."),
-      "FTP build",
-    );
-    await fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
+    await fireEvent.changeText(screen.getByLabelText("Plan name"), "FTP build");
+    await fireEvent.press(screen.getByTestId("builder-add-activity"));
     await fireEvent.press(
       screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`),
     );
@@ -1344,7 +1392,7 @@ describe("TrainingPlanBuilderScreen", () => {
     await fireEvent.press(screen.getByText("Create"));
 
     expect(mockMutations.create).not.toHaveBeenCalled();
-    expect(screen.getByText("Projection could not be loaded.")).toBeTruthy();
+    expect(screen.getByText("Couldn’t check this plan")).toBeTruthy();
   });
 
   it("retains inline details and sessions after a failed create and allows retry", async () => {
@@ -1384,8 +1432,8 @@ describe("TrainingPlanBuilderScreen", () => {
     mockPerformanceModelError = new Error("Performance model unavailable");
     await renderNative(<TrainingPlanBuilderScreen />);
 
-    expect(screen.getByText("Athlete context unavailable")).toBeTruthy();
-    await fireEvent.press(screen.getByLabelText("Retry athlete context unavailable"));
+    expect(screen.getByText("Training history unavailable")).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText("Retry training history unavailable"));
 
     expect(mockProjectionRefetch.baseline).toHaveBeenCalledTimes(1);
   });

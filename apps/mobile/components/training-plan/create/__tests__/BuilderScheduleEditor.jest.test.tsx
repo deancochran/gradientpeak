@@ -135,6 +135,34 @@ const renderEditor = async (
 };
 
 describe("BuilderScheduleEditor selected day planning", () => {
+  it("returns to the newly scheduled week instead of hiding it on week one", async () => {
+    await renderEditor(0, { scheduleOnly: true, focusOffsetDays: 15 });
+    expect(screen.getByText("Week 3")).toBeTruthy();
+  });
+  it("browses a sparse authored schedule without a server chart or fitness panels", async () => {
+    const props = await renderEditor(0, {
+      scheduleOnly: true,
+      chartReview: { chart: { weeks: [] }, selectedWeekIndex: 0 },
+      viewModel: {
+        timelineWeeks: [
+          { weekIndex: 2, sessions: [{ session: { localId: "session-1", offsetDays: 16 } }] },
+        ],
+      },
+    } as unknown as Partial<React.ComponentProps<typeof BuilderScheduleEditor>>);
+    expect(screen.queryByTestId("mock-chart-review")).toBeNull();
+    expect(screen.queryByTestId("builder-copy-week")).toBeNull();
+    expect(
+      screen.getByText("No activities this week. Add an activity to get started."),
+    ).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText("Next schedule week"));
+    await fireEvent.press(screen.getByLabelText("Next schedule week"));
+    expect(screen.getByText("Week 3")).toBeTruthy();
+    expect(screen.getByText("Day 3")).toBeTruthy();
+    expect(screen.getByTestId("mock-event-card")).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("builder-add-activity"));
+    expect(props.onAddSessionAtOffset).toHaveBeenCalledWith(14);
+    expect(screen.getByLabelText("Next schedule week").props.disabled).toBe(true);
+  });
   beforeEach(() => {
     mockScrollViewCount = 0;
   });
