@@ -1,7 +1,7 @@
 import { performance } from "node:perf_hooks";
 import { describe, expect, it } from "vitest";
 import { defaultAthletePreferenceProfile } from "../../../schemas/settings/profile_settings";
-import { buildDeterministicProjectionPayload } from "../../projectionCalculations";
+import { buildDeterministicProjectionPayload } from "../../projection/engine";
 import { fromProfileGoals } from "../adapters/fromProfileGoals";
 import { periodizationScenarioFixtures } from "../fixtures/scenarios";
 import {
@@ -43,10 +43,10 @@ describe("periodization benchmarks", () => {
   const constraintProfile = resolveConstraintProfile({
     optimizationProfile: "balanced",
     preferenceProfile: defaultAthletePreferenceProfile,
-    sport: "run",
+    activity_category: "run",
   });
   const feasibility = assessFeasibility({
-    currentCtl: 45,
+    currentLongTermLoad: 45,
     weeksToPeak: 52,
     goals: normalizedGoals,
     resolvedDemands,
@@ -58,7 +58,7 @@ describe("periodization benchmarks", () => {
       generateReferenceTrajectory({
         startDate: "2026-01-01",
         endDate: "2026-12-31",
-        currentCtl: 45,
+        currentLongTermLoad: 45,
         goals: normalizedGoals,
         resolvedDemands,
         preferenceProfile: defaultAthletePreferenceProfile,
@@ -84,13 +84,13 @@ describe("periodization benchmarks", () => {
             phase: "build",
             start_date: "2026-01-01",
             end_date: "2026-12-31",
-            target_weekly_tss_range: { min: 320, max: 420 },
+            target_weekly_load_range: { min: 320, max: 420 },
           },
         ],
         goals: benchmarkGoals,
-        starting_ctl: 45,
-        starting_atl: 42,
-        starting_tsb: 3,
+        starting_longTermLoad: 45,
+        starting_recentLoad: 42,
+        starting_loadBalance: 3,
         preference_profile: defaultAthletePreferenceProfile,
       });
     }, 5);

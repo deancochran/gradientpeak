@@ -6,22 +6,41 @@ import {
   type GoalEditorDraft,
   parseProfileGoalRecord,
 } from "@repo/core";
-import { Button } from "@repo/ui/components/button";
 import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useMemo, useRef } from "react";
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, View } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { View } from "react-native";
 import { GoalEditorForm, type GoalEditorFormHandle } from "@/components/goals";
+import { FormScreen } from "@/components/shared/FormScreen";
+import { EmptyState, ErrorState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
+import { useCreationFlowActive } from "@/lib/hooks/useCreationFlowActive";
 
 export default function GoalEditScreen() {
+  const { id } = useLocalSearchParams<{ id?: string }>();
+  const flow = useCreationFlowActive(["goal-edit"], false, { ownerKey: id ?? "missing" });
+  return flow.active ? (
+    <GoalEditSession key={`${id ?? "missing"}:${flow.key}`} isCurrent={flow.isCurrent} />
+  ) : null;
+}
+
+function GoalEditSession({ isCurrent }: { isCurrent: () => boolean }) {
   const router = useRouter();
   const utils = api.useUtils();
   const formRef = useRef<GoalEditorFormHandle>(null);
+  const active = useRef(true);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
   const { id } = useLocalSearchParams<{ id?: string }>();
   const goalId = typeof id === "string" ? id : "";
+  const [isSaving, setIsSaving] = useState(false);
+  const saveGuard = useRef(false);
   const goalQuery = api.goals.getById.useQuery({ id: goalId }, { enabled: !!goalId });
   const goalRecord = useMemo(() => {
     if (!goalQuery.data) {
@@ -29,17 +48,16 @@ export default function GoalEditScreen() {
     }
 
     try {
-      return parseProfileGoalRecord(goalQuery.data);
+      const record = parseProfileGoalRecord(goalQuery.data);
+      return record.id === goalId ? record : null;
     } catch {
       return null;
     }
-  }, [goalQuery.data]);
-  const updateGoalMutation = api.goals.update.useMutation({
-    onSuccess: async () => {
-      await invalidateGoalQueries(utils, { goalId });
-      router.replace(ROUTES.GOALS.DETAIL(goalId) as never);
-    },
-  });
+  }, [goalQuery.data, goalId]);
+  const goalContext = JSON.stringify([goalId, goalRecord?.profile_id]);
+  const currentGoalContext = useRef(goalContext);
+  currentGoalContext.current = goalContext;
+  const updateGoalMutation = api.goals.update.useMutation();
 
   const initialDraft = useMemo(() => {
     if (!goalRecord) {
@@ -50,28 +68,41 @@ export default function GoalEditScreen() {
   }, [goalRecord]);
 
   const handleSubmit = async (draft: GoalEditorDraft) => {
-    if (!goalRecord) {
+    if (!active.current || !isCurrent() || !goalRecord || saveGuard.current) {
       return;
     }
 
+    saveGuard.current = true;
+    setIsSaving(true);
     try {
       await updateGoalMutation.mutateAsync({
         id: goalRecord.id,
         data: buildGoalUpdatePayload({ draft }),
       });
-    } catch (error) {
-      Alert.alert(
-        "Unable to save goal",
-        error instanceof Error ? error.message : "Please try again.",
-      );
+      if (!active.current || !isCurrent() || currentGoalContext.current !== goalContext) return;
+      await Promise.allSettled([
+        Promise.resolve().then(() => invalidateGoalQueries(utils, { goalId })),
+      ]);
+      if (!active.current || !isCurrent() || currentGoalContext.current !== goalContext) return;
+      router.replace(ROUTES.GOALS.DETAIL(goalId) as never);
+    } finally {
+      saveGuard.current = false;
+      if (active.current) setIsSaving(false);
     }
   };
 
-  if (goalQuery.isLoading) {
+  if (goalQuery.isLoading || (goalQuery.data && goalQuery.data.id !== goalId)) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
-        <ActivityIndicator size="large" />
-        <Text className="mt-3 text-sm text-muted-foreground">Loading goal...</Text>
+        <LoadingState message="Loading goal..." />
+      </View>
+    );
+  }
+
+  if (goalQuery.isError && !goalRecord && goalQuery.error?.data?.code !== "NOT_FOUND") {
+    return (
+      <View className="flex-1 bg-background px-6">
+        <ErrorState title="Unable to load goal" onAction={() => void goalQuery.refetch()} />
       </View>
     );
   }
@@ -79,30 +110,25 @@ export default function GoalEditScreen() {
   if (!goalRecord) {
     return (
       <View className="flex-1 items-center justify-center bg-background px-6">
-        <Text className="text-lg font-semibold text-foreground">Goal not found</Text>
-        <Text className="mt-2 text-center text-sm text-muted-foreground">
-          This goal may have been removed.
-        </Text>
-        <Button className="mt-4" onPress={() => router.back()}>
-          <Text className="text-primary-foreground">Go Back</Text>
-        </Button>
+        <EmptyState
+          actionLabel="Go back"
+          description="This goal may have been removed."
+          onAction={() => router.back()}
+          title="Goal not found"
+        />
       </View>
     );
   }
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      className="flex-1 gap-3 bg-background p-3"
-      keyboardVerticalOffset={80}
-      testID="goal-edit-screen"
-    >
+    <FormScreen testID="goal-edit-screen">
       <Stack.Screen
         options={{
           headerRight: () => (
             <LoadingButton
-              disabled={updateGoalMutation.isPending}
-              loading={updateGoalMutation.isPending}
+              testID="goal-edit-submit"
+              disabled={isSaving || updateGoalMutation.isPending}
+              loading={isSaving || updateGoalMutation.isPending}
               loadingLabel="Saving..."
               loadingTextClassName="text-primary"
               onPress={() => formRef.current?.submit()}
@@ -119,13 +145,14 @@ export default function GoalEditScreen() {
         <Text className="text-xs text-muted-foreground">Tune the focus, date, and target.</Text>
       </View>
       <GoalEditorForm
+        key={`${goalRecord.profile_id}:${goalId}`}
         ref={formRef}
         initialValue={initialDraft}
         submitLabel="Save Changes"
-        isSubmitting={updateGoalMutation.isPending}
+        isSubmitting={isSaving || updateGoalMutation.isPending}
         showSubmitAction={false}
         onSubmit={handleSubmit}
       />
-    </KeyboardAvoidingView>
+    </FormScreen>
   );
 }

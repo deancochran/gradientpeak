@@ -9,12 +9,23 @@ export function useStrategyComposerController(controller: TrainingPlanBuilderCon
   return useMemo(
     () => ({
       chartReview: controller.chartReview,
+      saveReadiness: builder.derived.savePlan.readiness,
       state: strategy.state,
+      planningBriefRows: strategy.viewModel.planningBriefRows,
+      onAddActivity: controller.actions.addSession,
       onEditMetadata: () => openSheet("metadata"),
       onOpenAthleteContext: () => openSheet("athleteContext"),
+      onUpdateDetails: builder.actions.updateDetails,
       onOpenGoals: () => openSheet("goals"),
       onOpenPlanningConstraints: () => openSheet("preferences"),
     }),
-    [controller.chartReview, openSheet, strategy.state],
+    [
+      controller.chartReview,
+      builder.derived.savePlan.readiness,
+      controller.actions.addSession,
+      builder.actions.updateDetails,
+      openSheet,
+      strategy,
+    ],
   );
 }

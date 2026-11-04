@@ -6,7 +6,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { type ResolvedThemeMode, resolveThemeMode, type ThemePreference } from "@/lib/theme";
 
 function applyRuntimeTheme(preference: ThemePreference) {
-  const scheme = preference === "system" ? null : preference;
+  const scheme = preference === "system" ? "unspecified" : preference;
 
   nativeCssColorScheme.set(scheme);
   Appearance.setColorScheme(scheme);

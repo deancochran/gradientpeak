@@ -1,4 +1,5 @@
 import {
+  buildGroupViewerState,
   canRemoveGroupMember,
   canTransferGroupOwnership,
   canUpdateGroupMemberRole,
@@ -6,7 +7,6 @@ import {
   GROUP_INVITATION_STATUSES,
   GROUP_JOIN_POLICIES,
   GROUP_JOIN_REQUEST_STATUSES,
-  GROUP_MEMBERSHIP_ROLES,
   GROUP_MEMBERSHIP_STATUSES,
   inviteProfilesInputSchema,
   listGroupsInputSchema,
@@ -18,8 +18,14 @@ import {
 } from "@repo/core/groups";
 import { groupInvitations, groupJoinRequests, groupMemberships, groups, profiles } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, count, desc, eq, ilike, inArray, isNull, lt, or } from "drizzle-orm";
+import { and, asc, desc, eq, gt, ilike, inArray, isNull, lt, or } from "drizzle-orm";
 import { z } from "zod";
+import { createOrGetPendingGroupJoinRequest } from "../../application/groups/joinRequestMutations";
+import {
+  getActiveGroupOwnerCount,
+  setGroupMembershipActive,
+} from "../../application/groups/membershipMutations";
+import { resolveProfileMediaUrl } from "../../application/storage/profile-media-url";
 import { getRequiredDb } from "../../db";
 import { createTRPCRouter, protectedProcedure } from "../../trpc";
 import {
@@ -37,6 +43,7 @@ import {
 import { groupEventsRouter } from "./events";
 
 const groupIdInputSchema = z.object({ groupId: z.string().uuid("Invalid group ID") });
+const joinOrRequestInputSchema = groupIdInputSchema.strict();
 const invitationIdInputSchema = z.object({
   invitationId: z.string().uuid("Invalid invitation ID"),
 });
@@ -58,16 +65,17 @@ const groupPageInputSchema = groupIdInputSchema.extend({
 const profileGroupsInputSchema = listGroupsInputSchema.extend({
   profileId: z.string().uuid("Invalid profile ID"),
 });
+const discoverGroupsInputSchema = listGroupsInputSchema.extend({
+  sort_by: z.enum(["newest", "oldest"]).optional(),
+});
 
 type GroupRow = typeof groups.$inferSelect;
 type MembershipRow = typeof groupMemberships.$inferSelect;
 type InvitationRow = typeof groupInvitations.$inferSelect;
 type JoinRequestRow = typeof groupJoinRequests.$inferSelect;
-type GroupsMutationDb = Pick<ReturnType<typeof getRequiredDb>, "select" | "insert" | "update">;
 
 const GROUP_JOIN_POLICY_OPEN = GROUP_JOIN_POLICIES[0];
 const GROUP_JOIN_POLICY_INVITE_ONLY = GROUP_JOIN_POLICIES[2];
-const GROUP_MEMBERSHIP_ROLE_MEMBER = GROUP_MEMBERSHIP_ROLES[2];
 const GROUP_MEMBERSHIP_STATUS_LEFT = GROUP_MEMBERSHIP_STATUSES[1];
 const GROUP_MEMBERSHIP_STATUS_REMOVED = GROUP_MEMBERSHIP_STATUSES[2];
 const GROUP_INVITATION_STATUS_ACCEPTED = GROUP_INVITATION_STATUSES[1];
@@ -172,70 +180,6 @@ async function generateUniqueActiveGroupSlug(db: ReturnType<typeof getRequiredDb
   });
 }
 
-async function getActiveOwnerCount(db: GroupsMutationDb, groupId: string) {
-  const [row] = await db
-    .select({ value: count() })
-    .from(groupMemberships)
-    .where(
-      and(
-        eq(groupMemberships.group_id, groupId),
-        eq(groupMemberships.role, GROUP_MEMBERSHIP_ROLE_OWNER),
-        eq(groupMemberships.status, GROUP_MEMBERSHIP_STATUS_ACTIVE),
-      ),
-    );
-
-  return row?.value ?? 0;
-}
-
-async function setMembershipActive(
-  db: GroupsMutationDb,
-  input: {
-    groupId: string;
-    profileId: string;
-    role?: typeof GROUP_MEMBERSHIP_ROLE_MEMBER | typeof GROUP_MEMBERSHIP_ROLE_OWNER;
-  },
-) {
-  const role = input.role ?? GROUP_MEMBERSHIP_ROLE_MEMBER;
-  const now = new Date();
-  const [membership] = await db
-    .select()
-    .from(groupMemberships)
-    .where(
-      and(
-        eq(groupMemberships.group_id, input.groupId),
-        eq(groupMemberships.profile_id, input.profileId),
-      ),
-    )
-    .limit(1);
-
-  if (membership) {
-    const [updated] = await db
-      .update(groupMemberships)
-      .set({ role, status: GROUP_MEMBERSHIP_STATUS_ACTIVE, updated_at: now })
-      .where(
-        and(
-          eq(groupMemberships.group_id, input.groupId),
-          eq(groupMemberships.profile_id, input.profileId),
-        ),
-      )
-      .returning();
-
-    return updated as MembershipRow;
-  }
-
-  const [created] = await db
-    .insert(groupMemberships)
-    .values({
-      group_id: input.groupId,
-      profile_id: input.profileId,
-      role,
-      status: GROUP_MEMBERSHIP_STATUS_ACTIVE,
-    })
-    .returning();
-
-  return created as MembershipRow;
-}
-
 function pageResult<T>(items: T[], limit: number, getCursor: (item: T) => string) {
   const hasMore = items.length > limit;
   const visibleItems = hasMore ? items.slice(0, limit) : items;
@@ -337,10 +281,11 @@ async function getJoinRequestCursorFilter(
 }
 
 async function getGroupByLookup(
-  db: ReturnType<typeof getRequiredDb>,
+  db: Pick<ReturnType<typeof getRequiredDb>, "select">,
   input: z.infer<typeof groupLookupInputSchema>,
+  options: { forUpdate?: boolean } = {},
 ) {
-  const [group] = await db
+  const query = db
     .select()
     .from(groups)
     .where(
@@ -350,6 +295,7 @@ async function getGroupByLookup(
       ),
     )
     .limit(1);
+  const [group] = options.forUpdate ? await query.for("update") : await query;
 
   if (!group) {
     throw new TRPCError({ code: "NOT_FOUND", message: "Group not found" });
@@ -490,9 +436,104 @@ export const groupsRouter = createTRPCRouter({
       return { membership: serializeMembership(activeMembership as MembershipRow) };
     }
 
-    const updatedMembership = await setMembershipActive(db, { groupId: input.groupId, profileId });
+    const updatedMembership = await setGroupMembershipActive(db, {
+      groupId: input.groupId,
+      profileId,
+    });
+    if (updatedMembership.status === GROUP_MEMBERSHIP_STATUS_REMOVED) {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "You cannot automatically rejoin this group",
+      });
+    }
     return { membership: serializeMembership(updatedMembership) };
   }),
+
+  joinOrRequest: protectedProcedure
+    .input(joinOrRequestInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
+      const profileId = await getCurrentProfileId(db, ctx.session.user.id);
+
+      return db.transaction(async (tx) => {
+        const group = await getGroupByLookup(tx, { groupId: input.groupId }, { forUpdate: true });
+        const membership = await getGroupMembership(tx, input.groupId, profileId);
+
+        if (membership.status === GROUP_MEMBERSHIP_STATUS_ACTIVE) {
+          const [activeMembership] = await tx
+            .select()
+            .from(groupMemberships)
+            .where(
+              and(
+                eq(groupMemberships.group_id, input.groupId),
+                eq(groupMemberships.profile_id, profileId),
+              ),
+            )
+            .limit(1);
+          return {
+            action: "already_member" as const,
+            result: serializeMembership(activeMembership as MembershipRow),
+          };
+        }
+        if (membership.status === GROUP_MEMBERSHIP_STATUS_REMOVED) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "You cannot join this group" });
+        }
+
+        const [invitation] = await tx
+          .select()
+          .from(groupInvitations)
+          .where(
+            and(
+              eq(groupInvitations.group_id, input.groupId),
+              eq(groupInvitations.invited_profile_id, profileId),
+              eq(groupInvitations.status, GROUP_INVITATION_STATUS_PENDING),
+              or(isNull(groupInvitations.expires_at), gt(groupInvitations.expires_at, new Date())),
+            ),
+          )
+          .limit(1);
+        if (invitation) {
+          return { action: "invited" as const, result: serializeInvitation(invitation) };
+        }
+
+        const [pendingRequest] = await tx
+          .select()
+          .from(groupJoinRequests)
+          .where(
+            and(
+              eq(groupJoinRequests.group_id, input.groupId),
+              eq(groupJoinRequests.profile_id, profileId),
+              eq(groupJoinRequests.status, GROUP_JOIN_REQUEST_STATUS_PENDING),
+            ),
+          )
+          .limit(1);
+        if (pendingRequest) {
+          return {
+            action: "already_requested" as const,
+            result: serializeJoinRequest(pendingRequest),
+          };
+        }
+
+        if (group.join_policy === GROUP_JOIN_POLICY_OPEN) {
+          const activated = await setGroupMembershipActive(tx, {
+            groupId: input.groupId,
+            profileId,
+          });
+          if (activated.status === GROUP_MEMBERSHIP_STATUS_REMOVED) {
+            throw new TRPCError({ code: "FORBIDDEN", message: "You cannot join this group" });
+          }
+          return { action: "joined" as const, result: serializeMembership(activated) };
+        }
+
+        const joinRequest = await createOrGetPendingGroupJoinRequest(tx, {
+          groupId: input.groupId,
+          profileId,
+        });
+        if (!joinRequest) {
+          throw new TRPCError({ code: "CONFLICT", message: "Unable to create join request" });
+        }
+        return { action: "requested" as const, result: serializeJoinRequest(joinRequest) };
+      });
+    }),
 
   leave: protectedProcedure.input(groupIdInputSchema).mutation(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
@@ -506,7 +547,7 @@ export const groupsRouter = createTRPCRouter({
 
     if (
       membership.role === GROUP_MEMBERSHIP_ROLE_OWNER &&
-      (await getActiveOwnerCount(db, input.groupId)) <= 1
+      (await getActiveGroupOwnerCount(db, input.groupId)) <= 1
     ) {
       throw new TRPCError({
         code: "BAD_REQUEST",
@@ -514,15 +555,17 @@ export const groupsRouter = createTRPCRouter({
       });
     }
 
-    await db
-      .update(groupMemberships)
-      .set({ status: GROUP_MEMBERSHIP_STATUS_LEFT, updated_at: new Date() })
-      .where(
-        and(
-          eq(groupMemberships.group_id, input.groupId),
-          eq(groupMemberships.profile_id, profileId),
-        ),
-      );
+    await db.transaction(async (tx) => {
+      await tx
+        .update(groupMemberships)
+        .set({ status: GROUP_MEMBERSHIP_STATUS_LEFT, updated_at: new Date() })
+        .where(
+          and(
+            eq(groupMemberships.group_id, input.groupId),
+            eq(groupMemberships.profile_id, profileId),
+          ),
+        );
+    });
 
     return { success: true };
   }),
@@ -538,35 +581,37 @@ export const groupsRouter = createTRPCRouter({
 
     const membership = await getGroupMembership(db, input.groupId, profileId);
     if (membership.status === GROUP_MEMBERSHIP_STATUS_ACTIVE) {
-      throw new TRPCError({ code: "CONFLICT", message: "You are already a member of this group" });
+      const [activeMembership] = await db
+        .select()
+        .from(groupMemberships)
+        .where(
+          and(
+            eq(groupMemberships.group_id, input.groupId),
+            eq(groupMemberships.profile_id, profileId),
+          ),
+        )
+        .limit(1);
+      return {
+        joinRequest: null,
+        membership: serializeMembership(activeMembership as MembershipRow),
+      };
+    }
+    if (membership.status === GROUP_MEMBERSHIP_STATUS_REMOVED) {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "You cannot request access to this group",
+      });
     }
 
-    const [existingRequest] = await db
-      .select()
-      .from(groupJoinRequests)
-      .where(
-        and(
-          eq(groupJoinRequests.group_id, input.groupId),
-          eq(groupJoinRequests.profile_id, profileId),
-          eq(groupJoinRequests.status, GROUP_JOIN_REQUEST_STATUS_PENDING),
-        ),
-      )
-      .limit(1);
-
-    if (existingRequest) {
-      return { joinRequest: serializeJoinRequest(existingRequest) };
+    const joinRequest = await createOrGetPendingGroupJoinRequest(db, {
+      groupId: input.groupId,
+      profileId,
+    });
+    if (!joinRequest) {
+      throw new TRPCError({ code: "CONFLICT", message: "Unable to create join request" });
     }
 
-    const [joinRequest] = await db
-      .insert(groupJoinRequests)
-      .values({
-        group_id: input.groupId,
-        profile_id: profileId,
-        status: GROUP_JOIN_REQUEST_STATUS_PENDING,
-      })
-      .returning();
-
-    return { joinRequest: serializeJoinRequest(joinRequest as JoinRequestRow) };
+    return { joinRequest: serializeJoinRequest(joinRequest) };
   }),
 
   cancelJoinRequest: protectedProcedure
@@ -636,11 +681,17 @@ export const groupsRouter = createTRPCRouter({
           .returning();
         const membership =
           input.decision === "approve"
-            ? await setMembershipActive(tx, {
+            ? await setGroupMembershipActive(tx, {
                 groupId: row.request.group_id,
                 profileId: row.request.profile_id,
               })
             : null;
+        if (membership?.status === GROUP_MEMBERSHIP_STATUS_REMOVED) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Removed members cannot be reactivated by a join request",
+          });
+        }
 
         return { joinRequest: updatedRequest as JoinRequestRow, membership };
       });
@@ -715,39 +766,103 @@ export const groupsRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
       const profileId = await getCurrentProfileId(db, ctx.session.user.id);
-      const [row] = await db
-        .select({ invitation: groupInvitations, group: groups })
-        .from(groupInvitations)
-        .innerJoin(groups, eq(groups.id, groupInvitations.group_id))
-        .where(and(eq(groupInvitations.id, input.invitationId), isNull(groups.deleted_at)))
-        .limit(1);
+      const now = new Date();
 
-      if (!row) {
+      const result = await db.transaction(async (tx) => {
+        const [owned] = await tx
+          .select({ invitation: groupInvitations })
+          .from(groupInvitations)
+          .innerJoin(groups, eq(groups.id, groupInvitations.group_id))
+          .where(
+            and(
+              eq(groupInvitations.id, input.invitationId),
+              eq(groupInvitations.invited_profile_id, profileId),
+              isNull(groups.deleted_at),
+            ),
+          )
+          .limit(1);
+
+        if (!owned || owned.invitation.invited_profile_id !== profileId) {
+          return { kind: "not_found" as const };
+        }
+
+        const [claimed] = await tx
+          .update(groupInvitations)
+          .set({ status: GROUP_INVITATION_STATUS_ACCEPTED, updated_at: now })
+          .where(
+            and(
+              eq(groupInvitations.id, input.invitationId),
+              eq(groupInvitations.invited_profile_id, profileId),
+              eq(groupInvitations.status, GROUP_INVITATION_STATUS_PENDING),
+              or(isNull(groupInvitations.expires_at), gt(groupInvitations.expires_at, now)),
+            ),
+          )
+          .returning();
+
+        let invitation = claimed as InvitationRow | undefined;
+        if (!invitation) {
+          const [currentInvitation] = await tx
+            .select()
+            .from(groupInvitations)
+            .where(
+              and(
+                eq(groupInvitations.id, input.invitationId),
+                eq(groupInvitations.invited_profile_id, profileId),
+              ),
+            )
+            .limit(1);
+          invitation = currentInvitation;
+        }
+        if (!invitation) return { kind: "not_found" as const };
+        if (invitation.status !== GROUP_INVITATION_STATUS_ACCEPTED) {
+          const expired =
+            invitation.status === GROUP_INVITATION_STATUS_PENDING &&
+            invitation.expires_at !== null &&
+            new Date(invitation.expires_at).getTime() <= now.getTime();
+          return { kind: expired ? ("expired" as const) : ("conflict" as const) };
+        }
+
+        let membership = await setGroupMembershipActive(tx, {
+          groupId: invitation.group_id,
+          profileId,
+        });
+        if (membership.status === GROUP_MEMBERSHIP_STATUS_REMOVED) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "You cannot join this group",
+          });
+        }
+        if (!claimed) {
+          const [currentMembership] = await tx
+            .select()
+            .from(groupMemberships)
+            .where(
+              and(
+                eq(groupMemberships.group_id, invitation.group_id),
+                eq(groupMemberships.profile_id, profileId),
+                eq(groupMemberships.status, GROUP_MEMBERSHIP_STATUS_ACTIVE),
+              ),
+            )
+            .limit(1);
+          membership = currentMembership ?? membership;
+        }
+
+        return { kind: "accepted" as const, invitation, membership };
+      });
+
+      if (result.kind === "not_found") {
         throw new TRPCError({ code: "NOT_FOUND", message: "Invitation not found" });
       }
-      if (row.invitation.invited_profile_id !== profileId) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "You cannot accept this invitation" });
+      if (result.kind === "expired") {
+        throw new TRPCError({ code: "CONFLICT", message: "Invitation has expired" });
       }
-      if (row.invitation.status !== GROUP_INVITATION_STATUS_PENDING) {
+      if (result.kind === "conflict") {
         throw new TRPCError({ code: "CONFLICT", message: "Invitation is no longer pending" });
       }
 
-      const result = await db.transaction(async (tx) => {
-        const membership = await setMembershipActive(tx, {
-          groupId: row.invitation.group_id,
-          profileId,
-        });
-        const [invitation] = await tx
-          .update(groupInvitations)
-          .set({ status: GROUP_INVITATION_STATUS_ACCEPTED, updated_at: new Date() })
-          .where(eq(groupInvitations.id, input.invitationId))
-          .returning();
-        return { invitation: invitation as InvitationRow, membership };
-      });
-
       return {
-        invitation: serializeInvitation(result.invitation),
-        membership: serializeMembership(result.membership),
+        invitation: serializeInvitation(result.invitation as InvitationRow),
+        membership: serializeMembership(result.membership as MembershipRow),
       };
     }),
 
@@ -845,16 +960,19 @@ export const groupsRouter = createTRPCRouter({
         throw new TRPCError({ code: "FORBIDDEN", message: "You cannot remove this group member" });
       }
 
-      const [membership] = await db
-        .update(groupMemberships)
-        .set({ status: GROUP_MEMBERSHIP_STATUS_REMOVED, updated_at: new Date() })
-        .where(
-          and(
-            eq(groupMemberships.group_id, input.groupId),
-            eq(groupMemberships.profile_id, input.profileId),
-          ),
-        )
-        .returning();
+      const [membership] = await db.transaction(async (tx) => {
+        const [updatedMembership] = await tx
+          .update(groupMemberships)
+          .set({ status: GROUP_MEMBERSHIP_STATUS_REMOVED, updated_at: new Date() })
+          .where(
+            and(
+              eq(groupMemberships.group_id, input.groupId),
+              eq(groupMemberships.profile_id, input.profileId),
+            ),
+          )
+          .returning();
+        return [updatedMembership];
+      });
 
       return { membership: serializeMembership(membership as MembershipRow) };
     }),
@@ -864,20 +982,22 @@ export const groupsRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
       const profileId = await getCurrentProfileId(db, ctx.session.user.id);
-      await getGroupByLookup(db, { groupId: input.groupId });
-      const viewer = await requireGroupOwner(db, input.groupId, profileId);
-      const target = await getGroupMembership(db, input.groupId, input.targetProfileId);
+      const targetMembership = await db.transaction(async (tx) => {
+        // Serialize ownership changes on the group row. Without this lock, two requests can both
+        // authorize against the same owner and promote different targets after one demotion.
+        await getGroupByLookup(tx, { groupId: input.groupId }, { forUpdate: true });
+        const viewer = await requireGroupOwner(tx, input.groupId, profileId);
+        const target = await getGroupMembership(tx, input.groupId, input.targetProfileId);
 
-      if (profileId === input.targetProfileId || !canTransferGroupOwnership({ viewer, target })) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "You cannot transfer ownership to this profile",
-        });
-      }
+        if (profileId === input.targetProfileId || !canTransferGroupOwnership({ viewer, target })) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "You cannot transfer ownership to this profile",
+          });
+        }
 
-      const [targetMembership] = await db.transaction(async (tx) => {
         const now = new Date();
-        await tx
+        const [demotedOwner] = await tx
           .update(groupMemberships)
           .set({ role: input.previousOwnerRole, updated_at: now })
           .where(
@@ -887,9 +1007,14 @@ export const groupsRouter = createTRPCRouter({
               eq(groupMemberships.role, GROUP_MEMBERSHIP_ROLE_OWNER),
               eq(groupMemberships.status, GROUP_MEMBERSHIP_STATUS_ACTIVE),
             ),
-          );
+          )
+          .returning();
 
-        return tx
+        if (!demotedOwner) {
+          throw new TRPCError({ code: "CONFLICT", message: "Group ownership changed" });
+        }
+
+        const [promotedTarget] = await tx
           .update(groupMemberships)
           .set({
             role: GROUP_MEMBERSHIP_ROLE_OWNER,
@@ -903,17 +1028,29 @@ export const groupsRouter = createTRPCRouter({
             ),
           )
           .returning();
+
+        if (!promotedTarget) {
+          throw new TRPCError({ code: "CONFLICT", message: "Group member changed" });
+        }
+
+        return promotedTarget;
       });
 
       return { membership: serializeMembership(targetMembership as MembershipRow) };
     }),
 
   listDiscoverable: protectedProcedure
-    .input(listGroupsInputSchema)
+    .input(discoverGroupsInputSchema)
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
-      await getCurrentProfileId(db, ctx.session.user.id);
-      const cursorFilter = await getGroupCursorFilter(db, input.cursor);
+      const profileId = await getCurrentProfileId(db, ctx.session.user.id);
+      const offsetCursor = input.cursor?.startsWith("index:")
+        ? Number.parseInt(input.cursor.slice(6), 10)
+        : input.sort_by
+          ? 0
+          : null;
+      const cursorFilter =
+        offsetCursor === null ? await getGroupCursorFilter(db, input.cursor) : undefined;
       const searchFilter = input.search
         ? or(
             ilike(groups.name, `%${input.search}%`),
@@ -921,18 +1058,71 @@ export const groupsRouter = createTRPCRouter({
           )
         : undefined;
 
-      const rows = await db
-        .select()
+      const query = db
+        .select({
+          group: groups,
+          membershipRole: groupMemberships.role,
+          membershipStatus: groupMemberships.status,
+          invitationId: groupInvitations.id,
+          joinRequestId: groupJoinRequests.id,
+        })
         .from(groups)
+        .leftJoin(
+          groupMemberships,
+          and(eq(groupMemberships.group_id, groups.id), eq(groupMemberships.profile_id, profileId)),
+        )
+        .leftJoin(
+          groupInvitations,
+          and(
+            eq(groupInvitations.group_id, groups.id),
+            eq(groupInvitations.invited_profile_id, profileId),
+            eq(groupInvitations.status, GROUP_INVITATION_STATUS_PENDING),
+            or(isNull(groupInvitations.expires_at), gt(groupInvitations.expires_at, new Date())),
+          ),
+        )
+        .leftJoin(
+          groupJoinRequests,
+          and(
+            eq(groupJoinRequests.group_id, groups.id),
+            eq(groupJoinRequests.profile_id, profileId),
+            eq(groupJoinRequests.status, GROUP_JOIN_REQUEST_STATUS_PENDING),
+          ),
+        )
         .where(and(isNull(groups.deleted_at), searchFilter, cursorFilter))
-        .orderBy(desc(groups.created_at), desc(groups.id))
+        .orderBy(
+          input.sort_by === "oldest" ? asc(groups.created_at) : desc(groups.created_at),
+          input.sort_by === "oldest" ? asc(groups.id) : desc(groups.id),
+        )
         .limit(input.limit + 1);
+      const rows = offsetCursor === null ? await query : await query.offset(offsetCursor);
 
-      return pageResult(
-        rows.map((group) => serializeGroupBasics(group)),
+      const page = pageResult(
+        rows.map(({ group, membershipRole, membershipStatus, invitationId, joinRequestId }) => {
+          const baseViewer = buildGroupViewerState({
+            accessLevel: group.access_level,
+            joinPolicy: group.join_policy,
+            membershipRole,
+            membershipStatus,
+            hasPendingInvite: invitationId !== null,
+            hasPendingJoinRequest: joinRequestId !== null,
+          });
+          const viewer = {
+            ...baseViewer,
+            canRequestToJoin: baseViewer.canRequestToJoin && !baseViewer.hasPendingInvite,
+          };
+          return {
+            ...serializeGroupBasics(group, {
+              includePrivateContent: membershipStatus === GROUP_MEMBERSHIP_STATUS_ACTIVE,
+            }),
+            viewer,
+          };
+        }),
         input.limit,
         (group) => group.id,
       );
+      return offsetCursor !== null && page.nextCursor
+        ? { ...page, nextCursor: `index:${offsetCursor + input.limit}` }
+        : page;
     }),
 
   myGroups: protectedProcedure.input(listGroupsInputSchema).query(async ({ ctx, input }) => {
@@ -1054,7 +1244,7 @@ export const groupsRouter = createTRPCRouter({
         profile: {
           id: row.profile_id,
           username: row.profile_username,
-          avatar_url: row.profile_avatar_url,
+          avatar_url: resolveProfileMediaUrl(row.profile_avatar_url, row.profile_id),
         },
       })),
       input.limit,
@@ -1104,7 +1294,7 @@ export const groupsRouter = createTRPCRouter({
           invited_profile: {
             id: row.invited_profile_id,
             username: row.profile_username,
-            avatar_url: row.profile_avatar_url,
+            avatar_url: resolveProfileMediaUrl(row.profile_avatar_url, row.invited_profile_id),
           },
         })),
         input.limit,
@@ -1124,6 +1314,7 @@ export const groupsRouter = createTRPCRouter({
         and(
           eq(groupInvitations.invited_profile_id, profileId),
           eq(groupInvitations.status, GROUP_INVITATION_STATUS_PENDING),
+          or(isNull(groupInvitations.expires_at), gt(groupInvitations.expires_at, new Date())),
           isNull(groups.deleted_at),
           cursorFilter,
         ),
@@ -1142,6 +1333,35 @@ export const groupsRouter = createTRPCRouter({
       })),
       input.limit,
       (invitation) => invitation.id,
+    );
+  }),
+
+  myJoinRequests: protectedProcedure.input(listGroupsInputSchema).query(async ({ ctx, input }) => {
+    const db = getRequiredDb(ctx);
+    const profileId = await getCurrentProfileId(db, ctx.session.user.id);
+    const cursorFilter = await getJoinRequestCursorFilter(db, input.cursor);
+    const rows = await db
+      .select({ request: groupJoinRequests, group: groups })
+      .from(groupJoinRequests)
+      .innerJoin(groups, eq(groups.id, groupJoinRequests.group_id))
+      .where(
+        and(
+          eq(groupJoinRequests.profile_id, profileId),
+          eq(groupJoinRequests.status, GROUP_JOIN_REQUEST_STATUS_PENDING),
+          isNull(groups.deleted_at),
+          cursorFilter,
+        ),
+      )
+      .orderBy(desc(groupJoinRequests.created_at), desc(groupJoinRequests.id))
+      .limit(input.limit + 1);
+
+    return pageResult(
+      rows.map(({ request, group }) => ({
+        ...serializeJoinRequest(request),
+        group: serializeGroupBasics(group),
+      })),
+      input.limit,
+      (request) => request.id,
     );
   }),
 
@@ -1185,7 +1405,7 @@ export const groupsRouter = createTRPCRouter({
           profile: {
             id: row.profile_id,
             username: row.profile_username,
-            avatar_url: row.profile_avatar_url,
+            avatar_url: resolveProfileMediaUrl(row.profile_avatar_url, row.profile_id),
           },
         })),
         input.limit,

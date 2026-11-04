@@ -18,7 +18,6 @@ export type MaterializedApplication = {
   includedFromDate: string | null;
   materializedSessions: MaterializedPlanSession[];
   skippedSessions: number;
-  snapshotStructure: Record<string, unknown>;
   targetDate: string | null;
 };
 
@@ -26,27 +25,9 @@ function maxDateOnlyUtc(left: string, right: string): string {
   return left >= right ? left : right;
 }
 
-function buildTrainingPlanSnapshotStructure(input: {
-  applicationMode: TrainingPlanApplicationMode;
-  appliedPlanStartDate: string;
-  includedFromDate: string | null;
-  structure: Record<string, unknown>;
-  targetDate: string | null;
-}) {
-  return {
-    ...input.structure,
-    start_date: input.appliedPlanStartDate,
-    _application: {
-      applied_start_date: input.appliedPlanStartDate,
-      application_mode: input.applicationMode,
-      included_from_date: input.includedFromDate,
-      target_date: input.targetDate,
-    },
-  } satisfies Record<string, unknown>;
-}
-
 export function materializeAppliedTrainingPlan(input: {
   applicationMode: TrainingPlanApplicationMode;
+  planningTimezone: string;
   startDate?: string;
   targetDate?: string;
   structure: Record<string, unknown>;
@@ -56,7 +37,11 @@ export function materializeAppliedTrainingPlan(input: {
 
   if (!appliedPlanStartDate && input.targetDate) {
     const dummyStart = "2000-01-01";
-    const dummySessions = materializePlanToEvents(input.structure, dummyStart);
+    const dummySessions = materializePlanToEvents(
+      input.structure,
+      dummyStart,
+      input.planningTimezone,
+    );
     let maxOffsetDays = 0;
     for (const session of dummySessions) {
       const offset = diffDateOnlyUtcDays(dummyStart, session.scheduled_date);
@@ -71,13 +56,10 @@ export function materializeAppliedTrainingPlan(input: {
     appliedPlanStartDate = input.todayDate;
   }
 
-  const materializationStructure = {
-    ...input.structure,
-    start_date: appliedPlanStartDate,
-  } satisfies Record<string, unknown>;
   const allMaterializedSessions = materializePlanToEvents(
-    materializationStructure,
+    input.structure,
     appliedPlanStartDate,
+    input.planningTimezone,
   );
   const includedFromDate =
     input.applicationMode === "remaining"
@@ -93,13 +75,6 @@ export function materializeAppliedTrainingPlan(input: {
     includedFromDate,
     materializedSessions,
     skippedSessions: allMaterializedSessions.length - materializedSessions.length,
-    snapshotStructure: buildTrainingPlanSnapshotStructure({
-      applicationMode: input.applicationMode,
-      appliedPlanStartDate,
-      includedFromDate,
-      structure: input.structure,
-      targetDate: input.targetDate ?? null,
-    }),
     targetDate: input.targetDate ?? null,
   };
 }
