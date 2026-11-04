@@ -80,9 +80,11 @@ const trainingPlanPreviewSessionResultSchema = z.discriminatedUnion("status", [
     .strict(),
 ]);
 
-const editableTemplateDraftSchema = z
+const editableTemplatePreviewDraftSchema = z
   .object({
-    name: z.string().trim().min(1).max(255),
+    // A title is not needed to simulate an in-progress draft. Keep the literal
+    // value here so the preview fingerprint changes when the author names it.
+    name: z.string().max(255),
     description: z.string().max(1000).nullable().optional(),
     contentVisibility: contentVisibilitySchema.optional(),
     structure: trainingPlanCreateSchema,
@@ -90,7 +92,21 @@ const editableTemplateDraftSchema = z
   })
   .strict();
 
-const updateTemplateDraftSchema = editableTemplateDraftSchema
+const editableTemplateCommitDraftSchema = editableTemplatePreviewDraftSchema
+  .extend({
+    name: z.string().trim().min(1).max(255),
+  })
+  .strict();
+
+const updateTemplatePreviewDraftSchema = editableTemplatePreviewDraftSchema
+  .extend({
+    planId: z.string().uuid(),
+    expectedRevision: z.number().int().positive(),
+    expectedStructureHash: structureHashSchema,
+  })
+  .strict();
+
+const updateTemplateCommitDraftSchema = editableTemplateCommitDraftSchema
   .extend({
     planId: z.string().uuid(),
     expectedRevision: z.number().int().positive(),
@@ -108,11 +124,19 @@ const duplicateTemplateDraftSchema = z
 
 const createOperationSchema = z.object({
   kind: z.literal("create"),
-  draft: editableTemplateDraftSchema,
+  draft: editableTemplatePreviewDraftSchema,
 });
 const updateOperationSchema = z.object({
   kind: z.literal("update"),
-  draft: updateTemplateDraftSchema,
+  draft: updateTemplatePreviewDraftSchema,
+});
+const createCommitOperationSchema = z.object({
+  kind: z.literal("create"),
+  draft: editableTemplateCommitDraftSchema,
+});
+const updateCommitOperationSchema = z.object({
+  kind: z.literal("update"),
+  draft: updateTemplateCommitDraftSchema,
 });
 const duplicateOperationSchema = z.object({
   kind: z.literal("duplicate"),
@@ -126,14 +150,14 @@ export const trainingPlanPreviewInputSchema = z.discriminatedUnion("kind", [
 ]);
 
 export const trainingPlanCommitInputSchema = z.discriminatedUnion("kind", [
-  createOperationSchema
+  createCommitOperationSchema
     .extend({
       operationId: operationIdSchema,
       basePublishedRevision: z.number().int().nonnegative().nullable(),
       previewFingerprint: resolutionFingerprintSchema,
     })
     .strict(),
-  updateOperationSchema
+  updateCommitOperationSchema
     .extend({
       operationId: operationIdSchema,
       basePublishedRevision: z.number().int().nonnegative().nullable(),
