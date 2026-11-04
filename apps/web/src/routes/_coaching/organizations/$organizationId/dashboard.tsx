@@ -1,0 +1,41 @@
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { CoachAccessDenied } from "../../../../components/coaching/coach-access-denied";
+import { OrganizationManagementOverview } from "../../../../components/coaching/organization-management-overview";
+import { loadOrganizationManagementOverview } from "../../../../lib/coaching/server-functions";
+
+export const Route = createFileRoute("/_coaching/organizations/$organizationId/dashboard")({
+  loader: ({ params }) =>
+    loadOrganizationManagementOverview({ data: { organizationId: params.organizationId } }),
+  component: CoachDashboardPage,
+});
+
+function CoachDashboardPage() {
+  const overview = Route.useLoaderData();
+  const { organizationId } = Route.useParams();
+
+  if (overview.status === "forbidden") return <CoachAccessDenied />;
+
+  return (
+    <div className="space-y-6">
+      {overview.canReadAdministrativeRoster ? (
+        <nav aria-label="Organization administration" className="flex flex-wrap gap-3">
+          <Link
+            to="/organizations/$organizationId/staff"
+            params={{ organizationId }}
+            className="inline-flex rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2"
+          >
+            Manage staff
+          </Link>
+          <Link
+            to="/organizations/$organizationId/athletes"
+            params={{ organizationId }}
+            className="inline-flex rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2"
+          >
+            Manage athletes
+          </Link>
+        </nav>
+      ) : null}
+      <OrganizationManagementOverview overview={overview} />
+    </div>
+  );
+}

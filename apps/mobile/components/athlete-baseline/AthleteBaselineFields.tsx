@@ -1,0 +1,328 @@
+import {
+  getProfileMetricDefinition,
+  isProfileMetricValueWithinRange,
+} from "@repo/core/athlete-inputs";
+import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
+import { Button } from "@repo/ui/components/button";
+import { DateInput } from "@repo/ui/components/date-input";
+import { Icon } from "@repo/ui/components/icon";
+import { Text } from "@repo/ui/components/text";
+import { WeightInputField } from "@repo/ui/components/weight-input-field";
+import { Check } from "lucide-react-native";
+import { TouchableOpacity, View } from "react-native";
+
+export type AthleteBaselineSourceKind = "imported" | "estimated" | "manual" | "cleared";
+
+export type AthleteBaselineFieldSource = {
+  kind: AthleteBaselineSourceKind;
+  label?: string;
+};
+
+export interface AthleteBaselineValue {
+  experience: "beginner" | "intermediate" | "advanced" | "skip" | null;
+  dob: string | null;
+  gender: "male" | "female" | "other" | null;
+  weightKg: number | null;
+  weightDisplayUnit: "kg" | "lbs";
+  maxHr: number | null;
+  restingHr: number | null;
+}
+
+export type AthleteBaselineField = keyof AthleteBaselineValue;
+export type AthleteBaselineFieldSources = Partial<
+  Record<AthleteBaselineField, AthleteBaselineFieldSource>
+>;
+export type AthleteBaselineChange = {
+  [Field in AthleteBaselineField]: {
+    field: Field;
+    value: AthleteBaselineValue[Field];
+    source: "manual" | "cleared" | "estimated";
+  };
+}[AthleteBaselineField];
+
+export interface AthleteBaselineFieldsProps {
+  value: AthleteBaselineValue;
+  onChange: (change: AthleteBaselineChange) => void;
+  sources?: AthleteBaselineFieldSources;
+  estimates?: Partial<Pick<AthleteBaselineValue, "maxHr">>;
+}
+
+const metric = {
+  weight: getProfileMetricDefinition("weight_kg"),
+  maxHr: getProfileMetricDefinition("max_hr"),
+  restingHr: getProfileMetricDefinition("resting_hr"),
+};
+
+function getSourceText(field: AthleteBaselineField, source?: AthleteBaselineFieldSource) {
+  if (!source) return null;
+  if (source.kind === "imported") {
+    return source.label ? `Imported from ${source.label}` : "Imported";
+  }
+  if (source.kind === "estimated") return source.label ?? "Estimated";
+  if (source.kind === "manual") return "Manual";
+  return field === "dob" || field === "gender" || field === "experience"
+    ? "Cleared"
+    : "Not used for this setup";
+}
+
+function SourceText({
+  field,
+  source,
+}: {
+  field: AthleteBaselineField;
+  source?: AthleteBaselineFieldSource;
+}) {
+  const text = getSourceText(field, source);
+  return text ? <Text className="text-xs text-muted-foreground">{text}</Text> : null;
+}
+
+function MetricSourceRow({
+  estimate,
+  field,
+  hasValue,
+  onChange,
+  source,
+  unit,
+}: {
+  estimate?: number | null;
+  field: "weightKg" | "maxHr" | "restingHr";
+  hasValue: boolean;
+  onChange: AthleteBaselineFieldsProps["onChange"];
+  source?: AthleteBaselineFieldSource;
+  unit?: string;
+}) {
+  const canReset = estimate != null && source?.kind !== "estimated";
+  const sourceText = getSourceText(field, source);
+
+  if (!sourceText && !canReset && !hasValue) return null;
+
+  return (
+    <View className="flex-row flex-wrap items-center gap-2">
+      {sourceText ? <Text className="text-xs text-muted-foreground">{sourceText}</Text> : null}
+      {hasValue ? (
+        <Button
+          testId={`athlete-baseline-${field}-exclude`}
+          variant="ghost"
+          size="sm"
+          onPress={() =>
+            onChange({ field, value: null, source: "cleared" } as AthleteBaselineChange)
+          }
+        >
+          <Text className="text-muted-foreground">Exclude from setup</Text>
+        </Button>
+      ) : null}
+      {canReset ? (
+        <Button
+          testId={`athlete-baseline-${field}-reset-estimate`}
+          variant="ghost"
+          size="sm"
+          onPress={() =>
+            onChange({ field, value: estimate, source: "estimated" } as AthleteBaselineChange)
+          }
+        >
+          <Text className="text-muted-foreground">
+            Reset to estimate ({estimate} {unit})
+          </Text>
+        </Button>
+      ) : null}
+    </View>
+  );
+}
+
+function ChoiceField<Value extends string>({
+  label,
+  options,
+  selected,
+  testIdPrefix,
+  onChange,
+}: {
+  label: string;
+  options: readonly Value[];
+  selected: Value | null;
+  testIdPrefix: string;
+  onChange: (value: Value | null) => void;
+}) {
+  return (
+    <View
+      className="gap-3"
+      testID={`${testIdPrefix}-group`}
+      accessibilityRole="radiogroup"
+      accessibilityLabel={`${label} options`}
+    >
+      <Text className="text-base font-semibold">{label}</Text>
+      {options.map((option) => (
+        <TouchableOpacity
+          key={option}
+          testID={`${testIdPrefix}-${option}`}
+          accessibilityRole="radio"
+          accessibilityLabel={`${label}: ${option}`}
+          accessibilityState={{ checked: selected === option }}
+          onPress={() => onChange(option)}
+          className={`p-3 border rounded-xl flex-row items-center justify-between ${
+            selected === option ? "border-primary bg-primary/5" : "border-border bg-card"
+          }`}
+        >
+          <Text className="font-semibold capitalize">{option}</Text>
+          {selected === option ? <Icon as={Check} className="text-primary" /> : null}
+        </TouchableOpacity>
+      ))}
+      {selected ? (
+        <Button
+          testId={`${testIdPrefix}-clear`}
+          variant="ghost"
+          size="sm"
+          onPress={() => onChange(null)}
+        >
+          <Text className="text-muted-foreground">Clear</Text>
+        </Button>
+      ) : null}
+    </View>
+  );
+}
+
+export function AthleteBaselineFields({
+  estimates,
+  onChange,
+  sources = {},
+  value,
+}: AthleteBaselineFieldsProps) {
+  const emit = <Field extends AthleteBaselineField>(
+    field: Field,
+    nextValue: AthleteBaselineValue[Field],
+  ) =>
+    onChange({
+      field,
+      value: nextValue,
+      source: nextValue === null ? "cleared" : "manual",
+    } as AthleteBaselineChange);
+  const weightError =
+    value.weightKg !== null && !isProfileMetricValueWithinRange("weight_kg", value.weightKg)
+      ? `Enter a weight from ${metric.weight.min} to ${metric.weight.max} kg.`
+      : undefined;
+
+  return (
+    <View className="gap-8">
+      <View className="gap-5">
+        <Text className="text-lg font-semibold">Identity basics</Text>
+        <ChoiceField
+          label="Experience (Optional)"
+          options={["beginner", "intermediate", "advanced"] as const}
+          selected={value.experience === "skip" ? null : value.experience}
+          testIdPrefix="athlete-baseline-experience"
+          onChange={(nextValue) => emit("experience", nextValue)}
+        />
+        <SourceText
+          field="experience"
+          {...(sources.experience === undefined ? {} : { source: sources.experience })}
+        />
+        <DateInput
+          id="athlete-baseline-dob"
+          label="Date of birth (Optional)"
+          value={value.dob ?? undefined}
+          onChange={(nextValue) => emit("dob", nextValue ?? null)}
+          helperText="Used for age-based heart rate estimates and training zones."
+          placeholder="Select your date of birth"
+          maximumDate={new Date()}
+          accessibilityHint="Choose your date of birth"
+          clearable
+        />
+        <SourceText field="dob" {...(sources.dob === undefined ? {} : { source: sources.dob })} />
+        <ChoiceField
+          label="Gender (Optional)"
+          options={["male", "female", "other"] as const}
+          selected={value.gender}
+          testIdPrefix="athlete-baseline-gender"
+          onChange={(nextValue) => emit("gender", nextValue)}
+        />
+        <SourceText
+          field="gender"
+          {...(sources.gender === undefined ? {} : { source: sources.gender })}
+        />
+        <WeightInputField
+          id="athlete-baseline-weight"
+          label={`${metric.weight.label} (Optional)`}
+          valueKg={value.weightKg}
+          onChangeKg={(nextValue) => emit("weightKg", nextValue)}
+          onInputResult={(result) => {
+            if (result.status === "invalid") emit("weightKg", Number.NaN);
+          }}
+          unit={value.weightDisplayUnit}
+          onUnitChange={(nextUnit) => emit("weightDisplayUnit", nextUnit)}
+          helperText="Switch units without changing the canonical kilogram value."
+          {...(weightError === undefined ? {} : { error: weightError })}
+          placeholder={value.weightDisplayUnit === "kg" ? "70.0" : "154.3"}
+        />
+        <MetricSourceRow
+          field="weightKg"
+          hasValue={value.weightKg !== null}
+          {...(sources.weightKg === undefined ? {} : { source: sources.weightKg })}
+          onChange={onChange}
+        />
+      </View>
+
+      <View className="gap-5">
+        <Text className="text-lg font-semibold">Heart rate</Text>
+        <View className="gap-2">
+          <BoundedNumberInput
+            id="athlete-baseline-max-hr"
+            label={`${metric.maxHr.label} (Optional)`}
+            value={value.maxHr?.toString() ?? ""}
+            onChange={(text) => {
+              if (!text.trim()) emit("maxHr", null);
+            }}
+            onInputResult={(result) =>
+              emit(
+                "maxHr",
+                result.status === "valid"
+                  ? result.value
+                  : result.status === "empty"
+                    ? null
+                    : Number.NaN,
+              )
+            }
+            min={metric.maxHr.min}
+            max={metric.maxHr.max}
+            decimals={metric.maxHr.decimals}
+            unitLabel={metric.maxHr.unit}
+          />
+          <MetricSourceRow
+            field="maxHr"
+            hasValue={value.maxHr !== null}
+            {...(sources.maxHr === undefined ? {} : { source: sources.maxHr })}
+            {...(estimates?.maxHr === undefined ? {} : { estimate: estimates.maxHr })}
+            unit={metric.maxHr.unit}
+            onChange={onChange}
+          />
+        </View>
+        <BoundedNumberInput
+          id="athlete-baseline-resting-hr"
+          label={`${metric.restingHr.label} (Optional)`}
+          value={value.restingHr?.toString() ?? ""}
+          onChange={(text) => {
+            if (!text.trim()) emit("restingHr", null);
+          }}
+          onInputResult={(result) =>
+            emit(
+              "restingHr",
+              result.status === "valid"
+                ? result.value
+                : result.status === "empty"
+                  ? null
+                  : Number.NaN,
+            )
+          }
+          min={metric.restingHr.min}
+          max={metric.restingHr.max}
+          decimals={metric.restingHr.decimals}
+          unitLabel={metric.restingHr.unit}
+        />
+        <MetricSourceRow
+          field="restingHr"
+          hasValue={value.restingHr !== null}
+          {...(sources.restingHr === undefined ? {} : { source: sources.restingHr })}
+          onChange={onChange}
+        />
+      </View>
+    </View>
+  );
+}

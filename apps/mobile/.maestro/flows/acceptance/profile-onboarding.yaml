@@ -1,0 +1,45 @@
+appId: com.deancochran.gradientpeak.dev
+name: Synthetic athlete profile onboarding on the runner-provisioned current candidate
+---
+# Setup boundary: the disposable runner provisions credentials and loopback
+# routing; this flow only enters them through the visible sign-in/onboarding UI.
+- openLink: "gradientpeak-dev://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8083"
+- extendedWaitUntil:
+    visible:
+      id: sign-in-screen
+    timeout: 30000
+- assertVisible: ${MAESTRO_ACCEPTANCE_RUNTIME_SENTINEL}
+- tapOn:
+    id: email-input
+- eraseText: 200
+- inputText: ${MAESTRO_ACCEPTANCE_EMAIL}
+- tapOn:
+    id: password-input
+- eraseText: 200
+- inputText: ${MAESTRO_ACCEPTANCE_PASSWORD}
+- hideKeyboard
+- tapOn:
+    id: sign-in-button
+- extendedWaitUntil:
+    visible:
+      id: onboarding-screen
+    timeout: 30000
+- tapOn:
+    id: onboarding-full-name-input
+- eraseText: 200
+- inputText: "Native acceptance athlete"
+- tapOn:
+    id: onboarding-username-input
+- eraseText: 200
+- inputText: ${MAESTRO_ACCEPTANCE_USERNAME}
+- hideKeyboard
+- tapOn:
+    id: onboarding-finish-button
+- extendedWaitUntil:
+    visible:
+      id: tab-button-home
+    timeout: 30000
+- tapOn:
+    id: tab-button-plan
+- assertVisible:
+    id: tab-button-plan

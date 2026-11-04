@@ -8,9 +8,12 @@
  * Key benefits:
  * - Flat, reactive structure (no nested state)
  * - Zone arrays match database schema
- * - Easy to serialize for upload
+ * - Keeps provisional UI output separate from source-fact submission
  * - Clear separation of concerns
  */
+
+import type { ProvisionalRecordingMetricsSnapshot } from "@repo/core";
+import { selectAerobicDecouplingValue, selectEfficiencyFactorValue } from "@repo/core/calculations";
 
 // ================================
 // Core Interfaces
@@ -22,6 +25,9 @@
 export type SpeedDisplayFormat = "pace" | "speed";
 
 export interface SimplifiedMetrics {
+  /** Explicitly provisional live output; never completed-activity authority. */
+  provisionalMetrics: ProvisionalRecordingMetricsSnapshot;
+
   /** Current sensor readings (latest values) */
   current: {
     power?: number;
@@ -29,12 +35,6 @@ export interface SimplifiedMetrics {
     cadence?: number;
     speed?: number; // m/s
     temperature?: number;
-    position?: {
-      lat: number;
-      lng: number;
-      alt?: number;
-      heading?: number;
-    };
   };
 
   /** Display format recommendation for speed/pace */
@@ -71,7 +71,6 @@ export interface SimplifiedMetrics {
     heartRate: number;
     speed: number; // m/s
     cadence: number;
-    temperature: number;
   };
 
   /** Zone time distributions (in seconds) */
@@ -83,11 +82,9 @@ export interface SimplifiedMetrics {
   /** Advanced metrics (requires sufficient data) */
   advanced?: {
     normalizedPower: number;
-    tss: number;
-    intensityFactor: number;
     variabilityIndex: number;
-    efficiencyFactor: number;
-    decoupling: number;
+    efficiencyFactor?: number;
+    decoupling?: number;
     powerWeightRatio: number;
     powerHrRatio: number;
   };
@@ -132,68 +129,6 @@ export const sensorModels = {
 
 export function getSensorModel(metric: string): SensorModel<number> | undefined {
   return sensorModels[metric as keyof typeof sensorModels];
-}
-
-// ================================
-// Zone Calculation Helpers
-// ================================
-
-/**
- * Calculate power zone index (0-6) based on FTP
- * Using Coggan 7-zone model
- */
-export function getPowerZone(watts: number, ftp: number): number {
-  const percent = (watts / ftp) * 100;
-  if (percent < 55) return 0; // Active Recovery
-  if (percent < 75) return 1; // Endurance
-  if (percent < 90) return 2; // Tempo
-  if (percent < 105) return 3; // Lactate Threshold
-  if (percent < 120) return 4; // VO2 Max
-  if (percent < 150) return 5; // Anaerobic Capacity
-  return 6; // Neuromuscular Power
-}
-
-/**
- * Calculate heart rate zone index (0-4) based on threshold HR
- * Using 5-zone model
- */
-export function getHRZone(bpm: number, threshold_hr: number): number {
-  const percent = (bpm / threshold_hr) * 100;
-  if (percent < 81) return 0; // Zone 1 - Recovery
-  if (percent < 89) return 1; // Zone 2 - Aerobic
-  if (percent < 94) return 2; // Zone 3 - Tempo
-  if (percent < 100) return 3; // Zone 4 - Threshold
-  return 4; // Zone 5 - Anaerobic
-}
-
-/**
- * Get zone names for display
- */
-export const POWER_ZONE_NAMES = [
-  "Active Recovery",
-  "Endurance",
-  "Tempo",
-  "Threshold",
-  "VO2 Max",
-  "Anaerobic",
-  "Neuromuscular",
-] as const;
-
-export const HR_ZONE_NAMES = ["Recovery", "Aerobic", "Tempo", "Threshold", "Anaerobic"] as const;
-
-/**
- * Calculate zone distribution percentages
- */
-export function getZoneDistribution(
-  zoneTimes: number[],
-): Array<{ zone: number; seconds: number; percentage: number }> {
-  const total = zoneTimes.reduce((sum, time) => sum + time, 0);
-
-  return zoneTimes.map((seconds, index) => ({
-    zone: index,
-    seconds,
-    percentage: total > 0 ? (seconds / total) * 100 : 0,
-  }));
 }
 
 // ================================
@@ -280,21 +215,24 @@ export function formatSpeed(speedKmH: number): string {
  */
 export function convertToSimplifiedMetrics(
   state: import("./types").LiveMetricsState,
-  currentReadings: any,
+  currentReadings: import("./types").CurrentReadings,
   hasEnoughData: boolean,
-  profile?: { ftp?: number; weight_kg?: number },
+  provisionalMetrics: ProvisionalRecordingMetricsSnapshot,
+  profile?: { weightKg?: number },
 ): SimplifiedMetrics {
   // Calculate dynamic speed/pace display
   const speedDisplay = getSpeedDisplay(currentReadings.speed);
 
   const metrics: SimplifiedMetrics = {
+    provisionalMetrics,
     current: {
-      power: currentReadings.power,
-      heartRate: currentReadings.heartRate,
-      cadence: currentReadings.cadence,
-      speed: currentReadings.speed,
-      temperature: currentReadings.temperature,
-      position: currentReadings.position,
+      ...(currentReadings.power === undefined ? {} : { power: currentReadings.power }),
+      ...(currentReadings.heartRate === undefined ? {} : { heartRate: currentReadings.heartRate }),
+      ...(currentReadings.cadence === undefined ? {} : { cadence: currentReadings.cadence }),
+      ...(currentReadings.speed === undefined ? {} : { speed: currentReadings.speed }),
+      ...(currentReadings.temperature === undefined
+        ? {}
+        : { temperature: currentReadings.temperature }),
     },
     display: speedDisplay,
     totals: {
@@ -319,7 +257,6 @@ export function convertToSimplifiedMetrics(
       heartRate: state.maxHeartRate,
       speed: state.maxSpeed,
       cadence: state.maxCadence,
-      temperature: state.maxTemperature || 0,
     },
     zones: {
       hr: [
@@ -343,15 +280,17 @@ export function convertToSimplifiedMetrics(
 
   // Add advanced metrics if we have enough data
   if (hasEnoughData && state.normalizedPowerEst > 0) {
+    const efficiencyFactor = selectEfficiencyFactorValue(provisionalMetrics.efficiencyFactorResult);
+    const aerobicDecoupling = selectAerobicDecouplingValue(
+      provisionalMetrics.aerobicDecouplingResult,
+    );
     metrics.advanced = {
       normalizedPower: state.normalizedPowerEst,
-      tss: state.trainingStressScoreEst,
-      intensityFactor: state.intensityFactorEst,
       variabilityIndex: state.variabilityIndexEst,
-      efficiencyFactor: state.efficiencyFactorEst,
-      decoupling: state.decouplingEst,
+      ...(efficiencyFactor === null ? {} : { efficiencyFactor }),
+      ...(aerobicDecoupling === null ? {} : { decoupling: aerobicDecoupling }),
       powerWeightRatio:
-        profile?.weight_kg && state.avgPower > 0 ? state.avgPower / profile.weight_kg : 0,
+        profile?.weightKg && state.avgPower > 0 ? state.avgPower / profile.weightKg : 0,
       powerHrRatio: state.powerHeartRateRatio,
     };
   }
