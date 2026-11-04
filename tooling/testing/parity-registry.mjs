@@ -101,6 +101,11 @@ const webTests = {
     identity: "coaching.view-dashboard opens an authorized organization dashboard",
     path: "apps/web/e2e/specs/capability-p3-settings-coaching.spec.ts",
   },
+  "coaching.invitation-response": {
+    identity:
+      "anonymous athlete completes login and onboarding before explicitly accepting the link",
+    path: "apps/web/e2e/specs/organization-invitation-link.spec.ts",
+  },
   "navigation.shell": {
     identity: "navigation.mobile:escape-focus",
     path: "apps/web/e2e/specs/shell-screen-variations.spec.ts",
@@ -271,6 +276,20 @@ const definitions = [
     steps: ["open", "view"],
     matches: (platform, source) => platform === "web" && source.includes("_coaching"),
     rationale: "Coaching workspaces are currently delivered through the web application only.",
+  },
+  {
+    id: "coaching.invitation-response",
+    title: "Respond to organization invitations",
+    outcome:
+      "A recipient can sign in, finish onboarding, and explicitly respond to an organization invitation.",
+    policy: "web_only",
+    steps: ["open", "review", "respond"],
+    matches: (platform, source) =>
+      platform === "web" &&
+      (source === "apps/web/src/routes/organization-invitation.tsx" ||
+        source === "apps/web/src/routes/_protected/organization-invitations.tsx"),
+    rationale:
+      "Organization invitation links currently continue in the web recipient workflow, including mobile browsers; native recipient UI is not claimed.",
   },
   {
     id: "navigation.shell",
