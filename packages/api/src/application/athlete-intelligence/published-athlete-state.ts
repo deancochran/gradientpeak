@@ -286,7 +286,13 @@ async function readPublishedAthleteStateSnapshotInSnapshot(input: {
     : createUnavailableAthletePerformanceTargetFacts(now.toISOString(), input.profileId);
   const performanceTargets = athletePerformanceTargetFactsSchema.parse({
     ...thresholdFacts,
-    heartRate: cachedTargets.heartRate,
+    // LTHR belongs to canonical thresholds; only max HR belongs to the cache.
+    // Replacing the whole heart-rate object silently discarded valid LTHR evidence.
+    heartRate: {
+      bike: { ...thresholdFacts.heartRate.bike, maxHr: cachedTargets.heartRate.bike.maxHr },
+      run: { ...thresholdFacts.heartRate.run, maxHr: cachedTargets.heartRate.run.maxHr },
+      swim: { ...thresholdFacts.heartRate.swim, maxHr: cachedTargets.heartRate.swim.maxHr },
+    },
   });
   const hasPublishedState = Boolean(
     current && current.state.published_revision > 0 && current.state.computed_at,

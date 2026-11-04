@@ -2,6 +2,7 @@ import {
   ATHLETE_STATE_PROJECTION_ALGORITHM_VERSION,
   athleteStateBaselineSchema,
   createUnavailableAthletePerformanceTargetFacts,
+  materializeAthletePerformanceTargetFacts,
 } from "@repo/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -125,6 +126,48 @@ describe("AthleteReadModel", () => {
     });
     expect(result).not.toHaveProperty("publishedState");
     expect(result).not.toHaveProperty("currentBaseline");
+  });
+
+  it("carries canonical LTHR unchanged to both picker facts and planning context without inventing max HR", async () => {
+    const state = snapshot();
+    state.performanceTargets = materializeAthletePerformanceTargetFacts({
+      athleteId: profileId,
+      asOf: computedAt,
+      thresholds: [
+        {
+          id: "canonical-run-lthr",
+          status: "available",
+          activityCategory: "run",
+          metric: "lthr",
+          unit: "bpm",
+          method: "lthr_30m_final_20m",
+          value: 178,
+          effectiveAt: "2026-07-31T00:00:00.000Z",
+          policyVersion: "threshold-policy-v1",
+          state: "confirmed",
+          confidence: 0.95,
+          sourceEvaluationIds: ["evaluation"],
+          sourceEffortIds: ["effort"],
+          sourceActivityIds: ["activity"],
+        },
+      ],
+    });
+    vi.mocked(readPublishedAthleteStateSnapshot).mockResolvedValue(state);
+    const result = await readAthleteReadModel({
+      db: {} as never,
+      profileId,
+      now: new Date(computedAt),
+      sections: { publishedState: true, currentBaseline: { includePlanningContext: true } },
+    });
+    expect(result.publishedState?.performanceTargets.heartRate.run).toEqual(
+      state.performanceTargets.heartRate.run,
+    );
+    expect(result.currentBaseline?.planningContext?.performanceTargets.heartRate.run).toEqual(
+      state.performanceTargets.heartRate.run,
+    );
+    expect(
+      result.currentBaseline?.planningContext?.performanceTargets.heartRate.run.maxHr,
+    ).toMatchObject({ status: "unavailable", valueBpm: null });
   });
 
   it("does not expose raw evidence as load history while publication is stale", async () => {
