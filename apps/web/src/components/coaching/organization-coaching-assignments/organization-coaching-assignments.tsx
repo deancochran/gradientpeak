@@ -198,9 +198,9 @@ function Contents({
     setError(null);
     setIntent({
       action,
-      assignment,
-      coachMembershipId,
-      assignmentKind: action === "end" ? undefined : kind,
+      ...(assignment ? { assignment } : {}),
+      ...(coachMembershipId ? { coachMembershipId } : {}),
+      ...(action === "end" ? {} : { assignmentKind: kind }),
       operationId: crypto.randomUUID(),
       expectedStateDigest: digest,
     });
@@ -436,7 +436,14 @@ function Contents({
             </div>
           </div>
         ) : null}
-        <Button type="button" variant="outline" onClick={onClose}>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={loading || saving || Boolean(uncertain)}
+          onClick={() => {
+            if (!refreshing.current && !submitting.current && !uncertain) onClose();
+          }}
+        >
           Back to athlete roster
         </Button>
       </CardContent>

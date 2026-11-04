@@ -132,6 +132,7 @@ describe("OrganizationCoachingAssignments", () => {
     expect(screen.queryByRole("button", { name: "Confirm responsibility change" })).toBeNull();
   });
   it("retains the exact request when a result is unknown", async () => {
+    const onClose = vi.fn();
     const reconciliation = deferred<ReturnType<typeof loaded>>();
     mocks.load.mockResolvedValueOnce(loaded()).mockReturnValueOnce(reconciliation.promise);
     mocks.end.mockRejectedValue(new Error("network"));
@@ -141,7 +142,7 @@ describe("OrganizationCoachingAssignments", () => {
         engagementId={engagementId}
         actorProfileId="profile-1"
         onAccessLost={vi.fn()}
-        onClose={vi.fn()}
+        onClose={onClose}
         organizationId={organizationId}
       />,
     );
@@ -155,12 +156,17 @@ describe("OrganizationCoachingAssignments", () => {
     const refresh = screen.getByRole("button", { name: "Refresh current assignments" });
     expect((retry as HTMLButtonElement).disabled).toBe(true);
     expect((refresh as HTMLButtonElement).disabled).toBe(true);
+    const back = screen.getByRole("button", { name: "Back to athlete roster" });
+    expect((back as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(back);
+    expect(onClose).not.toHaveBeenCalled();
     fireEvent.click(retry);
     fireEvent.click(refresh);
     expect(mocks.end).toHaveBeenCalledTimes(1);
     expect(mocks.load).toHaveBeenCalledTimes(2);
     reconciliation.resolve(loaded());
     await waitFor(() => expect((retry as HTMLButtonElement).disabled).toBe(false));
+    expect((back as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByRole("button", { name: "Retry exact request" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Retry exact request" }));
     await waitFor(() => expect(mocks.end).toHaveBeenCalledTimes(2));

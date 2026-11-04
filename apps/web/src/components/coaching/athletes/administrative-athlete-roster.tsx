@@ -269,7 +269,7 @@ function AdministrativeAthleteRosterContents({
                       {athlete.status}
                     </Badge>
                     <Button
-                      disabled={isTerminationPending}
+                      disabled={isTerminationPending || Boolean(managingResponsibilitiesFor)}
                       onClick={() => setManagingResponsibilitiesFor(athlete)}
                       type="button"
                       variant="outline"
@@ -277,7 +277,7 @@ function AdministrativeAthleteRosterContents({
                       Manage coaches
                     </Button>
                     <Button
-                      disabled={isTerminationPending}
+                      disabled={isTerminationPending || Boolean(managingResponsibilitiesFor)}
                       onClick={() => {
                         if (pendingSubmission.current !== null) return;
                         setSelected(athlete);
@@ -296,7 +296,12 @@ function AdministrativeAthleteRosterContents({
           )}
           {page.hasMore ? (
             <Button
-              disabled={form.formState.isSubmitting || isLoadingPage || isTerminationPending}
+              disabled={
+                form.formState.isSubmitting ||
+                isLoadingPage ||
+                isTerminationPending ||
+                Boolean(managingResponsibilitiesFor)
+              }
               onClick={() => load(page.nextCursor)}
               type="button"
               variant="outline"
