@@ -48,6 +48,24 @@ describe("recipient invitation route composition", () => {
     state.authUserId = undefined;
     render(<Page />);
     expect(screen.queryByTestId("recipient")).toBeNull();
+    expect(takeHandoff).not.toHaveBeenCalled();
+  });
+  it("waits for the first protected identity before consuming the handoff", () => {
+    state.authUserId = undefined;
+    const view = render(
+      <StrictMode>
+        <Page />
+      </StrictMode>,
+    );
+    expect(takeHandoff).not.toHaveBeenCalled();
+    state.authUserId = "actor-one";
+    view.rerender(
+      <StrictMode>
+        <Page />
+      </StrictMode>,
+    );
+    expect(takeHandoff).toHaveBeenCalledOnce();
+    expect(screen.getByTestId("recipient").textContent).toContain("actor-one:a");
   });
   it("consumes a handoff once under StrictMode and never reinjects it after an actor switch", () => {
     const view = render(

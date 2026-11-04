@@ -111,7 +111,9 @@ describe("organization invitation handoff", () => {
       },
     );
     expect(observed).toHaveLength(1);
-    expect(new URL(observed[0]!).hash).toBe("");
+    const instrumentationUrl = observed[0];
+    if (!instrumentationUrl) throw new Error("Instrumentation did not observe a URL");
+    expect(new URL(instrumentationUrl).hash).toBe("");
     expect(observed[0]).not.toContain(token);
   });
 });

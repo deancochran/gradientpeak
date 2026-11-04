@@ -12,6 +12,11 @@ function OrganizationInvitationsPage() {
   const initialActorId = useRef(authUserId);
   const handoffConsumed = useRef(false);
   useEffect(() => {
+    if (!authUserId) {
+      setInitialInvitationToken(null);
+      return;
+    }
+    if (!initialActorId.current && !handoffConsumed.current) initialActorId.current = authUserId;
     if (initialActorId.current !== authUserId) {
       setInitialInvitationToken(null);
       return;
@@ -24,7 +29,9 @@ function OrganizationInvitationsPage() {
   return (
     <InvitationResponse
       actorId={authUserId}
-      {...(initialInvitationToken ? { initialInvitationToken } : {})}
+      {...(initialInvitationToken && initialActorId.current === authUserId
+        ? { initialInvitationToken }
+        : {})}
     />
   );
 }
