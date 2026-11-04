@@ -250,6 +250,7 @@ describe("useTrainingPlanCreationService authoritative projection", () => {
         selection: { setSessionId },
         sheetStack: { openSheet: jest.fn() },
         chartReview: { selectedWeekIndex: 0 },
+        creationChart: { sessionMetricsById: new Map() },
       } as unknown as TrainingPlanBuilderController;
       return { builder, schedule: useScheduleEditorController(controller) };
     });
@@ -344,14 +345,22 @@ describe("useTrainingPlanCreationService authoritative projection", () => {
     expect(hook.result.current.derived.savePlan.canSave).toBe(true);
   });
 
-  it("skips preview for unfinished names and resumes only for a valid name", async () => {
+  it("previews an unnamed schedule while keeping creation gated by a valid name", async () => {
     const hook = await renderHook(() => useTrainingPlanCreationService());
     await act(() => hook.result.current.actions.addSession(0));
     expect(mockUsePreviewQuery).toHaveBeenLastCalledWith(
-      expect.any(Symbol),
-      expect.objectContaining({ enabled: false }),
+      expect.objectContaining({ draft: expect.objectContaining({ name: "" }) }),
+      expect.objectContaining({ enabled: true }),
     );
-    for (const name of ["   ", "x".repeat(256)]) {
+    expect(hook.result.current.derived.savePlan.canSave).toBe(false);
+    await act(() => hook.result.current.derived.savePlan.execute());
+    expect(mockQueries.commitPlanMutation.mutateAsync).not.toHaveBeenCalled();
+    await act(() => hook.result.current.actions.updateDetails({ name: "   " }));
+    expect(mockUsePreviewQuery).toHaveBeenLastCalledWith(
+      expect.objectContaining({ draft: expect.objectContaining({ name: "" }) }),
+      expect.objectContaining({ enabled: true }),
+    );
+    for (const name of ["x".repeat(256)]) {
       await act(() => hook.result.current.actions.updateDetails({ name }));
       expect(mockUsePreviewQuery).toHaveBeenLastCalledWith(
         expect.any(Symbol),
@@ -368,9 +377,10 @@ describe("useTrainingPlanCreationService authoritative projection", () => {
     );
     await act(() => hook.result.current.actions.updateDetails({ name: "" }));
     expect(mockUsePreviewQuery).toHaveBeenLastCalledWith(
-      expect.any(Symbol),
-      expect.objectContaining({ enabled: false }),
+      expect.objectContaining({ draft: expect.objectContaining({ name: "" }) }),
+      expect.objectContaining({ enabled: true }),
     );
+    expect(hook.result.current.derived.savePlan.canSave).toBe(false);
   });
 
   it("refuses to commit without a current authoritative preview", async () => {

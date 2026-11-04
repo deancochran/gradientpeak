@@ -1,4 +1,4 @@
-import type { ActivityPlanPlanningEstimate } from "@repo/core";
+import type { ActivityPlanMetric, ActivityPlanPlanningEstimate } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
 import { Plus } from "lucide-react-native";
@@ -19,6 +19,7 @@ type BuilderScheduleEditorProps = {
   viewModel: BuilderPlanPresentation;
   chartReview: TrainingPlanBuilderController["chartReview"];
   estimateBySessionId: Map<string, ActivityPlanPlanningEstimate>;
+  metricsBySessionId?: ReadonlyMap<string, readonly ActivityPlanMetric[]> | undefined;
   onAddSessionAtOffset: (offsetDays: number) => void;
   onCopyWeek: (sourceWeekIndex: number, destinationWeekIndex: number) => void;
   onDuplicateSession: (sessionId: string) => void;
@@ -34,6 +35,7 @@ type BuilderScheduleEditorProps = {
 };
 
 type BuilderSelectedDayPlanningPanelProps = {
+  metricsBySessionId?: ReadonlyMap<string, readonly ActivityPlanMetric[]> | undefined;
   dateLabel: string | null;
   estimateBySessionId: Map<string, ActivityPlanPlanningEstimate>;
   onAddActivity: () => void;
@@ -59,6 +61,7 @@ export function BuilderScheduleEditor({
   scheduleOnly = false,
   focusOffsetDays,
   estimateBySessionId,
+  metricsBySessionId,
   viewModel,
   weekSummary,
   creationChart,
@@ -95,6 +98,7 @@ export function BuilderScheduleEditor({
     <BuilderSelectedDayPlanningPanel
       dateLabel={selectedDayLabel}
       estimateBySessionId={estimateBySessionId}
+      metricsBySessionId={metricsBySessionId}
       onAddActivity={() => onAddSessionAtOffset(selectedDayOffset)}
       onDuplicateSession={onDuplicateSession}
       onMoveSessionByDays={onMoveSessionByDays}
@@ -118,7 +122,7 @@ export function BuilderScheduleEditor({
         <Text className="text-xs text-muted-foreground">
           {creationChart.forecastAvailable
             ? creationChart.forecastPartial
-              ? "Partial forecast: unresolved activities are excluded from the trajectory. Missing load estimates remain unknown."
+              ? "Partial forecast: activities with unresolved or incomplete load are excluded from the trajectory. Missing load estimates remain unknown."
               : "Projected trajectory uses your current plan check. Missing activity estimates remain unknown."
             : "Your authored schedule is shown now. A current plan check is needed for the projected trajectory."}
         </Text>
@@ -201,6 +205,7 @@ export function BuilderScheduleEditor({
               <TrainingPlanBuilderEventCard
                 event={session}
                 estimate={estimateBySessionId.get(session.localId) ?? null}
+                projectionMetrics={metricsBySessionId?.get(session.localId)}
                 onDuplicate={() => onDuplicateSession(session.localId)}
                 onEdit={() => onPressSession(session.localId)}
                 onMoveByDays={(days) => onMoveSessionByDays(session.localId, days)}
@@ -258,6 +263,7 @@ export function BuilderScheduleEditor({
 }
 
 function BuilderSelectedDayPlanningPanel({
+  metricsBySessionId,
   dateLabel,
   estimateBySessionId,
   onAddActivity,
@@ -317,6 +323,7 @@ function BuilderSelectedDayPlanningPanel({
               key={sessionRow.session.localId}
               event={sessionRow.session}
               estimate={estimateBySessionId.get(sessionRow.session.localId) ?? null}
+              projectionMetrics={metricsBySessionId?.get(sessionRow.session.localId)}
               onDuplicate={() => onDuplicateSession(sessionRow.session.localId)}
               onEdit={() => onPressSession(sessionRow.session.localId)}
               onMoveByDays={(days) => onMoveSessionByDays(sessionRow.session.localId, days)}

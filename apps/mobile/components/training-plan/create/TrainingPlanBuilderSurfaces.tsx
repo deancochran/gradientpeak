@@ -42,6 +42,7 @@ export function TrainingPlanBuilderSurfaces({ controller }: TrainingPlanBuilderS
         <BuilderActivityAssignmentSheetContent
           activityPlanEstimateById={activityPicker.estimateById}
           activityPlanItems={activityPlanItems}
+          metricsById={activityPicker.metricsById}
           activityPlanSort={activityPicker.sort}
           categoryFilter={activityPicker.categoryFilter}
           hasNextPage={activityPlansQuery.hasNextPage}
@@ -118,6 +119,7 @@ export function TrainingPlanBuilderSurfaces({ controller }: TrainingPlanBuilderS
                 : null
             }
             session={session}
+            projectionMetrics={controller.creationChart.sessionMetricsById.get(session.localId)}
             onChange={controller.builder.actions.updateSession}
             onChangeActivity={controller.actions.openActivityPicker}
           />
@@ -167,7 +169,7 @@ export function TrainingPlanBuilderSurfaces({ controller }: TrainingPlanBuilderS
         ) : null}
         {controller.mode === "create" && previewStatus === "backend_input_unavailable" ? (
           <Text className="text-sm text-muted-foreground">
-            Enter a plan name and add an activity to continue.
+            Add an activity to preview your plan. A plan name is required before creating.
           </Text>
         ) : null}
         {controller.mode === "create" && previewStatus === "backend_preview_unavailable" ? (

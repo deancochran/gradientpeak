@@ -1,4 +1,8 @@
-import type { ActivityPlanPlanningEstimate, ActivityPlanSummary } from "@repo/core";
+import type {
+  ActivityPlanMetric,
+  ActivityPlanPlanningEstimate,
+  ActivityPlanSummary,
+} from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import { useCallback, useMemo } from "react";
 import { View } from "react-native";
@@ -30,6 +34,7 @@ const ACTIVITY_CATEGORY_OPTIONS = [
 type BuilderActivityAssignmentSheetContentProps = {
   activityPlanEstimateById: Map<string, ActivityPlanPlanningEstimate>;
   activityPlanItems: ActivityPlanSummary[];
+  metricsById?: ReadonlyMap<string, readonly ActivityPlanMetric[]> | undefined;
   activityPlanSort: ActivityPlanSort;
   categoryFilter: ActivityCategoryFilter;
   hasNextPage?: boolean;
@@ -46,6 +51,7 @@ type BuilderActivityAssignmentSheetContentProps = {
 
 export function BuilderActivityAssignmentSheetContent({
   activityPlanItems,
+  metricsById,
   hasNextPage,
   isFetchingNextPage,
   isLoading,
@@ -64,13 +70,14 @@ export function BuilderActivityAssignmentSheetContent({
       <View className="pb-3">
         <ActivityPlanCard
           plan={item}
+          projectionMetrics={metricsById?.get(item.id)}
           onPress={() => onSelectActivityPlan(activityPlanById.get(item.id) ?? item)}
           testID={`training-plan-builder-activity-row-${item.id}`}
           variant="compact"
         />
       </View>
     ),
-    [activityPlanById, onSelectActivityPlan],
+    [activityPlanById, metricsById, onSelectActivityPlan],
   );
 
   return (

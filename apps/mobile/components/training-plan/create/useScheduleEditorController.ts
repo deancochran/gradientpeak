@@ -41,6 +41,7 @@ export function useScheduleEditorController(controller: TrainingPlanBuilderContr
       chartReview: controller.chartReview,
       creationChart: controller.mode === "create" ? controller.creationChart : undefined,
       estimateBySessionId,
+      metricsBySessionId: controller.creationChart.sessionMetricsById,
       weekSummary,
       onAddSessionAtOffset: actions.addSessionAtOffset,
       onCopyWeek: (sourceWeekIndex: number, destinationWeekIndex: number) => {

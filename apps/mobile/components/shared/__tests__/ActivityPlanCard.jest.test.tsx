@@ -149,6 +149,20 @@ const availableMetrics = [
   },
 ];
 describe("ActivityPlanCard", () => {
+  it("renders separate viewer estimate metrics without replacing the saved summary", async () => {
+    const plan = createActivityPlanSummary();
+    const original = JSON.stringify(plan.metrics);
+    await renderNative(
+      <ProjectionActivityPlanCard
+        plan={plan}
+        projectionMetrics={availableMetrics}
+        variant="compact"
+      />,
+    );
+    expect(screen.getByText("~64")).toBeTruthy();
+    expect(screen.getByText("~0.80")).toBeTruthy();
+    expect(JSON.stringify(plan.metrics)).toBe(original);
+  });
   beforeEach(() => {
     toggleLikeMutateMock.mockReset();
     openEntityCommentsMock.mockReset();

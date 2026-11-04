@@ -1,5 +1,7 @@
+import type { ActivityPlanMetric } from "@repo/core";
 import { act, renderHook } from "@testing-library/react-native";
 import type { useTrainingPlanCreationService } from "@/lib/training-plan-creation/useTrainingPlanCreationService";
+import { createActivityPlanStructure } from "../../../../test/activity-plan-projection-fixture";
 import { useCreationChartController } from "../useCreationChartController";
 
 const makeBuilder = () => ({
@@ -33,6 +35,96 @@ const makeBuilder = () => ({
 });
 
 describe("creation chart selection and current forecast", () => {
+  it("uses current resolver load and duration for the scheduled card and chart", async () => {
+    const initial = makeBuilder();
+    const builder = {
+      ...initial,
+      state: {
+        ...initial.state,
+        structure: {
+          sessions: [
+            {
+              id: "s",
+              localId: "s",
+              offsetDays: 0,
+              activityPlan: { id: "plan" },
+              demand: { target_common_load: 100, target_duration_minutes: 45 },
+            },
+          ],
+        },
+      },
+      derived: {
+        backendPlanningPreview: {
+          ...initial.derived.backendPlanningPreview,
+          data: {
+            ...initial.derived.backendPlanningPreview.data,
+            sessionResults: [
+              {
+                sourceSessionId: "s",
+                planningDate: "2026-11-04",
+                status: "resolved",
+                manifest: {
+                  resolved_structure: createActivityPlanStructure(),
+                  prescription_estimate: {
+                    common_load: { status: "complete", value: 72 },
+                    duration: { status: "estimated", value_seconds: 2700 },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    };
+    const templateMetrics: ActivityPlanMetric[] = [
+      {
+        key: "common_load",
+        label: "Common Load",
+        status: "available",
+        value: 64,
+        unit: "score",
+        reason: null,
+        provenance: "estimated",
+      },
+    ];
+    const { result, rerender } = await renderHook(() =>
+      useCreationChartController(
+        builder as unknown as ReturnType<typeof useTrainingPlanCreationService>,
+        {},
+        new Map([["plan", templateMetrics]]),
+      ),
+    );
+    expect(result.current.chartProps.dailyPoints[0]?.plannedLoad).toBe(72);
+    expect(result.current.sessionMetricsById.get("s")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "common_load", value: 72, status: "available" }),
+        expect.objectContaining({ key: "elapsed_duration", value: 2700, status: "available" }),
+      ]),
+    );
+    const resolved = builder.derived.backendPlanningPreview.data.sessionResults[0];
+    if (!resolved) throw new Error("Expected fixture resolution");
+    builder.derived.backendPlanningPreview.data = {
+      ...builder.derived.backendPlanningPreview.data,
+      sessionResults: [
+        {
+          ...resolved,
+          manifest: {
+            ...resolved.manifest,
+            prescription_estimate: {
+              ...resolved.manifest.prescription_estimate,
+              common_load: { status: "partial", value: 72 },
+            },
+          },
+        },
+      ],
+    };
+    await rerender({});
+    expect(result.current.chartProps.dailyPoints[0]?.plannedLoad).toBeNull();
+    expect(
+      result.current.sessionMetricsById.get("s")?.find((metric) => metric.key === "common_load"),
+    ).toMatchObject({ value: null, status: "unavailable" });
+    expect(result.current.forecastPartial).toBe(true);
+  });
   it("keeps the authored range future-facing and allows navigating beyond the last session", async () => {
     const builder = makeBuilder();
     const { result } = await renderHook(() =>

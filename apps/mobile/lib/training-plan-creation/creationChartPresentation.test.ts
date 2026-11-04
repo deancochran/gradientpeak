@@ -132,7 +132,7 @@ describe("creation chart Plan-tab adapter", () => {
     draft.demand.target_duration_minutes = 90;
     expect(buildCreationChartPoints({ ...input, sessions: [draft] })[0]?.plannedLoad).toBeNull();
   });
-  it("prefers authoritative resolution and preserves partial quantities", () => {
+  it("does not chart incomplete resolver quantities excluded from the forecast", () => {
     const draft = session(0, 80);
     draft.demand.target_common_load = 100;
     const preview = {
@@ -147,8 +147,8 @@ describe("creation chart Plan-tab adapter", () => {
       ],
     } as unknown as ProjectionPreviewOutput;
     expect(buildCreationChartPoints({ ...input, sessions: [draft], preview })[0]).toMatchObject({
-      plannedLoad: 72,
-      plannedLoadStatus: "partial",
+      plannedLoad: null,
+      plannedLoadStatus: "unavailable",
     });
   });
 });

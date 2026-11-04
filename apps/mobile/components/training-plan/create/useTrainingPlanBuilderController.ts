@@ -2,6 +2,7 @@ import type { ActivityPlanPlanningEstimate, ActivityPlanSummary } from "@repo/co
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert } from "react-native";
+import { resolveMobileActivityPlanEstimateMetrics } from "@/components/activity-plan/resolveMobileActivityPlanEstimateMetrics";
 import type {
   ActivityCategoryFilter,
   ActivityPlanSort,
@@ -208,7 +209,28 @@ export function useTrainingPlanBuilderController({
     [builder.activityPlanItems, builder.linkedActivityPlansQuery.data, retainedActivityPlans],
   );
 
-  const creationChart = useCreationChartController(builder, activityPlansById);
+  const performanceTargets =
+    builder.queries.publishedState.data?.publishedState?.performanceTargets;
+  const metricsByActivityPlanId = useMemo(
+    () =>
+      new Map(
+        Object.values(activityPlansById).map((plan) => [
+          plan.id,
+          resolveMobileActivityPlanEstimateMetrics({
+            structure: plan.structure,
+            persistedMetrics: plan.metrics,
+            ...omitUndefined({ performanceTargets }),
+          }),
+        ]),
+      ),
+    [activityPlansById, performanceTargets],
+  );
+  const creationChart = useCreationChartController(
+    builder,
+    activityPlansById,
+    metricsByActivityPlanId,
+    performanceTargets,
+  );
 
   const addSession = useCallback(() => {
     setActivityPickerReturnsToSession(false);
@@ -405,6 +427,7 @@ export function useTrainingPlanBuilderController({
       searchQuery: activityPlanSearchQuery,
       sort: activityPlanSort,
       plansById: activityPlansById,
+      metricsById: metricsByActivityPlanId,
       applyFiltersDraft: applyActivityFiltersDraft,
       selectPlan: selectActivityPlan,
       setCategoryFilter: setActivityPlanCategoryFilter,
@@ -416,6 +439,7 @@ export function useTrainingPlanBuilderController({
       activityPlanSearchQuery,
       activityPlanSort,
       activityPlansById,
+      metricsByActivityPlanId,
       applyActivityFiltersDraft,
       builder.activityPlanEstimateById,
       selectActivityPlan,

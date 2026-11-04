@@ -57,6 +57,7 @@ const activityTitleSchema = z.object({
 type TrainingPlanBuilderEventCardProps = {
   event: TrainingPlanBuilderSession;
   estimate?: ActivityPlanPlanningEstimate | null;
+  projectionMetrics?: readonly ActivityPlanMetric[] | undefined;
   onDuplicate: () => void;
   onEdit: () => void;
   onMoveByDays: (days: number) => void;
@@ -290,12 +291,25 @@ function ChoicePill({
 export function TrainingPlanBuilderEventCard({
   event,
   estimate,
+  projectionMetrics,
   onDuplicate,
   onEdit,
   onMoveByDays,
   onRemove,
 }: TrainingPlanBuilderEventCardProps) {
-  const headlineMetrics = getBuilderHeadlineMetrics(event, estimate);
+  const headlineMetrics = projectionMetrics
+    ? {
+        duration:
+          projectionMetrics.find((metric) => metric.key === "elapsed_duration") ??
+          unavailableMetric("elapsed_duration", "Duration", "seconds"),
+        load:
+          projectionMetrics.find((metric) => metric.key === "common_load") ??
+          unavailableMetric("common_load", "Common Load", "score"),
+        objectiveIntensity:
+          projectionMetrics.find((metric) => metric.key === "objective_intensity") ??
+          unavailableMetric("objective_intensity", "Intensity", "ratio"),
+      }
+    : getBuilderHeadlineMetrics(event, estimate);
   const meta = getEventMeta(event, headlineMetrics);
   const metrics = getActivityMetrics(headlineMetrics);
   const scheduleLabel = formatBuilderWeekdayWithWeek(event.offsetDays);

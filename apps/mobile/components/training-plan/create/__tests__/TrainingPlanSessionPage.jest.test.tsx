@@ -28,6 +28,38 @@ const session: TrainingPlanBuilderSession = {
 };
 
 describe("TrainingPlanSessionPage", () => {
+  it("shows the current viewer intensity and load instead of the generic summary", async () => {
+    await renderNative(
+      <TrainingPlanSessionPage
+        session={session}
+        activityPlan={plan}
+        onChange={jest.fn()}
+        onChangeActivity={jest.fn()}
+        projectionMetrics={[
+          {
+            key: "common_load",
+            label: "Common Load",
+            status: "available",
+            value: 64,
+            unit: "score",
+            reason: null,
+            provenance: "estimated",
+          },
+          {
+            key: "objective_intensity",
+            label: "Intensity",
+            status: "available",
+            value: 0.8,
+            unit: "ratio",
+            reason: null,
+            provenance: "estimated",
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText("~64")).toBeTruthy();
+    expect(screen.getByText("~0.80")).toBeTruthy();
+  });
   it("shows only canonical available estimates and never rewrites session demand", async () => {
     const onChange = jest.fn();
     const withDuration = createActivityPlanSummary({

@@ -1,4 +1,9 @@
-import { type ActivityPlanSummary, addDaysDateOnlyUtc, diffDateOnlyUtcDays } from "@repo/core";
+import {
+  type ActivityPlanMetric,
+  type ActivityPlanSummary,
+  addDaysDateOnlyUtc,
+  diffDateOnlyUtcDays,
+} from "@repo/core";
 import type { DailyTrainingAdjustmentPoint } from "@/components/plan/training-path/DailyTrainingAdjustmentChart";
 import type { ProjectionPreviewOutput } from "./backend-planning/types";
 import type { TrainingPlanBuilderSession } from "./types";
@@ -10,6 +15,7 @@ export function buildCreationChartPoints(input: {
   windowEnd: string;
   sessions: TrainingPlanBuilderSession[];
   activityPlans: Record<string, ActivityPlanSummary>;
+  metricsById?: ReadonlyMap<string, readonly ActivityPlanMetric[]>;
   preview: ProjectionPreviewOutput | null;
 }): DailyTrainingAdjustmentPoint[] {
   const transitions =
@@ -39,9 +45,11 @@ export function buildCreationChartPoints(input: {
         if (resolution) {
           if (resolution.status !== "resolved") return undefined;
           const load = resolution.manifest.prescription_estimate.common_load;
+          // The authoritative simulation excludes incomplete prescription loads.
+          if (load.status !== "complete") return undefined;
           return {
             value: load.value,
-            status: load.status === "complete" ? "available" : load.status,
+            status: "available",
           };
         }
         // Demand is a resolver target, not an achieved estimate. Never chart it as load.
@@ -51,9 +59,10 @@ export function buildCreationChartPoints(input: {
         )
           return undefined;
         return session.activityPlan
-          ? input.activityPlans[session.activityPlan.id]?.metrics.find(
-              (metric) => metric.key === "common_load",
-            )
+          ? (
+              input.metricsById?.get(session.activityPlan.id) ??
+              input.activityPlans[session.activityPlan.id]?.metrics
+            )?.find((metric) => metric.key === "common_load")
           : undefined;
       });
       const known = metrics.filter((metric) => metric?.value != null);

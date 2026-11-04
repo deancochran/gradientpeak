@@ -30,6 +30,7 @@ it("rejects a week copy at the activity limit without changing the schedule", as
     selection: { setSessionId: jest.fn() },
     sheetStack: { openSheet: jest.fn() },
     chartReview: { selectedWeekIndex: 0 },
+    creationChart: { sessionMetricsById: new Map() },
   } as unknown as TrainingPlanBuilderController;
   try {
     const { result } = await renderHook(() => useScheduleEditorController(controller));

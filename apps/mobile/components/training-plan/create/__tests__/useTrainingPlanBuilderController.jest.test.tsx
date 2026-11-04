@@ -1,3 +1,5 @@
+import type { ActivityPlanSummary, AthletePerformanceTargetFacts } from "@repo/core";
+import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import { act, renderHook } from "@testing-library/react-native";
 import { Alert } from "react-native";
 import type { TrainingPlanBuilderSession } from "@/lib/training-plan-creation/types";
@@ -14,8 +16,15 @@ const mockBuilder = {
     removeSession: jest.fn(),
   },
   activityPlanEstimateById: new Map(),
-  activityPlanItems: [],
+  activityPlanItems: [] as ActivityPlanSummary[],
   linkedActivityPlansQuery: { data: undefined },
+  queries: {
+    publishedState: {
+      data: undefined as
+        | { publishedState: { performanceTargets: AthletePerformanceTargetFacts } }
+        | undefined,
+    },
+  },
   derived: {
     backendPlanningPreview: {
       data: null,
@@ -49,7 +58,7 @@ const mockBuilder = {
   state: {
     scheduling: { startDate: "2026-01-05" },
     selection: { type: "overview" },
-    structure: { sessions: [] },
+    structure: { sessions: [] as TrainingPlanBuilderSession[] },
   },
 };
 
@@ -63,6 +72,94 @@ jest.mock("@/lib/training-plan-creation/useTrainingPlanCreationService", () => (
 }));
 
 describe("useTrainingPlanBuilderController chart selection", () => {
+  it("uses the signed-in athlete facts for picker, session metrics, and immediate schedule load", async () => {
+    const plan = createActivityPlanSummary({
+      activityCategory: "bike",
+      structure: {
+        version: 5,
+        activity_category: "bike",
+        items: [
+          {
+            type: "step",
+            id: "00000000-0000-4000-8000-000000000001",
+            duration: { type: "time", seconds: 3600 },
+            targets: [{ type: "watts", intensity: 200 }],
+          },
+        ],
+      },
+    });
+    const originalMetrics = JSON.stringify(plan.metrics);
+    mockBuilder.activityPlanItems = [plan];
+    mockBuilder.queries.publishedState.data = {
+      publishedState: {
+        performanceTargets: buildPerformanceTargetFactsFixture({
+          asOf: "2026-01-05T00:00:00Z",
+          bikeThresholdWatts: 250,
+        }),
+      },
+    };
+    const session: TrainingPlanBuilderSession = {
+      id: "one",
+      localId: "one",
+      offsetDays: 0,
+      activityPlan: {
+        id: plan.id,
+        name: plan.name,
+        published: true,
+        accessible: true,
+        prescriptionQuantification: null,
+      },
+      demand: {
+        activity_category: "bike",
+        training_intent: "aerobic_base",
+        importance: "normal",
+        target_common_load: null,
+        target_duration_minutes: null,
+      },
+    };
+    mockBuilder.state.structure.sessions = [session];
+    const { result, rerender } = await renderHook(() =>
+      useTrainingPlanBuilderController({ mode: "create" }),
+    );
+    const metric = (key: string) =>
+      result.current.activityPicker.metricsById.get(plan.id)?.find((value) => value.key === key)
+        ?.value;
+    const load = metric("common_load");
+    expect(load).toBeGreaterThan(0);
+    expect(metric("objective_intensity")).toBeGreaterThan(0);
+    expect(result.current.creationChart.chartProps.dailyPoints[0]?.plannedLoad).toBe(load);
+    expect(
+      result.current.creationChart.sessionMetricsById
+        .get("one")
+        ?.find((value) => value.key === "common_load")?.value,
+    ).toBe(load);
+    mockBuilder.activityPlanItems = [];
+    mockBuilder.queries.publishedState.data = {
+      publishedState: {
+        performanceTargets: buildPerformanceTargetFactsFixture({
+          asOf: "2026-01-05T01:00:00Z",
+          bikeThresholdWatts: 500,
+        }),
+      },
+    };
+    await rerender({});
+    expect(metric("common_load")).toBeLessThan(load as number);
+    expect(result.current.creationChart.chartProps.dailyPoints[0]?.plannedLoad).toBe(
+      metric("common_load"),
+    );
+    mockBuilder.state.structure.sessions = [
+      session,
+      { ...session, id: "two", localId: "two", offsetDays: 7 },
+    ];
+    await rerender({});
+    expect(result.current.creationChart.chartProps.dailyPoints[7]?.plannedLoad).toBe(
+      metric("common_load"),
+    );
+    mockBuilder.state.structure.sessions = [];
+    await rerender({});
+    expect(result.current.creationChart.chartProps.dailyPoints[0]?.plannedLoad).toBe(0);
+    expect(JSON.stringify(plan.metrics)).toBe(originalMetrics);
+  });
   it("changes category from the prescription without replacing saved demand or schedule overrides", async () => {
     const existing: TrainingPlanBuilderSession = {
       id: "session-one",
@@ -103,6 +200,9 @@ describe("useTrainingPlanBuilderController chart selection", () => {
   });
   beforeEach(() => {
     jest.clearAllMocks();
+    mockBuilder.activityPlanItems = [];
+    mockBuilder.state.structure.sessions = [];
+    mockBuilder.queries.publishedState.data = undefined;
   });
 
   it("keeps an immediately selected in-week date even when daily data is temporarily sparse", async () => {

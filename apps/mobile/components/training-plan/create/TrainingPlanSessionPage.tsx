@@ -1,4 +1,4 @@
-import type { ActivityPlanSummary as ActivityPlan } from "@repo/core";
+import type { ActivityPlanSummary as ActivityPlan, ActivityPlanMetric } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Form, FormTextField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
@@ -17,11 +17,13 @@ const titleSchema = z.object({ title: z.string() });
 export function TrainingPlanSessionPage({
   session,
   activityPlan,
+  projectionMetrics,
   onChange,
   onChangeActivity,
 }: {
   session: TrainingPlanBuilderSession;
   activityPlan: ActivityPlan | null;
+  projectionMetrics?: readonly ActivityPlanMetric[] | undefined;
   onChange: (session: TrainingPlanBuilderSession) => void;
   onChangeActivity: (sessionId: string) => void;
 }) {
@@ -48,7 +50,7 @@ export function TrainingPlanSessionPage({
   }, [title, session.eventOverrides?.title, updateOverride]);
   const week = Math.floor(session.offsetDays / 7);
   const day = session.offsetDays % 7;
-  const metrics = activityPlan?.metrics;
+  const metrics = projectionMetrics ?? activityPlan?.metrics;
   const hasEstimates = metrics?.some((metric) => metric.status === "available") ?? false;
 
   return (
