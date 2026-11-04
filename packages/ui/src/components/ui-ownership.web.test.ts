@@ -94,6 +94,8 @@ describe("UI ownership guardrails", () => {
       "coaching/coach-shell.tsx",
       // Recipient-bound response and group roster workflows own web server-function recovery state.
       "coaching/invitation-response/invitation-response.tsx",
+      // Administrative assignment orchestration binds actor/organization state and command receipts.
+      "coaching/organization-coaching-assignments/organization-coaching-assignments.tsx",
       // Web-only organization creation and API-backed administrative composition.
       "coaching/organization-create-form.tsx",
       "coaching/organization-group-athletes/organization-group-athletes.tsx",

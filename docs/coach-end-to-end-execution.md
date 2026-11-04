@@ -56,8 +56,18 @@ is live in preview at `8dff4239e6f38a8a09172f8566f218336f543368` with locked
 ancestry checks, six focused tests and healthy web/login probes. Coordinator ran
 the wired fresh-disposable DB test independently and on this combined branch;
 both passed, as did API typecheck. Independent recheck closed all three findings.
-This is API delivery only: athlete-roster assignment controls are being implemented
-in isolated `feat/coaching-assignment-web` based on that exact checkpoint.
+Athlete-roster assignment controls are now live from isolated
+`feat/coaching-assignment-web`, checkpoint `4f4bfd6e03a553d7109d55ba96977e7140295427`,
+preview `36007c50af29727a14d3ade415105dd115ba7a39`. Review exposed and repairs covered
+parent access-loss redaction, actor/tenant fencing, exact-retry preservation,
+candidate pagination races and mutually exclusive pending administrative workflows.
+Final focused suite: 26 tests and typecheck passed. Disposable desktop/mobile
+assign/end journey `acceptance-1045551-1793812819118` passed 2/2 with ended history
+and no consent rows. The final mutual-exclusion addition passed roster regressions;
+combined acceptance `acceptance-1056796-1793813035775` passed all eight desktop/mobile
+invitation and assignment browser cases on the combined branch. Web typecheck and
+three ownership checks also passed.
+Locked ancestry, integrated 26 tests, web health and login probes passed.
 
 Invitation links are committed through
 `c0f3b9c009c91faa6ca90f8ba7d61b5ec749fe1c` and merged into this branch at
@@ -75,7 +85,13 @@ the retry used tool-managed output, without changing permissions. No real email
 delivery or telemetry transport activation occurred. Runtime SDK event/replay
 payload redaction remains unproven beyond static and unit safeguards.
 
-Publication of these new checkpoints remains outstanding. No complete coaching
+Publication of these new checkpoints remains outstanding. Two normal push attempts
+stopped at architecture and optional-property strictness checks respectively.
+Removed an unused repository type alias, omitted absent optional inbox properties,
+and reconciled exact app-owned component inventory entries without weakening gates.
+Architecture now has zero new violations; strictness has zero added diagnostics;
+ownership tests passed before adding the new assignment composition inventory entry.
+No complete coaching
 journey is accepted yet. Prior staff and auth browser evidence applies to
 their recorded feature checkpoints, not automatically to this combined branch.
 The reported authenticated iPhone Safari black screen remains unconfirmed as fixed.
