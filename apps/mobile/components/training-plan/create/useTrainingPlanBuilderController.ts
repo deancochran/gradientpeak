@@ -13,6 +13,7 @@ import { omitUndefined } from "@/lib/omitUndefined";
 import { diffDateOnlyDays } from "@/lib/training-plan-creation/date-utils";
 import type { TrainingPlanActivityPlanFacts } from "@/lib/training-plan-creation/types";
 import { useTrainingPlanCreationService } from "@/lib/training-plan-creation/useTrainingPlanCreationService";
+import { useCreationChartController } from "./useCreationChartController";
 
 type ActivityPlanListItem = ActivityPlanSummary;
 
@@ -181,15 +182,33 @@ export function useTrainingPlanBuilderController({
     if (chartReview.chart.weeks.some((week) => week.weekStart === selectedWeekStart)) return;
     setSelectedWeekStart(chartReview.chart.weeks[0]?.weekStart ?? null);
   }, [chartReview.chart.weeks, selectedWeekStart]);
+  const [retainedActivityPlans, setRetainedActivityPlans] = useState<
+    Record<string, ActivityPlanSummary>
+  >({});
+  useEffect(() => {
+    const items = [
+      ...(builder.linkedActivityPlansQuery.data?.items ?? []),
+      ...builder.activityPlanItems,
+    ];
+    if (items.length === 0) return;
+    setRetainedActivityPlans((current) => {
+      if (items.every((item) => current[item.id] === item)) return current;
+      return { ...current, ...Object.fromEntries(items.map((item) => [item.id, item])) };
+    });
+  }, [builder.activityPlanItems, builder.linkedActivityPlansQuery.data]);
   const activityPlansById = useMemo(
-    () =>
-      Object.fromEntries(
+    () => ({
+      ...retainedActivityPlans,
+      ...Object.fromEntries(
         [...(builder.linkedActivityPlansQuery.data?.items ?? []), ...builder.activityPlanItems].map(
           (activityPlan) => [activityPlan.id, activityPlan] as const,
         ),
       ),
-    [builder.activityPlanItems, builder.linkedActivityPlansQuery.data],
+    }),
+    [builder.activityPlanItems, builder.linkedActivityPlansQuery.data, retainedActivityPlans],
   );
+
+  const creationChart = useCreationChartController(builder, activityPlansById);
 
   const addSession = useCallback(() => {
     setActivityPickerReturnsToSession(false);
@@ -453,6 +472,7 @@ export function useTrainingPlanBuilderController({
     activityPicker,
     builder,
     chartReview,
+    creationChart,
     header,
     isSaving,
     mode,

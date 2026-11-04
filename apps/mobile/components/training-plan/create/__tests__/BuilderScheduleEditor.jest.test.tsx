@@ -6,6 +6,11 @@ import { BuilderScheduleEditor } from "../BuilderScheduleEditor";
 
 let mockScrollViewCount = 0;
 
+jest.mock("@/components/plan/training-path/PlanTrainingChart", () => ({
+  PlanTrainingChart: (props: HostProps) =>
+    React.createElement("View", { ...props, testID: "shared-plan-chart" }),
+}));
+
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
@@ -135,6 +140,36 @@ const renderEditor = async (
 };
 
 describe("BuilderScheduleEditor selected day planning", () => {
+  it("uses shared Plan chart selection for the activity and copy actions", async () => {
+    const selectDate = jest.fn();
+    const props = await renderEditor(0, {
+      creationChart: {
+        selectedDate: "2026-02-18",
+        selectedDayOffset: 16,
+        selectDate,
+        forecastAvailable: false,
+        chartProps: {
+          dailyPoints: [
+            { date: "2026-02-18", plannedLoad: null, plannedLoadStatus: "unavailable" },
+          ],
+        },
+      },
+      onCopyWeek: jest.fn(),
+      viewModel: {
+        timelineWeeks: [
+          { weekIndex: 2, sessions: [{ session: { localId: "s", offsetDays: 16 } }] },
+        ],
+      },
+    } as unknown as Partial<React.ComponentProps<typeof BuilderScheduleEditor>>);
+    expect(screen.getByTestId("shared-plan-chart")).toBeTruthy();
+    expect(screen.getByTestId("mock-event-card")).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
+    expect(props.onAddSessionAtOffset).toHaveBeenCalledWith(16);
+    await fireEvent.press(screen.getByTestId("builder-copy-week"));
+    expect(props.onCopyWeek).toHaveBeenCalledWith(2, 3);
+    await fireEvent.press(screen.getByLabelText("Next schedule day"));
+    expect(selectDate).toHaveBeenCalledWith("2026-02-19");
+  });
   it("returns to the newly scheduled week instead of hiding it on week one", async () => {
     await renderEditor(0, { scheduleOnly: true, focusOffsetDays: 15 });
     expect(screen.getByText("Week 3")).toBeTruthy();

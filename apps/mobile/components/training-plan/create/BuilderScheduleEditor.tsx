@@ -5,12 +5,14 @@ import { Plus } from "lucide-react-native";
 import { useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
 import type { DailyTrainingAdjustmentPoint } from "@/components/plan/training-path/DailyTrainingAdjustmentChart";
+import { PlanTrainingChart } from "@/components/plan/training-path/PlanTrainingChart";
 import { TrainingPathSelectedDayPanel } from "@/components/plan/training-path/TrainingPathSelectedDayPanel";
 import { buildTrainingPathLoadMetrics } from "@/components/plan/training-path/trainingPathLoadMetrics";
 import { BuilderTrainingPathReviewSection } from "@/components/training-plan/create/BuilderTrainingPathReviewSection";
 import { TrainingPlanBuilderEventCard } from "@/components/training-plan/create/TrainingPlanBuilderEventCard";
 import type { TrainingPlanBuilderController } from "@/components/training-plan/create/useTrainingPlanBuilderController";
 import type { BuilderPlanPresentation } from "@/lib/training-plan-creation/builder-presentation";
+import { addDaysToDateKey } from "@/lib/training-plan-creation/date-utils";
 import { formatBuilderWeekdayWithWeek } from "@/lib/training-plan-creation/formatters";
 
 type BuilderScheduleEditorProps = {
@@ -28,6 +30,7 @@ type BuilderScheduleEditorProps = {
   scheduleOnly?: boolean;
   focusOffsetDays?: number;
   weekSummary?: string;
+  creationChart?: TrainingPlanBuilderController["creationChart"] | undefined;
 };
 
 type BuilderSelectedDayPlanningPanelProps = {
@@ -58,6 +61,7 @@ export function BuilderScheduleEditor({
   estimateBySessionId,
   viewModel,
   weekSummary,
+  creationChart,
 }: BuilderScheduleEditorProps) {
   const [scheduleWeekIndex, setScheduleWeekIndex] = useState(
     Math.floor((focusOffsetDays ?? 0) / 7),
@@ -66,13 +70,16 @@ export function BuilderScheduleEditor({
     if (focusOffsetDays !== undefined) setScheduleWeekIndex(Math.floor(focusOffsetDays / 7));
   }, [focusOffsetDays]);
   const lastScheduleWeek = Math.max(0, ...viewModel.timelineWeeks.map((week) => week.weekIndex));
-  const selectedWeekIndex = scheduleOnly
-    ? Math.min(scheduleWeekIndex, lastScheduleWeek)
-    : chartReview.selectedWeekIndex;
+  const selectedWeekIndex = creationChart
+    ? Math.floor(creationChart.selectedDayOffset / 7)
+    : scheduleOnly
+      ? Math.min(scheduleWeekIndex, lastScheduleWeek)
+      : chartReview.selectedWeekIndex;
   const selectedTimelineWeek =
     viewModel.timelineWeeks.find((week) => week.weekIndex === selectedWeekIndex) ?? null;
   const activeWeekStartOffset = selectedWeekIndex * 7;
-  const selectedDayOffset = chartReview.selectedDayOffset ?? activeWeekStartOffset;
+  const selectedDayOffset =
+    creationChart?.selectedDayOffset ?? chartReview.selectedDayOffset ?? activeWeekStartOffset;
   const selectedDaySessions = useMemo(
     () =>
       (selectedTimelineWeek?.sessions ?? []).filter(
@@ -98,6 +105,60 @@ export function BuilderScheduleEditor({
       sessions={selectedDaySessions}
     />
   );
+
+  if (creationChart) {
+    const point =
+      creationChart.chartProps.dailyPoints.find(
+        (entry) => entry.date === creationChart.selectedDate,
+      ) ?? null;
+    return (
+      <View className="gap-4" testID="builder-sessions-workspace">
+        <Text className="text-lg font-semibold">Schedule & trajectory</Text>
+        <PlanTrainingChart {...creationChart.chartProps} />
+        <Text className="text-xs text-muted-foreground">
+          {creationChart.forecastAvailable
+            ? creationChart.forecastPartial
+              ? "Partial forecast: unresolved activities are excluded from the trajectory. Missing load estimates remain unknown."
+              : "Projected trajectory uses your current plan check. Missing activity estimates remain unknown."
+            : "Your authored schedule is shown now. A current plan check is needed for the projected trajectory."}
+        </Text>
+        <View className="flex-row items-center justify-between">
+          <Button
+            variant="ghost"
+            size="sm"
+            accessibilityLabel="Previous schedule day"
+            disabled={selectedDayOffset === 0}
+            onPress={() =>
+              creationChart.selectDate(addDaysToDateKey(creationChart.selectedDate, -1))
+            }
+          >
+            <Text>Previous day</Text>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            accessibilityLabel="Next schedule day"
+            onPress={() =>
+              creationChart.selectDate(addDaysToDateKey(creationChart.selectedDate, 1))
+            }
+          >
+            <Text>Next day</Text>
+          </Button>
+        </View>
+        {renderSelectedDayPanel(point)}
+        <Button
+          variant="outline"
+          testID="builder-copy-week"
+          disabled={!selectedTimelineWeek?.sessions.length}
+          onPress={() => onCopyWeek(selectedWeekIndex, selectedWeekIndex + 1)}
+        >
+          <Text>
+            Copy week {selectedWeekIndex + 1} to week {selectedWeekIndex + 2}
+          </Text>
+        </Button>
+      </View>
+    );
+  }
 
   if (scheduleOnly) {
     const previousWeek = selectedWeekIndex > 0;

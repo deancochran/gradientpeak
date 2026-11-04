@@ -723,7 +723,11 @@ describe("TrainingPlanBuilderScreen", () => {
   });
 
   it("single-flights a delayed preview but permits exit and fences its late result", async () => {
-    mockAuthoritativePreviewData = { status: "available", simulation: authoritativeSimulation };
+    mockAuthoritativePreviewData = {
+      status: "available",
+      simulation: authoritativeSimulation,
+      sessionResults: [],
+    };
     let resolvePreview!: (value: object) => void;
     mockCommitPreview.mockReturnValueOnce(
       new Promise((resolve) => {
@@ -763,7 +767,11 @@ describe("TrainingPlanBuilderScreen", () => {
   });
 
   it("keeps the hydrated edit revision when refreshed server data advances", async () => {
-    mockAuthoritativePreviewData = { status: "available", simulation: authoritativeSimulation };
+    mockAuthoritativePreviewData = {
+      status: "available",
+      simulation: authoritativeSimulation,
+      sessionResults: [],
+    };
     mockMutations.update.mockResolvedValue({ status: "stale", reason: "plan_revision" });
     const view = await renderNative(
       <TrainingPlanBuilderScreen mode="edit" planId={editableTrainingPlan.id} />,
@@ -1173,7 +1181,11 @@ describe("TrainingPlanBuilderScreen", () => {
   });
 
   it("cancels an unassigned activity picker draft before closing the full-screen picker", async () => {
-    mockAuthoritativePreviewData = { status: "available", simulation: authoritativeSimulation };
+    mockAuthoritativePreviewData = {
+      status: "available",
+      simulation: authoritativeSimulation,
+      sessionResults: [],
+    };
     await renderNative(<TrainingPlanBuilderScreen />);
 
     await fireEvent.press(screen.getByTestId("builder-add-activity"));
@@ -1288,7 +1300,11 @@ describe("TrainingPlanBuilderScreen", () => {
   });
 
   it("keeps duplicate actions on the schedule and opens the simple scheduling page", async () => {
-    mockAuthoritativePreviewData = { status: "available", simulation: authoritativeSimulation };
+    mockAuthoritativePreviewData = {
+      status: "available",
+      simulation: authoritativeSimulation,
+      sessionResults: [],
+    };
     await renderNative(<TrainingPlanBuilderScreen mode="edit" planId={editableTrainingPlan.id} />);
     await fireEvent.press(screen.getByTestId("duplicate-33333333-3333-4333-8333-333333333333"));
     expect(screen.getByTestId("builder-session-screen")).toBeTruthy();
@@ -1316,6 +1332,7 @@ describe("TrainingPlanBuilderScreen", () => {
     mockAuthoritativePreviewData = {
       status: "available",
       simulation: authoritativeSimulation,
+      sessionResults: [],
     };
     await renderNative(<TrainingPlanBuilderScreen />);
 
@@ -1396,7 +1413,11 @@ describe("TrainingPlanBuilderScreen", () => {
   });
 
   it("retains inline details and sessions after a failed create and allows retry", async () => {
-    mockAuthoritativePreviewData = { status: "available", simulation: authoritativeSimulation };
+    mockAuthoritativePreviewData = {
+      status: "available",
+      simulation: authoritativeSimulation,
+      sessionResults: [],
+    };
     mockMutations.create.mockRejectedValueOnce(new Error("Connection interrupted"));
     const alert = jest.spyOn(Alert, "alert");
     await renderNative(<TrainingPlanBuilderScreen />);
@@ -1439,7 +1460,11 @@ describe("TrainingPlanBuilderScreen", () => {
   });
 
   it("hydrates edit mode into the new builder save flow", async () => {
-    mockAuthoritativePreviewData = { status: "available", simulation: authoritativeSimulation };
+    mockAuthoritativePreviewData = {
+      status: "available",
+      simulation: authoritativeSimulation,
+      sessionResults: [],
+    };
     await renderNative(
       <TrainingPlanBuilderScreen mode="edit" planId="22222222-2222-4222-8222-222222222222" />,
     );

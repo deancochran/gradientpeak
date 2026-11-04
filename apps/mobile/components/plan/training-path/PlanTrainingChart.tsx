@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, SlidersHorizontal } from "lucide-react-nativ
 import { useMemo, useState } from "react";
 import { ActivityIndicator, TouchableOpacity, View } from "react-native";
 import { ChartRangeModal } from "@/components/charts/ChartRangeModal";
+import { omitUndefined } from "@/lib/omitUndefined";
 import {
   DailyTrainingAdjustmentChart,
   type DailyTrainingAdjustmentPoint,
@@ -56,6 +57,7 @@ export type PlanTrainingChartProps = {
   previousDisabled?: boolean;
   initialVisibleTrends?: readonly PlanTrainingTrendLine[];
   weekAnchorDate?: string;
+  todayLabel?: string;
 };
 
 /** Shared Plan-tab chart surface; callers retain data loading and selected-day details. */
@@ -79,6 +81,7 @@ export function PlanTrainingChart({
   resetLabel = "Today",
   selectedDate,
   todayKey,
+  todayLabel,
   weekAnchorDate,
 }: PlanTrainingChartProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -159,12 +162,11 @@ export function PlanTrainingChart({
         <DailyTrainingAdjustmentChart
           density="compact"
           fitRange
-          formatDateLabel={formatDateLabel}
+          {...omitUndefined({ formatDateLabel, onGoalPress })}
           goalMarkers={goalMarkers}
           height={250}
           key={`${analysisPeriod}:${analysisAnchor}:${binning}`}
           loadOnly
-          onGoalPress={onGoalPress}
           onSelectedDateChange={onSelectedDateChange}
           points={chartPoints}
           primaryGoalId={primaryGoalId}
@@ -173,7 +175,9 @@ export function PlanTrainingChart({
           showSelectedTray={false}
           testID="plan-training-chart"
           todayDate={todayKey}
+          todayLabel={todayLabel}
           visibleTrends={visibleTrends}
+          weekAnchorDate={weekAnchorDate}
         />
       )}
       <ChartRangeModal

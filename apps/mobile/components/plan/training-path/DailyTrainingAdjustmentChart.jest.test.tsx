@@ -895,6 +895,29 @@ describe("DailyTrainingAdjustmentChart", () => {
     expect(screen.queryByTestId("daily-training-adjustment-chart-goals-before")).toBeNull();
   });
 
+  it("groups start and goal markers using a midweek draft anchor", async () => {
+    await render(
+      <DailyTrainingAdjustmentChart
+        goalMarkers={[{ id: "goal", label: "Week goal", priority: 1, targetDate: "2026-06-08" }]}
+        loadOnly
+        onGoalPress={jest.fn()}
+        points={[{ date: "2026-06-03", effectiveRemainingLoad: 20 }]}
+        range="weekly"
+        weekAnchorDate="2026-06-03"
+        todayDate="2026-06-08"
+      />,
+    );
+    expect(
+      screen.container.queryAll(
+        (node) => node.props.testID === "daily-training-adjustment-chart-today-boundary",
+      )[0],
+    ).toBeTruthy();
+    expect(
+      screen.getByTestId("daily-training-adjustment-chart-goal-marker-2026-06-03"),
+    ).toBeTruthy();
+    expect(screen.queryByTestId("daily-training-adjustment-chart-goals-after")).toBeNull();
+  });
+
   it("renders only the requested optional trend lines alongside Load", async () => {
     await render(
       <DailyTrainingAdjustmentChart

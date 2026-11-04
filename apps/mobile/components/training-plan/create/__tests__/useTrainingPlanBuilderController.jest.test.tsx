@@ -17,6 +17,13 @@ const mockBuilder = {
   activityPlanItems: [],
   linkedActivityPlansQuery: { data: undefined },
   derived: {
+    backendPlanningPreview: {
+      data: null,
+      isEnabled: false,
+      isFetching: false,
+      isStaleInput: false,
+      error: null,
+    },
     projection: {
       chart: {
         dailyPoints: [{ date: "2026-01-05" }],
@@ -39,7 +46,11 @@ const mockBuilder = {
     },
     summary: { durationDays: 7, sessionCount: 1 },
   },
-  state: { scheduling: { startDate: "2026-01-05" } },
+  state: {
+    scheduling: { startDate: "2026-01-05" },
+    selection: { type: "overview" },
+    structure: { sessions: [] },
+  },
 };
 
 jest.mock("expo-router", () => ({ useRouter: () => ({ replace: jest.fn() }) }));
