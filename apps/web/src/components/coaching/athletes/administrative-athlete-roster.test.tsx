@@ -10,6 +10,13 @@ vi.mock("../../../lib/coaching/athletes-server-functions", () => ({
   loadAdministrativeAthleteRoster: mocks.load,
   terminateAthleteEngagement: mocks.end,
 }));
+vi.mock("../organization-coaching-assignments/organization-coaching-assignments", () => ({
+  OrganizationCoachingAssignments: ({ onAccessLost }: { onAccessLost: () => void }) => (
+    <button type="button" onClick={onAccessLost}>
+      Lose coaching responsibility access
+    </button>
+  ),
+}));
 
 import { AdministrativeAthleteRoster } from "./administrative-athlete-roster";
 
@@ -88,8 +95,33 @@ describe("AdministrativeAthleteRoster", () => {
     vi.unstubAllGlobals();
   });
 
+  it("keeps engagement termination and responsibility management mutually exclusive", () => {
+    render(
+      <AdministrativeAthleteRoster
+        actorProfileId="profile-1"
+        initialPage={page}
+        organizationId={organizationId}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "End engagement" }));
+    expect(screen.getByRole("button", { name: "Confirm end engagement" })).toBeTruthy();
+    const manage = screen.getByRole("button", { name: "Manage coaches" });
+    expect((manage as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(manage);
+    expect(
+      screen.queryByRole("button", { name: "Lose coaching responsibility access" }),
+    ).toBeNull();
+    expect(mocks.end).not.toHaveBeenCalled();
+  });
+
   it("shows identity and paused status without private training data, and pages by cursor", async () => {
-    render(<AdministrativeAthleteRoster initialPage={page} organizationId={organizationId} />);
+    render(
+      <AdministrativeAthleteRoster
+        actorProfileId="profile-1"
+        initialPage={page}
+        organizationId={organizationId}
+      />,
+    );
     expect(screen.getByRole("list", { name: "Athletes" }).textContent).toContain("Alex Athlete");
     expect(screen.getByText("paused")).toBeTruthy();
     expect(screen.getByText(/does not provide access to private athlete training/)).toBeTruthy();
@@ -105,7 +137,13 @@ describe("AdministrativeAthleteRoster", () => {
     mocks.end
       .mockRejectedValueOnce(new Error("network uncertain"))
       .mockResolvedValueOnce({ status: "ended", engagementId });
-    render(<AdministrativeAthleteRoster initialPage={page} organizationId={organizationId} />);
+    render(
+      <AdministrativeAthleteRoster
+        actorProfileId="profile-1"
+        initialPage={page}
+        organizationId={organizationId}
+      />,
+    );
     fireEvent.click(screen.getByRole("button", { name: "End engagement" }));
     fireEvent.click(screen.getByRole("button", { name: "Confirm end engagement" }));
     expect(await screen.findByText("Confirm that you want to end this engagement.")).toBeTruthy();
@@ -124,7 +162,13 @@ describe("AdministrativeAthleteRoster", () => {
   it("allows only one immediate submit while a termination request is pending", async () => {
     const pendingEnd = deferred<{ status: "ended"; engagementId: string }>();
     mocks.end.mockReturnValueOnce(pendingEnd.promise);
-    render(<AdministrativeAthleteRoster initialPage={page} organizationId={organizationId} />);
+    render(
+      <AdministrativeAthleteRoster
+        actorProfileId="profile-1"
+        initialPage={page}
+        organizationId={organizationId}
+      />,
+    );
     fireEvent.click(screen.getByRole("button", { name: "End engagement" }));
     fireEvent.click(screen.getByRole("checkbox"));
     const form = screen.getByRole("button", { name: "Confirm end engagement" }).closest("form");
@@ -141,7 +185,11 @@ describe("AdministrativeAthleteRoster", () => {
     const pendingEnd = deferred<{ status: "ended"; engagementId: string }>();
     mocks.end.mockReturnValueOnce(pendingEnd.promise);
     render(
-      <AdministrativeAthleteRoster initialPage={twoAthletePage} organizationId={organizationId} />,
+      <AdministrativeAthleteRoster
+        actorProfileId="profile-1"
+        initialPage={twoAthletePage}
+        organizationId={organizationId}
+      />,
     );
     const [firstRowAction, secondRowAction] = screen.getAllByRole("button", {
       name: "End engagement",
@@ -159,21 +207,70 @@ describe("AdministrativeAthleteRoster", () => {
 
   it("removes stale roster data when current tenant access is lost", async () => {
     mocks.load.mockResolvedValue({ status: "forbidden" });
-    render(<AdministrativeAthleteRoster initialPage={page} organizationId={organizationId} />);
+    render(
+      <AdministrativeAthleteRoster
+        actorProfileId="profile-1"
+        initialPage={page}
+        organizationId={organizationId}
+      />,
+    );
     fireEvent.click(screen.getByRole("button", { name: "Load more athletes" }));
     expect(await screen.findByText("Coaching access required")).toBeTruthy();
     expect(screen.queryByText("Alex Athlete")).toBeNull();
+  });
+
+  it("redacts the entire roster when responsibility management loses access", () => {
+    render(
+      <AdministrativeAthleteRoster
+        actorProfileId="profile-1"
+        initialPage={page}
+        organizationId={organizationId}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Manage coaches" }));
+    fireEvent.click(screen.getByRole("button", { name: "Lose coaching responsibility access" }));
+    expect(screen.getByText("Coaching access required")).toBeTruthy();
+    expect(screen.queryByText("Alex Athlete")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Manage coaches" })).toBeNull();
+  });
+
+  it("immediately redacts the prior actor and organization roster on identity scope replacement", () => {
+    const view = render(
+      <AdministrativeAthleteRoster
+        actorProfileId="profile-1"
+        initialPage={page}
+        organizationId={organizationId}
+      />,
+    );
+    view.rerender(
+      <AdministrativeAthleteRoster
+        actorProfileId="profile-2"
+        initialPage={otherPage}
+        organizationId={otherOrganizationId}
+      />,
+    );
+    expect(screen.getByText("Blair Athlete")).toBeTruthy();
+    expect(screen.queryByText("Alex Athlete")).toBeNull();
+    expect(screen.queryByText("End engagement with Alex Athlete")).toBeNull();
   });
 
   it("does not retain identities or apply a pending old-organization page after an organization change", async () => {
     const oldLoad = deferred<RosterResponse>();
     mocks.load.mockReturnValueOnce(oldLoad.promise);
     const view = render(
-      <AdministrativeAthleteRoster initialPage={page} organizationId={organizationId} />,
+      <AdministrativeAthleteRoster
+        actorProfileId="profile-1"
+        initialPage={page}
+        organizationId={organizationId}
+      />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Load more athletes" }));
     view.rerender(
-      <AdministrativeAthleteRoster initialPage={otherPage} organizationId={otherOrganizationId} />,
+      <AdministrativeAthleteRoster
+        actorProfileId="profile-2"
+        initialPage={otherPage}
+        organizationId={otherOrganizationId}
+      />,
     );
     await waitFor(() => expect(screen.getByText("Blair Athlete")).toBeTruthy());
     expect(screen.queryByText("Alex Athlete")).toBeNull();
@@ -185,11 +282,19 @@ describe("AdministrativeAthleteRoster", () => {
     const oldLoad = deferred<RosterResponse>();
     mocks.load.mockReturnValueOnce(oldLoad.promise);
     const view = render(
-      <AdministrativeAthleteRoster initialPage={page} organizationId={organizationId} />,
+      <AdministrativeAthleteRoster
+        actorProfileId="profile-1"
+        initialPage={page}
+        organizationId={organizationId}
+      />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Load more athletes" }));
     view.rerender(
-      <AdministrativeAthleteRoster initialPage={otherPage} organizationId={organizationId} />,
+      <AdministrativeAthleteRoster
+        actorProfileId="profile-1"
+        initialPage={otherPage}
+        organizationId={organizationId}
+      />,
     );
     await waitFor(() => expect(screen.getByText("Blair Athlete")).toBeTruthy());
     oldLoad.resolve({ status: "granted", ...page });
@@ -199,7 +304,13 @@ describe("AdministrativeAthleteRoster", () => {
 
   it("keeps a committed termination visible when its refresh fails, without repeating the operation", async () => {
     mocks.load.mockRejectedValueOnce(new Error("refresh unavailable"));
-    render(<AdministrativeAthleteRoster initialPage={page} organizationId={organizationId} />);
+    render(
+      <AdministrativeAthleteRoster
+        actorProfileId="profile-1"
+        initialPage={page}
+        organizationId={organizationId}
+      />,
+    );
     fireEvent.click(screen.getByRole("button", { name: "End engagement" }));
     fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: "Confirm end engagement" }));
@@ -215,7 +326,11 @@ describe("AdministrativeAthleteRoster", () => {
     mocks.end.mockReturnValueOnce(pendingEnd.promise);
     mocks.load.mockReturnValueOnce(postCommandRefresh.promise);
     const view = render(
-      <AdministrativeAthleteRoster initialPage={page} organizationId={organizationId} />,
+      <AdministrativeAthleteRoster
+        actorProfileId="profile-1"
+        initialPage={page}
+        organizationId={organizationId}
+      />,
     );
     fireEvent.click(screen.getByRole("button", { name: "End engagement" }));
     fireEvent.click(screen.getByRole("checkbox"));
@@ -227,6 +342,7 @@ describe("AdministrativeAthleteRoster", () => {
 
     view.rerender(
       <AdministrativeAthleteRoster
+        actorProfileId="profile-1"
         initialPage={{ ...page, items: [...page.items] }}
         organizationId={organizationId}
       />,
@@ -252,7 +368,11 @@ describe("AdministrativeAthleteRoster", () => {
       })
       .mockReturnValueOnce(ordinaryPagination.promise);
     const view = render(
-      <AdministrativeAthleteRoster initialPage={page} organizationId={organizationId} />,
+      <AdministrativeAthleteRoster
+        actorProfileId="profile-1"
+        initialPage={page}
+        organizationId={organizationId}
+      />,
     );
     fireEvent.click(screen.getByRole("button", { name: "End engagement" }));
     fireEvent.click(screen.getByRole("checkbox"));
@@ -265,7 +385,11 @@ describe("AdministrativeAthleteRoster", () => {
     await waitFor(() => expect(mocks.load).toHaveBeenCalledTimes(2));
 
     view.rerender(
-      <AdministrativeAthleteRoster initialPage={otherPage} organizationId={organizationId} />,
+      <AdministrativeAthleteRoster
+        actorProfileId="profile-1"
+        initialPage={otherPage}
+        organizationId={organizationId}
+      />,
     );
     expect(await screen.findByText("Blair Athlete")).toBeTruthy();
     ordinaryPagination.resolve({ status: "granted", ...page });
@@ -278,7 +402,13 @@ describe("AdministrativeAthleteRoster", () => {
     const oldPage = deferred<RosterResponse>();
     const refresh = deferred<RosterResponse>();
     mocks.load.mockReturnValueOnce(oldPage.promise).mockReturnValueOnce(refresh.promise);
-    render(<AdministrativeAthleteRoster initialPage={page} organizationId={organizationId} />);
+    render(
+      <AdministrativeAthleteRoster
+        actorProfileId="profile-1"
+        initialPage={page}
+        organizationId={organizationId}
+      />,
+    );
     fireEvent.click(screen.getByRole("button", { name: "Load more athletes" }));
     fireEvent.click(screen.getByRole("button", { name: "End engagement" }));
     fireEvent.click(screen.getByRole("checkbox"));
@@ -296,14 +426,22 @@ describe("AdministrativeAthleteRoster", () => {
     mocks.load.mockReturnValueOnce(oldLoad.promise);
     mocks.end.mockReturnValueOnce(oldEnd.promise);
     const view = render(
-      <AdministrativeAthleteRoster initialPage={page} organizationId={organizationId} />,
+      <AdministrativeAthleteRoster
+        actorProfileId="profile-1"
+        initialPage={page}
+        organizationId={organizationId}
+      />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Load more athletes" }));
     fireEvent.click(screen.getByRole("button", { name: "End engagement" }));
     fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: "Confirm end engagement" }));
     view.rerender(
-      <AdministrativeAthleteRoster initialPage={otherPage} organizationId={otherOrganizationId} />,
+      <AdministrativeAthleteRoster
+        actorProfileId="profile-2"
+        initialPage={otherPage}
+        organizationId={otherOrganizationId}
+      />,
     );
     await waitFor(() => expect(screen.getByText("Blair Athlete")).toBeTruthy());
     oldEnd.resolve({ status: "ended", engagementId });

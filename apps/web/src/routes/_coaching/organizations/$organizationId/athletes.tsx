@@ -14,11 +14,12 @@ export const Route = createFileRoute("/_coaching/organizations/$organizationId/a
 function AthleteRosterPage() {
   const roster = Route.useLoaderData();
   const { organizationId } = Route.useParams();
+  const { actorProfileId } = Route.useRouteContext();
   if (roster.status === "forbidden") return <CoachAccessDenied />;
   return (
     <AdministrativeAthleteRoster
       initialPage={roster}
-      key={organizationId}
+      actorProfileId={actorProfileId}
       organizationId={organizationId}
     />
   );
