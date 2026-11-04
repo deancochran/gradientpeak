@@ -1,10 +1,11 @@
 import React from "react";
-import { fireEvent, renderNative, screen, waitFor } from "../../../test/render-native";
+import { act, fireEvent, renderNative, screen, waitFor } from "../../../test/render-native";
 
 const replaceMock = jest.fn();
 const signUpMock = jest.fn();
 const refreshMobileAuthSessionMock = jest.fn();
 const refreshStoreSessionMock = jest.fn();
+const authState: { loading: boolean; user?: { id: string } } = { loading: false };
 
 type HostProps = {
   children?: React.ReactNode;
@@ -13,17 +14,6 @@ type HostProps = {
   testID?: string;
   testId?: string;
   [key: string]: unknown;
-};
-
-type FormControl = {
-  values: Record<string, string>;
-  errors: Record<string, { message: string }>;
-  setValue: (name: string, value: string) => void;
-};
-
-type ZodFormSubmitArgs = {
-  form: { handleSubmit: (onSubmit: (data: Record<string, string>) => unknown) => () => unknown };
-  onSubmit: (data: Record<string, string>) => unknown;
 };
 
 jest.mock("expo-router", () => ({
@@ -56,7 +46,7 @@ jest.mock("@/lib/auth/request-timeout", () => ({
 
 jest.mock("@/lib/hooks/useAuth", () => ({
   __esModule: true,
-  useAuth: () => ({ loading: false }),
+  useAuth: () => authState,
 }));
 
 jest.mock("@/lib/logging/mobile-action-log", () => ({
@@ -85,7 +75,15 @@ jest.mock("@/lib/stores/auth-store", () => ({
 jest.mock("@repo/ui/components/alert", () => {
   const React = require("react");
   const host = (type: string) => (props: HostProps) =>
-    React.createElement(type, props, props.children);
+    React.createElement(
+      type,
+      props,
+      React.Children.map(props.children, (child: React.ReactNode) =>
+        typeof child === "string" || typeof child === "number"
+          ? React.createElement("Text", null, String(child))
+          : child,
+      ),
+    );
 
   return {
     __esModule: true,
@@ -105,14 +103,26 @@ jest.mock("@repo/ui/components/button", () => ({
         onPress: disabled ? undefined : onPress,
         testID: props.testID ?? props.testId,
       },
-      children,
+      React.Children.map(children, (child) =>
+        typeof child === "string" || typeof child === "number"
+          ? React.createElement("Text", null, String(child))
+          : child,
+      ),
     ),
 }));
 
 jest.mock("@repo/ui/components/card", () => {
   const React = require("react");
   const host = (type: string) => (props: HostProps) =>
-    React.createElement(type, props, props.children);
+    React.createElement(
+      type,
+      props,
+      React.Children.map(props.children, (child: React.ReactNode) =>
+        typeof child === "string" || typeof child === "number"
+          ? React.createElement("Text", null, String(child))
+          : child,
+      ),
+    );
 
   return {
     __esModule: true,
@@ -123,76 +133,10 @@ jest.mock("@repo/ui/components/card", () => {
   };
 });
 
-jest.mock("@repo/ui/components/form", () => ({
-  __esModule: true,
-  Form: ({ children }: { children?: React.ReactNode }) => children,
-  FormTextField: ({
-    control,
-    name,
-    placeholder,
-    testId,
-  }: {
-    control: FormControl;
-    name: string;
-    placeholder?: string;
-    testId?: string;
-  }) =>
-    React.createElement(
-      React.Fragment,
-      null,
-      React.createElement("TextInput", {
-        placeholder,
-        testID: testId ?? name,
-        value: control.values[name] ?? "",
-        onChangeText: (nextValue: string) => control.setValue(name, nextValue),
-      }),
-      control.errors[name] ? React.createElement("Text", null, control.errors[name].message) : null,
-    ),
-}));
-
 jest.mock("@repo/ui/components/text", () => ({
   __esModule: true,
   Text: ({ children, ...props }: HostProps) => React.createElement("Text", props, children),
 }));
-
-jest.mock("@repo/ui/hooks", () => {
-  const React = require("react");
-
-  return {
-    __esModule: true,
-    useZodForm: () => {
-      const [values, setValues] = React.useState({
-        email: "",
-        password: "",
-        repeatPassword: "",
-      });
-      const [errors, setErrors] = React.useState({} as Record<string, { message: string }>);
-
-      return {
-        control: {
-          errors,
-          values,
-          setValue: (name: string, value: string) => {
-            setValues((current: typeof values) => ({ ...current, [name]: value }));
-          },
-        },
-        formState: { errors },
-        clearErrors: jest.fn(),
-        setError: (name: string, error: { message: string }) => {
-          setErrors((current: Record<string, { message: string }>) => ({
-            ...current,
-            [name]: error,
-          }));
-        },
-        handleSubmit: (onSubmit: (data: typeof values) => unknown) => () => onSubmit(values),
-      };
-    },
-    useZodFormSubmit: ({ form, onSubmit }: ZodFormSubmitArgs) => ({
-      handleSubmit: form.handleSubmit(onSubmit),
-      isSubmitting: false,
-    }),
-  };
-});
 
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
@@ -202,20 +146,46 @@ jest.mock("lucide-react-native", () => ({
 const SignUpScreen = require("../sign-up").default;
 
 describe("sign-up screen", () => {
+  it("locks pending fields, single-flights and retains failed credentials", async () => {
+    let finish!: (value: unknown) => void;
+    signUpMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await renderNative(<SignUpScreen />);
+    await fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
+    await fireEvent.changeText(screen.getByTestId("password-input"), "Password123");
+    await fireEvent.changeText(screen.getByTestId("repeat-password-input"), "Password123");
+    const press = screen.getByTestId("sign-up-button").props.onPress;
+    await act(async () => {
+      void press();
+      void press();
+    });
+    expect(signUpMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("email-input").props.editable).toBe(false);
+    await fireEvent.press(screen.getByTestId("sign-in-link-button"));
+    expect(replaceMock).not.toHaveBeenCalled();
+    await act(async () => finish({ error: { message: "Request unavailable" } }));
+    expect(screen.getByTestId("password-input").props.value).toBe("Password123");
+    expect(screen.getByTestId("repeat-password-input").props.value).toBe("Password123");
+  });
   beforeEach(() => {
     jest.clearAllMocks();
+    delete authState.user;
     signUpMock.mockResolvedValue({ error: null });
     refreshMobileAuthSessionMock.mockResolvedValue(null);
     refreshStoreSessionMock.mockResolvedValue(undefined);
   });
 
   it("routes to verify after successful sign up", async () => {
-    renderNative(<SignUpScreen />);
+    await renderNative(<SignUpScreen />);
 
-    fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
-    fireEvent.changeText(screen.getByTestId("password-input"), "Password123");
-    fireEvent.changeText(screen.getByTestId("repeat-password-input"), "Password123");
-    fireEvent.press(screen.getByTestId("sign-up-button"));
+    await fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
+    await fireEvent.changeText(screen.getByTestId("password-input"), "Password123");
+    await fireEvent.changeText(screen.getByTestId("repeat-password-input"), "Password123");
+    await fireEvent.press(screen.getByTestId("sign-up-button"));
 
     await waitFor(() => {
       expect(signUpMock).toHaveBeenCalledWith(
@@ -231,17 +201,24 @@ describe("sign-up screen", () => {
     });
   });
 
+  it("marks new password fields for credential-manager generation", async () => {
+    await renderNative(<SignUpScreen />);
+
+    expect(screen.getByTestId("password-input").props.autoComplete).toBe("new-password");
+    expect(screen.getByTestId("repeat-password-input").props.autoComplete).toBe("new-password");
+  });
+
   it("routes verified sessions into the app after sign up success", async () => {
     refreshMobileAuthSessionMock.mockResolvedValue({
       user: { id: "user-1", email: "athlete@example.com", emailVerified: true },
     });
 
-    renderNative(<SignUpScreen />);
+    await renderNative(<SignUpScreen />);
 
-    fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
-    fireEvent.changeText(screen.getByTestId("password-input"), "Password123");
-    fireEvent.changeText(screen.getByTestId("repeat-password-input"), "Password123");
-    fireEvent.press(screen.getByTestId("sign-up-button"));
+    await fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
+    await fireEvent.changeText(screen.getByTestId("password-input"), "Password123");
+    await fireEvent.changeText(screen.getByTestId("repeat-password-input"), "Password123");
+    await fireEvent.press(screen.getByTestId("sign-up-button"));
 
     await waitFor(() => {
       expect(replaceMock).toHaveBeenCalledWith("/");
@@ -251,15 +228,38 @@ describe("sign-up screen", () => {
   it("maps duplicate-email errors onto the email field", async () => {
     signUpMock.mockResolvedValue({ error: { message: "User already exists. Use another email." } });
 
-    renderNative(<SignUpScreen />);
+    await renderNative(<SignUpScreen />);
 
-    fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
-    fireEvent.changeText(screen.getByTestId("password-input"), "Password123");
-    fireEvent.changeText(screen.getByTestId("repeat-password-input"), "Password123");
-    fireEvent.press(screen.getByTestId("sign-up-button"));
+    await fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
+    await fireEvent.changeText(screen.getByTestId("password-input"), "Password123");
+    await fireEvent.changeText(screen.getByTestId("repeat-password-input"), "Password123");
+    await fireEvent.press(screen.getByTestId("sign-up-button"));
 
     await waitFor(() => {
       expect(screen.getByText("An account with this email already exists")).toBeTruthy();
     });
+  });
+
+  it("does not navigate or reset fields after another account takes ownership", async () => {
+    let finish!: (value: unknown) => void;
+    signUpMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const view = await renderNative(<SignUpScreen />);
+    await fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
+    await fireEvent.changeText(screen.getByTestId("password-input"), "Password123");
+    await fireEvent.changeText(screen.getByTestId("repeat-password-input"), "Password123");
+    await act(async () => {
+      void screen.getByTestId("sign-up-button").props.onPress();
+    });
+    authState.user = { id: "another-account" };
+    await view.rerender(<SignUpScreen />);
+    await act(async () => finish({ error: null, data: { user: { id: "created-account" } } }));
+    expect(replaceMock).not.toHaveBeenCalled();
+    expect(refreshMobileAuthSessionMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId("password-input").props.value).toBe("Password123");
   });
 });

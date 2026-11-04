@@ -1,48 +1,54 @@
-import type { CanonicalSport, DurationV2, IntensityTargetV2, PlanStepV2 } from "../schemas";
-import { getSportStepDefaults, getSportStepName } from "../sports";
+import {
+  getActivityCategoryStepDefaults,
+  getActivityCategoryStepName,
+} from "../activity-categories";
+import type { ActivityPlanDuration, ActivityPlanStep } from "../activity-plan";
+import type { CanonicalActivityCategory } from "../schemas";
+import type { ActivityTarget } from "../targets";
 
 /**
  * Context for generating smart defaults for activity steps
  */
 export interface DefaultsContext {
-  activityCategory: CanonicalSport;
+  activityCategory: CanonicalActivityCategory;
   position: number; // 0 = first step, -1 = last step
   totalSteps: number;
 }
 
 /**
- * Generate a smart step name based on activity type and position
+ * Generate a smart step name based on activity category and position
  */
 export function generateStepName(ctx: DefaultsContext): string {
   const phase = getStepPhase(ctx);
-  return getSportStepName(ctx.activityCategory, phase, ctx.position);
+  return getActivityCategoryStepName(ctx.activityCategory, phase, ctx.position);
 }
 
 /**
- * Get default duration based on activity type and position
+ * Get default duration based on activity category and position
  */
-export function getDefaultDuration(ctx: DefaultsContext): DurationV2 {
-  return getSportStepDefaults(ctx.activityCategory, getStepPhase(ctx)).duration;
+export function getDefaultDuration(ctx: DefaultsContext): ActivityPlanDuration {
+  return getActivityCategoryStepDefaults(ctx.activityCategory, getStepPhase(ctx)).duration;
 }
 
 /**
- * Get default intensity target based on activity type and position
+ * Get default intensity target based on activity category and position
  */
-export function getDefaultTarget(ctx: DefaultsContext): IntensityTargetV2 | undefined {
-  return getSportStepDefaults(ctx.activityCategory, getStepPhase(ctx)).target;
+export function getDefaultTarget(ctx: DefaultsContext): ActivityTarget | undefined {
+  return getActivityCategoryStepDefaults(ctx.activityCategory, getStepPhase(ctx)).target;
 }
 
 /**
  * Create a complete step with smart defaults based on context
  */
-export function createDefaultStep(ctx: DefaultsContext): PlanStepV2 {
+export function createDefaultStep(ctx: DefaultsContext): ActivityPlanStep {
   const target = getDefaultTarget(ctx);
 
   return {
+    type: "step",
+    id: crypto.randomUUID(),
     name: generateStepName(ctx),
     duration: getDefaultDuration(ctx),
-    targets: target ? [target] : [],
-    notes: "",
+    targets: [target ?? { type: "RPE", intensity: 5 }],
   };
 }
 
