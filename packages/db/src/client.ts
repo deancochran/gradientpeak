@@ -1,5 +1,5 @@
 import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
+import { Pool, type PoolConfig } from "pg";
 
 import { relationalSchema, type schema } from "./schema";
 
@@ -23,6 +23,17 @@ export interface DbClientLike<TFullSchema = DbSchema> {
 
 export interface DbConnectionConfig {
   readonly url: string;
+}
+
+/** Creates a schema-bound, closeable client for isolated local tooling and test lanes. */
+export function createDbClient(config: DbConnectionConfig, options: PoolConfig = {}) {
+  const pool = new Pool({ ...options, connectionString: config.url });
+  const db = drizzle({
+    client: pool,
+    schema: relationalSchema,
+    casing: "snake_case",
+  });
+  return { db, close: () => pool.end() };
 }
 
 export function assertDatabaseUrl(url: string | undefined): string {

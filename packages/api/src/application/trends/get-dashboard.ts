@@ -1,0 +1,235 @@
+import {
+  type ActivityObservationQuantificationBundle,
+  activityObservationQuantificationBundleSchema,
+} from "@repo/core";
+import type { publicActivityCategorySchema } from "@repo/db";
+import { z } from "zod";
+import type { ActivityAnalysisStore } from "../../repositories";
+import type {
+  TrendsDashboardActivityRow,
+  TrendsDashboardRepository,
+} from "../../repositories/trends-dashboard-repository";
+import { normalizeTrendActivityRows, type TrendActivityRow } from "./activityRows";
+import { buildConsistencyMetrics } from "./consistencyMetrics";
+import { buildVolumeTrends, type VolumeTrendsGroupBy } from "./volumeTrends";
+import { buildZoneDistributionTrends } from "./zoneDistributionTrends";
+
+const isoDatetimeSchema = z.string().datetime({ offset: true });
+const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected ISO date (YYYY-MM-DD)");
+const intensityZoneSchema = z.enum([
+  "recovery",
+  "endurance",
+  "tempo",
+  "threshold",
+  "vo2max",
+  "anaerobic",
+  "neuromuscular",
+]);
+const availabilitySchema = z.enum(["complete", "partial", "unavailable"]);
+export const trendsDashboardOutputSchema = z
+  .object({
+    volume: z
+      .object({
+        dataPoints: z.array(
+          z
+            .object({
+              date: isoDateSchema,
+              status: availabilitySchema,
+              totalDistance: z.number().finite(),
+              totalTime: z.number().finite(),
+              activityCount: z.number().int().nonnegative(),
+              observationQuantification: activityObservationQuantificationBundleSchema,
+            })
+            .strict(),
+        ),
+        unavailableDataPoints: z.array(
+          z
+            .object({
+              date: isoDateSchema,
+              status: z.enum(["partial", "unavailable"]),
+              activityCount: z.number().int().nonnegative(),
+              observationQuantification: activityObservationQuantificationBundleSchema.nullable(),
+            })
+            .strict(),
+        ),
+        totals: z
+          .object({
+            status: availabilitySchema,
+            totalDistance: z.number().finite(),
+            totalTime: z.number().finite(),
+            totalActivities: z.number().int().nonnegative(),
+            observationQuantification: activityObservationQuantificationBundleSchema,
+          })
+          .strict()
+          .nullable(),
+        aggregate: z
+          .object({
+            status: availabilitySchema,
+            totalDistance: z.number().finite().nullable(),
+            totalTime: z.number().finite().nullable(),
+            totalActivities: z.number().int().nonnegative(),
+            observationQuantification: activityObservationQuantificationBundleSchema.nullable(),
+          })
+          .strict()
+          .nullable(),
+      })
+      .strict(),
+    performance: z
+      .object({
+        dataPoints: z.array(
+          z
+            .object({
+              date: isoDatetimeSchema,
+              activityId: z.string().uuid(),
+              activityName: z.string(),
+              avgSpeed: z.number().finite().nullable(),
+              avgPower: z.number().finite().nullable(),
+              avgHeartRate: z.number().finite().nullable(),
+              distance: z.number().finite().nullable(),
+              duration: z.number().finite().nullable(),
+              observationQuantification: activityObservationQuantificationBundleSchema.nullable(),
+            })
+            .strict(),
+        ),
+      })
+      .strict(),
+    zones: z
+      .object({
+        weeklyData: z.array(
+          z
+            .object({
+              weekStart: isoDateSchema,
+              status: availabilitySchema,
+              totalCommonLoad: z.number().finite().nullable(),
+              zones: z.record(intensityZoneSchema, z.number().finite()),
+              observationQuantification: activityObservationQuantificationBundleSchema.nullable(),
+              coverage: z
+                .object({
+                  totalActivities: z.number().int().nonnegative(),
+                  quantifiedActivities: z.number().int().nonnegative(),
+                })
+                .strict(),
+            })
+            .strict(),
+        ),
+      })
+      .strict(),
+    consistency: z
+      .object({
+        activityDays: z.array(isoDateSchema),
+        weeklyAvg: z.number().finite(),
+        currentStreak: z.number().int().nonnegative(),
+        longestStreak: z.number().int().nonnegative(),
+        totalActivities: z.number().int().nonnegative(),
+        totalDays: z.number().int().nonnegative(),
+      })
+      .strict(),
+  })
+  .strict();
+
+type ActivityCategory = z.infer<typeof publicActivityCategorySchema>;
+type DerivedSummaryMap = Map<
+  string,
+  {
+    observationQuantification: ActivityObservationQuantificationBundle;
+  }
+>;
+
+export type BuildDerivedSummaries = (input: {
+  activities: TrendActivityRow[];
+  profileId: string;
+  store: ActivityAnalysisStore;
+}) => Promise<DerivedSummaryMap>;
+
+export async function getTrendsDashboardProjection({
+  buildDerivedSummaries,
+  repository,
+  store,
+  profileId,
+  startDate,
+  endDate,
+  groupBy,
+  type,
+}: {
+  buildDerivedSummaries: BuildDerivedSummaries;
+  endDate: Date;
+  groupBy: VolumeTrendsGroupBy;
+  profileId: string;
+  repository: TrendsDashboardRepository;
+  startDate: Date;
+  store: ActivityAnalysisStore;
+  type?: ActivityCategory;
+}) {
+  const loaded = await repository.loadDashboardActivities({
+    profileId,
+    startDate,
+    endDate,
+    ...(type === undefined ? {} : { type }),
+  });
+  if (!Array.isArray(loaded)) return loaded;
+
+  const activities: TrendActivityRow[] = (type
+    ? loaded
+        .map((activity) => ({
+          ...activity,
+          segments: activity.segments.filter(
+            (segment) => segment.role === "activity" && segment.activity_category === type,
+          ),
+        }))
+        .filter((activity) => activity.segments.length > 0)
+    : loaded) as TrendsDashboardActivityRow[] as TrendActivityRow[];
+  const normalized = normalizeTrendActivityRows(activities);
+  const derived =
+    activities.length === 0
+      ? new Map()
+      : await buildDerivedSummaries({ activities, profileId, store });
+  const performanceDataPoints = normalized.map((activity) => {
+    const observationQuantification = derived.get(activity.id)?.observationQuantification ?? null;
+    const quantification = observationQuantification?.summary ?? null;
+    const duration = quantification
+      ? ([
+          quantification.duration.moving,
+          quantification.duration.active,
+          quantification.duration.elapsed,
+        ].find((quantity) => quantity.status !== "unavailable")?.value ?? null)
+      : null;
+    const distance =
+      quantification?.distance.status === "available" ||
+      quantification?.distance.status === "complete" ||
+      quantification?.distance.status === "partial"
+        ? quantification.distance.value
+        : null;
+    return {
+      date: activity.started_at.toISOString(),
+      activityId: activity.id,
+      activityName: activity.name,
+      avgSpeed: activity.avg_speed_mps ?? null,
+      avgPower: activity.avg_power ?? null,
+      avgHeartRate: activity.avg_heart_rate ?? null,
+      distance,
+      duration,
+      observationQuantification,
+    };
+  });
+
+  return {
+    activities,
+    derived,
+    normalized,
+    dashboard: trendsDashboardOutputSchema.parse({
+      volume: buildVolumeTrends(normalized, groupBy, derived),
+      performance: {
+        dataPoints: performanceDataPoints,
+      },
+      zones: buildZoneDistributionTrends(normalized, derived),
+      consistency: buildConsistencyMetrics(normalized, startDate, endDate),
+    }),
+  };
+}
+
+export async function getTrendsDashboard(
+  input: Parameters<typeof getTrendsDashboardProjection>[0],
+) {
+  const projection = await getTrendsDashboardProjection(input);
+  return "kind" in projection ? projection : projection.dashboard;
+}

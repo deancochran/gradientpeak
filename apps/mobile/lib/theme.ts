@@ -1,5 +1,5 @@
-import { DarkTheme, DefaultTheme, type Theme } from "@react-navigation/native";
 import { THEME } from "@repo/tailwindcss/native";
+import { DarkTheme, DefaultTheme, type Theme } from "expo-router/react-navigation";
 import { Appearance, type ColorSchemeName } from "react-native";
 
 export type ThemePreference = "system" | "light" | "dark";
@@ -32,7 +32,7 @@ export const NAV_THEME: Record<"light" | "dark", Theme> = {
 
 export function resolveThemeMode(
   preference: ThemePreference,
-  systemColorScheme: ColorSchemeName = Appearance.getColorScheme(),
+  systemColorScheme: ColorSchemeName | null | undefined = Appearance.getColorScheme(),
 ): ResolvedThemeMode {
   if (preference === "system") {
     return systemColorScheme === "dark" ? "dark" : "light";

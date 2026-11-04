@@ -4,7 +4,7 @@ import {
   athletePreferenceProfileSchema,
   athleteTrainingSettingsFormSchema,
   defaultAthletePreferenceProfile,
-  getManualBaselineCtlWarning,
+  getManualBaselineLongTermLoadWarning,
   invalidateCapabilitySnapshot,
   plannerDerivedDiagnosticsSchema,
   plannerPolicyConfigSchema,
@@ -31,7 +31,7 @@ const canonicalProfile = athletePreferenceProfileSchema.parse({
     max_sessions_per_week: 5,
     max_single_session_duration_minutes: 120,
     max_weekly_duration_minutes: 420,
-    sport_overrides: {
+    activity_category_overrides: {
       run: {
         max_weekly_duration_minutes: 480,
       },
@@ -62,7 +62,7 @@ const canonicalProfile = athletePreferenceProfileSchema.parse({
 });
 
 const capabilitySnapshot = athleteCapabilitySnapshotSchema.parse({
-  sport_slices: {
+  activity_category_slices: {
     run: {
       aerobic_base: 0.6,
       threshold_capacity: 0.55,
@@ -127,7 +127,25 @@ describe("athletePreferenceProfileSchema", () => {
       "adaptation_preferences",
       "goal_strategy_preferences",
     ]);
-    expect(defaultAthletePreferenceProfile.dose_limits.sport_overrides).toEqual({});
+    expect(defaultAthletePreferenceProfile.dose_limits.activity_category_overrides).toEqual({});
+  });
+
+  it("roundtrips optional onboarding personalization intents", () => {
+    const parsed = athletePreferenceProfileSchema.parse({
+      ...canonicalProfile,
+      onboarding_intents: ["improve_fitness", "groups"],
+    });
+
+    expect(parsed.onboarding_intents).toEqual(["improve_fitness", "groups"]);
+  });
+
+  it("rejects duplicate onboarding personalization intents", () => {
+    expect(
+      athletePreferenceProfileSchema.safeParse({
+        ...canonicalProfile,
+        onboarding_intents: ["explore", "explore"],
+      }).success,
+    ).toBe(false);
   });
 
   it("rejects planner-only and internal fields from canonical persistence", () => {
@@ -150,7 +168,7 @@ describe("athletePreferenceProfileSchema", () => {
         target_surplus_preference: 0.5,
       },
       dose_limits: {
-        sport_overrides: {
+        activity_category_overrides: {
           bike: {
             max_sessions_per_week: 6,
           },
@@ -175,7 +193,7 @@ describe("athletePreferenceProfileSchema", () => {
       fallback_depth: 2,
       fallback_mode: "conservative_priors",
       confidence: 0.42,
-      rationale_codes: ["weak_same_sport_evidence"],
+      rationale_codes: ["weak_same_activity_category_evidence"],
     });
 
     expect(overrideResult.success).toBe(true);
@@ -183,7 +201,7 @@ describe("athletePreferenceProfileSchema", () => {
     expect(diagnosticsResult.success).toBe(true);
     expect(invalidOverrideResult.success).toBe(false);
     if (overrideResult.success) {
-      expect(overrideResult.data.dose_limits?.sport_overrides?.bike).toEqual({
+      expect(overrideResult.data.dose_limits?.activity_category_overrides?.bike).toEqual({
         max_sessions_per_week: 6,
       });
     }
@@ -226,9 +244,9 @@ describe("athletePreferenceProfileSchema", () => {
     expect(normalizedFormValues.baseline_fitness?.override_date).toBe("2026-04-03");
   });
 
-  it("warns when manual baseline CTL is high enough to distort estimated readiness", () => {
-    expect(getManualBaselineCtlWarning(90)).toBeNull();
-    expect(getManualBaselineCtlWarning(220)).toContain("Manual CTL above 120");
+  it("uses the user-facing Fitness label when a manual baseline is too high", () => {
+    expect(getManualBaselineLongTermLoadWarning(90)).toBeNull();
+    expect(getManualBaselineLongTermLoadWarning(220)).toContain("Manual Fitness above 120");
   });
 });
 
@@ -288,10 +306,10 @@ describe("resolveEffectivePreferences", () => {
     expect(resolved.availability.hard_rest_days).toEqual(["saturday"]);
   });
 
-  it("merges per-sport dose overrides additively", () => {
+  it("merges per-activity_category dose overrides additively", () => {
     const resolved = resolveEffectivePreferences(canonicalProfile, {
       dose_limits: {
-        sport_overrides: {
+        activity_category_overrides: {
           bike: {
             max_sessions_per_week: 6,
           },
@@ -299,7 +317,7 @@ describe("resolveEffectivePreferences", () => {
       },
     });
 
-    expect(resolved.dose_limits.sport_overrides).toEqual({
+    expect(resolved.dose_limits.activity_category_overrides).toEqual({
       run: {
         max_weekly_duration_minutes: 480,
       },

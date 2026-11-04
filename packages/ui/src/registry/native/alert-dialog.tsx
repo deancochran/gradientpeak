@@ -4,6 +4,7 @@ import { Platform, View, type ViewProps } from "react-native";
 import { FadeIn, FadeOut } from "react-native-reanimated";
 import { FullWindowOverlay as RNFullWindowOverlay } from "react-native-screens";
 import { cn } from "../../lib/cn";
+import { omitUndefined } from "../../lib/omit-undefined";
 import { buttonTextVariants, buttonVariants } from "./button";
 import { NativeOnlyAnimatedView } from "./native-only-animated-view";
 import { TextClassContext } from "./text";
@@ -54,7 +55,7 @@ function AlertDialogContent({
   portalHost?: string;
 }) {
   return (
-    <AlertDialogPortal hostName={portalHost}>
+    <AlertDialogPortal {...omitUndefined({ hostName: portalHost })}>
       <AlertDialogOverlay>
         <AlertDialogPrimitive.Content
           className={cn(

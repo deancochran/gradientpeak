@@ -1,20 +1,43 @@
 import { act, renderHook, waitFor } from "@testing-library/react-native";
+import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 
-const upsertJobMock = jest.fn(async () => undefined);
 const createFromRecordingSummaryMock = jest.fn(async () => ({
   id: "activity-1",
   ingestion: { id: "ingestion-1", status: "pending_upload", source: "mobile_recording" },
 }));
-const getSignedUploadUrlMock = jest.fn(async () => ({
+const beginMobileRecordingUploadMock = jest.fn(async () => ({
+  status: "upload" as const,
+  ingestionId: "ingestion-1",
+  activityId: "activity-1",
+  byteSize: 1234,
+  sha256: "a".repeat(64),
+  format: "fit" as const,
+  mediaType: "application/vnd.ant.fit",
   signedUrl: "https://storage.example/upload",
-  filePath: "activities/profile-1/activity.fit",
+  token: "upload-token",
 }));
 const markUploadedAndProcessMock = jest.fn(async () => ({ success: true }));
 const uploadToSignedUrlMock = jest.fn(async () => ({ success: true, attempts: 1 }));
-const clearPendingFinalizedArtifactMock = jest.fn(async () => undefined);
-const deleteFinalizedArtifactFilesMock = jest.fn(async () => undefined);
 const invalidatePostActivityIngestionQueriesMock = jest.fn(async () => undefined);
 const setQueryDataMock = jest.fn();
+const localArtifactMetadataMock = jest.fn(async (_filePath: string) => ({
+  sha256: "a".repeat(64),
+  byteSize: 1234,
+}));
+const atomicHandoffMock = jest.fn();
+let profileId: string | null = "profile-1";
+const getIngestionStatusUseQueryMock = jest.fn((_input: unknown, _options: unknown) => ({
+  data: undefined,
+}));
+
+jest.mock("@/lib/services/ActivityRecorder/recordingEvidenceJournal", () => ({
+  createFinalizedArtifactQueueHandoff: (...args: unknown[]) => atomicHandoffMock(...args),
+}));
+
+jest.mock("@/lib/services/activitySubmissionQueue/localArtifact", () => ({
+  getLocalActivityArtifactMetadata: (...args: unknown[]) =>
+    localArtifactMetadataMock(...(args as [string])),
+}));
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -29,9 +52,11 @@ jest.mock("@tanstack/react-query", () => ({
 
 jest.mock("@repo/api/client", () => ({
   __esModule: true,
+  canRetryDirectIngestion: () => false,
+  IDEMPOTENT_INGESTION_MUTATION_RETRY_OPTIONS: { retry: 1, retryDelay: 1000 },
+  ingestionStatusPollingInterval: () => false,
   invalidatePostActivityIngestionQueries: (...args: unknown[]) =>
     (invalidatePostActivityIngestionQueriesMock as jest.Mock)(...args),
-  queryKeys: { activities: { detail: (id: string) => ["activity", id] } },
 }));
 
 jest.mock("expo-file-system", () => ({
@@ -39,25 +64,7 @@ jest.mock("expo-file-system", () => ({
   File: class MockFile {
     exists = true;
     size = 1234;
-    constructor(_path: string) {}
   },
-}));
-
-jest.mock("@/lib/services/activitySubmissionQueue", () => {
-  const actual = jest.requireActual("@/lib/services/activitySubmissionQueue");
-  return {
-    __esModule: true,
-    ...actual,
-    upsertActivitySubmissionQueueJob: (...args: unknown[]) => (upsertJobMock as jest.Mock)(...args),
-  };
-});
-
-jest.mock("@/lib/services/ActivityRecorder/finalizedArtifactStorage", () => ({
-  __esModule: true,
-  clearPendingFinalizedArtifact: () => clearPendingFinalizedArtifactMock(),
-  deleteFinalizedArtifactFiles: (...args: unknown[]) =>
-    (deleteFinalizedArtifactFilesMock as jest.Mock)(...args),
-  loadPendingFinalizedArtifact: jest.fn(async () => null),
 }));
 
 jest.mock("@/lib/services/fit/ActivityFileUploader", () => ({
@@ -71,7 +78,7 @@ jest.mock("@/lib/services/fit/ActivityFileUploader", () => ({
 
 jest.mock("@/lib/hooks/useAuth", () => ({
   __esModule: true,
-  useAuth: () => ({ profile: { id: "profile-1" } }),
+  useAuth: () => ({ profile: profileId ? { id: profileId } : null }),
 }));
 
 jest.mock("@/lib/api", () => ({
@@ -83,8 +90,12 @@ jest.mock("@/lib/api", () => ({
       },
     },
     activityFiles: {
-      getSignedUploadUrl: {
-        useMutation: () => ({ mutateAsync: getSignedUploadUrlMock }),
+      getIngestionStatus: {
+        useQuery: (input: unknown, options: unknown) =>
+          getIngestionStatusUseQueryMock(input, options),
+      },
+      beginMobileRecordingUpload: {
+        useMutation: () => ({ mutateAsync: beginMobileRecordingUploadMock }),
       },
       markUploadedAndProcess: {
         useMutation: () => ({ mutateAsync: markUploadedAndProcessMock }),
@@ -93,11 +104,46 @@ jest.mock("@/lib/api", () => ({
   },
 }));
 
+const executionManifest = {
+  version: 1 as const,
+  compilerVersion: 3 as const,
+  planHash: "0".repeat(64),
+  occurrences: [
+    {
+      occurrenceId:
+        "activity:repeat:00000000-0000-4000-8000-000000000002:0:step:00000000-0000-4000-8000-000000000003",
+      globalOrdinal: 0,
+      stepId: "00000000-0000-4000-8000-000000000003",
+      repeatId: "00000000-0000-4000-8000-000000000002",
+      repeatIteration: 0,
+      role: "activity" as const,
+      activity_category: "bike" as const,
+      startedAt: "2026-01-01T10:00:00.000Z",
+      completedAt: "2026-01-01T11:00:00.000Z",
+      activeSeconds: 3500,
+      movingSeconds: 3500,
+      distanceMeters: 25000,
+      timerEvents: [],
+      laps: [
+        {
+          lapNumber: 1,
+          startedAt: "2026-01-01T10:00:00.000Z",
+          endedAt: "2026-01-01T11:00:00.000Z",
+          activeSeconds: 3500,
+          distanceMeters: 25000,
+        },
+      ],
+    },
+  ],
+};
+
 const artifact = {
+  schemaVersion: 2 as const,
   sessionId: "session-1",
+  profileId: "profile-1",
   snapshot: {
     identity: { startedAt: "2026-01-01T10:00:00.000Z" },
-    activity: { category: "bike", gpsMode: "off", activityPlanId: null },
+    activity: { activity_category: "bike", gpsMode: "off", activityPlanId: null },
   },
   overrides: [],
   finalStats: {
@@ -108,6 +154,7 @@ const artifact = {
   },
   activityFilePath: "file:///activity.fit",
   streamArtifactPaths: ["file:///streams.json"],
+  executionManifest,
   completedAt: "2026-01-01T11:00:00.000Z",
   runtimeSourceState: {
     selectedSources: [],
@@ -124,46 +171,291 @@ const service = {
   addListener: jest.fn(() => ({ remove: jest.fn() })),
 };
 
+const noPendingRecordingService = {
+  state: "idle",
+  recordingMetadata: { profileId: "profile-1" },
+  getFinalizedArtifact: () => null,
+  addListener: jest.fn(() => ({ remove: jest.fn() })),
+};
+
 const { useActivitySubmission } = require("../useActivitySubmission");
+const queueStorage = jest.requireActual(
+  "@/lib/services/activitySubmissionQueue/storage",
+) as typeof import("@/lib/services/activitySubmissionQueue/storage");
 
 describe("useActivitySubmission", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    profileId = "profile-1";
+    queueStorage.setActivitySubmissionQueueJobsForTests(new Map());
+    atomicHandoffMock.mockImplementation(async (job) => {
+      const existing = await queueStorage.loadActivitySubmissionQueueJobByArtifactId(
+        job.sessionId,
+        job.draft.profileId,
+      );
+      if (existing) return "existing";
+      await queueStorage.upsertActivitySubmissionQueueJob(job);
+      return "created";
+    });
   });
 
-  it("queues a finalized artifact, creates the backend activity, and continues upload processing", async () => {
-    const { result } = renderHook(() => useActivitySubmission(service as any));
+  afterEach(() => queueStorage.setActivitySubmissionQueueJobsForTests());
+
+  it("queues an unplanned finalized artifact with its canonical segment and reaches submission preparation", async () => {
+    const { result } = await renderHook(() =>
+      useActivitySubmission(service as unknown as ActivityRecorderService),
+    );
 
     await waitFor(() => expect(result.current.isReady).toBe(true));
 
     await act(async () => {
       await expect(
-        result.current.submit({ name: "Queued ride", notes: "felt good", is_private: false }),
+        result.current.submit({
+          name: "Queued ride",
+          notes: "felt good",
+          content_visibility: "followers",
+        }),
       ).resolves.toBe(true);
     });
 
-    expect(upsertJobMock).toHaveBeenCalledWith(
+    await expect(
+      queueStorage.loadActivitySubmissionQueueJobByArtifactId("session-1", "profile-1"),
+    ).resolves.toMatchObject(
       expect.objectContaining({
         id: "session-1",
-        status: "queued",
+        status: "complete",
         localActivityFilePath: "file:///activity.fit",
         draft: expect.objectContaining({
           name: "Queued ride",
           notes: "felt good",
-          is_private: false,
+          content_visibility: "followers",
+          activity_category: "bike",
         }),
       }),
     );
     expect(createFromRecordingSummaryMock).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "Queued ride", source: "mobile_recording" }),
+      expect.objectContaining({
+        name: "Queued ride",
+        executionManifest,
+        uploadedArtifact: { ingestionId: "ingestion-1" },
+        source: "mobile_recording",
+      }),
     );
+    expect(executionManifest.occurrences).toHaveLength(1);
+    expect(executionManifest.occurrences[0]).toMatchObject({
+      role: "activity",
+      activity_category: "bike",
+      globalOrdinal: 0,
+    });
     expect(uploadToSignedUrlMock).toHaveBeenCalledWith(
       "file:///activity.fit",
       "https://storage.example/upload",
     );
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(clearPendingFinalizedArtifactMock).toHaveBeenCalledTimes(1);
-    expect(deleteFinalizedArtifactFilesMock).toHaveBeenCalledWith(artifact);
+  });
+
+  it.each([
+    ["no recorder", null],
+    ["no finalized artifact", noPendingRecordingService],
+  ])("treats a mount with %s as idle without queue effects", async (_state, recorder) => {
+    const { result } = await renderHook(() =>
+      useActivitySubmission(recorder as ActivityRecorderService | null),
+    );
+
+    await waitFor(() => expect(result.current.isReady).toBe(true));
+
+    expect(result.current).toMatchObject({ artifact: null, activity: null, error: null });
+    expect(atomicHandoffMock).not.toHaveBeenCalled();
+    expect(createFromRecordingSummaryMock).not.toHaveBeenCalled();
+    expect(beginMobileRecordingUploadMock).not.toHaveBeenCalled();
+    await expect(queueStorage.loadActivitySubmissionQueueJobs()).resolves.toEqual([]);
+  });
+
+  it("waits for authentication before processing a finalized artifact", async () => {
+    profileId = null;
+    const { result } = await renderHook(() =>
+      useActivitySubmission(service as unknown as ActivityRecorderService),
+    );
+
+    await waitFor(() => expect(result.current.isReady).toBe(true));
+
+    expect(result.current).toMatchObject({ artifact: null, activity: null, error: null });
+    expect(atomicHandoffMock).not.toHaveBeenCalled();
+    await expect(queueStorage.loadActivitySubmissionQueueJobs()).resolves.toEqual([]);
+  });
+
+  it("reports a missing FIT once and preserves the finalized artifact for retry", async () => {
+    const missingFitService = {
+      ...service,
+      getFinalizedArtifact: () => ({ ...artifact, activityFilePath: null }),
+    };
+    const { Alert } = require("react-native") as typeof import("react-native");
+    const { result } = await renderHook(() =>
+      useActivitySubmission(missingFitService as unknown as ActivityRecorderService),
+    );
+
+    await waitFor(() => expect(result.current.isReady).toBe(true));
+    await act(async () => {
+      await expect(result.current.submit()).resolves.toBe(false);
+    });
+
+    expect(Alert.alert).toHaveBeenCalledTimes(1);
+    expect(result.current).toMatchObject({
+      artifact: expect.objectContaining({ sessionId: "session-1", activityFilePath: null }),
+      isError: true,
+    });
+    expect(atomicHandoffMock).not.toHaveBeenCalled();
+    expect(createFromRecordingSummaryMock).not.toHaveBeenCalled();
+    expect(beginMobileRecordingUploadMock).not.toHaveBeenCalled();
+    await expect(queueStorage.loadActivitySubmissionQueueJobs()).resolves.toEqual([]);
+  });
+
+  it("restores ingestion identity and continues a persisted job without rebuilding progress", async () => {
+    await queueStorage.upsertActivitySubmissionQueueJob({
+      schemaVersion: 3,
+      id: "session-1",
+      artifactId: "session-1",
+      sessionId: "session-1",
+      localActivityFilePath: "file:///activity.fit",
+      localActivityFileSize: 1234,
+      streamArtifactPaths: ["file:///streams.json"],
+      executionManifest,
+      draft: {
+        recordingSessionId: "session-1",
+        profileId: "profile-1",
+        startedAt: "2026-01-01T10:00:00.000Z",
+        finishedAt: "2026-01-01T11:00:00.000Z",
+        name: "Persisted ride",
+        activity_category: "bike",
+        durationSeconds: 3600,
+        movingSeconds: 3500,
+        distanceMeters: 25000,
+      },
+      activityId: "activity-existing",
+      ingestionId: "ingestion-existing",
+      artifactSha256: "a".repeat(64),
+      status: "failed",
+      attempts: 3,
+      lastError: "app restarted",
+      retryClass: "transient",
+      nextAttemptAt: "2026-01-01T11:05:00.000Z",
+      createdAt: "2026-01-01T11:00:00.000Z",
+      updatedAt: "2026-01-01T11:05:00.000Z",
+    });
+
+    const { result, rerender } = await renderHook(() =>
+      useActivitySubmission(service as unknown as ActivityRecorderService),
+    );
+    await waitFor(() => expect(result.current.ingestionId).toBe("ingestion-existing"));
+    const beforeRefresh = await queueStorage.loadActivitySubmissionQueueJobByArtifactId(
+      "session-1",
+      "profile-1",
+    );
+    await rerender({});
+    expect(
+      await queueStorage.loadActivitySubmissionQueueJobByArtifactId("session-1", "profile-1"),
+    ).toEqual(beforeRefresh);
+    expect(atomicHandoffMock).not.toHaveBeenCalled();
+    expect(uploadToSignedUrlMock).not.toHaveBeenCalled();
+    expect(result.current.isError).toBe(true);
+    expect(getIngestionStatusUseQueryMock).toHaveBeenLastCalledWith(
+      { profileId: "profile-1", ingestionId: "ingestion-existing" },
+      expect.objectContaining({ enabled: true }),
+    );
+
+    await act(async () => {
+      await expect(result.current.submit()).resolves.toBe(true);
+    });
+
+    expect(createFromRecordingSummaryMock).not.toHaveBeenCalled();
+    expect(beginMobileRecordingUploadMock).not.toHaveBeenCalled();
+    expect(uploadToSignedUrlMock).not.toHaveBeenCalled();
+    expect(markUploadedAndProcessMock).not.toHaveBeenCalled();
+    expect(
+      await queueStorage.loadActivitySubmissionQueueJobByArtifactId("session-1", "profile-1"),
+    ).toMatchObject({
+      id: "session-1",
+      ingestionId: "ingestion-existing",
+      localActivityFilePath: "file:///activity.fit",
+      draft: expect.objectContaining({ name: "Persisted ride", recordingSessionId: "session-1" }),
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  });
+
+  it("keeps finalized artifact files when continuation fails", async () => {
+    await queueStorage.upsertActivitySubmissionQueueJob({
+      schemaVersion: 3,
+      id: "session-1",
+      artifactId: "session-1",
+      sessionId: "session-1",
+      localActivityFilePath: "file:///activity.fit",
+      localActivityFileSize: 1234,
+      streamArtifactPaths: ["file:///streams.json"],
+      executionManifest,
+      draft: {
+        recordingSessionId: "session-1",
+        profileId: "profile-1",
+        startedAt: "2026-01-01T10:00:00.000Z",
+        finishedAt: "2026-01-01T11:00:00.000Z",
+        name: "Persisted ride",
+        activity_category: "bike",
+        durationSeconds: 3600,
+        movingSeconds: 3500,
+        distanceMeters: 25000,
+      },
+      artifactSha256: "a".repeat(64),
+      status: "failed",
+      attempts: 1,
+      retryClass: "transient",
+      nextAttemptAt: "2026-01-01T11:05:00.000Z",
+      createdAt: "2026-01-01T11:00:00.000Z",
+      updatedAt: "2026-01-01T11:05:00.000Z",
+    });
+    createFromRecordingSummaryMock.mockRejectedValueOnce(new Error("server unavailable"));
+
+    const { result } = await renderHook(() =>
+      useActivitySubmission(service as unknown as ActivityRecorderService),
+    );
+    await waitFor(() => expect(result.current.artifact).not.toBeNull());
+    expect(result.current.isError).toBe(true);
+
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+
+  it("refuses another profile's finalized artifact after an account switch", async () => {
+    const otherProfileService = {
+      ...service,
+      recordingMetadata: { profileId: "profile-2" },
+      getFinalizedArtifact: () => ({ ...artifact, profileId: "profile-2" }),
+    };
+
+    const { result } = await renderHook(() =>
+      useActivitySubmission(otherProfileService as unknown as ActivityRecorderService),
+    );
+    await waitFor(() => expect(result.current.error).toContain("different profile"));
+
+    await expect(queueStorage.loadActivitySubmissionQueueJobs()).resolves.toEqual([]);
+    expect(createFromRecordingSummaryMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "discarded",
+    "absent",
+    "rejected",
+  ] as const)("does not run submission effects for atomic %s", async (outcome) => {
+    atomicHandoffMock.mockResolvedValueOnce(outcome);
+    const { result } = await renderHook(() =>
+      useActivitySubmission(service as unknown as ActivityRecorderService),
+    );
+    await waitFor(() => expect(result.current.isReady).toBe(true));
+    await expect(result.current.submit()).resolves.toBe(false);
+    expect(createFromRecordingSummaryMock).not.toHaveBeenCalled();
+    expect(beginMobileRecordingUploadMock).not.toHaveBeenCalled();
+    expect(uploadToSignedUrlMock).not.toHaveBeenCalled();
   });
 });

@@ -1,11 +1,8 @@
 // auth-hooks.ts - Separate file for auth hooks that use API
 
+import type { OnboardingStatus } from "@repo/core/schemas/onboarding";
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import {
-  deleteMobileAccount,
-  updateMobileEmail,
-  updateMobilePassword,
-} from "@/lib/auth/account-management";
+import { updateMobileEmail, updateMobilePassword } from "@/lib/auth/account-management";
 import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { api } from "../api";
@@ -20,7 +17,7 @@ import { api } from "../api";
 export const useAuth = () => {
   const store = useAuthStore();
   const utils = api.useUtils();
-  const { session, user, ready, loading } = store;
+  const { session, user, ready } = store;
 
   const isAuthenticated = useMemo(() => !!session?.user, [session]);
   const hasAuthCredentials = useMemo(() => hasSessionAuthCredentials(), []);
@@ -63,33 +60,26 @@ export const useAuth = () => {
 
   // FIX: Sync profile from API to store - use ref to track if we've already synced this data
   const lastSyncedProfileId = useRef<string | null>(null);
-  const lastSyncedOnboarded = useRef<boolean | null>(null);
+  const lastSyncedOnboardingStatus = useRef<OnboardingStatus | null>(null);
   const lastSyncedUpdatedAt = useRef<string | null>(null);
 
   useEffect(() => {
     if (profileQuery.data) {
       // Only update if data actually changed
       const profileId = profileQuery.data.id;
-      const onboarded = profileQuery.data.onboarded;
+      const onboardingStatus = profileQuery.data.onboarding_status;
       const updatedAt = profileQuery.data.updated_at ?? null;
 
       if (
         lastSyncedProfileId.current !== profileId ||
-        lastSyncedOnboarded.current !== onboarded ||
+        lastSyncedOnboardingStatus.current !== onboardingStatus ||
         lastSyncedUpdatedAt.current !== updatedAt
       ) {
-        // Prevent stale query data from overwriting optimistic 'true' status
-        if (store.onboardingStatus === true && onboarded === false) {
-          console.log(
-            "🛡️ Preventing stale profile query from overwriting optimistic onboarding status",
-          );
-        } else {
-          store.setProfile(profileQuery.data);
-          store.setOnboardingStatus(onboarded);
-          lastSyncedProfileId.current = profileId;
-          lastSyncedOnboarded.current = onboarded;
-          lastSyncedUpdatedAt.current = updatedAt;
-        }
+        store.setProfile(profileQuery.data);
+        store.setOnboardingStatus(onboardingStatus);
+        lastSyncedProfileId.current = profileId;
+        lastSyncedOnboardingStatus.current = onboardingStatus;
+        lastSyncedUpdatedAt.current = updatedAt;
       }
     } else if (profileQuery.isError || !isAuthenticated) {
       // Clear profile if query fails or user logs out
@@ -97,7 +87,7 @@ export const useAuth = () => {
         store.setProfile(null);
         store.setOnboardingStatus(null);
         lastSyncedProfileId.current = null;
-        lastSyncedOnboarded.current = null;
+        lastSyncedOnboardingStatus.current = null;
         lastSyncedUpdatedAt.current = null;
       }
     }
@@ -106,22 +96,9 @@ export const useAuth = () => {
     profileQuery.data,
     profileQuery.isError,
     isAuthenticated,
-    store.onboardingStatus,
     store.setOnboardingStatus,
     store.setProfile,
   ]); // Don't include store methods
-
-  // FIX: Delete account - stable callback
-  const deleteAccount = useCallback(async () => {
-    try {
-      const result = await deleteMobileAccount();
-      if (result.error) throw result.error;
-      await useAuthStore.getState().clearSession();
-    } catch (e) {
-      console.error("Error deleting account:", e);
-      throw e;
-    }
-  }, []); // No dependencies needed
 
   const updatePassword = useCallback(
     async (input: { currentPassword?: string; newPassword: string }) => {
@@ -158,29 +135,23 @@ export const useAuth = () => {
     return result;
   }, []);
 
-  // FIX: Complete onboarding - stable callback
-  const completeOnboarding = useCallback(async () => {
-    if (!user) return;
-    try {
-      // Note: The DB update is now handled by the completeOnboarding API mutation.
-      // This function simply updates the local store to reflect the change immediately
-      // and prevent navigation loops while the profile query re-fetches.
-      const currentStore = useAuthStore.getState();
-      currentStore.setOnboardingStatus(true);
-
-      // Also update the profile in store if it exists
-      if (currentStore.profile) {
-        currentStore.setProfile({ ...currentStore.profile, onboarded: true });
-      }
-
-      // Invalidate profile query to fetch fresh data.
-      // We intentionally don't await this to keep the UI responsive.
-      void utils.profiles.get.invalidate();
-    } catch (e) {
-      console.error("Error completing onboarding:", e);
-      throw e;
+  const refreshOnboardingStatus = useCallback(async () => {
+    await utils.profiles.get.invalidate();
+    const result = await profileQuery.refetch();
+    if (result.data) {
+      useAuthStore.getState().setProfile(result.data);
+      useAuthStore.getState().setOnboardingStatus(result.data.onboarding_status);
     }
-  }, [user, utils]);
+  }, [profileQuery, utils.profiles.get]);
+
+  const refreshProfile = useCallback(async () => {
+    const result = await profileQuery.refetch();
+    if (result.data) {
+      useAuthStore.getState().setProfile(result.data);
+      useAuthStore.getState().setOnboardingStatus(result.data.onboarding_status);
+    }
+    return result;
+  }, [profileQuery]);
 
   return {
     // Auth state from Zustand (single source of truth)
@@ -190,10 +161,7 @@ export const useAuth = () => {
     profile: store.profile ?? profileQuery.data,
     // Use computed email verification status for more reliable routing
     userStatus,
-    onboardingStatus:
-      store.onboardingStatus === true
-        ? true
-        : (profileQuery.data?.onboarded ?? store.onboardingStatus),
+    onboardingStatus: profileQuery.data?.onboarding_status ?? store.onboardingStatus,
     loading: store.loading,
     ready: store.ready,
     error: store.error,
@@ -201,17 +169,17 @@ export const useAuth = () => {
     isEmailVerified,
 
     // Actions
-    deleteAccount,
     updateEmail,
     updatePassword,
-    completeOnboarding,
+    refreshOnboardingStatus,
+    completeOnboarding: refreshOnboardingStatus,
     canUpdateEmail,
     updateEmailUnavailableReason,
 
     // Profile query status (for loading/error states)
     profileLoading: profileQuery.isLoading,
     profileError: profileQuery.error,
-    refreshProfile: profileQuery.refetch,
+    refreshProfile,
     authUserLoading: false,
     authUserError: null,
 
