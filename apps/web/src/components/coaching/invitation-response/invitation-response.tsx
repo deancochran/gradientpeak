@@ -13,8 +13,14 @@ type InboxState =
   | { page?: InboxPage; status: "loading"; cursor: string | null }
   | { page: InboxPage; status: "success"; cursor: string | null };
 
-export function InvitationResponse({ actorId }: { actorId: string }) {
-  const [token, setToken] = useState("");
+export function InvitationResponse({
+  actorId,
+  initialInvitationToken,
+}: {
+  actorId: string;
+  initialInvitationToken?: string;
+}) {
+  const [token, setToken] = useState(initialInvitationToken ?? "");
   const [preview, setPreview] = useState<Awaited<
     ReturnType<typeof previewOrganizationInvitation>
   > | null>(null);
@@ -31,6 +37,7 @@ export function InvitationResponse({ actorId }: { actorId: string }) {
   const inboxInFlight = useRef(false);
   const previewInFlight = useRef(false);
   const responseInFlight = useRef(false);
+  const initialPreviewStarted = useRef(false);
   const loadInbox = useCallback(
     (cursor: string | null, previousPage?: InboxPage, replace = false) => {
       if (inboxInFlight.current && !replace) return;
@@ -62,7 +69,12 @@ export function InvitationResponse({ actorId }: { actorId: string }) {
     [],
   );
   useEffect(() => {
+    const actorChanged = currentActorId.current !== actorId;
     currentActorId.current = actorId;
+    if (!actorChanged) {
+      loadInbox(null, undefined, true);
+      return;
+    }
     inboxGeneration.current++;
     tokenGeneration.current++;
     previewInFlight.current = false;
@@ -84,14 +96,14 @@ export function InvitationResponse({ actorId }: { actorId: string }) {
     setResponseFailure(null);
     setReceipt(null);
   };
-  const inspect = async () => {
+  const inspect = async (commandToken = token) => {
     if (previewInFlight.current || responseInFlight.current || responseFailure) return;
     const generationAtStart = ++tokenGeneration.current;
     previewInFlight.current = true;
     setPreviewError(false);
     setResponseFailure(null);
     try {
-      const result = await previewOrganizationInvitation({ data: { token } });
+      const result = await previewOrganizationInvitation({ data: { token: commandToken } });
       if (generationAtStart === tokenGeneration.current) setPreview(result);
     } catch {
       if (generationAtStart === tokenGeneration.current) {
@@ -102,6 +114,14 @@ export function InvitationResponse({ actorId }: { actorId: string }) {
       if (generationAtStart === tokenGeneration.current) previewInFlight.current = false;
     }
   };
+  // The handoff is intentionally previewed once for the identity that mounted this surface.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: inspect is deliberately one-shot.
+  useEffect(() => {
+    if (!initialInvitationToken || initialPreviewStarted.current) return;
+    initialPreviewStarted.current = true;
+    clear(initialInvitationToken);
+    void inspect(initialInvitationToken);
+  }, [initialInvitationToken]);
   const respond = async (choice: "accept" | "decline", commandToken = token) => {
     if (responseInFlight.current || previewInFlight.current) return;
     const generationAtStart = ++tokenGeneration.current;
@@ -177,6 +197,8 @@ export function InvitationResponse({ actorId }: { actorId: string }) {
         <input
           aria-label="Invitation token"
           className="mt-1 block w-full rounded border p-2"
+          data-ph-no-capture
+          data-sentry-mask
           type="password"
           autoComplete="off"
           value={token}

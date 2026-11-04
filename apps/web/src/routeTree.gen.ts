@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as CoachingRouteImport } from './routes/_coaching'
 import { Route as ProtectedRouteImport } from './routes/_protected'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
+import { Route as OrganizationInvitationRouteImport } from './routes/organization-invitation'
 import { Route as ProtectedIndexRouteImport } from './routes/_protected/index'
 import { Route as ProtectedCalendarRouteImport } from './routes/_protected/calendar'
 import { Route as ProtectedGoalsRouteImport } from './routes/_protected/goals'
@@ -114,6 +115,11 @@ const ProtectedRoute = ProtectedRouteImport.update({
 const OnboardingRoute = OnboardingRouteImport.update({
   id: '/onboarding',
   path: '/onboarding',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrganizationInvitationRoute = OrganizationInvitationRouteImport.update({
+  id: '/organization-invitation',
+  path: '/organization-invitation',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProtectedIndexRoute = ProtectedIndexRouteImport.update({
@@ -620,6 +626,7 @@ const CoachingOrganizationsOrganizationIdGroupsGroupIdCoachesRoute =
 export interface FileRoutesByFullPath {
   '/': typeof ProtectedIndexRoute
   '/onboarding': typeof OnboardingRoute
+  '/organization-invitation': typeof OrganizationInvitationRoute
   '/calendar': typeof ProtectedCalendarRouteWithChildren
   '/goals': typeof ProtectedGoalsRouteWithChildren
   '/integrations': typeof ProtectedIntegrationsRoute
@@ -713,6 +720,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof ProtectedIndexRoute
   '/onboarding': typeof OnboardingRoute
+  '/organization-invitation': typeof OrganizationInvitationRoute
   '/integrations': typeof ProtectedIntegrationsRoute
   '/messages': typeof ProtectedMessagesRoute
   '/notifications': typeof ProtectedNotificationsRoute
@@ -803,6 +811,7 @@ export interface FileRoutesById {
   '/_coaching': typeof CoachingRouteWithChildren
   '/_protected': typeof ProtectedRouteWithChildren
   '/onboarding': typeof OnboardingRoute
+  '/organization-invitation': typeof OrganizationInvitationRoute
   '/_protected/calendar': typeof ProtectedCalendarRouteWithChildren
   '/_protected/goals': typeof ProtectedGoalsRouteWithChildren
   '/_protected/integrations': typeof ProtectedIntegrationsRoute
@@ -899,6 +908,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/onboarding'
+    | '/organization-invitation'
     | '/calendar'
     | '/goals'
     | '/integrations'
@@ -992,6 +1002,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/onboarding'
+    | '/organization-invitation'
     | '/integrations'
     | '/messages'
     | '/notifications'
@@ -1081,6 +1092,7 @@ export interface FileRouteTypes {
     | '/_coaching'
     | '/_protected'
     | '/onboarding'
+    | '/organization-invitation'
     | '/_protected/calendar'
     | '/_protected/goals'
     | '/_protected/integrations'
@@ -1177,6 +1189,7 @@ export interface RootRouteChildren {
   CoachingRoute: typeof CoachingRouteWithChildren
   ProtectedRoute: typeof ProtectedRouteWithChildren
   OnboardingRoute: typeof OnboardingRoute
+  OrganizationInvitationRoute: typeof OrganizationInvitationRoute
   ApiChatRoute: typeof ApiChatRoute
   ApiHealthRoute: typeof ApiHealthRoute
   ApiReadyRoute: typeof ApiReadyRoute
@@ -1226,6 +1239,13 @@ declare module '@tanstack/react-router' {
       path: '/onboarding'
       fullPath: '/onboarding'
       preLoaderRoute: typeof OnboardingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/organization-invitation': {
+      id: '/organization-invitation'
+      path: '/organization-invitation'
+      fullPath: '/organization-invitation'
+      preLoaderRoute: typeof OrganizationInvitationRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_protected/': {
@@ -2097,6 +2117,7 @@ const rootRouteChildren: RootRouteChildren = {
   CoachingRoute: CoachingRouteWithChildren,
   ProtectedRoute: ProtectedRouteWithChildren,
   OnboardingRoute: OnboardingRoute,
+  OrganizationInvitationRoute: OrganizationInvitationRoute,
   ApiChatRoute: ApiChatRoute,
   ApiHealthRoute: ApiHealthRoute,
   ApiReadyRoute: ApiReadyRoute,

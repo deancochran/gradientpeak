@@ -20,7 +20,7 @@ import {
 import { useRouter } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
-
+import { buildOrganizationInvitationLink } from "../../../lib/coaching/invitation-handoff";
 import {
   createOrganizationInvitation,
   revokeOrganizationInvitation,
@@ -93,7 +93,7 @@ function OrganizationInvitationsContents({
   const current = useRef({ actorProfileId, organizationId, operation: 0 });
   const inFlight = useRef(false);
   const [selected, setSelected] = useState<Invitation | null>(null);
-  const [token, setToken] = useState<string | null>(null);
+  const [invitationLink, setInvitationLink] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [locked, setLocked] = useState(false);
@@ -159,15 +159,17 @@ function OrganizationInvitationsContents({
         setError("Your access has changed. Refresh invitations before taking another action.");
         return;
       }
-      setToken(result.invitation.token);
-      setNotice("Invitation created. Copy the token now; it will not be shown again.");
+      setInvitationLink(
+        buildOrganizationInvitationLink(window.location.origin, result.invitation.token),
+      );
+      setNotice("Invitation created. Copy the invitation link now; it will not be shown again.");
       try {
         await router.invalidate();
       } catch {
         if (isCurrent(operation)) {
           setLocked(true);
           setNotice(
-            "Invitation created, but the list could not refresh. Copy the token now, then refresh before another change.",
+            "Invitation created, but the list could not refresh. Copy the invitation link now, then refresh before another change.",
           );
         }
       }
@@ -220,20 +222,20 @@ function OrganizationInvitationsContents({
       inFlight.current = false;
     }
   };
-  const copyToken = async () => {
-    if (!token) return;
+  const copyInvitationLink = async () => {
+    if (!invitationLink) return;
     // Copying is not a new mutation and must not supersede its reconciliation.
     const operation = current.current.operation;
     try {
-      await navigator.clipboard.writeText(token);
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(invitationLink);
       if (isCurrent(operation)) {
-        setToken(null);
-        setNotice("Invitation token copied. It is no longer displayed.");
+        setNotice("Invitation link copied. Keep it open until you have shared it.");
       }
     } catch {
       if (isCurrent(operation))
         setError(
-          "The token could not be copied. Select and copy it before dismissing this message.",
+          "The invitation link could not be copied. Select and copy it before dismissing this message.",
         );
     }
   };
@@ -247,7 +249,7 @@ function OrganizationInvitationsContents({
           Organization invitations
         </h1>
         <p className="max-w-3xl text-sm leading-6 text-slate-400">
-          Create a shareable invitation token. No email is sent, and recipient identity is not shown
+          Create a shareable invitation link. No email is sent, and recipient identity is not shown
           in this list.
         </p>
       </div>
@@ -261,22 +263,32 @@ function OrganizationInvitationsContents({
           {error}
         </p>
       ) : null}
-      {token ? (
+      {invitationLink ? (
         <Card className="border-amber-700 bg-slate-900 text-slate-50">
           <CardHeader>
-            <CardTitle>Copy invitation token</CardTitle>
+            <CardTitle>Copy invitation link</CardTitle>
             <CardDescription className="text-slate-400">
-              This token is displayed once. Share it through an approved channel.
+              This link is displayed once. Share it through an approved channel. No email has been
+              sent.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <code className="block break-all rounded bg-slate-950 p-3 text-sm">{token}</code>
+            <input
+              aria-label="Invitation link"
+              className="block w-full rounded bg-slate-950 p-3 text-sm"
+              data-ph-no-capture
+              data-sentry-mask
+              readOnly
+              type="text"
+              value={invitationLink}
+              onFocus={(event) => event.currentTarget.select()}
+            />
             <div className="flex flex-wrap gap-3">
-              <Button type="button" onClick={() => void copyToken()}>
-                Copy token
+              <Button type="button" onClick={() => void copyInvitationLink()}>
+                Copy invitation link
               </Button>
-              <Button type="button" variant="outline" onClick={() => setToken(null)}>
-                Dismiss token
+              <Button type="button" variant="outline" onClick={() => setInvitationLink(null)}>
+                Dismiss invitation link
               </Button>
             </div>
           </CardContent>
