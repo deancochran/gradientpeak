@@ -11,6 +11,7 @@ vi.mock("@tanstack/react-router", () => ({
     ...options,
     useLoaderData: () => state.roster,
     useParams: () => ({ organizationId: "11111111-1111-4111-8111-111111111111" }),
+    useRouteContext: () => ({ actorProfileId: "profile-1" }),
   }),
 }));
 vi.mock("../../../../lib/coaching/athletes-server-functions", () => ({

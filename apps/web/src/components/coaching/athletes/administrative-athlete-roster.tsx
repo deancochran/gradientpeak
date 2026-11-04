@@ -16,6 +16,7 @@ import {
   loadAdministrativeAthleteRoster,
   terminateAthleteEngagement,
 } from "../../../lib/coaching/athletes-server-functions";
+import { OrganizationCoachingAssignments } from "../organization-coaching-assignments/organization-coaching-assignments";
 
 const PAGE_SIZE = 20;
 const terminationSchema = z.object({
@@ -35,15 +36,38 @@ type RosterResult =
 
 export function AdministrativeAthleteRoster({
   organizationId,
+  actorProfileId,
   initialPage,
 }: {
   organizationId: string;
+  actorProfileId: string;
+  initialPage: Page;
+}) {
+  return (
+    <AdministrativeAthleteRosterContents
+      key={`${actorProfileId}:${organizationId}`}
+      actorProfileId={actorProfileId}
+      organizationId={organizationId}
+      initialPage={initialPage}
+    />
+  );
+}
+function AdministrativeAthleteRosterContents({
+  organizationId,
+  actorProfileId,
+  initialPage,
+}: {
+  organizationId: string;
+  actorProfileId: string;
   initialPage: Page;
 }) {
   const loadRoster = useServerFn(loadAdministrativeAthleteRoster);
   const endEngagement = useServerFn(terminateAthleteEngagement);
   const [page, setPage] = useState<Page>(initialPage);
   const [selected, setSelected] = useState<Athlete | null>(null);
+  const [managingResponsibilitiesFor, setManagingResponsibilitiesFor] = useState<Athlete | null>(
+    null,
+  );
   const [accessLost, setAccessLost] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoadingPage, setIsLoadingPage] = useState(false);
@@ -97,6 +121,7 @@ export function AdministrativeAthleteRoster({
     }
 
     setSelected(null);
+    setManagingResponsibilitiesFor(null);
     setAccessLost(false);
     setSaveNotice(null);
     operationRef.current = null;
@@ -245,6 +270,14 @@ export function AdministrativeAthleteRoster({
                     </Badge>
                     <Button
                       disabled={isTerminationPending}
+                      onClick={() => setManagingResponsibilitiesFor(athlete)}
+                      type="button"
+                      variant="outline"
+                    >
+                      Manage coaches
+                    </Button>
+                    <Button
+                      disabled={isTerminationPending}
                       onClick={() => {
                         if (pendingSubmission.current !== null) return;
                         setSelected(athlete);
@@ -273,6 +306,16 @@ export function AdministrativeAthleteRoster({
           ) : null}
         </CardContent>
       </Card>
+      {managingResponsibilitiesFor ? (
+        <OrganizationCoachingAssignments
+          athleteName={identityName(managingResponsibilitiesFor)}
+          actorProfileId={actorProfileId}
+          engagementId={managingResponsibilitiesFor.engagementId}
+          onClose={() => setManagingResponsibilitiesFor(null)}
+          onAccessLost={() => setAccessLost(true)}
+          organizationId={organizationId}
+        />
+      ) : null}
       {selected ? (
         <Card className="border-destructive bg-slate-950 text-slate-50">
           <CardHeader>
