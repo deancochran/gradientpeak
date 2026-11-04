@@ -1,5 +1,13 @@
 # Form UX standards and remediation coverage
 
+## Mobile training-plan creation pages — 2026-11-03
+
+- Inline name/description and visibility precede the schedule. New plans use the signed-in athlete context without Athlete/Goals/Preferences setup tiles; existing edit-mode settings remain available.
+- Activity selection, filters and session editing use full-screen content with native header ownership. Header and Android hardware Back share draft-preserving transitions; child stack gestures are disabled. One creation service retains the draft throughout the flow.
+- Page pickers use a native FlatList; sheet consumers retain the Gorhom list. Cancelling an unassigned new activity removes only that pending session; reassignment Back returns to the session. Raw invalid session values survive page transitions, block saving and remain correctable after reopening.
+- Root navigation confirms dirty discard. Visibility, server preview validation, mutation conflict handling and pending-save protection remain in place; no backend/schema or native dependency changes.
+- Focused evidence: builder screen, projection/composer, controller, sheet and portal suites, mobile typecheck and scoped Biome passed. Coverage includes retrying an uncertain create without losing the locked draft. No newly skipped tests. Physical-device layout/gestures remain unverified; runtime and preview disposition are recorded separately in the shared-preview activation record.
+
 ## Single-line step-note authoring — 2026-10-15
 
 - Web and Mobile step-note editors now use single-line text fields. Shared Core authoring validation rejects explicit line/paragraph separators and notes longer than 160 Unicode characters, including direct API content validated through that schema. Natural display wrapping remains permitted.

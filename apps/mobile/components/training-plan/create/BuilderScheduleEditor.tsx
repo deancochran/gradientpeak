@@ -8,10 +8,7 @@ import type { DailyTrainingAdjustmentPoint } from "@/components/plan/training-pa
 import { TrainingPathSelectedDayPanel } from "@/components/plan/training-path/TrainingPathSelectedDayPanel";
 import { buildTrainingPathLoadMetrics } from "@/components/plan/training-path/trainingPathLoadMetrics";
 import { BuilderTrainingPathReviewSection } from "@/components/training-plan/create/BuilderTrainingPathReviewSection";
-import {
-  TrainingPlanBuilderEventCard,
-  TrainingPlanBuilderEventEditor,
-} from "@/components/training-plan/create/TrainingPlanBuilderEventCard";
+import { TrainingPlanBuilderEventCard } from "@/components/training-plan/create/TrainingPlanBuilderEventCard";
 import type { TrainingPlanBuilderController } from "@/components/training-plan/create/useTrainingPlanBuilderController";
 import type { BuilderPlanPresentation } from "@/lib/training-plan-creation/builder-presentation";
 import { formatBuilderWeekdayWithWeek } from "@/lib/training-plan-creation/formatters";
@@ -26,9 +23,6 @@ type BuilderScheduleEditorProps = {
   onMoveSessionByDays: (sessionId: string, days: number) => void;
   onPressSession: (sessionId: string) => void;
   onRemoveSession: (sessionId: string) => void;
-  selectedSession: TrainingPlanBuilderController["selection"]["session"];
-  onChangeSession: TrainingPlanBuilderController["builder"]["actions"]["updateSession"];
-  onOpenActivityPicker: (sessionId: string) => void;
   selectedDayPointOverride?: DailyTrainingAdjustmentPoint | null;
   showChart?: boolean;
   weekSummary?: string;
@@ -55,9 +49,6 @@ export function BuilderScheduleEditor({
   onMoveSessionByDays,
   onPressSession,
   onRemoveSession,
-  selectedSession,
-  onChangeSession,
-  onOpenActivityPicker,
   selectedDayPointOverride,
   showChart = true,
   estimateBySessionId,
@@ -120,18 +111,6 @@ export function BuilderScheduleEditor({
         </Text>
       </Button>
       {weekSummary ? <Text className="text-xs text-muted-foreground">{weekSummary}</Text> : null}
-      {selectedSession ? (
-        <View className="border-t border-border pt-4" testID="builder-inline-session-editor">
-          <Text className="mb-3 text-base font-semibold text-foreground">Edit activity</Text>
-          <TrainingPlanBuilderEventEditor
-            event={selectedSession}
-            onChange={onChangeSession}
-            onDuplicate={onDuplicateSession}
-            onOpenActivityPicker={onOpenActivityPicker}
-            onRemove={onRemoveSession}
-          />
-        </View>
-      ) : null}
     </View>
   );
 }

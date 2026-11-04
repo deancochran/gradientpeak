@@ -2,7 +2,7 @@ import { BottomSheetFlatList } from "@gorhom/bottom-sheet";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
 import type { ReactElement } from "react";
-import { View } from "react-native";
+import { FlatList, View } from "react-native";
 import {
   APP_BOTTOM_SHEET_ACTION_FOOTER_BOTTOM_INSET,
   APP_BOTTOM_SHEET_SEARCH_HEADER_CONTENT_TOP_INSET,
@@ -26,7 +26,24 @@ type SearchableBottomSheetListProps<TItem> = {
   singularLabel: string;
 };
 
+export type SearchableListPresentation = "sheet" | "screen";
+
+type SearchableListProps<TItem> = SearchableBottomSheetListProps<TItem> & {
+  presentation?: SearchableListPresentation;
+};
+
 export function SearchableBottomSheetList<TItem>({
+  ...props
+}: SearchableBottomSheetListProps<TItem>) {
+  return <SearchableList {...props} presentation="sheet" />;
+}
+
+/**
+ * The Gorhom list is coupled to BottomSheet's scrollable context. Picker pages
+ * use the native list instead, while sheet consumers retain their existing
+ * keyboard and footer integration.
+ */
+export function SearchableList<TItem>({
   data,
   emptyMessage,
   hasNextPage,
@@ -40,13 +57,15 @@ export function SearchableBottomSheetList<TItem>({
   renderItem,
   sectionLabel,
   singularLabel,
-}: SearchableBottomSheetListProps<TItem>) {
+  presentation = "sheet",
+}: SearchableListProps<TItem>) {
   const listData = isLoading ? [] : data;
+  const List = presentation === "sheet" ? BottomSheetFlatList : FlatList;
 
   return (
-    <BottomSheetFlatList
+    <List
       data={listData}
-      enableFooterMarginAdjustment
+      {...(presentation === "sheet" ? { enableFooterMarginAdjustment: true } : {})}
       keyExtractor={(item: unknown) => keyExtractor(item as TItem)}
       keyboardShouldPersistTaps="handled"
       style={{ flex: 1 }}

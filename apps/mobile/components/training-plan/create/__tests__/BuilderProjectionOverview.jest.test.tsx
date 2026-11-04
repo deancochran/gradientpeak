@@ -94,11 +94,13 @@ describe("BuilderProjectionOverview", () => {
     expect(screen.queryByTestId("builder-projection-modal")).toBeNull();
   });
 
-  it("is the projection surface rendered by the production strategy composer", async () => {
+  it("leads the strategy composer with inline details instead of projection", async () => {
     const props = {
       chartReview,
       saveReadiness: { detail: "Ready to review", label: "Review plan", status: "review" },
       onAddActivity: jest.fn(),
+      onUpdateDetails: jest.fn(),
+      onUpdateVisibility: jest.fn(),
       planningBriefRows: [
         {
           key: "athleteContext",
@@ -121,24 +123,24 @@ describe("BuilderProjectionOverview", () => {
       },
     } as unknown as ComponentProps<typeof BuilderStrategyComposer>;
 
-    const { rerender } = await render(<BuilderStrategyComposer {...props} />);
+    await render(<BuilderStrategyComposer {...props} />);
 
     expect(screen.getByTestId("builder-strategy-composer")).toBeTruthy();
-    expect(screen.getByTestId("builder-projection-overview")).toBeTruthy();
-    expect(screen.getByTestId("builder-edit-plan").props.accessibilityLabel).toContain(
-      "Current name: Summer build. Current description: Base block.",
-    );
+    expect(screen.queryByTestId("builder-projection-overview")).toBeNull();
+    expect(screen.getByLabelText("Plan name").props.value).toBe("Summer build");
+    expect(screen.getByLabelText("Description").props.value).toBe("Base block");
     expect(screen.queryByTestId("full-builder-training-path")).toBeNull();
 
-    await rerender(
-      <BuilderStrategyComposer
-        {...props}
-        state={{ ...props.state, details: { ...props.state.details, description: "", name: "" } }}
-      />,
-    );
-    expect(screen.getByTestId("builder-edit-plan").props.accessibilityLabel).toContain(
-      "Current name: No name set. Current description: No description set.",
-    );
+    await fireEvent.changeText(screen.getByLabelText("Plan name"), "Renamed plan");
+    expect(props.onUpdateDetails).toHaveBeenCalledWith({
+      name: "Renamed plan",
+      description: "Base block",
+    });
+    await fireEvent.changeText(screen.getByLabelText("Description"), "");
+    expect(props.onUpdateDetails).toHaveBeenLastCalledWith({
+      name: "Renamed plan",
+      description: "",
+    });
   });
 
   it("keeps schedule setup visible and wires its primary actions", async () => {
@@ -147,6 +149,8 @@ describe("BuilderProjectionOverview", () => {
       chartReview,
       saveReadiness: { detail: "Ready to review", label: "Review plan", status: "review" },
       onAddActivity,
+      onUpdateDetails: jest.fn(),
+      onUpdateVisibility: jest.fn(),
       planningBriefRows: [
         {
           key: "athleteContext",
@@ -171,26 +175,10 @@ describe("BuilderProjectionOverview", () => {
 
     const { rerender } = await render(<BuilderStrategyComposer {...props} />);
 
-    expect(screen.getByTestId("builder-configuration-grid")).toBeTruthy();
-    expect(screen.getByTestId("builder-configuration-grid-row-1").props.className).toContain(
-      "flex-row",
-    );
-    expect(screen.getByTestId("builder-configuration-grid-row-2").props.className).toContain(
-      "flex-row",
-    );
-    expect(screen.getByTestId("builder-configuration-grid").props.className).not.toContain(
-      "flex-wrap",
-    );
-    expect(screen.getByText("Athlete")).toBeTruthy();
-    expect(screen.getByText("Goals")).toBeTruthy();
-    expect(screen.getByText("Preferences")).toBeTruthy();
-    expect(screen.getByText("Schedule")).toBeTruthy();
-    expect(screen.getByText("Default")).toBeTruthy();
-    expect(screen.getAllByText("Optional")).toHaveLength(2);
-    expect(screen.getByText("Needs setup")).toBeTruthy();
-    expect(screen.getByTestId("builder-status-goals").props.className).toContain(
-      "bg-muted-foreground",
-    );
+    expect(screen.queryByTestId("builder-configuration-grid")).toBeNull();
+    expect(screen.queryByText("Athlete")).toBeNull();
+    expect(screen.queryByText("Goals")).toBeNull();
+    expect(screen.queryByText("Preferences")).toBeNull();
     expect(screen.getByTestId("builder-readiness")).toBeTruthy();
     expect(screen.getByText("Review plan")).toBeTruthy();
     await fireEvent.press(screen.getByText("Add activity"));
@@ -224,7 +212,7 @@ describe("BuilderProjectionOverview", () => {
       />,
     );
 
-    expect(screen.getByText("Needs assignment")).toBeTruthy();
+    expect(screen.getByText("Review plan")).toBeTruthy();
     expect(screen.getByTestId("builder-add-activity").props.className).toContain("w-full");
 
     await rerender(
@@ -261,6 +249,7 @@ describe("BuilderProjectionOverview", () => {
       />,
     );
 
-    expect(screen.getAllByText("Ready").length).toBeGreaterThan(0);
+    await fireEvent.press(screen.getByText("Add activity"));
+    expect(onAddActivity).toHaveBeenCalledTimes(2);
   });
 });

@@ -4,7 +4,10 @@ import { useCallback, useMemo } from "react";
 import { View } from "react-native";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { FilterChip, IndexSearchBar } from "@/components/shared/IndexSearchBar";
-import { SearchableBottomSheetList } from "@/components/shared/SearchableBottomSheetList";
+import {
+  SearchableList,
+  type SearchableListPresentation,
+} from "@/components/shared/SearchableBottomSheetList";
 import { omitUndefined } from "@/lib/omitUndefined";
 
 export type ActivityCategoryFilter = "run" | "bike" | "swim" | "strength" | "other" | null;
@@ -38,6 +41,7 @@ type BuilderActivityAssignmentSheetContentProps = {
   onSearchChange: (value: string) => void;
   onSelectActivityPlan: (activityPlan: ActivityPlanSummary) => void;
   searchQuery: string;
+  presentation?: SearchableListPresentation;
 };
 
 export function BuilderActivityAssignmentSheetContent({
@@ -47,6 +51,7 @@ export function BuilderActivityAssignmentSheetContent({
   isLoading,
   onFetchNextPage,
   onSelectActivityPlan,
+  presentation,
 }: BuilderActivityAssignmentSheetContentProps) {
   const activityPlanItemsWithEstimates = useMemo(() => activityPlanItems, [activityPlanItems]);
   const activityPlanById = useMemo(
@@ -69,7 +74,7 @@ export function BuilderActivityAssignmentSheetContent({
   );
 
   return (
-    <SearchableBottomSheetList
+    <SearchableList
       {...omitUndefined({ hasNextPage })}
       data={activityPlanItemsWithEstimates}
       emptyMessage="No matching activities."
@@ -81,6 +86,7 @@ export function BuilderActivityAssignmentSheetContent({
       onFetchNextPage={onFetchNextPage}
       pluralLabel="activities"
       renderItem={renderActivityPlan}
+      presentation={presentation}
       sectionLabel="Tap to assign"
       singularLabel="activity"
     />

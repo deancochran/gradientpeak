@@ -57,6 +57,7 @@ export function useScheduleEditorController(controller: TrainingPlanBuilderContr
         const session = builder.actions.duplicateSession(sessionId);
         if (session) {
           selection.setSessionId(session.localId);
+          sheetStack.openSheet("session");
         }
       },
       onMoveSessionByDays: (sessionId: string, days: number) => {
@@ -72,14 +73,10 @@ export function useScheduleEditorController(controller: TrainingPlanBuilderContr
         sheetStack.openSheet("session");
       },
       onRemoveSession: actions.confirmRemoveSession,
-      selectedSession: selection.session,
-      onChangeSession: builder.actions.updateSession,
-      onOpenActivityPicker: actions.openActivityPicker,
     }),
     [
       actions.addSessionAtOffset,
       actions.confirmRemoveSession,
-      actions.openActivityPicker,
       builder.actions,
       canonicalSessions,
       controller.chartReview,

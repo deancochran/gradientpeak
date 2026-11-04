@@ -1,11 +1,13 @@
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
-import { Stack, useGlobalSearchParams, usePathname } from "expo-router";
-import { ActivityIndicator, View } from "react-native";
+import { Stack, useFocusEffect, useGlobalSearchParams, usePathname } from "expo-router";
+import { useCallback, useRef, useState } from "react";
+import { ActivityIndicator, BackHandler, View } from "react-native";
 import { TrainingPlanBuilderSheets } from "@/components/training-plan/create/TrainingPlanBuilderSheets";
 import { TrainingPlanBuilderSurfaces } from "@/components/training-plan/create/TrainingPlanBuilderSurfaces";
 import { useTrainingPlanBuilderController } from "@/components/training-plan/create/useTrainingPlanBuilderController";
 import { useCreationFlowActive } from "@/lib/hooks/useCreationFlowActive";
+import { useDirtyNavigationGuard } from "@/lib/hooks/useDirtyNavigationGuard";
 import { omitUndefined } from "@/lib/omitUndefined";
 import { useAuthStore } from "@/lib/stores/auth-store";
 
@@ -46,14 +48,58 @@ function TrainingPlanBuilderScreenSession({
   planId,
   isFlowCurrent,
 }: TrainingPlanBuilderScreenProps & { isFlowCurrent: () => boolean }) {
+  const [isDirty, setIsDirty] = useState(false);
+  const allowNavigationRef = useRef(false);
   const controller = useTrainingPlanBuilderController(
     omitUndefined({
       mode,
       planId,
       isFlowCurrent,
+      onDirtyChange: setIsDirty,
+      onPersisted: () => {
+        allowNavigationRef.current = true;
+      },
     }),
   );
   const { builder } = controller;
+  useDirtyNavigationGuard({
+    isDirty,
+    isPending: builder.derived.savePlan.isPending,
+    allowNavigationRef,
+  });
+  const activeSurface = controller.sheetStack.activeSheet;
+  const surfaceTitle =
+    activeSurface === "activityAssignment"
+      ? "Choose activity"
+      : activeSurface === "activityFilters"
+        ? "Activity filters"
+        : activeSurface === "session"
+          ? "Edit activity"
+          : controller.header.title;
+  const leaveSurface = useCallback(() => {
+    if (builder.derived.savePlan.isLocked) return;
+    if (activeSurface === "activityAssignment") {
+      controller.actions.backFromActivityPicker();
+      return;
+    }
+    if (activeSurface === "activityFilters") controller.sheetStack.goBackSheet();
+    else controller.actions.exitSession();
+  }, [activeSurface, builder.derived.savePlan.isLocked, controller.actions, controller.sheetStack]);
+  const isChildSurface =
+    activeSurface === "activityAssignment" ||
+    activeSurface === "activityFilters" ||
+    activeSurface === "session";
+  useFocusEffect(
+    useCallback(() => {
+      if (!isChildSurface) return undefined;
+      const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+        if (builder.derived.savePlan.isLocked) return true;
+        leaveSurface();
+        return true;
+      });
+      return () => subscription.remove();
+    }, [builder.derived.savePlan.isLocked, isChildSurface, leaveSurface]),
+  );
 
   if (
     mode === "edit" &&
@@ -100,21 +146,41 @@ function TrainingPlanBuilderScreenSession({
     <>
       <Stack.Screen
         options={{
-          title: controller.header.title,
-          headerRight: () => (
-            <Button
-              accessibilityLabel={controller.header.primaryLabel}
-              accessibilityState={{ disabled: controller.header.primaryDisabled }}
-              disabled={controller.header.primaryDisabled}
-              onPress={() => void controller.header.save()}
-              size="sm"
-              testID="training-plan-save-button"
-              variant="ghost"
-            >
-              {controller.header.isSaving ? <ActivityIndicator size="small" /> : null}
-              <Text>{controller.header.primaryLabel}</Text>
-            </Button>
+          title: surfaceTitle,
+          headerLeft: isChildSurface
+            ? () => (
+                <Button
+                  accessibilityLabel="Back"
+                  disabled={builder.derived.savePlan.isLocked}
+                  onPress={leaveSurface}
+                  size="sm"
+                  variant="ghost"
+                >
+                  <Text>Back</Text>
+                </Button>
+              )
+            : undefined,
+          gestureEnabled: !(
+            activeSurface === "activityAssignment" ||
+            activeSurface === "activityFilters" ||
+            activeSurface === "session"
           ),
+          headerRight: isChildSurface
+            ? undefined
+            : () => (
+                <Button
+                  accessibilityLabel={controller.header.primaryLabel}
+                  accessibilityState={{ disabled: controller.header.primaryDisabled }}
+                  disabled={controller.header.primaryDisabled}
+                  onPress={() => void controller.header.save()}
+                  size="sm"
+                  testID="training-plan-save-button"
+                  variant="ghost"
+                >
+                  {controller.header.isSaving ? <ActivityIndicator size="small" /> : null}
+                  <Text>{controller.header.primaryLabel}</Text>
+                </Button>
+              ),
         }}
       />
 
@@ -127,7 +193,9 @@ function TrainingPlanBuilderScreenSession({
         }
       >
         <TrainingPlanBuilderSurfaces controller={controller} />
-        {controller.sheetStack.activeSheet !== "activityAssignment" ? (
+        {controller.sheetStack.activeSheet !== "activityAssignment" &&
+        controller.sheetStack.activeSheet !== "session" &&
+        controller.sheetStack.activeSheet !== "activityFilters" ? (
           <TrainingPlanBuilderSheets controller={controller} />
         ) : null}
       </View>

@@ -62,6 +62,8 @@ export function useTrainingPlanBuilderController({
   const [activityPlanSort, setActivityPlanSort] = useState<ActivityPlanSort>("newest");
   const [pendingSessionDraftId, setPendingSessionDraftId] = useState<string | null>(null);
   const [numericDraftErrors, setNumericDraftErrors] = useState<Record<string, string>>({});
+  const [sessionRawDrafts, setSessionRawDrafts] = useState<Record<string, string>>({});
+  const [activityPickerReturnsToSession, setActivityPickerReturnsToSession] = useState(false);
   const numericDraftErrorsRef = useRef<Record<string, string>>({});
   const [selectedWeekStart, setSelectedWeekStart] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -250,6 +252,16 @@ export function useTrainingPlanBuilderController({
     numericDraftErrorsRef.current = next;
     setNumericDraftErrors(next);
   }, []);
+  const setSessionRawDraft = useCallback((key: string, value: string) => {
+    setSessionRawDrafts((current) => ({ ...current, [key]: value }));
+  }, []);
+  const clearSessionDrafts = useCallback((sessionId: string) => {
+    setSessionRawDrafts((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([key]) => !key.startsWith(`session:${sessionId}:`)),
+      ),
+    );
+  }, []);
 
   const selectActivityPlan = useCallback(
     (activityPlan: ActivityPlanListItem) => {
@@ -264,6 +276,7 @@ export function useTrainingPlanBuilderController({
       if (pendingSessionDraftId === selectedSessionId) {
         setPendingSessionDraftId(null);
       }
+      setActivityPickerReturnsToSession(false);
       sheetStack.openSheet("session");
     },
     [
@@ -281,12 +294,19 @@ export function useTrainingPlanBuilderController({
     if (pendingSession && !pendingSession.activityPlan) {
       builder.actions.removeSession(pendingSessionDraftId);
       clearNumericDraftErrors(`session:${pendingSessionDraftId}:`);
+      clearSessionDrafts(pendingSessionDraftId);
       if (selectedSessionId === pendingSessionDraftId) {
         setSelectedSessionId(null);
       }
     }
     setPendingSessionDraftId(null);
-  }, [builder.actions, clearNumericDraftErrors, pendingSessionDraftId, selectedSessionId]);
+  }, [
+    builder.actions,
+    clearNumericDraftErrors,
+    clearSessionDrafts,
+    pendingSessionDraftId,
+    selectedSessionId,
+  ]);
 
   const confirmRemoveSession = useCallback(
     (sessionId: string) => {
@@ -298,6 +318,7 @@ export function useTrainingPlanBuilderController({
           onPress: () => {
             builder.actions.removeSession(sessionId);
             clearNumericDraftErrors(`session:${sessionId}:`);
+            clearSessionDrafts(sessionId);
             if (selectedSessionId === sessionId) {
               setSelectedSessionId(null);
               sheetStack.closeSheet();
@@ -306,7 +327,13 @@ export function useTrainingPlanBuilderController({
         },
       ]);
     },
-    [builder.actions, clearNumericDraftErrors, selectedSessionId, sheetStack.closeSheet],
+    [
+      builder.actions,
+      clearNumericDraftErrors,
+      clearSessionDrafts,
+      selectedSessionId,
+      sheetStack.closeSheet,
+    ],
   );
 
   const applyActivityFiltersDraft = useCallback(
@@ -360,7 +387,9 @@ export function useTrainingPlanBuilderController({
       plansById: activityPlansById,
       applyFiltersDraft: applyActivityFiltersDraft,
       selectPlan: selectActivityPlan,
+      setCategoryFilter: setActivityPlanCategoryFilter,
       setSearchQuery: setActivityPlanSearchQuery,
+      setSort: setActivityPlanSort,
     }),
     [
       activityPlanCategoryFilter,
@@ -381,15 +410,31 @@ export function useTrainingPlanBuilderController({
       handleSave,
       openActivityPicker: (sessionId: string) => {
         setSelectedSessionId(sessionId);
+        setActivityPickerReturnsToSession(true);
         sheetStack.openSheet("activityAssignment");
+      },
+      backFromActivityPicker: () => {
+        if (activityPickerReturnsToSession) {
+          setActivityPickerReturnsToSession(false);
+          sheetStack.openSheet("session");
+          return;
+        }
+        cancelPendingSessionDraft();
+        sheetStack.closeSheet();
+      },
+      exitSession: () => {
+        setSelectedSessionId(null);
+        sheetStack.closeSheet();
       },
     }),
     [
       addSession,
       addSessionAtOffset,
+      activityPickerReturnsToSession,
       cancelPendingSessionDraft,
       confirmRemoveSession,
       handleSave,
+      sheetStack.closeSheet,
       sheetStack.openSheet,
     ],
   );
@@ -401,6 +446,7 @@ export function useTrainingPlanBuilderController({
     chartReview,
     header,
     isSaving,
+    mode,
     numericDrafts: {
       clearErrors: clearNumericDraftErrors,
       hasInvalid: hasInvalidNumericDrafts,
@@ -408,6 +454,7 @@ export function useTrainingPlanBuilderController({
         Object.keys(numericDraftErrors).some((key) => key.startsWith(prefix)),
       setError: setNumericDraftError,
     },
+    sessionDrafts: { rawDrafts: sessionRawDrafts, setRawDraft: setSessionRawDraft },
     selection,
     sheetStack,
   };

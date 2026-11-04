@@ -204,14 +204,8 @@ describe("BuilderScheduleEditor selected day planning", () => {
     expect(props.onRemoveSession).toHaveBeenCalledWith("session-1");
   });
 
-  it("keeps the selected activity editor inline with the weekly schedule", async () => {
-    await renderEditor(0, {
-      selectedSession: { localId: "session-inline", offsetDays: 0 },
-      onChangeSession: jest.fn(),
-      onOpenActivityPicker: jest.fn(),
-    } as unknown as Partial<React.ComponentProps<typeof BuilderScheduleEditor>>);
-
-    expect(screen.getByTestId("builder-inline-session-editor")).toBeTruthy();
-    expect(screen.getByTestId("inline-editor-session-inline")).toBeTruthy();
+  it("keeps editing out of the schedule so all entry points use the session page", async () => {
+    await renderEditor(0);
+    expect(screen.queryByTestId("builder-inline-session-editor")).toBeNull();
   });
 });
