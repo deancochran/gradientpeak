@@ -120,6 +120,38 @@ describe("organizationsRouter", () => {
     expect(harness.getAccessRepository).not.toHaveBeenCalled();
   });
 
+  it("rejects unauthenticated and malformed staff-role mutations before persistence", async () => {
+    const harness = createHarness();
+    const anonymous = createRouterCaller(harness.router, { session: null });
+    await expect(
+      anonymous.staffRoles.grant({
+        organizationId: ORGANIZATION_ID,
+        membershipId: MEMBERSHIP_ID,
+        role: "coach",
+        operationId: ORGANIZATION_ID,
+      }),
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" } satisfies Partial<TRPCError>);
+    const caller = createRouterCaller(harness.router, { userId: SESSION_PROFILE_ID });
+    await expect(
+      caller.staffRoles.revoke({
+        organizationId: ORGANIZATION_ID,
+        membershipId: MEMBERSHIP_ID,
+        role: "owner",
+        operationId: ORGANIZATION_ID,
+      } as never),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" } satisfies Partial<TRPCError>);
+    await expect(
+      caller.staffRoles.grant({
+        organizationId: ORGANIZATION_ID,
+        membershipId: MEMBERSHIP_ID,
+        role: "coach",
+        operationId: ORGANIZATION_ID,
+        extra: true,
+      } as never),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" } satisfies Partial<TRPCError>);
+    expect(harness.getAccessRepository).not.toHaveBeenCalled();
+  });
+
   it("rejects unauthenticated, malformed, and cross-scope invitation discovery cursors", async () => {
     const harness = createHarness();
     const anonymous = createRouterCaller(harness.router, { session: null });
