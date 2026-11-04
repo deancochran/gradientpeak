@@ -433,9 +433,9 @@ function OrganizationInvitationsContents({
       </Card>
       <InvitationPagination
         organizationId={organizationId}
-        cursor={cursor}
         hasMore={page.hasMore}
         nextCursor={page.nextCursor}
+        {...(cursor === undefined ? {} : { cursor })}
       />
       <AlertDialog
         open={selected !== null}
