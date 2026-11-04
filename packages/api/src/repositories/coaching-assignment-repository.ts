@@ -213,4 +213,3 @@ export function createCoachingAssignmentRepository(db: DrizzleQueryExecutor) {
         .orderBy(asc(coachingAssignments.id)),
   };
 }
-export type CoachingAssignmentRepository = ReturnType<typeof createCoachingAssignmentRepository>;
