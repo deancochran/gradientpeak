@@ -5,13 +5,24 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Pool } from "pg";
 import { dbPackageRoot } from "./_helpers";
+import {
+  assertAuthIdentityCompatibilityDataInventory,
+  assertAuthIdentityCompatibilityTableInventory,
+} from "./auth-identity-compatibility-upgrade";
 import { createSchemaFingerprint } from "./check-schema-fingerprint";
+import {
+  createRetainedDataDigest,
+  lockRetainedDataTables,
+  type RetainedDataMap,
+  retainedDataTables,
+} from "./retained-e2e-upgrade";
 
 export const prerequisite = "7cf88482037dba81f2d7a00311661f4627fc63fc";
 const directory = resolve(dbPackageRoot, "supabase/approved-upgrades/coaching-write-consent");
 const baselinePath = "packages/db/supabase/migrations/20260730000000_mvp_baseline.sql";
 const beginMarker = "-- COACHING_WRITE_CONSENT_UPGRADE_BEGIN";
 const endMarker = "-- COACHING_WRITE_CONSENT_UPGRADE_END";
+const advisoryLockName = "gradientpeak:coaching-write-consent-upgrade";
 
 export function prerequisiteBaseline() {
   return execFileSync("git", ["show", `${prerequisite}:${baselinePath}`], {
@@ -27,6 +38,10 @@ export function expectedPrerequisiteFingerprint() {
       encoding: "utf8",
     }),
   );
+}
+
+export function expectedCoachingWriteConsentAfterFingerprint() {
+  return JSON.parse(readFileSync(resolve(directory, "after-fingerprint.json"), "utf8"));
 }
 
 /** The artifact is a byte-for-byte bounded extraction from the reviewed fresh baseline. */
@@ -102,13 +117,34 @@ export function materializeUpgrade() {
   );
 }
 
+export type CoachingWriteConsentUpgradeOptions = {
+  afterDdl?: (client: import("pg").PoolClient) => Promise<void>;
+  /**
+   * Operational callers can acquire their reviewed platform-table locks and set
+   * the DDL role here. This runs inside this runner's transaction, after its
+   * organization lock and before any fingerprint or data observation.
+   */
+  beforeFingerprint?: (client: import("pg").PoolClient) => Promise<void>;
+  /** A recovery rehearsal's pre-lock digest, compared only while locks are held. */
+  expectedSourceData?: RetainedDataMap;
+  /** Require the retained/auth/storage/ledger table inventory reviewed for this prerequisite. */
+  requireExactDataInventory?: boolean;
+};
+
+/** Lock every reviewed pre-existing platform/application table for an operational run. */
+export async function lockCoachingWriteConsentPreexistingTables(client: import("pg").PoolClient) {
+  const tables = await retainedDataTables(client);
+  await lockRetainedDataTables(client, tables);
+  assertAuthIdentityCompatibilityTableInventory(tables);
+}
+
 export async function applyCoachingWriteConsentUpgrade(
   pool: Pool,
-  hooks: { afterDdl?: (client: import("pg").PoolClient) => Promise<void> } = {},
+  options: CoachingWriteConsentUpgradeOptions = {},
 ) {
   const sql = readFileSync(resolve(directory, "upgrade.sql"), "utf8");
   const before = JSON.parse(readFileSync(resolve(directory, "before-fingerprint.json"), "utf8"));
-  const after = JSON.parse(readFileSync(resolve(directory, "after-fingerprint.json"), "utf8"));
+  const after = expectedCoachingWriteConsentAfterFingerprint();
   const authoritativeAfter = JSON.parse(
     readFileSync(resolve(dbPackageRoot, "schema-fingerprint.json"), "utf8"),
   );
@@ -122,14 +158,47 @@ export async function applyCoachingWriteConsentUpgrade(
   try {
     await client.query("begin");
     await client.query("set local lock_timeout = '10s'; set local statement_timeout = '60s'");
+    if (
+      !(
+        await client.query("select pg_try_advisory_xact_lock(hashtext($1)) as acquired", [
+          advisoryLockName,
+        ])
+      ).rows[0]?.acquired
+    )
+      throw new Error("coaching write consent upgrade already running");
     // Organization-first serializes future FOR UPDATE grant/revoke commands with lifecycle commands.
     await client.query("lock table public.organizations in access exclusive mode");
+    await options.beforeFingerprint?.(client);
     if (JSON.stringify(await createSchemaFingerprint(client)) !== JSON.stringify(before))
       throw new Error(
         "pre-upgrade fingerprint mismatch; refusing unexpected, partial or already-installed schema",
       );
+    const beforeData =
+      options.expectedSourceData || options.requireExactDataInventory
+        ? await createRetainedDataDigest(client)
+        : undefined;
+    if (options.requireExactDataInventory && beforeData)
+      assertAuthIdentityCompatibilityDataInventory(beforeData);
+    if (
+      options.expectedSourceData &&
+      JSON.stringify(beforeData) !== JSON.stringify(options.expectedSourceData)
+    )
+      throw new Error("pre-upgrade source data digest mismatch");
     await client.query(sql.replace("\nBEGIN;\n", "\n").replace(/COMMIT;\n$/, ""));
-    await hooks.afterDdl?.(client);
+    await options.afterDdl?.(client);
+    if (beforeData) {
+      const afterData = await createRetainedDataDigest(client);
+      const preexistingAfterData = Object.fromEntries(
+        Object.keys(beforeData).map((table) => [table, afterData[table]]),
+      );
+      if (JSON.stringify(preexistingAfterData) !== JSON.stringify(beforeData))
+        throw new Error("pre-existing table data digest mismatch");
+      const grants = await client.query(
+        "select count(*)::text as count from public.athlete_coaching_write_grants",
+      );
+      if (grants.rows[0]?.count !== "0")
+        throw new Error("upgrade manufactured coaching write grants");
+    }
     if (JSON.stringify(await createSchemaFingerprint(client)) !== JSON.stringify(after))
       throw new Error("post-upgrade fingerprint mismatch; rolling back");
     await client.query("commit");

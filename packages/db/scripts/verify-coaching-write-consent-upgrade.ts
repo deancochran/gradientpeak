@@ -12,6 +12,7 @@ import {
   extractWriteConsentUpgrade,
   prerequisiteBaseline,
 } from "./coaching-write-consent-upgrade";
+import { createRetainedDataDigest } from "./retained-e2e-upgrade";
 
 async function main() {
   const begin = "-- COACHING_WRITE_CONSENT_UPGRADE_BEGIN";
@@ -62,6 +63,7 @@ async function main() {
     "coaching_write_consent_upgrade",
     async (pool) => {
       await bootstrapSupabaseSchemas(pool);
+      await pool.query("create extension if not exists pgcrypto with schema extensions");
       await pool.query(prerequisiteBaseline());
       const athlete = "00000000-0000-4000-8000-000000999901";
       const policy = "00000000-0000-4000-8000-000000999902";
@@ -122,9 +124,14 @@ async function main() {
         null,
       );
       await pool.query("drop table public.unexpected_write_upgrade_state");
+      const sourceData = await createRetainedDataDigest(pool);
       await assert.rejects(
         () =>
           applyCoachingWriteConsentUpgrade(pool, {
+            beforeFingerprint: async (client) => {
+              await client.query("lock table public.profiles in access exclusive mode");
+            },
+            expectedSourceData: sourceData,
             afterDdl: async (client) => {
               await client.query("create table public.write_upgrade_fault(id integer)");
             },
@@ -136,7 +143,7 @@ async function main() {
           .rows[0]?.relation,
         null,
       );
-      await applyCoachingWriteConsentUpgrade(pool);
+      await applyCoachingWriteConsentUpgrade(pool, { expectedSourceData: sourceData });
       const after = await pool.query(
         "select (select to_jsonb(p) from public.profiles p where p.id=$1) profile, (select jsonb_agg(to_jsonb(x) order by x.id) from public.athlete_data_sharing_consents x) consents, (select jsonb_agg(to_jsonb(x) order by x.id) from public.coaching_engagements x) engagements, (select jsonb_agg(to_jsonb(x) order by x.id) from public.coaching_assignments x) assignments",
         [athlete],

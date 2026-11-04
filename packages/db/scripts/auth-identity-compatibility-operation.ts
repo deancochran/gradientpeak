@@ -226,7 +226,12 @@ export async function deriveAuthIdentityTargetIdentity(
   };
 }
 
-export function verifyAuthIdentityRecoveryArchive(archive: string, target: AuthIdentityTargetName) {
+/** Verify a private archive against a caller-owned, pinned target and fingerprint. */
+export function verifyPrivateRecoveryArchive(
+  archive: string,
+  target: AuthIdentityTargetName,
+  beforeFingerprint: unknown,
+) {
   const manifestPath = `${archive}.manifest.json`;
   assertPrivateOwnedDirectory(dirname(archive));
   if (
@@ -247,14 +252,21 @@ export function verifyAuthIdentityRecoveryArchive(archive: string, target: AuthI
   if (
     manifest.target !== authIdentityManifestTarget(target) ||
     manifest.archiveSha256 !== sha256Hex(readFileSync(archive)) ||
-    manifest.beforeFingerprintSha256 !==
-      sha256Hex(JSON.stringify(expectedAuthIdentityCompatibilityBeforeFingerprint())) ||
+    manifest.beforeFingerprintSha256 !== sha256Hex(JSON.stringify(beforeFingerprint)) ||
     !Number.isFinite(age) ||
     age < 0 ||
     age > maxArchiveAgeMs
   )
     throw new Error("auth identity recovery archive manifest mismatch");
   return manifest;
+}
+
+export function verifyAuthIdentityRecoveryArchive(archive: string, target: AuthIdentityTargetName) {
+  return verifyPrivateRecoveryArchive(
+    archive,
+    target,
+    expectedAuthIdentityCompatibilityBeforeFingerprint(),
+  );
 }
 
 export function verifyAuthIdentityRehearsalReceipt(
@@ -287,7 +299,11 @@ export function verifyAuthIdentityRehearsalReceipt(
   return receipt;
 }
 
-function restoreArchiveIntoDisposableDatabase(
+/**
+ * Restore a checked archive only into the guarded disposable database supplied by
+ * the caller. It is deliberately not an operational-target restore primitive.
+ */
+export function restoreArchiveIntoDisposableDatabase(
   archive: Buffer,
   database: string,
   sourceFingerprint: unknown,
