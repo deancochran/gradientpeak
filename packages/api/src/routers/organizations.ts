@@ -22,6 +22,10 @@ import {
   revokeOrganizationInvitation,
 } from "../application/organizations/manage-organizations";
 import {
+  manageStaffRole,
+  OrganizationStaffRoleError,
+} from "../application/organizations/manage-staff-roles";
+import {
   decodeOrganizationListCursor,
   listMyOrganizationContexts,
   readOrganizationCoachingAccess,
@@ -108,6 +112,21 @@ const invitationRevokeInputSchema = z
   .object({
     organizationId: z.string().uuid(),
     invitationId: z.string().uuid(),
+  })
+  .strict();
+const staffRoleMutationInputSchema = z
+  .object({
+    organizationId: z.string().uuid(),
+    membershipId: z.string().uuid(),
+    role: z.enum(["admin", "coach"]),
+    operationId: z.string().uuid(),
+  })
+  .strict();
+const staffRoleMutationOutputSchema = z
+  .object({
+    membershipId: z.string().uuid(),
+    role: z.enum(["admin", "coach"]),
+    status: z.enum(["granted", "revoked"]),
   })
   .strict();
 const invitationListCursorSchema = z.string().min(1).max(512).nullable().default(null);
@@ -249,6 +268,21 @@ function managementError(error: unknown): never {
   }
   throw internalError("Organization request failed", error);
 }
+function staffRoleError(error: unknown): never {
+  if (error instanceof OrganizationStaffRoleError) {
+    throw new TRPCError({
+      code:
+        error.reason === "conflict"
+          ? "CONFLICT"
+          : error.reason === "not_found"
+            ? "NOT_FOUND"
+            : "FORBIDDEN",
+      message: "Organization staff role request could not be completed",
+      cause: error,
+    });
+  }
+  throw internalError("Organization staff role request failed", error);
+}
 
 export function createOrganizationsRouter(
   dependencies: OrganizationsRouterDependencies = defaultDependencies,
@@ -370,6 +404,44 @@ export function createOrganizationsRouter(
             });
           } catch (error) {
             return managementError(error);
+          }
+        }),
+    }),
+    staffRoles: createTRPCRouter({
+      grant: protectedProcedure
+        .input(staffRoleMutationInputSchema)
+        .output(staffRoleMutationOutputSchema)
+        .mutation(async ({ ctx, input }) => {
+          try {
+            return await manageStaffRole({
+              db: getRequiredDb(ctx),
+              actorProfileId: ctx.session.user.id,
+              targetMembershipId: input.membershipId,
+              role: input.role,
+              mutation: "grant",
+              operationId: input.operationId,
+              organizationId: input.organizationId,
+            });
+          } catch (error) {
+            return staffRoleError(error);
+          }
+        }),
+      revoke: protectedProcedure
+        .input(staffRoleMutationInputSchema)
+        .output(staffRoleMutationOutputSchema)
+        .mutation(async ({ ctx, input }) => {
+          try {
+            return await manageStaffRole({
+              db: getRequiredDb(ctx),
+              actorProfileId: ctx.session.user.id,
+              targetMembershipId: input.membershipId,
+              role: input.role,
+              mutation: "revoke",
+              operationId: input.operationId,
+              organizationId: input.organizationId,
+            });
+          } catch (error) {
+            return staffRoleError(error);
           }
         }),
     }),
