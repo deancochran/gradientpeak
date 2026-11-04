@@ -1,0 +1,1066 @@
+ WARN  Unsupported engine: wanted: {"node":">=24.19.0 <25"} (current: {"node":"v22.23.2","pnpm":"10.34.5"})
+packages/api/src/routers/__tests__/activities.test.ts:744:16 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    742 │   likeRows?: Array<{ entity_id: string; likes_count: number; has_liked: boolean }>;
+    743 │   totalRows?: Array<{ total: number }>;
+  > 744 │   joinedRows?: any[];
+        │                ^^^
+    745 │   activitySummaryRows?: any[];
+    746 │   activityImportRows?: any[];
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:1110:11 lint/correctness/noUnusedVariables  FIXABLE  ━━━━━━━━━━
+
+  ! This variable publicDerived is unused.
+  
+    1108 │     if (!firstRow) throw new Error("Expected an activity row fixture");
+    1109 │     const derived = parentDerivedSummary(ACTIVITY_ID, availableCommonLoad(72));
+  > 1110 │     const publicDerived = {
+         │           ^^^^^^^^^^^^^
+    1111 │       common_load: derived.common_load,
+    1112 │       computed_as_of: derived.computed_as_of,
+  
+  i Unused variables are often the result of typos, incomplete refactors, or other sources of bugs.
+  
+  i Unsafe fix: If this is intentional, prepend publicDerived with an underscore.
+  
+    1108 1108 │       if (!firstRow) throw new Error("Expected an activity row fixture");
+    1109 1109 │       const derived = parentDerivedSummary(ACTIVITY_ID, availableCommonLoad(72));
+    1110      │ - ····const·publicDerived·=·{
+         1110 │ + ····const·_publicDerived·=·{
+    1111 1111 │         common_load: derived.common_load,
+    1112 1112 │         computed_as_of: derived.computed_as_of,
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:673:32 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    671 │ }
+    672 │ 
+  > 673 │ function findInsertedValue(db: any, tableName: string) {
+        │                                ^^^
+    674 │   return db.__spies.insertValues.mock.calls.find(
+    675 │     ([insertedTableName]: [string, unknown]) => insertedTableName === tableName,
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:694:17 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    692 │   if (table && typeof table === "object") {
+    693 │     const candidate =
+  > 694 │       (table as any)?._?.name ??
+        │                 ^^^
+    695 │       (table as any)?._?.baseName ??
+    696 │       (table as any)?.config?.name ??
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:695:17 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    693 │     const candidate =
+    694 │       (table as any)?._?.name ??
+  > 695 │       (table as any)?._?.baseName ??
+        │                 ^^^
+    696 │       (table as any)?.config?.name ??
+    697 │       (table as any)?.name;
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:696:17 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    694 │       (table as any)?._?.name ??
+    695 │       (table as any)?._?.baseName ??
+  > 696 │       (table as any)?.config?.name ??
+        │                 ^^^
+    697 │       (table as any)?.name;
+    698 │ 
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:697:17 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    695 │       (table as any)?._?.baseName ??
+    696 │       (table as any)?.config?.name ??
+  > 697 │       (table as any)?.name;
+        │                 ^^^
+    698 │ 
+    699 │     if (typeof candidate === "string") return candidate;
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:702:31 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    701 │     for (const symbol of Object.getOwnPropertySymbols(table)) {
+  > 702 │       const value = (table as any)[symbol];
+        │                               ^^^
+    703 │       if (typeof value === "string" && /^[a-z_]+$/i.test(value)) return value;
+    704 │     }
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:711:43 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    710 │ function toSql(fragment: unknown) {
+  > 711 │   return pgDialect.sqlToQuery(fragment as any).sql;
+        │                                           ^^^
+    712 │ }
+    713 │ 
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:714:27 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    712 │ }
+    713 │ 
+  > 714 │ function createCaller(db: any, userId = OWNER_ID) {
+        │                           ^^^
+    715 │   return activitiesRouter.createCaller({
+    716 │     db,
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:725:8 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    723 │     clientType: "test",
+    724 │     trpcSource: "vitest",
+  > 725 │   } as any);
+        │        ^^^
+    726 │ }
+    727 │ 
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:739:18 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    738 │ function createDbMock(options: {
+  > 739 │   activityRows?: any[];
+        │                  ^^^
+    740 │   activityEffortRows?: any[];
+    741 │   activityPlanRows?: any[];
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:740:24 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    738 │ function createDbMock(options: {
+    739 │   activityRows?: any[];
+  > 740 │   activityEffortRows?: any[];
+        │                        ^^^
+    741 │   activityPlanRows?: any[];
+    742 │   likeRows?: Array<{ entity_id: string; likes_count: number; has_liked: boolean }>;
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:741:22 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    739 │   activityRows?: any[];
+    740 │   activityEffortRows?: any[];
+  > 741 │   activityPlanRows?: any[];
+        │                      ^^^
+    742 │   likeRows?: Array<{ entity_id: string; likes_count: number; has_liked: boolean }>;
+    743 │   totalRows?: Array<{ total: number }>;
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:746:24 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    744 │   joinedRows?: any[];
+    745 │   activitySummaryRows?: any[];
+  > 746 │   activityImportRows?: any[];
+        │                        ^^^
+    747 │   activitySourceReferenceRows?: any[];
+    748 │   activityFileIngestionRows?: any[];
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:747:33 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    745 │   activitySummaryRows?: any[];
+    746 │   activityImportRows?: any[];
+  > 747 │   activitySourceReferenceRows?: any[];
+        │                                 ^^^
+    748 │   activityFileIngestionRows?: any[];
+    749 │   activityGeometryRows?: any[];
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:748:31 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    746 │   activityImportRows?: any[];
+    747 │   activitySourceReferenceRows?: any[];
+  > 748 │   activityFileIngestionRows?: any[];
+        │                               ^^^
+    749 │   activityGeometryRows?: any[];
+    750 │   activityLapRows?: any[];
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:749:26 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    747 │   activitySourceReferenceRows?: any[];
+    748 │   activityFileIngestionRows?: any[];
+  > 749 │   activityGeometryRows?: any[];
+        │                          ^^^
+    750 │   activityLapRows?: any[];
+    751 │   currentArtifactRows?: any[];
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:750:21 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    748 │   activityFileIngestionRows?: any[];
+    749 │   activityGeometryRows?: any[];
+  > 750 │   activityLapRows?: any[];
+        │                     ^^^
+    751 │   currentArtifactRows?: any[];
+    752 │   sessionRpeEvidenceRows?: any[];
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:751:25 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    749 │   activityGeometryRows?: any[];
+    750 │   activityLapRows?: any[];
+  > 751 │   currentArtifactRows?: any[];
+        │                         ^^^
+    752 │   sessionRpeEvidenceRows?: any[];
+    753 │   profileRows?: any[];
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:752:28 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    750 │   activityLapRows?: any[];
+    751 │   currentArtifactRows?: any[];
+  > 752 │   sessionRpeEvidenceRows?: any[];
+        │                            ^^^
+    753 │   profileRows?: any[];
+    754 │   integrationRows?: any[];
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:753:17 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    751 │   currentArtifactRows?: any[];
+    752 │   sessionRpeEvidenceRows?: any[];
+  > 753 │   profileRows?: any[];
+        │                 ^^^
+    754 │   integrationRows?: any[];
+    755 │   providerSyncRows?: any[];
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:754:21 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    752 │   sessionRpeEvidenceRows?: any[];
+    753 │   profileRows?: any[];
+  > 754 │   integrationRows?: any[];
+        │                     ^^^
+    755 │   providerSyncRows?: any[];
+    756 │   queryActivitiesFindFirst?: any[];
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:755:22 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    753 │   profileRows?: any[];
+    754 │   integrationRows?: any[];
+  > 755 │   providerSyncRows?: any[];
+        │                      ^^^
+    756 │   queryActivitiesFindFirst?: any[];
+    757 │   queryActivityArtifactsFindFirst?: any[];
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:756:30 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    754 │   integrationRows?: any[];
+    755 │   providerSyncRows?: any[];
+  > 756 │   queryActivitiesFindFirst?: any[];
+        │                              ^^^
+    757 │   queryActivityArtifactsFindFirst?: any[];
+    758 │   queryActivityFileIngestionsFindFirst?: any[];
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:757:37 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    755 │   providerSyncRows?: any[];
+    756 │   queryActivitiesFindFirst?: any[];
+  > 757 │   queryActivityArtifactsFindFirst?: any[];
+        │                                     ^^^
+    758 │   queryActivityFileIngestionsFindFirst?: any[];
+    759 │   queryActivityGeometryFindFirst?: any[];
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:758:42 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    756 │   queryActivitiesFindFirst?: any[];
+    757 │   queryActivityArtifactsFindFirst?: any[];
+  > 758 │   queryActivityFileIngestionsFindFirst?: any[];
+        │                                          ^^^
+    759 │   queryActivityGeometryFindFirst?: any[];
+    760 │   queryActivityImportsFindFirst?: any[];
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:759:36 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    757 │   queryActivityArtifactsFindFirst?: any[];
+    758 │   queryActivityFileIngestionsFindFirst?: any[];
+  > 759 │   queryActivityGeometryFindFirst?: any[];
+        │                                    ^^^
+    760 │   queryActivityImportsFindFirst?: any[];
+    761 │   queryActivitySummariesFindFirst?: any[];
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:760:35 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    758 │   queryActivityFileIngestionsFindFirst?: any[];
+    759 │   queryActivityGeometryFindFirst?: any[];
+  > 760 │   queryActivityImportsFindFirst?: any[];
+        │                                   ^^^
+    761 │   queryActivitySummariesFindFirst?: any[];
+    762 │   queryEventsFindFirst?: any[];
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:761:37 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    759 │   queryActivityGeometryFindFirst?: any[];
+    760 │   queryActivityImportsFindFirst?: any[];
+  > 761 │   queryActivitySummariesFindFirst?: any[];
+        │                                     ^^^
+    762 │   queryEventsFindFirst?: any[];
+    763 │   queryLikesFindFirst?: any[];
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:762:26 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    760 │   queryActivityImportsFindFirst?: any[];
+    761 │   queryActivitySummariesFindFirst?: any[];
+  > 762 │   queryEventsFindFirst?: any[];
+        │                          ^^^
+    763 │   queryLikesFindFirst?: any[];
+    764 │   executeRows?: Array<{ id: string }>;
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:763:25 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    761 │   queryActivitySummariesFindFirst?: any[];
+    762 │   queryEventsFindFirst?: any[];
+  > 763 │   queryLikesFindFirst?: any[];
+        │                         ^^^
+    764 │   executeRows?: Array<{ id: string }>;
+    765 │   insertedRowsByTable?: Record<string, unknown[]>;
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:766:17 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    764 │   executeRows?: Array<{ id: string }>;
+    765 │   insertedRowsByTable?: Record<string, unknown[]>;
+  > 766 │   updatedRows?: any[];
+        │                 ^^^
+    767 │   transactionError?: Error;
+    768 │   onCommonLoadScanBatch?: (batchNumber: number) => void;
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:775:5 lint/suspicious/noThenProperty ━━━━━━━━━━
+
+  ! Do not add then to an object.
+  
+    773 │       Promise.resolve([{ id: ACTIVITY_ID, finishedAt: new Date("2026-01-01T12:00:00.000Z") }]),
+    774 │     ),
+  > 775 │     then: (onFulfilled: (value: undefined) => unknown) =>
+        │     ^^^^
+    776 │       Promise.resolve(undefined).then(onFulfilled),
+    777 │   };
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:782:32 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    780 │   const selectWhere = vi.fn();
+    781 │   const commonLoadLimit = vi.fn();
+  > 782 │   let transactionActivityRows: any[] | undefined;
+        │                                ^^^
+    783 │   let commonLoadScanIndex = 0;
+    784 │   let commonLoadScanBatchNumber = 0;
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:794:7 lint/suspicious/noThenProperty ━━━━━━━━━━
+
+  ! Do not add then to an object.
+  
+    792 │         );
+    793 │       },
+  > 794 │       then: (onFulfilled: (value: unknown[]) => unknown) =>
+        │       ^^^^
+    795 │         Promise.resolve(limitedRows).then(onFulfilled),
+    796 │     };
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:818:7 lint/suspicious/noThenProperty ━━━━━━━━━━
+
+  ! Do not add then to an object.
+  
+    816 │     return {
+    817 │       limit,
+  > 818 │       then: (onFulfilled: (value: unknown[]) => unknown) =>
+        │       ^^^^
+    819 │         Promise.resolve(options.activityRows ?? []).then(onFulfilled),
+    820 │     };
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:942:17 lint/suspicious/noThenProperty ━━━━━━━━━━
+
+  ! Do not add then to an object.
+  
+    940 │                         ? vi.fn(() => Promise.resolve(rows))
+    941 │                         : vi.fn(() => ({ limit: vi.fn(resolveRows) })),
+  > 942 │                 then: (onFulfilled: (value: unknown[]) => unknown) =>
+        │                 ^^^^
+    943 │                   Promise.resolve(rows).then(onFulfilled),
+    944 │               };
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:1281:20 lint/style/noNonNullAssertion  FIXABLE  ━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1279 │       segmentDerivedSummary({
+    1280 │         activityId: ACTIVITY_ID,
+  > 1281 │         segmentId: segmentByActivityId.get(ACTIVITY_ID)![0]!.id,
+         │                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1282 │         commonLoad: availableCommonLoad(30),
+    1283 │         distanceMeters: 100,
+  
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+  
+    1279 1279 │         segmentDerivedSummary({
+    1280 1280 │           activityId: ACTIVITY_ID,
+    1281      │ - ········segmentId:·segmentByActivityId.get(ACTIVITY_ID)![0]!.id,
+         1281 │ + ········segmentId:·segmentByActivityId.get(ACTIVITY_ID)![0]?.id,
+    1282 1282 │           commonLoad: availableCommonLoad(30),
+    1283 1283 │           distanceMeters: 100,
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:1281:20 lint/style/noNonNullAssertion  FIXABLE  ━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1279 │       segmentDerivedSummary({
+    1280 │         activityId: ACTIVITY_ID,
+  > 1281 │         segmentId: segmentByActivityId.get(ACTIVITY_ID)![0]!.id,
+         │                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1282 │         commonLoad: availableCommonLoad(30),
+    1283 │         distanceMeters: 100,
+  
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+  
+    1279 1279 │         segmentDerivedSummary({
+    1280 1280 │           activityId: ACTIVITY_ID,
+    1281      │ - ········segmentId:·segmentByActivityId.get(ACTIVITY_ID)![0]!.id,
+         1281 │ + ········segmentId:·segmentByActivityId.get(ACTIVITY_ID)?.[0]!.id,
+    1282 1282 │           commonLoad: availableCommonLoad(30),
+    1283 1283 │           distanceMeters: 100,
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:1289:20 lint/style/noNonNullAssertion  FIXABLE  ━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1287 │       segmentDerivedSummary({
+    1288 │         activityId: ACTIVITY_ID_2,
+  > 1289 │         segmentId: segmentByActivityId.get(ACTIVITY_ID_2)![0]!.id,
+         │                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1290 │         commonLoad: availableCommonLoad(10),
+    1291 │         distanceMeters: 200,
+  
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+  
+    1287 1287 │         segmentDerivedSummary({
+    1288 1288 │           activityId: ACTIVITY_ID_2,
+    1289      │ - ········segmentId:·segmentByActivityId.get(ACTIVITY_ID_2)![0]!.id,
+         1289 │ + ········segmentId:·segmentByActivityId.get(ACTIVITY_ID_2)![0]?.id,
+    1290 1290 │           commonLoad: availableCommonLoad(10),
+    1291 1291 │           distanceMeters: 200,
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:1289:20 lint/style/noNonNullAssertion  FIXABLE  ━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1287 │       segmentDerivedSummary({
+    1288 │         activityId: ACTIVITY_ID_2,
+  > 1289 │         segmentId: segmentByActivityId.get(ACTIVITY_ID_2)![0]!.id,
+         │                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1290 │         commonLoad: availableCommonLoad(10),
+    1291 │         distanceMeters: 200,
+  
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+  
+    1287 1287 │         segmentDerivedSummary({
+    1288 1288 │           activityId: ACTIVITY_ID_2,
+    1289      │ - ········segmentId:·segmentByActivityId.get(ACTIVITY_ID_2)![0]!.id,
+         1289 │ + ········segmentId:·segmentByActivityId.get(ACTIVITY_ID_2)?.[0]!.id,
+    1290 1290 │           commonLoad: availableCommonLoad(10),
+    1291 1291 │           distanceMeters: 200,
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:1433:36 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    1431 │     expect(result.hasMore).toBe(false);
+    1432 │     expect(result.nextCursor).toBeUndefined();
+  > 1433 │     expect(result.items.map((item: any) => item.id)).toEqual([ACTIVITY_ID_3, ACTIVITY_ID]);
+         │                                    ^^^
+    1434 │     expect(db.__spies.commonLoadLimit).toHaveBeenCalledWith(3);
+    1435 │     expect(db.transaction).toHaveBeenCalledWith(expect.any(Function), {
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:1700:16 lint/style/noNonNullAssertion ━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1698 │         occurrences: [
+    1699 │           {
+  > 1700 │             ...recordingExecutionManifest("bike").occurrences[0]!,
+         │                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1701 │             blockId: bikeSegmentId,
+    1702 │             completedAt: "2026-01-15T09:25:00.000Z",
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:1707:16 lint/style/noNonNullAssertion ━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1705 │           },
+    1706 │           {
+  > 1707 │             ...recordingExecutionManifest().occurrences[0]!,
+         │                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1708 │             occurrenceId: "occurrence-transition",
+    1709 │             globalOrdinal: 1,
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:1720:16 lint/style/noNonNullAssertion ━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1718 │           },
+    1719 │           {
+  > 1720 │             ...recordingExecutionManifest("run").occurrences[0]!,
+         │                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1721 │             occurrenceId: "occurrence-run",
+    1722 │             globalOrdinal: 2,
+  
+
+packages/api/src/routers/__tests__/activities.test.ts:745:25 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    743 │   totalRows?: Array<{ total: number }>;
+    744 │   joinedRows?: any[];
+  > 745 │   activitySummaryRows?: any[];
+        │                         ^^^
+    746 │   activityImportRows?: any[];
+    747 │   activitySourceReferenceRows?: any[];
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activity-plans.test.ts:231:7 lint/suspicious/noThenProperty ━━━━━━━━━━
+
+  ! Do not add then to an object.
+  
+    229 │       for: () => builder,
+    230 │       offset: async () => nextRows("select", table),
+  > 231 │       then: (onFulfilled: (value: unknown[]) => unknown) =>
+        │       ^^^^
+    232 │         Promise.resolve(nextRows("select", table)).then(onFulfilled),
+    233 │     };
+  
+
+packages/api/src/routers/__tests__/activity-plans.test.ts:238:13 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    236 │   };
+    237 │ 
+  > 238 │   const db: any = {
+        │             ^^^
+    239 │     select: () => ({
+    240 │       from: (table: unknown) => {
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activity-plans.test.ts:318:15 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    317 │   const caller = activityPlansRouter.createCaller({
+  > 318 │     db: db as any,
+        │               ^^^
+    319 │     session: { user: { id: userId } },
+    320 │     headers: new Headers(),
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activity-plans.test.ts:323:8 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    321 │     clientType: "test",
+    322 │     trpcSource: "vitest",
+  > 323 │   } as any);
+        │        ^^^
+    324 │ 
+    325 │   return { caller, callLog };
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activity-plans.test.ts:1046:12 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    1044 │         id: "99999999-9999-4999-8999-999999999999",
+    1045 │         extra: true,
+  > 1046 │       } as any),
+         │            ^^^
+    1047 │     ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
+    1048 │   });
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activity-plans.test.ts:1691:12 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    1689 │         id: "77777777-7777-4777-8777-777777777777",
+    1690 │         extra: true,
+  > 1691 │       } as any),
+         │            ^^^
+    1692 │     ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
+    1693 │   });
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activity-plans.test.ts:1927:12 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    1925 │         id: "88888888-8888-4888-8888-888888888888",
+    1926 │         extra: true,
+  > 1927 │       } as any),
+         │            ^^^
+    1928 │     ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
+    1929 │   });
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activity-plans.test.ts:22:46 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    20 │ const { estimationState, plannedActivitySyncState } = vi.hoisted(() => ({
+    21 │   estimationState: {
+  > 22 │     estimateActivityPlan: vi.fn(async (plan: any) => ({
+       │                                              ^^^
+    23 │       ...plan,
+    24 │       prescriptionQuantification: null,
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activity-plans.test.ts:26:48 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    24 │       prescriptionQuantification: null,
+    25 │     })),
+  > 26 │     estimateActivityPlans: vi.fn(async (plans: any[]) =>
+       │                                                ^^^
+    27 │       plans.map((plan) => ({
+    28 │         ...plan,
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activity-plans.test.ts:86:24 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    84 │ const pgDialect = new PgDialect();
+    85 │ 
+  > 86 │ const sampleStructure: any = {
+       │                        ^^^
+    87 │   version: 4,
+    88 │   activity_category: "bike",
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/activity-plans.test.ts:221:20 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    220 │   const createSelectBuilder = (table: MockTableName, call: DbCall) => {
+  > 221 │     const builder: any = {
+        │                    ^^^
+    222 │       where: (condition: unknown) => {
+    223 │         call.where = condition;
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/goals.test.ts:112:20 lint/suspicious/noExplicitAny ━━━━━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    110 │   const createSelectBuilder = (isCountSelect = false) => {
+    111 │     let isProfileAccess = false;
+  > 112 │     const builder: any = {
+        │                    ^^^
+    113 │       from: (table: any) => {
+    114 │         _activeTable = getTableName(table);
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/goals.test.ts:113:21 lint/suspicious/noExplicitAny ━━━━━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    111 │     let isProfileAccess = false;
+    112 │     const builder: any = {
+  > 113 │       from: (table: any) => {
+        │                     ^^^
+    114 │         _activeTable = getTableName(table);
+    115 │         isProfileAccess = String(
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/goals.test.ts:126:7 lint/suspicious/noThenProperty ━━━━━━━━━━━━━━
+
+  ! Do not add then to an object.
+  
+    124 │       offset: () => builder,
+    125 │       for: () => builder,
+  > 126 │       then: (onFulfilled: (value: any[]) => unknown, onRejected?: (reason: unknown) => unknown) =>
+        │       ^^^^
+    127 │         Promise.resolve(
+    128 │           isProfileAccess ? (queryMap.profileAccess ?? []) : nextSelectResult(isCountSelect),
+  
+
+packages/api/src/routers/__tests__/goals.test.ts:126:35 lint/suspicious/noExplicitAny ━━━━━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    124 │       offset: () => builder,
+    125 │       for: () => builder,
+  > 126 │       then: (onFulfilled: (value: any[]) => unknown, onRejected?: (reason: unknown) => unknown) =>
+        │                                   ^^^
+    127 │         Promise.resolve(
+    128 │           isProfileAccess ? (queryMap.profileAccess ?? []) : nextSelectResult(isCountSelect),
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/goals.test.ts:135:13 lint/suspicious/noExplicitAny ━━━━━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    133 │   };
+    134 │ 
+  > 135 │   const db: any = {
+        │             ^^^
+    136 │     transaction: async (callback: (tx: any) => Promise<unknown>) => callback(db),
+    137 │     execute: async () => ({
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/goals.test.ts:136:40 lint/suspicious/noExplicitAny ━━━━━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    135 │   const db: any = {
+  > 136 │     transaction: async (callback: (tx: any) => Promise<unknown>) => callback(db),
+        │                                        ^^^
+    137 │     execute: async () => ({
+    138 │       rows: queryMap.profileAccess ?? [{ has_access: false }],
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/goals.test.ts:141:21 lint/suspicious/noExplicitAny ━━━━━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    139 │     }),
+    140 │     select: (selection?: Record<string, unknown>) => createSelectBuilder(Boolean(selection?.total)),
+  > 141 │     insert: (table: any) => ({
+        │                     ^^^
+    142 │       values: (payload: Record<string, unknown>) => {
+    143 │         const tableName = getTableName(table);
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/goals.test.ts:157:21 lint/suspicious/noExplicitAny ━━━━━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    155 │       },
+    156 │     }),
+  > 157 │     update: (table: any) => ({
+        │                     ^^^
+    158 │       set: (payload: Record<string, unknown>) => {
+    159 │         const tableName = getTableName(table);
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/goals.test.ts:172:21 lint/suspicious/noExplicitAny ━━━━━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    170 │       },
+    171 │     }),
+  > 172 │     delete: (table: any) => ({
+        │                     ^^^
+    173 │       where: () => {
+    174 │         const tableName = getTableName(table);
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/goals.test.ts:217:15 lint/suspicious/noExplicitAny ━━━━━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    215 │   const router = authorizeRead ? createGoalsRouter(authorizeRead) : goalsRouter;
+    216 │   const caller = router.createCaller({
+  > 217 │     db: db as any,
+        │               ^^^
+    218 │     session: { user: { id: userId } },
+    219 │     headers: new Headers(),
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/goals.test.ts:222:8 lint/suspicious/noExplicitAny ━━━━━━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    220 │     clientType: "test",
+    221 │     trpcSource: "vitest",
+  > 222 │   } as any);
+        │        ^^^
+    223 │ 
+    224 │   return { caller, callLog };
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/goals.test.ts:276:12 lint/suspicious/noExplicitAny ━━━━━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    274 │         limit: 20,
+    275 │         extra: true,
+  > 276 │       } as any),
+        │            ^^^
+    277 │     ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
+    278 │   });
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/goals.test.ts:297:12 lint/suspicious/noExplicitAny ━━━━━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    295 │           target_time_s: 1500,
+    296 │         },
+  > 297 │       } as any),
+        │            ^^^
+    298 │     ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
+    299 │   });
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/goals.test.ts:58:30 lint/suspicious/noExplicitAny ━━━━━━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    56 │ const GOAL_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    57 │ 
+  > 58 │ function getTableName(table: any): "profile_goals" | "training_plans" {
+       │                              ^^^
+    59 │   const name = String(table?.[Symbol.for("drizzle:Name")] ?? table?._?.name ?? "");
+    60 │   if (name.includes("training_plans")) return "training_plans";
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/goals.test.ts:87:53 lint/suspicious/noExplicitAny ━━━━━━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    85 │   let _activeTable: "profile_goals" | "training_plans" = "profile_goals";
+    86 │ 
+  > 87 │   const nextSelectResult = (isCountSelect = false): any[] => {
+       │                                                     ^^^
+    88 │     if (isCountSelect) {
+    89 │       return (
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/goals.test.ts:496:12 lint/suspicious/noExplicitAny ━━━━━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    494 │           extra: true,
+    495 │         },
+  > 496 │       } as any),
+        │            ^^^
+    497 │     ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
+    498 │   });
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+packages/api/src/routers/__tests__/goals.test.ts:541:12 lint/suspicious/noExplicitAny ━━━━━━━━━━━━━━
+
+  ! Unexpected any. Specify a different type.
+  
+    539 │         id: GOAL_ID,
+    540 │         extra: true,
+  > 541 │       } as any),
+        │            ^^^
+    542 │     ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
+    543 │   });
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+Checked 3 files in 1032ms. No fixes applied.
+Found 75 warnings.

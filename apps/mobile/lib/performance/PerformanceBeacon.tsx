@@ -26,6 +26,7 @@ export function PerformanceBeacon() {
         <Text
           className="text-foreground text-xs"
           key={metric.id}
+          style={{ position: "absolute", bottom: 0, height: 1, width: 1 }}
           testID={`perf-metric-${metric.id}`}
         >
           {Math.round(metric.durationMs)}

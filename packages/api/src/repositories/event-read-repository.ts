@@ -1,12 +1,6 @@
-import type {
-  ActivityEffortRow,
-  ActivityPlanRow,
-  ActivityRouteRow,
-  ActivityRow,
-  EventRow,
-  ProfileMetricRow,
-  TrainingPlanRow,
-} from "@repo/db";
+import type { ResolutionManifest } from "@repo/core";
+import type { ActivityPlanRow, ActivityRow, ProfileMetricRow, TrainingPlanRow } from "@repo/db";
+import type { CurrentPlannedSessionPlan } from "../application/calendar/current-planned-session-projection";
 import type { EventCompletionEventRecord } from "./event-completion-repository";
 
 export interface EventListOwnedInput {
@@ -15,6 +9,7 @@ export interface EventListOwnedInput {
   cursor?: { id: string; startsAt: string };
   dateFrom?: string;
   dateTo?: string;
+  planningTimezone?: string;
   eventTypes?: EventCompletionEventRecord["event_type"][];
   includeAdhoc?: boolean;
   limit: number;
@@ -24,34 +19,111 @@ export interface EventListOwnedInput {
 
 type SerializedProfileDob = { dob: string | null };
 type SerializedActivityTime = Pick<ActivityRow, "activity_plan_id" | "id"> & {
-  started_at: string;
+  started_at: string | null;
 };
-type SerializedEventDate = { starts_at: string };
+export type CalendarCompletedActivityRecord = Pick<
+  ActivityRow,
+  | "active_ms"
+  | "content_visibility"
+  | "distance_meters"
+  | "diary_date"
+  | "diary_timezone"
+  | "elapsed_ms"
+  | "finished_at"
+  | "id"
+  | "name"
+  | "notes"
+  | "polyline"
+  | "profile_id"
+> & {
+  activity_category: "run" | "bike" | "swim" | "strength" | "other" | null;
+  comments_count: number;
+  has_liked: boolean;
+  likes_count: number;
+  profile: { avatar_url: string | null; username: string | null };
+  started_at: string | null;
+};
+export type CalendarGoalRecord = {
+  activity_category: string;
+  id: string;
+  priority: number;
+  profile_id: string;
+  target_date: string;
+  target_payload: unknown;
+  title: string;
+};
+export type EffectivePlanLoadActivityRecord = Pick<
+  ActivityRow,
+  | "id"
+  | "profile_id"
+  | "started_at"
+  | "finished_at"
+  | "elapsed_ms"
+  | "active_ms"
+  | "moving_ms"
+  | "timing_coverage"
+  | "distance_meters"
+  | "avg_heart_rate"
+  | "max_heart_rate"
+>;
+/**
+ * Effective-plan scheduled items are calendar-date anchored records. This is
+ * intentionally narrower than the general event-completion record contract.
+ */
+export type EffectivePlanLoadPlannedSessionRecord = {
+  currentPlan: CurrentPlannedSessionPlan | null;
+  completedActivityId: string | null;
+  id: string;
+  lifecycleStatus: "scheduled" | "completed" | "cancelled";
+  originalTargetDate: string;
+  planningDate: string;
+  /** Legacy scheduling provenance. New reference-based rows deliberately omit it. */
+  resolutionManifest: ResolutionManifest | null;
+  source: {
+    trainingPlanId: string | null;
+    trainingPlanRevision: number | null;
+  };
+};
+/** A bounded, owner-scoped calendar-day read used by the derived day summary. */
+export type PlannedDaySummaryActivityPlanRecord = Pick<
+  ActivityPlanRow,
+  | "id"
+  | "profile_id"
+  | "name"
+  | "description"
+  | "structure"
+  | "gps_recording_enabled"
+  | "structure_hash"
+  | "updated_at"
+>;
+export type PlannedDaySummaryEventRecord = {
+  activity_plan: PlannedDaySummaryActivityPlanRecord | null;
+  activity_plan_id: string | null;
+  id: string;
+  starts_at: string;
+};
+export type PlannedDaySummaryReadInput = {
+  date: string;
+  limit: number;
+  profileId: string;
+};
 type ConstraintActivityPlan = Pick<
   ActivityPlanRow,
-  "id" | "activity_category" | "route_id" | "structure"
+  | "id"
+  | "profile_id"
+  | "name"
+  | "description"
+  | "gps_recording_enabled"
+  | "structure"
+  | "structure_hash"
+  | "updated_at"
 >;
-type NumericValue = { value: number };
 type ProfileMetricValue = Pick<ProfileMetricRow, "value">;
 type ConstraintTrainingPlan = Pick<TrainingPlanRow, "id" | "structure">;
-type EstimationEffort = Pick<
-  ActivityEffortRow,
-  "activity_category" | "duration_seconds" | "effort_type" | "unit" | "value"
->;
-type EstimationMetric = Pick<ProfileMetricRow, "metric_type" | "value"> & {
-  recorded_at: string;
-};
-type EstimationRoute = {
-  id: ActivityRouteRow["id"];
-  distance_meters: number | null;
-  total_ascent: ActivityRouteRow["total_ascent"];
-  total_descent: ActivityRouteRow["total_descent"];
-  updated_at: string;
-};
 type ProjectionActivity = Pick<
   ActivityRow,
   | "id"
-  | "type"
+  | "name"
   | "avg_heart_rate"
   | "max_heart_rate"
   | "avg_power"
@@ -59,13 +131,13 @@ type ProjectionActivity = Pick<
   | "avg_speed_mps"
   | "max_speed_mps"
   | "distance_meters"
-  | "duration_seconds"
-  | "moving_seconds"
-  | "normalized_power"
+  | "elapsed_ms"
+  | "active_ms"
+  | "moving_ms"
   | "normalized_speed_mps"
-  | "normalized_graded_speed_mps"
 > & { started_at: string; finished_at: string };
-type ProjectionPlannedActivity = Pick<EventRow, "training_plan_id"> & {
+type ProjectionPlannedActivity = {
+  training_plan_id: string | null;
   activity_plan: ActivityPlanRow | null;
   scheduled_date: string;
   starts_at: string;
@@ -73,6 +145,31 @@ type ProjectionPlannedActivity = Pick<EventRow, "training_plan_id"> & {
 type ProjectionTrainingPlan = Pick<TrainingPlanRow, "id" | "structure">;
 
 export interface EventReadRepository {
+  /**
+   * Profile-owned planned-session and completion facts for effective Plan Load.
+   * This transitional EventReadRepository method is deliberately planned-session-backed.
+   */
+  getEffectivePlanLoadInputs(input: {
+    asOf: Date;
+    endDate?: string;
+    profileId: string;
+    startDate?: string;
+  }): Promise<{
+    activities: EffectivePlanLoadActivityRecord[];
+    plannedSessions: EffectivePlanLoadPlannedSessionRecord[];
+    recommendationPlannedSessions: EffectivePlanLoadPlannedSessionRecord[];
+    recommendationSource: {
+      status: "complete" | "partial";
+      trainingPlanId: string | null;
+    };
+    planningTimezone: string | null;
+    resolvedRange: { endDate: string | null; startDate: string | null };
+    sourceCounts: { activities: number; plannedSessions: number };
+    sourceCoverage: {
+      activities: { endDate: string; startDate: string; status: "complete" | "partial" } | null;
+      scheduledItems: { endDate: string; startDate: string; status: "complete" | "partial" } | null;
+    };
+  }>;
   countOwnedEventsInRange(input: {
     profileId: string;
     startsAtGte: string;
@@ -87,33 +184,42 @@ export interface EventReadRepository {
     startedAtGte: string;
     startedAtLt: string;
   }): Promise<SerializedActivityTime[]>;
-  listPlannedEventDatesInRange(input: {
+  listCalendarCompletedActivities(input: {
+    limit: number;
     profileId: string;
-    startsAtGte: string;
-    startsAtLte: string;
-  }): Promise<SerializedEventDate[]>;
+    diaryDateGte: string;
+    diaryDateLt: string;
+    startedAtGte: string;
+    startedAtLt: string;
+  }): Promise<CalendarCompletedActivityRecord[]>;
+  listCalendarCompletedActivitiesByIds(input: {
+    activityIds: string[];
+    profileId: string;
+  }): Promise<CalendarCompletedActivityRecord[]>;
+  listCalendarGoals(input: {
+    endDateExclusive: string;
+    limit: number;
+    profileId: string;
+    startDate: string;
+  }): Promise<CalendarGoalRecord[]>;
+  listCalendarGroupActivityPlans(input: {
+    activityPlanIds: string[];
+    profileId: string;
+  }): Promise<ActivityPlanRow[]>;
+  listCurrentPlannedSessionPlans(input: {
+    activityPlanIds: string[];
+    profileId: string;
+  }): Promise<CurrentPlannedSessionPlan[]>;
   getValidateConstraintsInputs(input: {
     activityPlanId: string;
-    effortCutoffIso: string;
+    asOf: Date;
     profileId: string;
     trainingPlanId: string;
   }): Promise<{
     activityPlan: ConstraintActivityPlan | null;
-    best20mPower: NumericValue | null;
-    lthrMetric: ProfileMetricValue | null;
     profile: SerializedProfileDob | null;
     trainingPlan: ConstraintTrainingPlan | null;
     weightMetric: ProfileMetricValue | null;
-  }>;
-  getEstimationInputs(input: {
-    effortCutoffIso: string;
-    profileId: string;
-    routeIds: string[];
-  }): Promise<{
-    efforts: EstimationEffort[];
-    metrics: EstimationMetric[];
-    profile: SerializedProfileDob | null;
-    routes: EstimationRoute[];
   }>;
   getAccessibleTrainingPlanProjection(input: {
     endDateExclusiveIso: string;

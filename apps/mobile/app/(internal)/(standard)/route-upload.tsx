@@ -1,167 +1,242 @@
+import { deriveRouteNameFromFileName, ROUTE_FILE_NATIVE_MIME_TYPES } from "@repo/core/route-files";
 import { Alert, AlertDescription } from "@repo/ui/components/alert";
-import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
-import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-  FormTextareaField,
-  FormTextField,
-} from "@repo/ui/components/form";
-import { LoadingButton } from "@repo/ui/components/loading";
+import { Form, FormFileField, FormTextareaField, FormTextField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
-import * as DocumentPicker from "expo-document-picker";
-import { useRouter } from "expo-router";
-import { AlertCircle, CheckCircle, FileText, Upload } from "lucide-react-native";
-import { ScrollView, View } from "react-native";
+import { Stack, useRouter } from "expo-router";
+import { AlertCircle } from "lucide-react-native";
+import { useEffect, useRef, useState } from "react";
+import { Pressable, View } from "react-native";
+import { FormScreen } from "@/components/shared/FormScreen";
 import { api } from "@/lib/api";
-import { getErrorMessage, handleSubmitFormError } from "@/lib/utils/formErrors";
-import { type RouteUploadFormValues, routeUploadFormSchema } from "@/lib/validation/route-upload";
+import { useAuth } from "@/lib/hooks/useAuth";
+import { useDirtyNavigationGuard } from "@/lib/hooks/useDirtyNavigationGuard";
+import {
+  getRouteFileReadErrorMessage,
+  nativeRouteFileMetadataSchema,
+  readRouteFileText,
+} from "@/lib/route-files/native-route-file";
+import {
+  claimRouteUploadOperation,
+  clearRouteUploadOperation,
+} from "@/lib/route-files/route-upload-operation";
+import { handleSubmitFormError } from "@/lib/utils/formErrors";
+import { routeUploadFormSchema } from "@/lib/validation/route-upload";
+
+type UploadPhase = "idle" | "reading" | "uploading" | "success";
 
 export default function UploadRouteScreen() {
   const router = useRouter();
   const utils = api.useUtils();
+  const { user } = useAuth();
+  const [uploadPhase, setUploadPhase] = useState<UploadPhase>("idle");
+  const uploadInFlightRef = useRef(false);
+  const terminalSuccessRef = useRef(false);
+  const previousFileKeyRef = useRef<string | null>(null);
+  const previousAutoNameRef = useRef<string | null>(null);
   const form = useZodForm({
     schema: routeUploadFormSchema,
     defaultValues: {
+      files: [],
       name: "",
       description: "",
-      fileName: "",
-      fileContent: "",
     },
   });
-
-  const uploadMutation = api.routes.upload.useMutation({
-    onSuccess: async () => {
-      await utils.routes.invalidate();
-      router.back();
-    },
+  const uploadMutation = api.routes.upload.useMutation();
+  const { allowNavigationAfterSuccess } = useDirtyNavigationGuard({
+    isDirty: form.formState.isDirty,
+    isPending: uploadPhase === "reading" || uploadPhase === "uploading" || uploadMutation.isPending,
   });
+  const files = form.watch("files");
+  const selectedFile = files[0] ?? null;
+  const isFormDisabled =
+    uploadPhase !== "idle" || uploadMutation.isPending || terminalSuccessRef.current;
 
-  const selectedFileName = form.watch("fileName");
-
-  const handlePickFile = async () => {
-    form.clearErrors(["fileName", "fileContent", "root"]);
-
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: [
-          "application/gpx+xml",
-          "application/vnd.garmin.tcx+xml",
-          "text/xml",
-          "application/xml",
-        ],
-        copyToCacheDirectory: true,
-      });
-
-      if (result.canceled || !result.assets[0]) {
-        return;
-      }
-
-      const file = result.assets[0];
-      const response = await fetch(file.uri);
-      const content = await response.text();
-
-      form.setValue("fileName", file.name, {
-        shouldDirty: true,
-        shouldTouch: true,
-        shouldValidate: true,
-      });
-      form.setValue("fileContent", content, {
-        shouldDirty: true,
-        shouldTouch: true,
-        shouldValidate: true,
-      });
-
-      if (!String(form.getValues("name") ?? "").trim() && file.name) {
-        form.setValue("name", file.name.replace(/\.(gpx|tcx|xml)$/i, ""), {
-          shouldDirty: true,
-          shouldTouch: true,
-          shouldValidate: true,
-        });
-      }
-    } catch (error) {
-      form.setError("root", {
-        message: getErrorMessage(error),
-      });
+  useEffect(() => {
+    const fileKey = selectedFile
+      ? `${selectedFile.name}:${selectedFile.size}:${String(selectedFile.uri)}`
+      : null;
+    if (fileKey === previousFileKeyRef.current) {
+      return;
     }
-  };
 
-  const submitForm = useZodFormSubmit<RouteUploadFormValues>({
+    const currentName = form.getValues("name");
+    const previousAutoName = previousAutoNameRef.current;
+    if (!selectedFile) {
+      if (previousAutoName !== null && currentName === previousAutoName) {
+        form.setValue("name", "", { shouldDirty: true, shouldValidate: true });
+      }
+      previousFileKeyRef.current = null;
+      previousAutoNameRef.current = null;
+      return;
+    }
+
+    const nextAutoName = deriveRouteNameFromFileName(selectedFile.name);
+    if (!currentName.trim() || currentName === previousAutoName) {
+      form.setValue("name", nextAutoName, { shouldDirty: true, shouldValidate: true });
+    }
+    previousFileKeyRef.current = fileKey;
+    previousAutoNameRef.current = nextAutoName;
+
+    const metadataResult = nativeRouteFileMetadataSchema.safeParse(selectedFile);
+    if (!metadataResult.success) {
+      form.setError("files", {
+        type: "invalid-route-metadata",
+        message: metadataResult.error.issues[0]?.message ?? "Choose a valid route file.",
+      });
+    } else if (form.getFieldState("files").error?.type === "invalid-route-metadata") {
+      form.clearErrors("files");
+    }
+  }, [form, selectedFile]);
+
+  useEffect(() => {
+    const subscription = form.watch(() => {
+      if (!terminalSuccessRef.current) {
+        form.clearErrors("root");
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, [form]);
+
+  const submitForm = useZodFormSubmit({
     form,
     shouldRethrow: false,
     onSubmit: async (values) => {
+      if (uploadInFlightRef.current || terminalSuccessRef.current) {
+        return;
+      }
+      uploadInFlightRef.current = true;
       form.clearErrors("root");
-      await uploadMutation.mutateAsync({
-        name: values.name,
-        description: values.description || undefined,
-        fileContent: values.fileContent,
-        fileName: values.fileName,
-      });
+      const file = values.files[0];
+      if (!file) {
+        form.setError("files", {
+          type: "missing-file",
+          message: "Choose a route file to upload.",
+        });
+        uploadInFlightRef.current = false;
+        return;
+      }
+      const fileUri = file.uri;
+
+      if (typeof fileUri !== "string" || fileUri.length === 0) {
+        form.setError("files", {
+          type: "missing-uri",
+          message: "The selected route file is unavailable. Choose it again.",
+        });
+        uploadInFlightRef.current = false;
+        return;
+      }
+
+      try {
+        setUploadPhase("reading");
+        const readAndUpload = async () => {
+          let fileContent: string;
+          try {
+            fileContent = await readRouteFileText(fileUri);
+          } catch (error) {
+            form.setError("root", {
+              message: getRouteFileReadErrorMessage(error),
+            });
+            return false;
+          }
+
+          setUploadPhase("uploading");
+          if (!user?.id) throw new Error("Authenticated profile is unavailable");
+          const operation = await claimRouteUploadOperation({
+            description: values.description ?? null,
+            fileContent,
+            fileName: file.name,
+            name: values.name,
+            profileId: user.id,
+          });
+          await uploadMutation.mutateAsync({
+            name: values.name,
+            description: values.description ?? undefined,
+            fileContent,
+            fileName: file.name,
+            idempotencyKey: operation.idempotencyKey,
+          });
+          await clearRouteUploadOperation(operation.storageKey);
+          return true;
+        };
+        if (!(await readAndUpload())) {
+          return;
+        }
+
+        terminalSuccessRef.current = true;
+        setUploadPhase("success");
+        await Promise.allSettled([Promise.resolve().then(() => utils.routes.invalidate())]);
+
+        try {
+          allowNavigationAfterSuccess();
+          router.back();
+        } catch {
+          form.setError("root", {
+            message: "Route uploaded, but this screen could not close. Use Back to continue.",
+          });
+        }
+      } catch (error) {
+        handleSubmitFormError(form, error, { preferRootError: true });
+      } finally {
+        if (!terminalSuccessRef.current) {
+          uploadInFlightRef.current = false;
+          setUploadPhase("idle");
+        }
+      }
     },
     onError: (error) => {
       handleSubmitFormError(form, error, { preferRootError: true });
     },
   });
 
-  const isSubmitting = uploadMutation.isPending || submitForm.isSubmitting;
-  const submitButtonState = submitForm.getSubmitButtonState({
-    disabled: isSubmitting,
-    label: "Upload Route",
-    submittingLabel: "Uploading...",
-  });
+  const submitLabel =
+    uploadPhase === "reading"
+      ? "Reading..."
+      : uploadPhase === "uploading"
+        ? "Uploading..."
+        : uploadPhase === "success"
+          ? "Uploaded"
+          : "Upload Route";
 
   return (
     <View className="flex-1 bg-background" testID="route-upload-screen">
-      <ScrollView className="flex-1 p-4" keyboardShouldPersistTaps="handled">
+      <Stack.Screen
+        options={{
+          headerRight: () => (
+            <Pressable
+              onPress={submitForm.handleSubmit}
+              disabled={isFormDisabled || submitForm.isSubmitting}
+              className="mr-2 rounded-full px-2 py-1"
+              testID="route-upload-submit-button"
+            >
+              <Text
+                className={
+                  isFormDisabled || submitForm.isSubmitting
+                    ? "text-sm font-medium text-muted-foreground"
+                    : "text-sm font-medium text-primary"
+                }
+              >
+                {submitLabel}
+              </Text>
+            </Pressable>
+          ),
+        }}
+      />
+      <FormScreen>
         <Form {...form}>
           <View className="gap-6">
             <Card>
               <CardContent className="p-4">
-                <FormField
+                <FormFileField
                   control={form.control}
-                  name="fileName"
-                  render={() => (
-                    <FormItem>
-                      <FormLabel>GPX or TCX File *</FormLabel>
-                      <FormControl>
-                        {!selectedFileName ? (
-                          <Button
-                            onPress={handlePickFile}
-                            variant="outline"
-                            className="w-full justify-start gap-2"
-                            testID="route-upload-pick-file-button"
-                          >
-                            <Upload className="text-foreground" size={20} />
-                            <Text>Choose GPX or TCX File</Text>
-                          </Button>
-                        ) : (
-                          <View className="flex-row items-center gap-2 rounded-lg bg-muted p-3">
-                            <FileText className="text-foreground" size={20} />
-                            <Text className="flex-1" numberOfLines={1}>
-                              {selectedFileName}
-                            </Text>
-                            <CheckCircle className="text-green-500" size={20} />
-                            <Button
-                              onPress={handlePickFile}
-                              variant="ghost"
-                              size="sm"
-                              testID="route-upload-change-file-button"
-                            >
-                              <Text className="text-xs">Change</Text>
-                            </Button>
-                          </View>
-                        )}
-                      </FormControl>
-                      <FormDescription>Select a GPX or TCX file from your device</FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                  description="Select one GPX, TCX, or XML route file from your device."
+                  disabled={isFormDisabled}
+                  label="Route File"
+                  name="files"
+                  nativeMimeTypes={[...ROUTE_FILE_NATIVE_MIME_TYPES]}
+                  required
+                  testId="route-upload-file-input"
                 />
               </CardContent>
             </Card>
@@ -174,6 +249,7 @@ export default function UploadRouteScreen() {
                   name="name"
                   placeholder="e.g., Morning Hill Climb"
                   required
+                  disabled={isFormDisabled}
                   testId="route-upload-name-input"
                 />
 
@@ -184,6 +260,7 @@ export default function UploadRouteScreen() {
                   placeholder="Add notes about this route..."
                   description="Optional"
                   className="min-h-[80px]"
+                  disabled={isFormDisabled}
                 />
 
                 {form.formState.errors.root?.message ? (
@@ -204,34 +281,7 @@ export default function UploadRouteScreen() {
             </Card>
           </View>
         </Form>
-      </ScrollView>
-
-      <View className="border-t border-border bg-card p-4">
-        <View className="flex-row gap-3">
-          <Button
-            variant="outline"
-            className="flex-1"
-            onPress={() => {
-              form.clearErrors("root");
-              router.back();
-            }}
-            disabled={isSubmitting}
-            testID="route-upload-cancel-button"
-          >
-            <Text>Cancel</Text>
-          </Button>
-          <LoadingButton
-            className="flex-1"
-            onPress={submitForm.handleSubmit}
-            disabled={submitButtonState.disabled}
-            loading={isSubmitting || submitButtonState.loading}
-            loadingLabel={submitButtonState.loadingLabel}
-            testID="route-upload-submit-button"
-          >
-            <Text className="text-primary-foreground">{submitButtonState.label}</Text>
-          </LoadingButton>
-        </View>
-      </View>
+      </FormScreen>
     </View>
   );
 }

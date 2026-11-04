@@ -1,9 +1,11 @@
+import { invalidateRelationshipQueries } from "@repo/api/react";
 import { Button } from "@repo/ui/components/button";
 import { useServerFn } from "@tanstack/react-start";
 import { UserCheck, UserMinus, UserPlus } from "lucide-react";
-import { useState } from "react";
-import { toast } from "sonner";
+import { useRef, useState } from "react";
 
+import { api } from "../../lib/api/client";
+import { contractEpochFormInputProps } from "../../lib/contract-epoch";
 import { followUserAction, unfollowUserAction } from "../../lib/social/server-actions";
 
 type FollowActionFormProps = {
@@ -21,16 +23,22 @@ export function FollowActionForm({
 }: FollowActionFormProps) {
   const followUser = useServerFn(followUserAction);
   const unfollowUser = useServerFn(unfollowUserAction);
+  const utils = api.useUtils();
   const [isPendingSubmit, setIsPendingSubmit] = useState(false);
+  const pendingSubmitRef = useRef(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const action = isFollowing || isPending ? unfollowUserAction : followUserAction;
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (pendingSubmitRef.current) return;
+
+    pendingSubmitRef.current = true;
     setIsPendingSubmit(true);
+    setSubmitError(null);
 
     try {
-      event.preventDefault();
-
       if (isFollowing || isPending) {
         await unfollowUser({ data: { redirectTo, target_user_id: targetUserId } });
         return;
@@ -38,14 +46,19 @@ export function FollowActionForm({
 
       await followUser({ data: { redirectTo, target_user_id: targetUserId } });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to update follow state");
+      setSubmitError(error instanceof Error ? error.message : "Unable to update follow state");
     } finally {
+      pendingSubmitRef.current = false;
       setIsPendingSubmit(false);
+      // Server actions change the profile query's relationship status. Refresh the
+      // tRPC cache so the control reflects the persisted follow state immediately.
+      void invalidateRelationshipQueries(utils, [targetUserId]);
     }
   };
 
   return (
     <form action={action.url} method="post" onSubmit={handleSubmit}>
+      <input {...contractEpochFormInputProps} />
       <input type="hidden" name="target_user_id" value={targetUserId} />
       <input type="hidden" name="redirectTo" value={redirectTo} />
       <Button
@@ -58,12 +71,12 @@ export function FollowActionForm({
         {isFollowing ? (
           <>
             <UserCheck className="mr-2 h-4 w-4" />
-            Following
+            Unfollow
           </>
         ) : isPending ? (
           <>
             <UserMinus className="mr-2 h-4 w-4" />
-            Requested
+            Cancel request
           </>
         ) : (
           <>
@@ -72,6 +85,11 @@ export function FollowActionForm({
           </>
         )}
       </Button>
+      {submitError ? (
+        <p className="mt-2 text-sm text-destructive" role="alert">
+          {submitError}
+        </p>
+      ) : null}
     </form>
   );
 }

@@ -1,12 +1,7 @@
 import { pgEnum } from "drizzle-orm/pg-core";
+import { canonicalActivityCategoryDbValues } from "./canonical-activity-categories";
 
-export const activityCategoryEnum = pgEnum("activity_category", [
-  "run",
-  "bike",
-  "swim",
-  "strength",
-  "other",
-]);
+export const activityCategoryEnum = pgEnum("activity_category", canonicalActivityCategoryDbValues);
 
 export const activityFileIngestionSourceEnum = pgEnum("activity_file_ingestion_source", [
   "mobile_recording",
@@ -14,15 +9,117 @@ export const activityFileIngestionSourceEnum = pgEnum("activity_file_ingestion_s
   "provider_sync",
 ]);
 
-export const activityFileIngestionStatusEnum = pgEnum("activity_file_ingestion_status", [
-  "pending_upload",
-  "uploaded",
-  "processing",
-  "ready",
-  "failed",
+export const evidenceObservationSourceEnum = pgEnum("evidence_observation_source", [
+  "manual",
+  "test",
+  "imported",
+  "provider",
+  "estimated",
+  "derived",
 ]);
 
-export const effortTypeEnum = pgEnum("effort_type", ["power", "speed"]);
+export const activityFileIngestionStatusEnum = pgEnum("activity_file_ingestion_status", [
+  "awaiting_upload",
+  "processing",
+  "failed_retryable",
+  "succeeded",
+  "failed_terminal",
+]);
+
+export const activityIngestionFailureCodeEnum = pgEnum("activity_ingestion_failure_code", [
+  "artifact_missing",
+  "hash_mismatch",
+  "unsupported_format",
+  "invalid_activity",
+  "promotion_failed",
+  "dependency_unavailable",
+  "internal",
+]);
+
+export const athleteRecalculationReasonEnum = pgEnum("athlete_recalculation_reason", [
+  "activity_created",
+  "activity_changed",
+  "activity_deleted",
+  "analysis_replaced",
+  "threshold_changed",
+  "import_completed",
+  "algorithm_changed",
+  "timezone_changed",
+  "explicit_repair",
+]);
+
+export const thresholdEvidenceStatusEnum = pgEnum("threshold_evidence_status", [
+  "active",
+  "superseded",
+  "deleted",
+]);
+
+export const plannedSessionSourceKindEnum = pgEnum("planned_session_source_kind", [
+  "direct",
+  "training_plan",
+]);
+
+export const plannedSessionStatusEnum = pgEnum("planned_session_status", [
+  "scheduled",
+  "cancelled",
+  "completed",
+]);
+
+export const plannedSessionCompletionStateEnum = pgEnum("planned_session_completion_state", [
+  "linked",
+  "activity_deleted",
+]);
+
+export const plannedSessionCancellationReasonEnum = pgEnum("planned_session_cancellation_reason", [
+  "user_requested",
+  "plan_replaced",
+  "series_cancelled",
+]);
+
+export const effortTypeEnum = pgEnum("effort_type", ["power", "speed", "heart_rate"]);
+
+export const activityEffortSourceSeriesEnum = pgEnum("activity_effort_source_series", [
+  "power",
+  "grade_adjusted_speed",
+  "raw_speed",
+  "swim_speed",
+  "heart_rate",
+]);
+
+export const thresholdMetricEnum = pgEnum("threshold_metric", ["power", "speed", "lthr"]);
+
+export const thresholdEvaluationOutcomeEnum = pgEnum("threshold_evaluation_outcome", [
+  "qualified",
+  "rejected",
+]);
+
+export const thresholdEvaluationRejectionReasonEnum = pgEnum(
+  "threshold_evaluation_rejection_reason",
+  [
+    "source_not_accepted",
+    "ownership_unverified",
+    "series_missing",
+    "series_ambiguous",
+    "exact_window_missing",
+    "exact_window_ambiguous",
+    "exact_window_incomplete",
+    "source_incomplete",
+    "coverage_insufficient",
+    "gap_bound_exceeded",
+    "value_implausible",
+  ],
+);
+
+export const thresholdEvaluationEffortRoleEnum = pgEnum("threshold_evaluation_effort_role", [
+  "primary",
+  "supporting",
+]);
+
+export const activitySessionRpeSourceEnum = pgEnum("activity_session_rpe_source", [
+  "user",
+  "provider",
+  "manual",
+]);
 
 export const integrationProviderEnum = pgEnum("integration_provider", [
   "strava",
@@ -34,8 +131,10 @@ export const integrationProviderEnum = pgEnum("integration_provider", [
 
 export const integrationResourceKindEnum = pgEnum("integration_resource_kind", [
   "event",
+  "planned_session",
   "activity_plan",
   "activity_route",
+  "group_event_route_delivery",
   "activity",
 ]);
 
@@ -48,19 +147,19 @@ export const likeEntityTypeEnum = pgEnum("like_entity_type", [
 
 export const eventStatusEnum = pgEnum("event_status", ["scheduled", "completed", "cancelled"]);
 
-export const eventTypeEnum = pgEnum("event_type", [
-  "planned_activity",
-  "rest_day",
-  "race",
-  "custom",
-  "imported",
-]);
+export const eventTypeEnum = pgEnum("event_type", ["race_target", "custom"]);
 
 export const genderEnum = pgEnum("gender", ["male", "female", "other"]);
 
+export const onboardingStatusEnum = pgEnum("onboarding_status", [
+  "provider_selection",
+  "processing",
+  "review",
+  "completed",
+]);
+
 export const profileMetricTypeEnum = pgEnum("profile_metric_type", [
   "weight_kg",
-  "ftp",
   "resting_hr",
   "sleep_hours",
   "hrv_rmssd",
@@ -71,7 +170,6 @@ export const profileMetricTypeEnum = pgEnum("profile_metric_type", [
   "soreness_level",
   "wellness_score",
   "max_hr",
-  "lthr",
 ]);
 
 export const notificationTypeEnum = pgEnum("notification_type", [
@@ -82,12 +180,4 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "new_follower",
   "follow_request",
   "group_event_cancelled",
-]);
-
-export const trainingEffectLabelEnum = pgEnum("training_effect_label", [
-  "recovery",
-  "base",
-  "tempo",
-  "threshold",
-  "vo2max",
 ]);
