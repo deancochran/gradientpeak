@@ -96,6 +96,8 @@ describe("UI ownership guardrails", () => {
       "coaching/organization-create-form.tsx",
       "coaching/organization-groups/organization-group-detail.tsx",
       "coaching/organization-groups/organization-group-list.tsx",
+      // Invitation mutations and pagination compose app-owned server functions and route state.
+      "coaching/organization-invitations/organization-invitations.tsx",
       "coaching/organization-management-overview.tsx",
       "coaching/organization-selector.tsx",
       "coaching/staff/staff-roster.tsx",
