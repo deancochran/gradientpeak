@@ -7,6 +7,10 @@ const mocks = vi.hoisted(() => ({
   createApiContext: vi.fn(),
   listStaff: vi.fn(),
   endMembership: vi.fn(),
+  suspendMembership: vi.fn(),
+  resumeMembership: vi.fn(),
+  grantRole: vi.fn(),
+  revokeRole: vi.fn(),
 }));
 
 vi.mock("@tanstack/react-start", () => ({
@@ -29,13 +33,25 @@ vi.mock("@repo/api/server", () => ({
   appRouter: {
     createCaller: () => ({
       organizations: {
-        lifecycle: { staff: { list: mocks.listStaff }, endMembership: mocks.endMembership },
+        lifecycle: {
+          staff: { list: mocks.listStaff },
+          endMembership: mocks.endMembership,
+          suspendMembership: mocks.suspendMembership,
+          resumeMembership: mocks.resumeMembership,
+        },
+        staffRoles: { grant: mocks.grantRole, revoke: mocks.revokeRole },
       },
     }),
   },
 }));
 
-import { endOrganizationStaffMembership, loadOrganizationStaff } from "./staff-server-functions";
+import {
+  endOrganizationStaffMembership,
+  grantOrganizationStaffRole,
+  loadOrganizationStaff,
+  revokeOrganizationStaffRole,
+  suspendOrganizationStaffMembership,
+} from "./staff-server-functions";
 
 const ORGANIZATION_ID = "11111111-1111-4111-8111-111111111111";
 const MEMBERSHIP_ID = "22222222-2222-4222-8222-222222222222";
@@ -48,11 +64,23 @@ describe("staff server functions", () => {
     mocks.createApiContext.mockResolvedValue({ session: { user: { id: "profile-1" } } });
     mocks.listStaff.mockResolvedValue({ items: [], nextCursor: null, hasMore: false });
     mocks.endMembership.mockResolvedValue({ membershipId: MEMBERSHIP_ID, status: "ended" });
+    mocks.suspendMembership.mockResolvedValue({
+      membershipId: MEMBERSHIP_ID,
+      operationId: CORRELATION_ID,
+      status: "suspended",
+    });
+    mocks.grantRole.mockResolvedValue({
+      membershipId: MEMBERSHIP_ID,
+      role: "coach",
+      status: "granted",
+    });
   });
 
   it("uses the request-bound authenticated API caller for the requested organization page", async () => {
     await expect(
-      loadOrganizationStaff({ data: { organizationId: ORGANIZATION_ID, limit: 20, cursor: null } }),
+      loadOrganizationStaff({
+        data: { organizationId: ORGANIZATION_ID, status: "active", limit: 20, cursor: null },
+      }),
     ).resolves.toEqual({
       status: "granted",
       page: { items: [], nextCursor: null, hasMore: false },
@@ -64,6 +92,7 @@ describe("staff server functions", () => {
     });
     expect(mocks.listStaff).toHaveBeenCalledWith({
       organizationId: ORGANIZATION_ID,
+      status: "active",
       limit: 20,
       cursor: null,
     });
@@ -72,7 +101,9 @@ describe("staff server functions", () => {
   it("fails closed when the authoritative roster read loses access", async () => {
     mocks.listStaff.mockRejectedValue(Object.assign(new Error("revoked"), { code: "FORBIDDEN" }));
     await expect(
-      loadOrganizationStaff({ data: { organizationId: ORGANIZATION_ID, limit: 20, cursor: null } }),
+      loadOrganizationStaff({
+        data: { organizationId: ORGANIZATION_ID, status: "active", limit: 20, cursor: null },
+      }),
     ).resolves.toEqual({ status: "forbidden" });
   });
 
@@ -81,7 +112,9 @@ describe("staff server functions", () => {
       Object.assign(new Error("expired"), { code: "UNAUTHORIZED" }),
     );
     await expect(
-      loadOrganizationStaff({ data: { organizationId: ORGANIZATION_ID, limit: 20, cursor: null } }),
+      loadOrganizationStaff({
+        data: { organizationId: ORGANIZATION_ID, status: "active", limit: 20, cursor: null },
+      }),
     ).resolves.toEqual({ status: "forbidden" });
   });
 
@@ -132,5 +165,46 @@ describe("staff server functions", () => {
         },
       }),
     ).resolves.toEqual({ status: "access_lost" });
+  });
+
+  it("forwards exact suspension and role commands to authoritative procedures", async () => {
+    await suspendOrganizationStaffMembership({
+      data: {
+        organizationId: ORGANIZATION_ID,
+        membershipId: MEMBERSHIP_ID,
+        operationId: CORRELATION_ID,
+        reason: "administrative_review",
+      },
+    });
+    await grantOrganizationStaffRole({
+      data: {
+        organizationId: ORGANIZATION_ID,
+        membershipId: MEMBERSHIP_ID,
+        operationId: CORRELATION_ID,
+        role: "coach",
+      },
+    });
+    expect(mocks.suspendMembership).toHaveBeenCalledWith({
+      organizationId: ORGANIZATION_ID,
+      membershipId: MEMBERSHIP_ID,
+      operationId: CORRELATION_ID,
+      reason: "administrative_review",
+    });
+    expect(mocks.grantRole).toHaveBeenCalledWith({
+      organizationId: ORGANIZATION_ID,
+      membershipId: MEMBERSHIP_ID,
+      operationId: CORRELATION_ID,
+      role: "coach",
+    });
+    await expect(
+      revokeOrganizationStaffRole({
+        data: {
+          organizationId: ORGANIZATION_ID,
+          membershipId: MEMBERSHIP_ID,
+          operationId: CORRELATION_ID,
+          role: "other",
+        } as never,
+      }),
+    ).rejects.toThrow();
   });
 });

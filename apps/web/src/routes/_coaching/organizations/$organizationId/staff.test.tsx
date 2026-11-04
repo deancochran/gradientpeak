@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, render, screen } from "@testing-library/react";
-import type { ReactNode } from "react";
+import type { ComponentType, ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
@@ -35,7 +35,7 @@ describe("staff route", () => {
   it("renders the current route organization roster", () => {
     const Component = (Route as unknown as { component: React.ComponentType }).component;
     render(<Component />);
-    expect(screen.getByRole("heading", { name: "No active staff members" })).toBeTruthy();
+    expect(screen.getByText("No active staff on this page.")).toBeTruthy();
   });
 
   it("renders access lost instead of stale tenant data", () => {
@@ -43,5 +43,11 @@ describe("staff route", () => {
     const Component = (Route as unknown as { component: React.ComponentType }).component;
     render(<Component />);
     expect(screen.getByRole("heading", { name: "Coaching access required" })).toBeTruthy();
+  });
+
+  it("returns an invalidated cursor page to the first page without retrying the same cursor", () => {
+    const ErrorComponent = (Route as unknown as { errorComponent: ComponentType }).errorComponent;
+    render(<ErrorComponent />);
+    expect(screen.getByRole("link", { name: "Return to first page" })).toBeTruthy();
   });
 });

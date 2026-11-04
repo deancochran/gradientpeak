@@ -22,6 +22,7 @@ function CoachDashboardPage() {
           <Link
             to="/organizations/$organizationId/staff"
             params={{ organizationId }}
+            search={{ status: "active", cursor: undefined }}
             className="inline-flex rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2"
           >
             Manage staff

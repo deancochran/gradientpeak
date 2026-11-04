@@ -16,37 +16,71 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
+import { Label } from "@repo/ui/components/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@repo/ui/components/select";
 import { Link, useRouter } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { useForm } from "react-hook-form";
 
-import { endOrganizationStaffMembership } from "../../../lib/coaching/staff-server-functions";
+import {
+  grantOrganizationStaffRole,
+  resumeOrganizationStaffMembership,
+  revokeOrganizationStaffRole,
+  suspendOrganizationStaffMembership,
+} from "../../../lib/coaching/staff-server-functions";
 
 const PAGE_SIZE = 20;
-
+type StaffStatus = "active" | "suspended";
+type StaffAction =
+  | "suspend"
+  | "resume"
+  | "grant_admin"
+  | "revoke_admin"
+  | "grant_coach"
+  | "revoke_coach";
 type StaffMember = {
   membershipId: string;
   identity: { profileId: string; displayName: string | null; username: string | null };
   roleKeys: Array<"admin" | "coach">;
+  status: StaffStatus;
+  suspendedAt: Date | null;
   endMembership: { eligible: boolean; reason: "self" | "root_owner" | "admin_target" | null };
+  actions: Record<
+    "suspend" | "resume" | "grantAdmin" | "revokeAdmin" | "grantCoach" | "revokeCoach",
+    { eligible: boolean }
+  >;
 };
-
 type StaffPage = { items: StaffMember[]; nextCursor: string | null; hasMore: boolean };
+type Command = {
+  membershipId: string;
+  operationId: string;
+  action: StaffAction;
+  role?: "admin" | "coach";
+  reason?: "administrative_review";
+};
 
 export function StaffRoster({
   organizationId,
   page,
+  status,
   cursor,
 }: {
   organizationId: string;
   page: StaffPage;
+  status: StaffStatus;
   cursor?: string;
 }) {
   return (
     <StaffRosterContents
-      key={organizationId}
+      key={`${organizationId}:${status}:${cursor ?? "first"}`}
       organizationId={organizationId}
       page={page}
+      status={status}
       {...(cursor === undefined ? {} : { cursor })}
     />
   );
@@ -55,116 +89,134 @@ export function StaffRoster({
 function StaffRosterContents({
   organizationId,
   page,
+  status,
   cursor,
 }: {
   organizationId: string;
   page: StaffPage;
+  status: StaffStatus;
   cursor?: string;
 }) {
   const router = useRouter();
   const current = useRef(true);
+  const authorizedPage = useRef(page);
   const inFlight = useRef(false);
-  const uncertain = useRef<{ membershipId: string; correlationId: string } | null>(null);
   const [selected, setSelected] = useState<StaffMember | null>(null);
+  const [action, setAction] = useState<StaffAction | null>(null);
+  const [reason, setReason] = useState<"administrative_review">("administrative_review");
+  const [uncertain, setUncertain] = useState<Command | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [locked, setLocked] = useState(false);
-  const form = useForm({ defaultValues: { reason: "staff_departure" as const } });
+  const [accessLost, setAccessLost] = useState(false);
+
   useEffect(() => {
     current.current = true;
     return () => {
       current.current = false;
     };
   }, []);
+  // This component only receives `page` from the granted route branch. Keep an
+  // access-loss fence through failed/denied revalidation, and clear it only once
+  // a fresh authorized loader snapshot replaces the prior page.
+  useEffect(() => {
+    if (authorizedPage.current === page) return;
+    authorizedPage.current = page;
+    setAccessLost(false);
+  }, [page]);
 
-  const close = () => {
-    if (!form.formState.isSubmitting && !inFlight.current) {
-      setSelected(null);
-      setError(null);
-    }
-  };
   const refresh = async () => {
     try {
       await router.invalidate();
-      if (!current.current) {
-        inFlight.current = false;
-        return;
-      }
+      if (!current.current) return;
       setLocked(false);
       setError(null);
       setNotice(null);
     } catch {
       if (current.current)
         setError(
-          "The roster could not refresh. No membership changes are available until it does.",
+          "The staff roster could not refresh. No new staff action is available until it does.",
         );
     }
   };
-  const submit = async () => {
-    if (!selected || locked || inFlight.current) return;
-    inFlight.current = true;
-    const prior = uncertain.current;
-    if (prior && prior.membershipId !== selected.membershipId) {
-      setError(
-        "We could not confirm the previous departure. Refresh the roster before ending another membership.",
-      );
-      inFlight.current = false;
-      return;
+  const close = () => {
+    if (!inFlight.current && !uncertain) {
+      setSelected(null);
+      setAction(null);
+      setError(null);
     }
-    const correlationId = prior?.correlationId ?? crypto.randomUUID();
+  };
+  const submit = async (command?: Command) => {
+    const member = selected;
+    if (!member || (locked && !command) || inFlight.current) return;
+    const nextAction = command?.action ?? action;
+    if (!nextAction) return;
+    const next = command ?? commandFor(member, nextAction, reason);
+    if (next.membershipId !== member.membershipId) return;
+    inFlight.current = true;
+    setError(null);
     try {
-      const response = await endOrganizationStaffMembership({
-        data: {
-          organizationId,
-          membershipId: selected.membershipId,
-          reason: "staff_departure",
-          correlationId,
-        },
-      });
+      const response = await executeCommand(organizationId, next);
       if (!current.current) return;
       if (response.status === "access_lost") {
-        setLocked(true);
-        setError("Your access has changed. Refresh the roster before taking another action.");
-        inFlight.current = false;
+        setSelected(null);
+        setAction(null);
+        setUncertain(null);
+        setLocked(false);
+        setError(null);
+        setNotice(null);
+        setAccessLost(true);
         return;
       }
-    } catch {
-      if (current.current) {
-        uncertain.current = { membershipId: selected.membershipId, correlationId };
+      const expectedStatus = commandStatus(next.action);
+      // Never paint an idempotency receipt over the displayed row. A receipt is
+      // historical until a fresh, same-scope authoritative read confirms it.
+      if (
+        response.membershipId !== next.membershipId ||
+        response.status !== expectedStatus ||
+        !("operationId" in response) ||
+        response.operationId !== next.operationId ||
+        (next.role !== undefined && (!("role" in response) || response.role !== next.role))
+      ) {
+        setLocked(true);
         setError(
-          "We could not confirm whether the membership ended. Retry the same departure; do not change the member.",
+          "The command response could not be reconciled. Refresh the roster before another action.",
         );
-      }
-      inFlight.current = false;
-      return;
-    }
-    if (!current.current) {
-      inFlight.current = false;
-      return;
-    }
-    uncertain.current = null;
-    const name = displayIdentity(selected.identity);
-    setSelected(null);
-    setNotice(`${name}'s membership ended.`);
-    try {
-      await router.invalidate();
-      if (!current.current) {
-        inFlight.current = false;
         return;
+      }
+      setUncertain(null);
+      setSelected(null);
+      setNotice(
+        `${displayIdentity(member.identity)} ${commandPastTense(next.action)}. Roster status was reread.`,
+      );
+      try {
+        await router.invalidate();
+        if (!current.current) return;
+      } catch {
+        if (current.current) {
+          setLocked(true);
+          setNotice(
+            `${displayIdentity(member.identity)} ${commandPastTense(next.action)}, but the roster could not refresh. Refresh before another action.`,
+          );
+        }
       }
     } catch {
       if (current.current) {
+        setUncertain(next);
         setLocked(true);
-        setNotice(
-          `${name}'s membership ended, but the roster could not refresh. Refresh the page before another change.`,
+        setError(
+          `We could not confirm whether this staff change completed. Retry this exact command after reconciling the roster.`,
         );
       }
+    } finally {
+      inFlight.current = false;
     }
-    inFlight.current = false;
   };
-  if (page.items.length === 0) {
-    return cursor ? <EmptyStaffPage organizationId={organizationId} /> : <EmptyStaffRoster />;
-  }
+  const selectedAction = uncertain?.action ?? action;
+  const selectedProtected = selectedAction ? !isEligible(selected, selectedAction) : false;
+  const selectedCommand = uncertain?.membershipId === selected?.membershipId ? uncertain : null;
+
+  if (accessLost) return <StaffAccessLost />;
 
   return (
     <section aria-labelledby="staff-roster-heading" className="space-y-5">
@@ -173,80 +225,141 @@ function StaffRosterContents({
           Staff roster
         </h1>
         <p className="max-w-3xl text-sm leading-6 text-slate-400">
-          Active administrative memberships only. This roster does not provide access to private
-          athlete records. The root-owner membership cannot be ended.
+          Review active and suspended administrative memberships. Suspension ends active coaching
+          assignments; resuming does not restore them or grant private-athlete access.
         </p>
       </div>
+      <nav aria-label="Staff status" className="flex flex-wrap gap-2">
+        <StatusLink
+          organizationId={organizationId}
+          status="active"
+          selected={status === "active"}
+        />
+        <StatusLink
+          organizationId={organizationId}
+          status="suspended"
+          selected={status === "suspended"}
+        />
+      </nav>
       {notice ? (
         <p role="status" className="text-sm text-emerald-300">
           {notice}
         </p>
       ) : null}
+      {error ? (
+        <p role="alert" className="text-sm text-red-300">
+          {error}
+        </p>
+      ) : null}
       {locked ? (
-        <div className="flex gap-3" role="status">
-          <p className="text-sm text-amber-200">
-            Refresh the roster before another membership change.
-          </p>
-          <Button type="button" onClick={() => void refresh()}>
-            Refresh roster
-          </Button>
-        </div>
+        <Button type="button" onClick={() => void refresh()}>
+          Refresh roster
+        </Button>
       ) : null}
       <Card className="border-slate-800 bg-slate-900 text-slate-50">
         <CardHeader>
-          <CardTitle>Active staff</CardTitle>
-          <CardDescription className="text-slate-400">{page.items.length} shown</CardDescription>
+          <CardTitle>{status === "active" ? "Active staff" : "Suspended staff"}</CardTitle>
+          <CardDescription className="text-slate-400">
+            {page.items.length} shown on this page
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <ul aria-label="Staff roster" className="space-y-3">
-            {page.items.map((member) => (
-              <li
-                key={member.membershipId}
-                className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3 last:border-0 last:pb-0"
-              >
-                <div>
-                  <p className="font-medium">{displayIdentity(member.identity)}</p>
-                  <div className="mt-1 flex gap-1">
-                    {member.roleKeys.map((role) => (
-                      <Badge
-                        key={role}
-                        className="border-slate-700 bg-slate-800 capitalize text-slate-200"
-                      >
-                        {role}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-                {member.endMembership.eligible ? (
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    disabled={locked || form.formState.isSubmitting}
-                    onClick={() => {
-                      if (inFlight.current) return;
-                      setError(null);
-                      setSelected(member);
-                    }}
+          {page.items.length === 0 ? (
+            <p className="text-sm text-slate-400">No {status} staff on this page.</p>
+          ) : (
+            <ul
+              aria-label={`${status === "active" ? "Active" : "Suspended"} staff roster`}
+              className="space-y-3"
+            >
+              {page.items.map((member) => {
+                const label = member.status === "active" ? "Suspend" : "Resume";
+                const statusEligible =
+                  member.actions[member.status === "active" ? "suspend" : "resume"].eligible;
+                return (
+                  <li
+                    key={member.membershipId}
+                    className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3 last:border-0 last:pb-0"
                   >
-                    End membership for {displayIdentity(member.identity)}
-                  </Button>
-                ) : (
-                  <p className="max-w-sm text-sm text-slate-400">
-                    {member.endMembership.reason === "self"
-                      ? "You cannot end your own membership."
-                      : member.endMembership.reason === "root_owner"
-                        ? "The root-owner membership cannot be ended."
-                        : "Only the root owner can end an administrator membership."}
-                  </p>
-                )}
-              </li>
-            ))}
-          </ul>
+                    <div>
+                      <p className="font-medium">{displayIdentity(member.identity)}</p>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {member.roleKeys.map((role) => (
+                          <Badge
+                            key={role}
+                            className="border-slate-700 bg-slate-800 capitalize text-slate-200"
+                          >
+                            {role}
+                          </Badge>
+                        ))}
+                        <Badge className="border-slate-700 bg-slate-800 capitalize text-slate-200">
+                          {member.status}
+                        </Badge>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {(["admin", "coach"] as const).map((role) => {
+                        const hasRole = member.roleKeys.includes(role);
+                        const roleAction = `${hasRole ? "revoke" : "grant"}_${role}` as StaffAction;
+                        return (
+                          <Button
+                            key={role}
+                            type="button"
+                            variant="outline"
+                            disabled={
+                              locked ||
+                              inFlight.current ||
+                              !member.actions[
+                                hasRole
+                                  ? role === "admin"
+                                    ? "revokeAdmin"
+                                    : "revokeCoach"
+                                  : role === "admin"
+                                    ? "grantAdmin"
+                                    : "grantCoach"
+                              ].eligible
+                            }
+                            onClick={() => {
+                              setError(null);
+                              setSelected(member);
+                              setAction(roleAction);
+                            }}
+                          >
+                            {hasRole ? "Revoke" : "Grant"} {role}
+                          </Button>
+                        );
+                      })}
+                    </div>
+                    {!statusEligible ? (
+                      <p className="max-w-sm text-sm text-slate-400">
+                        {member.endMembership.reason === "root_owner"
+                          ? "The root-owner membership cannot be suspended or resumed."
+                          : "Your current authority does not allow this membership status change."}
+                      </p>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant={member.status === "active" ? "destructive" : "outline"}
+                        disabled={locked || inFlight.current || !statusEligible}
+                        onClick={() => {
+                          setError(null);
+                          setSelected(member);
+                          setAction(member.status === "active" ? "suspend" : "resume");
+                        }}
+                      >
+                        {label} {displayIdentity(member.identity)}
+                      </Button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </CardContent>
       </Card>
       <StaffPagination
         organizationId={organizationId}
-        {...(cursor === undefined ? {} : { cursor })}
+        status={status}
+        cursor={cursor}
         hasMore={page.hasMore}
         nextCursor={page.nextCursor}
       />
@@ -257,116 +370,94 @@ function StaffRosterContents({
         }}
       >
         <AlertDialogContent>
-          <form onSubmit={form.handleSubmit(submit)} noValidate>
-            <AlertDialogHeader>
-              <AlertDialogTitle>End staff membership?</AlertDialogTitle>
-              <AlertDialogDescription>
-                End {selected ? displayIdentity(selected.identity) : "this member"}&apos;s active
-                membership. Their staff roles and coaching assignments will end.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            {error ? (
-              <p role="alert" className="py-3 text-sm text-red-300">
-                {error}
-              </p>
-            ) : null}
-            <AlertDialogFooter>
-              <AlertDialogCancel
-                type="button"
-                disabled={form.formState.isSubmitting}
-                onClick={close}
+          <AlertDialogHeader>
+            <AlertDialogTitle>{commandTitle(selectedAction)}</AlertDialogTitle>
+            <AlertDialogDescription>{commandImpact(selectedAction)}</AlertDialogDescription>
+          </AlertDialogHeader>
+          {selectedProtected ? (
+            <p role="alert" className="text-sm text-red-300">
+              This protected membership cannot be changed.
+            </p>
+          ) : null}
+          {selectedAction === "suspend" || selectedAction === "resume" ? (
+            <div className="space-y-2 py-2">
+              <Label htmlFor="staff-suspension-reason">Reason</Label>
+              <Select
+                value={reason}
+                onValueChange={(value) => setReason(value as "administrative_review")}
+                disabled={Boolean(selectedCommand) || inFlight.current}
               >
-                Cancel
-              </AlertDialogCancel>
-              <Button
-                type="submit"
-                variant="destructive"
-                disabled={form.formState.isSubmitting || locked}
-              >
-                {form.formState.isSubmitting ? "Ending membership…" : "End membership"}
-              </Button>
-            </AlertDialogFooter>
-          </form>
+                <SelectTrigger id="staff-suspension-reason">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="administrative_review">Administrative review</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              type="button"
+              disabled={inFlight.current || Boolean(selectedCommand)}
+              onClick={close}
+            >
+              Cancel
+            </AlertDialogCancel>
+            <Button
+              type="button"
+              variant={
+                selectedAction === "suspend" || selectedAction?.startsWith("revoke")
+                  ? "destructive"
+                  : "default"
+              }
+              disabled={selectedProtected || inFlight.current || (locked && !selectedCommand)}
+              onClick={() => void submit(selectedCommand ?? undefined)}
+            >
+              {inFlight.current
+                ? "Submitting…"
+                : selectedCommand
+                  ? `Retry same ${commandButton(selectedCommand.action)}`
+                  : commandButton(selectedAction)}
+            </Button>
+          </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </section>
   );
 }
 
-export function StaffRosterPending() {
+function StatusLink({
+  organizationId,
+  status,
+  selected,
+}: {
+  organizationId: string;
+  status: StaffStatus;
+  selected: boolean;
+}) {
   return (
-    <p role="status" aria-live="polite" className="text-sm text-slate-400">
-      Loading staff roster…
-    </p>
+    <Button asChild variant={selected ? "default" : "outline"}>
+      <Link
+        to="/organizations/$organizationId/staff"
+        params={{ organizationId }}
+        search={{ status, cursor: undefined }}
+        aria-current={selected ? "page" : undefined}
+      >
+        {status === "active" ? "Active" : "Suspended"}
+      </Link>
+    </Button>
   );
 }
-
-export function StaffRosterError() {
-  const router = useRouter();
-  return (
-    <Card className="border-slate-800 bg-slate-900 text-slate-50">
-      <CardContent className="flex flex-wrap items-center gap-3 py-6">
-        <p role="alert" className="text-sm text-slate-400">
-          We could not load the staff roster.
-        </p>
-        <Button onClick={() => void router.invalidate()}>Retry</Button>
-      </CardContent>
-    </Card>
-  );
-}
-
-function EmptyStaffRoster() {
-  return (
-    <section aria-labelledby="empty-staff-heading">
-      <Card className="border-slate-800 bg-slate-900 text-slate-50">
-        <CardHeader>
-          <CardTitle>
-            <h1 id="empty-staff-heading">No active staff members</h1>
-          </CardTitle>
-          <CardDescription className="text-slate-400">
-            There are no active staff memberships to administer.
-          </CardDescription>
-        </CardHeader>
-      </Card>
-    </section>
-  );
-}
-
-function EmptyStaffPage({ organizationId }: { organizationId: string }) {
-  return (
-    <section aria-labelledby="empty-staff-page-heading">
-      <Card className="border-slate-800 bg-slate-900 text-slate-50">
-        <CardHeader>
-          <CardTitle>
-            <h1 id="empty-staff-page-heading">No staff on this page</h1>
-          </CardTitle>
-          <CardDescription className="text-slate-400">
-            This saved page no longer has active staff to show.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button asChild variant="outline">
-            <Link
-              to="/organizations/$organizationId/staff"
-              params={{ organizationId }}
-              search={{ cursor: undefined }}
-            >
-              Back to first page
-            </Link>
-          </Button>
-        </CardContent>
-      </Card>
-    </section>
-  );
-}
-
 function StaffPagination({
   organizationId,
+  status,
   cursor,
   hasMore,
   nextCursor,
 }: {
   organizationId: string;
+  status: StaffStatus;
   cursor?: string;
   hasMore: boolean;
   nextCursor: string | null;
@@ -379,7 +470,7 @@ function StaffPagination({
           <Link
             to="/organizations/$organizationId/staff"
             params={{ organizationId }}
-            search={{ cursor: undefined }}
+            search={{ status, cursor: undefined }}
           >
             First page
           </Link>
@@ -390,7 +481,7 @@ function StaffPagination({
           <Link
             to="/organizations/$organizationId/staff"
             params={{ organizationId }}
-            search={{ cursor: nextCursor }}
+            search={{ status, cursor: nextCursor }}
           >
             Next page
           </Link>
@@ -399,7 +490,157 @@ function StaffPagination({
     </nav>
   );
 }
+export function StaffRosterPending() {
+  return (
+    <p role="status" aria-live="polite" className="text-sm text-slate-400">
+      Loading staff roster…
+    </p>
+  );
+}
 
+function commandFor(
+  member: StaffMember,
+  action: StaffAction,
+  reason: "administrative_review",
+): Command {
+  const role = action.endsWith("admin") ? "admin" : action.endsWith("coach") ? "coach" : undefined;
+  return {
+    membershipId: member.membershipId,
+    operationId: crypto.randomUUID(),
+    action,
+    ...(role ? { role } : {}),
+    ...(role ? {} : { reason }),
+  };
+}
+function isEligible(member: StaffMember | null, action: StaffAction) {
+  if (!member) return false;
+  return member.actions[
+    (
+      {
+        suspend: "suspend",
+        resume: "resume",
+        grant_admin: "grantAdmin",
+        revoke_admin: "revokeAdmin",
+        grant_coach: "grantCoach",
+        revoke_coach: "revokeCoach",
+      } as const
+    )[action]
+  ].eligible;
+}
+async function executeCommand(organizationId: string, command: Command) {
+  if (command.role) {
+    return (
+      command.action.startsWith("grant") ? grantOrganizationStaffRole : revokeOrganizationStaffRole
+    )({
+      data: {
+        organizationId,
+        membershipId: command.membershipId,
+        role: command.role,
+        operationId: command.operationId,
+      },
+    });
+  }
+  return (
+    command.action === "suspend"
+      ? suspendOrganizationStaffMembership
+      : resumeOrganizationStaffMembership
+  )({
+    data: {
+      organizationId,
+      membershipId: command.membershipId,
+      operationId: command.operationId,
+      reason: command.reason ?? "administrative_review",
+    },
+  });
+}
+function commandStatus(action: StaffAction) {
+  return action === "suspend"
+    ? "suspended"
+    : action === "resume"
+      ? "resumed"
+      : action.startsWith("grant")
+        ? "granted"
+        : "revoked";
+}
+function commandButton(action: StaffAction | null) {
+  return action
+    ? (
+        {
+          suspend: "Suspend membership",
+          resume: "Resume membership",
+          grant_admin: "Grant admin",
+          revoke_admin: "Revoke admin",
+          grant_coach: "Grant coach",
+          revoke_coach: "Revoke coach",
+        } as const
+      )[action]
+    : "Confirm staff change";
+}
+function commandTitle(action: StaffAction | null) {
+  return action ? `${commandButton(action)}?` : "Confirm staff change";
+}
+function commandPastTense(action: StaffAction) {
+  return (
+    {
+      suspend: "was suspended",
+      resume: "was resumed",
+      grant_admin: "was granted the admin role",
+      revoke_admin: "had the admin role revoked",
+      grant_coach: "was granted the coach role",
+      revoke_coach: "had the coach role revoked",
+    } as const
+  )[action];
+}
+function commandImpact(action: StaffAction | null) {
+  if (action === "suspend")
+    return "Suspension ends this member’s active coaching assignments. It does not end their membership, change roles, or grant private-athlete access.";
+  if (action === "resume")
+    return "Resuming restores membership status only. It does not restore ended coaching assignments, change roles, or grant private-athlete access.";
+  return "This changes an administrative role only. It does not create coaching assignments, consent, or private-athlete access.";
+}
+export function StaffRosterError({
+  organizationId,
+  status,
+}: {
+  organizationId: string;
+  status: StaffStatus;
+}) {
+  return (
+    <Card className="border-slate-800 bg-slate-900 text-slate-50">
+      <CardContent className="flex flex-wrap items-center gap-3 py-6">
+        <p role="alert" className="text-sm text-slate-400">
+          We could not load the staff roster.
+        </p>
+        <Button asChild>
+          <Link
+            to="/organizations/$organizationId/staff"
+            params={{ organizationId }}
+            search={{ status, cursor: undefined }}
+          >
+            Return to first page
+          </Link>
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+export function StaffAccessLost() {
+  const router = useRouter();
+  return (
+    <Card className="border-slate-800 bg-slate-900 text-slate-50">
+      <CardContent className="flex flex-wrap items-center gap-3 py-6">
+        <p role="alert" className="text-sm text-slate-400">
+          Your organization staff-management access has changed. Reauthorize the roster before
+          taking another action.
+        </p>
+        <Button type="button" onClick={() => void router.invalidate()}>
+          Reauthorize roster
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
 function displayIdentity(identity: StaffMember["identity"]) {
   return identity.displayName ?? identity.username ?? "Organization member";
 }
