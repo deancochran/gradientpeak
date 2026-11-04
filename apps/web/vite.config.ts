@@ -76,7 +76,7 @@ const config = defineConfig(({ mode }) => {
     plugins: [
       tunnelSourceModulePlugin(),
       clientDisconnectRecorderPlugin(),
-      devtools(),
+      ...(process.env.VITE_ENABLE_DEVTOOLS === "true" ? [devtools()] : []),
       tailwindcss(),
       tanstackStart({
         router: {

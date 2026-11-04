@@ -1,5 +1,23 @@
 # Development Errors
 
+## Optional browser inspectors
+
+The TanStack browser inspectors and their Vite instrumentation are opt-in.
+Set `VITE_ENABLE_DEVTOOLS=true` before starting the web development server to
+enable both. Restart the owning server after changing this setting; the default
+keeps inspector code off the initial client path. This does not disable Sentry,
+sanitized API error capture, or the normal Vite error overlay.
+Verify the opt-in inspector path with
+`VITE_ENABLE_DEVTOOLS=true pnpm --dir apps/web exec tsx scripts/run-disposable-acceptance.ts e2e/specs/devtools-compatibility.spec.ts --project='Desktop Chrome'`.
+Without the flag, that spec checks that inspectors remain absent.
+
+For disposable authenticated loading measurements, run
+`pnpm --dir apps/web exec tsx scripts/run-disposable-acceptance.ts e2e/specs/route-timing.spec.ts --project='Desktop Chrome'`.
+The report separates document timing, exact hydration, route-content readiness,
+and API durations. It is diagnostic, not a speed acceptance gate: a passing run
+can still contain unacceptable delays. Disposable actors do not reproduce an
+existing user's history or phone/network performance.
+
 Set `ENABLE_LOCAL_ERROR_LOG=1` in the web development environment to write sanitized unexpected API errors to the repository-local `.logs/dev-errors.jsonl`. The directory and files are owner-only, symlinks are rejected, and the file rotates at 1 MB with one `.1` backup. `LOCAL_ERROR_LOG_PATH` is optional only for an absolute filename directly inside that same `.logs` directory; other paths are rejected.
 
 Run `pnpm dev:errors` to print grouped recent errors and the latest safe record. It does not start a server or read console output.
