@@ -39,6 +39,11 @@ vi.mock("@tanstack/react-router", () => ({
 vi.mock("../components/protected/protected-header", () => ({
   ProtectedHeader: () => <header>Protected header</header>,
 }));
+vi.mock("../components/providers/auth-provider", () => ({
+  AuthProvider: ({ children }: { children: React.ReactNode }) => children,
+  AuthSessionRouteInvalidator: ({ children }: { children: React.ReactNode }) => children,
+  AuthenticatedViewerBoundary: ({ children }: { children: React.ReactNode }) => children,
+}));
 vi.mock("../components/providers/recording-storage-boundary", () => ({
   RecordingStorageBoundary: ({ children }: { children: React.ReactNode }) => {
     mocks.storageMount();

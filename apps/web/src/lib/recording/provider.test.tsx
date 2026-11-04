@@ -1221,6 +1221,28 @@ describe("timer-only recording storage readiness", () => {
     await waitFor(() => expect(recording?.hydrationStatus).not.toBe("hydrating"));
     expect(setItem).toHaveBeenCalledTimes(1);
   });
+  it("preserves a pending durable checkpoint when the authenticated recorder subtree unmounts", async () => {
+    const storage = new ControlledStorage();
+    const rendered = render(
+      <TimerOnlyRecordingProvider ownerId="profile-1" storage={storageForTest(storage)}>
+        <Probe />
+      </TimerOnlyRecordingProvider>,
+    );
+    await waitFor(() => expect(currentRecording().hydrationStatus).toBe("ready"));
+    act(() => {
+      currentRecording().configure({ activity_category: "run" });
+    });
+    await waitFor(() => expect(currentRecording().state.configuration).not.toBeNull());
+    void currentRecording().start();
+    await waitFor(() => expect(storage.saveCalls).toBeGreaterThan(0));
+
+    const removesBeforeUnmount = storage.removeCalls;
+    rendered.unmount();
+    storage.releaseSave();
+
+    await waitFor(() => expect(storage.draft).not.toBeNull());
+    expect(storage.removeCalls).toBe(removesBeforeUnmount);
+  });
   it("does not drain storage while disabled", async () => {
     vi.useFakeTimers();
     const storage = new ControlledStorage();

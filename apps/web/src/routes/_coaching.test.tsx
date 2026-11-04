@@ -14,6 +14,15 @@ vi.mock("@tanstack/react-router", () => ({
 vi.mock("../lib/auth/route-guards", () => ({
   authSessionMiddleware: { name: "auth-session" },
   resolveRouteAuthSession: mocks.resolveRouteAuthSession,
+  toPublicAuthViewer: (session: { user?: unknown } | null) => ({
+    version: 1,
+    user: session?.user ?? null,
+  }),
+}));
+vi.mock("../components/providers/auth-provider", () => ({
+  AuthProvider: ({ children }: { children: React.ReactNode }) => children,
+  AuthSessionRouteInvalidator: ({ children }: { children: React.ReactNode }) => children,
+  AuthenticatedViewerBoundary: ({ children }: { children: React.ReactNode }) => children,
 }));
 
 import { Route } from "./_coaching";
@@ -56,7 +65,10 @@ describe("coaching authentication boundary", () => {
         location: { href: "/organizations/org-1/dashboard" },
         serverContext,
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({
+      actorProfileId: "profile-1",
+      authViewer: { version: 1, user: serverContext.session.user },
+    });
     expect(mocks.resolveRouteAuthSession).toHaveBeenCalledWith(serverContext);
   });
 });

@@ -35,6 +35,13 @@ function CoachDashboardPage() {
             Manage athletes
           </Link>
           <Link
+            to="/organizations/$organizationId/invitations"
+            params={{ organizationId }}
+            className="inline-flex rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2"
+          >
+            Manage invitations
+          </Link>
+          <Link
             to="/organizations/$organizationId/groups"
             params={{ organizationId }}
             className="inline-flex rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2"

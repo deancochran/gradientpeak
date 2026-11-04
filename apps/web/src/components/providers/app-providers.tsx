@@ -6,7 +6,6 @@ import { useEffect } from "react";
 import { api, type createApiClient } from "../../lib/api/client";
 import { posthogOptions, posthogProjectToken } from "../../lib/telemetry";
 
-import { AuthProvider } from "./auth-provider";
 import { ThemeProvider } from "./theme-provider";
 
 export function AppProviders({
@@ -23,9 +22,7 @@ export function AppProviders({
       <QueryClientProvider client={queryClient}>
         <api.Provider client={apiClient} queryClient={queryClient}>
           <ThemeProvider>
-            <ProfileIdentityFocusRefresh>
-              <AuthProvider>{children}</AuthProvider>
-            </ProfileIdentityFocusRefresh>
+            <ProfileIdentityFocusRefresh>{children}</ProfileIdentityFocusRefresh>
           </ThemeProvider>
         </api.Provider>
       </QueryClientProvider>

@@ -3,8 +3,30 @@ import type { OnboardingStatus } from "@repo/core/schemas/onboarding";
 import { redirect } from "@tanstack/react-router";
 import { createMiddleware, createServerFn } from "@tanstack/react-start";
 import { setResponseHeader } from "@tanstack/react-start/server";
+import { z } from "zod";
 
 import { getWebAuthSession } from "./client";
+
+/**
+ * The only session data a route may serialize into its SSR/hydration context.
+ * In particular, this excludes the session identifier, expiry, transport, and
+ * any bearer credential from AuthSession.
+ */
+export const publicAuthViewerSchema = z
+  .object({
+    version: z.literal(1),
+    user: z
+      .object({ id: z.string().min(1), email: z.email(), emailVerified: z.boolean() })
+      .strict()
+      .nullable(),
+  })
+  .strict();
+
+export type PublicAuthViewer = z.infer<typeof publicAuthViewerSchema>;
+
+export function toPublicAuthViewer(session: AuthSession | null): PublicAuthViewer {
+  return publicAuthViewerSchema.parse({ version: 1, user: session?.user ?? null });
+}
 
 export const authSessionMiddleware = createMiddleware({ type: "request" }).server(
   async ({ next, request }) => {

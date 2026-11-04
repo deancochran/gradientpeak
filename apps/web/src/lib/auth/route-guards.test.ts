@@ -11,6 +11,7 @@ import {
   getAuthenticatedEntryDestination,
   getProtectedAccessRedirect,
   resolveRouteAuthSession,
+  toPublicAuthViewer,
 } from "./route-guards";
 
 const authenticatedSession = {
@@ -45,6 +46,24 @@ describe("resolveRouteAuthSession", () => {
 
     await expect(resolveRouteAuthSession()).resolves.toBe(authenticatedSession);
     expect(getWebAuthSession).toHaveBeenCalledOnce();
+  });
+});
+
+describe("toPublicAuthViewer", () => {
+  it("serializes only the public user snapshot, never session credentials or metadata", () => {
+    const result = toPublicAuthViewer({
+      sessionId: "session-secret",
+      transport: "bearer",
+      bearerToken: "bearer-secret",
+      expiresAt: "2026-01-01T00:00:00.000Z",
+      user: { id: "user-1", email: "user@example.test", emailVerified: true },
+    });
+
+    expect(result).toEqual({
+      version: 1,
+      user: { id: "user-1", email: "user@example.test", emailVerified: true },
+    });
+    expect(JSON.stringify(result)).not.toMatch(/session-secret|bearer-secret|expiresAt/);
   });
 });
 
