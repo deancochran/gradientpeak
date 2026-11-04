@@ -13,7 +13,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Pool } from "pg";
 import { bootstrapSupabaseSchemas, withDisposableDatabase } from "./_disposable-target";
-import { dbPackageRoot } from "./_helpers";
 import {
   type AuthIdentityRehearsalReceipt,
   type AuthIdentityTargetIdentity,
