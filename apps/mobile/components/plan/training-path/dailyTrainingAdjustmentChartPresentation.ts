@@ -138,12 +138,22 @@ function toDateKey(date: Date) {
   ).padStart(2, "0")}`;
 }
 
-export function getPlanChartBucketDate(dateKey: string, range: PlanTrainingChartRange) {
+export function getPlanChartBucketDate(
+  dateKey: string,
+  range: PlanTrainingChartRange,
+  weekAnchorDate?: string,
+) {
   if (range === "daily") return dateKey;
   const date = parseDateKey(dateKey);
   if (!date) return dateKey;
   if (range === "monthly") {
     return `${dateKey.slice(0, 7)}-01`;
+  }
+  const weekAnchor = weekAnchorDate ? parseDateKey(weekAnchorDate) : null;
+  if (weekAnchor) {
+    const daysSinceAnchor = Math.floor((date.getTime() - weekAnchor.getTime()) / 86_400_000);
+    weekAnchor.setUTCDate(weekAnchor.getUTCDate() + Math.floor(daysSinceAnchor / 7) * 7);
+    return toDateKey(weekAnchor);
   }
   const daysSinceMonday = (date.getUTCDay() + 6) % 7;
   date.setUTCDate(date.getUTCDate() - daysSinceMonday);
@@ -250,12 +260,13 @@ function hasCompleteBucketCoverage(
 export function aggregateDailyTrainingAdjustmentPoints(
   points: readonly DailyTrainingAdjustmentPoint[],
   range: PlanTrainingChartRange,
+  weekAnchorDate?: string,
 ) {
   if (range === "daily") return [...points];
 
   const buckets = new Map<string, DailyTrainingAdjustmentPoint[]>();
   for (const point of [...points].sort((left, right) => left.date.localeCompare(right.date))) {
-    const bucketDate = getPlanChartBucketDate(point.date, range);
+    const bucketDate = getPlanChartBucketDate(point.date, range, weekAnchorDate);
     const bucket = buckets.get(bucketDate);
     if (bucket) bucket.push(point);
     else buckets.set(bucketDate, [point]);

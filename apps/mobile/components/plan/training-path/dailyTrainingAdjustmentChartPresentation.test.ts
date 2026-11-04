@@ -190,6 +190,43 @@ describe("daily training adjustment chart presentation", () => {
     expect(formatPlanChartDateLabel("2026-07-01", "monthly")).toBe("Jul ’26");
   });
 
+  it("keeps Monday weeks by default and uses a supplied draft start as the weekly anchor", () => {
+    expect(getPlanChartBucketDate("2026-06-09", "weekly")).toBe("2026-06-08");
+    expect(getPlanChartBucketDate("2026-06-09", "weekly", "2026-06-10")).toBe("2026-06-03");
+    expect(getPlanChartBucketDate("2026-06-10", "weekly", "2026-06-10")).toBe("2026-06-10");
+    expect(getPlanChartBucketDate("2026-06-16", "weekly", "2026-06-10")).toBe("2026-06-10");
+    expect(getPlanChartBucketDate("2026-06-17", "weekly", "2026-06-10")).toBe("2026-06-17");
+  });
+
+  it("aggregates partial creation weeks using the same supplied anchor", () => {
+    expect(
+      aggregateDailyTrainingAdjustmentPoints(
+        [
+          { date: "2026-06-10", effectiveCompletedLoad: 10, plannedLoad: 20 },
+          { date: "2026-06-11", effectiveCompletedLoad: 15, plannedLoad: 25 },
+          { date: "2026-06-17", effectiveCompletedLoad: 30, plannedLoad: 40 },
+        ],
+        "weekly",
+        "2026-06-10",
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        date: "2026-06-10",
+        bucketStartDate: "2026-06-10",
+        bucketEndDate: "2026-06-11",
+        effectiveCompletedLoad: 25,
+        plannedLoad: 45,
+      }),
+      expect.objectContaining({
+        date: "2026-06-17",
+        bucketStartDate: "2026-06-17",
+        bucketEndDate: "2026-06-17",
+        effectiveCompletedLoad: 30,
+        plannedLoad: 40,
+      }),
+    ]);
+  });
+
   it("aggregates only supplied bounded points and never manufactures a period recommendation", () => {
     const points = [
       {
