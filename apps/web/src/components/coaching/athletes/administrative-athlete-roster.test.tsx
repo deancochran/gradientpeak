@@ -95,6 +95,25 @@ describe("AdministrativeAthleteRoster", () => {
     vi.unstubAllGlobals();
   });
 
+  it("keeps engagement termination and responsibility management mutually exclusive", () => {
+    render(
+      <AdministrativeAthleteRoster
+        actorProfileId="profile-1"
+        initialPage={page}
+        organizationId={organizationId}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "End engagement" }));
+    expect(screen.getByRole("button", { name: "Confirm end engagement" })).toBeTruthy();
+    const manage = screen.getByRole("button", { name: "Manage coaches" });
+    expect((manage as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(manage);
+    expect(
+      screen.queryByRole("button", { name: "Lose coaching responsibility access" }),
+    ).toBeNull();
+    expect(mocks.end).not.toHaveBeenCalled();
+  });
+
   it("shows identity and paused status without private training data, and pages by cursor", async () => {
     render(
       <AdministrativeAthleteRoster

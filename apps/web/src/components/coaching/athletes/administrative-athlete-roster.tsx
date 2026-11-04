@@ -162,6 +162,7 @@ function AdministrativeAthleteRosterContents({
   }
 
   async function submit(values: TerminationValues) {
+    if (managingResponsibilitiesFor) return;
     if (!selected) return;
     const context = contextVersion.current;
     // React state does not update synchronously. This ref is the authoritative single-flight guard
@@ -269,8 +270,15 @@ function AdministrativeAthleteRosterContents({
                       {athlete.status}
                     </Badge>
                     <Button
-                      disabled={isTerminationPending || Boolean(managingResponsibilitiesFor)}
-                      onClick={() => setManagingResponsibilitiesFor(athlete)}
+                      disabled={
+                        isTerminationPending ||
+                        Boolean(managingResponsibilitiesFor) ||
+                        Boolean(selected)
+                      }
+                      onClick={() => {
+                        if (!selected && !managingResponsibilitiesFor && !isTerminationPending)
+                          setManagingResponsibilitiesFor(athlete);
+                      }}
                       type="button"
                       variant="outline"
                     >
@@ -321,7 +329,7 @@ function AdministrativeAthleteRosterContents({
           organizationId={organizationId}
         />
       ) : null}
-      {selected ? (
+      {selected && !managingResponsibilitiesFor ? (
         <Card className="border-destructive bg-slate-950 text-slate-50">
           <CardHeader>
             <CardTitle>End engagement with {identityName(selected)}</CardTitle>
