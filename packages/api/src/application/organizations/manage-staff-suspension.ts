@@ -21,6 +21,26 @@ type Command = {
   reason: string;
   action: Action;
 };
+
+/**
+ * The membership-state portion of the suspension command's authorization.
+ * Organization state and membership existence remain repository concerns.
+ */
+export function canManageStaffSuspension(input: {
+  actorMembershipId: string;
+  actorIsActive: boolean;
+  rootMembershipId: string;
+  targetMembershipId: string;
+  targetIsEnded: boolean;
+}) {
+  return (
+    input.actorIsActive &&
+    !input.targetIsEnded &&
+    input.targetMembershipId !== input.actorMembershipId &&
+    input.targetMembershipId !== input.rootMembershipId
+  );
+}
+
 const actionName = (action: Action) =>
   action === "suspend"
     ? ("organization.membership_suspended" as const)
@@ -71,8 +91,13 @@ async function execute(input: Command) {
     const target = await repository.lockMembership(input.organizationId, input.membershipId);
     if (!target || target.endedAt) throw new OrganizationStaffSuspensionError("not_found");
     if (
-      input.membershipId === actor.membershipId ||
-      input.membershipId === organization.rootMembershipId
+      !canManageStaffSuspension({
+        actorMembershipId: actor.membershipId,
+        actorIsActive: actor.suspendedAt === null && actor.endedAt === null,
+        rootMembershipId: organization.rootMembershipId,
+        targetMembershipId: input.membershipId,
+        targetIsEnded: target.endedAt !== null,
+      })
     )
       throw new OrganizationStaffSuspensionError("forbidden");
 

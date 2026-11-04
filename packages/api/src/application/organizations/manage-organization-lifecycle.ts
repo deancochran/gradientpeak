@@ -3,6 +3,8 @@ import {
   createOrganizationLifecycleRepository,
   type OrganizationLifecycleRepository,
 } from "../../repositories/organization-lifecycle-repository";
+import { canManageStaffRole, type StaffRole } from "./manage-staff-roles";
+import { canManageStaffSuspension } from "./manage-staff-suspension";
 
 export type OrganizationLifecycleCommandFailure =
   | "forbidden"
@@ -109,9 +111,36 @@ export async function listOrganizationStaff(input: {
             : !actor.isRootOwner && item.roleKeys.includes("admin")
               ? "admin_target"
               : null;
+      const targetIsActive = item.suspendedAt === null;
+      const actorRoles: readonly StaffRole[] = actor.isRootOwner ? [] : ["admin"];
+      const canManageRole = (mutation: "grant" | "revoke", role: StaffRole) =>
+        targetIsActive &&
+        canManageStaffRole({
+          mutation,
+          role,
+          actorMembershipId: actor.membershipId,
+          rootMembershipId: actor.rootMembershipId,
+          actorRoles,
+          targetMembershipId: item.membershipId,
+        });
+      const canManageSuspension = canManageStaffSuspension({
+        actorMembershipId: actor.membershipId,
+        actorIsActive: true,
+        rootMembershipId: actor.rootMembershipId,
+        targetMembershipId: item.membershipId,
+        targetIsEnded: false,
+      });
       return {
         ...item,
         endMembership: { eligible: reason === null, reason },
+        actions: {
+          suspend: { eligible: canManageSuspension },
+          resume: { eligible: canManageSuspension },
+          grantAdmin: { eligible: canManageRole("grant", "admin") },
+          revokeAdmin: { eligible: canManageRole("revoke", "admin") },
+          grantCoach: { eligible: canManageRole("grant", "coach") },
+          revokeCoach: { eligible: canManageRole("revoke", "coach") },
+        },
       };
     }),
   };

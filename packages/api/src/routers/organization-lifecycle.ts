@@ -119,6 +119,16 @@ export const organizationLifecycleRouter = createTRPCRouter({
                   reason: z.enum(["self", "root_owner", "admin_target"]).nullable(),
                 })
                 .strict(),
+              actions: z
+                .object({
+                  suspend: z.object({ eligible: z.boolean() }).strict(),
+                  resume: z.object({ eligible: z.boolean() }).strict(),
+                  grantAdmin: z.object({ eligible: z.boolean() }).strict(),
+                  revokeAdmin: z.object({ eligible: z.boolean() }).strict(),
+                  grantCoach: z.object({ eligible: z.boolean() }).strict(),
+                  revokeCoach: z.object({ eligible: z.boolean() }).strict(),
+                })
+                .strict(),
             })
             .strict(),
         ),
@@ -144,6 +154,7 @@ export const organizationLifecycleRouter = createTRPCRouter({
             status: input.status,
             suspendedAt: item.suspendedAt,
             endMembership: item.endMembership,
+            actions: item.actions,
           })),
         };
       }),

@@ -205,14 +205,6 @@ describe("organization staff roles against a disposable migrated PostgreSQL data
             ).rejects.toMatchObject({ code: "FORBIDDEN" });
 
           const grantOperationId = randomUUID();
-          // Deliberately discard the first durable response, as a client that
-          // loses its acknowledgement would, then retry with the same id.
-          await caller(client.db, admin.id).staffRoles.grant({
-            organizationId,
-            membershipId: targetMembershipId,
-            role: "coach",
-            operationId: grantOperationId,
-          });
           await expect(
             caller(client.db, admin.id).staffRoles.grant({
               organizationId,
@@ -220,7 +212,15 @@ describe("organization staff roles against a disposable migrated PostgreSQL data
               role: "coach",
               operationId: grantOperationId,
             }),
-          ).resolves.toMatchObject({ status: "granted" });
+          ).resolves.toMatchObject({ status: "granted", operationId: grantOperationId });
+          await expect(
+            caller(client.db, admin.id).staffRoles.grant({
+              organizationId,
+              membershipId: targetMembershipId,
+              role: "coach",
+              operationId: grantOperationId,
+            }),
+          ).resolves.toMatchObject({ status: "granted", operationId: grantOperationId });
           const grantReceipts = await client.db
             .select({
               correlationId: organizationAuditEvents.correlation_id,
@@ -255,7 +255,7 @@ describe("organization staff roles against a disposable migrated PostgreSQL data
               role: "coach",
               operationId: grantNoopOperationId,
             }),
-          ).resolves.toMatchObject({ status: "granted" });
+          ).resolves.toMatchObject({ status: "granted", operationId: grantNoopOperationId });
           const noopGrantReceipts = await client.db
             .select({
               correlationId: organizationAuditEvents.correlation_id,
@@ -344,7 +344,7 @@ describe("organization staff roles against a disposable migrated PostgreSQL data
               role: "coach",
               operationId: revokeOperationId,
             }),
-          ).resolves.toMatchObject({ status: "revoked" });
+          ).resolves.toMatchObject({ status: "revoked", operationId: revokeOperationId });
           const revokeReceipts = await client.db
             .select({
               correlationId: organizationAuditEvents.correlation_id,
@@ -453,12 +453,14 @@ describe("organization staff roles against a disposable migrated PostgreSQL data
           ).toBe(auditCountBeforeReplay);
 
           const revokeNoopOperationId = randomUUID();
-          await rootCaller.staffRoles.revoke({
-            organizationId,
-            membershipId: targetMembershipId,
-            role: "coach",
-            operationId: revokeNoopOperationId,
-          });
+          await expect(
+            rootCaller.staffRoles.revoke({
+              organizationId,
+              membershipId: targetMembershipId,
+              role: "coach",
+              operationId: revokeNoopOperationId,
+            }),
+          ).resolves.toMatchObject({ status: "revoked", operationId: revokeNoopOperationId });
           const revokeNoopReceipts = await client.db
             .select({
               correlationId: organizationAuditEvents.correlation_id,
@@ -508,7 +510,7 @@ describe("organization staff roles against a disposable migrated PostgreSQL data
               role: "coach",
               operationId: revokeNoopOperationId,
             }),
-          ).resolves.toMatchObject({ status: "revoked" });
+          ).resolves.toMatchObject({ status: "revoked", operationId: revokeNoopOperationId });
           await expect(
             rootCaller.staffRoles.grant({
               organizationId,
