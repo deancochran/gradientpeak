@@ -1,4 +1,4 @@
 [tools]
-node = "24"
-pnpm = "10.33.0"
-supabase = "latest"
+node = "24.19.0"
+pnpm = "10.34.5"
+supabase = "2.115.0"

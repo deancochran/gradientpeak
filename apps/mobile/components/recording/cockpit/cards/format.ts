@@ -1,4 +1,4 @@
-import type { useCurrentReadings } from "@/lib/hooks/useActivityRecorder";
+import type { CurrentReadings } from "@/lib/services/ActivityRecorder/types";
 
 export function formatSeconds(seconds: number) {
   const safeSeconds = Math.max(0, Math.floor(seconds));
@@ -15,7 +15,7 @@ export function formatSeconds(seconds: number) {
   return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
 }
 
-export function formatPrimaryReading(readings: ReturnType<typeof useCurrentReadings>) {
+export function formatPrimaryReading(readings: CurrentReadings) {
   if (readings.power) return `${Math.round(readings.power)} W`;
   if (readings.heartRate) return `${Math.round(readings.heartRate)} bpm`;
   if (readings.cadence) return `${Math.round(readings.cadence)} rpm`;

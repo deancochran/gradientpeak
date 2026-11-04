@@ -12,153 +12,28 @@
  * - Keep server-only runtime dependencies behind explicit server subpaths
  */
 
-export * from "./ftms";
-// ============================================================================
-// FTMS (Fitness Machine Service) Types
-// ============================================================================
-export * from "./ftms-types";
-
-// ============================================================================
-// Calculations Module
-// ============================================================================
-// Note: This module exports ALL functions from calculations.ts, including
-// formatDuration(seconds: number). There's also a formatDuration in schemas
-// that works with DurationV2 objects. Both are exported - TypeScript will
-// handle overload resolution based on the argument type.
-
-export type {
-  AggregatedStream,
-  PublicActivityMetric,
-  PublicActivityMetricDataType,
-} from "./calculations";
-// Export all calculations functions and types
-export {
-  addDays,
-  calculateAge,
-  calculateATL,
-  calculateAverageGrade,
-  calculateAveragePace,
-  calculateAverageSpeed,
-  calculateCalories,
-  calculateCTL,
-  calculateCTLProjection,
-  calculateDecoupling,
-  calculateDistance,
-  calculateEfficiencyFactor,
-  calculateElapsedTime,
-  calculateElevationChanges,
-  calculateElevationGainPerKm,
-  calculateHRZones,
-  calculateIntensityFactor,
-  calculateMaxHRPercent,
-  calculateMovingAverage,
-  calculateMovingTime,
-  calculateNormalizedPower,
-  calculatePercentageChange,
-  calculatePowerHeartRateRatio,
-  calculatePowerWeightRatio,
-  calculatePowerZones,
-  calculateRampRate,
-  calculateTargetDailyTSS,
-  calculateTotalDistance,
-  calculateTotalWork,
-  calculateTrainingIntensityFactor,
-  calculateTrainingLoadSeries,
-  calculateTrainingTSS,
-  calculateTSB,
-  calculateTSS,
-  calculateVariabilityIndex,
-  celsiusToFahrenheit,
-  clamp,
-  endOfDay,
-  estimateCalories,
-  estimateTSS,
-  fahrenheitToCelsius,
-  feetToMeters,
-  formatAccuracy,
-  formatAltitude,
-  formatCadence,
-  formatDistance,
-  formatDuration, // ⚠️ Works with number (seconds) - see note above
-  formatDurationCompact,
-  formatDurationCompactMs,
-  formatHeartRate,
-  formatPace,
-  formatPower,
-  formatSpeed,
-  formatTSS,
-  formatWeight,
-  getFormStatus,
-  getFormStatusColor,
-  getTrainingIntensityZone,
-  isRampRateSafe,
-  kgToLbs,
-  kmToMiles,
-  kphToMps,
-  lbsToKg,
-  lerp,
-  metersPerSecondToKph,
-  metersPerSecondToMph,
-  metersToFeet,
-  metersToKm,
-  milesToKm,
-  mphToMps,
-  msToKmh,
-  parseDuration,
-  projectCTL,
-  startOfDay,
-} from "./calculations";
+export * from "./activity-plan-calculations";
 // Onboarding & Performance Estimation Functions
+export * from "./athlete-inputs/calculation-trust";
 export {
   calculateAge as calculateAgeFromDOB,
-  getBaselineProfile,
-  mergeWithBaseline,
+  getOnboardingBaselineProfile,
 } from "./calculations/baseline-profiles";
 export {
   calculateHRReserve,
   calculateTargetHR,
   calculateVO2MaxFromHR,
-  estimateLTHR,
   estimateMaxHRFromAge,
 } from "./calculations/heart-rate";
+export { estimatePowerForDuration } from "./calculations/power-curve";
 export {
-  estimateCSSFromGender,
-  estimateFTPFromWeight,
-  estimateThresholdPaceFromGender,
-} from "./calculations/performance-estimates";
-export {
-  derivePowerCurveFromFTP,
-  estimatePowerForDuration,
-  estimateWPrime,
-} from "./calculations/power-curve";
-export {
-  deriveSpeedCurveFromThresholdPace,
+  kilometersPerHourToPaceSeconds,
+  paceSecondsPerKilometerToKilometersPerHour,
   paceToSpeed,
   parsePace,
   speedToPace,
 } from "./calculations/speed-curve";
-export {
-  deriveSwimPaceCurveFromCSS,
-  estimateCSSFromSwimTests,
-  pacePerHundredMetersToSpeed,
-  speedToPacePerHundredMeters,
-} from "./calculations/swim-pace-curve";
-export type {
-  ActivityProfilePointV2,
-  ActivityStatsV2,
-} from "./calculations_v2";
-// V2 Calculations (for ActivityPlanStructureV2)
-export {
-  calculateActivityStatsV2,
-  calculateTotalDurationSecondsV2,
-  extractActivityProfileV2,
-  getStepAtTimeV2,
-} from "./calculations_v2";
-
-// ============================================================================
-// Constants Module
-// ============================================================================
-export * from "./constants";
+export * from "./recording";
 
 // ============================================================================
 // Barrel File Exports - Automatically export from subdirectories
@@ -167,66 +42,74 @@ export * from "./constants";
 // and will automatically pick up new files added to their directories
 
 export * from "./activity-analysis"; // Shared dynamic activity analysis contracts/helpers
+export * from "./activity-artifacts"; // Thin decoded source-artifact contracts
+export * from "./activity-categories"; // Canonical activity_category registry and heuristics
 export * from "./activity-files"; // Runtime-neutral activity file ingestion contracts
-// ============================================================================
-// Legacy Server-Only Activity File Parsing
-// ============================================================================
-// Compatibility exports for existing root consumers only. Do not add new
-// server-only exports here; use `@repo/core/server` or its server subpaths so
-// runtime-neutral consumers can avoid Node/FIT-SDK dependencies.
-export * from "./activity-files/activity-file-parser";
+export * from "./activity-plan"; // Strict activity-plan contracts and compiler
+export * from "./activity-quantification"; // Canonical prescription/observation quantification contracts
+export * from "./activity-segments"; // Completed activity segment contracts
+export * from "./athlete-capabilities"; // Evidence-qualified continuous capabilities and limiters
+export * from "./athlete-intelligence"; // Deterministic athlete intelligence contracts and evaluation
+// Athlete-state plan simulation is re-exported through the plan boundary below.
 export * from "./bluetooth"; // Canonical BLE parsers
-export * from "./calculations/critical-power";
-// Performance curves (power, pace, HR)
-export * from "./calculations/curves";
 // ============================================================================
 // Performance Metrics Calculations
-// Multi-modal TSS calculations (power, heart rate, pace)
-export * from "./calculations/defaults";
 export * from "./calculations/duration";
 export * from "./calculations/training-quality";
-export * from "./calculations/tss";
 export * from "./calculations/workload";
-export * from "./coaching"; // Shared coaching roster adapters
 export * from "./contracts"; // Shared API contracts
+export * from "./cycling-performance"; // Evidence-first cycling duration-performance model
 // Heart rate test detection
-export * from "./detection/hr-tests";
 // Running test detection
-export * from "./detection/pace-tests";
 // ============================================================================
 // Test Effort Detection
 // ============================================================================
 // Power test detection
-export * from "./detection/power-tests";
 export * from "./duration"; // Canonical duration helpers
-export * from "./estimation"; // TSS estimation system
+// Root names retain their canonical date-only and activity-plan meanings.
+export { formatDuration } from "./duration/format";
+export * from "./duration-performance"; // Evidence-first cross-category duration/session performance
 export * from "./goals"; // Goal draft/payload helpers
 export * from "./groups"; // Group contracts, permissions, and display state
 export * from "./integrations"; // Provider capability registry and sync action helpers
-// Compatibility export; prefer `@repo/core/server/fit-sdk-parser` in new code.
-export * from "./lib/fit-sdk-parser";
 export * from "./load"; // Canonical load-domain helpers
 export * from "./messaging"; // Shared messaging adapters
 export * from "./notifications"; // Shared notification normalization helpers
-export * from "./parity"; // Product parity registry and contracts
+export * from "./organizations"; // Organization authorization contracts
+export * from "./performance-calibration"; // Activity-derived calibration registry and policies
+export * from "./performance-model"; // Canonical as-of category models and narrow target facts
 export * from "./plan"; // Training plan normalization/expansion helpers
 export * from "./profile"; // Shared profile contracts and adapters
+export * from "./profile-previews"; // Privacy-safe effort, structure, and session-count previews
 export type {
-  ActivityCategory as RecordingMetricsActivityCategory,
+  ProvisionalCommonLoadMethod,
+  ProvisionalRecordingMetricsAccumulator,
+  ProvisionalRecordingMetricsSnapshot,
   RecordingMetricSample,
-  RecordingMetricsAccumulator,
+  RecordingMetricsActivityCategory,
   RecordingMetricsConfig,
-  RecordingMetricsSnapshot,
-  TrainingStressScoreMethod,
 } from "./recording-metrics";
 export {
-  calculateRecordingMetrics,
-  createRecordingMetricsAccumulator,
+  calculateProvisionalCommonLoad,
+  calculateProvisionalRecordingMetrics,
+  createProvisionalRecordingMetricsAccumulator,
+  provisionalRecordingMetricsSnapshotSchema,
 } from "./recording-metrics"; // Live/replay recording metrics accumulator
+export * from "./recurrence"; // Supported recurrence semantics and deterministic serialization
+export * from "./route-files"; // Route upload formats, limits, schemas, and filename helpers
 export * from "./samples"; // Sample data for testing and development
-export * from "./schemas"; // Zod schemas and types (includes formatDuration for DurationV2)
-export * from "./sports"; // Canonical sport registry and heuristics
-export type { StandardActivity } from "./types/normalization";
+export * from "./schemas"; // Shared Zod schemas and domain types
+export * from "./social"; // Social engagement entity taxonomy
+export * from "./targets"; // Authored target roles and objective-intensity normalization
+export * from "./training-timeline"; // Canonical training timeline read model
+export type {
+  ActivityLap,
+  ActivityLength,
+  ActivityRecord,
+  ActivitySegment,
+  ActivitySession,
+  StandardActivity,
+} from "./types/normalization";
 export * from "./utils"; // Utility functions
 export * from "./zones"; // Canonical zones and threshold metadata
 
@@ -234,17 +117,16 @@ export * from "./zones"; // Canonical zones and threshold metadata
 // Namespace Exports - For organized imports
 // ============================================================================
 // Allows consumers to import as: import { Calculations } from '@repo/core'
-// and use as: Calculations.calculateTSS(...)
+// and use as: Calculations.calculateTrainingEffect(...)
 
+export * as ActivityCategories from "./activity-categories";
+export * as AthleteInputs from "./athlete-inputs";
 export * as Bluetooth from "./bluetooth";
 export * as Calculations from "./calculations";
-export * as CalculationsV2 from "./calculations_v2";
-export * as Coaching from "./coaching";
-export * as Constants from "./constants";
+export * from "./chatbot";
+export * from "./constants/authoring-choices";
 export * as Duration from "./duration";
-export * as Estimation from "./estimation";
 export * as Estimators from "./estimators/index";
-export * as Ftms from "./ftms";
 export * as Load from "./load";
 export * as Messaging from "./messaging";
 export * as Plan from "./plan";
@@ -252,6 +134,6 @@ export * as Profile from "./profile";
 export * as RecordingMetrics from "./recording-metrics";
 export * as Samples from "./samples";
 export * as Schemas from "./schemas";
-export * as Sports from "./sports";
+export * as TrainingTimeline from "./training-timeline";
 export * as Utils from "./utils";
 export * as Zones from "./zones";

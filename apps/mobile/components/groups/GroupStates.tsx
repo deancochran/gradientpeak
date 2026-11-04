@@ -38,24 +38,32 @@ export function GroupEmptyState({
 export function GroupListSkeleton({ count = 4 }: { count?: number }) {
   return (
     <View className="gap-3 p-4">
-      {Array.from({ length: count }).map((_, index) => (
-        <View key={index} className="gap-3 rounded-2xl border border-border bg-card p-4">
-          <View className="flex-row items-center gap-3">
-            <Skeleton className="h-12 w-12 rounded-full" />
-            <View className="flex-1 gap-2">
-              <Skeleton className="h-5 w-2/3" />
-              <Skeleton className="h-3 w-1/3" />
-            </View>
-          </View>
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-4/5" />
-          <View className="flex-row gap-2">
-            <Skeleton className="h-7 w-20 rounded-full" />
-            <Skeleton className="h-7 w-28 rounded-full" />
+      <GroupSkeletonRows count={count} />
+    </View>
+  );
+}
+
+function GroupSkeletonRows({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <>
+      <View className="gap-3 rounded-2xl border border-border bg-card p-4">
+        <View className="flex-row items-center gap-3">
+          <Skeleton className="h-12 w-12 rounded-full" />
+          <View className="flex-1 gap-2">
+            <Skeleton className="h-5 w-2/3" />
+            <Skeleton className="h-3 w-1/3" />
           </View>
         </View>
-      ))}
-    </View>
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-4/5" />
+        <View className="flex-row gap-2">
+          <Skeleton className="h-7 w-20 rounded-full" />
+          <Skeleton className="h-7 w-28 rounded-full" />
+        </View>
+      </View>
+      <GroupSkeletonRows count={count - 1} />
+    </>
   );
 }
 

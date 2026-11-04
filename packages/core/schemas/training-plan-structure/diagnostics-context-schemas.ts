@@ -27,12 +27,12 @@ export const creationContextSummarySchema = z.object({
   profile_metric_completeness_marker: creationSignalMarkerEnum,
   is_youth: z.boolean().optional(),
   signal_quality: z.number().min(0).max(1),
-  recommended_baseline_tss_range: creationRangeSchema,
+  recommended_baseline_load_range: creationRangeSchema,
   recommended_recent_influence_range: creationRangeSchema,
   recommended_sessions_per_week_range: creationRangeSchema,
   user_age: z.number().int().min(0).max(120).optional(),
   user_gender: z.enum(["male", "female"]).nullable().optional(),
-  max_sustainable_ctl: z.number().min(0).max(300).optional(),
+  max_sustainable_longTermLoad: z.number().min(0).max(300).optional(),
   missing_required_onboarding_fields: z.array(z.string().min(1).max(120)).optional(),
   missing_optional_calibration_fields: z.array(z.string().min(1).max(120)).optional(),
   learned_ramp_rate: z
@@ -48,7 +48,7 @@ export const creationContextSummarySchema = z.object({
       moderate_intensity_ratio: z.number().min(0).max(1),
       high_intensity_ratio: z.number().min(0).max(1),
       load_factor: z.number().min(1).max(2),
-      atl_extension_days: z.number().int().min(0).max(2),
+      recent_load_extension_days: z.number().int().min(0).max(2),
     })
     .optional(),
   rationale_codes: z.array(z.string().min(1).max(120)).default([]),
@@ -105,9 +105,9 @@ export type CreationFeasibilitySafetySummary = z.infer<
 >;
 
 export const inferredCurrentStateMeanSchema = z.object({
-  ctl: z.number().min(0).finite(),
-  atl: z.number().min(0).finite(),
-  tsb: z.number().finite(),
+  longTermLoad: z.number().min(0).finite(),
+  recentLoad: z.number().min(0).finite(),
+  loadBalance: z.number().finite(),
   slb: z.number().min(0).finite(),
   durability: z.number().min(0).max(100).finite(),
   readiness: z.number().min(0).max(100).finite(),

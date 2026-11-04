@@ -3,17 +3,11 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { FollowActionForm } from "../../../../components/protected/follow-action-form";
 import { RelationshipList } from "../../../../components/protected/relationship-list";
+import { RelationshipPageShell } from "../../../../components/protected/relationship-page-shell";
 import { useAuth } from "../../../../components/providers/auth-provider";
 import { RouteFlashToast, type RouteFlashType } from "../../../../components/route-flash-toast";
 import { api } from "../../../../lib/api/client";
-
-type FollowingProfile = {
-  avatar_url: string | null;
-  follow_status?: string | null;
-  id: string;
-  is_public: boolean | null;
-  username: string | null;
-};
+import { loadRouteQuery } from "../../../../lib/api/route-loading";
 
 export const Route = createFileRoute("/_protected/user/$userId/following")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -24,6 +18,18 @@ export const Route = createFileRoute("/_protected/user/$userId/following")({
         ? (search.flashType as RouteFlashType)
         : undefined,
   }),
+  loaderDeps: ({ search }) => ({ cursor: search.cursor }),
+  loader: ({ context, deps, params }) => {
+    const input = {
+      user_id: params.userId,
+      limit: 20,
+      cursor: deps.cursor,
+    };
+    return loadRouteQuery(
+      () => context.apiUtils.social.getFollowing.getData(input),
+      () => context.apiUtils.social.getFollowing.fetch(input),
+    );
+  },
   component: FollowingPage,
 });
 
@@ -35,7 +41,7 @@ function FollowingPage() {
   const limit = 20;
   const followingQuery = api.social.getFollowing.useQuery(
     { user_id: userId, limit, cursor },
-    { enabled: Boolean(userId) },
+    { enabled: Boolean(userId), retry: 2 },
   );
 
   const users = useMemo(() => followingQuery.data?.users ?? [], [followingQuery.data]);
@@ -44,10 +50,10 @@ function FollowingPage() {
   const hasMore = Boolean(followingQuery.data?.nextCursor);
 
   return (
-    <div className="container max-w-3xl space-y-6 py-8">
+    <RelationshipPageShell activeTab="following" userId={userId}>
       <RouteFlashToast
-        message={flash}
-        type={flashType}
+        {...(flash === undefined ? {} : { message: flash })}
+        {...(flashType === undefined ? {} : { type: flashType })}
         clear={() =>
           void navigate({
             to: "/user/$userId/following",
@@ -57,22 +63,11 @@ function FollowingPage() {
           })
         }
       />
-      <div className="flex justify-end">
-        <Button asChild variant="ghost">
-          <Link
-            to="/user/$userId"
-            params={{ userId }}
-            search={{ flash: undefined, flashType: undefined }}
-          >
-            Back
-          </Link>
-        </Button>
-      </div>
-
       <RelationshipList
         title="{count} following"
         total={total}
         emptyMessage="Not following anyone yet"
+        {...(followingQuery.error ? { errorMessage: "Unable to load following" } : {})}
         users={users}
         isLoading={followingQuery.isLoading}
         hasMore={hasMore}
@@ -93,6 +88,7 @@ function FollowingPage() {
             </Button>
           ) : undefined
         }
+        onRetry={() => void followingQuery.refetch()}
         getProfileLink={(profileUserId) => ({
           to: "/user/$userId",
           params: { userId: profileUserId },
@@ -121,6 +117,19 @@ function FollowingPage() {
           );
         }}
       />
-    </div>
+      {cursor ? (
+        <div className="text-center">
+          <Button asChild variant="ghost">
+            <Link
+              to="/user/$userId/following"
+              params={{ userId }}
+              search={{ cursor: undefined, flash: undefined, flashType: undefined }}
+            >
+              Back to first page
+            </Link>
+          </Button>
+        </div>
+      ) : null}
+    </RelationshipPageShell>
   );
 }

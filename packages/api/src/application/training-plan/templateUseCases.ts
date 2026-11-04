@@ -1,96 +1,30 @@
-import { persistedTrainingPlanStructureSchema, trainingPlanCreateSchema } from "@repo/core";
 import type { TrainingPlanRow } from "@repo/db";
+import type { DrizzleDbClient } from "@repo/db/client";
 import { TRPCError } from "@trpc/server";
 import type { TrainingPlanRepository, TrainingPlanTemplateListFilters } from "../../repositories";
+import { getLikeStats, loadLikeStats } from "../../repositories/like-stats";
 import { buildIndexPageInfo, parseIndexCursor } from "../../utils/index-cursor";
+import {
+  mapTrainingPlanPlannedSchedulePreview,
+  sanitizeTrainingPlanForViewer,
+} from "./trainingPlanMapping";
 
 type TrainingPlanTemplateListInput = TrainingPlanTemplateListFilters & {
   cursor?: string;
-  direction?: "forward" | "backward";
   limit: number;
 };
 
-type TrainingPlanTemplateHealthIssueCode =
-  | "invalid_persisted_structure"
-  | "legacy_structure"
-  | "missing_sport_metadata"
-  | "missing_experience_level_metadata"
-  | "missing_duration_weeks_metadata";
-
-function auditTrainingPlanTemplateStructureHealth(input: { structure: unknown }): {
-  isHealthy: boolean;
-  isPersistedCompatible: boolean;
-  isCurrentSchemaCompatible: boolean;
-  missingMetadata: Array<"sport" | "experienceLevel" | "durationWeeks">;
-  issueCodes: TrainingPlanTemplateHealthIssueCode[];
-} {
-  const persistedResult = persistedTrainingPlanStructureSchema.safeParse(input.structure);
-  const currentResult = trainingPlanCreateSchema.safeParse(input.structure);
-  const structure =
-    input.structure && typeof input.structure === "object"
-      ? (input.structure as Record<string, unknown>)
-      : null;
-
-  const missingMetadata: Array<"sport" | "experienceLevel" | "durationWeeks"> = [];
-
-  if (!Array.isArray(structure?.sport) || structure.sport.length === 0) {
-    missingMetadata.push("sport");
-  }
-
-  if (!Array.isArray(structure?.experienceLevel) || structure.experienceLevel.length === 0) {
-    missingMetadata.push("experienceLevel");
-  }
-
-  const durationWeeks =
-    structure?.durationWeeks && typeof structure.durationWeeks === "object"
-      ? (structure.durationWeeks as Record<string, unknown>)
-      : null;
-
-  if (
-    typeof durationWeeks?.recommended !== "number" ||
-    !Number.isFinite(durationWeeks.recommended)
-  ) {
-    missingMetadata.push("durationWeeks");
-  }
-
-  const issueCodes: TrainingPlanTemplateHealthIssueCode[] = [];
-
-  if (!persistedResult.success) {
-    issueCodes.push("invalid_persisted_structure");
-  } else if (!currentResult.success) {
-    issueCodes.push("legacy_structure");
-  }
-
-  if (missingMetadata.includes("sport")) {
-    issueCodes.push("missing_sport_metadata");
-  }
-
-  if (missingMetadata.includes("experienceLevel")) {
-    issueCodes.push("missing_experience_level_metadata");
-  }
-
-  if (missingMetadata.includes("durationWeeks")) {
-    issueCodes.push("missing_duration_weeks_metadata");
-  }
-
-  return {
-    isHealthy: issueCodes.length === 0,
-    isPersistedCompatible: persistedResult.success,
-    isCurrentSchemaCompatible: currentResult.success,
-    missingMetadata,
-    issueCodes,
-  };
-}
-
-function serializeTrainingPlanTemplate(template: TrainingPlanRow & { has_liked?: boolean }) {
+function serializeTrainingPlanTemplate(
+  template: TrainingPlanRow & { likes_count: number; has_liked: boolean },
+) {
   return {
     id: template.id,
     name: template.name,
     description: template.description,
     sessions_per_week_target: template.sessions_per_week_target,
     duration_hours: template.duration_hours,
-    likes_count: typeof template.likes_count === "number" ? template.likes_count : 0,
-    has_liked: Boolean(template.has_liked),
+    likes_count: template.likes_count,
+    has_liked: template.has_liked,
     created_at:
       template.created_at instanceof Date
         ? template.created_at.toISOString()
@@ -99,16 +33,25 @@ function serializeTrainingPlanTemplate(template: TrainingPlanRow & { has_liked?:
       template.updated_at instanceof Date
         ? template.updated_at.toISOString()
         : String(template.updated_at ?? ""),
+    plannedSchedulePreview: deriveTemplatePreview(template.structure),
     ...(template.structure as object),
   };
 }
 
+function deriveTemplatePreview(structure: unknown) {
+  return mapTrainingPlanPlannedSchedulePreview({ structure }).plannedSchedulePreview;
+}
+
 export async function listTrainingPlanTemplatesUseCase(input: {
+  db: DrizzleDbClient;
   profileId: string;
   query: TrainingPlanTemplateListInput;
   repository: TrainingPlanRepository;
 }) {
-  const templates = await input.repository.listPublicTemplateTrainingPlans(input.query);
+  const templates = (await input.repository.listPublicTemplateTrainingPlans(input.query)).map(
+    (plan) =>
+      mapTrainingPlanPlannedSchedulePreview(sanitizeTrainingPlanForViewer(plan, input.profileId)),
+  );
   const offset = parseIndexCursor(input.query.cursor);
   const pageItems = templates.slice(offset, offset + input.query.limit);
   const pageInfo = buildIndexPageInfo({
@@ -116,16 +59,17 @@ export async function listTrainingPlanTemplatesUseCase(input: {
     limit: input.query.limit,
     total: templates.length,
   });
-  const likedTemplateIds = await input.repository.listTrainingPlanLikedIds({
-    profileId: input.profileId,
-    planIds: pageItems.map((template) => template.id),
+  const likeStats = await loadLikeStats(input.db, {
+    entityType: "training_plan",
+    entityIds: pageItems.map((template) => template.id),
+    viewerProfileId: input.profileId,
   });
 
   return {
     items: pageItems.map((template) =>
       serializeTrainingPlanTemplate({
         ...template,
-        has_liked: likedTemplateIds.includes(template.id),
+        ...getLikeStats(likeStats, template.id),
       }),
     ),
     total: templates.length,
@@ -133,44 +77,22 @@ export async function listTrainingPlanTemplatesUseCase(input: {
   };
 }
 
-export async function auditTrainingPlanTemplateHealthUseCase(input: {
-  repository: TrainingPlanRepository;
-}) {
-  const templates = await input.repository.listPublicTemplateTrainingPlans();
-  const items = templates.map((template) => {
-    const health = auditTrainingPlanTemplateStructureHealth({ structure: template.structure });
-
-    return {
-      id: template.id,
-      name: template.name,
-      ...health,
-    };
-  });
-
-  return {
-    total: items.length,
-    healthy_count: items.filter((item) => item.isHealthy).length,
-    legacy_count: items.filter(
-      (item) => item.isPersistedCompatible && !item.isCurrentSchemaCompatible,
-    ).length,
-    invalid_count: items.filter((item) => !item.isPersistedCompatible).length,
-    metadata_gap_count: items.filter((item) => item.missingMetadata.length > 0).length,
-    items,
-  };
-}
-
 export async function getTrainingPlanTemplateUseCase(input: {
   id: string;
+  profileId: string;
   repository: TrainingPlanRepository;
 }) {
-  const template = await input.repository.getPublicTemplateTrainingPlan(input.id);
+  const foundTemplate = await input.repository.getPublicTemplateTrainingPlan(input.id);
 
-  if (!template) {
+  if (!foundTemplate) {
     throw new TRPCError({
       code: "NOT_FOUND",
       message: "Template not found",
     });
   }
+  const template = mapTrainingPlanPlannedSchedulePreview(
+    sanitizeTrainingPlanForViewer(foundTemplate, input.profileId),
+  );
 
   return {
     id: template.id,
@@ -178,6 +100,7 @@ export async function getTrainingPlanTemplateUseCase(input: {
     description: template.description,
     sessions_per_week_target: template.sessions_per_week_target,
     duration_hours: template.duration_hours,
+    plannedSchedulePreview: template.plannedSchedulePreview,
     ...(template.structure as object),
   };
 }

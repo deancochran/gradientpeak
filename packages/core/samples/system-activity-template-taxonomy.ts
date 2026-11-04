@@ -1,8 +1,14 @@
-import type { RecordingServiceActivityPlan } from "../schemas";
-import { getDurationSeconds } from "../schemas/duration_helpers";
+import type { ActivityPlanTrainingIntent } from "../activity-plan";
+import { getExactDurationSeconds } from "../duration";
+import { REFERENCE_ASSESSMENT_ACTIVITIES } from "./assessment-activities";
+import { EXPANDED_ENDURANCE_BIKE_ACTIVITIES } from "./endurance-expansion-bike";
+import { EXPANDED_ENDURANCE_OTHER_ACTIVITIES } from "./endurance-expansion-other";
+import { EXPANDED_ENDURANCE_RUN_ACTIVITIES } from "./endurance-expansion-run";
+import { EXPANDED_ENDURANCE_STRENGTH_ACTIVITIES } from "./endurance-expansion-strength";
+import { EXPANDED_ENDURANCE_SWIM_ACTIVITIES } from "./endurance-expansion-swim";
+import { ICONIC_ENDURANCE_ACTIVITIES } from "./iconic-endurance";
 import {
   SAMPLE_INDOOR_TRAINER_ACTIVITIES,
-  SAMPLE_RECOVERY_WORKOUT,
   SYSTEM_FTP_INTERVALS_WORKOUT,
   SYSTEM_SWEET_SPOT_WORKOUT,
   SYSTEM_VO2_MAX_WORKOUT,
@@ -10,26 +16,29 @@ import {
 import { SAMPLE_INDOOR_STRENGTH_ACTIVITIES } from "./indoor-strength";
 import { SAMPLE_INDOOR_SWIM_ACTIVITIES } from "./indoor-swim";
 import {
-  EASY_RECOVERY_RUN,
   SAMPLE_TREADMILL_ACTIVITIES,
   THRESHOLD_RUN_WORKOUT_1,
   THRESHOLD_RUN_WORKOUT_2,
 } from "./indoor-treadmill";
-import { SAMPLE_OTHER_ACTIVITIES } from "./other-activity";
+import { SAMPLE_MULTISPORT_COMPONENT_ACTIVITIES } from "./multisport";
+import {
+  OTHER_RACE_SIMULATION,
+  OTHER_THRESHOLD_ROW,
+  SAMPLE_OTHER_ACTIVITIES,
+} from "./other-activity";
 import {
   GROUP_RIDE_SIMULATION,
   SAMPLE_OUTDOOR_BIKE_ACTIVITIES,
-  SYSTEM_LONG_ENDURANCE_RIDE,
   SYSTEM_PROGRESSIVE_LONG_ENDURANCE_RIDE,
 } from "./outdoor-bike";
 import {
-  EASY_AEROBIC_RUN,
   FARTLEK_RUN,
   SAMPLE_OUTDOOR_RUN_ACTIVITIES,
-  SYSTEM_LONG_EASY_RUN,
   SYSTEM_MARATHON_PACE_LONG_RUN,
 } from "./outdoor-run";
 import { normalizeSystemActivityTemplateId } from "./template-ids";
+import type { SystemActivityPlanTemplate as RecordingServiceActivityPlan } from "./types";
+import { deriveSystemActivityTemplateActivityCategory } from "./types";
 
 export type SystemActivityTemplateExecutionContext = "indoor" | "outdoor";
 
@@ -51,18 +60,7 @@ export type SystemActivityTemplateArchetype =
   | "general_aerobic"
   | "mixed_support";
 
-export type SystemActivityTemplateTrainingIntent =
-  | "recovery"
-  | "aerobic_base"
-  | "durable_endurance"
-  | "threshold_development"
-  | "race_specific"
-  | "vo2max"
-  | "muscular_endurance"
-  | "speed_skill"
-  | "technique"
-  | "strength_support"
-  | "general_maintenance";
+export type SystemActivityTemplateTrainingIntent = ActivityPlanTrainingIntent;
 
 export type SystemActivityTemplateIntensityFamily =
   | "recovery"
@@ -105,35 +103,31 @@ export type SystemActivityTemplateTaxonomyOverride = Partial<
 export const SYSTEM_ACTIVITY_TEMPLATE_TAXONOMY_STRATEGY = "hybrid-derived-plus-sidecar" as const;
 
 function toNormalizedTemplateId(template: RecordingServiceActivityPlan): string {
+  if (!template.id) {
+    throw new Error(
+      `System activity template ${template.name ?? "template"} must declare an RFC 4122 UUID`,
+    );
+  }
+
   return normalizeSystemActivityTemplateId({
-    id: template.id ?? undefined,
-    activityCategory: template.activity_category ?? "other",
+    id: template.id,
+    activityCategory: deriveSystemActivityTemplateActivityCategory(template.structure),
     name: template.name ?? "template",
   });
 }
 
-function estimateTemplateDurationSeconds(template: RecordingServiceActivityPlan): number {
-  const paceSecondsPerKm =
-    template.activity_category === "bike"
-      ? 180
-      : template.activity_category === "run"
-        ? 300
-        : template.activity_category === "swim"
-          ? 1200
-          : 300;
-
-  return template.structure.intervals.reduce((planTotal, interval) => {
-    const intervalDuration = interval.steps.reduce((stepTotal, step) => {
-      return (
-        stepTotal +
-        getDurationSeconds(step.duration, {
-          paceSecondsPerKm,
-        })
-      );
-    }, 0);
-
-    return planTotal + intervalDuration * interval.repetitions;
-  }, 0);
+function estimateTemplateDurationSeconds(template: RecordingServiceActivityPlan): number | null {
+  let totalSeconds = 0;
+  for (const item of template.structure.items) {
+    let itemSeconds = 0;
+    for (const step of item.type === "step" ? [item] : item.steps) {
+      const stepSeconds = getExactDurationSeconds(step.duration);
+      if (stepSeconds === null) return null;
+      itemSeconds += stepSeconds;
+    }
+    totalSeconds += itemSeconds * (item.type === "repeat" ? item.count : 1);
+  }
+  return totalSeconds;
 }
 
 function includesAny(value: string, patterns: readonly string[]): boolean {
@@ -156,18 +150,11 @@ function deriveRunArchetype(name: string): SystemActivityTemplateArchetype {
   if (includesAny(name, ["5k pace", "race pace", "time trial", "yasso", "mile repeat"])) {
     return "race_pace";
   }
+  if (includesAny(name, ["anaerobic", "sprint", "stride", "neuromuscular", "speed skill"])) {
+    return "anaerobic_power";
+  }
   if (
-    includesAny(name, [
-      "speed",
-      "vo2",
-      "fartlek",
-      "hill",
-      "interval",
-      "track",
-      "repeat",
-      "ladder",
-      "stride",
-    ])
+    includesAny(name, ["vo2", "fartlek", "hill", "interval", "track", "repeat", "ladder", "stride"])
   ) {
     return "vo2_speed";
   }
@@ -208,14 +195,21 @@ function deriveOtherArchetype(
   template: RecordingServiceActivityPlan,
   name: string,
 ): SystemActivityTemplateArchetype {
-  if (template.activity_category === "strength") {
+  const activity_category = deriveSystemActivityTemplateActivityCategory(template.structure);
+  if (activity_category === "strength") {
     return "strength_support";
   }
-  if (template.activity_category === "swim") {
+  if (activity_category === "swim") {
     return includesAny(name, ["technique", "drill"]) ? "swim_technique" : "swim_endurance";
   }
   if (includesAny(name, ["mobility", "walk", "recovery"])) {
     return "mixed_support";
+  }
+  if (includesAny(name, ["threshold"])) {
+    return "threshold";
+  }
+  if (includesAny(name, ["long", "endurance"])) {
+    return "long_endurance";
   }
 
   return "general_aerobic";
@@ -226,10 +220,11 @@ function deriveTemplateArchetype(
 ): SystemActivityTemplateArchetype {
   const name = template.name.toLowerCase();
 
-  if (template.activity_category === "run") {
+  const activity_category = deriveSystemActivityTemplateActivityCategory(template.structure);
+  if (activity_category === "run") {
     return deriveRunArchetype(name);
   }
-  if (template.activity_category === "bike") {
+  if (activity_category === "bike") {
     return deriveBikeArchetype(name);
   }
 
@@ -304,7 +299,7 @@ function deriveTrainingIntent(
 function deriveProgressionLevel(input: {
   template: RecordingServiceActivityPlan;
   archetype: SystemActivityTemplateArchetype;
-  durationSeconds: number;
+  durationSeconds: number | null;
 }): SystemActivityTemplateProgressionLevel {
   const name = input.template.name.toLowerCase();
 
@@ -326,7 +321,7 @@ function deriveProgressionLevel(input: {
   }
   if (
     includesAny(name, ["development 1", "progressive", "long"]) ||
-    input.durationSeconds >= 7200
+    (input.durationSeconds !== null && input.durationSeconds >= 7200)
   ) {
     return "progressive";
   }
@@ -337,7 +332,7 @@ function deriveProgressionLevel(input: {
 function deriveRecoveryCostBand(input: {
   archetype: SystemActivityTemplateArchetype;
   intensityFamily: SystemActivityTemplateIntensityFamily;
-  durationSeconds: number;
+  durationSeconds: number | null;
 }): SystemActivityTemplateRecoveryCostBand {
   if (input.intensityFamily === "support" || input.intensityFamily === "recovery") {
     return "low";
@@ -346,7 +341,7 @@ function deriveRecoveryCostBand(input: {
   if (
     input.intensityFamily === "high_intensity" ||
     input.intensityFamily === "race_specific" ||
-    input.durationSeconds >= 7200
+    (input.durationSeconds !== null && input.durationSeconds >= 7200)
   ) {
     return "high";
   }
@@ -355,6 +350,41 @@ function deriveRecoveryCostBand(input: {
 }
 
 const SYSTEM_TEMPLATE_SOURCE_GROUPS = [
+  {
+    source_file: "assessment-activities.ts",
+    execution_context: "indoor" as const,
+    templates: REFERENCE_ASSESSMENT_ACTIVITIES,
+  },
+  {
+    source_file: "endurance-expansion-bike.ts",
+    execution_context: "indoor" as const,
+    templates: EXPANDED_ENDURANCE_BIKE_ACTIVITIES,
+  },
+  {
+    source_file: "endurance-expansion-run.ts",
+    execution_context: "outdoor" as const,
+    templates: EXPANDED_ENDURANCE_RUN_ACTIVITIES,
+  },
+  {
+    source_file: "endurance-expansion-swim.ts",
+    execution_context: "indoor" as const,
+    templates: EXPANDED_ENDURANCE_SWIM_ACTIVITIES,
+  },
+  {
+    source_file: "endurance-expansion-strength.ts",
+    execution_context: "indoor" as const,
+    templates: EXPANDED_ENDURANCE_STRENGTH_ACTIVITIES,
+  },
+  {
+    source_file: "endurance-expansion-other.ts",
+    execution_context: "indoor" as const,
+    templates: EXPANDED_ENDURANCE_OTHER_ACTIVITIES,
+  },
+  {
+    source_file: "iconic-endurance.ts",
+    execution_context: "outdoor" as const,
+    templates: ICONIC_ENDURANCE_ACTIVITIES,
+  },
   {
     source_file: "indoor-bike-activity.ts",
     execution_context: "indoor" as const,
@@ -390,7 +420,17 @@ const SYSTEM_TEMPLATE_SOURCE_GROUPS = [
   {
     source_file: "other-activity.ts",
     execution_context: "outdoor" as const,
-    templates: SAMPLE_OTHER_ACTIVITIES,
+    templates: SAMPLE_OTHER_ACTIVITIES.filter((template) => template !== OTHER_THRESHOLD_ROW),
+  },
+  {
+    source_file: "other-activity.ts",
+    execution_context: "indoor" as const,
+    templates: [OTHER_THRESHOLD_ROW],
+  },
+  {
+    source_file: "multisport.ts",
+    execution_context: "outdoor" as const,
+    templates: SAMPLE_MULTISPORT_COMPONENT_ACTIVITIES,
   },
 ] as const;
 
@@ -412,20 +452,6 @@ export const SYSTEM_ACTIVITY_TEMPLATE_SOURCE_INDEX = new Map<
 export const SYSTEM_ACTIVITY_TEMPLATE_TAXONOMY_OVERRIDES: Readonly<
   Record<string, SystemActivityTemplateTaxonomyOverride>
 > = {
-  [toNormalizedTemplateId(EASY_AEROBIC_RUN)]: {
-    session_archetype: "aerobic_endurance",
-    training_intent: "aerobic_base",
-    intensity_family: "endurance",
-    progression_level: "foundation",
-    recovery_cost_band: "low",
-  },
-  [toNormalizedTemplateId(EASY_RECOVERY_RUN)]: {
-    session_archetype: "easy_recovery",
-    training_intent: "recovery",
-    intensity_family: "recovery",
-    progression_level: "conservative",
-    recovery_cost_band: "low",
-  },
   [toNormalizedTemplateId(THRESHOLD_RUN_WORKOUT_1)]: {
     session_archetype: "threshold",
     training_intent: "threshold_development",
@@ -440,13 +466,15 @@ export const SYSTEM_ACTIVITY_TEMPLATE_TAXONOMY_OVERRIDES: Readonly<
     training_intent: "speed_skill",
     intensity_family: "high_intensity",
   },
-  [toNormalizedTemplateId(SYSTEM_LONG_EASY_RUN)]: {
-    session_archetype: "long_endurance",
-    training_intent: "durable_endurance",
-    intensity_family: "endurance",
-  },
   [toNormalizedTemplateId(SYSTEM_MARATHON_PACE_LONG_RUN)]: {
     session_archetype: "long_endurance",
+    training_intent: "race_specific",
+    intensity_family: "race_specific",
+    progression_level: "race_specific",
+    recovery_cost_band: "high",
+  },
+  [toNormalizedTemplateId(OTHER_RACE_SIMULATION)]: {
+    session_archetype: "race_pace",
     training_intent: "race_specific",
     intensity_family: "race_specific",
     progression_level: "race_specific",
@@ -475,24 +503,12 @@ export const SYSTEM_ACTIVITY_TEMPLATE_TAXONOMY_OVERRIDES: Readonly<
     progression_level: "advanced",
     recovery_cost_band: "high",
   },
-  [toNormalizedTemplateId(SYSTEM_LONG_ENDURANCE_RIDE)]: {
-    session_archetype: "long_endurance",
-    training_intent: "durable_endurance",
-    intensity_family: "endurance",
-  },
   [toNormalizedTemplateId(SYSTEM_PROGRESSIVE_LONG_ENDURANCE_RIDE)]: {
     session_archetype: "long_endurance",
     training_intent: "durable_endurance",
     intensity_family: "moderate",
     progression_level: "advanced",
     recovery_cost_band: "high",
-  },
-  [toNormalizedTemplateId(SAMPLE_RECOVERY_WORKOUT)]: {
-    session_archetype: "easy_recovery",
-    training_intent: "recovery",
-    intensity_family: "recovery",
-    progression_level: "conservative",
-    recovery_cost_band: "low",
   },
 };
 
