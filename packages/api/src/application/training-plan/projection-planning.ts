@@ -4,6 +4,7 @@ import {
   addDaysDateOnlyUtc,
   DRAFT_PLAN_PROJECTION_ALGORITHM_VERSION,
   derivePlanGoalReadinessContext,
+  getCalendarDateInIanaZone,
   ianaTimezoneSchema,
   MAX_PLAN_SIMULATION_SESSIONS,
   missingPlanningInputSchema,
@@ -40,6 +41,38 @@ import { readAthleteReadModel } from "../athlete-intelligence/athlete-read-model
 import { loadPlanningBaseline } from "../athlete-intelligence/load-planning-baseline";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
+
+type SimulatedSession = {
+  kind: "projected";
+  sourceId: string;
+  scheduledAt: string;
+  planningDate: string;
+  isUntimed: boolean;
+  activityCategory: "bike" | "other" | "run" | "strength" | "swim";
+  commonLoad: number;
+};
+
+/**
+ * Keeps calendar-day draft sessions from being treated as historical merely
+ * because their absent time defaults to midnight. Explicit times retain their
+ * instant-based filtering semantics.
+ */
+export function selectSimulatedSessionsForProjection(input: {
+  baselineAsOf: string;
+  planningTimezone: string;
+  sessions: SimulatedSession[];
+}) {
+  const baselinePlanningDate = getCalendarDateInIanaZone(
+    input.baselineAsOf,
+    input.planningTimezone,
+  );
+  const baselineAsOfMillis = Date.parse(input.baselineAsOf);
+  return input.sessions.flatMap(({ planningDate, isUntimed, ...session }) => {
+    const scheduledAt =
+      isUntimed && planningDate === baselinePlanningDate ? input.baselineAsOf : session.scheduledAt;
+    return Date.parse(scheduledAt) >= baselineAsOfMillis ? [{ ...session, scheduledAt }] : [];
+  });
+}
 
 export const resolveAuthoritativePlanReadinessHorizon = resolvePlanReadinessHorizon;
 
@@ -451,13 +484,7 @@ async function deriveProjection(input: {
       currentPublishedRevision: readModel.publishedRevision,
     });
   }
-  const simulatedSessions: Array<{
-    kind: "projected";
-    sourceId: string;
-    scheduledAt: string;
-    activityCategory: "bike" | "other" | "run" | "strength" | "swim";
-    commonLoad: number;
-  }> = [];
+  const simulatedSessions: SimulatedSession[] = [];
   const sessionResults: z.output<typeof trainingPlanPreviewSessionResultSchema>[] = [];
   for (const session of input.draft.structure.sessions) {
     const planningDate = addDaysDateOnlyUtc(input.draft.previewStartDate, session.offset_days);
@@ -532,6 +559,8 @@ async function deriveProjection(input: {
           time: session.event_overrides?.start_time ?? "00:00",
           timeZone: planningTimezone,
         }),
+        planningDate,
+        isUntimed: session.event_overrides?.start_time === undefined,
         activityCategory: session.demand.activity_category,
         commonLoad: resolution.manifest.prescription_estimate.common_load.value,
       });
@@ -548,9 +577,11 @@ async function deriveProjection(input: {
     capabilities: [],
     athleteAgeYears: null,
   };
-  const futureSimulatedSessions = simulatedSessions.filter(
-    (session) => Date.parse(session.scheduledAt) >= Date.parse(simulationBaseline.asOf),
-  );
+  const futureSimulatedSessions = selectSimulatedSessionsForProjection({
+    baselineAsOf: simulationBaseline.asOf,
+    planningTimezone,
+    sessions: simulatedSessions,
+  });
   const goal = derivePlanGoalReadinessContext({
     planId: input.draft.planId,
     structure: input.draft.structure,

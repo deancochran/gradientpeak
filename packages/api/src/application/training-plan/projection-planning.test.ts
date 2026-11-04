@@ -11,6 +11,7 @@ import { readAthleteReadModel } from "../athlete-intelligence/athlete-read-model
 import {
   hasPublishedRevisionConflict,
   resolveAuthoritativePlanReadinessHorizon,
+  selectSimulatedSessionsForProjection,
   trainingPlanCommitInputSchema,
   trainingPlanPreviewInputSchema,
 } from "./projection-planning";
@@ -106,6 +107,87 @@ describe("projection planning", () => {
     expect(
       hasPublishedRevisionConflict({ currentPublishedRevision: 5, expectedPublishedRevision: 4 }),
     ).toBe(true);
+  });
+
+  it("includes an untimed session on the baseline planning date without backdating it", () => {
+    const sessions = selectSimulatedSessionsForProjection({
+      baselineAsOf: "2026-07-01T19:00:00.000Z",
+      planningTimezone: "America/Los_Angeles",
+      sessions: [
+        {
+          kind: "projected",
+          sourceId: "same-day-untimed",
+          planningDate: "2026-07-01",
+          isUntimed: true,
+          scheduledAt: "2026-07-01T07:00:00.000Z",
+          activityCategory: "run",
+          commonLoad: 50,
+        },
+        {
+          kind: "projected",
+          sourceId: "previous-day-untimed",
+          planningDate: "2026-06-30",
+          isUntimed: true,
+          scheduledAt: "2026-06-30T07:00:00.000Z",
+          activityCategory: "run",
+          commonLoad: 50,
+        },
+        {
+          kind: "projected",
+          sourceId: "future-day-untimed",
+          planningDate: "2026-07-02",
+          isUntimed: true,
+          scheduledAt: "2026-07-02T07:00:00.000Z",
+          activityCategory: "run",
+          commonLoad: 50,
+        },
+        {
+          kind: "projected",
+          sourceId: "past-explicit-time",
+          planningDate: "2026-07-01",
+          isUntimed: false,
+          scheduledAt: "2026-07-01T14:00:00.000Z",
+          activityCategory: "run",
+          commonLoad: 50,
+        },
+      ],
+    });
+
+    expect(sessions).toEqual([
+      expect.objectContaining({
+        sourceId: "same-day-untimed",
+        scheduledAt: "2026-07-01T19:00:00.000Z",
+      }),
+      expect.objectContaining({
+        sourceId: "future-day-untimed",
+        scheduledAt: "2026-07-02T07:00:00.000Z",
+      }),
+    ]);
+  });
+
+  it("uses the planning timezone rather than the UTC date for untimed sessions", () => {
+    const sessions = selectSimulatedSessionsForProjection({
+      baselineAsOf: "2026-07-01T01:00:00.000Z",
+      planningTimezone: "America/Los_Angeles",
+      sessions: [
+        {
+          kind: "projected",
+          sourceId: "local-same-day",
+          planningDate: "2026-06-30",
+          isUntimed: true,
+          scheduledAt: "2026-06-30T07:00:00.000Z",
+          activityCategory: "run",
+          commonLoad: 50,
+        },
+      ],
+    });
+
+    expect(sessions).toEqual([
+      expect.objectContaining({
+        sourceId: "local-same-day",
+        scheduledAt: "2026-07-01T01:00:00.000Z",
+      }),
+    ]);
   });
 
   it("keeps preview feedback separate from commit authority", () => {
