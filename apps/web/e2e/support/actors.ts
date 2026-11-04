@@ -495,6 +495,8 @@ class ActorImplementation implements E2EActor {
   }
 
   async createContext(options: BrowserContextOptions = {}) {
+    const javaScriptEnabled =
+      options.javaScriptEnabled ?? this.input.contextOptions.javaScriptEnabled ?? true;
     const context = await this.input.browser.newContext({
       ...this.input.contextOptions,
       ...options,
@@ -507,14 +509,18 @@ class ActorImplementation implements E2EActor {
       storageState: this.storageState,
     });
     this.#contexts.add(context);
-    context.on("page", installHydrationAwareNavigation);
+    // Hydration-aware navigation waits for the client to mark the document
+    // hydrated. A no-JavaScript document intentionally cannot emit that mark.
+    if (javaScriptEnabled) context.on("page", installHydrationAwareNavigation);
     context.once("close", () => this.#contexts.delete(context));
     return context;
   }
 
   async createPage(pathname = "/", options: BrowserContextOptions = {}) {
     const context = await this.createContext(options);
-    const page = installHydrationAwareNavigation(await context.newPage());
+    // createContext installs the page listener for JavaScript-enabled contexts.
+    // Do not decorate no-JavaScript pages, whose SSR assertions are intentional.
+    const page = await context.newPage();
     await page.goto(pathname);
     return page;
   }

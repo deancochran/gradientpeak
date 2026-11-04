@@ -3,6 +3,11 @@ import { createFileRoute, Outlet, redirect, useLocation } from "@tanstack/react-
 
 import { ProtectedHeader } from "../components/protected/protected-header";
 import {
+  AuthenticatedViewerBoundary,
+  AuthProvider,
+  AuthSessionRouteInvalidator,
+} from "../components/providers/auth-provider";
+import {
   RecordingStorageBoundary,
   useRecordingStorageReadiness,
 } from "../components/providers/recording-storage-boundary";
@@ -11,6 +16,7 @@ import {
   getProtectedAccessRedirect,
   resolveRouteAuthSession,
   resolveRouteProfileState,
+  toPublicAuthViewer,
 } from "../lib/auth/route-guards";
 import { TimerOnlyRecordingProvider, useTimerOnlyRecording } from "../lib/recording/provider";
 
@@ -57,13 +63,13 @@ export const Route = createFileRoute("/_protected")({
       });
     }
 
-    return { authUserId: session?.user.id };
+    return { authViewer: toPublicAuthViewer(session), authUserId: session?.user.id };
   },
   component: ProtectedLayout,
 });
 
 export function ProtectedLayout() {
-  const { authUserId } = Route.useRouteContext();
+  const { authViewer, authUserId } = Route.useRouteContext();
   const location = useLocation();
   if (!authUserId) throw new Error("The protected layout requires an authenticated user.");
 
@@ -71,19 +77,31 @@ export function ProtectedLayout() {
   // real recorder. Existing active-recording navigation remains guarded by its provider.
   if (location.pathname.replace(/\/$/, "") === "/record/simulate") {
     return (
-      <div className="gp-protected-shell flex min-h-screen flex-col">
-        <ProtectedHeader />
-        <main className="mx-auto w-full max-w-7xl flex-1 p-4 sm:p-6 lg:px-8">
-          <Outlet />
-        </main>
-      </div>
+      <AuthProvider initialViewer={authViewer}>
+        <AuthSessionRouteInvalidator>
+          <AuthenticatedViewerBoundary>
+            <div className="gp-protected-shell flex min-h-screen flex-col">
+              <ProtectedHeader />
+              <main className="mx-auto w-full max-w-7xl flex-1 p-4 sm:p-6 lg:px-8">
+                <Outlet />
+              </main>
+            </div>
+          </AuthenticatedViewerBoundary>
+        </AuthSessionRouteInvalidator>
+      </AuthProvider>
     );
   }
 
   return (
-    <RecordingStorageBoundary>
-      <ProtectedRecordingProvider ownerId={authUserId} />
-    </RecordingStorageBoundary>
+    <AuthProvider initialViewer={authViewer}>
+      <AuthSessionRouteInvalidator>
+        <AuthenticatedViewerBoundary>
+          <RecordingStorageBoundary>
+            <ProtectedRecordingProvider ownerId={authUserId} />
+          </RecordingStorageBoundary>
+        </AuthenticatedViewerBoundary>
+      </AuthSessionRouteInvalidator>
+    </AuthProvider>
   );
 }
 

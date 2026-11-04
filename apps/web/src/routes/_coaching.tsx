@@ -1,6 +1,15 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 
-import { authSessionMiddleware, resolveRouteAuthSession } from "../lib/auth/route-guards";
+import {
+  AuthenticatedViewerBoundary,
+  AuthProvider,
+  AuthSessionRouteInvalidator,
+} from "../components/providers/auth-provider";
+import {
+  authSessionMiddleware,
+  resolveRouteAuthSession,
+  toPublicAuthViewer,
+} from "../lib/auth/route-guards";
 
 export const Route = createFileRoute("/_coaching")({
   server: {
@@ -15,10 +24,20 @@ export const Route = createFileRoute("/_coaching")({
         search: { flash: undefined, flashType: undefined, redirect: location.href },
       });
     }
+    return { authViewer: toPublicAuthViewer(session) };
   },
   component: CoachingAuthenticatedBoundary,
 });
 
 function CoachingAuthenticatedBoundary() {
-  return <Outlet />;
+  const { authViewer } = Route.useRouteContext();
+  return (
+    <AuthProvider initialViewer={authViewer}>
+      <AuthSessionRouteInvalidator>
+        <AuthenticatedViewerBoundary>
+          <Outlet />
+        </AuthenticatedViewerBoundary>
+      </AuthSessionRouteInvalidator>
+    </AuthProvider>
+  );
 }
