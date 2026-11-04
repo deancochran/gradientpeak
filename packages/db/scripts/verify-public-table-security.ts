@@ -26,6 +26,8 @@ const coachingAuthorityReadOnlyTables = [
   "coaching_assignments",
   "athlete_consent_policy_versions",
   "athlete_data_sharing_consents",
+  "athlete_coaching_write_policy_versions",
+  "athlete_coaching_write_grants",
   "organization_audit_events",
   "organization_invitations",
   "organization_groups",

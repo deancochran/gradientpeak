@@ -1,7 +1,9 @@
 import { persistentIntegrationSourceIdValues } from "@repo/core/integrations/provider-capabilities";
 import {
   ATHLETE_READ_SCOPES,
+  ATHLETE_WRITE_SCOPES,
   type AthleteReadScope,
+  type AthleteWriteScope,
   ORGANIZATION_ROLE_KEYS,
   type OrganizationRoleKey,
 } from "@repo/core/organizations/constants";
@@ -28,6 +30,10 @@ export const athleteReadScopeDbValues = [
   "goals",
   "calendar",
 ] as const satisfies readonly AthleteReadScope[];
+export const athleteWriteScopeDbValues = [
+  "training_assignment",
+  "schedule_modification",
+] as const satisfies readonly AthleteWriteScope[];
 export const commentsEntityTypeDbValues = [
   "activity",
   "training_plan",
@@ -49,6 +55,11 @@ export const coreEnumParityManifest = {
   athlete_read_scope: {
     coreValues: [...ATHLETE_READ_SCOPES].sort(),
     databaseValues: [...athleteReadScopeDbValues].sort(),
+    strategy: "check-constraint" as const,
+  },
+  athlete_write_scope: {
+    coreValues: [...ATHLETE_WRITE_SCOPES].sort(),
+    databaseValues: [...athleteWriteScopeDbValues].sort(),
     strategy: "check-constraint" as const,
   },
   activity_category: {

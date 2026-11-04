@@ -270,6 +270,18 @@
       "forceRls": false
     },
     {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "rls": true,
+      "name": "athlete_coaching_write_grants",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "rls": true,
+      "name": "athlete_coaching_write_policy_versions",
+      "forceRls": false
+    },
+    {
       "acl": "{postgres=arwdDxtm/postgres,service_role=rm/postgres}",
       "rls": true,
       "name": "athlete_consent_policy_versions",
@@ -3639,6 +3651,186 @@
       "notNull": true,
       "identity": "",
       "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "athlete_coaching_write_grants",
+      "default": "gen_random_uuid()",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "organization_id",
+      "type": "uuid",
+      "table": "athlete_coaching_write_grants",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "engagement_id",
+      "type": "uuid",
+      "table": "athlete_coaching_write_grants",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "athlete_profile_id",
+      "type": "uuid",
+      "table": "athlete_coaching_write_grants",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "scope_key",
+      "type": "text",
+      "table": "athlete_coaching_write_grants",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "policy_version_id",
+      "type": "uuid",
+      "table": "athlete_coaching_write_grants",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "granted_by_profile_id",
+      "type": "uuid",
+      "table": "athlete_coaching_write_grants",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "granted_at",
+      "type": "timestamp with time zone",
+      "table": "athlete_coaching_write_grants",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "expires_at",
+      "type": "timestamp with time zone",
+      "table": "athlete_coaching_write_grants",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
+      "name": "revoked_at",
+      "type": "timestamp with time zone",
+      "table": "athlete_coaching_write_grants",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 10,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "athlete_coaching_write_policy_versions",
+      "default": "gen_random_uuid()",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "scope_key",
+      "type": "text",
+      "table": "athlete_coaching_write_policy_versions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "effective_from",
+      "type": "timestamp with time zone",
+      "table": "athlete_coaching_write_policy_versions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "jurisdiction",
+      "type": "text",
+      "table": "athlete_coaching_write_policy_versions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "terms_text",
+      "type": "text",
+      "table": "athlete_coaching_write_policy_versions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "content_digest",
+      "type": "text",
+      "table": "athlete_coaching_write_policy_versions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "supersedes_policy_version_id",
+      "type": "uuid",
+      "table": "athlete_coaching_write_policy_versions",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "athlete_coaching_write_policy_versions",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 8,
       "generated": ""
     },
     {
@@ -10559,6 +10751,46 @@
       "definition": "CREATE INDEX idx_api_rate_limit_windows_expiry ON public.api_rate_limit_windows USING btree (expires_at)"
     },
     {
+      "name": "athlete_coaching_write_grants_authority_identity_unique",
+      "table": "athlete_coaching_write_grants",
+      "definition": "CREATE UNIQUE INDEX athlete_coaching_write_grants_authority_identity_unique ON public.athlete_coaching_write_grants USING btree (organization_id, engagement_id, athlete_profile_id, scope_key, id)"
+    },
+    {
+      "name": "athlete_coaching_write_grants_current_unique",
+      "table": "athlete_coaching_write_grants",
+      "definition": "CREATE UNIQUE INDEX athlete_coaching_write_grants_current_unique ON public.athlete_coaching_write_grants USING btree (organization_id, engagement_id, athlete_profile_id, scope_key) WHERE (revoked_at IS NULL)"
+    },
+    {
+      "name": "athlete_coaching_write_grants_engagement_fkey_idx",
+      "table": "athlete_coaching_write_grants",
+      "definition": "CREATE INDEX athlete_coaching_write_grants_engagement_fkey_idx ON public.athlete_coaching_write_grants USING btree (organization_id, engagement_id, athlete_profile_id)"
+    },
+    {
+      "name": "athlete_coaching_write_grants_pkey",
+      "table": "athlete_coaching_write_grants",
+      "definition": "CREATE UNIQUE INDEX athlete_coaching_write_grants_pkey ON public.athlete_coaching_write_grants USING btree (id)"
+    },
+    {
+      "name": "athlete_coaching_write_grants_policy_scope_idx",
+      "table": "athlete_coaching_write_grants",
+      "definition": "CREATE INDEX athlete_coaching_write_grants_policy_scope_idx ON public.athlete_coaching_write_grants USING btree (policy_version_id, scope_key)"
+    },
+    {
+      "name": "athlete_coaching_write_policy_versions_id_scope_unique",
+      "table": "athlete_coaching_write_policy_versions",
+      "definition": "CREATE UNIQUE INDEX athlete_coaching_write_policy_versions_id_scope_unique ON public.athlete_coaching_write_policy_versions USING btree (id, scope_key)"
+    },
+    {
+      "name": "athlete_coaching_write_policy_versions_pkey",
+      "table": "athlete_coaching_write_policy_versions",
+      "definition": "CREATE UNIQUE INDEX athlete_coaching_write_policy_versions_pkey ON public.athlete_coaching_write_policy_versions USING btree (id)"
+    },
+    {
+      "name": "athlete_coaching_write_policy_versions_supersedes_scope_fkey_id",
+      "table": "athlete_coaching_write_policy_versions",
+      "definition": "CREATE INDEX athlete_coaching_write_policy_versions_supersedes_scope_fkey_id ON public.athlete_coaching_write_policy_versions USING btree (supersedes_policy_version_id, scope_key)"
+    },
+    {
       "name": "athlete_consent_policy_versions_id_scope_unique",
       "table": "athlete_consent_policy_versions",
       "definition": "CREATE UNIQUE INDEX athlete_consent_policy_versions_id_scope_unique ON public.athlete_consent_policy_versions USING btree (id, scope_key)"
@@ -11845,6 +12077,24 @@
       "definition": "CREATE TRIGGER activity_session_rpe_evidence_reject_update BEFORE UPDATE ON activity_session_rpe_evidence FOR EACH ROW EXECUTE FUNCTION reject_activity_session_rpe_evidence_mutation()"
     },
     {
+      "name": "athlete_coaching_write_grants_history_guard",
+      "table": "athlete_coaching_write_grants",
+      "schema": "public",
+      "definition": "CREATE TRIGGER athlete_coaching_write_grants_history_guard BEFORE DELETE OR UPDATE ON athlete_coaching_write_grants FOR EACH ROW EXECUTE FUNCTION guard_athlete_coaching_write_grant_history()"
+    },
+    {
+      "name": "athlete_coaching_write_policy_versions_immutable",
+      "table": "athlete_coaching_write_policy_versions",
+      "schema": "public",
+      "definition": "CREATE TRIGGER athlete_coaching_write_policy_versions_immutable BEFORE DELETE OR UPDATE ON athlete_coaching_write_policy_versions FOR EACH ROW EXECUTE FUNCTION prevent_athlete_coaching_write_policy_mutation()"
+    },
+    {
+      "name": "athlete_coaching_write_policy_versions_supersession_guard",
+      "table": "athlete_coaching_write_policy_versions",
+      "schema": "public",
+      "definition": "CREATE CONSTRAINT TRIGGER athlete_coaching_write_policy_versions_supersession_guard AFTER INSERT ON athlete_coaching_write_policy_versions DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_athlete_coaching_write_policy_supersession()"
+    },
+    {
       "name": "athlete_consent_policy_versions_immutable",
       "table": "athlete_consent_policy_versions",
       "schema": "public",
@@ -12342,6 +12592,15 @@
       "securityDefiner": true
     },
     {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "coaching_athlete_write_access_decision(uuid,uuid,uuid,text)",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.coaching_athlete_write_access_decision(p_actor_profile_id uuid, p_organization_id uuid, p_athlete_profile_id uuid, p_scope_key text)\n RETURNS text\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE v_now timestamptz := transaction_timestamp(); v_membership_id uuid; v_engagement_id uuid; v_grant public.athlete_coaching_write_grants%ROWTYPE; v_effective_from timestamptz;\nBEGIN\n  IF p_scope_key NOT IN ('training_assignment', 'schedule_modification') THEN RAISE EXCEPTION 'invalid coaching write scope' USING ERRCODE = '22023'; END IF;\n  PERFORM 1 FROM public.organizations o WHERE o.id=p_organization_id AND o.suspended_at IS NULL AND o.closed_at IS NULL FOR SHARE;\n  IF NOT FOUND THEN RETURN 'organization_not_active'; END IF;\n  SELECT m.id INTO v_membership_id FROM public.organization_memberships m WHERE m.organization_id=p_organization_id AND m.profile_id=p_actor_profile_id AND m.suspended_at IS NULL AND m.ended_at IS NULL FOR SHARE;\n  IF v_membership_id IS NULL THEN RETURN 'membership_not_active'; END IF;\n  IF NOT EXISTS (SELECT 1 FROM public.organization_membership_role_grants r WHERE r.organization_id=p_organization_id AND r.membership_id=v_membership_id AND r.role_key='coach' AND r.granted_at<=v_now AND r.revoked_at IS NULL FOR SHARE) THEN RETURN 'missing_coach_role'; END IF;\n  SELECT e.id INTO v_engagement_id FROM public.coaching_engagements e WHERE e.organization_id=p_organization_id AND e.athlete_profile_id=p_athlete_profile_id AND e.paused_at IS NULL AND e.ended_at IS NULL AND e.created_at<=v_now ORDER BY e.created_at DESC, e.id DESC LIMIT 1 FOR SHARE;\n  IF v_engagement_id IS NULL THEN RETURN 'engagement_not_active'; END IF;\n  IF NOT EXISTS (SELECT 1 FROM public.coaching_assignments a WHERE a.organization_id=p_organization_id AND a.engagement_id=v_engagement_id AND a.coach_membership_id=v_membership_id AND a.ended_at IS NULL AND a.assigned_at<=v_now FOR SHARE) THEN RETURN 'assignment_missing'; END IF;\n  SELECT * INTO v_grant FROM public.athlete_coaching_write_grants g WHERE g.organization_id=p_organization_id AND g.engagement_id=v_engagement_id AND g.athlete_profile_id=p_athlete_profile_id AND g.scope_key=p_scope_key ORDER BY (g.revoked_at IS NULL) DESC, g.granted_at DESC, g.id DESC LIMIT 1 FOR SHARE;\n  IF v_grant.id IS NULL OR v_grant.granted_at>v_now THEN RETURN 'grant_missing'; END IF;\n  IF v_grant.revoked_at IS NOT NULL THEN RETURN 'grant_revoked'; END IF;\n  IF v_grant.expires_at IS NOT NULL AND v_grant.expires_at<=v_now THEN RETURN 'grant_expired'; END IF;\n  SELECT p.effective_from INTO v_effective_from FROM public.athlete_coaching_write_policy_versions p WHERE p.id=v_grant.policy_version_id AND p.scope_key=p_scope_key;\n  IF v_effective_from IS NULL OR v_effective_from>v_now THEN RETURN 'grant_policy_not_effective'; END IF;\n  RETURN 'allow';\nEND $function$\n",
+      "volatility": "v",
+      "securityDefiner": true
+    },
+    {
       "acl": "{postgres=X/postgres}",
       "config": ["search_path=pg_catalog, public"],
       "identity": "delete_effort_dependent_threshold_evaluations()",
@@ -12452,6 +12711,15 @@
     {
       "acl": "",
       "config": ["search_path=pg_catalog"],
+      "identity": "guard_athlete_coaching_write_grant_history()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.guard_athlete_coaching_write_grant_history()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN\n  IF NEW.id <> OLD.id OR NEW.organization_id <> OLD.organization_id OR NEW.engagement_id <> OLD.engagement_id OR NEW.athlete_profile_id <> OLD.athlete_profile_id OR NEW.scope_key <> OLD.scope_key OR NEW.policy_version_id <> OLD.policy_version_id OR NEW.granted_by_profile_id <> OLD.granted_by_profile_id OR NEW.granted_at <> OLD.granted_at OR NEW.expires_at IS DISTINCT FROM OLD.expires_at OR OLD.revoked_at IS NOT NULL OR NEW.revoked_at IS NULL THEN\n    RAISE EXCEPTION 'coaching write grant history is immutable except one revocation';\n  END IF;\n  RETURN NEW;\nEND $function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": "",
+      "config": ["search_path=pg_catalog"],
       "identity": "guard_organization_group_authority()",
       "language": "plpgsql",
       "definition": "CREATE OR REPLACE FUNCTION public.guard_organization_group_authority()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE\n  actor_id uuid;\n  row_data jsonb := pg_catalog.to_jsonb(NEW);\nBEGIN\n  -- All new authority writers use the same fence as protected projection reads.\n  PERFORM 1 FROM public.organizations WHERE id = NEW.organization_id FOR UPDATE;\n  IF TG_TABLE_NAME = 'organization_groups' THEN\n    actor_id := CASE WHEN TG_OP = 'INSERT' THEN NEW.created_by_membership_id ELSE NEW.archived_by_membership_id END;\n  ELSIF TG_TABLE_NAME = 'organization_group_athletes' THEN\n    actor_id := CASE WHEN TG_OP = 'INSERT' THEN NEW.added_by_membership_id ELSE NEW.ended_by_membership_id END;\n  ELSE\n    actor_id := CASE WHEN TG_OP = 'INSERT' THEN NEW.assigned_by_membership_id ELSE NEW.ended_by_membership_id END;\n  END IF;\n  IF NOT EXISTS (\n    SELECT 1 FROM public.organizations o\n    JOIN public.organization_memberships m ON m.organization_id = o.id AND m.id = actor_id\n    WHERE o.id = NEW.organization_id AND o.suspended_at IS NULL AND o.closed_at IS NULL\n      AND m.suspended_at IS NULL AND m.ended_at IS NULL AND m.created_at <= transaction_timestamp()\n      AND (m.id = o.root_owner_membership_id OR EXISTS (\n        SELECT 1 FROM public.organization_membership_role_grants r\n        WHERE r.organization_id = o.id AND r.membership_id = m.id AND r.role_key = 'admin'\n          AND r.revoked_at IS NULL AND r.granted_at <= transaction_timestamp()\n      ))\n  ) THEN RAISE EXCEPTION 'organization group mutation requires an active root owner or admin actor'; END IF;\n  IF TG_OP = 'INSERT' AND (\n    row_data->>'ended_at' IS NOT NULL OR row_data->>'archived_at' IS NOT NULL\n    OR COALESCE((row_data->>'joined_at')::timestamptz, (row_data->>'assigned_at')::timestamptz,\n                (row_data->>'created_at')::timestamptz) > transaction_timestamp()\n  ) THEN RAISE EXCEPTION 'organization group relationships must begin active and effective now'; END IF;\n  IF TG_OP = 'UPDATE' AND COALESCE((row_data->>'ended_at')::timestamptz,\n       (row_data->>'archived_at')::timestamptz) > transaction_timestamp() THEN\n    RAISE EXCEPTION 'organization group revocation must be effective now';\n  END IF;\n  RETURN NEW;\nEND $function$\n",
@@ -12475,6 +12743,15 @@
       "definition": "CREATE OR REPLACE FUNCTION public.handle_new_user()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare\n    full_name text;\n    user_email text;\n    base_username text;\n    unique_suffix text;\n    final_username text;\nbegin\n    full_name := nullif(btrim(coalesce(\n        new.raw_user_meta_data->>'full_name',\n        new.raw_user_meta_data->>'name',\n        concat_ws(' ',\n            new.raw_user_meta_data->>'first_name',\n            new.raw_user_meta_data->>'last_name'\n        )\n    )), '');\n\n    user_email := coalesce(\n        nullif(new.email, ''),\n        nullif(new.raw_user_meta_data->>'email', ''),\n        new.id::text || '@users.local'\n    );\n\n    base_username := coalesce(\n        nullif(concat_ws('',\n            new.raw_user_meta_data->>'first_name',\n            new.raw_user_meta_data->>'last_name'\n        ), ''),\n        split_part(user_email, '@', 1),\n        'user'\n    );\n\n    unique_suffix := substring(replace(new.id::text, '-', '') from 1 for 6);\n    final_username := left(base_username || unique_suffix, 50);\n\n    insert into public.users (id, name, email, email_verified, image)\n    values (\n        new.id,\n        coalesce(full_name, split_part(user_email, '@', 1), 'User'),\n        user_email,\n        coalesce(new.email_confirmed_at is not null, false),\n        new.raw_user_meta_data->>'avatar_url'\n    )\n    on conflict (id) do update\n    set\n        name = coalesce(public.users.name, excluded.name),\n        email = coalesce(public.users.email, excluded.email),\n        image = coalesce(public.users.image, excluded.image),\n        updated_at = now();\n\n    insert into public.profiles (id, email, full_name, username, avatar_url)\n    values (\n        new.id,\n        new.email,\n        full_name,\n        final_username,\n        new.raw_user_meta_data->>'avatar_url'\n    )\n    on conflict (id) do update\n    set\n        email = coalesce(public.profiles.email, excluded.email),\n        full_name = coalesce(public.profiles.full_name, excluded.full_name),\n        username = coalesce(public.profiles.username, excluded.username),\n        avatar_url = coalesce(public.profiles.avatar_url, excluded.avatar_url),\n        updated_at = now();\n\n    return new;\nend;\n$function$\n",
       "volatility": "v",
       "securityDefiner": true
+    },
+    {
+      "acl": "",
+      "config": ["search_path=pg_catalog"],
+      "identity": "prevent_athlete_coaching_write_policy_mutation()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_athlete_coaching_write_policy_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN RAISE EXCEPTION 'coaching write policy versions are immutable'; END $function$\n",
+      "volatility": "v",
+      "securityDefiner": false
     },
     {
       "acl": "",
@@ -12655,6 +12932,15 @@
       "definition": "CREATE OR REPLACE FUNCTION public.validate_activity_segment_set(target_activity_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare\n  parent_record record;\n  segment_count integer;\n  max_ordinal integer;\n  summed_active bigint;\n  summed_moving bigint;\n  complete_count integer;\nbegin\n  select elapsed_ms, active_ms, moving_ms, timing_coverage,\n    entry_provenance, manual_activity_category, diary_date, diary_timezone,\n    started_at, finished_at\n    into parent_record\n  from public.activities where id = target_activity_id;\n  if not found then return; end if;\n\n  -- Manual diary observations are scalar evidence. The immediate manual\n  -- contract check owns their nullable measurement fields; they have no segment set.\n  if parent_record.entry_provenance = 'manual'\n    and parent_record.manual_activity_category is not null\n    and parent_record.diary_date is not null\n    and parent_record.diary_timezone is not null\n    and ((parent_record.started_at is null and parent_record.finished_at is null)\n      or (parent_record.started_at is not null and parent_record.finished_at is not null)) then\n    return;\n  end if;\n\n  select count(*), max(ordinal), sum(active_ms), sum(moving_ms),\n    count(*) filter(where timing_coverage='complete' and active_ms is not null and moving_ms is not null)\n    into segment_count, max_ordinal, summed_active, summed_moving, complete_count\n  from public.activity_segments where activity_id = target_activity_id;\n  if segment_count = 0 or max_ordinal <> segment_count - 1 then\n    raise exception 'activity % segment ordinals must be contiguous from zero', target_activity_id;\n  end if;\n  if exists (select 1 from public.activity_segments where activity_id = target_activity_id and end_offset_ms > parent_record.elapsed_ms) then\n    raise exception 'activity % segment exceeds parent elapsed bounds', target_activity_id;\n  end if;\n  if exists (\n    select 1 from public.activity_segments s\n    left join public.activity_segments p on p.activity_id=s.activity_id and p.ordinal=s.ordinal-1\n    left join public.activity_segments n on n.activity_id=s.activity_id and n.ordinal=s.ordinal+1\n    where s.activity_id=target_activity_id and s.role='transition'\n      and (p.role is distinct from 'activity' or n.role is distinct from 'activity')\n  ) then raise exception 'activity % transition must be between activity segments', target_activity_id; end if;\n  if exists (\n    select 1 from public.activity_segments s join public.activity_segments n\n      on n.activity_id=s.activity_id and n.ordinal=s.ordinal+1\n    where s.activity_id=target_activity_id and s.role='rest' and n.role='rest'\n  ) then raise exception 'activity % has consecutive rest segments', target_activity_id; end if;\n  if parent_record.timing_coverage='complete' then\n    if complete_count<>segment_count then\n      raise exception 'activity % complete parent requires complete timing for every segment',target_activity_id;\n    end if;\n    if parent_record.active_ms is distinct from summed_active or parent_record.moving_ms is distinct from summed_moving then\n      raise exception 'activity % complete timing does not reconcile with segments',target_activity_id;\n    end if;\n  elsif parent_record.active_ms is not null or parent_record.moving_ms is not null then\n    raise exception 'activity % partial/unavailable parent timing totals must be null',target_activity_id;\n  end if;\n  if exists (\n    select 1 from public.activity_segments s\n    where s.activity_id=target_activity_id\n      and (s.summary->>'version' is distinct from s.summary_version::text\n        or s.summary#>>'{timing,timingCoverage}' is distinct from s.timing_coverage\n        or (s.summary#>>'{timing,activeMs}')::bigint is distinct from s.active_ms\n        or (s.summary#>>'{timing,movingMs}')::bigint is distinct from s.moving_ms)\n  ) then raise exception 'activity % segment summary timing/version mismatch', target_activity_id; end if;\nend $function$\n",
       "volatility": "v",
       "securityDefiner": true
+    },
+    {
+      "acl": "",
+      "config": ["search_path=pg_catalog"],
+      "identity": "validate_athlete_coaching_write_policy_supersession()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.validate_athlete_coaching_write_policy_supersession()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE predecessor_effective_from timestamptz;\nBEGIN\n  IF NEW.supersedes_policy_version_id IS NULL THEN RETURN NULL; END IF;\n  SELECT effective_from INTO predecessor_effective_from FROM public.athlete_coaching_write_policy_versions\n  WHERE id=NEW.supersedes_policy_version_id AND scope_key=NEW.scope_key;\n  IF predecessor_effective_from IS NULL OR NEW.effective_from < predecessor_effective_from THEN\n    RAISE EXCEPTION 'coaching write policy supersession must retain scope and cannot move effective chronology backward';\n  END IF;\n  RETURN NULL;\nEND $function$\n",
+      "volatility": "v",
+      "securityDefiner": false
     },
     {
       "acl": "",
@@ -13992,6 +14278,111 @@
       "table": "api_rate_limit_windows",
       "validated": true,
       "definition": "PRIMARY KEY (key_hash, window_started_at)"
+    },
+    {
+      "kind": "u",
+      "name": "athlete_coaching_write_grants_authority_identity_unique",
+      "table": "athlete_coaching_write_grants",
+      "validated": true,
+      "definition": "UNIQUE (organization_id, engagement_id, athlete_profile_id, scope_key, id)"
+    },
+    {
+      "kind": "f",
+      "name": "athlete_coaching_write_grants_engagement_fkey",
+      "table": "athlete_coaching_write_grants",
+      "validated": true,
+      "definition": "FOREIGN KEY (organization_id, engagement_id, athlete_profile_id) REFERENCES coaching_engagements(organization_id, id, athlete_profile_id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "athlete_coaching_write_grants_expiry_chronology_check",
+      "table": "athlete_coaching_write_grants",
+      "validated": true,
+      "definition": "CHECK (expires_at IS NULL OR expires_at >= granted_at)"
+    },
+    {
+      "kind": "c",
+      "name": "athlete_coaching_write_grants_grantor_check",
+      "table": "athlete_coaching_write_grants",
+      "validated": true,
+      "definition": "CHECK (granted_by_profile_id = athlete_profile_id)"
+    },
+    {
+      "kind": "p",
+      "name": "athlete_coaching_write_grants_pkey",
+      "table": "athlete_coaching_write_grants",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "kind": "f",
+      "name": "athlete_coaching_write_grants_policy_scope_fkey",
+      "table": "athlete_coaching_write_grants",
+      "validated": true,
+      "definition": "FOREIGN KEY (policy_version_id, scope_key) REFERENCES athlete_coaching_write_policy_versions(id, scope_key) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "athlete_coaching_write_grants_revocation_chronology_check",
+      "table": "athlete_coaching_write_grants",
+      "validated": true,
+      "definition": "CHECK (revoked_at IS NULL OR revoked_at >= granted_at)"
+    },
+    {
+      "kind": "c",
+      "name": "athlete_coaching_write_grants_scope_check",
+      "table": "athlete_coaching_write_grants",
+      "validated": true,
+      "definition": "CHECK (scope_key = ANY (ARRAY['training_assignment'::text, 'schedule_modification'::text]))"
+    },
+    {
+      "kind": "c",
+      "name": "athlete_coaching_write_policy_versions_digest_non_empty",
+      "table": "athlete_coaching_write_policy_versions",
+      "validated": true,
+      "definition": "CHECK (btrim(content_digest) <> ''::text)"
+    },
+    {
+      "kind": "u",
+      "name": "athlete_coaching_write_policy_versions_id_scope_unique",
+      "table": "athlete_coaching_write_policy_versions",
+      "validated": true,
+      "definition": "UNIQUE (id, scope_key)"
+    },
+    {
+      "kind": "p",
+      "name": "athlete_coaching_write_policy_versions_pkey",
+      "table": "athlete_coaching_write_policy_versions",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "kind": "c",
+      "name": "athlete_coaching_write_policy_versions_scope_check",
+      "table": "athlete_coaching_write_policy_versions",
+      "validated": true,
+      "definition": "CHECK (scope_key = ANY (ARRAY['training_assignment'::text, 'schedule_modification'::text]))"
+    },
+    {
+      "kind": "c",
+      "name": "athlete_coaching_write_policy_versions_supersedes_not_self_chec",
+      "table": "athlete_coaching_write_policy_versions",
+      "validated": true,
+      "definition": "CHECK (supersedes_policy_version_id IS NULL OR supersedes_policy_version_id <> id)"
+    },
+    {
+      "kind": "f",
+      "name": "athlete_coaching_write_policy_versions_supersedes_scope_fkey",
+      "table": "athlete_coaching_write_policy_versions",
+      "validated": true,
+      "definition": "FOREIGN KEY (supersedes_policy_version_id, scope_key) REFERENCES athlete_coaching_write_policy_versions(id, scope_key) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "athlete_coaching_write_policy_versions_terms_non_empty",
+      "table": "athlete_coaching_write_policy_versions",
+      "validated": true,
+      "definition": "CHECK (btrim(terms_text) <> ''::text)"
     },
     {
       "kind": "c",
@@ -16858,6 +17249,22 @@
       "rls": true,
       "kind": "r",
       "name": "api_rate_limit_windows",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "athlete_coaching_write_grants",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "athlete_coaching_write_policy_versions",
       "managed": true,
       "forceRls": false
     },

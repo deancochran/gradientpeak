@@ -1,17 +1,13 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { bootstrapSupabaseSchemas, withDisposableDatabase } from "./_disposable-target";
-import { dbPackageRoot } from "./_helpers";
 import {
   applyAuthIdentityCompatibilityUpgrade,
   assertAuthIdentityCompatibilityUpgradeArtifact,
   expectedAuthIdentityCompatibilityBeforeFingerprint,
   expectedAuthIdentityCompatibilityUpgradeSql,
 } from "./auth-identity-compatibility-upgrade";
+import { authIdentityLegacyBaseline } from "./auth-identity-legacy-fixture";
 import { createSchemaFingerprint } from "./check-schema-fingerprint";
-
-const baseline = resolve(dbPackageRoot, "supabase/migrations/20260730000000_mvp_baseline.sql");
 
 async function createLegacyAccount(
   pool: Parameters<typeof applyAuthIdentityCompatibilityUpgrade>[0],
@@ -47,13 +43,8 @@ async function main() {
     async (pool) => {
       await bootstrapSupabaseSchemas(pool);
       await pool.query("create extension if not exists pgcrypto with schema extensions");
-      await pool.query(readFileSync(baseline, "utf8"));
-      // Build the exact legacy source in the guarded disposable target only.
-      await pool.query('drop index public."accounts_providerId_accountId_uidx"');
-      await pool.query("alter table public.accounts alter column issuer set not null");
-      await pool.query(
-        'create unique index "accounts_issuer_accountId_uidx" on public.accounts using btree (issuer, account_id)',
-      );
+      await pool.query(authIdentityLegacyBaseline());
+      // The pinned historical baseline is already the exact legacy source.
       await createLegacyAccount(pool, {
         email: "legacy-one@example.test",
         issuer: "https://legacy.example/issuer",

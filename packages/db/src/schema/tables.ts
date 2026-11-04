@@ -28,6 +28,7 @@ import {
 import { users } from "../auth-schema";
 import {
   athleteReadScopeDbValues,
+  athleteWriteScopeDbValues,
   commentsEntityTypeDbValues,
   organizationRoleKeyDbValues,
 } from "./core-enum-parity";
@@ -876,6 +877,119 @@ export const athleteDataSharingConsents = pgTable(
     check(
       "athlete_data_sharing_consents_successor_not_self_check",
       sql`${table.superseded_by_consent_id} is null or ${table.superseded_by_consent_id} <> ${table.id}`,
+    ),
+  ],
+);
+
+/** Explicit delegated mutation authority; it intentionally cannot satisfy read authorization. */
+export const athleteCoachingWritePolicyVersions = pgTable(
+  "athlete_coaching_write_policy_versions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    scope_key: text("scope_key", { enum: athleteWriteScopeDbValues }).notNull(),
+    effective_from: timestamp("effective_from", { withTimezone: true, mode: "date" }).notNull(),
+    jurisdiction: text("jurisdiction").notNull(),
+    terms_text: text("terms_text").notNull(),
+    content_digest: text("content_digest").notNull(),
+    supersedes_policy_version_id: uuid("supersedes_policy_version_id"),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("athlete_coaching_write_policy_versions_id_scope_unique").on(table.id, table.scope_key),
+    foreignKey({
+      columns: [table.supersedes_policy_version_id, table.scope_key],
+      foreignColumns: [table.id, table.scope_key],
+      name: "athlete_coaching_write_policy_versions_supersedes_scope_fkey",
+    }).onDelete("restrict"),
+    check(
+      "athlete_coaching_write_policy_versions_scope_check",
+      sql`${table.scope_key} in ('training_assignment', 'schedule_modification')`,
+    ),
+    check(
+      "athlete_coaching_write_policy_versions_terms_non_empty",
+      sql`btrim(${table.terms_text}) <> ''`,
+    ),
+    check(
+      "athlete_coaching_write_policy_versions_digest_non_empty",
+      sql`btrim(${table.content_digest}) <> ''`,
+    ),
+    check(
+      "athlete_coaching_write_policy_versions_supersedes_not_self_check",
+      sql`${table.supersedes_policy_version_id} is null or ${table.supersedes_policy_version_id} <> ${table.id}`,
+    ),
+    index("athlete_coaching_write_policy_versions_supersedes_scope_fkey_idx").on(
+      table.supersedes_policy_version_id,
+      table.scope_key,
+    ),
+  ],
+);
+
+export const athleteCoachingWriteGrants = pgTable(
+  "athlete_coaching_write_grants",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organization_id: uuid("organization_id").notNull(),
+    engagement_id: uuid("engagement_id").notNull(),
+    athlete_profile_id: uuid("athlete_profile_id").notNull(),
+    scope_key: text("scope_key", { enum: athleteWriteScopeDbValues }).notNull(),
+    policy_version_id: uuid("policy_version_id").notNull(),
+    granted_by_profile_id: uuid("granted_by_profile_id").notNull(),
+    granted_at: timestamp("granted_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    expires_at: timestamp("expires_at", { withTimezone: true, mode: "date" }),
+    revoked_at: timestamp("revoked_at", { withTimezone: true, mode: "date" }),
+  },
+  (table) => [
+    unique("athlete_coaching_write_grants_authority_identity_unique").on(
+      table.organization_id,
+      table.engagement_id,
+      table.athlete_profile_id,
+      table.scope_key,
+      table.id,
+    ),
+    foreignKey({
+      columns: [table.organization_id, table.engagement_id, table.athlete_profile_id],
+      foreignColumns: [
+        coachingEngagements.organization_id,
+        coachingEngagements.id,
+        coachingEngagements.athlete_profile_id,
+      ],
+      name: "athlete_coaching_write_grants_engagement_fkey",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.policy_version_id, table.scope_key],
+      foreignColumns: [
+        athleteCoachingWritePolicyVersions.id,
+        athleteCoachingWritePolicyVersions.scope_key,
+      ],
+      name: "athlete_coaching_write_grants_policy_scope_fkey",
+    }).onDelete("restrict"),
+    uniqueIndex("athlete_coaching_write_grants_current_unique")
+      .on(table.organization_id, table.engagement_id, table.athlete_profile_id, table.scope_key)
+      .where(sql`${table.revoked_at} is null`),
+    index("athlete_coaching_write_grants_policy_scope_idx").on(
+      table.policy_version_id,
+      table.scope_key,
+    ),
+    index("athlete_coaching_write_grants_engagement_fkey_idx").on(
+      table.organization_id,
+      table.engagement_id,
+      table.athlete_profile_id,
+    ),
+    check(
+      "athlete_coaching_write_grants_grantor_check",
+      sql`${table.granted_by_profile_id} = ${table.athlete_profile_id}`,
+    ),
+    check(
+      "athlete_coaching_write_grants_expiry_chronology_check",
+      sql`${table.expires_at} is null or ${table.expires_at} >= ${table.granted_at}`,
+    ),
+    check(
+      "athlete_coaching_write_grants_revocation_chronology_check",
+      sql`${table.revoked_at} is null or ${table.revoked_at} >= ${table.granted_at}`,
     ),
   ],
 );

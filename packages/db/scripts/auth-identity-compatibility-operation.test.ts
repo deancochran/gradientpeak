@@ -35,6 +35,7 @@ import {
   expectedAuthIdentityCompatibilityTableInventory,
   expectedAuthIdentityCompatibilityUpgradeSql,
 } from "./auth-identity-compatibility-upgrade";
+import { authIdentityLegacyBaseline } from "./auth-identity-legacy-fixture";
 import { createSchemaFingerprint } from "./check-schema-fingerprint";
 import {
   createRetainedDataDigest,
@@ -42,7 +43,6 @@ import {
   retainedTables,
 } from "./retained-e2e-upgrade";
 
-const baseline = join(dbPackageRoot, "supabase/migrations/20260730000000_mvp_baseline.sql");
 const identity: AuthIdentityTargetIdentity = {
   target: "preview",
   containerId: "test-container",
@@ -256,12 +256,7 @@ async function main() {
     async (pool, url) => {
       await bootstrapSupabaseSchemas(pool);
       await pool.query("create extension if not exists pgcrypto with schema extensions");
-      await pool.query(readFileSync(baseline, "utf8"));
-      await pool.query('drop index public."accounts_providerId_accountId_uidx"');
-      await pool.query("alter table public.accounts alter column issuer set not null");
-      await pool.query(
-        'create unique index "accounts_issuer_accountId_uidx" on public.accounts using btree (issuer, account_id)',
-      );
+      await pool.query(authIdentityLegacyBaseline());
       await createLegacyAccount(pool);
       assert.deepEqual(
         await createSchemaFingerprint(pool),

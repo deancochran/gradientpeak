@@ -33,6 +33,24 @@ export const ATHLETE_READ_SCOPES = [
 ] as const;
 export type AthleteReadScope = (typeof ATHLETE_READ_SCOPES)[number];
 
+/** Delegated mutation powers require a separate, explicit athlete grant. */
+export const ATHLETE_WRITE_SCOPES = ["training_assignment", "schedule_modification"] as const;
+export type AthleteWriteScope = (typeof ATHLETE_WRITE_SCOPES)[number];
+
+/** Internal fail-closed outcomes from the delegated athlete-write authority chain. */
+export const ATHLETE_WRITE_ACCESS_DENIAL_REASONS = [
+  "organization_not_active",
+  "membership_not_active",
+  "missing_coach_role",
+  "engagement_not_active",
+  "assignment_missing",
+  "grant_missing",
+  "grant_expired",
+  "grant_revoked",
+  "grant_policy_not_effective",
+] as const;
+export type AthleteWriteAccessDenialReason = (typeof ATHLETE_WRITE_ACCESS_DENIAL_REASONS)[number];
+
 /** Internal fail-closed outcomes from the complete delegated athlete-read authority chain. */
 export const ATHLETE_READ_ACCESS_DENIAL_REASONS = [
   "organization_not_active",

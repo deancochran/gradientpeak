@@ -7,6 +7,8 @@ import { preferredUnitSystemSchema } from "../units";
 import {
   ATHLETE_READ_ACCESS_DENIAL_REASONS,
   ATHLETE_READ_SCOPES,
+  ATHLETE_WRITE_ACCESS_DENIAL_REASONS,
+  ATHLETE_WRITE_SCOPES,
   COACHING_ASSIGNMENT_KINDS,
   ORGANIZATION_GROUP_STATUSES,
   ORGANIZATION_INVITATION_KINDS,
@@ -22,6 +24,7 @@ const instantSchema = z.string().datetime({ offset: true });
 export const organizationRoleKeySchema = z.enum(ORGANIZATION_ROLE_KEYS);
 export const organizationOperationSchema = z.enum(ORGANIZATION_OPERATIONS);
 export const athleteReadScopeSchema = z.enum(ATHLETE_READ_SCOPES);
+export const athleteWriteScopeSchema = z.enum(ATHLETE_WRITE_SCOPES);
 export const organizationInvitationKindSchema = z.enum(ORGANIZATION_INVITATION_KINDS);
 export const organizationInvitationStatusSchema = z.enum(ORGANIZATION_INVITATION_STATUSES);
 export const coachingAssignmentKindSchema = z.enum(COACHING_ASSIGNMENT_KINDS);
@@ -211,6 +214,23 @@ export const athleteReadAccessDecisionSchema = z.discriminatedUnion("outcome", [
     .readonly(),
 ]);
 export type AthleteReadAccessDecision = z.infer<typeof athleteReadAccessDecisionSchema>;
+
+/** A write grant is independent from every athlete-read consent. */
+export const athleteWriteAccessDecisionSchema = z.discriminatedUnion("outcome", [
+  z
+    .object({ outcome: z.literal("allow"), scope: athleteWriteScopeSchema })
+    .strict()
+    .readonly(),
+  z
+    .object({
+      outcome: z.literal("deny"),
+      scope: athleteWriteScopeSchema,
+      reason: z.enum(ATHLETE_WRITE_ACCESS_DENIAL_REASONS),
+    })
+    .strict()
+    .readonly(),
+]);
+export type AthleteWriteAccessDecision = z.infer<typeof athleteWriteAccessDecisionSchema>;
 
 /**
  * A role-eligibility result for an athlete read is deliberately not full authorization.
