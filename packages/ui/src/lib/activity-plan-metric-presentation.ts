@@ -16,7 +16,7 @@ export function describeActivityPlanLoadAvailability(metric: unknown): string | 
   switch (parsed.data.reason) {
     case "threshold_missing":
     case "category_calibration_required":
-      return "Load unavailable: usable sport-specific calibration was not supplied to this estimate.";
+      return "Load unavailable: usable activity-specific calibration was not supplied to this estimate.";
     case "activity_data_missing":
     case "no_objective_target":
       return "Load unavailable: the estimator cannot calculate load from the current activity inputs.";

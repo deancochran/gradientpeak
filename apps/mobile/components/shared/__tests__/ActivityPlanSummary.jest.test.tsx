@@ -31,7 +31,7 @@ describe("ActivityPlanSummary", () => {
   it("explains missing calibration instead of implying the athlete has no thresholds", async () => {
     await renderNative(
       <ActivityPlanSummary
-        title="Threshold workout"
+        title="Threshold activity"
         projectionMetrics={[
           {
             key: "common_load",

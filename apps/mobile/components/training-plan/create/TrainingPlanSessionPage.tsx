@@ -60,7 +60,9 @@ export function TrainingPlanSessionPage({
       <ActivityPlanSummary
         title={activityPlan?.name ?? session.activityPlan?.name ?? "Activity unavailable"}
         subtitle={activityPlan?.activityCategory ?? session.demand.activity_category}
-        {...(metrics ? { projectionMetrics: metrics } : {})}
+        {...(metrics && (metrics.length > 0 || !forecastExplanation)
+          ? { projectionMetrics: metrics }
+          : {})}
         showAttribution={false}
         headerAccessory={
           <Button

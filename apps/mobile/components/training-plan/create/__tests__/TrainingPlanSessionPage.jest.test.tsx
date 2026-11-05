@@ -43,6 +43,7 @@ describe("TrainingPlanSessionPage", () => {
       "The selected activity does not match this session's training intent.",
     );
     expect(screen.queryByText("Estimates aren’t available for this activity yet.")).toBeNull();
+    expect(screen.queryByTestId("activity-plan-load-explanation")).toBeNull();
   });
   it("shows the current viewer intensity and load instead of the generic summary", async () => {
     await renderNative(
