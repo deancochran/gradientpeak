@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 
 import { RouteFlashToast, type RouteFlashType } from "../../components/route-flash-toast";
 import { SignUpForm } from "../../components/sign-up-form";
+import { getSafeAppRedirectTarget } from "../../lib/app-url";
 import { publicAuthPageMiddleware, redirectAuthenticatedUser } from "../../lib/auth/route-guards";
 
 export const Route = createFileRoute("/auth/sign-up")({
@@ -10,6 +11,10 @@ export const Route = createFileRoute("/auth/sign-up")({
     flashType:
       search.flashType === "success" || search.flashType === "error" || search.flashType === "info"
         ? (search.flashType as RouteFlashType)
+        : undefined,
+    redirect:
+      typeof search.redirect === "string"
+        ? getSafeAppRedirectTarget(search.redirect, "/")
         : undefined,
   }),
   server: {
@@ -23,7 +28,7 @@ export const Route = createFileRoute("/auth/sign-up")({
 
 function SignUpPage() {
   const navigate = Route.useNavigate();
-  const { flash, flashType } = Route.useSearch();
+  const { flash, flashType, redirect } = Route.useSearch();
 
   return (
     <div className="flex min-h-[70vh] items-center justify-center py-6 md:py-10">
@@ -33,13 +38,13 @@ function SignUpPage() {
         clear={() =>
           void navigate({
             to: "/auth/sign-up",
-            search: { flash: undefined, flashType: undefined },
+            search: { flash: undefined, flashType: undefined, redirect },
             replace: true,
           })
         }
       />
       <div className="w-full max-w-sm">
-        <SignUpForm />
+        <SignUpForm {...(redirect === undefined ? {} : { redirectTo: redirect })} />
       </div>
     </div>
   );

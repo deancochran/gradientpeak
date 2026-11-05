@@ -99,7 +99,33 @@ const invitationCreateInputSchema = z
         message: "Staff invitations require a role and athlete invitations do not",
       });
   });
-const invitationAcceptInputSchema = z.object({ token: z.string().min(43).max(256) }).strict();
+const invitationAcceptInputSchema = z
+  .object({
+    token: z.string().min(43).max(256),
+    acknowledgement: z
+      .object({
+        version: z.string().min(1).max(120),
+        digest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+        accepted: z.literal(true),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+const invitationIdResponseInputSchema = z
+  .object({
+    invitationId: z.string().uuid(),
+    acknowledgement: z
+      .object({
+        version: z.string().min(1).max(120),
+        digest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+        accepted: z.literal(true),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+const invitationIdPreviewInputSchema = z.object({ invitationId: z.string().uuid() }).strict();
 const invitationPreviewOutputSchema = z
   .object({
     invitationId: z.string().uuid(),
@@ -108,6 +134,16 @@ const invitationPreviewOutputSchema = z
     kind: z.enum(["staff", "athlete"]),
     requestedRole: z.enum(["admin", "coach"]).nullable(),
     expiresAt: z.date(),
+    agreement: z
+      .object({
+        version: z.string().min(1),
+        digest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+        terms: z.string().min(1),
+        scopes: z.array(
+          z.enum(["basic_profile", "training", "activities", "metrics", "goals", "calendar"]),
+        ),
+      })
+      .optional(),
   })
   .strict();
 const invitationRevokeInputSchema = z
@@ -334,6 +370,22 @@ export function createOrganizationsRouter(
               db: getRequiredDb(ctx),
               actorProfileId: ctx.session.user.id,
               token: input.token,
+              ...(input.acknowledgement ? { acknowledgement: input.acknowledgement } : {}),
+            });
+          } catch (error) {
+            return managementError(error);
+          }
+        }),
+      acceptById: protectedProcedure
+        .input(invitationIdResponseInputSchema)
+        .output(invitationAcceptOutputSchema)
+        .mutation(async ({ ctx, input }) => {
+          try {
+            return await acceptOrganizationInvitation({
+              db: getRequiredDb(ctx),
+              actorProfileId: ctx.session.user.id,
+              invitationId: input.invitationId,
+              ...(input.acknowledgement ? { acknowledgement: input.acknowledgement } : {}),
             });
           } catch (error) {
             return managementError(error);
@@ -353,6 +405,20 @@ export function createOrganizationsRouter(
             return managementError(error);
           }
         }),
+      previewById: protectedProcedure
+        .input(invitationIdPreviewInputSchema)
+        .output(invitationPreviewOutputSchema)
+        .query(async ({ ctx, input }) => {
+          try {
+            return await previewOrganizationInvitation({
+              db: getRequiredDb(ctx),
+              actorProfileId: ctx.session.user.id,
+              invitationId: input.invitationId,
+            });
+          } catch (error) {
+            return managementError(error);
+          }
+        }),
       decline: protectedProcedure
         .input(invitationAcceptInputSchema)
         .output(invitationDeclineOutputSchema)
@@ -362,6 +428,20 @@ export function createOrganizationsRouter(
               db: getRequiredDb(ctx),
               actorProfileId: ctx.session.user.id,
               token: input.token,
+            });
+          } catch (error) {
+            return managementError(error);
+          }
+        }),
+      declineById: protectedProcedure
+        .input(invitationIdPreviewInputSchema)
+        .output(invitationDeclineOutputSchema)
+        .mutation(async ({ ctx, input }) => {
+          try {
+            return await declineOrganizationInvitation({
+              db: getRequiredDb(ctx),
+              actorProfileId: ctx.session.user.id,
+              invitationId: input.invitationId,
             });
           } catch (error) {
             return managementError(error);

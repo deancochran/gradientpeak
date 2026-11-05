@@ -21,6 +21,7 @@ export function InvitationResponse({
   initialInvitationToken?: string;
 }) {
   const [token, setToken] = useState(initialInvitationToken ?? "");
+  const [selectedInvitationId, setSelectedInvitationId] = useState<string | null>(null);
   const [preview, setPreview] = useState<Awaited<
     ReturnType<typeof previewOrganizationInvitation>
   > | null>(null);
@@ -28,6 +29,8 @@ export function InvitationResponse({
   const [responseFailure, setResponseFailure] = useState<{
     choice: "accept" | "decline";
     token: string;
+    invitationId: string | null;
+    acknowledgement?: { accepted: true; digest: string; version: string };
   } | null>(null);
   const [receipt, setReceipt] = useState<"accepted" | "declined" | null>(null);
   const [inbox, setInbox] = useState<InboxState>({ cursor: null, status: "loading" });
@@ -80,6 +83,7 @@ export function InvitationResponse({
     previewInFlight.current = false;
     responseInFlight.current = false;
     setToken("");
+    setSelectedInvitationId(null);
     setPreview(null);
     setPreviewError(false);
     setResponseFailure(null);
@@ -91,19 +95,28 @@ export function InvitationResponse({
     previewInFlight.current = false;
     responseInFlight.current = false;
     setToken(value);
+    setSelectedInvitationId(null);
     setPreview(null);
     setPreviewError(false);
     setResponseFailure(null);
     setReceipt(null);
   };
-  const inspect = async (commandToken = token) => {
+  const inspect = async (
+    commandToken = token,
+    invitationId: string | null = selectedInvitationId,
+  ) => {
     if (previewInFlight.current || responseInFlight.current || responseFailure) return;
     const generationAtStart = ++tokenGeneration.current;
     previewInFlight.current = true;
     setPreviewError(false);
+    setPreview(null);
+    setReceipt(null);
+    setSelectedInvitationId(invitationId);
     setResponseFailure(null);
     try {
-      const result = await previewOrganizationInvitation({ data: { token: commandToken } });
+      const result = await previewOrganizationInvitation({
+        data: invitationId ? { invitationId } : { token: commandToken },
+      });
       if (generationAtStart === tokenGeneration.current) setPreview(result);
     } catch {
       if (generationAtStart === tokenGeneration.current) {
@@ -122,16 +135,39 @@ export function InvitationResponse({
     clear(initialInvitationToken);
     void inspect(initialInvitationToken);
   }, [initialInvitationToken]);
-  const respond = async (choice: "accept" | "decline", commandToken = token) => {
+  const respond = async (
+    choice: "accept" | "decline",
+    commandToken = token,
+    retryAcknowledgement?: { accepted: true; digest: string; version: string },
+    invitationId: string | null = selectedInvitationId,
+  ) => {
     if (responseInFlight.current || previewInFlight.current) return;
     const generationAtStart = ++tokenGeneration.current;
     responseInFlight.current = true;
     setResponseFailure(null);
+    const acknowledgement =
+      retryAcknowledgement ??
+      (preview?.status === "ready" &&
+      preview.preview.kind === "athlete" &&
+      preview.preview.agreement
+        ? {
+            version: preview.preview.agreement.version,
+            digest: preview.preview.agreement.digest,
+            accepted: true as const,
+          }
+        : undefined);
     try {
       const result =
         choice === "accept"
-          ? await acceptOrganizationInvitation({ data: { token: commandToken } })
-          : await declineOrganizationInvitation({ data: { token: commandToken } });
+          ? await acceptOrganizationInvitation({
+              data: {
+                ...(invitationId ? { invitationId } : { token: commandToken }),
+                ...(acknowledgement ? { acknowledgement } : {}),
+              },
+            })
+          : await declineOrganizationInvitation({
+              data: invitationId ? { invitationId } : { token: commandToken },
+            });
       if (generationAtStart !== tokenGeneration.current) return;
       if (result.status === "accepted" || result.status === "declined") {
         setReceipt(result.status);
@@ -141,7 +177,12 @@ export function InvitationResponse({
     } catch {
       if (generationAtStart === tokenGeneration.current) {
         setPreview(null);
-        setResponseFailure({ choice, token: commandToken });
+        setResponseFailure({
+          choice,
+          token: commandToken,
+          invitationId,
+          ...(acknowledgement ? { acknowledgement } : {}),
+        });
       }
     } finally {
       if (generationAtStart === tokenGeneration.current) responseInFlight.current = false;
@@ -151,6 +192,12 @@ export function InvitationResponse({
   return (
     <section className="space-y-4">
       <h1 className="text-2xl font-semibold">Organization invitations</h1>
+      {!initialInvitationToken && (
+        <p className="text-sm text-muted-foreground">
+          Review a pending invitation below. Invitations sent to your verified email are available
+          here even if you created your account or verified your email in another tab.
+        </p>
+      )}
       {inbox.status === "loading" && <p role="status">Loading invitation summaries…</p>}
       {inbox.status === "error" && (
         <div role="alert" className="space-y-2">
@@ -177,6 +224,16 @@ export function InvitationResponse({
                 <li key={item.invitationId}>
                   {item.kind} invitation · {item.status} ·{" "}
                   {item.requestedRole ?? "no role requested"} · expires {String(item.expiresAt)}
+                  {item.status === "pending" && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={Boolean(responseFailure)}
+                      onClick={() => void inspect("", item.invitationId)}
+                    >
+                      Review invitation
+                    </Button>
+                  )}
                 </li>
               ))}
             </ul>
@@ -225,9 +282,30 @@ export function InvitationResponse({
           <p>
             {preview.preview.organizationName} · {preview.preview.kind}
           </p>
-          <Button type="button" onClick={() => void respond("accept")}>
-            Accept invitation
-          </Button>
+          {preview.preview.kind === "athlete" ? (
+            <div className="space-y-3">
+              <h2 className="font-medium">Coaching data-sharing agreement</h2>
+              <p className="text-sm text-muted-foreground">
+                {preview.preview.agreement?.terms ?? "The current agreement could not be loaded."}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                This acceptance records agreement version{" "}
+                {preview.preview.agreement?.version ?? "unknown"} for all six read scopes:{" "}
+                {preview.preview.agreement?.scopes.join(", ") ?? ""}.
+              </p>
+              <Button
+                type="button"
+                disabled={!preview.preview.agreement}
+                onClick={() => void respond("accept")}
+              >
+                Accept invitation &amp; share training data
+              </Button>
+            </div>
+          ) : (
+            <Button type="button" onClick={() => void respond("accept")}>
+              Accept invitation
+            </Button>
+          )}
           <Button type="button" variant="outline" onClick={() => void respond("decline")}>
             Decline invitation
           </Button>
@@ -242,7 +320,14 @@ export function InvitationResponse({
           </p>
           <Button
             type="button"
-            onClick={() => void respond(responseFailure.choice, responseFailure.token)}
+            onClick={() =>
+              void respond(
+                responseFailure.choice,
+                responseFailure.token,
+                responseFailure.acknowledgement,
+                responseFailure.invitationId,
+              )
+            }
           >
             Retry {responseFailure.choice} invitation to reconcile
           </Button>

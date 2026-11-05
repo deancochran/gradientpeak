@@ -146,7 +146,9 @@ test("anonymous athlete completes login and onboarding before explicitly accepti
     username: `invite_${e2eIdentity.suffix("recipient", 16)}`,
   });
   await expect(page).toHaveURL(/\/organization-invitations$/);
-  await expect(page.getByRole("button", { name: "Accept invitation", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Accept invitation & share training data", exact: true }),
+  ).toBeVisible();
   await withLocalE2EDatabase(async ({ db }) => {
     const [row] = await db
       .select({ status: organizationInvitations.status })
@@ -154,7 +156,9 @@ test("anonymous athlete completes login and onboarding before explicitly accepti
       .where(eq(organizationInvitations.id, invitationId));
     expect(row?.status).toBe("pending");
   });
-  await page.getByRole("button", { name: "Accept invitation", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Accept invitation & share training data", exact: true })
+    .click();
   await expect(page.getByRole("status").filter({ hasText: "Invitation accepted." })).toBeVisible();
   await withLocalE2EDatabase(async ({ db }) => {
     const [row] = await db

@@ -19,7 +19,7 @@ const loginServerActionSchema = loginFormSchema.extend({
   redirect: z.string().optional(),
 });
 
-const signUpServerActionSchema = signUpFormSchema;
+const signUpServerActionSchema = signUpFormSchema.extend({ redirect: z.string().optional() });
 const forgotPasswordServerActionSchema = forgotPasswordFormSchema;
 const updatePasswordServerActionSchema = updatePasswordFormSchema.extend({
   token: z.string().min(1, "Missing or invalid reset token"),
@@ -27,6 +27,7 @@ const updatePasswordServerActionSchema = updatePasswordFormSchema.extend({
 const verifyEmailServerActionSchema = z.object({
   email: z.email("Enter a valid email address"),
   source: z.string().optional(),
+  redirect: z.string().optional(),
 });
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -92,10 +93,13 @@ function normalizeVerifyEmailServerActionInput(data: unknown) {
   };
 }
 
-function getEmailVerificationCallbackUrl() {
-  return toAbsoluteAppUrl(
+function getEmailVerificationCallbackUrl(redirectTo?: string) {
+  const callback = new URL(
     "/auth/confirm?target=web&intent=email-verification&fallback=/auth/verification-success",
+    toAbsoluteAppUrl("/"),
   );
+  if (redirectTo) callback.searchParams.set("next", getSafeAppRedirectTarget(redirectTo, "/"));
+  return callback.toString();
 }
 
 function buildLoginRedirectHref(
@@ -185,7 +189,7 @@ export const signUpWithEmailAction = createServerFn({ method: "POST" })
           email: data.email,
           password: data.password,
           name: data.email.split("@")[0] || data.email,
-          callbackURL: getEmailVerificationCallbackUrl(),
+          callbackURL: getEmailVerificationCallbackUrl(data.redirect),
         },
       });
     } catch (error) {
@@ -202,7 +206,7 @@ export const signUpWithEmailAction = createServerFn({ method: "POST" })
     }
 
     throw redirect({
-      href: `/auth/sign-up-success?email=${encodeURIComponent(data.email)}`,
+      href: `/auth/sign-up-success?email=${encodeURIComponent(data.email)}${data.redirect ? `&redirect=${encodeURIComponent(getSafeAppRedirectTarget(data.redirect, "/"))}` : ""}`,
       statusCode: 303,
     });
   });
@@ -276,7 +280,7 @@ export const sendVerificationEmailAction = createServerFn({ method: "POST" })
       await auth.api.sendVerificationEmail({
         body: {
           email: data.email,
-          callbackURL: getEmailVerificationCallbackUrl(),
+          callbackURL: getEmailVerificationCallbackUrl(data.redirect),
         },
       });
     } catch {

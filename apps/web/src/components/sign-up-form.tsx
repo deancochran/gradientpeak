@@ -11,7 +11,11 @@ import { signUpWithEmailAction } from "../lib/auth/server-actions";
 import { contractEpochFormInputProps } from "../lib/contract-epoch";
 import { AuthCardShell } from "./auth-card-shell";
 
-export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutRef<"div">) {
+export function SignUpForm({
+  className,
+  redirectTo,
+  ...props
+}: React.ComponentPropsWithoutRef<"div"> & { redirectTo?: string }) {
   const signUp = useServerFn(signUpWithEmailAction);
   const form = useForm<SignUpFormValues>({
     resolver: zodResolver(signUpFormSchema),
@@ -26,7 +30,7 @@ export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutR
     form.clearErrors();
 
     try {
-      await signUp({ data: values });
+      await signUp({ data: { ...values, ...(redirectTo ? { redirect: redirectTo } : {}) } });
     } catch (error: unknown) {
       const formError = getSignUpFormError(error);
 
@@ -45,6 +49,7 @@ export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutR
         <Form {...form}>
           <form action={signUpWithEmailAction.url} method="post" onSubmit={handleSignUp}>
             <input {...contractEpochFormInputProps} />
+            <input type="hidden" name="redirect" value={redirectTo ?? ""} />
             <div className="flex flex-col gap-6">
               <FormTextField
                 autoComplete="email"
@@ -97,7 +102,7 @@ export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutR
               Already have an account?{" "}
               <Link
                 to="/auth/login"
-                search={{ flash: undefined, flashType: undefined, redirect: undefined }}
+                search={{ flash: undefined, flashType: undefined, redirect: redirectTo }}
                 className="underline underline-offset-4"
               >
                 Login

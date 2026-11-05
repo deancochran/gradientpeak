@@ -42,6 +42,7 @@ export const Route = createFileRoute("/_protected")({
           flash: undefined,
           flashType: undefined,
           source: undefined,
+          redirect: location.href,
         },
       });
     }

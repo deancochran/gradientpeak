@@ -1,4 +1,6 @@
 import {
+  athleteConsentPolicyVersions,
+  athleteDataSharingConsents,
   coachingEngagements,
   organizationAuditEvents,
   organizationInvitations,
@@ -320,6 +322,23 @@ export function createOrganizationManagementRepository(db: DrizzleQueryExecutor)
           .where(eq(organizationInvitations.token_digest, digest))
           .limit(1)
       )[0] ?? null,
+    findInvitationById: async (invitationId: string) =>
+      (
+        await db
+          .select({ organizationId: organizationInvitations.organization_id })
+          .from(organizationInvitations)
+          .where(eq(organizationInvitations.id, invitationId))
+          .limit(1)
+      )[0] ?? null,
+    lockInvitationByIdForRecipient: async (invitationId: string) =>
+      (
+        await db
+          .select()
+          .from(organizationInvitations)
+          .where(eq(organizationInvitations.id, invitationId))
+          .for("update")
+          .limit(1)
+      )[0] ?? null,
     recipient: async (profileId: string) =>
       (
         await db
@@ -372,7 +391,97 @@ export function createOrganizationManagementRepository(db: DrizzleQueryExecutor)
           organization_id: organizationId,
           athlete_profile_id: profileId,
         })
+        .onConflictDoNothing()
+        .returning({ id: coachingEngagements.id }),
+    lockCurrentEngagement: async (organizationId: string, profileId: string) =>
+      (
+        await db
+          .select({ id: coachingEngagements.id })
+          .from(coachingEngagements)
+          .where(
+            and(
+              eq(coachingEngagements.organization_id, organizationId),
+              eq(coachingEngagements.athlete_profile_id, profileId),
+              isNull(coachingEngagements.ended_at),
+            ),
+          )
+          .for("update")
+          .limit(1)
+      )[0] ?? null,
+    materializeConsentPolicy: async (policy: {
+      id: string;
+      scope: "basic_profile" | "training" | "activities" | "metrics" | "goals" | "calendar";
+      effectiveFrom: Date;
+      jurisdiction: string;
+      terms: string;
+      digest: string;
+    }) => {
+      await db
+        .insert(athleteConsentPolicyVersions)
+        .values({
+          id: policy.id,
+          scope_key: policy.scope,
+          effective_from: policy.effectiveFrom,
+          jurisdiction: policy.jurisdiction,
+          terms_text: policy.terms,
+          content_digest: policy.digest,
+        })
+        .onConflictDoNothing();
+      return (
+        (
+          await db
+            .select({
+              id: athleteConsentPolicyVersions.id,
+              scope: athleteConsentPolicyVersions.scope_key,
+              effectiveFrom: athleteConsentPolicyVersions.effective_from,
+              jurisdiction: athleteConsentPolicyVersions.jurisdiction,
+              terms: athleteConsentPolicyVersions.terms_text,
+              digest: athleteConsentPolicyVersions.content_digest,
+            })
+            .from(athleteConsentPolicyVersions)
+            .where(eq(athleteConsentPolicyVersions.id, policy.id))
+            .for("update")
+            .limit(1)
+        )[0] ?? null
+      );
+    },
+    grantReadConsent: (input: {
+      organizationId: string;
+      engagementId: string;
+      athleteProfileId: string;
+      scope: "basic_profile" | "training" | "activities" | "metrics" | "goals" | "calendar";
+      policyVersionId: string;
+    }) =>
+      db
+        .insert(athleteDataSharingConsents)
+        .values({
+          organization_id: input.organizationId,
+          engagement_id: input.engagementId,
+          athlete_profile_id: input.athleteProfileId,
+          scope_key: input.scope,
+          policy_version_id: input.policyVersionId,
+          granted_by_profile_id: input.athleteProfileId,
+        })
         .onConflictDoNothing(),
+    recordRecipientAcceptance: (input: {
+      organizationId: string;
+      invitationId: string;
+      profileId: string;
+      agreementVersion: string;
+      agreementDigest: string;
+    }) =>
+      db.insert(organizationAuditEvents).values({
+        organization_id: input.organizationId,
+        actor_profile_id: input.profileId,
+        action: "organization_invitation.accepted_with_read_consent",
+        resource_type: "organization_invitation",
+        resource_id: input.invitationId,
+        details: {
+          agreementVersion: input.agreementVersion,
+          agreementDigest: input.agreementDigest,
+          scopes: ["basic_profile", "training", "activities", "metrics", "goals", "calendar"],
+        },
+      }),
     revoke: (organizationId: string, id: string, actorMembershipId: string) =>
       db
         .update(organizationInvitations)

@@ -127,7 +127,13 @@ export async function redirectAuthenticatedUser(serverContext?: {
   if (initialDestination === "verify") {
     throw redirect({
       to: "/auth/verify",
-      search: { email: undefined, flash: undefined, flashType: undefined, source: undefined },
+      search: {
+        email: undefined,
+        flash: undefined,
+        flashType: undefined,
+        source: undefined,
+        redirect: undefined,
+      },
     });
   }
   if (!session?.user) return;

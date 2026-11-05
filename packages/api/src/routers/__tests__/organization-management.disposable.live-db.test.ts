@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createDbClient, type DrizzleDbClient } from "@repo/db/client";
 import {
+  athleteConsentPolicyVersions,
   athleteDataSharingConsents,
   coachingEngagements,
   organizationAuditEvents,
@@ -41,6 +42,31 @@ function caller(db: DrizzleDbClient, userId: string) {
   } as never);
 }
 
+async function acceptAthleteInvitation(invitationCaller: ReturnType<typeof caller>, token: string) {
+  const preview = await invitationCaller.invitations.preview({ token });
+  if (preview.kind !== "athlete" || !preview.agreement)
+    throw new Error("expected athlete invitation with a reviewable agreement");
+  return invitationCaller.invitations.accept({
+    token,
+    acknowledgement: {
+      version: preview.agreement.version,
+      digest: preview.agreement.digest,
+      accepted: true,
+    },
+  });
+}
+
+async function athleteAcknowledgement(invitationCaller: ReturnType<typeof caller>, token: string) {
+  const preview = await invitationCaller.invitations.preview({ token });
+  if (preview.kind !== "athlete" || !preview.agreement)
+    throw new Error("expected athlete invitation with a reviewable agreement");
+  return {
+    version: preview.agreement.version,
+    digest: preview.agreement.digest,
+    accepted: true as const,
+  };
+}
+
 async function person(db: DrizzleDbClient, label: string, verified = true) {
   const id = randomUUID();
   const email = `${label}-${id}@organization-management.test`;
@@ -73,6 +99,82 @@ async function waitForDatabaseLock(predicate: () => Promise<boolean>, attempts =
 }
 
 describe("organization management against a disposable migrated PostgreSQL database", () => {
+  it("rolls back every acceptance effect when the final immutable policy conflicts", async () => {
+    await withDisposableDatabase(
+      ["--disposable", "--local"],
+      "invitation_policy_conflict",
+      async (pool, url) => {
+        await bootstrapSupabaseSchemas(pool);
+        for (const path of requireFreshBaseline().migrationPaths) await applySqlFile(pool, path);
+        const client = createDbClient({ url });
+        try {
+          const owner = await person(client.db, "policy-owner");
+          const athlete = await person(client.db, "policy-athlete");
+          const ownerCaller = caller(client.db, owner.id);
+          const recipient = caller(client.db, athlete.id);
+          const organizationId = randomUUID();
+          await ownerCaller.create({
+            organizationId,
+            name: "Atomic consent",
+            slug: `atomic-${organizationId}`,
+            timezone: "UTC",
+          });
+          const invite = await ownerCaller.invitations.create({
+            organizationId,
+            kind: "athlete",
+            requestedRole: null,
+            recipientProfileId: athlete.id,
+            recipientEmail: null,
+            expiresAt: new Date(Date.now() + 60000),
+          });
+          const acknowledgement = await athleteAcknowledgement(recipient, invite.token);
+          // Insert immutable conflicting content before acceptance, never update or disable its guard.
+          const conflictId = "90a36147-502a-4df1-8f9f-e67d43e27006";
+          await client.db.insert(athleteConsentPolicyVersions).values({
+            id: conflictId,
+            scope_key: "calendar",
+            jurisdiction: "US",
+            effective_from: new Date("2026-11-04T00:00:00.000Z"),
+            terms_text: "Conflicting fixture policy",
+            content_digest: "conflicting-fixture-digest",
+          });
+          await expect(
+            recipient.invitations.acceptById({
+              invitationId: invite.invitationId,
+              acknowledgement,
+            }),
+          ).rejects.toMatchObject({ code: "CONFLICT" });
+          expect(
+            await client.db.select({ id: coachingEngagements.id }).from(coachingEngagements),
+          ).toEqual([]);
+          expect(
+            await client.db
+              .select({ id: athleteDataSharingConsents.id })
+              .from(athleteDataSharingConsents),
+          ).toEqual([]);
+          expect(
+            await client.db
+              .select({ id: athleteConsentPolicyVersions.id })
+              .from(athleteConsentPolicyVersions),
+          ).toEqual([{ id: conflictId }]);
+          expect(
+            await client.db
+              .select({ status: organizationInvitations.status })
+              .from(organizationInvitations)
+              .where(eq(organizationInvitations.id, invite.invitationId)),
+          ).toEqual([{ status: "pending" }]);
+          expect(
+            await client.db
+              .select({ id: organizationAuditEvents.id })
+              .from(organizationAuditEvents)
+              .where(eq(organizationAuditEvents.resource_id, invite.invitationId)),
+          ).toEqual([]);
+        } finally {
+          await client.close();
+        }
+      },
+    );
+  });
   it("commits setup/invitation lifecycles atomically and rejects cross-tenant or invalid acceptance", async () => {
     await withDisposableDatabase(
       ["--disposable", "--local"],
@@ -184,6 +286,10 @@ describe("organization management against a disposable migrated PostgreSQL datab
             recipientEmail: canonicalRaceRecipient.email,
             expiresAt: new Date(Date.now() + 60_000),
           });
+          const canonicalAcknowledgement = await athleteAcknowledgement(
+            caller(client.db, canonicalRaceRecipient.id),
+            canonicalRace.token,
+          );
           const identityPool = new Pool({ connectionString: url, max: 1 });
           const activityPool = new Pool({ connectionString: url, max: 1 });
           const identityConnection = await identityPool.connect();
@@ -194,6 +300,7 @@ describe("organization management against a disposable migrated PostgreSQL datab
             ]);
             const acceptance = caller(client.db, canonicalRaceRecipient.id).invitations.accept({
               token: canonicalRace.token,
+              acknowledgement: canonicalAcknowledgement,
             });
             await waitForDatabaseLock(async () => {
               const result = await activityPool.query<{ waiting: boolean }>(
@@ -377,8 +484,15 @@ describe("organization management against a disposable migrated PostgreSQL datab
             recipientEmail: null,
             expiresAt: new Date(Date.now() + 60_000),
           });
-          await recipientCaller.invitations.accept({ token: athlete.token });
-          await recipientCaller.invitations.accept({ token: athlete.token });
+          const athleteAck = await athleteAcknowledgement(recipientCaller, athlete.token);
+          await recipientCaller.invitations.accept({
+            token: athlete.token,
+            acknowledgement: athleteAck,
+          });
+          await recipientCaller.invitations.accept({
+            token: athlete.token,
+            acknowledgement: athleteAck,
+          });
           const engagements = await client.db
             .select()
             .from(coachingEngagements)
@@ -395,7 +509,14 @@ describe("organization management against a disposable migrated PostgreSQL datab
             .select()
             .from(athleteDataSharingConsents)
             .where(eq(athleteDataSharingConsents.engagement_id, engagement.id));
-          expect(consents).toHaveLength(0);
+          expect(consents.map((consent) => consent.scope_key).sort()).toEqual([
+            "activities",
+            "basic_profile",
+            "calendar",
+            "goals",
+            "metrics",
+            "training",
+          ]);
 
           const revoked = await ownerCaller.invitations.create({
             organizationId,
@@ -545,6 +666,211 @@ describe("organization management against a disposable migrated PostgreSQL datab
               .select({ id: organizations.id })
               .from(organizations)
               .where(eq(organizations.id, rollbackOrganizationId)),
+          ).resolves.toHaveLength(0);
+        } finally {
+          await client.close();
+        }
+      },
+    );
+  }, 90_000);
+
+  it("requires exact athlete consent acknowledgement and atomically grants all read scopes", async () => {
+    await withDisposableDatabase(
+      ["--disposable", "--local"],
+      "invitation_consent",
+      async (pool, url) => {
+        await bootstrapSupabaseSchemas(pool);
+        for (const migration of requireFreshBaseline().migrationPaths)
+          await applySqlFile(pool, migration);
+        const client = createDbClient({ url });
+        try {
+          const owner = await person(client.db, "consent-owner");
+          const athlete = await person(client.db, "consent-athlete");
+          const declined = await person(client.db, "consent-declined");
+          const other = await person(client.db, "consent-other");
+          const unverified = await person(client.db, "consent-unverified", false);
+          const organizationId = randomUUID();
+          const ownerCaller = caller(client.db, owner.id);
+          await ownerCaller.create({
+            organizationId,
+            name: "Consent",
+            slug: `consent-${organizationId}`,
+            timezone: "UTC",
+          });
+          const createAthleteInvite = (recipientProfileId: string) =>
+            ownerCaller.invitations.create({
+              organizationId,
+              kind: "athlete",
+              requestedRole: null,
+              recipientProfileId,
+              recipientEmail: null,
+              expiresAt: new Date(Date.now() + 60_000),
+            });
+          const invitation = await createAthleteInvite(athlete.id);
+          const athleteCaller = caller(client.db, athlete.id);
+          const preview = await athleteCaller.invitations.preview({ token: invitation.token });
+          expect(preview.agreement?.scopes).toEqual([
+            "basic_profile",
+            "training",
+            "activities",
+            "metrics",
+            "goals",
+            "calendar",
+          ]);
+          await expect(
+            caller(client.db, other.id).invitations.previewById({
+              invitationId: invitation.invitationId,
+            }),
+          ).rejects.toMatchObject({ code: "FORBIDDEN" });
+          await expect(
+            caller(client.db, unverified.id).invitations.previewById({
+              invitationId: invitation.invitationId,
+            }),
+          ).rejects.toMatchObject({ code: "FORBIDDEN" });
+          await expect(
+            athleteCaller.invitations.previewById({ invitationId: randomUUID() }),
+          ).rejects.toMatchObject({ code: "FORBIDDEN" });
+          for (const attempt of [
+            { actor: other.id, invitationId: invitation.invitationId },
+            { actor: unverified.id, invitationId: invitation.invitationId },
+            { actor: athlete.id, invitationId: randomUUID() },
+          ]) {
+            await expect(
+              caller(client.db, attempt.actor).invitations.acceptById({
+                invitationId: attempt.invitationId,
+              }),
+            ).rejects.toMatchObject({ code: "FORBIDDEN" });
+            await expect(
+              caller(client.db, attempt.actor).invitations.declineById({
+                invitationId: attempt.invitationId,
+              }),
+            ).rejects.toMatchObject({ code: "FORBIDDEN" });
+          }
+          for (const acknowledgement of [
+            undefined,
+            {
+              version: "stale-v0",
+              digest: preview.agreement?.digest ?? "",
+              accepted: true as const,
+            },
+            {
+              version: preview.agreement?.version ?? "",
+              digest: `sha256:${"0".repeat(64)}`,
+              accepted: true as const,
+            },
+          ])
+            await expect(
+              athleteCaller.invitations.accept({
+                token: invitation.token,
+                ...(acknowledgement ? { acknowledgement } : {}),
+              }),
+            ).rejects.toMatchObject({ code: "CONFLICT" });
+          await expect(client.db.select().from(coachingEngagements)).resolves.toHaveLength(0);
+          await expect(client.db.select().from(athleteDataSharingConsents)).resolves.toHaveLength(
+            0,
+          );
+
+          const acknowledgement = await athleteAcknowledgement(athleteCaller, invitation.token);
+          await athleteCaller.invitations.acceptById({
+            invitationId: invitation.invitationId,
+            acknowledgement,
+          });
+          const [engagement] = await client.db.select().from(coachingEngagements);
+          if (!engagement) throw new Error("expected accepted engagement");
+          await expect(
+            client.db
+              .select({ scope: athleteDataSharingConsents.scope_key })
+              .from(athleteDataSharingConsents)
+              .where(eq(athleteDataSharingConsents.engagement_id, engagement.id)),
+          ).resolves.toEqual([
+            { scope: "basic_profile" },
+            { scope: "training" },
+            { scope: "activities" },
+            { scope: "metrics" },
+            { scope: "goals" },
+            { scope: "calendar" },
+          ]);
+          await expect(
+            client.db
+              .select({ details: organizationAuditEvents.details })
+              .from(organizationAuditEvents)
+              .where(eq(organizationAuditEvents.resource_id, invitation.invitationId)),
+          ).resolves.toEqual([
+            expect.objectContaining({
+              details: expect.objectContaining({ agreementVersion: acknowledgement.version }),
+            }),
+          ]);
+          await client.db.update(athleteDataSharingConsents).set({ ended_at: new Date() });
+          await athleteCaller.invitations.acceptById({
+            invitationId: invitation.invitationId,
+            acknowledgement,
+          });
+          await expect(
+            client.db
+              .select()
+              .from(athleteDataSharingConsents)
+              .where(sql`${athleteDataSharingConsents.ended_at} is null`),
+          ).resolves.toHaveLength(0);
+
+          const emailRecipient = await person(client.db, "consent-email-recipient");
+          await client.db
+            .update(coachingEngagements)
+            .set({ ended_at: new Date() })
+            .where(eq(coachingEngagements.id, engagement.id));
+          const reinvite = await ownerCaller.invitations.create({
+            organizationId,
+            kind: "athlete",
+            requestedRole: null,
+            recipientProfileId: athlete.id,
+            recipientEmail: null,
+            expiresAt: new Date(Date.now() + 60000),
+          });
+          await acceptAthleteInvitation(athleteCaller, reinvite.token);
+          const history = await client.db
+            .select({ id: coachingEngagements.id, endedAt: coachingEngagements.ended_at })
+            .from(coachingEngagements)
+            .where(
+              and(
+                eq(coachingEngagements.organization_id, organizationId),
+                eq(coachingEngagements.athlete_profile_id, athlete.id),
+              ),
+            );
+          expect(history).toHaveLength(2);
+          expect(history.find((row) => row.id === engagement.id)?.endedAt).toBeInstanceOf(Date);
+          expect(history.filter((row) => row.endedAt === null)).toHaveLength(1);
+          expect(
+            await client.db
+              .select({ id: athleteDataSharingConsents.id })
+              .from(athleteDataSharingConsents)
+              .where(
+                and(
+                  eq(athleteDataSharingConsents.engagement_id, engagement.id),
+                  sql`${athleteDataSharingConsents.ended_at} is null`,
+                ),
+              ),
+          ).toEqual([]);
+          const emailInvite = await ownerCaller.invitations.create({
+            organizationId,
+            kind: "athlete",
+            requestedRole: null,
+            recipientProfileId: null,
+            recipientEmail: emailRecipient.email.toUpperCase(),
+            expiresAt: new Date(Date.now() + 60_000),
+          });
+          const emailCaller = caller(client.db, emailRecipient.id);
+          const emailPreview = await emailCaller.invitations.previewById({
+            invitationId: emailInvite.invitationId,
+          });
+          if (!emailPreview.agreement) throw new Error("expected email-recipient agreement");
+          await emailCaller.invitations.declineById({ invitationId: emailInvite.invitationId });
+
+          const declinedInvite = await createAthleteInvite(declined.id);
+          await caller(client.db, declined.id).invitations.decline({ token: declinedInvite.token });
+          await expect(
+            client.db
+              .select()
+              .from(coachingEngagements)
+              .where(eq(coachingEngagements.athlete_profile_id, declined.id)),
           ).resolves.toHaveLength(0);
         } finally {
           await client.close();
@@ -790,7 +1116,7 @@ describe("organization management against a disposable migrated PostgreSQL datab
             expiresAt: new Date(Date.now() + 60_000),
           });
           const results = await Promise.allSettled([
-            recipientCaller.invitations.accept({ token: raced.token }),
+            acceptAthleteInvitation(recipientCaller, raced.token),
             recipientCaller.invitations.decline({ token: raced.token }),
           ]);
           expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);

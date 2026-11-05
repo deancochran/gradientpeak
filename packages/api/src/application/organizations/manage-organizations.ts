@@ -104,6 +104,48 @@ export class OrganizationManagementError extends Error {
   }
 }
 const tokenDigest = (token: string) => createHash("sha256").update(token).digest("hex");
+export type InvitationReference = { token: string } | { invitationId: string };
+
+const athleteReadScopes = [
+  "basic_profile",
+  "training",
+  "activities",
+  "metrics",
+  "goals",
+  "calendar",
+] as const;
+type AthleteReadScope = (typeof athleteReadScopes)[number];
+
+// These source-owned records are deliberately immutable. They are materialized
+// only by the athlete's explicit acceptance transaction, then re-read and
+// compared byte-for-byte so a pre-existing/tampered row fails closed.
+export const COACHING_READ_AGREEMENT = {
+  version: "coaching-read-v1",
+  jurisdiction: "US",
+  effectiveFrom: new Date("2026-11-04T00:00:00.000Z"),
+  terms:
+    "By accepting this athlete invitation, you agree that this organization may let its assigned coaches read your basic profile, training, activities, metrics, goals, and calendar. This grants read-only sharing for those six categories only. It does not grant coaches permission to write data or change your training.",
+} as const;
+const coachingReadAgreementDigest = `sha256:${createHash("sha256")
+  .update(COACHING_READ_AGREEMENT.terms)
+  .digest("hex")}`;
+const policyIds: Record<AthleteReadScope, string> = {
+  basic_profile: "90a36147-502a-4df1-8f9f-e67d43e27001",
+  training: "90a36147-502a-4df1-8f9f-e67d43e27002",
+  activities: "90a36147-502a-4df1-8f9f-e67d43e27003",
+  metrics: "90a36147-502a-4df1-8f9f-e67d43e27004",
+  goals: "90a36147-502a-4df1-8f9f-e67d43e27005",
+  calendar: "90a36147-502a-4df1-8f9f-e67d43e27006",
+};
+
+export function coachingReadAgreementPreview() {
+  return {
+    version: COACHING_READ_AGREEMENT.version,
+    digest: coachingReadAgreementDigest,
+    terms: COACHING_READ_AGREEMENT.terms,
+    scopes: [...athleteReadScopes],
+  };
+}
 
 /** Token-bound recipient failures deliberately collapse to one public error. */
 function unavailableInvitation(): never {
@@ -112,16 +154,21 @@ function unavailableInvitation(): never {
 
 async function lockRecipientInvitation(
   repo: OrganizationManagementRepository,
-  token: string,
+  reference: InvitationReference,
   actorProfileId: string,
 ) {
-  const digest = tokenDigest(token);
-  const candidate = await repo.findInvitation(digest);
+  const candidate =
+    "token" in reference
+      ? await repo.findInvitation(tokenDigest(reference.token))
+      : await repo.findInvitationById(reference.invitationId);
   if (!candidate) return unavailableInvitation();
   // Keep the organization-first ordering used by acceptance so accept/decline
   // transitions serialize before the invitation is re-read and locked.
   const organization = await repo.lockOrganization(candidate.organizationId);
-  const invitation = await repo.lockInvitation(digest);
+  const invitation =
+    "token" in reference
+      ? await repo.lockInvitation(tokenDigest(reference.token))
+      : await repo.lockInvitationByIdForRecipient(reference.invitationId);
   const recipient = await repo.recipient(actorProfileId);
   if (!organization || !invitation || !recipient?.verified) return unavailableInvitation();
   const matches =
@@ -267,22 +314,36 @@ export async function createOrganizationInvitation(input: {
   };
 }
 
-export async function acceptOrganizationInvitation(input: {
-  db: DrizzleDbClient;
-  actorProfileId: string;
-  token: string;
-}) {
+export async function acceptOrganizationInvitation(
+  input: {
+    db: DrizzleDbClient;
+    actorProfileId: string;
+    acknowledgement?: { version: string; digest: string; accepted: boolean };
+  } & InvitationReference,
+) {
   // Read committed is deliberate: the canonical identity row is locked after
   // the organization lock, and must be observed at its newest committed value.
   return input.db.transaction(async (tx) => {
     const repo = createOrganizationManagementRepository(tx);
-    const candidate = await repo.findInvitation(tokenDigest(input.token));
-    if (!candidate) throw new OrganizationManagementError("not_found");
+    const candidate =
+      "token" in input
+        ? await repo.findInvitation(tokenDigest(input.token))
+        : await repo.findInvitationById(input.invitationId);
+    if (!candidate) {
+      if ("invitationId" in input) return unavailableInvitation();
+      throw new OrganizationManagementError("not_found");
+    }
     // Organization-first locking matches revoke/create writers; invitation is
     // re-read under lock below before any state transition is accepted.
     const organization = await repo.lockOrganization(candidate.organizationId);
-    const invitation = await repo.lockInvitation(tokenDigest(input.token));
-    if (!invitation) throw new OrganizationManagementError("not_found");
+    const invitation =
+      "token" in input
+        ? await repo.lockInvitation(tokenDigest(input.token))
+        : await repo.lockInvitationByIdForRecipient(input.invitationId);
+    if (!invitation) {
+      if ("invitationId" in input) return unavailableInvitation();
+      throw new OrganizationManagementError("not_found");
+    }
     const recipient = await repo.recipient(input.actorProfileId);
     const matches =
       invitation.invited_profile_id === input.actorProfileId ||
@@ -334,7 +395,57 @@ export async function acceptOrganizationInvitation(input: {
         membershipId,
         invitation.requested_role_key as OrganizationRoleKey,
       );
-    } else await repo.createEngagement(invitation.organization_id, input.actorProfileId);
+    } else {
+      const acknowledgement = input.acknowledgement;
+      if (
+        !acknowledgement?.accepted ||
+        acknowledgement.version !== COACHING_READ_AGREEMENT.version ||
+        acknowledgement.digest !== coachingReadAgreementDigest
+      )
+        throw new OrganizationManagementError("conflict");
+
+      const created = await repo.createEngagement(invitation.organization_id, input.actorProfileId);
+      const engagement =
+        created[0] ??
+        (await repo.lockCurrentEngagement(invitation.organization_id, input.actorProfileId));
+      if (!engagement) throw new OrganizationManagementError("conflict");
+
+      for (const scope of athleteReadScopes) {
+        const expected = {
+          id: policyIds[scope],
+          scope,
+          effectiveFrom: COACHING_READ_AGREEMENT.effectiveFrom,
+          jurisdiction: COACHING_READ_AGREEMENT.jurisdiction,
+          terms: COACHING_READ_AGREEMENT.terms,
+          digest: coachingReadAgreementDigest,
+        };
+        const policy = await repo.materializeConsentPolicy(expected);
+        if (
+          !policy ||
+          policy.id !== expected.id ||
+          policy.scope !== expected.scope ||
+          policy.effectiveFrom.getTime() !== expected.effectiveFrom.getTime() ||
+          policy.jurisdiction !== expected.jurisdiction ||
+          policy.terms !== expected.terms ||
+          policy.digest !== expected.digest
+        )
+          throw new OrganizationManagementError("conflict");
+        await repo.grantReadConsent({
+          organizationId: invitation.organization_id,
+          engagementId: engagement.id,
+          athleteProfileId: input.actorProfileId,
+          scope,
+          policyVersionId: policy.id,
+        });
+      }
+      await repo.recordRecipientAcceptance({
+        organizationId: invitation.organization_id,
+        invitationId: invitation.id,
+        profileId: input.actorProfileId,
+        agreementVersion: acknowledgement.version,
+        agreementDigest: acknowledgement.digest,
+      });
+    }
     await repo.accept(invitation.id, input.actorProfileId);
     return {
       invitationId: invitation.id,
@@ -344,16 +455,17 @@ export async function acceptOrganizationInvitation(input: {
   });
 }
 
-export async function previewOrganizationInvitation(input: {
-  db: DrizzleDbClient;
-  actorProfileId: string;
-  token: string;
-}) {
+export async function previewOrganizationInvitation(
+  input: {
+    db: DrizzleDbClient;
+    actorProfileId: string;
+  } & InvitationReference,
+) {
   return input.db.transaction(async (tx) => {
     const repo = createOrganizationManagementRepository(tx);
     const { organization, invitation } = await lockRecipientInvitation(
       repo,
-      input.token,
+      "token" in input ? { token: input.token } : { invitationId: input.invitationId },
       input.actorProfileId,
     );
     if (
@@ -369,20 +481,24 @@ export async function previewOrganizationInvitation(input: {
       kind: invitation.invitation_kind,
       requestedRole: invitation.requested_role_key,
       expiresAt: invitation.expires_at,
+      ...(invitation.invitation_kind === "athlete"
+        ? { agreement: coachingReadAgreementPreview() }
+        : {}),
     };
   });
 }
 
-export async function declineOrganizationInvitation(input: {
-  db: DrizzleDbClient;
-  actorProfileId: string;
-  token: string;
-}) {
+export async function declineOrganizationInvitation(
+  input: {
+    db: DrizzleDbClient;
+    actorProfileId: string;
+  } & InvitationReference,
+) {
   return input.db.transaction(async (tx) => {
     const repo = createOrganizationManagementRepository(tx);
     const { organization, invitation } = await lockRecipientInvitation(
       repo,
-      input.token,
+      "token" in input ? { token: input.token } : { invitationId: input.invitationId },
       input.actorProfileId,
     );
     if (

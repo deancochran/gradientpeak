@@ -3,6 +3,22 @@ import { getRequestHeaders } from "@tanstack/react-start/server";
 import { z } from "zod";
 
 const tokenSchema = z.object({ token: z.string().min(43).max(256) }).strict();
+const idSchema = z.object({ invitationId: z.string().uuid() }).strict();
+const referenceSchema = z.union([tokenSchema, idSchema]);
+const acknowledgementShape = {
+  acknowledgement: z
+    .object({
+      version: z.string().min(1).max(120),
+      digest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+      accepted: z.literal(true),
+    })
+    .strict()
+    .optional(),
+};
+const acceptSchema = z.union([
+  tokenSchema.extend(acknowledgementShape),
+  idSchema.extend(acknowledgementShape),
+]);
 const pageSchema = z
   .object({ limit: z.number().int().min(1).max(50), cursor: z.string().nullable() })
   .strict();
@@ -36,12 +52,15 @@ export const loadMyOrganizationInvitations = createServerFn({ method: "POST" })
   .handler(async ({ data }) => (await caller()).organizations.invitations.listMine(data));
 
 export const previewOrganizationInvitation = createServerFn({ method: "POST" })
-  .validator((input: unknown) => tokenSchema.parse(input))
+  .validator((input: unknown) => referenceSchema.parse(input))
   .handler(async ({ data }) => {
     try {
       return {
         status: "ready" as const,
-        preview: await (await caller()).organizations.invitations.preview(data),
+        preview:
+          "invitationId" in data
+            ? await (await caller()).organizations.invitations.previewById(data)
+            : await (await caller()).organizations.invitations.preview(data),
       };
     } catch (error) {
       if (unavailable(error)) return { status: "unavailable" as const };
@@ -50,12 +69,15 @@ export const previewOrganizationInvitation = createServerFn({ method: "POST" })
   });
 
 export const acceptOrganizationInvitation = createServerFn({ method: "POST" })
-  .validator((input: unknown) => tokenSchema.parse(input))
+  .validator((input: unknown) => acceptSchema.parse(input))
   .handler(async ({ data }) => {
     try {
       return {
         status: "accepted" as const,
-        receipt: await (await caller()).organizations.invitations.accept(data),
+        receipt:
+          "invitationId" in data
+            ? await (await caller()).organizations.invitations.acceptById(data)
+            : await (await caller()).organizations.invitations.accept(data),
       };
     } catch (error) {
       if (unavailable(error)) return { status: "unavailable" as const };
@@ -64,12 +86,15 @@ export const acceptOrganizationInvitation = createServerFn({ method: "POST" })
   });
 
 export const declineOrganizationInvitation = createServerFn({ method: "POST" })
-  .validator((input: unknown) => tokenSchema.parse(input))
+  .validator((input: unknown) => referenceSchema.parse(input))
   .handler(async ({ data }) => {
     try {
       return {
         status: "declined" as const,
-        receipt: await (await caller()).organizations.invitations.decline(data),
+        receipt:
+          "invitationId" in data
+            ? await (await caller()).organizations.invitations.declineById(data)
+            : await (await caller()).organizations.invitations.decline(data),
       };
     } catch (error) {
       if (unavailable(error)) return { status: "unavailable" as const };

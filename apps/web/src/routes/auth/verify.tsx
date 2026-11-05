@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 
 import { AuthCardShell } from "../../components/auth-card-shell";
 import { RouteFlashToast, type RouteFlashType } from "../../components/route-flash-toast";
+import { getSafeAppRedirectTarget } from "../../lib/app-url";
 import { publicAuthPageMiddleware, resolveRouteAuthSession } from "../../lib/auth/route-guards";
 import { sendVerificationEmailAction } from "../../lib/auth/server-actions";
 import { getVerificationEmail } from "../../lib/auth/verification-email";
@@ -19,6 +20,10 @@ export const Route = createFileRoute("/auth/verify")({
         ? (search.flashType as RouteFlashType)
         : undefined,
     source: typeof search.source === "string" ? search.source : undefined,
+    redirect:
+      typeof search.redirect === "string"
+        ? getSafeAppRedirectTarget(search.redirect, "/")
+        : undefined,
   }),
   server: {
     middleware: publicAuthPageMiddleware,
@@ -42,7 +47,7 @@ function VerifyEmailPage() {
 
 function VerificationForm() {
   const navigate = Route.useNavigate();
-  const { email, flash, flashType, source } = Route.useSearch();
+  const { email, flash, flashType, source, redirect } = Route.useSearch();
   const { authenticatedEmail } = Route.useRouteContext();
   const verificationEmail = getVerificationEmail(email, authenticatedEmail);
   const resend = useFormServerFn(sendVerificationEmailAction, () => undefined);
@@ -85,7 +90,7 @@ function VerificationForm() {
           clear={() =>
             void navigate({
               to: "/auth/verify",
-              search: { email, flash: undefined, flashType: undefined, source },
+              search: { email, flash: undefined, flashType: undefined, source, redirect },
               replace: true,
             })
           }
@@ -105,6 +110,7 @@ function VerificationForm() {
               <input {...contractEpochFormInputProps} />
               <input type="hidden" name="email" value={verificationEmail ?? ""} />
               <input type="hidden" name="source" value={source ?? ""} />
+              <input type="hidden" name="redirect" value={redirect ?? ""} />
               <Button
                 type="submit"
                 className="w-full"
@@ -116,10 +122,7 @@ function VerificationForm() {
               {resendError ? <p role="alert">{resendError}</p> : null}
             </form>
             <Button asChild variant="link" className="w-full px-0">
-              <Link
-                to="/auth/login"
-                search={{ flash: undefined, flashType: undefined, redirect: undefined }}
-              >
+              <Link to="/auth/login" search={{ flash: undefined, flashType: undefined, redirect }}>
                 Back to Sign In
               </Link>
             </Button>

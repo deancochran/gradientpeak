@@ -53,7 +53,13 @@ export const Route = createFileRoute("/onboarding")({
     if (!session.user.emailVerified) {
       throw redirect({
         to: "/auth/verify",
-        search: { email: undefined, flash: undefined, flashType: undefined, source: undefined },
+        search: {
+          email: undefined,
+          flash: undefined,
+          flashType: undefined,
+          source: undefined,
+          redirect: "/onboarding",
+        },
       });
     }
   },

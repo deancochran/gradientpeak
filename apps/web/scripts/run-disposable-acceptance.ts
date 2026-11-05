@@ -14,6 +14,7 @@ import { runAllCleanup, throwCleanupFailures } from "./disposable-acceptance-cle
 
 // This composes the DB-owned guarded lifecycle; it never migrates/resets an existing database.
 const runId = `acceptance-${process.pid}-${Date.now()}`;
+const captureAuthMail = process.env.E2E_CAPTURE_AUTH_MAIL === "1";
 let interrupted = false;
 let activeTests: ChildProcess | undefined;
 function interrupt() {
@@ -60,7 +61,10 @@ await withDisposableDatabase(
           PORT: "3100",
           OAUTH_CALLBACK_BASE_URL: "http://127.0.0.1:3100",
           BETTER_AUTH_SECRET: `local-only-${runId}-synthetic-secret`,
-          AUTH_EMAIL_MODE: "disabled",
+          // Private file capture enables real signup/verification without external email.
+          ...(captureAuthMail ? { NODE_ENV: "test" } : {}),
+          AUTH_EMAIL_MODE: captureAuthMail ? "capture" : "disabled",
+          AUTH_EMAIL_CAPTURE_PATH: captureAuthMail ? resolve(artifacts, "auth-mail.jsonl") : "",
           AUTH_MOBILE_SCHEME: "gradientpeak-dev",
           AUTH_SMTP_HOST: "127.0.0.1",
           AUTH_SMTP_PORT: "55325",

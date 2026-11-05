@@ -2,16 +2,21 @@ import { Button } from "@repo/ui/components/button";
 import { createFileRoute, Link } from "@tanstack/react-router";
 
 import { AuthCardShell } from "../../components/auth-card-shell";
+import { getSafeAppRedirectTarget } from "../../lib/app-url";
 
 export const Route = createFileRoute("/auth/sign-up-success")({
   validateSearch: (search: Record<string, unknown>) => ({
     email: typeof search.email === "string" ? search.email : undefined,
+    redirect:
+      typeof search.redirect === "string"
+        ? getSafeAppRedirectTarget(search.redirect, "/")
+        : undefined,
   }),
   component: SignUpSuccessPage,
 });
 
 function SignUpSuccessPage() {
-  const { email } = Route.useSearch();
+  const { email, redirect } = Route.useSearch();
 
   return (
     <div className="flex min-h-[70vh] items-center justify-center py-6 md:py-10">
@@ -28,16 +33,19 @@ function SignUpSuccessPage() {
             <Button asChild className="w-full">
               <Link
                 to="/auth/verify"
-                search={{ email, flash: undefined, flashType: undefined, source: "sign-up" }}
+                search={{
+                  email,
+                  flash: undefined,
+                  flashType: undefined,
+                  source: "sign-up",
+                  redirect,
+                }}
               >
                 Continue to Verification
               </Link>
             </Button>
             <Button asChild variant="link" className="w-full px-0">
-              <Link
-                to="/auth/login"
-                search={{ flash: undefined, flashType: undefined, redirect: undefined }}
-              >
+              <Link to="/auth/login" search={{ flash: undefined, flashType: undefined, redirect }}>
                 Back to Sign In
               </Link>
             </Button>

@@ -7,6 +7,9 @@ const m = vi.hoisted(() => ({
   accept: vi.fn(),
   decline: vi.fn(),
   list: vi.fn(),
+  previewById: vi.fn(),
+  acceptById: vi.fn(),
+  declineById: vi.fn(),
 }));
 vi.mock("@tanstack/react-start", () => ({
   createServerFn: ({ method }: { method: string }) => ({
@@ -26,7 +29,15 @@ vi.mock("@repo/api/server", () => ({
   appRouter: {
     createCaller: () => ({
       organizations: {
-        invitations: { preview: m.preview, accept: m.accept, decline: m.decline, listMine: m.list },
+        invitations: {
+          preview: m.preview,
+          accept: m.accept,
+          decline: m.decline,
+          listMine: m.list,
+          previewById: m.previewById,
+          acceptById: m.acceptById,
+          declineById: m.declineById,
+        },
       },
     }),
   },
@@ -83,6 +94,19 @@ describe("invitation response server functions", () => {
     await declineOrganizationInvitation({ data: { token } });
     expect(m.accept).toHaveBeenCalledWith({ token });
     expect(m.decline).toHaveBeenCalledWith({ token });
+  });
+  it("uses recipient-bound ID operations without a bearer token and rejects mixed references", async () => {
+    const data = { invitationId: "11111111-1111-4111-8111-111111111111" };
+    await previewOrganizationInvitation({ data });
+    await acceptOrganizationInvitation({ data });
+    await declineOrganizationInvitation({ data });
+    expect(m.previewById).toHaveBeenCalledWith(data);
+    expect(m.acceptById).toHaveBeenCalledWith(data);
+    expect(m.declineById).toHaveBeenCalledWith(data);
+    expect(m.preview).not.toHaveBeenCalled();
+    await expect(
+      previewOrganizationInvitation({ data: { ...data, token } as never }),
+    ).rejects.toThrow();
   });
   it.each([
     ["inbox", loadMyOrganizationInvitations],

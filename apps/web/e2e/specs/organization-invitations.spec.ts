@@ -28,9 +28,9 @@ test("administrator creates and revokes an invitation without implying email del
   await athletePage.getByLabel("Expires at", { exact: true }).fill("2030-01-01T12:00");
   await athletePage.getByRole("button", { name: "Create invitation", exact: true }).click();
   await expect(
-    athletePage.getByRole("button", { name: "Dismiss token", exact: true }),
+    athletePage.getByRole("button", { name: "Dismiss invitation link", exact: true }),
   ).toBeVisible();
-  await athletePage.getByRole("button", { name: "Dismiss token", exact: true }).click();
+  await athletePage.getByRole("button", { name: "Dismiss invitation link", exact: true }).click();
   await withLocalE2EDatabase(async ({ db }) => {
     const rows = await db
       .select({

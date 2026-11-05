@@ -118,7 +118,7 @@ export function LoginForm({ className, redirectTo, ...props }: LoginFormProps) {
               Don&apos;t have an account?{" "}
               <Link
                 to="/auth/sign-up"
-                search={{ flash: undefined, flashType: undefined }}
+                search={{ flash: undefined, flashType: undefined, redirect: redirectTo }}
                 className="underline underline-offset-4"
               >
                 Sign up

@@ -24,7 +24,16 @@ const firstToken = "a".repeat(43);
 const secondToken = "b".repeat(43);
 const readyPreview = {
   status: "ready" as const,
-  preview: { organizationName: "Peak", kind: "athlete" },
+  preview: {
+    organizationName: "Peak",
+    kind: "athlete",
+    agreement: {
+      version: "coaching-read-v1",
+      digest: `sha256:${"a".repeat(64)}`,
+      terms: "Read-only terms",
+      scopes: ["basic_profile", "training", "activities", "metrics", "goals", "calendar"],
+    },
+  },
 };
 const firstInvitation = {
   invitationId: "11111111-1111-4111-8111-111111111111",
@@ -51,7 +60,7 @@ function enterToken(token: string) {
 async function previewInvitation(token = firstToken) {
   enterToken(token);
   fireEvent.click(screen.getByRole("button", { name: "Preview invitation" }));
-  await screen.findByRole("button", { name: "Accept invitation" });
+  await screen.findByRole("button", { name: /^Accept invitation/ });
 }
 
 describe("InvitationResponse", () => {
@@ -85,8 +94,8 @@ describe("InvitationResponse", () => {
     expect(mocks.preview).toHaveBeenCalledOnce();
 
     preview.resolve(readyPreview);
-    await screen.findByRole("button", { name: "Accept invitation" });
-    const acceptButton = screen.getByRole("button", { name: "Accept invitation" });
+    await screen.findByRole("button", { name: /^Accept invitation/ });
+    const acceptButton = screen.getByRole("button", { name: /^Accept invitation/ });
     fireEvent.click(acceptButton);
     fireEvent.click(acceptButton);
     expect(mocks.accept).toHaveBeenCalledOnce();
@@ -97,10 +106,42 @@ describe("InvitationResponse", () => {
     );
   });
 
+  it("reviews a verified inbox invitation without a token and retries the exact acknowledged ID", async () => {
+    mocks.load.mockResolvedValue({ items: [firstInvitation], nextCursor: null, hasMore: false });
+    mocks.accept
+      .mockRejectedValueOnce(new Error("response lost"))
+      .mockResolvedValueOnce({ status: "accepted" });
+    render(<InvitationResponse actorId="new-verified-account" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Review invitation" }));
+    expect(mocks.preview).toHaveBeenCalledWith({
+      data: { invitationId: firstInvitation.invitationId },
+    });
+    expect(mocks.accept).not.toHaveBeenCalled();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Accept invitation & share training data" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Retry accept invitation to reconcile" }),
+    );
+    await screen.findByText(/Invitation accepted\./);
+    const expected = {
+      data: {
+        invitationId: firstInvitation.invitationId,
+        acknowledgement: {
+          accepted: true,
+          version: readyPreview.preview.agreement.version,
+          digest: readyPreview.preview.agreement.digest,
+        },
+      },
+    };
+    expect(mocks.accept).toHaveBeenNthCalledWith(1, expected);
+    expect(mocks.accept).toHaveBeenNthCalledWith(2, expected);
+  });
+
   it("previews a one-time handoff token without accepting it", async () => {
     render(<InvitationResponse actorId="actor-a" initialInvitationToken={firstToken} />);
 
-    await screen.findByRole("button", { name: "Accept invitation" });
+    await screen.findByRole("button", { name: /^Accept invitation/ });
     expect(mocks.preview).toHaveBeenCalledWith({ data: { token: firstToken } });
     expect(mocks.accept).not.toHaveBeenCalled();
     expect(mocks.decline).not.toHaveBeenCalled();
@@ -115,10 +156,22 @@ describe("InvitationResponse", () => {
         <InvitationResponse actorId="actor-a" initialInvitationToken={firstToken} />
       </StrictMode>,
     );
-    await screen.findByRole("button", { name: `${label} invitation` });
-    fireEvent.click(screen.getByRole("button", { name: `${label} invitation` }));
+    await screen.findByRole("button", { name: new RegExp(`^${label} invitation`) });
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${label} invitation`) }));
     await waitFor(() =>
-      expect(mocks[command]).toHaveBeenCalledWith({ data: { token: firstToken } }),
+      expect(mocks[command]).toHaveBeenCalledWith({
+        data:
+          command === "accept"
+            ? {
+                token: firstToken,
+                acknowledgement: {
+                  version: "coaching-read-v1",
+                  digest: `sha256:${"a".repeat(64)}`,
+                  accepted: true,
+                },
+              }
+            : { token: firstToken },
+      }),
     );
     expect(await screen.findByText(new RegExp(`Invitation ${status}`))).toBeTruthy();
   });
@@ -133,16 +186,42 @@ describe("InvitationResponse", () => {
         <InvitationResponse actorId="actor-a" initialInvitationToken={firstToken} />
       </StrictMode>,
     );
-    const label = choice === "accept" ? "Accept invitation" : "Decline invitation";
+    const label = choice === "accept" ? /^Accept invitation/ : "Decline invitation";
     fireEvent.click(await screen.findByRole("button", { name: label }));
     fireEvent.click(
       await screen.findByRole("button", { name: `Retry ${choice} invitation to reconcile` }),
     );
     await waitFor(() => expect(mocks[choice]).toHaveBeenCalledTimes(2));
-    expect(mocks[choice].mock.calls).toEqual([
-      [{ data: { token: firstToken } }],
-      [{ data: { token: firstToken } }],
-    ]);
+    expect(mocks[choice].mock.calls).toEqual(
+      choice === "accept"
+        ? [
+            [
+              {
+                data: {
+                  token: firstToken,
+                  acknowledgement: {
+                    version: "coaching-read-v1",
+                    digest: `sha256:${"a".repeat(64)}`,
+                    accepted: true,
+                  },
+                },
+              },
+            ],
+            [
+              {
+                data: {
+                  token: firstToken,
+                  acknowledgement: {
+                    version: "coaching-read-v1",
+                    digest: `sha256:${"a".repeat(64)}`,
+                    accepted: true,
+                  },
+                },
+              },
+            ],
+          ]
+        : [[{ data: { token: firstToken } }], [{ data: { token: firstToken } }]],
+    );
   });
 
   it.each([
@@ -159,7 +238,7 @@ describe("InvitationResponse", () => {
       </StrictMode>,
     );
     if (phase === "accept")
-      fireEvent.click(await screen.findByRole("button", { name: "Accept invitation" }));
+      fireEvent.click(await screen.findByRole("button", { name: /^Accept invitation/ }));
     view.rerender(
       <StrictMode>
         <InvitationResponse actorId="actor-b" initialInvitationToken={firstToken} />
@@ -169,7 +248,7 @@ describe("InvitationResponse", () => {
     pendingAccept.resolve({ status: "accepted" });
     await waitFor(() => {
       expect((screen.getByLabelText("Invitation token") as HTMLInputElement).value).toBe("");
-      expect(screen.queryByRole("button", { name: "Accept invitation" })).toBeNull();
+      expect(screen.queryByRole("button", { name: /^Accept invitation/ })).toBeNull();
       expect(screen.queryByText(/Invitation accepted/)).toBeNull();
     });
     expect(mocks.preview).toHaveBeenCalledTimes(1);
@@ -183,11 +262,11 @@ describe("InvitationResponse", () => {
     enterToken(firstToken);
     fireEvent.click(screen.getByRole("button", { name: "Preview invitation" }));
     enterToken(secondToken);
-    expect(screen.queryByRole("button", { name: "Accept invitation" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Accept invitation/ })).toBeNull();
 
     preview.resolve(readyPreview);
     await waitFor(() =>
-      expect(screen.queryByRole("button", { name: "Accept invitation" })).toBeNull(),
+      expect(screen.queryByRole("button", { name: /^Accept invitation/ })).toBeNull(),
     );
     expect((screen.getByLabelText("Invitation token") as HTMLInputElement).value).toBe(secondToken);
   });
@@ -203,7 +282,7 @@ describe("InvitationResponse", () => {
       "preview could not be confirmed",
     );
     expect(screen.getByRole("button", { name: "Retry preview" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Accept invitation" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Accept invitation/ })).toBeNull();
   });
 
   it("clears invitation state and ignores an old command acknowledgement after actor replacement", async () => {
@@ -212,12 +291,12 @@ describe("InvitationResponse", () => {
     const { rerender } = render(<InvitationResponse actorId="actor-a" />);
 
     await previewInvitation();
-    fireEvent.click(screen.getByRole("button", { name: "Accept invitation" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Accept invitation/ }));
     expect(mocks.accept).toHaveBeenCalledOnce();
     rerender(<InvitationResponse actorId="actor-b" />);
 
     expect((screen.getByLabelText("Invitation token") as HTMLInputElement).value).toBe("");
-    expect(screen.queryByRole("button", { name: "Accept invitation" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Accept invitation/ })).toBeNull();
     accept.resolve({ status: "accepted" });
     await waitFor(() => expect(screen.queryByText(/Invitation accepted/)).toBeNull());
   });
@@ -231,7 +310,7 @@ describe("InvitationResponse", () => {
     render(<InvitationResponse actorId="actor-a" />);
 
     await previewInvitation();
-    fireEvent.click(screen.getByRole("button", { name: `${action} invitation` }));
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${action} invitation`) }));
 
     expect((await screen.findByText(new RegExp(`Invitation ${receipt}`))).textContent).toContain(
       `Invitation ${receipt}`,
@@ -248,12 +327,12 @@ describe("InvitationResponse", () => {
     render(<InvitationResponse actorId="actor-a" />);
 
     await previewInvitation();
-    fireEvent.click(screen.getByRole("button", { name: `${action} invitation` }));
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${action} invitation`) }));
 
     expect((await screen.findByRole("alert")).textContent).toContain(
       `could not confirm whether this invitation was ${receipt}`,
     );
-    expect(screen.queryByRole("button", { name: "Accept invitation" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Accept invitation/ })).toBeNull();
     expect(screen.queryByRole("button", { name: "Decline invitation" })).toBeNull();
     const previewButton = screen.getByRole("button", { name: "Preview invitation" });
     expect((previewButton as HTMLButtonElement).disabled).toBe(true);
@@ -265,7 +344,19 @@ describe("InvitationResponse", () => {
       screen.getByRole("button", { name: `Retry ${choice} invitation to reconcile` }),
     );
     await waitFor(() => expect(mocks[choice]).toHaveBeenCalledTimes(2));
-    expect(mocks[choice]).toHaveBeenLastCalledWith({ data: { token: firstToken } });
+    expect(mocks[choice]).toHaveBeenLastCalledWith({
+      data:
+        choice === "accept"
+          ? {
+              token: firstToken,
+              acknowledgement: {
+                version: "coaching-read-v1",
+                digest: `sha256:${"a".repeat(64)}`,
+                accepted: true,
+              },
+            }
+          : { token: firstToken },
+    });
     expect((await screen.findByText(new RegExp(`Invitation ${receipt}`))).textContent).toContain(
       `Invitation ${receipt}`,
     );
@@ -327,7 +418,7 @@ describe("InvitationResponse", () => {
     render(<InvitationResponse actorId="actor-a" />);
 
     await previewInvitation();
-    fireEvent.click(screen.getByRole("button", { name: "Accept invitation" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Accept invitation/ }));
     await waitFor(() => expect(mocks.load).toHaveBeenCalledTimes(2));
     initialPage.resolve({
       items: [{ ...firstInvitation, status: "old" }],
@@ -369,7 +460,7 @@ describe("InvitationResponse", () => {
     await screen.findByRole("button", { name: "Next invitation summaries" });
     fireEvent.click(screen.getByRole("button", { name: "Next invitation summaries" }));
     await previewInvitation();
-    fireEvent.click(screen.getByRole("button", { name: "Accept invitation" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Accept invitation/ }));
     await waitFor(() => expect(mocks.load).toHaveBeenCalledTimes(3));
     nextPage.resolve({
       items: [{ ...firstInvitation, status: "old" }],
