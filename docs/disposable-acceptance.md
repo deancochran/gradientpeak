@@ -3,7 +3,8 @@
 The acceptance runner composes the DB package's guarded disposable database and
 Storage API helpers. It creates a uniquely named synthetic database on the
 repository-managed local PostgreSQL instance, a separate storage container and
-storage directory, and a loopback web server on port 3100. It does not reset either
+storage directory, and a loopback web server on a dynamically selected port for browser runs
+(port 3100 for native runs). It does not reset either
 existing Supabase stack or reuse the web server on port 3001.
 
 From `apps/web`, with the documented local toolchain and local Supabase services
@@ -15,6 +16,10 @@ mise exec -- pnpm exec tsx scripts/run-disposable-acceptance.ts
 
 The default runs the combined desktop browser journey. Additional Playwright
 specifications and project selectors may be supplied explicitly. Only use specs
+under `e2e/specs/` for browser mode. Native specs supplied by their `e2e/native/`
+path activate native setup; title-only native selection requires `--native --grep
+"current Android candidate"`. Browser mode cannot discover native tests, and a
+selection with no matches fails rather than silently skipping required checks. Only use specs
 whose fixtures support this disposable target; provider-account operations are
 outside this runner's acceptance scope. Logs live in `.logs/acceptance-*` and
 Playwright artifacts in `apps/web/test-results/acceptance-*`. Treat artifacts as
