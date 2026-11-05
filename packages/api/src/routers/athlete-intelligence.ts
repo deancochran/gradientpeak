@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   athleteReadModelRequestSchema,
   athleteReadModelSchema,
+  athleteReadModelSectionsSchema,
   readAthleteReadModel,
 } from "../application/athlete-intelligence/athlete-read-model";
 import {
@@ -28,6 +29,7 @@ import {
 } from "../application/athlete-intelligence/request-athlete-recalculation";
 import { getProfileGoalOwnerId } from "../application/goals/getProfileGoalById";
 import {
+  withAuthorizedAthleteRead,
   withAuthorizedAthleteReadAcrossOrganizations,
   withResolvedAuthorizedAthleteReadAcrossOrganizations,
 } from "../application/organizations/authorize-athlete-read";
@@ -72,6 +74,14 @@ import {
 const goalAssessmentInputSchema = z
   .object({
     goalId: z.string().uuid(),
+  })
+  .strict();
+
+const organizationReadModelInputSchema = z
+  .object({
+    organizationId: z.string().uuid(),
+    athleteProfileId: z.string().uuid(),
+    sections: athleteReadModelSectionsSchema,
   })
   .strict();
 
@@ -125,6 +135,7 @@ export function createAthleteIntelligenceRouter(
   authorizeRead: ConsentAwareAthleteReadAuthorizer = withAuthorizedAthleteReadAcrossOrganizations,
   authorizeResolvedRead: ConsentAwareResolvedAthleteReadAuthorizer = withResolvedAuthorizedAthleteReadAcrossOrganizations,
   transportDependencies: Partial<AthleteStateTransportDependencies> = {},
+  authorizeOrganizationRead: typeof withAuthorizedAthleteRead = withAuthorizedAthleteRead,
 ) {
   const stateServices: AthleteStateTransportDependencies = {
     getGoalAssessmentBatch: transportDependencies.getGoalAssessmentBatch ?? getGoalAssessmentBatch,
@@ -231,6 +242,51 @@ export function createAthleteIntelligenceRouter(
               now: new Date(),
             }),
         });
+      }),
+    /**
+     * A coaching workspace read is deliberately separate from the personal and
+     * cross-organization read model. The selected organization is part of both
+     * the authorization predicate and the transaction containing the data read.
+     */
+    getOrganizationReadModel: protectedProcedure
+      .input(organizationReadModelInputSchema)
+      .output(athleteReadModelSchema)
+      .query(async ({ ctx, input }) => {
+        const requestsMetrics = Boolean(
+          input.sections.publishedState ||
+            input.sections.status ||
+            input.sections.currentBaseline ||
+            input.sections.loadHistory ||
+            input.sections.profileObservations ||
+            input.sections.trendInsights,
+        );
+        const requestsActivities = Boolean(
+          input.sections.activityAnalytics || input.sections.trendInsights,
+        );
+        if (requestsMetrics && requestsActivities) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Coaching workspace requests must use one consent scope",
+          });
+        }
+        const result = await authorizeOrganizationRead({
+          db: getRequiredDb(ctx),
+          actorProfileId: ctx.session.user.id,
+          organizationId: input.organizationId,
+          athleteProfileId: input.athleteProfileId,
+          scope: requestsActivities ? "activities" : "metrics",
+          read: (authorizedDb) =>
+            readModel({
+              db: authorizedDb,
+              profileId: input.athleteProfileId,
+              sections: input.sections,
+              now: new Date(),
+            }),
+        });
+        if (!("value" in result)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Not authorized" });
+        }
+        return result.value;
       }),
     getTrainingEffects: protectedProcedure
       .input(trainingEffectsRequestSchema)

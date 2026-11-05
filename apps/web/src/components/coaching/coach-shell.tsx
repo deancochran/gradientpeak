@@ -10,7 +10,7 @@ import {
   SheetTrigger,
 } from "@repo/ui/components/sheet";
 import { Link, Outlet, useLocation } from "@tanstack/react-router";
-import { Building2, LayoutDashboard, Menu } from "lucide-react";
+import { Building2, LayoutDashboard, Menu, Users } from "lucide-react";
 
 type CoachShellProps = {
   organization: {
@@ -49,6 +49,19 @@ export function CoachShell({ organization }: CoachShellProps) {
             Coach workspace
           </Badge>
           <nav className="ml-5 hidden items-center md:flex" aria-label="Coaching navigation">
+            <Link
+              to="/organizations/$organizationId/athletes"
+              params={{ organizationId: organization.id }}
+              aria-current={
+                location.pathname.startsWith(`/organizations/${organization.id}/athletes`)
+                  ? "page"
+                  : undefined
+              }
+              className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-slate-900 hover:text-white aria-[current=page]:bg-slate-800 aria-[current=page]:text-white"
+            >
+              <Users className="h-4 w-4" />
+              Athletes
+            </Link>
             <Link
               to="/organizations/$organizationId/dashboard"
               params={{ organizationId: organization.id }}
@@ -109,6 +122,16 @@ function CoachMobileNavigation({
           <SheetDescription className="text-slate-400">{organizationName}</SheetDescription>
         </SheetHeader>
         <nav className="grid gap-1 p-3" aria-label="Mobile coaching navigation">
+          <SheetClose asChild>
+            <Link
+              to="/organizations/$organizationId/athletes"
+              params={{ organizationId }}
+              className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-900 hover:text-white"
+            >
+              <Users className="h-4 w-4" />
+              Athletes
+            </Link>
+          </SheetClose>
           <SheetClose asChild>
             <Link
               to="/organizations/$organizationId/dashboard"

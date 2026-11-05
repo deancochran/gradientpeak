@@ -9,6 +9,7 @@ import {
   type readGoalProgress,
 } from "../../application/athlete-intelligence/read-goal-progress";
 import type {
+  withAuthorizedAthleteRead,
   withAuthorizedAthleteReadAcrossOrganizations,
   withResolvedAuthorizedAthleteReadAcrossOrganizations,
 } from "../../application/organizations/authorize-athlete-read";
@@ -548,5 +549,52 @@ describe("athleteIntelligenceRouter.getReadModel", () => {
       api.getReadModel({ profileId: OWNER_ID, sections: { publishedState: true } }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(readModel).not.toHaveBeenCalled();
+  });
+});
+
+describe("athleteIntelligenceRouter.getOrganizationReadModel", () => {
+  it("binds delegated metrics reads to the selected organization and never calls the cross-organization authorizer", async () => {
+    const readModel = vi.fn(async () => ({
+      contractVersion: "athlete-read-model-v1" as const,
+      profileId: OWNER_ID,
+      asOf: "2026-07-10T12:00:00.000Z",
+      publishedRevision: null,
+      algorithmVersion: null,
+      publishedState: null,
+    }));
+    const organizationId = "11111111-1111-4111-8111-111111111111";
+    const authorizeOrganizationReadSpy = vi.fn();
+    const authorizeOrganizationRead: typeof withAuthorizedAthleteRead = async (request) => {
+      authorizeOrganizationReadSpy(request);
+      return {
+        decision: { outcome: "allow" as const, scope: request.scope },
+        value: await request.read({} as never),
+      };
+    };
+    const router = createAthleteIntelligenceRouter(
+      vi.fn(async () => publishedAssessment()),
+      vi.fn(async () => OWNER_ID),
+      readModel,
+      consentAuthorizer({ state: "missing", scopes: [] }),
+      undefined,
+      {},
+      authorizeOrganizationRead,
+    );
+    const api = createRouterCaller(router, { db: {}, userId: COACH_ID });
+
+    await api.getOrganizationReadModel({
+      organizationId,
+      athleteProfileId: OWNER_ID,
+      sections: { publishedState: true },
+    });
+
+    expect(authorizeOrganizationReadSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorProfileId: COACH_ID,
+        organizationId,
+        athleteProfileId: OWNER_ID,
+        scope: "metrics",
+      }),
+    );
   });
 });

@@ -10,6 +10,9 @@ const rosterInputSchema = z
     cursor: z.string().uuid().nullable(),
   })
   .strict();
+const coachDirectoryInputSchema = rosterInputSchema.extend({
+  search: z.string().min(1).max(120).nullable(),
+});
 const endEngagementInputSchema = z
   .object({
     organizationId,
@@ -50,10 +53,117 @@ export const loadAdministrativeAthleteRoster = createServerFn({ method: "POST" }
       const caller = await createRequestApiCaller();
       return {
         status: "granted" as const,
-        ...(await caller.organizations.lifecycle.adminRoster.list(data)),
+        ...(await caller.organizations.lifecycle.adminRoster.list({
+          organizationId: data.organizationId,
+          limit: data.limit,
+          cursor: data.cursor,
+        })),
       };
     } catch (error) {
       if (isAccessError(error)) return { status: "forbidden" as const };
+      throw error;
+    }
+  });
+
+/** The ordinary coaching selector is assignment-bound; administration is only a fallback page. */
+export const loadOrganizationAthletesLanding = createServerFn({ method: "POST" })
+  .validator((input: unknown) => coachDirectoryInputSchema.parse(input))
+  .handler(async ({ data }) => {
+    const caller = await createRequestApiCaller();
+    try {
+      return {
+        status: "directory" as const,
+        ...(await caller.organizations.coachAthletes.listAssigned(data)),
+      };
+    } catch (error) {
+      if (!isAccessError(error)) throw error;
+    }
+    try {
+      return {
+        status: "administration" as const,
+        ...(await caller.organizations.lifecycle.adminRoster.list({
+          organizationId: data.organizationId,
+          limit: data.limit,
+          cursor: data.cursor,
+        })),
+      };
+    } catch (error) {
+      if (isAccessError(error)) return { status: "forbidden" as const };
+      throw error;
+    }
+  });
+
+export const loadAssignedCoachAthletes = createServerFn({ method: "POST" })
+  .validator((input: unknown) => coachDirectoryInputSchema.parse(input))
+  .handler(async ({ data }) => {
+    try {
+      const caller = await createRequestApiCaller();
+      return {
+        status: "granted" as const,
+        ...(await caller.organizations.coachAthletes.listAssigned(data)),
+      };
+    } catch (error) {
+      if (isAccessError(error)) return { status: "forbidden" as const };
+      throw error;
+    }
+  });
+
+export const loadSelectedCoachAthlete = createServerFn({ method: "POST" })
+  .validator((input: unknown) =>
+    z.object({ organizationId, athleteProfileId: z.string().uuid() }).strict().parse(input),
+  )
+  .handler(async ({ data }) => {
+    try {
+      const caller = await createRequestApiCaller();
+      return await caller.organizations.coachAthletes.getAssigned(data);
+    } catch (error) {
+      if (isAccessError(error)) return null;
+      throw error;
+    }
+  });
+
+export const loadCoachAthleteOverview = createServerFn({ method: "POST" })
+  .validator((input: unknown) =>
+    z.object({ organizationId, athleteProfileId: z.string().uuid() }).strict().parse(input),
+  )
+  .handler(async ({ data }) => {
+    try {
+      const caller = await createRequestApiCaller();
+      const model = await caller.athleteIntelligence.getOrganizationReadModel({
+        organizationId: data.organizationId,
+        athleteProfileId: data.athleteProfileId,
+        sections: { publishedState: true, status: true },
+      });
+      return {
+        status: "granted" as const,
+        model: {
+          publishedState: model.publishedState
+            ? {
+                publishedAt: model.publishedState.publishedAt,
+                baseline: model.publishedState.baseline,
+                estimates: model.publishedState.estimates.map((estimate) => ({
+                  activityCategory: estimate.activityCategory,
+                  capabilityKind: estimate.capabilityKind,
+                  value: estimate.value,
+                  unit: estimate.unit,
+                  confidence: estimate.confidence,
+                  effectiveAt: estimate.effectiveAt,
+                  computedAt: estimate.computedAt,
+                  algorithmVersion: estimate.algorithmVersion,
+                })),
+              }
+            : null,
+          status: model.status
+            ? {
+                freshness: model.status.freshness,
+                importStatus: model.status.importStatus,
+                coverage: { lastActivityAt: model.status.coverage.lastActivityAt },
+              }
+            : undefined,
+        },
+      };
+    } catch (error) {
+      if (isAccessError(error)) return { status: "unavailable" as const };
       throw error;
     }
   });

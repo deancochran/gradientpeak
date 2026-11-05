@@ -302,6 +302,19 @@ function AdministrativeAthleteRosterContents({
               ))}
             </ul>
           )}
+          <Button
+            disabled={
+              form.formState.isSubmitting ||
+              isLoadingPage ||
+              isTerminationPending ||
+              Boolean(managingResponsibilitiesFor)
+            }
+            onClick={() => load(null)}
+            type="button"
+            variant="outline"
+          >
+            First page of athletes
+          </Button>
           {page.hasMore ? (
             <Button
               disabled={
@@ -314,7 +327,7 @@ function AdministrativeAthleteRosterContents({
               type="button"
               variant="outline"
             >
-              {isLoadingPage ? "Loading athletes…" : "Load more athletes"}
+              {isLoadingPage ? "Loading athletes…" : "Next page of athletes"}
             </Button>
           ) : null}
         </CardContent>

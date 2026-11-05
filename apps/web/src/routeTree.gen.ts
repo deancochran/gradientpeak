@@ -89,6 +89,8 @@ import { Route as ProtectedUserUserIdIndexRouteImport } from './routes/_protecte
 import { Route as ProtectedUserUserIdFollowersRouteImport } from './routes/_protected/user/$userId/followers'
 import { Route as ProtectedUserUserIdFollowingRouteImport } from './routes/_protected/user/$userId/following'
 import { Route as ApiIntegrationsCallbackProviderRouteImport } from './routes/api/integrations/callback/$provider'
+import { Route as CoachingOrganizationsOrganizationIdAthletesIndexRouteImport } from './routes/_coaching/organizations/$organizationId/athletes/index'
+import { Route as CoachingOrganizationsOrganizationIdAthletesAthleteIdRouteImport } from './routes/_coaching/organizations/$organizationId/athletes/$athleteId'
 import { Route as CoachingOrganizationsOrganizationIdGroupsIndexRouteImport } from './routes/_coaching/organizations/$organizationId/groups/index'
 import { Route as CoachingOrganizationsOrganizationIdGroupsGroupIdRouteImport } from './routes/_coaching/organizations/$organizationId/groups/$groupId'
 import { Route as ProtectedCalendarEventsEventIdIndexRouteImport } from './routes/_protected/calendar/events/$eventId/index'
@@ -538,6 +540,18 @@ const ApiIntegrationsCallbackProviderRoute =
     path: '/api/integrations/callback/$provider',
     getParentRoute: () => rootRouteImport,
   } as any)
+const CoachingOrganizationsOrganizationIdAthletesIndexRoute =
+  CoachingOrganizationsOrganizationIdAthletesIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => CoachingOrganizationsOrganizationIdAthletesRoute,
+  } as any)
+const CoachingOrganizationsOrganizationIdAthletesAthleteIdRoute =
+  CoachingOrganizationsOrganizationIdAthletesAthleteIdRouteImport.update({
+    id: '/$athleteId',
+    path: '/$athleteId',
+    getParentRoute: () => CoachingOrganizationsOrganizationIdAthletesRoute,
+  } as any)
 const CoachingOrganizationsOrganizationIdGroupsIndexRoute =
   CoachingOrganizationsOrganizationIdGroupsIndexRouteImport.update({
     id: '/',
@@ -679,7 +693,7 @@ export interface FileRoutesByFullPath {
   '/record/': typeof ProtectedRecordIndexRoute
   '/routes/': typeof ProtectedRoutesIndexRoute
   '/training-plans/': typeof ProtectedTrainingPlansIndexRoute
-  '/organizations/$organizationId/athletes': typeof CoachingOrganizationsOrganizationIdAthletesRoute
+  '/organizations/$organizationId/athletes': typeof CoachingOrganizationsOrganizationIdAthletesRouteWithChildren
   '/organizations/$organizationId/dashboard': typeof CoachingOrganizationsOrganizationIdDashboardRoute
   '/organizations/$organizationId/groups': typeof CoachingOrganizationsOrganizationIdGroupsRouteWithChildren
   '/organizations/$organizationId/invitations': typeof CoachingOrganizationsOrganizationIdInvitationsRoute
@@ -702,6 +716,7 @@ export interface FileRoutesByFullPath {
   '/routes/$routeId/': typeof ProtectedRoutesRouteIdIndexRoute
   '/training-plans/$planId/': typeof ProtectedTrainingPlansPlanIdIndexRoute
   '/user/$userId/': typeof ProtectedUserUserIdIndexRoute
+  '/organizations/$organizationId/athletes/$athleteId': typeof CoachingOrganizationsOrganizationIdAthletesAthleteIdRoute
   '/organizations/$organizationId/groups/$groupId': typeof CoachingOrganizationsOrganizationIdGroupsGroupIdRouteWithChildren
   '/calendar/events/$eventId/edit': typeof ProtectedCalendarEventsEventIdEditRoute
   '/groups/$groupId/events/new': typeof ProtectedGroupsGroupIdEventsNewRoute
@@ -711,6 +726,7 @@ export interface FileRoutesByFullPath {
   '/api/internal/provider-sync/wahoo/drain': typeof ApiInternalProviderSyncWahooDrainRoute
   '/api/internal/provider-sync/wahoo/retry': typeof ApiInternalProviderSyncWahooRetryRoute
   '/api/internal/provider-sync/wahoo/status': typeof ApiInternalProviderSyncWahooStatusRoute
+  '/organizations/$organizationId/athletes/': typeof CoachingOrganizationsOrganizationIdAthletesIndexRoute
   '/organizations/$organizationId/groups/': typeof CoachingOrganizationsOrganizationIdGroupsIndexRoute
   '/calendar/events/$eventId/': typeof ProtectedCalendarEventsEventIdIndexRoute
   '/groups/events/$groupEventId/': typeof ProtectedGroupsEventsGroupEventIdIndexRoute
@@ -769,7 +785,6 @@ export interface FileRoutesByTo {
   '/record': typeof ProtectedRecordIndexRoute
   '/routes': typeof ProtectedRoutesIndexRoute
   '/training-plans': typeof ProtectedTrainingPlansIndexRoute
-  '/organizations/$organizationId/athletes': typeof CoachingOrganizationsOrganizationIdAthletesRoute
   '/organizations/$organizationId/dashboard': typeof CoachingOrganizationsOrganizationIdDashboardRoute
   '/organizations/$organizationId/invitations': typeof CoachingOrganizationsOrganizationIdInvitationsRoute
   '/organizations/$organizationId/staff': typeof CoachingOrganizationsOrganizationIdStaffRoute
@@ -791,6 +806,7 @@ export interface FileRoutesByTo {
   '/routes/$routeId': typeof ProtectedRoutesRouteIdIndexRoute
   '/training-plans/$planId': typeof ProtectedTrainingPlansPlanIdIndexRoute
   '/user/$userId': typeof ProtectedUserUserIdIndexRoute
+  '/organizations/$organizationId/athletes/$athleteId': typeof CoachingOrganizationsOrganizationIdAthletesAthleteIdRoute
   '/organizations/$organizationId/groups/$groupId': typeof CoachingOrganizationsOrganizationIdGroupsGroupIdRouteWithChildren
   '/calendar/events/$eventId/edit': typeof ProtectedCalendarEventsEventIdEditRoute
   '/groups/$groupId/events/new': typeof ProtectedGroupsGroupIdEventsNewRoute
@@ -800,6 +816,7 @@ export interface FileRoutesByTo {
   '/api/internal/provider-sync/wahoo/drain': typeof ApiInternalProviderSyncWahooDrainRoute
   '/api/internal/provider-sync/wahoo/retry': typeof ApiInternalProviderSyncWahooRetryRoute
   '/api/internal/provider-sync/wahoo/status': typeof ApiInternalProviderSyncWahooStatusRoute
+  '/organizations/$organizationId/athletes': typeof CoachingOrganizationsOrganizationIdAthletesIndexRoute
   '/organizations/$organizationId/groups': typeof CoachingOrganizationsOrganizationIdGroupsIndexRoute
   '/calendar/events/$eventId': typeof ProtectedCalendarEventsEventIdIndexRoute
   '/groups/events/$groupEventId': typeof ProtectedGroupsEventsGroupEventIdIndexRoute
@@ -865,7 +882,7 @@ export interface FileRoutesById {
   '/_protected/record/': typeof ProtectedRecordIndexRoute
   '/_protected/routes/': typeof ProtectedRoutesIndexRoute
   '/_protected/training-plans/': typeof ProtectedTrainingPlansIndexRoute
-  '/_coaching/organizations/$organizationId/athletes': typeof CoachingOrganizationsOrganizationIdAthletesRoute
+  '/_coaching/organizations/$organizationId/athletes': typeof CoachingOrganizationsOrganizationIdAthletesRouteWithChildren
   '/_coaching/organizations/$organizationId/dashboard': typeof CoachingOrganizationsOrganizationIdDashboardRoute
   '/_coaching/organizations/$organizationId/groups': typeof CoachingOrganizationsOrganizationIdGroupsRouteWithChildren
   '/_coaching/organizations/$organizationId/invitations': typeof CoachingOrganizationsOrganizationIdInvitationsRoute
@@ -888,6 +905,7 @@ export interface FileRoutesById {
   '/_protected/routes/$routeId/': typeof ProtectedRoutesRouteIdIndexRoute
   '/_protected/training-plans/$planId/': typeof ProtectedTrainingPlansPlanIdIndexRoute
   '/_protected/user/$userId/': typeof ProtectedUserUserIdIndexRoute
+  '/_coaching/organizations/$organizationId/athletes/$athleteId': typeof CoachingOrganizationsOrganizationIdAthletesAthleteIdRoute
   '/_coaching/organizations/$organizationId/groups/$groupId': typeof CoachingOrganizationsOrganizationIdGroupsGroupIdRouteWithChildren
   '/_protected/calendar/events/$eventId/edit': typeof ProtectedCalendarEventsEventIdEditRoute
   '/_protected/groups/$groupId/events/new': typeof ProtectedGroupsGroupIdEventsNewRoute
@@ -897,6 +915,7 @@ export interface FileRoutesById {
   '/api/internal/provider-sync/wahoo/drain': typeof ApiInternalProviderSyncWahooDrainRoute
   '/api/internal/provider-sync/wahoo/retry': typeof ApiInternalProviderSyncWahooRetryRoute
   '/api/internal/provider-sync/wahoo/status': typeof ApiInternalProviderSyncWahooStatusRoute
+  '/_coaching/organizations/$organizationId/athletes/': typeof CoachingOrganizationsOrganizationIdAthletesIndexRoute
   '/_coaching/organizations/$organizationId/groups/': typeof CoachingOrganizationsOrganizationIdGroupsIndexRoute
   '/_protected/calendar/events/$eventId/': typeof ProtectedCalendarEventsEventIdIndexRoute
   '/_protected/groups/events/$groupEventId/': typeof ProtectedGroupsEventsGroupEventIdIndexRoute
@@ -984,6 +1003,7 @@ export interface FileRouteTypes {
     | '/routes/$routeId/'
     | '/training-plans/$planId/'
     | '/user/$userId/'
+    | '/organizations/$organizationId/athletes/$athleteId'
     | '/organizations/$organizationId/groups/$groupId'
     | '/calendar/events/$eventId/edit'
     | '/groups/$groupId/events/new'
@@ -993,6 +1013,7 @@ export interface FileRouteTypes {
     | '/api/internal/provider-sync/wahoo/drain'
     | '/api/internal/provider-sync/wahoo/retry'
     | '/api/internal/provider-sync/wahoo/status'
+    | '/organizations/$organizationId/athletes/'
     | '/organizations/$organizationId/groups/'
     | '/calendar/events/$eventId/'
     | '/groups/events/$groupEventId/'
@@ -1051,7 +1072,6 @@ export interface FileRouteTypes {
     | '/record'
     | '/routes'
     | '/training-plans'
-    | '/organizations/$organizationId/athletes'
     | '/organizations/$organizationId/dashboard'
     | '/organizations/$organizationId/invitations'
     | '/organizations/$organizationId/staff'
@@ -1073,6 +1093,7 @@ export interface FileRouteTypes {
     | '/routes/$routeId'
     | '/training-plans/$planId'
     | '/user/$userId'
+    | '/organizations/$organizationId/athletes/$athleteId'
     | '/organizations/$organizationId/groups/$groupId'
     | '/calendar/events/$eventId/edit'
     | '/groups/$groupId/events/new'
@@ -1082,6 +1103,7 @@ export interface FileRouteTypes {
     | '/api/internal/provider-sync/wahoo/drain'
     | '/api/internal/provider-sync/wahoo/retry'
     | '/api/internal/provider-sync/wahoo/status'
+    | '/organizations/$organizationId/athletes'
     | '/organizations/$organizationId/groups'
     | '/calendar/events/$eventId'
     | '/groups/events/$groupEventId'
@@ -1169,6 +1191,7 @@ export interface FileRouteTypes {
     | '/_protected/routes/$routeId/'
     | '/_protected/training-plans/$planId/'
     | '/_protected/user/$userId/'
+    | '/_coaching/organizations/$organizationId/athletes/$athleteId'
     | '/_coaching/organizations/$organizationId/groups/$groupId'
     | '/_protected/calendar/events/$eventId/edit'
     | '/_protected/groups/$groupId/events/new'
@@ -1178,6 +1201,7 @@ export interface FileRouteTypes {
     | '/api/internal/provider-sync/wahoo/drain'
     | '/api/internal/provider-sync/wahoo/retry'
     | '/api/internal/provider-sync/wahoo/status'
+    | '/_coaching/organizations/$organizationId/athletes/'
     | '/_coaching/organizations/$organizationId/groups/'
     | '/_protected/calendar/events/$eventId/'
     | '/_protected/groups/events/$groupEventId/'
@@ -1780,6 +1804,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiIntegrationsCallbackProviderRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_coaching/organizations/$organizationId/athletes/': {
+      id: '/_coaching/organizations/$organizationId/athletes/'
+      path: '/'
+      fullPath: '/organizations/$organizationId/athletes/'
+      preLoaderRoute: typeof CoachingOrganizationsOrganizationIdAthletesIndexRouteImport
+      parentRoute: typeof CoachingOrganizationsOrganizationIdAthletesRoute
+    }
+    '/_coaching/organizations/$organizationId/athletes/$athleteId': {
+      id: '/_coaching/organizations/$organizationId/athletes/$athleteId'
+      path: '/$athleteId'
+      fullPath: '/organizations/$organizationId/athletes/$athleteId'
+      preLoaderRoute: typeof CoachingOrganizationsOrganizationIdAthletesAthleteIdRouteImport
+      parentRoute: typeof CoachingOrganizationsOrganizationIdAthletesRoute
+    }
     '/_coaching/organizations/$organizationId/groups/': {
       id: '/_coaching/organizations/$organizationId/groups/'
       path: '/'
@@ -1881,6 +1919,24 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface CoachingOrganizationsOrganizationIdAthletesRouteChildren {
+  CoachingOrganizationsOrganizationIdAthletesAthleteIdRoute: typeof CoachingOrganizationsOrganizationIdAthletesAthleteIdRoute
+  CoachingOrganizationsOrganizationIdAthletesIndexRoute: typeof CoachingOrganizationsOrganizationIdAthletesIndexRoute
+}
+
+const CoachingOrganizationsOrganizationIdAthletesRouteChildren: CoachingOrganizationsOrganizationIdAthletesRouteChildren =
+  {
+    CoachingOrganizationsOrganizationIdAthletesAthleteIdRoute:
+      CoachingOrganizationsOrganizationIdAthletesAthleteIdRoute,
+    CoachingOrganizationsOrganizationIdAthletesIndexRoute:
+      CoachingOrganizationsOrganizationIdAthletesIndexRoute,
+  }
+
+const CoachingOrganizationsOrganizationIdAthletesRouteWithChildren =
+  CoachingOrganizationsOrganizationIdAthletesRoute._addFileChildren(
+    CoachingOrganizationsOrganizationIdAthletesRouteChildren,
+  )
+
 interface CoachingOrganizationsOrganizationIdGroupsGroupIdRouteChildren {
   CoachingOrganizationsOrganizationIdGroupsGroupIdAthletesRoute: typeof CoachingOrganizationsOrganizationIdGroupsGroupIdAthletesRoute
   CoachingOrganizationsOrganizationIdGroupsGroupIdCoachesRoute: typeof CoachingOrganizationsOrganizationIdGroupsGroupIdCoachesRoute
@@ -1918,7 +1974,7 @@ const CoachingOrganizationsOrganizationIdGroupsRouteWithChildren =
   )
 
 interface CoachingOrganizationsOrganizationIdRouteChildren {
-  CoachingOrganizationsOrganizationIdAthletesRoute: typeof CoachingOrganizationsOrganizationIdAthletesRoute
+  CoachingOrganizationsOrganizationIdAthletesRoute: typeof CoachingOrganizationsOrganizationIdAthletesRouteWithChildren
   CoachingOrganizationsOrganizationIdDashboardRoute: typeof CoachingOrganizationsOrganizationIdDashboardRoute
   CoachingOrganizationsOrganizationIdGroupsRoute: typeof CoachingOrganizationsOrganizationIdGroupsRouteWithChildren
   CoachingOrganizationsOrganizationIdInvitationsRoute: typeof CoachingOrganizationsOrganizationIdInvitationsRoute
@@ -1929,7 +1985,7 @@ interface CoachingOrganizationsOrganizationIdRouteChildren {
 const CoachingOrganizationsOrganizationIdRouteChildren: CoachingOrganizationsOrganizationIdRouteChildren =
   {
     CoachingOrganizationsOrganizationIdAthletesRoute:
-      CoachingOrganizationsOrganizationIdAthletesRoute,
+      CoachingOrganizationsOrganizationIdAthletesRouteWithChildren,
     CoachingOrganizationsOrganizationIdDashboardRoute:
       CoachingOrganizationsOrganizationIdDashboardRoute,
     CoachingOrganizationsOrganizationIdGroupsRoute:
