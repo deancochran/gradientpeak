@@ -90,6 +90,10 @@ describe("UI ownership guardrails", () => {
       "chatbot/use-chatbot.ts",
       // Existing prerequisite surfaces compose app-owned coaching server functions.
       "coaching/athletes/administrative-athlete-roster.tsx",
+      // Organization/assignment-bound route and server-function composition, using shared primitives.
+      "coaching/athletes/assigned-athlete-directory.tsx",
+      "coaching/athletes/athlete-workspace-switcher.tsx",
+      "coaching/athletes/coach-athlete-overview.tsx",
       "coaching/coach-access-denied.tsx",
       "coaching/coach-shell.tsx",
       // Recipient-bound response and group roster workflows own web server-function recovery state.
