@@ -92,7 +92,16 @@ test("new invited email verifies in a separate tab and explicitly accepts six-sc
   await anonymousPage.getByLabel(/^password/i).fill(password);
   await anonymousPage.getByLabel(/repeat password/i).fill(password);
   await anonymousPage.getByRole("button", { name: /^sign up$/i }).click();
-  await expect(anonymousPage).toHaveURL(/\/auth\/sign-up-success/);
+  await expect(anonymousPage).toHaveURL(/\/auth\/verify/);
+  // Exercise the native POST fallback, not only the enhanced resend handler.
+  await anonymousPage.locator('form[method="post"]').evaluate((form) => {
+    if (!(form instanceof HTMLFormElement)) throw new Error("Missing verification form");
+    form.submit();
+  });
+  await expect(anonymousPage).toHaveURL(/flashType=success/);
+  expect(new URL(anonymousPage.url()).searchParams.get("redirect")).toBe(
+    "/organization-invitations",
+  );
   await assertNotAccepted();
   const capturePath = process.env.AUTH_EMAIL_CAPTURE_PATH;
   if (!capturePath) throw new Error("Missing private disposable mail capture");

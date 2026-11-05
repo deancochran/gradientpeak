@@ -137,9 +137,11 @@ function buildVerifyEmailRedirectHref(
   source?: string,
   flashMessage?: string,
   flashType: "success" | "error" | "info" = "info",
+  redirectTo?: string,
 ) {
   const url = new URL("/auth/verify", "http://gradientpeak.local");
   url.searchParams.set("email", email);
+  if (redirectTo) url.searchParams.set("redirect", getSafeAppRedirectTarget(redirectTo, "/"));
 
   if (source) {
     url.searchParams.set("source", source);
@@ -206,7 +208,7 @@ export const signUpWithEmailAction = createServerFn({ method: "POST" })
     }
 
     throw redirect({
-      href: `/auth/sign-up-success?email=${encodeURIComponent(data.email)}${data.redirect ? `&redirect=${encodeURIComponent(getSafeAppRedirectTarget(data.redirect, "/"))}` : ""}`,
+      href: `${buildVerifyEmailRedirectHref(data.email, "sign-up")}${data.redirect ? `&redirect=${encodeURIComponent(getSafeAppRedirectTarget(data.redirect, "/"))}` : ""}`,
       statusCode: 303,
     });
   });
@@ -294,6 +296,7 @@ export const sendVerificationEmailAction = createServerFn({ method: "POST" })
         data.source,
         "Verification email sent. Check your inbox and spam folder.",
         "success",
+        data.redirect,
       ),
       statusCode: 303,
     });
