@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { activityPlanStructureSchema } from "../activity-plan/structure-schema";
+import { activityPlanTrainingIntentSchema } from "../activity-plan/training-intent";
 import { activityPrescriptionQuantificationBundleSchema } from "../activity-quantification/bundle";
 import { activityPlanProjectionSchema } from "../activity-quantification/plan-projection";
 import { completedSegmentSummarySchema } from "../activity-segments/completed-segment-schema";
@@ -458,6 +459,8 @@ const activityPlanSummaryShape = {
   owner: projectionOwnerSchema.nullable(),
   activityCategory: canonicalActivityCategorySchema,
   activityPlanRevision: z.number().int().positive(),
+  /** Canonical selection metadata; optional for previously cached projections. */
+  trainingIntent: activityPlanTrainingIntentSchema.optional(),
   /** Authored prescription data used by every plan presentation surface. */
   structure: activityPlanStructureSchema,
   /** Owner-only prescription detail. Non-owner projections omit this key entirely. */

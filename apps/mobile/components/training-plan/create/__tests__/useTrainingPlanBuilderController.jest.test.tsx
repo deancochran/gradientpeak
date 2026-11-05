@@ -160,7 +160,7 @@ describe("useTrainingPlanBuilderController chart selection", () => {
     expect(result.current.creationChart.chartProps.dailyPoints[0]?.plannedLoad).toBe(0);
     expect(JSON.stringify(plan.metrics)).toBe(originalMetrics);
   });
-  it("changes category from the prescription without replacing saved demand or schedule overrides", async () => {
+  it("copies canonical category and intent without replacing numeric demand or schedule overrides", async () => {
     const existing: TrainingPlanBuilderSession = {
       id: "session-one",
       localId: "session-one",
@@ -180,12 +180,12 @@ describe("useTrainingPlanBuilderController chart selection", () => {
     await act(() => result.current.selection.setSessionId(existing.localId));
     await act(() =>
       result.current.activityPicker.selectPlan(
-        createActivityPlanSummary({ activityCategory: "run" }),
+        createActivityPlanSummary({ activityCategory: "run", trainingIntent: "vo2max" }),
       ),
     );
     expect(mockBuilder.actions.updateSession).toHaveBeenCalledWith({
       ...existing,
-      demand: { ...existing.demand, activity_category: "run" },
+      demand: { ...existing.demand, activity_category: "run", training_intent: "vo2max" },
     });
     mockBuilder.actions.getSessionById.mockReturnValue(null);
   });

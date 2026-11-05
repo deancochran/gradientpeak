@@ -18,12 +18,14 @@ export function TrainingPlanSessionPage({
   session,
   activityPlan,
   projectionMetrics,
+  forecastExplanation,
   onChange,
   onChangeActivity,
 }: {
   session: TrainingPlanBuilderSession;
   activityPlan: ActivityPlan | null;
   projectionMetrics?: readonly ActivityPlanMetric[] | undefined;
+  forecastExplanation?: string | undefined;
   onChange: (session: TrainingPlanBuilderSession) => void;
   onChangeActivity: (sessionId: string) => void;
 }) {
@@ -58,7 +60,7 @@ export function TrainingPlanSessionPage({
       <ActivityPlanSummary
         title={activityPlan?.name ?? session.activityPlan?.name ?? "Activity unavailable"}
         subtitle={activityPlan?.activityCategory ?? session.demand.activity_category}
-        {...(hasEstimates && metrics ? { projectionMetrics: metrics } : {})}
+        {...(metrics ? { projectionMetrics: metrics } : {})}
         showAttribution={false}
         headerAccessory={
           <Button
@@ -71,14 +73,14 @@ export function TrainingPlanSessionPage({
           </Button>
         }
       />
-      {!hasEstimates ? (
-        <Text className="text-sm text-muted-foreground">
-          Estimates aren’t available for this activity yet.
+      {forecastExplanation ? (
+        <Text className="text-sm text-muted-foreground" testID="session-forecast-explanation">
+          {forecastExplanation}
         </Text>
       ) : null}
-      {hasEstimates && metrics?.some((metric) => metric.status !== "available") ? (
+      {!hasEstimates && !forecastExplanation ? (
         <Text className="text-sm text-muted-foreground">
-          Some estimates aren’t available yet. Missing estimates are shown as —.
+          Estimates aren’t available for this activity yet.
         </Text>
       ) : null}
       <View className="gap-3">

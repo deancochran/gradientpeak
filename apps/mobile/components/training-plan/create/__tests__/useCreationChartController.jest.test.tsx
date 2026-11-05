@@ -124,6 +124,56 @@ describe("creation chart selection and current forecast", () => {
       result.current.sessionMetricsById.get("s")?.find((metric) => metric.key === "common_load"),
     ).toMatchObject({ value: null, status: "unavailable" });
     expect(result.current.forecastPartial).toBe(true);
+    expect(result.current.forecastIssues).toEqual([
+      expect.objectContaining({
+        id: "s",
+        detail: expect.stringContaining("excluded from the projected trajectory"),
+      }),
+    ]);
+    builder.derived.backendPlanningPreview.isStaleInput = true;
+    await rerender({});
+    expect(result.current.forecastIssues).toEqual([]);
+  });
+  it("preserves session-specific missing input explanations from the server", async () => {
+    const base = makeBuilder();
+    const builder = {
+      ...base,
+      derived: {
+        backendPlanningPreview: {
+          ...base.derived.backendPlanningPreview,
+          data: {
+            ...base.derived.backendPlanningPreview.data,
+            applicable: false,
+            sessionResults: [
+              {
+                sourceSessionId: "s",
+                planningDate: "2026-11-04",
+                status: "needs_input",
+                missing: [
+                  {
+                    code: "threshold_missing",
+                    message: "Current running calibration is unavailable.",
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    };
+    const { result } = await renderHook(() =>
+      useCreationChartController(
+        builder as unknown as ReturnType<typeof useTrainingPlanCreationService>,
+        {},
+      ),
+    );
+    expect(result.current.forecastIssues).toEqual([
+      {
+        id: "s",
+        title: "Scheduled activity",
+        detail: "Current running calibration is unavailable.",
+      },
+    ]);
   });
   it("keeps the authored range future-facing and allows navigating beyond the last session", async () => {
     const builder = makeBuilder();

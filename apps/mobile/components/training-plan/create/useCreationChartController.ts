@@ -146,6 +146,38 @@ export function useCreationChartController(
     );
   }, [builder.state.structure.sessions, currentPreview, metricsById, performanceTargets]);
   return {
+    forecastIssues:
+      currentPreview?.status === "available"
+        ? currentPreview.sessionResults.flatMap((result) => {
+            const session = builder.state.structure.sessions.find(
+              (item) => item.id === result.sourceSessionId,
+            );
+            const title =
+              session?.eventOverrides?.title || session?.activityPlan?.name || "Scheduled activity";
+            if (result.status !== "resolved") {
+              const reasons = result.status === "needs_input" ? result.missing : result.reasons;
+              return [
+                {
+                  id: result.sourceSessionId,
+                  title,
+                  detail:
+                    reasons.map((reason) => reason.message).join(" ") ||
+                    "This activity could not be resolved for the forecast.",
+                },
+              ];
+            }
+            return result.manifest.prescription_estimate.common_load.status !== "complete"
+              ? [
+                  {
+                    id: result.sourceSessionId,
+                    title,
+                    detail:
+                      "No complete load estimate is available. This activity stays in your schedule but is excluded from the projected trajectory.",
+                  },
+                ]
+              : [];
+          })
+        : [],
     sessionMetricsById,
     selectedDate,
     selectedDayOffset: Math.max(0, diffDateOnlyUtcDays(startDate, selectedDate)),

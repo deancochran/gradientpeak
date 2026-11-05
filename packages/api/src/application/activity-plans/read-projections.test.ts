@@ -120,6 +120,14 @@ function nestedKeys(value: unknown): string[] {
   return Object.entries(value).flatMap(([key, child]) => [key, ...nestedKeys(child)]);
 }
 describe("toActivityPlanSummary", () => {
+  it("carries canonical training intent for explicit plan selection without inferring from the title", () => {
+    const result = toActivityPlanSummary(
+      { ...planRow(structure), training_intent: "vo2max" },
+      PROFILE_ID,
+    );
+    expect(result.trainingIntent).toBe("vo2max");
+    expect(toActivityPlanSummary(planRow(structure), PROFILE_ID).trainingIntent).toBeUndefined();
+  });
   it("normalizes malformed owner presentation fields", () => {
     const result = toActivityPlanSummary(planRow(structure), PROFILE_ID);
     expect(result.owner).toEqual({

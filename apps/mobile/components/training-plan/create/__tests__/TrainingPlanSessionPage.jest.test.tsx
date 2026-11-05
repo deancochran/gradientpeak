@@ -28,6 +28,22 @@ const session: TrainingPlanBuilderSession = {
 };
 
 describe("TrainingPlanSessionPage", () => {
+  it("keeps the server exclusion reason visible when inspecting an unresolved session", async () => {
+    await renderNative(
+      <TrainingPlanSessionPage
+        session={session}
+        activityPlan={plan}
+        projectionMetrics={[]}
+        forecastExplanation="The selected activity does not match this session's training intent."
+        onChange={jest.fn()}
+        onChangeActivity={jest.fn()}
+      />,
+    );
+    expect(screen.getByTestId("session-forecast-explanation").props.children).toBe(
+      "The selected activity does not match this session's training intent.",
+    );
+    expect(screen.queryByText("Estimates aren’t available for this activity yet.")).toBeNull();
+  });
   it("shows the current viewer intensity and load instead of the generic summary", async () => {
     await renderNative(
       <TrainingPlanSessionPage
@@ -85,9 +101,7 @@ describe("TrainingPlanSessionPage", () => {
       />,
     );
     expect(screen.getByText("30m")).toBeTruthy();
-    expect(
-      screen.getByText("Some estimates aren’t available yet. Missing estimates are shown as —."),
-    ).toBeTruthy();
+    expect(screen.getByTestId("activity-plan-load-explanation")).toBeTruthy();
     expect(screen.queryByLabelText("Planned duration")).toBeNull();
     await fireEvent.press(screen.getByLabelText("Day 7"));
     expect(onChange).toHaveBeenLastCalledWith({ ...session, offsetDays: 6 });
@@ -106,7 +120,8 @@ describe("TrainingPlanSessionPage", () => {
       />,
     );
     expect(screen.getByText("Estimates aren’t available for this activity yet.")).toBeTruthy();
-    expect(screen.queryByTestId("activity-plan-estimates")).toBeNull();
+    expect(screen.getByTestId("activity-plan-estimates")).toBeTruthy();
+    expect(screen.getByTestId("activity-plan-load-explanation")).toBeTruthy();
     expect(screen.getByLabelText("Custom title").props.value).toBe("Saved title");
     await fireEvent.press(screen.getByLabelText("Next week"));
     expect(onChange).toHaveBeenLastCalledWith({ ...existing, offsetDays: 7 });

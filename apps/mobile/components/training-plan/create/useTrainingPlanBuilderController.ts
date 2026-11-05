@@ -315,7 +315,11 @@ export function useTrainingPlanBuilderController({
       if (!session) return;
       builder.actions.updateSession({
         ...session,
-        demand: { ...session.demand, activity_category: activityPlan.activityCategory },
+        demand: {
+          ...session.demand,
+          activity_category: activityPlan.activityCategory,
+          ...(activityPlan.trainingIntent ? { training_intent: activityPlan.trainingIntent } : {}),
+        },
       });
       builder.actions.assignActivityPlan(
         selectedSessionId,

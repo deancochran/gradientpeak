@@ -1,5 +1,42 @@
 import { describe, expect, it } from "vitest";
-import { formatActivityPlanHeadlineMetric } from "./activity-plan-metric-presentation";
+import {
+  describeActivityPlanLoadAvailability,
+  formatActivityPlanHeadlineMetric,
+} from "./activity-plan-metric-presentation";
+
+describe("load availability explanations", () => {
+  it.each([
+    ["threshold_missing", "calibration was not supplied to this estimate"],
+    ["activity_data_missing", "cannot calculate load from the current activity inputs"],
+    ["incomplete_members", "only part of this activity"],
+    ["unexpected_reason", "did not return a complete estimate"],
+  ])("explains %s without exposing raw reason codes", (reason, text) => {
+    expect(
+      describeActivityPlanLoadAvailability({
+        key: "common_load",
+        label: "Load",
+        status: "unavailable",
+        value: null,
+        unit: "score",
+        reason,
+        provenance: null,
+      }),
+    ).toContain(text);
+  });
+  it("has no warning for a complete zero load", () => {
+    expect(
+      describeActivityPlanLoadAvailability({
+        key: "common_load",
+        label: "Load",
+        status: "available",
+        value: 0,
+        unit: "score",
+        reason: null,
+        provenance: "estimated",
+      }),
+    ).toBeNull();
+  });
+});
 
 describe("formatActivityPlanHeadlineMetric", () => {
   it.each([

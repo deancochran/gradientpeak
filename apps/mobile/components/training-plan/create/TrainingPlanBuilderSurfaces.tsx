@@ -120,6 +120,10 @@ export function TrainingPlanBuilderSurfaces({ controller }: TrainingPlanBuilderS
             }
             session={session}
             projectionMetrics={controller.creationChart.sessionMetricsById.get(session.localId)}
+            forecastExplanation={
+              controller.creationChart.forecastIssues?.find((issue) => issue.id === session.id)
+                ?.detail
+            }
             onChange={controller.builder.actions.updateSession}
             onChangeActivity={controller.actions.openActivityPicker}
           />

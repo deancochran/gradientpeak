@@ -126,6 +126,11 @@ export function BuilderScheduleEditor({
               : "Projected trajectory uses your current plan check. Missing activity estimates remain unknown."
             : "Your authored schedule is shown now. A current plan check is needed for the projected trajectory."}
         </Text>
+        {(creationChart.forecastIssues ?? []).map((issue) => (
+          <Text key={issue.id} className="text-sm text-muted-foreground">
+            {issue.title}: {issue.detail}
+          </Text>
+        ))}
         <View className="flex-row items-center justify-between">
           <Button
             variant="ghost"

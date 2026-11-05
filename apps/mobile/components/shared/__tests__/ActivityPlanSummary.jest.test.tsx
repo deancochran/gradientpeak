@@ -28,6 +28,27 @@ function objective(overrides: Record<string, unknown> = {}): SemanticMetric {
 }
 
 describe("ActivityPlanSummary", () => {
+  it("explains missing calibration instead of implying the athlete has no thresholds", async () => {
+    await renderNative(
+      <ActivityPlanSummary
+        title="Threshold workout"
+        projectionMetrics={[
+          {
+            key: "common_load",
+            label: "Load",
+            status: "unavailable",
+            value: null,
+            unit: "score",
+            reason: "threshold_missing",
+            provenance: null,
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByTestId("activity-plan-load-explanation").props.children).toContain(
+      "calibration was not supplied to this estimate",
+    );
+  });
   it("renders the canonical four labels exactly once", async () => {
     await renderNative(
       <ActivityPlanSummary projectionMetrics={[]} showAttribution={false} title="Metric plan" />,
