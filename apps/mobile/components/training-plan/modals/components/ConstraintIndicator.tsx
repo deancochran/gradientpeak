@@ -9,8 +9,8 @@ export type ConstraintStatus = "satisfied" | "warning" | "violated" | "not_appli
 interface ConstraintIndicatorProps {
   label: string;
   status: ConstraintStatus;
-  currentValue?: number | string;
-  newValue?: number | string;
+  currentValue?: number | string | null;
+  newValue?: number | string | null;
   limit?: number | string;
   unit?: string;
   description?: string;
@@ -30,12 +30,12 @@ interface ConstraintIndicatorProps {
  *
  * @example
  * <ConstraintIndicator
- *   label="Weekly TSS"
+ *   label="Weekly Load"
  *   status="warning"
  *   currentValue={250}
  *   newValue={280}
  *   limit={300}
- *   unit="TSS"
+ *   unit="Common Load"
  * />
  */
 export function ConstraintIndicator({
@@ -51,8 +51,11 @@ export function ConstraintIndicator({
     return null;
   }
 
+  const valuesMissing = currentValue === null || newValue === null;
+  const resolvedStatus: ConstraintStatus = valuesMissing ? "satisfied" : status;
+
   const getStatusColor = (): string => {
-    switch (status) {
+    switch (resolvedStatus) {
       case "satisfied":
         return "text-green-600";
       case "warning":
@@ -65,7 +68,7 @@ export function ConstraintIndicator({
   };
 
   const getStatusBgColor = (): string => {
-    switch (status) {
+    switch (resolvedStatus) {
       case "satisfied":
         return "bg-green-100";
       case "warning":
@@ -81,7 +84,7 @@ export function ConstraintIndicator({
     const iconSize = 20;
     const colorClass = getStatusColor();
 
-    switch (status) {
+    switch (resolvedStatus) {
       case "satisfied":
         return <Check size={iconSize} className={colorClass} />;
       case "warning":
@@ -93,7 +96,8 @@ export function ConstraintIndicator({
     }
   };
 
-  const formatValue = (value: number | string | undefined): string => {
+  const formatValue = (value: number | string | null | undefined): string => {
+    if (value === null) return "0";
     if (value === undefined) return "—";
     return typeof value === "number" ? Math.round(value).toString() : value;
   };
@@ -133,10 +137,10 @@ export function ConstraintIndicator({
       )}
 
       {/* Status Message */}
-      {status === "warning" && (
+      {resolvedStatus === "warning" && (
         <Text className="mt-2 text-xs text-yellow-700 ml-9">⚠️ Close to limit</Text>
       )}
-      {status === "violated" && (
+      {resolvedStatus === "violated" && (
         <Text className="mt-2 text-xs text-red-700 ml-9">❌ Exceeds recommended limit</Text>
       )}
     </View>

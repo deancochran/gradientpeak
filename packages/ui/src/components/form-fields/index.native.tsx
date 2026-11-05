@@ -1,10 +1,23 @@
-import type { FieldPath, FieldPathValue, FieldValues } from "react-hook-form";
-
-import { View } from "../../lib/react-native";
+import { useEffect, useState } from "react";
+import {
+  type Control,
+  type ControllerRenderProps,
+  type FieldPath,
+  type FieldPathValue,
+  type FieldValues,
+  useFormState,
+  useWatch,
+} from "react-hook-form";
+import { FlatList, View } from "react-native";
+import { useFormDraftResetKey } from "../../hooks/pending-form-drafts";
+import { cn } from "../../lib/cn";
 import { BoundedNumberInput } from "../bounded-number-input/index.native";
 import { Button } from "../button/index.native";
 import { DateInput } from "../date-input/index.native";
+import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "../dialog/index.native";
 import { DurationInput } from "../duration-input/index.native";
+import { FileInput } from "../file-input/index.native";
+import type { SelectedFile } from "../file-input/shared";
 import {
   FormControl,
   FormDescription,
@@ -35,6 +48,7 @@ import {
   type FormDateInputFieldProps,
   type FormDateTimeFieldProps,
   type FormDurationFieldProps,
+  type FormFileFieldProps,
   type FormIntegerStepperFieldProps,
   type FormNumberFieldProps,
   type FormPaceFieldProps,
@@ -45,8 +59,64 @@ import {
   type FormTextareaFieldProps,
   type FormTextFieldProps,
   type FormTimeInputFieldProps,
+  type FormTimezoneFieldProps,
   type FormWeightInputFieldProps,
+  filterTimezoneOptions,
+  getTimezoneOptions,
+  omitUndefined,
 } from "./shared";
+import { useNumberField } from "./use-number-field";
+
+function FormFileField<TFieldValues extends FieldValues, TName extends FieldPath<TFieldValues>>({
+  control,
+  description,
+  disabled,
+  emptyValue,
+  label,
+  name,
+  required,
+  rules,
+  testId,
+  ...fileInputProps
+}: FormFileFieldProps<TFieldValues, TName>) {
+  const { isSubmitting } = useFormState({ control });
+  const isDisabled = disabled || isSubmitting;
+
+  return (
+    <FormField
+      control={control}
+      name={name}
+      {...omitUndefined({ rules })}
+      render={({ field, fieldState }) => (
+        <FormItem>
+          <FormLabel>
+            {label}
+            {required ? " *" : null}
+          </FormLabel>
+          <FormControl>
+            <FileInput
+              {...fileInputProps}
+              disabled={isDisabled}
+              {...omitUndefined({ error: fieldState.error?.message })}
+              files={(Array.isArray(field.value) ? field.value : []) as SelectedFile[]}
+              hideLabel
+              label={label}
+              name={field.name}
+              onBlur={field.onBlur}
+              onFilesChange={(files) => {
+                const nextValue =
+                  files.length === 0 && emptyValue !== undefined ? emptyValue : files;
+                field.onChange(nextValue as FieldPathValue<TFieldValues, TName>);
+              }}
+              {...omitUndefined({ required, testId })}
+            />
+          </FormControl>
+          {description ? <FormDescription>{description}</FormDescription> : null}
+        </FormItem>
+      )}
+    />
+  );
+}
 
 function FormTextField<TFieldValues extends FieldValues, TName extends FieldPath<TFieldValues>>({
   control,
@@ -61,119 +131,152 @@ function FormTextField<TFieldValues extends FieldValues, TName extends FieldPath
   testId,
   ...inputProps
 }: FormTextFieldProps<TFieldValues, TName>) {
+  const { isSubmitting } = useFormState({ control });
+
   return (
     <FormField
       control={control}
       name={name}
-      rules={rules}
-      render={({ field }) => (
-        <FormItem>
-          <FormLabel>
-            {label}
-            {required ? " *" : null}
-          </FormLabel>
-          <FormControl>
-            <Input
-              {...inputProps}
-              accessibilityLabel={label}
-              editable={!disabled}
-              onBlur={field.onBlur}
-              onChangeText={(nextValue) => {
-                field.onChange(
-                  parseValue
-                    ? parseValue(nextValue)
-                    : (nextValue as FieldPathValue<TFieldValues, TName>),
-                );
-              }}
-              testId={testId}
-              value={formatValue(field.value)}
-            />
-          </FormControl>
-          {description ? <FormDescription>{description}</FormDescription> : null}
-          <FormMessage />
-        </FormItem>
-      )}
+      {...omitUndefined({ rules })}
+      render={({ field }) => {
+        const isDisabled = disabled || field.disabled || isSubmitting;
+
+        return (
+          <FormItem>
+            <FormLabel>
+              {label}
+              {required ? " *" : null}
+            </FormLabel>
+            <FormControl>
+              <Input
+                {...inputProps}
+                accessibilityLabel={label}
+                editable={!isDisabled}
+                onBlur={field.onBlur}
+                onChangeText={(nextValue) => {
+                  field.onChange(
+                    parseValue
+                      ? parseValue(nextValue)
+                      : (nextValue as FieldPathValue<TFieldValues, TName>),
+                  );
+                }}
+                inputRef={field.ref}
+                {...omitUndefined({ testId })}
+                value={formatValue(field.value)}
+              />
+            </FormControl>
+            {description ? <FormDescription>{description}</FormDescription> : null}
+            <FormMessage />
+          </FormItem>
+        );
+      }}
     />
   );
 }
 
-function FormNumberField<TFieldValues extends FieldValues, TName extends FieldPath<TFieldValues>>({
+type NumberFieldControlProps<
+  TFieldValues extends FieldValues,
+  TName extends FieldPath<TFieldValues>,
+> = Omit<FormNumberFieldProps<TFieldValues, TName>, "control" | "name" | "rules"> & {
+  control: Control<TFieldValues>;
+  error?: string;
+  field: ControllerRenderProps<TFieldValues, TName>;
+};
+
+function NumberFieldControl<
+  TFieldValues extends FieldValues,
+  TName extends FieldPath<TFieldValues>,
+>({
   allowDecimal = true,
   control,
   description,
   disabled,
   emptyValue,
+  error,
+  field,
   formatValue = defaultFormatValue,
   label,
   max,
   min,
-  name,
   parseValue,
   placeholder,
   required,
-  rules,
   testId,
+}: NumberFieldControlProps<TFieldValues, TName>) {
+  const input = useNumberField({
+    control,
+    field,
+    label,
+    allowDecimal,
+    disabled,
+    emptyValue,
+    formatValue,
+    min,
+    max,
+    parseValue,
+    required,
+  });
+  const isDisabled = input.disabled;
+
+  const accessibilityHint = [
+    required ? "Required" : undefined,
+    description,
+    error ? `Error: ${error}` : undefined,
+  ]
+    .filter(Boolean)
+    .join(". ");
+
+  return (
+    <FormItem>
+      <FormLabel>
+        {label}
+        {required ? " *" : null}
+      </FormLabel>
+      <FormControl>
+        <Input
+          {...omitUndefined({ accessibilityHint: accessibilityHint || undefined })}
+          accessibilityLabel={label}
+          accessibilityState={{ disabled: isDisabled }}
+          editable={!isDisabled}
+          keyboardType={allowDecimal ? "decimal-pad" : "numeric"}
+          onBlur={input.blur}
+          onChangeText={input.change}
+          {...omitUndefined({ placeholder, testId })}
+          inputRef={field.ref}
+          value={input.text}
+        />
+      </FormControl>
+      {description ? <FormDescription>{description}</FormDescription> : null}
+      {error ? <FormMessage>{error}</FormMessage> : <FormMessage />}
+    </FormItem>
+  );
+}
+
+function FormNumberField<TFieldValues extends FieldValues, TName extends FieldPath<TFieldValues>>({
+  control,
+  name,
+  rules,
+  ...props
 }: FormNumberFieldProps<TFieldValues, TName>) {
   return (
     <FormField
       control={control}
       name={name}
-      rules={rules}
+      {...omitUndefined({ rules })}
       render={({ field, fieldState }) => (
-        <FormItem>
-          <FormLabel>
-            {label}
-            {required ? " *" : null}
-          </FormLabel>
-          <FormControl>
-            <Input
-              accessibilityLabel={label}
-              editable={!disabled}
-              keyboardType="decimal-pad"
-              onBlur={field.onBlur}
-              onChangeText={(nextValue) => {
-                const raw = nextValue.trim();
-                if (raw.length === 0) {
-                  field.onChange(
-                    emptyValue === undefined
-                      ? (undefined as FieldPathValue<TFieldValues, TName>)
-                      : emptyValue,
-                  );
-                  return;
-                }
-
-                if (parseValue) {
-                  field.onChange(parseValue(raw));
-                  return;
-                }
-
-                const parsed = allowDecimal ? Number(raw) : Number.parseInt(raw, 10);
-                if (!Number.isFinite(parsed)) {
-                  field.onChange(undefined as FieldPathValue<TFieldValues, TName>);
-                  return;
-                }
-
-                const bounded = Math.min(max ?? parsed, Math.max(min ?? parsed, parsed));
-                field.onChange(bounded as FieldPathValue<TFieldValues, TName>);
-              }}
-              placeholder={placeholder}
-              testId={testId}
-              value={formatValue(field.value)}
-            />
-          </FormControl>
-          {description ? <FormDescription>{description}</FormDescription> : null}
-          {fieldState.error?.message ? (
-            <FormMessage>{fieldState.error.message}</FormMessage>
-          ) : (
-            <FormMessage />
-          )}
-        </FormItem>
+        <NumberFieldControl
+          {...props}
+          control={control}
+          {...omitUndefined({ error: fieldState.error?.message })}
+          field={field}
+        />
       )}
     />
   );
 }
 
 function FormSwitchField<TFieldValues extends FieldValues, TName extends FieldPath<TFieldValues>>({
+  className,
   control,
   description,
   disabled,
@@ -187,20 +290,20 @@ function FormSwitchField<TFieldValues extends FieldValues, TName extends FieldPa
     <FormField
       control={control}
       name={name}
-      rules={rules}
+      {...omitUndefined({ rules })}
       render={({ field }) => (
-        <FormItem className="flex-row items-center justify-between rounded-lg border border-border p-4">
-          <FormItem className="flex-1 gap-0.5">
-            <FormLabel className="text-base">{label}</FormLabel>
+        <FormItem className={cn("flex-row items-center justify-between gap-4 py-2", className)}>
+          <View className="flex-1 gap-0.5">
+            <FormLabel>{label}</FormLabel>
             {description ? <FormDescription>{description}</FormDescription> : null}
-          </FormItem>
+            <FormMessage />
+          </View>
           <FormControl>
             <Switch
               accessibilityLabel={switchLabel ?? label}
               checked={Boolean(field.value)}
-              disabled={disabled}
+              {...omitUndefined({ disabled, testId })}
               onCheckedChange={field.onChange}
-              testId={testId}
             />
           </FormControl>
         </FormItem>
@@ -215,7 +318,9 @@ function FormBoundedNumberField<
 >({
   control,
   decimals,
+  emptyValue,
   description,
+  disabled,
   label,
   max,
   min,
@@ -227,29 +332,37 @@ function FormBoundedNumberField<
   unitLabel,
   required,
 }: FormBoundedNumberFieldProps<TFieldValues, TName>) {
+  const resetKey = useFormDraftResetKey(control);
+  const { isSubmitting } = useFormState({ control });
   return (
     <FormField
       control={control}
       name={name}
-      rules={rules}
+      {...omitUndefined({ rules })}
       render={({ field, fieldState }) => (
         <BoundedNumberInput
-          decimals={decimals}
-          error={fieldState.error?.message}
-          helperText={description}
+          ref={field.ref}
+          formControl={control}
+          fieldName={field.name}
+          resetKey={resetKey}
+          {...omitUndefined({ decimals })}
+          disabled={disabled || field.disabled || isSubmitting}
+          {...omitUndefined({ error: fieldState.error?.message, helperText: description })}
           id={String(name)}
           label={label}
-          max={max}
-          min={min}
+          {...omitUndefined({ max, min })}
           onChange={() => undefined}
-          onNumberChange={(value) => {
-            field.onChange(value as FieldPathValue<TFieldValues, TName>);
-          }}
-          placeholder={placeholder}
-          presets={presets}
-          required={required}
-          testId={testId}
-          unitLabel={unitLabel}
+          onBlur={field.onBlur}
+          onInputResult={(result) =>
+            field.onChange(
+              result.status === "valid"
+                ? result.value
+                : result.status === "empty"
+                  ? emptyValue
+                  : Number.NaN,
+            )
+          }
+          {...omitUndefined({ placeholder, presets, required, testId, unitLabel })}
           value={defaultFormatValue(field.value)}
         />
       )}
@@ -263,31 +376,50 @@ function FormIntegerStepperField<
 >({
   control,
   description,
+  emptyValue,
+  disabled,
   label,
   max,
   min,
   name,
+  required = false,
   rules,
   step,
   testId,
 }: FormIntegerStepperFieldProps<TFieldValues, TName>) {
+  const { isSubmitting } = useFormState({ control });
+  const resetKey = useFormDraftResetKey(control);
+
   return (
     <FormField
       control={control}
       name={name}
-      rules={rules}
+      {...omitUndefined({ rules })}
       render={({ field, fieldState }) => (
         <IntegerStepper
-          error={fieldState.error?.message}
-          helperText={description}
+          required={required}
+          ref={field.ref}
+          formControl={control}
+          fieldName={field.name}
+          resetKey={resetKey}
+          onBlur={field.onBlur}
+          disabled={disabled || field.disabled || isSubmitting}
+          {...omitUndefined({ error: fieldState.error?.message, helperText: description })}
           id={String(name)}
           label={label}
-          max={max}
-          min={min}
-          onChange={(value) => field.onChange(value as FieldPathValue<TFieldValues, TName>)}
-          step={step}
-          testId={testId}
-          value={typeof field.value === "number" ? field.value : 0}
+          {...omitUndefined({ max, min })}
+          onChange={() => undefined}
+          onInputResult={(result) =>
+            field.onChange(
+              result.status === "valid"
+                ? result.value
+                : result.status === "empty"
+                  ? emptyValue
+                  : Number.NaN,
+            )
+          }
+          {...omitUndefined({ step, testId })}
+          value={typeof field.value === "number" ? field.value : null}
         />
       )}
     />
@@ -312,40 +444,46 @@ function FormTextareaField<
   testId,
   ...textareaProps
 }: FormTextareaFieldProps<TFieldValues, TName>) {
+  const { isSubmitting } = useFormState({ control });
+
   return (
     <FormField
       control={control}
       name={name}
-      rules={rules}
-      render={({ field }) => (
-        <FormItem>
-          <FormLabel>
-            {label}
-            {required ? " *" : null}
-          </FormLabel>
-          <FormControl>
-            <Textarea
-              {...textareaProps}
-              accessibilityLabel={label}
-              editable={!disabled}
-              numberOfLines={numberOfLines}
-              onBlur={field.onBlur}
-              onChangeText={(nextValue) => {
-                field.onChange(
-                  parseValue
-                    ? parseValue(nextValue)
-                    : (nextValue as FieldPathValue<TFieldValues, TName>),
-                );
-              }}
-              placeholder={placeholder}
-              testId={testId}
-              value={formatValue(field.value)}
-            />
-          </FormControl>
-          {description ? <FormDescription>{description}</FormDescription> : null}
-          <FormMessage />
-        </FormItem>
-      )}
+      {...omitUndefined({ rules })}
+      render={({ field }) => {
+        const isDisabled = disabled || field.disabled || isSubmitting;
+
+        return (
+          <FormItem>
+            <FormLabel>
+              {label}
+              {required ? " *" : null}
+            </FormLabel>
+            <FormControl>
+              <Textarea
+                {...textareaProps}
+                accessibilityLabel={label}
+                editable={!isDisabled}
+                {...omitUndefined({ numberOfLines })}
+                onBlur={field.onBlur}
+                onChangeText={(nextValue) => {
+                  field.onChange(
+                    parseValue
+                      ? parseValue(nextValue)
+                      : (nextValue as FieldPathValue<TFieldValues, TName>),
+                  );
+                }}
+                {...omitUndefined({ placeholder, testId })}
+                inputRef={field.ref}
+                value={formatValue(field.value)}
+              />
+            </FormControl>
+            {description ? <FormDescription>{description}</FormDescription> : null}
+            <FormMessage />
+          </FormItem>
+        );
+      }}
     />
   );
 }
@@ -368,66 +506,78 @@ function FormSelectField<TFieldValues extends FieldValues, TName extends FieldPa
     <FormField
       control={control}
       name={name}
-      rules={rules}
-      render={({ field }) => (
-        <FormItem>
-          <FormLabel>
-            {label}
-            {required ? " *" : null}
-          </FormLabel>
-          <Select
-            disabled={disabled}
-            onValueChange={(option) => {
-              const nextValue = option?.value;
-              if (nextValue == null) {
-                return;
-              }
-              field.onChange(
-                parseValue
-                  ? parseValue(nextValue)
-                  : (nextValue as FieldPathValue<TFieldValues, TName>),
-              );
-            }}
-            value={
-              (formatValue
-                ? formatValue(field.value)
-                : field.value == null
-                  ? undefined
-                  : String(field.value)) == null
-                ? undefined
-                : ({
-                    label:
-                      options.find(
-                        (option) =>
-                          option.value ===
-                          (formatValue ? formatValue(field.value) : String(field.value)),
-                      )?.label ?? (formatValue ? formatValue(field.value) : String(field.value))!,
-                    value: (formatValue ? formatValue(field.value) : String(field.value))!,
-                  } as never)
-            }
-          >
-            <FormControl>
-              <SelectTrigger accessibilityLabel={label} testID={testId}>
-                <SelectValue placeholder={placeholder ?? ""} />
-              </SelectTrigger>
-            </FormControl>
-            <SelectContent>
-              {options.map((option) => (
-                <SelectItem
-                  key={option.value}
-                  disabled={option.disabled}
-                  label={option.label}
-                  value={option.value}
+      {...omitUndefined({ rules })}
+      render={({ field }) => {
+        const selectedValue = formatValue
+          ? formatValue(field.value)
+          : field.value == null
+            ? undefined
+            : String(field.value);
+
+        return (
+          <FormItem>
+            <FormLabel>
+              {label}
+              {required ? " *" : null}
+            </FormLabel>
+            <Select
+              {...omitUndefined({ disabled })}
+              onValueChange={(option) => {
+                const nextValue = option?.value;
+                if (nextValue == null) {
+                  return;
+                }
+                field.onChange(
+                  parseValue
+                    ? parseValue(nextValue)
+                    : (nextValue as FieldPathValue<TFieldValues, TName>),
+                );
+              }}
+              {...omitUndefined({
+                value:
+                  selectedValue == null
+                    ? undefined
+                    : ({
+                        label:
+                          options.find((option) => option.value === selectedValue)?.label ??
+                          selectedValue,
+                        value: selectedValue,
+                      } as never),
+              })}
+            >
+              <FormControl>
+                <SelectTrigger
+                  {...omitUndefined({
+                    accessibilityHint:
+                      [required ? "Required" : undefined, description].filter(Boolean).join(". ") ||
+                      undefined,
+                    testID: testId,
+                  })}
+                  accessibilityLabel={label}
+                  accessibilityState={{ disabled }}
+                  {...omitUndefined({ "aria-required": required })}
                 >
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {description ? <FormDescription>{description}</FormDescription> : null}
-          <FormMessage />
-        </FormItem>
-      )}
+                  <SelectValue placeholder={placeholder ?? ""} />
+                </SelectTrigger>
+              </FormControl>
+              <SelectContent>
+                {options.map((option) => (
+                  <SelectItem
+                    key={option.value}
+                    {...omitUndefined({ disabled: option.disabled })}
+                    label={option.label}
+                    value={option.value}
+                  >
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {description ? <FormDescription>{description}</FormDescription> : null}
+            <FormMessage />
+          </FormItem>
+        );
+      }}
     />
   );
 }
@@ -452,7 +602,7 @@ function FormSegmentedSelectField<
     <FormField
       control={control}
       name={name}
-      rules={rules}
+      {...omitUndefined({ rules })}
       render={({ field }) => {
         const selectedValue = formatValue
           ? formatValue(field.value)
@@ -474,9 +624,15 @@ function FormSegmentedSelectField<
                   return (
                     <Button
                       accessibilityRole="button"
-                      accessibilityState={{ selected, disabled: disabled || option.disabled }}
+                      accessibilityState={{
+                        selected,
+                        ...(disabled || option.disabled ? { disabled: true } : {}),
+                      }}
                       className={options.length > 3 ? "min-w-[30%] flex-1" : "flex-1"}
-                      disabled={disabled || option.disabled}
+                      {...omitUndefined({
+                        disabled: disabled || option.disabled,
+                        testId: testId ? `${testId}-${option.value}` : undefined,
+                      })}
                       key={option.value}
                       onPress={() => {
                         field.onChange(
@@ -485,7 +641,6 @@ function FormSegmentedSelectField<
                             : (option.value as FieldPathValue<TFieldValues, TName>),
                         );
                       }}
-                      testId={testId ? `${testId}-${option.value}` : undefined}
                       variant={selected ? "default" : "outline"}
                     >
                       <Text
@@ -517,6 +672,7 @@ function FormDateInputField<
 >({
   control,
   description,
+  disabled,
   label,
   name,
   required,
@@ -524,22 +680,30 @@ function FormDateInputField<
   testId,
   ...dateProps
 }: FormDateInputFieldProps<TFieldValues, TName>) {
+  const { isSubmitting } = useFormState({ control });
+  const resetKey = useFormDraftResetKey(control);
   return (
     <FormField
       control={control}
       name={name}
-      rules={rules}
+      {...omitUndefined({ rules })}
       render={({ field, fieldState }) => (
         <DateInput
           {...dateProps}
-          error={fieldState.error?.message}
-          helperText={description}
+          formControl={control}
+          ref={field.ref}
+          onBlur={field.onBlur}
+          resetKey={resetKey}
+          disabled={disabled || field.disabled || isSubmitting}
+          {...omitUndefined({ error: fieldState.error?.message, helperText: description })}
           id={String(name)}
           label={label}
           onChange={(value) => field.onChange(value ?? null)}
-          required={required}
-          testId={testId}
-          value={typeof field.value === "string" ? field.value : undefined}
+          {...omitUndefined({
+            required,
+            testId,
+            value: typeof field.value === "string" ? field.value : undefined,
+          })}
         />
       )}
     />
@@ -564,7 +728,9 @@ function combineDateTimeValue(date: string | undefined, time: string | undefined
     return null;
   }
 
-  return `${date ?? new Date().toISOString().slice(0, 10)}T${time ?? "00:00"}`;
+  const localDate = new Date();
+  const fallbackDate = `${localDate.getFullYear()}-${String(localDate.getMonth() + 1).padStart(2, "0")}-${String(localDate.getDate()).padStart(2, "0")}`;
+  return `${date ?? fallbackDate}T${time ?? "00:00"}`;
 }
 
 function FormDateTimeField<
@@ -586,7 +752,7 @@ function FormDateTimeField<
     <FormField
       control={control}
       name={name}
-      rules={rules}
+      {...omitUndefined({ rules })}
       render={({ field, fieldState }) => {
         const { date, time } = splitDateTimeValue(field.value);
 
@@ -594,8 +760,11 @@ function FormDateTimeField<
           <View pointerEvents={disabled ? "none" : "auto"} className="gap-3 opacity-100">
             <View className="gap-3 sm:flex-row">
               <DateInput
-                error={fieldState.error?.message}
-                helperText={description}
+                {...omitUndefined({
+                  disabled,
+                  error: fieldState.error?.message,
+                  helperText: description,
+                })}
                 id={`${String(name)}-date`}
                 label={dateLabel ?? `${label} date`}
                 onChange={(nextDate) => {
@@ -604,12 +773,14 @@ function FormDateTimeField<
                   );
                 }}
                 pickerPresentation="modal"
-                required={required}
-                testId={testId ? `${testId}-date` : undefined}
-                value={date}
+                {...omitUndefined({
+                  required,
+                  testId: testId ? `${testId}-date` : undefined,
+                  value: date,
+                })}
               />
               <TimeInput
-                error={fieldState.error?.message}
+                {...omitUndefined({ disabled, error: fieldState.error?.message })}
                 id={`${String(name)}-time`}
                 label={timeLabel ?? `${label} time`}
                 onChange={(nextTime) => {
@@ -618,9 +789,11 @@ function FormDateTimeField<
                   );
                 }}
                 pickerPresentation="modal"
-                required={required}
-                testId={testId ? `${testId}-time` : undefined}
-                value={time}
+                {...omitUndefined({
+                  required,
+                  testId: testId ? `${testId}-time` : undefined,
+                  value: time,
+                })}
               />
             </View>
           </View>
@@ -636,6 +809,7 @@ function FormTimeInputField<
 >({
   control,
   description,
+  disabled,
   label,
   name,
   required,
@@ -647,20 +821,140 @@ function FormTimeInputField<
     <FormField
       control={control}
       name={name}
-      rules={rules}
+      {...omitUndefined({ rules })}
       render={({ field, fieldState }) => (
         <TimeInput
           {...timeProps}
-          error={fieldState.error?.message}
-          helperText={description}
+          {...omitUndefined({
+            disabled,
+            error: fieldState.error?.message,
+            helperText: description,
+          })}
           id={String(name)}
           label={label}
           onChange={(value) => field.onChange(value ?? null)}
-          required={required}
-          testId={testId}
-          value={typeof field.value === "string" ? field.value : undefined}
+          {...omitUndefined({
+            required,
+            testId,
+            value: typeof field.value === "string" ? field.value : undefined,
+          })}
         />
       )}
+    />
+  );
+}
+
+function FormTimezoneField<
+  TFieldValues extends FieldValues,
+  TName extends FieldPath<TFieldValues>,
+>({
+  control,
+  deviceTimeZone,
+  description,
+  disabled,
+  label,
+  name,
+  placeholder = "Select a timezone",
+  required,
+  rules,
+  testId,
+}: FormTimezoneFieldProps<TFieldValues, TName>) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const { isSubmitting } = useFormState({ control });
+  useEffect(() => {
+    if (disabled || isSubmitting) {
+      setOpen(false);
+      setSearch("");
+    }
+  }, [disabled, isSubmitting]);
+  const currentValue = useWatch({ control, name });
+  const options = getTimezoneOptions(
+    typeof currentValue === "string" ? currentValue : null,
+    deviceTimeZone,
+  );
+  return (
+    <FormField
+      control={control}
+      name={name}
+      {...(rules ? { rules } : {})}
+      render={({ field }) => {
+        const isDisabled = disabled || field.disabled || isSubmitting;
+        return (
+          <FormItem>
+            <FormLabel>
+              {label}
+              {required ? " *" : null}
+            </FormLabel>
+            <Dialog
+              open={open && !isDisabled}
+              onOpenChange={(next) => {
+                setOpen(next);
+                setSearch("");
+                if (!next) field.onBlur();
+              }}
+            >
+              <DialogTrigger asChild>
+                <FormControl>
+                  <Button
+                    ref={field.ref}
+                    variant="outline"
+                    disabled={isDisabled}
+                    accessibilityLabel={label}
+                    accessibilityState={{ expanded: open && !isDisabled, disabled: isDisabled }}
+                    {...(testId === undefined ? {} : { testId })}
+                  >
+                    <Text>
+                      {options.find((option) => option.value === currentValue)?.label ??
+                        currentValue ??
+                        placeholder}
+                    </Text>
+                  </Button>
+                </FormControl>
+              </DialogTrigger>
+              <DialogContent className="w-80 gap-2">
+                <DialogTitle>{label}</DialogTitle>
+                <Input
+                  accessibilityLabel="Search timezones"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  placeholder="Search timezones"
+                  value={search}
+                  onChangeText={setSearch}
+                />
+                <FlatList
+                  style={{ height: 240 }}
+                  data={filterTimezoneOptions(options, search)}
+                  extraData={currentValue}
+                  keyboardShouldPersistTaps="handled"
+                  keyExtractor={(item) => item.value}
+                  ListEmptyComponent={<Text>No timezones found</Text>}
+                  renderItem={({ item }) => (
+                    <Button
+                      variant="ghost"
+                      className="justify-start"
+                      disabled={isDisabled}
+                      accessibilityLabel={item.label}
+                      accessibilityState={{ selected: (currentValue ?? "") === item.value }}
+                      onPress={() => {
+                        if (isDisabled) return;
+                        field.onChange(item.value || null);
+                        field.onBlur();
+                        setOpen(false);
+                        setSearch("");
+                      }}
+                    >
+                      <Text>{item.label}</Text>
+                    </Button>
+                  )}
+                />
+              </DialogContent>
+            </Dialog>
+            {description ? <FormDescription>{description}</FormDescription> : null}
+            <FormMessage />
+          </FormItem>
+        );
+      }}
     />
   );
 }
@@ -671,6 +965,7 @@ function FormDurationField<
 >({
   control,
   description,
+  disabled,
   label,
   name,
   required,
@@ -678,21 +973,28 @@ function FormDurationField<
   testId,
   ...durationProps
 }: FormDurationFieldProps<TFieldValues, TName>) {
+  const { isSubmitting } = useFormState({ control });
+  const resetKey = useFormDraftResetKey(control);
   return (
     <FormField
       control={control}
       name={name}
-      rules={rules}
+      {...omitUndefined({ rules })}
       render={({ field, fieldState }) => (
         <DurationInput
           {...durationProps}
-          error={fieldState.error?.message}
-          helperText={description}
+          ref={field.ref}
+          formControl={control}
+          fieldName={field.name}
+          resetKey={resetKey}
+          disabled={disabled || field.disabled || isSubmitting}
+          {...omitUndefined({ error: fieldState.error?.message, helperText: description })}
           id={String(name)}
           label={label}
+          name={field.name}
+          onBlur={field.onBlur}
           onChange={(value) => field.onChange(value as FieldPathValue<TFieldValues, TName>)}
-          required={required}
-          testId={testId}
+          {...omitUndefined({ required, testId })}
           value={typeof field.value === "string" ? field.value : ""}
         />
       )}
@@ -703,6 +1005,7 @@ function FormDurationField<
 function FormPaceField<TFieldValues extends FieldValues, TName extends FieldPath<TFieldValues>>({
   control,
   description,
+  disabled,
   label,
   name,
   required,
@@ -710,21 +1013,28 @@ function FormPaceField<TFieldValues extends FieldValues, TName extends FieldPath
   testId,
   ...paceProps
 }: FormPaceFieldProps<TFieldValues, TName>) {
+  const { isSubmitting } = useFormState({ control });
+  const resetKey = useFormDraftResetKey(control);
   return (
     <FormField
       control={control}
       name={name}
-      rules={rules}
+      {...omitUndefined({ rules })}
       render={({ field, fieldState }) => (
         <PaceInput
           {...paceProps}
-          error={fieldState.error?.message}
-          helperText={description}
+          ref={field.ref}
+          formControl={control}
+          fieldName={field.name}
+          resetKey={resetKey}
+          disabled={disabled || field.disabled || isSubmitting}
+          {...omitUndefined({ error: fieldState.error?.message, helperText: description })}
           id={String(name)}
           label={label}
+          name={field.name}
+          onBlur={field.onBlur}
           onChange={(value) => field.onChange(value as FieldPathValue<TFieldValues, TName>)}
-          required={required}
-          testId={testId}
+          {...omitUndefined({ required, testId })}
           value={typeof field.value === "string" ? field.value : ""}
         />
       )}
@@ -734,14 +1044,14 @@ function FormPaceField<TFieldValues extends FieldValues, TName extends FieldPath
 
 function formatPercentFieldValue(value: unknown, valueMode: "percent" | "fraction") {
   if (typeof value !== "number" || !Number.isFinite(value)) {
-    return 0;
+    return undefined;
   }
 
   return valueMode === "fraction" ? value * 100 : value;
 }
 
 function parsePercentFieldValue(value: number, valueMode: "percent" | "fraction") {
-  return valueMode === "fraction" ? Number((value / 100).toFixed(4)) : value;
+  return valueMode === "fraction" ? value / 100 : value;
 }
 
 function FormPercentSliderField<
@@ -750,8 +1060,9 @@ function FormPercentSliderField<
 >({
   control,
   decimals,
+  emptyValue,
   description,
-  disabled: _disabled,
+  disabled,
   label,
   name,
   required,
@@ -760,26 +1071,38 @@ function FormPercentSliderField<
   valueMode = "percent",
   ...percentProps
 }: FormPercentSliderFieldProps<TFieldValues, TName>) {
+  const { isSubmitting } = useFormState({ control });
+  const resetKey = useFormDraftResetKey(control);
   return (
     <FormField
       control={control}
       name={name}
-      rules={rules}
+      {...omitUndefined({ rules })}
       render={({ field, fieldState }) => (
         <PercentSliderInput
           {...percentProps}
-          decimals={decimals}
-          error={fieldState.error?.message}
-          helperText={description}
+          ref={field.ref}
+          formControl={control}
+          fieldName={field.name}
+          resetKey={resetKey}
+          onBlur={field.onBlur}
+          {...omitUndefined({ decimals })}
+          disabled={disabled || field.disabled || isSubmitting}
+          {...omitUndefined({ error: fieldState.error?.message, helperText: description })}
           id={String(name)}
-          label={`${label}${required ? " *" : ""}`}
-          onChange={(value) => {
+          label={label}
+          onChange={() => undefined}
+          onInputResult={(result) =>
             field.onChange(
-              parsePercentFieldValue(value, valueMode) as FieldPathValue<TFieldValues, TName>,
-            );
-          }}
-          testId={testId}
-          value={formatPercentFieldValue(field.value, valueMode)}
+              result.status === "valid"
+                ? parsePercentFieldValue(result.value, valueMode)
+                : result.status === "empty"
+                  ? emptyValue
+                  : Number.NaN,
+            )
+          }
+          {...omitUndefined({ required, testId })}
+          value={formatPercentFieldValue(field.value, valueMode) ?? null}
         />
       )}
     />
@@ -789,31 +1112,35 @@ function FormPercentSliderField<
 function FormWeightInputField<
   TFieldValues extends FieldValues,
   TName extends FieldPath<TFieldValues>,
->({
-  control,
-  description,
-  label,
-  name,
-  required,
-  rules,
-  testId,
-  ...weightProps
-}: FormWeightInputFieldProps<TFieldValues, TName>) {
+>(props: FormWeightInputFieldProps<TFieldValues, TName>) {
+  const { control, description, emptyValue, label, name, required, rules, testId, ...weightProps } =
+    props;
+  const resetKey = useFormDraftResetKey(control);
+  const { isSubmitting } = useFormState({ control });
   return (
     <FormField
       control={control}
       name={name}
-      rules={rules}
+      {...omitUndefined({ rules })}
       render={({ field, fieldState }) => (
         <WeightInputField
           {...weightProps}
-          error={fieldState.error?.message}
-          helperText={description}
+          ref={field.ref}
+          formControl={control}
+          fieldName={field.name}
+          onBlur={field.onBlur}
+          disabled={weightProps.disabled || field.disabled || isSubmitting}
+          onInputResult={(result) => {
+            if (result.status === "invalid") field.onChange(Number.NaN);
+          }}
+          resetKey={`${weightProps.resetKey ?? ""}:${resetKey}`}
+          {...omitUndefined({ error: fieldState.error?.message, helperText: description })}
           id={String(name)}
           label={label}
-          onChangeKg={field.onChange}
-          required={required}
-          testId={testId}
+          onChangeKg={(value) =>
+            field.onChange(value === null ? ("emptyValue" in props ? emptyValue : null) : value)
+          }
+          {...omitUndefined({ required, testId })}
           valueKg={typeof field.value === "number" ? field.value : (field.value ?? null)}
         />
       )}
@@ -826,6 +1153,7 @@ export {
   FormDateInputField,
   FormDateTimeField,
   FormDurationField,
+  FormFileField,
   FormIntegerStepperField,
   FormNumberField,
   FormPaceField,
@@ -836,5 +1164,6 @@ export {
   FormTextareaField,
   FormTextField,
   FormTimeInputField,
+  FormTimezoneField,
   FormWeightInputField,
 };
