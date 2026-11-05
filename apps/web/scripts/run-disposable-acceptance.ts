@@ -64,7 +64,7 @@ await withDisposableDatabase(
           // Private file capture enables real signup/verification without external email.
           ...(captureAuthMail ? { NODE_ENV: "test" } : {}),
           AUTH_EMAIL_MODE: captureAuthMail ? "capture" : "disabled",
-          AUTH_EMAIL_CAPTURE_PATH: captureAuthMail ? resolve(artifacts, "auth-mail.jsonl") : "",
+          AUTH_EMAIL_CAPTURE_PATH: resolve(artifacts, "auth-mail.jsonl"),
           AUTH_MOBILE_SCHEME: "gradientpeak-dev",
           AUTH_SMTP_HOST: "127.0.0.1",
           AUTH_SMTP_PORT: "55325",
