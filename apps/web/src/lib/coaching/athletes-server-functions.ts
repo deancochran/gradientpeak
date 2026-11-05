@@ -154,13 +154,15 @@ export const loadCoachAthleteOverview = createServerFn({ method: "POST" })
                 })),
               }
             : null,
-          status: model.status
+          ...(model.status
             ? {
-                freshness: model.status.freshness,
-                importStatus: model.status.importStatus,
-                coverage: { lastActivityAt: model.status.coverage.lastActivityAt },
+                status: {
+                  freshness: model.status.freshness,
+                  importStatus: model.status.importStatus,
+                  coverage: { lastActivityAt: model.status.coverage.lastActivityAt },
+                },
               }
-            : undefined,
+            : {}),
         },
       };
     } catch (error) {
