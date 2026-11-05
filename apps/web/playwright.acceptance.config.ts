@@ -5,6 +5,10 @@ if (process.env.E2E_DISPOSABLE_DATABASE !== "1") {
   throw new Error("Use scripts/run-disposable-acceptance.ts to provision this acceptance target.");
 }
 localE2EDatabaseEnvironment(process.env);
+const baseURL = process.env.E2E_ACCEPTANCE_BASE_URL;
+if (!baseURL || !/^http:\/\/127\.0\.0\.1:\d+$/.test(baseURL)) {
+  throw new Error("Acceptance requires its harness-owned loopback origin.");
+}
 
 export default defineConfig({
   testDir: "./e2e",
@@ -15,7 +19,7 @@ export default defineConfig({
   workers: 1,
   outputDir: `test-results/${process.env.E2E_RUN_ID}`,
   use: {
-    baseURL: "http://127.0.0.1:3100",
+    baseURL,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
