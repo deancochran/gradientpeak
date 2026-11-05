@@ -9,13 +9,13 @@ import {
 
 const serviceKey = "local-service-key-never-log";
 
-test("browser CI starts and stops the same guarded E2E target", () => {
+test("browser CI owns its disposable target host without touching the retained E2E target", () => {
   const workflow = readFileSync(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8");
   const browser = workflow.split("  runtime-web:")[1]?.split("  ci:")[0];
   assert.ok(browser);
-  assert.match(browser, /run: pnpm db:e2e:start/);
-  assert.match(browser, /if: always\(\)\s+run: pnpm db:e2e:stop/);
-  assert.doesNotMatch(browser, /self-host:down/);
+  assert.match(browser, /run: pnpm --filter @repo\/db self-host:up/);
+  assert.match(browser, /if: always\(\)\s+run: pnpm --filter @repo\/db self-host:down/);
+  assert.doesNotMatch(browser, /db:e2e:|prepare-runtime-web-e2e\.mjs/);
 });
 
 function inspection(name, ports = {}, environment = []) {

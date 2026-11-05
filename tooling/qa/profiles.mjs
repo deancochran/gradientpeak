@@ -43,7 +43,11 @@ export function validateCiRuntimeDelegation(workflowSource) {
 const webSmoke = [
   "pnpm",
   [
-    "test:e2e:web",
+    "--filter",
+    "web",
+    "exec",
+    "tsx",
+    "scripts/run-disposable-acceptance.ts",
     directCiSmokeReferences.web.path.replace("apps/web/", ""),
     "--project=Desktop Chrome",
     "--grep",

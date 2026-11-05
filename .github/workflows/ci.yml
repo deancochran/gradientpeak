@@ -144,15 +144,13 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Install Chromium
         run: pnpm --filter web exec playwright install --with-deps chromium
-      - name: Start guarded E2E database
-        run: pnpm db:e2e:start
-      - name: Prepare guarded browser runtime environment
-        run: node tooling/qa/prepare-runtime-web-e2e.mjs
+      - name: Start local database host for disposable browser target
+        run: pnpm --filter @repo/db self-host:up
       - name: Run required browser profile
         run: pnpm qa:run --profile web --integration-only
-      - name: Stop guarded E2E database
+      - name: Stop local database host
         if: always()
-        run: pnpm db:e2e:stop
+        run: pnpm --filter @repo/db self-host:down
 
   ci:
     name: Basic checks

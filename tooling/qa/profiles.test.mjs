@@ -26,7 +26,11 @@ test("runtime profiles point directly to the maintained browser smoke test", () 
     {
       command: "pnpm",
       args: [
-        "test:e2e:web",
+        "--filter",
+        "web",
+        "exec",
+        "tsx",
+        "scripts/run-disposable-acceptance.ts",
         "e2e/specs/smoke.spec.ts",
         "--project=Desktop Chrome",
         "--grep",
