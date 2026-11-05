@@ -11,6 +11,7 @@ import {
   withDisposableSupabaseStorage,
 } from "@repo/db/testing/disposable-database";
 import { runAllCleanup, throwCleanupFailures } from "./disposable-acceptance-cleanup";
+import { acceptanceOptions } from "./disposable-acceptance-options";
 
 // This composes the DB-owned guarded lifecycle; it never migrates/resets an existing database.
 const runId = `acceptance-${process.pid}-${Date.now()}`;
@@ -34,8 +35,7 @@ function requireActive() {
 const artifacts = resolve("../../.logs", runId);
 mkdirSync(artifacts, { recursive: true, mode: 0o700 });
 const probe = createServer();
-const args = process.argv.slice(2).filter((arg) => arg !== "--");
-const requiresNativeCandidate = args.some((arg) => arg.includes("e2e/native/"));
+const { args, native: requiresNativeCandidate } = acceptanceOptions(process.argv.slice(2));
 probe.listen(requiresNativeCandidate ? 3100 : 0, "127.0.0.1");
 await once(probe, "listening");
 const address = probe.address();
@@ -64,6 +64,7 @@ await withDisposableDatabase(
           POSTGRES_URL: connectionString,
           APP_URL: browserOrigin,
           E2E_ACCEPTANCE_BASE_URL: browserOrigin,
+          E2E_ACCEPTANCE_NATIVE: requiresNativeCandidate ? "1" : "0",
           PORT: String(port),
           OAUTH_CALLBACK_BASE_URL: browserOrigin,
           BETTER_AUTH_SECRET: `local-only-${runId}-synthetic-secret`,
