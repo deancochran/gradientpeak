@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
+  directory: vi.fn(),
   end: vi.fn(),
   createApiContext: vi.fn(),
   resolveSession: vi.fn(),
@@ -22,7 +23,10 @@ vi.mock("@tanstack/react-start/server", () => ({ getRequestHeaders: () => mocks.
 vi.mock("@repo/api/server", () => ({
   appRouter: {
     createCaller: () => ({
-      organizations: { lifecycle: { adminRoster: { list: mocks.list }, endEngagement: mocks.end } },
+      organizations: {
+        coachAthletes: { listAssigned: mocks.directory },
+        lifecycle: { adminRoster: { list: mocks.list }, endEngagement: mocks.end },
+      },
     }),
   },
   createApiContext: mocks.createApiContext,
@@ -32,6 +36,7 @@ vi.mock("@repo/db/client", () => ({ db: mocks.db }));
 
 import {
   loadAdministrativeAthleteRoster,
+  loadOrganizationAthletesLanding,
   terminateAthleteEngagement,
 } from "./athletes-server-functions";
 
@@ -56,6 +61,18 @@ describe("athlete administration server functions", () => {
       auth: { session: { user: { id: "profile" } } },
       db: mocks.db,
     });
+  });
+
+  it("discards directory search and profile cursor when falling back to the engagement roster", async () => {
+    mocks.directory.mockRejectedValueOnce(
+      Object.assign(new Error("coach role revoked"), { code: "FORBIDDEN" }),
+    );
+    await expect(
+      loadOrganizationAthletesLanding({
+        data: { organizationId, limit: 20, cursor: correlationId, search: "Ada" },
+      }),
+    ).resolves.toMatchObject({ status: "administration" });
+    expect(mocks.list).toHaveBeenCalledWith({ organizationId, limit: 20, cursor: null });
   });
 
   it("rejects scope injection before calling the API", async () => {

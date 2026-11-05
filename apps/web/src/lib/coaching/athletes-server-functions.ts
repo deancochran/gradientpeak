@@ -84,7 +84,8 @@ export const loadOrganizationAthletesLanding = createServerFn({ method: "POST" }
         ...(await caller.organizations.lifecycle.adminRoster.list({
           organizationId: data.organizationId,
           limit: data.limit,
-          cursor: data.cursor,
+          // Directory cursors identify profiles; roster cursors identify engagements.
+          cursor: null,
         })),
       };
     } catch (error) {

@@ -125,7 +125,7 @@ describe("AdministrativeAthleteRoster", () => {
     expect(screen.getByRole("list", { name: "Athletes" }).textContent).toContain("Alex Athlete");
     expect(screen.getByText("paused")).toBeTruthy();
     expect(screen.getByText(/does not provide access to private athlete training/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Load more athletes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next page of athletes" }));
     await waitFor(() =>
       expect(mocks.load).toHaveBeenCalledWith({
         data: { organizationId, limit: 20, cursor: page.nextCursor },
@@ -214,7 +214,7 @@ describe("AdministrativeAthleteRoster", () => {
         organizationId={organizationId}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Load more athletes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next page of athletes" }));
     expect(await screen.findByText("Coaching access required")).toBeTruthy();
     expect(screen.queryByText("Alex Athlete")).toBeNull();
   });
@@ -264,7 +264,7 @@ describe("AdministrativeAthleteRoster", () => {
         organizationId={organizationId}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Load more athletes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next page of athletes" }));
     view.rerender(
       <AdministrativeAthleteRoster
         actorProfileId="profile-2"
@@ -288,7 +288,7 @@ describe("AdministrativeAthleteRoster", () => {
         organizationId={organizationId}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Load more athletes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next page of athletes" }));
     view.rerender(
       <AdministrativeAthleteRoster
         actorProfileId="profile-1"
@@ -379,7 +379,7 @@ describe("AdministrativeAthleteRoster", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm end engagement" }));
     expect(await screen.findByText("Alex Athlete's engagement has ended.")).toBeTruthy();
 
-    const loadMore = screen.getByRole("button", { name: "Load more athletes" });
+    const loadMore = screen.getByRole("button", { name: "Next page of athletes" });
     await waitFor(() => expect(loadMore.hasAttribute("disabled")).toBe(false));
     fireEvent.click(loadMore);
     await waitFor(() => expect(mocks.load).toHaveBeenCalledTimes(2));
@@ -409,7 +409,7 @@ describe("AdministrativeAthleteRoster", () => {
         organizationId={organizationId}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Load more athletes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next page of athletes" }));
     fireEvent.click(screen.getByRole("button", { name: "End engagement" }));
     fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: "Confirm end engagement" }));
@@ -432,7 +432,7 @@ describe("AdministrativeAthleteRoster", () => {
         organizationId={organizationId}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Load more athletes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next page of athletes" }));
     fireEvent.click(screen.getByRole("button", { name: "End engagement" }));
     fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: "Confirm end engagement" }));
