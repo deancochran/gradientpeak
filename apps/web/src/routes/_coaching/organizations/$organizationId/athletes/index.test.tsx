@@ -35,7 +35,8 @@ describe("assigned athletes route", () => {
         deps: { search: string | null; cursor: string | null };
       }) => Promise<unknown>;
     };
-    expect(route.validateSearch({ q: "Ada" })).toEqual({ q: "Ada" });
+    expect(route.validateSearch({ q: " Ada " })).toEqual({ q: "Ada" });
+    expect(() => route.validateSearch({ q: "   " })).toThrow();
     expect(route.loaderDeps({ search: {} })).toEqual({ search: null, cursor: null });
     mocks.load.mockResolvedValueOnce({ status: "forbidden" });
     const loaded = await route.loader({

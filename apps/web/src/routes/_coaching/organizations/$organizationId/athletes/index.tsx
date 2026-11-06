@@ -64,15 +64,16 @@ function AthletesLanding() {
   const { actorProfileId } = Route.useRouteContext();
   const { q, cursor, view } = Route.useSearch();
   const location = useRouterState({ select: (state) => state.location });
-  const liveSearch = location.search as { cursor?: unknown; q?: unknown; view?: unknown };
+  const liveSearch = searchSchema.safeParse(location.search);
   const directoryPath = `/organizations/${organizationId}/athletes`;
   // Intent preloads retain the prior route match during a history transition.
   // Do not show a directory (or its controlled search draft) for a different URL.
   if (
     !matchesDirectoryPath(location.pathname, directoryPath) ||
-    liveSearch.q !== q ||
-    liveSearch.cursor !== cursor ||
-    liveSearch.view !== view ||
+    !liveSearch.success ||
+    liveSearch.data.q !== q ||
+    liveSearch.data.cursor !== cursor ||
+    liveSearch.data.view !== view ||
     loaded.organizationId !== organizationId ||
     loaded.view !== view ||
     loaded.search !== (q ?? null) ||

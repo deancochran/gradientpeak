@@ -239,6 +239,18 @@ async function select(workspace: Workspace, athleteId: string) {
     .click();
 }
 
+async function clickCoachNavigationLink(page: Page, name: "Athletes" | "Organizations") {
+  const desktopLink = page
+    .getByRole("navigation", { name: "Coaching navigation" })
+    .getByRole("link", { name, exact: true });
+  if (await desktopLink.isVisible()) {
+    await desktopLink.click();
+    return;
+  }
+  await page.getByRole("button", { name: "Open coaching navigation" }).click();
+  await page.getByRole("link", { name, exact: true }).click();
+}
+
 test("withholds then shows only the selected athlete's real published metrics", async ({
   athletePage,
   athleteActor,
@@ -289,6 +301,7 @@ test("deferred selected-athlete response cannot reveal or overwrite another athl
   const { page, athlete, secondAthlete, organizationId } = workspace;
   await page.goto(`/organizations/${organizationId}/athletes/${athlete.profileId}`);
   await expect(page.getByText("211 watts", { exact: true })).toBeVisible();
+  await expect(page.getByText(`@${athlete.username}`, { exact: true })).toBeVisible();
   let resolve!: () => void;
   let arrive!: () => void;
   const release = new Promise<void>((done) => {
@@ -317,14 +330,129 @@ test("deferred selected-athlete response cannot reveal or overwrite another athl
   await expect(page).toHaveURL(
     `/organizations/${organizationId}/athletes/${secondAthlete.profileId}`,
   );
+  await expect(page.getByRole("status")).toHaveText("Loading athlete workspace…");
+  await expect(page.getByText(`@${athlete.username}`, { exact: true })).toHaveCount(0);
   await expect(page.getByText("211 watts", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("322 watts", { exact: true })).toHaveCount(0);
   await page.evaluate(() => history.back());
   await expect(page).toHaveURL(`/organizations/${organizationId}/athletes/${athlete.profileId}`);
   resolve();
   await navigation;
   await page.unroute("**/*", hold);
+  await expect(page.getByText(`@${athlete.username}`, { exact: true })).toBeVisible();
   await expect(page.getByText("211 watts", { exact: true })).toBeVisible();
   await expect(page.getByText("322 watts", { exact: true })).toHaveCount(0);
+});
+
+test("deferred directory search response does not retain a prior search during history navigation", async ({
+  athletePage,
+  athleteActor,
+  actorFactory,
+  coachActor,
+  e2eIdentity,
+}) => {
+  const workspace = await setupWorkspace({
+    athletePage,
+    athlete: athleteActor,
+    actorFactory,
+    coach: coachActor,
+    identity: e2eIdentity,
+  });
+  await grantMetrics(workspace, e2eIdentity);
+  const { page, athleteUsername, organizationId } = workspace;
+  await expect(page.getByText(`@${athleteUsername}`, { exact: true })).toBeVisible();
+
+  let resolveSearch!: () => void;
+  let arriveSearch!: () => void;
+  const searchRelease = new Promise<void>((done) => {
+    resolveSearch = done;
+  });
+  const searchArrived = new Promise<void>((done) => {
+    arriveSearch = done;
+  });
+  const delayedSearch = "delayed directory";
+  const holdSearch = async (route: Route) => {
+    if (
+      route.request().method() !== "POST" ||
+      !(route.request().postData() ?? "").includes(delayedSearch)
+    )
+      return route.continue();
+    arriveSearch();
+    await searchRelease;
+    return route.continue();
+  };
+  await page.route("**/*", holdSearch);
+  await page.getByLabel("Search assigned athletes").fill(delayedSearch);
+  const searchNavigation = page.getByRole("button", { name: "Search", exact: true }).click();
+  await searchArrived;
+  await expect(page).toHaveURL(
+    `/organizations/${organizationId}/athletes?${new URLSearchParams({ q: delayedSearch })}`,
+  );
+  await expect(page.getByRole("status")).toHaveText("Loading assigned athletes…");
+  await expect(page.getByText(`@${athleteUsername}`, { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Search assigned athletes")).toHaveCount(0);
+  await page.evaluate(() => history.back());
+  await expect(page).toHaveURL(`/organizations/${organizationId}/athletes`);
+  resolveSearch();
+  await searchNavigation;
+  await page.unroute("**/*", holdSearch);
+  await expect(page.getByText(`@${athleteUsername}`, { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Search assigned athletes")).toHaveValue("");
+});
+
+test("deferred directory response does not retain a prior organization during client navigation", async ({
+  athletePage,
+  athleteActor,
+  actorFactory,
+  coachActor,
+  e2eIdentity,
+}) => {
+  const workspace = await setupWorkspace({
+    athletePage,
+    athlete: athleteActor,
+    actorFactory,
+    coach: coachActor,
+    identity: e2eIdentity,
+  });
+  const { page, athleteUsername, otherAthlete, otherOrganizationId } = workspace;
+  await expect(page.getByText(`@${athleteUsername}`, { exact: true })).toBeVisible();
+
+  await clickCoachNavigationLink(page, "Organizations");
+  await expect(page).toHaveURL("/organizations");
+  await page
+    .getByRole("link", { name: "Open Other workspace coaching dashboard", exact: true })
+    .click();
+  await expect(page).toHaveURL(`/organizations/${otherOrganizationId}/dashboard`);
+  await expect(page.getByText("Coaching workspace", { exact: true })).toBeVisible();
+
+  let resolveOrganization!: () => void;
+  let arriveOrganization!: () => void;
+  const organizationRelease = new Promise<void>((done) => {
+    resolveOrganization = done;
+  });
+  const organizationArrived = new Promise<void>((done) => {
+    arriveOrganization = done;
+  });
+  const holdOrganization = async (route: Route) => {
+    const body = route.request().postData() ?? "";
+    if (route.request().method() !== "POST" || !body.includes(otherOrganizationId))
+      return route.continue();
+    arriveOrganization();
+    await organizationRelease;
+    return route.continue();
+  };
+  await page.route("**/*", holdOrganization);
+  const organizationNavigation = clickCoachNavigationLink(page, "Athletes");
+  await organizationArrived;
+  await expect(page).toHaveURL(`/organizations/${otherOrganizationId}/athletes`);
+  await expect(page.getByRole("status")).toHaveText("Loading assigned athletes…");
+  await expect(page.getByText(`@${athleteUsername}`, { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Search assigned athletes")).toHaveCount(0);
+  resolveOrganization();
+  await organizationNavigation;
+  await page.unroute("**/*", holdOrganization);
+  await expect(page.getByText(`@${otherAthlete.username}`, { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Search assigned athletes")).toHaveValue("");
 });
 
 test("revoked consent denies metrics but preserves assignment identity", async ({
