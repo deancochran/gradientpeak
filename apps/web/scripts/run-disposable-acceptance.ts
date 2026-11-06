@@ -11,6 +11,7 @@ import {
   withDisposableSupabaseStorage,
 } from "@repo/db/testing/disposable-database";
 import { runAllCleanup, throwCleanupFailures } from "./disposable-acceptance-cleanup";
+import { acceptanceOptions } from "./disposable-acceptance-options";
 
 // This composes the DB-owned guarded lifecycle; it never migrates/resets an existing database.
 const runId = `acceptance-${process.pid}-${Date.now()}`;
@@ -35,8 +36,13 @@ function requireActive() {
 const artifacts = resolve("../../.logs", runId);
 mkdirSync(artifacts, { recursive: true, mode: 0o700 });
 const probe = createServer();
-probe.listen(3100, "127.0.0.1");
+const { args, native: requiresNativeCandidate } = acceptanceOptions(process.argv.slice(2));
+probe.listen(requiresNativeCandidate ? 3100 : 0, "127.0.0.1");
 await once(probe, "listening");
+const address = probe.address();
+if (!address || typeof address === "string") throw new Error("Missing acceptance listen address");
+const port = address.port;
+const browserOrigin = `http://127.0.0.1:${port}`;
 await new Promise<void>((done) => probe.close(() => done()));
 
 await withDisposableDatabase(
@@ -57,9 +63,11 @@ await withDisposableDatabase(
           E2E_DISPOSABLE_DATABASE: "1",
           DATABASE_URL: connectionString,
           POSTGRES_URL: connectionString,
-          APP_URL: "http://127.0.0.1:3100",
-          PORT: "3100",
-          OAUTH_CALLBACK_BASE_URL: "http://127.0.0.1:3100",
+          APP_URL: browserOrigin,
+          E2E_ACCEPTANCE_BASE_URL: browserOrigin,
+          E2E_ACCEPTANCE_NATIVE: requiresNativeCandidate ? "1" : "0",
+          PORT: String(port),
+          OAUTH_CALLBACK_BASE_URL: browserOrigin,
           BETTER_AUTH_SECRET: `local-only-${runId}-synthetic-secret`,
           // Private file capture enables real signup/verification without external email.
           ...(captureAuthMail ? { NODE_ENV: "test" } : {}),
@@ -89,7 +97,7 @@ await withDisposableDatabase(
           // local client so their missing-provider development toast cannot
           // cover a semantic Maestro action.
           EXPO_PUBLIC_POSTHOG_KEY: "disposable-telemetry-disabled",
-          EXPO_PUBLIC_POSTHOG_HOST: "http://127.0.0.1:3100",
+          EXPO_PUBLIC_POSTHOG_HOST: browserOrigin,
           ENABLE_LOCAL_ERROR_LOG: "0",
           WAHOO_OAUTH_TEST_ADAPTER: "1",
           VITE_CACHE_DIR: resolve(artifacts, "vite"),
@@ -107,7 +115,7 @@ await withDisposableDatabase(
             "--host",
             "127.0.0.1",
             "--port",
-            "3100",
+            String(port),
             "--strictPort",
           ],
           {
@@ -124,7 +132,7 @@ await withDisposableDatabase(
             if (server.exitCode !== null)
               throw new Error("Acceptance web server exited before readiness");
             try {
-              const response = await fetch("http://127.0.0.1:3100/api/health", {
+              const response = await fetch(`${browserOrigin}/api/health`, {
                 signal: AbortSignal.timeout(1000),
               });
               ready = response.ok;
@@ -134,8 +142,6 @@ await withDisposableDatabase(
           }
           if (!ready) throw new Error("Acceptance web server readiness timed out");
           console.log(`[acceptance] ready; run=${runId}; artifacts=${artifacts}`);
-          const args = process.argv.slice(2).filter((arg) => arg !== "--");
-          const requiresNativeCandidate = args.some((arg) => arg.includes("e2e/native/"));
           let metro: ChildProcess | undefined;
           let metroExit: Promise<unknown> | undefined;
           let metroLog: number | undefined;
@@ -302,7 +308,7 @@ await withDisposableDatabase(
           closeSync(log);
         }
       },
-      { temporaryDirectory: artifacts, browserOrigin: "http://127.0.0.1:3100" },
+      { temporaryDirectory: artifacts, browserOrigin },
     );
   },
 );
