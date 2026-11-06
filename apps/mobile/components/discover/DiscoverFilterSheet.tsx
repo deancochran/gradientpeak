@@ -1,14 +1,9 @@
-import BottomSheet, {
-  BottomSheetBackdrop,
-  type BottomSheetBackdropProps,
-  BottomSheetScrollView,
-  BottomSheetView,
-} from "@gorhom/bottom-sheet";
-import { Input } from "@repo/ui/components/input";
+import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
 import { Text } from "@repo/ui/components/text";
 import type React from "react";
-import { useCallback, useMemo, useRef } from "react";
+import { useState } from "react";
 import { TouchableOpacity, View } from "react-native";
+import { AppBottomSheet } from "@/components/shared/AppBottomSheet";
 import {
   ACTIVITY_CATEGORY_OPTIONS,
   type ActivityPlanFilters,
@@ -29,35 +24,14 @@ import {
   type RouteSortField,
   type SortDirection,
   type SortState,
+  TRAINING_PLAN_ACTIVITY_CATEGORY_OPTIONS,
   TRAINING_PLAN_EXPERIENCE_OPTIONS,
-  TRAINING_PLAN_SPORT_OPTIONS,
   type TrainingPlanFilters,
   type TrainingPlanSortField,
 } from "@/lib/discover";
-import { useTheme } from "@/lib/stores/theme-store";
+import { omitUndefined } from "@/lib/omitUndefined";
 
-const THEME_COLORS = {
-  light: {
-    background: "#ffffff",
-    handleIndicator: "#888888",
-  },
-  dark: {
-    background: "#18181b",
-    handleIndicator: "#888888",
-  },
-} as const;
-
-const BOTTOM_SHEET_BASE_STYLES = {
-  handleIndicator: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-  },
-  container: {
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-  },
-} as const;
+const DISCOVER_FILTER_SHEET_SNAP_POINTS = ["92%"];
 
 interface DiscoverFilterSheetProps {
   visible: boolean;
@@ -104,36 +78,17 @@ export function DiscoverFilterSheet({
   onApply,
   onClose,
 }: DiscoverFilterSheetProps) {
-  const bottomSheetRef = useRef<BottomSheet>(null);
-  const snapPoints = useMemo(() => ["92%"], []);
-  const { resolvedTheme } = useTheme();
-  const themeColors = THEME_COLORS[resolvedTheme === "dark" ? "dark" : "light"];
-  const bottomSheetStyles = useMemo(
-    () => ({
-      handleIndicator: {
-        ...BOTTOM_SHEET_BASE_STYLES.handleIndicator,
-        backgroundColor: themeColors.handleIndicator,
-      },
-      background: {
-        backgroundColor: themeColors.background,
-      },
-      container: BOTTOM_SHEET_BASE_STYLES.container,
-    }),
-    [themeColors],
-  );
-
-  const renderBackdrop = useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop
-        {...props}
-        appearsOnIndex={0}
-        disappearsOnIndex={-1}
-        pressBehavior="close"
-      />
-    ),
-    [],
-  );
-
+  const [numericErrors, setNumericErrors] = useState<Record<string, string>>({});
+  const allValidationErrors = [...validationErrors, ...Object.values(numericErrors)];
+  const setNumericError = (key: string, error: string | null) => {
+    setNumericErrors((current) => {
+      if (!error && !current[key]) return current;
+      const next = { ...current };
+      if (error) next[key] = error;
+      else delete next[key];
+      return next;
+    });
+  };
   const isResetDisabled =
     (scope === "activityPlans" &&
       areSortStatesEqual(activityPlanSort, DEFAULT_ACTIVITY_PLAN_SORT) &&
@@ -147,455 +102,444 @@ export function DiscoverFilterSheet({
     scope === "groups" ||
     (scope === "users" && areSortStatesEqual(profileSort, DEFAULT_PROFILE_SORT));
 
-  if (!visible) {
-    return null;
-  }
-
   const showTrainingPlanFilters = scope === "trainingPlans";
   const showRouteFilters = scope === "routes";
 
   return (
-    <BottomSheet
-      ref={bottomSheetRef}
-      index={0}
-      snapPoints={snapPoints}
-      enablePanDownToClose
-      keyboardBehavior="interactive"
-      keyboardBlurBehavior="restore"
-      android_keyboardInputMode="adjustResize"
-      backdropComponent={renderBackdrop}
-      onClose={onClose}
-      handleIndicatorStyle={bottomSheetStyles.handleIndicator}
-      backgroundStyle={bottomSheetStyles.background}
-      style={bottomSheetStyles.container}
-    >
-      <BottomSheetView className="flex-1" testID="discover-filter-sheet">
-        <BottomSheetScrollView
-          contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 6, paddingBottom: 156 }}
-          keyboardShouldPersistTaps="handled"
-        >
-          <View className="gap-1 border-b border-border pb-3">
-            <Text className="text-lg font-semibold text-foreground">Sort & Filters</Text>
-            <Text className="text-sm text-muted-foreground">
-              {`Refine the ${getScopeNoun(scope)} list.`}
-            </Text>
-          </View>
+    <AppBottomSheet
+      visible={visible}
+      title="Sort & Filters"
+      description={`Refine the ${getScopeNoun(scope)} list.`}
+      onClose={() => {
+        setNumericErrors({});
+        onClose();
+      }}
+      snapPoints={DISCOVER_FILTER_SHEET_SNAP_POINTS}
+      initialSnapIndex={0}
+      contentPaddingBottom={156}
+      testID="discover-filter-sheet"
+      footer={
+        <View className="flex-row gap-3">
+          <TouchableOpacity
+            onPress={() => {
+              setNumericErrors({});
+              onReset();
+            }}
+            activeOpacity={0.85}
+            disabled={isResetDisabled}
+            testID="discover-filter-reset"
+            className={`flex-1 items-center justify-center rounded-2xl border px-4 py-3 ${
+              isResetDisabled ? "border-border bg-muted/40" : "border-border bg-background"
+            }`}
+          >
+            <Text className="text-sm font-medium text-foreground">Reset</Text>
+          </TouchableOpacity>
 
-          {validationErrors.length > 0 ? (
-            <View className="mt-4 gap-1 rounded-2xl border border-destructive/40 bg-destructive/10 px-3 py-3">
-              {validationErrors.map((error) => (
-                <Text key={error} className="text-xs text-destructive">
-                  {error}
-                </Text>
+          <TouchableOpacity
+            onPress={onApply}
+            activeOpacity={0.85}
+            disabled={allValidationErrors.length > 0}
+            testID="discover-filter-apply"
+            className={`flex-1 items-center justify-center rounded-2xl px-4 py-3 ${
+              allValidationErrors.length > 0 ? "bg-muted" : "bg-primary"
+            }`}
+          >
+            <Text
+              className={`text-sm font-semibold ${
+                allValidationErrors.length > 0 ? "text-muted-foreground" : "text-primary-foreground"
+              }`}
+            >
+              Apply
+            </Text>
+          </TouchableOpacity>
+        </View>
+      }
+    >
+      {allValidationErrors.length > 0 ? (
+        <View className="mb-4 gap-1 rounded-2xl border border-destructive/40 bg-destructive/10 px-3 py-3">
+          {allValidationErrors.map((error) => (
+            <Text key={error} className="text-xs text-destructive">
+              {error}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+
+      {scope === "activityPlans" ? (
+        <View className="gap-3">
+          <FilterSection title="Sort">
+            <SortFieldSelector
+              options={[
+                {
+                  label: "Created",
+                  value: "created_at",
+                  testID: "discover-filter-sort-field-created-at",
+                },
+                {
+                  label: "Estimated duration",
+                  value: "estimated_duration",
+                  testID: "discover-filter-sort-field-duration",
+                },
+                {
+                  label: "Common Load",
+                  value: "common_load",
+                  testID: "discover-filter-sort-field-common-load",
+                },
+                {
+                  label: "Intensity",
+                  value: "objective_intensity",
+                  testID: "discover-filter-sort-field-objective-intensity",
+                },
+              ]}
+              value={activityPlanSort.field}
+              onChange={(value) =>
+                onActivityPlanSortChange({
+                  ...activityPlanSort,
+                  field: value as ActivityPlanSortField,
+                })
+              }
+            />
+            <DirectionToggle
+              direction={activityPlanSort.direction}
+              onChange={(direction) => onActivityPlanSortChange({ ...activityPlanSort, direction })}
+            />
+          </FilterSection>
+
+          <FilterSection title="Activity plan type">
+            <View className="flex-row flex-wrap gap-2">
+              {ACTIVITY_CATEGORY_OPTIONS.map((activity_category) => (
+                <FilterChip
+                  key={activity_category.id}
+                  label={activity_category.label}
+                  isActive={activityPlanFilters.categoryIds.includes(activity_category.id)}
+                  onPress={() =>
+                    onActivityPlanFiltersChange({
+                      ...activityPlanFilters,
+                      categoryIds: activityPlanFilters.categoryIds.includes(activity_category.id)
+                        ? activityPlanFilters.categoryIds.filter(
+                            (id) => id !== activity_category.id,
+                          )
+                        : [...activityPlanFilters.categoryIds, activity_category.id],
+                    })
+                  }
+                  testID={`discover-filter-activityPlans-activity_category-${activity_category.id}`}
+                />
               ))}
             </View>
-          ) : null}
+          </FilterSection>
 
-          {scope === "activityPlans" ? (
-            <View className="mt-4 gap-3">
-              <FilterSection title="Sort">
-                <SortFieldSelector
-                  options={[
-                    {
-                      label: "Created",
-                      value: "created_at",
-                      testID: "discover-filter-sort-field-created-at",
-                    },
-                    {
-                      label: "Estimated duration",
-                      value: "estimated_duration",
-                      testID: "discover-filter-sort-field-duration",
-                    },
-                    {
-                      label: "Estimated TSS",
-                      value: "estimated_tss",
-                      testID: "discover-filter-sort-field-tss",
-                    },
-                    {
-                      label: "Estimated IF",
-                      value: "intensity_factor",
-                      testID: "discover-filter-sort-field-if",
-                    },
-                  ]}
-                  value={activityPlanSort.field}
-                  onChange={(value) =>
-                    onActivityPlanSortChange({
-                      ...activityPlanSort,
-                      field: value as ActivityPlanSortField,
-                    })
-                  }
-                />
-                <DirectionToggle
-                  direction={activityPlanSort.direction}
-                  onChange={(direction) =>
-                    onActivityPlanSortChange({ ...activityPlanSort, direction })
-                  }
-                />
-              </FilterSection>
+          <FilterSection title="Estimated duration">
+            <RangeInputRow
+              minValue={activityPlanFilters.minDurationMinutes}
+              maxValue={activityPlanFilters.maxDurationMinutes}
+              onMinChange={(value) =>
+                onActivityPlanFiltersChange({
+                  ...activityPlanFilters,
+                  minDurationMinutes: parseNumericInput(value),
+                })
+              }
+              onMaxChange={(value) =>
+                onActivityPlanFiltersChange({
+                  ...activityPlanFilters,
+                  maxDurationMinutes: parseNumericInput(value),
+                })
+              }
+              minPlaceholder="Min minutes"
+              maxPlaceholder="Max minutes"
+              unitLabel="minutes"
+              testIDPrefix="discover-filter-activityPlans-duration"
+              onValidationChange={setNumericError}
+            />
+          </FilterSection>
 
-              <FilterSection title="Activity plan type">
-                <View className="flex-row flex-wrap gap-2">
-                  {ACTIVITY_CATEGORY_OPTIONS.map((category) => (
-                    <FilterChip
-                      key={category.id}
-                      label={category.label}
-                      isActive={activityPlanFilters.categoryIds.includes(category.id)}
-                      onPress={() =>
-                        onActivityPlanFiltersChange({
-                          ...activityPlanFilters,
-                          categoryIds: activityPlanFilters.categoryIds.includes(category.id)
-                            ? activityPlanFilters.categoryIds.filter((id) => id !== category.id)
-                            : [...activityPlanFilters.categoryIds, category.id],
-                        })
-                      }
-                      testID={`discover-filter-activityPlans-category-${category.id}`}
-                    />
-                  ))}
-                </View>
-              </FilterSection>
+          <FilterSection title="Common Load">
+            <RangeInputRow
+              minValue={activityPlanFilters.minCommonLoad}
+              maxValue={activityPlanFilters.maxCommonLoad}
+              onMinChange={(value) =>
+                onActivityPlanFiltersChange({
+                  ...activityPlanFilters,
+                  minCommonLoad: parseNumericInput(value),
+                })
+              }
+              onMaxChange={(value) =>
+                onActivityPlanFiltersChange({
+                  ...activityPlanFilters,
+                  maxCommonLoad: parseNumericInput(value),
+                })
+              }
+              minPlaceholder="Min Common Load"
+              maxPlaceholder="Max Common Load"
+              unitLabel="common load"
+              testIDPrefix="discover-filter-activityPlans-common-load"
+              onValidationChange={setNumericError}
+            />
+          </FilterSection>
 
-              <FilterSection title="Estimated duration">
-                <RangeInputRow
-                  minValue={activityPlanFilters.minDurationMinutes}
-                  maxValue={activityPlanFilters.maxDurationMinutes}
-                  onMinChange={(value) =>
-                    onActivityPlanFiltersChange({
-                      ...activityPlanFilters,
-                      minDurationMinutes: parseNumericInput(value),
-                    })
-                  }
-                  onMaxChange={(value) =>
-                    onActivityPlanFiltersChange({
-                      ...activityPlanFilters,
-                      maxDurationMinutes: parseNumericInput(value),
-                    })
-                  }
-                  minPlaceholder="Min minutes"
-                  maxPlaceholder="Max minutes"
-                  unitLabel="minutes"
-                  testIDPrefix="discover-filter-activityPlans-duration"
-                />
-              </FilterSection>
-
-              <FilterSection title="Estimated TSS">
-                <RangeInputRow
-                  minValue={activityPlanFilters.minTss}
-                  maxValue={activityPlanFilters.maxTss}
-                  onMinChange={(value) =>
-                    onActivityPlanFiltersChange({
-                      ...activityPlanFilters,
-                      minTss: parseNumericInput(value),
-                    })
-                  }
-                  onMaxChange={(value) =>
-                    onActivityPlanFiltersChange({
-                      ...activityPlanFilters,
-                      maxTss: parseNumericInput(value),
-                    })
-                  }
-                  minPlaceholder="Min TSS"
-                  maxPlaceholder="Max TSS"
-                  unitLabel="stress score"
-                  testIDPrefix="discover-filter-activityPlans-tss"
-                />
-              </FilterSection>
-
-              <FilterSection title="Intensity factor">
-                <RangeInputRow
-                  minValue={activityPlanFilters.minIf}
-                  maxValue={activityPlanFilters.maxIf}
-                  onMinChange={(value) =>
-                    onActivityPlanFiltersChange({
-                      ...activityPlanFilters,
-                      minIf: parseNumericInput(value, { allowDecimal: true }),
-                    })
-                  }
-                  onMaxChange={(value) =>
-                    onActivityPlanFiltersChange({
-                      ...activityPlanFilters,
-                      maxIf: parseNumericInput(value, { allowDecimal: true }),
-                    })
-                  }
-                  minPlaceholder="Min IF"
-                  maxPlaceholder="Max IF"
-                  keyboardType="decimal-pad"
-                  unitLabel="intensity factor"
-                  testIDPrefix="discover-filter-activityPlans-if"
-                />
-              </FilterSection>
-            </View>
-          ) : null}
-
-          {showTrainingPlanFilters ? (
-            <View className="mt-4 gap-3">
-              <FilterSection title="Sort">
-                <SortFieldSelector
-                  options={[
-                    {
-                      label: "Created",
-                      value: "created_at",
-                      testID: "discover-filter-sort-field-created-at",
-                    },
-                    {
-                      label: "Duration",
-                      value: "duration_weeks",
-                      testID: "discover-filter-sort-field-duration",
-                    },
-                    {
-                      label: "Sessions",
-                      value: "sessions_per_week",
-                      testID: "discover-filter-sort-field-sessions",
-                    },
-                  ]}
-                  value={trainingPlanSort.field}
-                  onChange={(value) =>
-                    onTrainingPlanSortChange({
-                      ...trainingPlanSort,
-                      field: value as TrainingPlanSortField,
-                    })
-                  }
-                />
-                <DirectionToggle
-                  direction={trainingPlanSort.direction}
-                  onChange={(direction) =>
-                    onTrainingPlanSortChange({ ...trainingPlanSort, direction })
-                  }
-                />
-              </FilterSection>
-
-              <FilterSection title="Training plan sport">
-                <View className="flex-row flex-wrap gap-2">
-                  {TRAINING_PLAN_SPORT_OPTIONS.map((option) => (
-                    <FilterChip
-                      key={option.id}
-                      label={option.label}
-                      isActive={trainingPlanFilters.sport === option.id}
-                      onPress={() =>
-                        onTrainingPlanFiltersChange({
-                          ...trainingPlanFilters,
-                          sport: trainingPlanFilters.sport === option.id ? null : option.id,
-                        })
-                      }
-                      testID={`discover-filter-trainingPlans-sport-${option.id}`}
-                    />
-                  ))}
-                </View>
-              </FilterSection>
-
-              <FilterSection title="Experience">
-                <View className="flex-row flex-wrap gap-2">
-                  {TRAINING_PLAN_EXPERIENCE_OPTIONS.map((option) => (
-                    <FilterChip
-                      key={option.id}
-                      label={option.label}
-                      isActive={trainingPlanFilters.experienceLevel === option.id}
-                      onPress={() =>
-                        onTrainingPlanFiltersChange({
-                          ...trainingPlanFilters,
-                          experienceLevel:
-                            trainingPlanFilters.experienceLevel === option.id ? null : option.id,
-                        })
-                      }
-                      testID={`discover-filter-trainingPlans-experience-${option.id}`}
-                    />
-                  ))}
-                </View>
-              </FilterSection>
-
-              <FilterSection title="Duration weeks">
-                <RangeInputRow
-                  minValue={trainingPlanFilters.minWeeks}
-                  maxValue={trainingPlanFilters.maxWeeks}
-                  onMinChange={(value) =>
-                    onTrainingPlanFiltersChange({
-                      ...trainingPlanFilters,
-                      minWeeks: parseNumericInput(value),
-                    })
-                  }
-                  onMaxChange={(value) =>
-                    onTrainingPlanFiltersChange({
-                      ...trainingPlanFilters,
-                      maxWeeks: parseNumericInput(value),
-                    })
-                  }
-                  minPlaceholder="Min weeks"
-                  maxPlaceholder="Max weeks"
-                  unitLabel="weeks"
-                  testIDPrefix="discover-filter-trainingPlans-weeks"
-                />
-              </FilterSection>
-
-              <FilterSection title="Sessions per week">
-                <RangeInputRow
-                  minValue={trainingPlanFilters.minSessionsPerWeek}
-                  maxValue={trainingPlanFilters.maxSessionsPerWeek}
-                  onMinChange={(value) =>
-                    onTrainingPlanFiltersChange({
-                      ...trainingPlanFilters,
-                      minSessionsPerWeek: parseNumericInput(value),
-                    })
-                  }
-                  onMaxChange={(value) =>
-                    onTrainingPlanFiltersChange({
-                      ...trainingPlanFilters,
-                      maxSessionsPerWeek: parseNumericInput(value),
-                    })
-                  }
-                  minPlaceholder="Min sessions"
-                  maxPlaceholder="Max sessions"
-                  unitLabel="sessions per week"
-                  testIDPrefix="discover-filter-trainingPlans-sessions"
-                />
-              </FilterSection>
-            </View>
-          ) : null}
-
-          {showRouteFilters ? (
-            <View className="mt-4 gap-3">
-              <FilterSection title="Sort">
-                <SortFieldSelector
-                  options={[
-                    {
-                      label: "Created",
-                      value: "created_at",
-                      testID: "discover-filter-sort-field-created-at",
-                    },
-                    {
-                      label: "Distance",
-                      value: "distance",
-                      testID: "discover-filter-sort-field-distance",
-                    },
-                    {
-                      label: "Ascent",
-                      value: "ascent",
-                      testID: "discover-filter-sort-field-ascent",
-                    },
-                  ]}
-                  value={routeSort.field}
-                  onChange={(value) =>
-                    onRouteSortChange({ ...routeSort, field: value as RouteSortField })
-                  }
-                />
-                <DirectionToggle
-                  direction={routeSort.direction}
-                  onChange={(direction) => onRouteSortChange({ ...routeSort, direction })}
-                />
-              </FilterSection>
-
-              <FilterSection title="Distance">
-                <RangeInputRow
-                  minValue={routeFilters.minDistanceKm}
-                  maxValue={routeFilters.maxDistanceKm}
-                  onMinChange={(value) =>
-                    onRouteFiltersChange({
-                      ...routeFilters,
-                      minDistanceKm: parseNumericInput(value, { allowDecimal: true }),
-                    })
-                  }
-                  onMaxChange={(value) =>
-                    onRouteFiltersChange({
-                      ...routeFilters,
-                      maxDistanceKm: parseNumericInput(value, { allowDecimal: true }),
-                    })
-                  }
-                  minPlaceholder="Min km"
-                  maxPlaceholder="Max km"
-                  keyboardType="decimal-pad"
-                  unitLabel="kilometers"
-                  testIDPrefix="discover-filter-routes-distance"
-                />
-              </FilterSection>
-
-              <FilterSection title="Ascent">
-                <RangeInputRow
-                  minValue={routeFilters.minAscentM}
-                  maxValue={routeFilters.maxAscentM}
-                  onMinChange={(value) =>
-                    onRouteFiltersChange({
-                      ...routeFilters,
-                      minAscentM: parseNumericInput(value),
-                    })
-                  }
-                  onMaxChange={(value) =>
-                    onRouteFiltersChange({
-                      ...routeFilters,
-                      maxAscentM: parseNumericInput(value),
-                    })
-                  }
-                  minPlaceholder="Min ascent m"
-                  maxPlaceholder="Max ascent m"
-                  unitLabel="meters"
-                  testIDPrefix="discover-filter-routes-ascent"
-                />
-              </FilterSection>
-            </View>
-          ) : null}
-
-          {scope === "users" ? (
-            <View className="mt-4 gap-3">
-              <FilterSection title="Sort">
-                <SortFieldSelector
-                  options={[
-                    {
-                      label: "Created",
-                      value: "created_at",
-                      testID: "discover-filter-sort-field-created-at",
-                    },
-                    {
-                      label: "Username",
-                      value: "username",
-                      testID: "discover-filter-sort-field-username",
-                    },
-                  ]}
-                  value={profileSort.field}
-                  onChange={(value) =>
-                    onProfileSortChange({ ...profileSort, field: value as ProfileSortField })
-                  }
-                />
-                <DirectionToggle
-                  direction={profileSort.direction}
-                  onChange={(direction) => onProfileSortChange({ ...profileSort, direction })}
-                />
-              </FilterSection>
-            </View>
-          ) : null}
-        </BottomSheetScrollView>
-
-        <View className="border-t border-border bg-background px-4 pb-8 pt-3">
-          <View className="flex-row gap-3">
-            <TouchableOpacity
-              onPress={onReset}
-              activeOpacity={0.85}
-              disabled={isResetDisabled}
-              testID="discover-filter-reset"
-              className={`flex-1 items-center justify-center rounded-2xl border px-4 py-3 ${
-                isResetDisabled ? "border-border bg-muted/40" : "border-border bg-background"
-              }`}
-            >
-              <Text className="text-sm font-medium text-foreground">Reset</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={onApply}
-              activeOpacity={0.85}
-              disabled={validationErrors.length > 0}
-              testID="discover-filter-apply"
-              className={`flex-1 items-center justify-center rounded-2xl px-4 py-3 ${
-                validationErrors.length > 0 ? "bg-muted" : "bg-primary"
-              }`}
-            >
-              <Text
-                className={`text-sm font-semibold ${
-                  validationErrors.length > 0 ? "text-muted-foreground" : "text-primary-foreground"
-                }`}
-              >
-                Apply
-              </Text>
-            </TouchableOpacity>
-          </View>
+          <FilterSection title="Intensity">
+            <RangeInputRow
+              minValue={activityPlanFilters.minObjectiveIntensity}
+              maxValue={activityPlanFilters.maxObjectiveIntensity}
+              onMinChange={(value) =>
+                onActivityPlanFiltersChange({
+                  ...activityPlanFilters,
+                  minObjectiveIntensity: parseNumericInput(value, { allowDecimal: true }),
+                })
+              }
+              onMaxChange={(value) =>
+                onActivityPlanFiltersChange({
+                  ...activityPlanFilters,
+                  maxObjectiveIntensity: parseNumericInput(value, { allowDecimal: true }),
+                })
+              }
+              minPlaceholder="Min intensity"
+              maxPlaceholder="Max intensity"
+              decimals={2}
+              unitLabel="intensity ratio"
+              testIDPrefix="discover-filter-activityPlans-objective-intensity"
+              onValidationChange={setNumericError}
+            />
+          </FilterSection>
         </View>
-      </BottomSheetView>
-    </BottomSheet>
+      ) : null}
+
+      {showTrainingPlanFilters ? (
+        <View className="gap-3">
+          <FilterSection title="Sort">
+            <SortFieldSelector
+              options={[
+                {
+                  label: "Created",
+                  value: "created_at",
+                  testID: "discover-filter-sort-field-created-at",
+                },
+                {
+                  label: "Duration",
+                  value: "duration_weeks",
+                  testID: "discover-filter-sort-field-duration",
+                },
+                {
+                  label: "Sessions",
+                  value: "sessions_per_week",
+                  testID: "discover-filter-sort-field-sessions",
+                },
+              ]}
+              value={trainingPlanSort.field}
+              onChange={(value) =>
+                onTrainingPlanSortChange({
+                  ...trainingPlanSort,
+                  field: value as TrainingPlanSortField,
+                })
+              }
+            />
+            <DirectionToggle
+              direction={trainingPlanSort.direction}
+              onChange={(direction) => onTrainingPlanSortChange({ ...trainingPlanSort, direction })}
+            />
+          </FilterSection>
+
+          <FilterSection title="Training plan activity category">
+            <View className="flex-row flex-wrap gap-2">
+              {TRAINING_PLAN_ACTIVITY_CATEGORY_OPTIONS.map((option) => (
+                <FilterChip
+                  key={option.id}
+                  label={option.label}
+                  isActive={trainingPlanFilters.activity_category === option.id}
+                  onPress={() =>
+                    onTrainingPlanFiltersChange({
+                      ...trainingPlanFilters,
+                      activity_category:
+                        trainingPlanFilters.activity_category === option.id ? null : option.id,
+                    })
+                  }
+                  testID={`discover-filter-trainingPlans-activity_category-${option.id}`}
+                />
+              ))}
+            </View>
+          </FilterSection>
+
+          <FilterSection title="Experience">
+            <View className="flex-row flex-wrap gap-2">
+              {TRAINING_PLAN_EXPERIENCE_OPTIONS.map((option) => (
+                <FilterChip
+                  key={option.id}
+                  label={option.label}
+                  isActive={trainingPlanFilters.experienceLevel === option.id}
+                  onPress={() =>
+                    onTrainingPlanFiltersChange({
+                      ...trainingPlanFilters,
+                      experienceLevel:
+                        trainingPlanFilters.experienceLevel === option.id ? null : option.id,
+                    })
+                  }
+                  testID={`discover-filter-trainingPlans-experience-${option.id}`}
+                />
+              ))}
+            </View>
+          </FilterSection>
+
+          <FilterSection title="Duration weeks">
+            <RangeInputRow
+              minValue={trainingPlanFilters.minWeeks}
+              maxValue={trainingPlanFilters.maxWeeks}
+              onMinChange={(value) =>
+                onTrainingPlanFiltersChange({
+                  ...trainingPlanFilters,
+                  minWeeks: parseNumericInput(value),
+                })
+              }
+              onMaxChange={(value) =>
+                onTrainingPlanFiltersChange({
+                  ...trainingPlanFilters,
+                  maxWeeks: parseNumericInput(value),
+                })
+              }
+              minPlaceholder="Min weeks"
+              maxPlaceholder="Max weeks"
+              unitLabel="weeks"
+              testIDPrefix="discover-filter-trainingPlans-weeks"
+              onValidationChange={setNumericError}
+            />
+          </FilterSection>
+
+          <FilterSection title="Sessions per week">
+            <RangeInputRow
+              minValue={trainingPlanFilters.minSessionsPerWeek}
+              maxValue={trainingPlanFilters.maxSessionsPerWeek}
+              onMinChange={(value) =>
+                onTrainingPlanFiltersChange({
+                  ...trainingPlanFilters,
+                  minSessionsPerWeek: parseNumericInput(value),
+                })
+              }
+              onMaxChange={(value) =>
+                onTrainingPlanFiltersChange({
+                  ...trainingPlanFilters,
+                  maxSessionsPerWeek: parseNumericInput(value),
+                })
+              }
+              minPlaceholder="Min sessions"
+              maxPlaceholder="Max sessions"
+              unitLabel="sessions per week"
+              testIDPrefix="discover-filter-trainingPlans-sessions"
+              onValidationChange={setNumericError}
+            />
+          </FilterSection>
+        </View>
+      ) : null}
+
+      {showRouteFilters ? (
+        <View className="gap-3">
+          <FilterSection title="Sort">
+            <SortFieldSelector
+              options={[
+                {
+                  label: "Created",
+                  value: "created_at",
+                  testID: "discover-filter-sort-field-created-at",
+                },
+                {
+                  label: "Distance",
+                  value: "distance",
+                  testID: "discover-filter-sort-field-distance",
+                },
+                {
+                  label: "Ascent",
+                  value: "ascent",
+                  testID: "discover-filter-sort-field-ascent",
+                },
+              ]}
+              value={routeSort.field}
+              onChange={(value) =>
+                onRouteSortChange({ ...routeSort, field: value as RouteSortField })
+              }
+            />
+            <DirectionToggle
+              direction={routeSort.direction}
+              onChange={(direction) => onRouteSortChange({ ...routeSort, direction })}
+            />
+          </FilterSection>
+
+          <FilterSection title="Distance">
+            <RangeInputRow
+              minValue={routeFilters.minDistanceKm}
+              maxValue={routeFilters.maxDistanceKm}
+              onMinChange={(value) =>
+                onRouteFiltersChange({
+                  ...routeFilters,
+                  minDistanceKm: parseNumericInput(value, { allowDecimal: true }),
+                })
+              }
+              onMaxChange={(value) =>
+                onRouteFiltersChange({
+                  ...routeFilters,
+                  maxDistanceKm: parseNumericInput(value, { allowDecimal: true }),
+                })
+              }
+              minPlaceholder="Min km"
+              maxPlaceholder="Max km"
+              decimals={2}
+              unitLabel="kilometers"
+              testIDPrefix="discover-filter-routes-distance"
+              onValidationChange={setNumericError}
+            />
+          </FilterSection>
+
+          <FilterSection title="Ascent">
+            <RangeInputRow
+              minValue={routeFilters.minAscentM}
+              maxValue={routeFilters.maxAscentM}
+              onMinChange={(value) =>
+                onRouteFiltersChange({
+                  ...routeFilters,
+                  minAscentM: parseNumericInput(value),
+                })
+              }
+              onMaxChange={(value) =>
+                onRouteFiltersChange({
+                  ...routeFilters,
+                  maxAscentM: parseNumericInput(value),
+                })
+              }
+              minPlaceholder="Min ascent m"
+              maxPlaceholder="Max ascent m"
+              unitLabel="meters"
+              testIDPrefix="discover-filter-routes-ascent"
+              onValidationChange={setNumericError}
+            />
+          </FilterSection>
+        </View>
+      ) : null}
+
+      {scope === "users" ? (
+        <View className="gap-3">
+          <FilterSection title="Sort">
+            <SortFieldSelector
+              options={[
+                {
+                  label: "Created",
+                  value: "created_at",
+                  testID: "discover-filter-sort-field-created-at",
+                },
+                {
+                  label: "Username",
+                  value: "username",
+                  testID: "discover-filter-sort-field-username",
+                },
+              ]}
+              value={profileSort.field}
+              onChange={(value) =>
+                onProfileSortChange({ ...profileSort, field: value as ProfileSortField })
+              }
+            />
+            <DirectionToggle
+              direction={profileSort.direction}
+              onChange={(direction) => onProfileSortChange({ ...profileSort, direction })}
+            />
+          </FilterSection>
+        </View>
+      ) : null}
+    </AppBottomSheet>
   );
 }
 
@@ -614,6 +558,8 @@ function FilterChip({
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.8}
+      accessibilityRole="button"
+      accessibilityState={{ selected: isActive }}
       testID={testID}
       className={`rounded-full border px-3 py-2 ${
         isActive ? "border-primary bg-primary/10" : "border-border bg-background"
@@ -656,7 +602,7 @@ function SegmentedControl({
             key={option.value}
             onPress={() => onChange(option.value)}
             activeOpacity={0.85}
-            testID={option.testID}
+            {...omitUndefined({ testID: option.testID })}
             className={`flex-1 items-center justify-center rounded-lg px-3 py-2 ${
               isActive ? "bg-background" : "bg-transparent"
             }`}
@@ -696,7 +642,7 @@ function SortFieldSelector({
             label={option.label}
             isActive={value === option.value}
             onPress={() => onChange(option.value)}
-            testID={option.testID}
+            {...omitUndefined({ testID: option.testID })}
           />
         ))}
       </View>
@@ -737,7 +683,8 @@ function RangeInputRow({
   maxPlaceholder,
   unitLabel,
   testIDPrefix,
-  keyboardType = "numeric",
+  onValidationChange,
+  decimals = 0,
 }: {
   minValue: number | null;
   maxValue: number | null;
@@ -747,36 +694,47 @@ function RangeInputRow({
   maxPlaceholder: string;
   unitLabel?: string;
   testIDPrefix: string;
-  keyboardType?: "numeric" | "decimal-pad";
+  onValidationChange: (key: string, error: string | null) => void;
+  decimals?: number;
 }) {
   return (
     <View className="gap-2">
       {unitLabel ? <Text className="text-[11px] text-muted-foreground">{unitLabel}</Text> : null}
       <View className="flex-row gap-2.5">
-        <View className="flex-1 gap-1.5">
-          <Text className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            Min
-          </Text>
-          <Input
-            value={minValue?.toString() ?? ""}
-            onChangeText={onMinChange}
+        <View className="flex-1">
+          <BoundedNumberInput
+            decimals={decimals}
+            label="Min"
+            onChange={(value) => {
+              onMinChange(value);
+              onValidationChange(
+                `${testIDPrefix}-min`,
+                value.trim() && parseNumericInput(value, { allowDecimal: decimals > 0 }) === null
+                  ? "Enter a valid non-negative number."
+                  : null,
+              );
+            }}
             placeholder={minPlaceholder}
-            keyboardType={keyboardType}
             testID={`${testIDPrefix}-min`}
-            className="h-10 rounded-lg border border-border/80 bg-background px-3 text-sm text-foreground"
+            value={minValue?.toString() ?? ""}
           />
         </View>
-        <View className="flex-1 gap-1.5">
-          <Text className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            Max
-          </Text>
-          <Input
-            value={maxValue?.toString() ?? ""}
-            onChangeText={onMaxChange}
+        <View className="flex-1">
+          <BoundedNumberInput
+            decimals={decimals}
+            label="Max"
+            onChange={(value) => {
+              onMaxChange(value);
+              onValidationChange(
+                `${testIDPrefix}-max`,
+                value.trim() && parseNumericInput(value, { allowDecimal: decimals > 0 }) === null
+                  ? "Enter a valid non-negative number."
+                  : null,
+              );
+            }}
             placeholder={maxPlaceholder}
-            keyboardType={keyboardType}
             testID={`${testIDPrefix}-max`}
-            className="h-10 rounded-lg border border-border/80 bg-background px-3 text-sm text-foreground"
+            value={maxValue?.toString() ?? ""}
           />
         </View>
       </View>
