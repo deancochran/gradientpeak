@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouterState } from "@tanstack/react-router";
 import { z } from "zod";
 import { AdministrativeAthleteRoster } from "../../../../../components/coaching/athletes/administrative-athlete-roster";
 import { AssignedAthleteDirectory } from "../../../../../components/coaching/athletes/assigned-athlete-directory";
@@ -63,7 +63,16 @@ function AthletesLanding() {
   const { organizationId } = Route.useParams();
   const { actorProfileId } = Route.useRouteContext();
   const { q, cursor, view } = Route.useSearch();
+  const location = useRouterState({ select: (state) => state.location });
+  const liveSearch = location.search as { cursor?: unknown; q?: unknown; view?: unknown };
+  const directoryPath = `/organizations/${organizationId}/athletes`;
+  // Intent preloads retain the prior route match during a history transition.
+  // Do not show a directory (or its controlled search draft) for a different URL.
   if (
+    !matchesDirectoryPath(location.pathname, directoryPath) ||
+    liveSearch.q !== q ||
+    liveSearch.cursor !== cursor ||
+    liveSearch.view !== view ||
     loaded.organizationId !== organizationId ||
     loaded.view !== view ||
     loaded.search !== (q ?? null) ||
@@ -93,4 +102,11 @@ function AthletesLanding() {
       <AssignedAthleteDirectory organizationId={organizationId} page={result} search={q ?? null} />
     </div>
   );
+}
+
+function matchesDirectoryPath(pathname: string, directoryPath: string) {
+  // Treat the router's generated URL and its direct-link trailing-slash form as
+  // the same route. Query key order, percent encoding and hashes are represented
+  // separately by the live parsed location and must not affect route identity.
+  return pathname === directoryPath || pathname === `${directoryPath}/`;
 }
