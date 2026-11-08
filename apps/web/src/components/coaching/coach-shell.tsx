@@ -10,7 +10,7 @@ import {
   SheetTrigger,
 } from "@repo/ui/components/sheet";
 import { Link, Outlet, useLocation } from "@tanstack/react-router";
-import { Building2, LayoutDashboard, Menu, Users } from "lucide-react";
+import { Building2, LayoutDashboard, Menu, UserRoundCheck, Users } from "lucide-react";
 
 type CoachShellProps = {
   organization: {
@@ -61,6 +61,19 @@ export function CoachShell({ organization }: CoachShellProps) {
             >
               <Users className="h-4 w-4" />
               Athletes
+            </Link>
+            <Link
+              to="/organizations/$organizationId/assignments"
+              params={{ organizationId: organization.id }}
+              aria-current={
+                location.pathname.startsWith(`/organizations/${organization.id}/assignments`)
+                  ? "page"
+                  : undefined
+              }
+              className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-slate-900 hover:text-white aria-[current=page]:bg-slate-800 aria-[current=page]:text-white"
+            >
+              <UserRoundCheck className="h-4 w-4" />
+              Assignments
             </Link>
             <Link
               to="/organizations/$organizationId/dashboard"
@@ -130,6 +143,16 @@ function CoachMobileNavigation({
             >
               <Users className="h-4 w-4" />
               Athletes
+            </Link>
+          </SheetClose>
+          <SheetClose asChild>
+            <Link
+              to="/organizations/$organizationId/assignments"
+              params={{ organizationId }}
+              className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-900 hover:text-white"
+            >
+              <UserRoundCheck className="h-4 w-4" />
+              Assignments
             </Link>
           </SheetClose>
           <SheetClose asChild>

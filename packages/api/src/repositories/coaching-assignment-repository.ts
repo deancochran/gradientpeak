@@ -5,6 +5,7 @@ import {
   organizationMembershipRoleGrants,
   organizationMemberships,
   organizations,
+  profiles,
 } from "@repo/db";
 import { and, asc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import type { DrizzleQueryExecutor } from "../db";
@@ -194,6 +195,12 @@ export function createCoachingAssignmentRepository(db: DrizzleQueryExecutor) {
         })
         .onConflictDoNothing()
         .returning({ id: organizationAuditEvents.id }),
+    /**
+     * An active assignment remains visible even if its coach membership later becomes suspended or
+     * ended. Lifecycle commands normally end it atomically; retaining its bounded identity and
+     * explicit membership state makes an invariant breach visible instead of replacing a known
+     * coach with an ambiguous placeholder.
+     */
     list: (organizationId: string, engagementId: string) =>
       db
         .select({
@@ -201,8 +208,20 @@ export function createCoachingAssignmentRepository(db: DrizzleQueryExecutor) {
           coachMembershipId: coachingAssignments.coach_membership_id,
           assignmentKind: coachingAssignments.assignment_kind,
           assignedAt: coachingAssignments.assigned_at,
+          coachDisplayName: profiles.full_name,
+          coachUsername: profiles.username,
+          coachSuspendedAt: organizationMemberships.suspended_at,
+          coachEndedAt: organizationMemberships.ended_at,
         })
         .from(coachingAssignments)
+        .innerJoin(
+          organizationMemberships,
+          and(
+            eq(organizationMemberships.id, coachingAssignments.coach_membership_id),
+            eq(organizationMemberships.organization_id, coachingAssignments.organization_id),
+          ),
+        )
+        .innerJoin(profiles, eq(profiles.id, organizationMemberships.profile_id))
         .where(
           and(
             eq(coachingAssignments.organization_id, organizationId),

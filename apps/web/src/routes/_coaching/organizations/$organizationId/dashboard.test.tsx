@@ -58,6 +58,7 @@ describe("coach dashboard", () => {
     expect(screen.getByRole("heading", { name: "Organization management" })).toBeTruthy();
     expect(screen.getByRole("list", { name: "Staff" }).textContent).toContain("Casey Coach");
     expect(screen.getByRole("list", { name: "Athletes" }).textContent).toContain("Alex Athlete");
+    expect(screen.getByRole("link", { name: "Manage coach assignments" })).toBeTruthy();
     expect(screen.getByText(/does not grant access to private athlete training/)).toBeTruthy();
   });
 

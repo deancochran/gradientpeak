@@ -260,7 +260,55 @@ describe("organization direct coaching assignments against a fresh disposable Po
             }),
           ).rejects.toMatchObject({ code: "CONFLICT" });
           const active = await caller.list({ organizationId, engagementId });
-          const supporting = active.items.find((row) => row.assignmentKind === "supporting");
+          const directoryBoundaryCoaches: { membershipId: string; label: string }[] = [];
+          // Membership triggers serialize on the organization row; deliberately avoid concurrent
+          // fixture creation so this boundary check does not manufacture a database deadlock.
+          for (let index = 0; index < 51; index += 1) {
+            const label = `directory-boundary-${index}`;
+            const profileId = await person(client.db, label);
+            directoryBoundaryCoaches.push({
+              membershipId: await staff(client.db, organizationId, profileId, "coach"),
+              label,
+            });
+          }
+          const firstStaffPage = await ownerCaller.lifecycle.staff.list({
+            organizationId,
+            status: "active",
+            limit: 50,
+            cursor: null,
+          });
+          const beyondFirstStaffPage = directoryBoundaryCoaches.find(
+            (candidate) =>
+              !firstStaffPage.items.some(
+                (member) => member.membershipId === candidate.membershipId,
+              ),
+          );
+          expect(beyondFirstStaffPage).toBeDefined();
+          if (!beyondFirstStaffPage)
+            throw new Error("expected an active coach beyond staff page one");
+          await caller.assign({
+            organizationId,
+            engagementId,
+            operationId: randomUUID(),
+            expectedStateDigest: digest(active.items.map((row) => row.assignmentId)),
+            coachMembershipId: beyondFirstStaffPage.membershipId,
+            assignmentKind: "supporting",
+          });
+          const activeWithBoundaryCoach = await caller.list({ organizationId, engagementId });
+          expect(activeWithBoundaryCoach.items).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                coachMembershipId: beyondFirstStaffPage.membershipId,
+                coachIdentity: expect.objectContaining({
+                  displayName: beyondFirstStaffPage.label,
+                  membershipStatus: "active",
+                }),
+              }),
+            ]),
+          );
+          const supporting = activeWithBoundaryCoach.items.find(
+            (row) => row.assignmentKind === "supporting",
+          );
           expect(supporting).toBeDefined();
           if (!supporting) throw new Error("expected an active supporting assignment");
           const changeOperationId = randomUUID();
@@ -268,7 +316,9 @@ describe("organization direct coaching assignments against a fresh disposable Po
             organizationId,
             engagementId,
             operationId: changeOperationId,
-            expectedStateDigest: digest(active.items.map((row) => row.assignmentId)),
+            expectedStateDigest: digest(
+              activeWithBoundaryCoach.items.map((row) => row.assignmentId),
+            ),
             assignmentId: supporting.assignmentId,
             coachMembershipId: firstMembershipId,
             assignmentKind: "supporting",
@@ -278,7 +328,9 @@ describe("organization direct coaching assignments against a fresh disposable Po
               organizationId,
               engagementId,
               operationId: changeOperationId,
-              expectedStateDigest: digest(active.items.map((row) => row.assignmentId)),
+              expectedStateDigest: digest(
+                activeWithBoundaryCoach.items.map((row) => row.assignmentId),
+              ),
               assignmentId: supporting.assignmentId,
               coachMembershipId: firstMembershipId,
               assignmentKind: "supporting",
@@ -518,5 +570,5 @@ describe("organization direct coaching assignments against a fresh disposable Po
         }
       },
     );
-  });
+  }, 30_000);
 });

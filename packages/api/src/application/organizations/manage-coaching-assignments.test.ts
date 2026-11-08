@@ -20,6 +20,7 @@ vi.mock("../../repositories/coaching-assignment-repository", () => ({
 import {
   CoachingAssignmentError,
   coachingAssignmentStateDigest,
+  listCoachingAssignments,
   manageCoachingAssignment,
 } from "./manage-coaching-assignments";
 
@@ -95,6 +96,37 @@ describe("manageCoachingAssignment", () => {
       CoachingAssignmentError,
     );
     expect(repository.findReceipts).not.toHaveBeenCalled();
+  });
+  it("returns the bounded assigned-coach identity and makes a non-active membership explicit", async () => {
+    repository.list.mockResolvedValue([
+      {
+        id: "assignment",
+        coachMembershipId: ids.coach,
+        assignmentKind: "primary",
+        assignedAt: new Date("2026-11-08T00:00:00.000Z"),
+        coachDisplayName: "Coach Fifty One",
+        coachUsername: "coach-51",
+        coachSuspendedAt: new Date("2026-11-08T01:00:00.000Z"),
+        coachEndedAt: null,
+      },
+    ]);
+    await expect(
+      listCoachingAssignments({
+        db: command().db,
+        actorProfileId: ids.actor,
+        organizationId: ids.org,
+        engagementId: ids.engagement,
+      }),
+    ).resolves.toMatchObject([
+      {
+        coachMembershipId: ids.coach,
+        coachIdentity: {
+          displayName: "Coach Fifty One",
+          username: "coach-51",
+          membershipStatus: "suspended",
+        },
+      },
+    ]);
   });
   it("replays only the exact semantic command", async () => {
     repository.findReceipts.mockResolvedValue([

@@ -169,6 +169,18 @@ export async function listCoachingAssignments(input: {
     if (!actor || !active(actor)) throw new CoachingAssignmentError("forbidden");
     const engagement = await repo.lockEngagement(input.organizationId, input.engagementId);
     if (!engagement || engagement.endedAt) throw new CoachingAssignmentError("not_found");
-    return repo.list(input.organizationId, input.engagementId);
+    const assignments = await repo.list(input.organizationId, input.engagementId);
+    return assignments.map((assignment) => ({
+      ...assignment,
+      coachIdentity: {
+        displayName: assignment.coachDisplayName,
+        username: assignment.coachUsername,
+        membershipStatus: assignment.coachEndedAt
+          ? ("ended" as const)
+          : assignment.coachSuspendedAt
+            ? ("suspended" as const)
+            : ("active" as const),
+      },
+    }));
   });
 }

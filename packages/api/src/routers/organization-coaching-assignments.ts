@@ -23,6 +23,13 @@ const assignment = z
     coachMembershipId: z.string().uuid(),
     assignmentKind: z.enum(["primary", "supporting"]),
     assignedAt: z.date(),
+    coachIdentity: z
+      .object({
+        displayName: z.string().nullable(),
+        username: z.string().nullable(),
+        membershipStatus: z.enum(["active", "suspended", "ended"]),
+      })
+      .strict(),
   })
   .strict();
 const receipt = z
@@ -76,6 +83,7 @@ export const organizationCoachingAssignmentsRouter = createTRPCRouter({
           coachMembershipId: row.coachMembershipId,
           assignmentKind: row.assignmentKind,
           assignedAt: row.assignedAt,
+          coachIdentity: row.coachIdentity,
         })),
       };
     }),
