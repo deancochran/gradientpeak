@@ -1,6 +1,7 @@
 #!/usr/bin/env tsx
 
 import { execFileSync } from "node:child_process";
+import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { activityPlanSemanticHash, activityPlanStructureSchema } from "@repo/core/activity-plan";
 import { Pool } from "pg";
@@ -12,6 +13,7 @@ import {
 import { dbPackageRoot, runSupabaseCli } from "./_helpers";
 import { requireFreshBaseline } from "./baseline-workflow";
 import { structureHash } from "./canonical-json";
+import { runIsolatedSupabaseDiff } from "./isolated-supabase-diff";
 
 const activityCategoryValues = ["run", "bike", "swim", "strength", "other"] as const;
 
@@ -2075,11 +2077,15 @@ async function main() {
       dbPackageRoot,
     );
     if (args.includes("--diff")) {
-      const diff = runSupabaseCli(
-        ["db", "diff", "--db-url", targetUrl, "--schema", "public"],
-        dbPackageRoot,
-        "utf8",
-      ).toString();
+      const diff = await runIsolatedSupabaseDiff(
+        { sourceSupabaseRoot: resolve(dbPackageRoot, "supabase") },
+        (diffWorkdir) =>
+          runSupabaseCli(
+            ["db", "diff", "--db-url", targetUrl, "--schema", "public"],
+            diffWorkdir.root,
+            "utf8",
+          ).toString(),
+      );
       if (!isEmptyPublicSchemaDiff(diff))
         throw new Error(`fresh target schema diff is not empty:\n${diff}`);
       console.log("[db:diff] disposable authoritative target has no public schema diff");
