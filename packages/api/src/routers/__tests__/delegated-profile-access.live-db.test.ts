@@ -275,7 +275,10 @@ describe("delegated profile access and retired legacy revoke through appRouter",
     await expect(
       coach.goals.update({ id: goal.id, data: { title: "Still active update" } }),
     ).resolves.toMatchObject({ title: "Still active update" });
-    await expect(coach.goals.delete({ id: goal.id })).resolves.toMatchObject({ id: goal.id });
+    await expect(coach.goals.delete({ id: goal.id })).resolves.toEqual({
+      success: true,
+      cache_tags: ["goals.list", "goals.getById"],
+    });
 
     expect(await readPersistedGoalTitle(goal.id)).toBeUndefined();
   });
@@ -307,13 +310,33 @@ describe("delegated profile access and retired legacy revoke through appRouter",
       await held.query("select id from coaching_assignments where engagement_id = $1 for update", [
         relationship.engagementId,
       ]);
-      const write = coach.goals.create(goalInput(athleteId, "Committed before revoke"));
-      const revoke = coach.profileAccess.revoke({ coach_id: coachId, athlete_id: athleteId });
+      const write = coach.goals.create(goalInput(athleteId, "Committed before revoke")).then(
+        (value) => ({ status: "fulfilled" as const, value }),
+        (error: unknown) => ({ status: "rejected" as const, error }),
+      );
+      const revoke = coach.profileAccess.revoke({ coach_id: coachId, athlete_id: athleteId }).then(
+        () => ({ status: "fulfilled" as const }),
+        (error: unknown) => ({ status: "rejected" as const, error }),
+      );
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      const revokeWhileLocked = await Promise.race([
+        revoke,
+        new Promise<{ status: "timed_out" }>((resolve) => {
+          timeout = setTimeout(() => resolve({ status: "timed_out" }), 1_000);
+        }),
+      ]);
+      if (timeout) clearTimeout(timeout);
+      expect(revokeWhileLocked.status).toBe("rejected");
+      if (revokeWhileLocked.status === "rejected") {
+        expect(revokeWhileLocked.error).toMatchObject({ code: "PRECONDITION_FAILED" });
+      }
 
       await held.query("commit");
       committed = true;
-      await expect(revoke).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
-      await expect(write).resolves.toMatchObject({ title: "Committed before revoke" });
+      await expect(write).resolves.toMatchObject({
+        status: "fulfilled",
+        value: { title: "Committed before revoke" },
+      });
     } finally {
       if (!committed) await held.query("rollback").catch(() => undefined);
       held.release();

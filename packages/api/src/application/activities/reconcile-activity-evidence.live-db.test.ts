@@ -19,12 +19,14 @@ import { reconcileThresholdsWithProfileLockHeld } from "../performance-model/rec
 import { reconcileGeneratedActivityEvidence } from "./reconcile-activity-evidence";
 
 const profileIds: string[] = [];
-// This deliberately follows PostgreSQL's live clock: a fixed calendar date
-// cannot prove future-clock protection once the calendar advances.
-const completedAt = new Date(Date.now() + 60_000);
-const createdAt = new Date(completedAt.getTime() + 60_000);
+const eligibleCompletedAt = new Date(Date.now() - 60_000);
+const createdAt = new Date();
 
-async function seedBikeActivity() {
+async function seedBikeActivity({
+  completedAt = eligibleCompletedAt,
+}: {
+  completedAt?: Date;
+} = {}) {
   const profileId = randomUUID();
   const activityId = randomUUID();
   const artifactId = randomUUID();
@@ -111,7 +113,7 @@ async function seedBikeActivity() {
     });
   });
 
-  return { profileId, activityId, artifactId, segmentId };
+  return { profileId, activityId, artifactId, segmentId, completedAt };
 }
 
 function exactBikeThresholdEffort(input: Awaited<ReturnType<typeof seedBikeActivity>>) {
@@ -122,7 +124,7 @@ function exactBikeThresholdEffort(input: Awaited<ReturnType<typeof seedBikeActiv
     profile_id: input.profileId,
     activity_id: input.activityId,
     segment_id: input.segmentId,
-    recorded_at: completedAt,
+    recorded_at: input.completedAt,
     activity_category: "bike" as const,
     effort_type: "power" as const,
     source_series: "power" as const,
@@ -147,8 +149,8 @@ function exactBikeThresholdEffort(input: Awaited<ReturnType<typeof seedBikeActiv
       derived_from: "activity_file_stream",
       source_series: "power",
       interval_convention: "current_sample_applies_to_preceding_interval",
-      exact_window_start_timestamp_seconds: completedAt.getTime() / 1_000 - 1_800,
-      exact_window_end_timestamp_seconds: completedAt.getTime() / 1_000,
+      exact_window_start_timestamp_seconds: input.completedAt.getTime() / 1_000 - 1_800,
+      exact_window_end_timestamp_seconds: input.completedAt.getTime() / 1_000,
       exact_window_start_offset_seconds: 0,
       exact_window_end_offset_seconds: 1_800,
       duration_seconds: 1_800,
@@ -233,7 +235,8 @@ describe("reconcileGeneratedActivityEvidence against PostgreSQL", () => {
   });
 
   it("defers evaluations when a device-recorded completion is ahead of the server clock", async () => {
-    const fixture = await seedBikeActivity();
+    const completedAt = new Date(Date.now() + 60_000);
+    const fixture = await seedBikeActivity({ completedAt });
     await db.transaction((tx) =>
       reconcileGeneratedActivityEvidence(tx, {
         activityId: fixture.activityId,
@@ -330,7 +333,17 @@ describe("reconcileGeneratedActivityEvidence against PostgreSQL", () => {
           now: createdAt,
         }),
       ),
-    ).resolves.toMatchObject({ effortInserts: [] });
+    ).resolves.toMatchObject({
+      effortInserts: [],
+      calibrationReconciliation: {
+        changed: false,
+        identities: [
+          { activityCategory: "bike", metric: "power" },
+          { activityCategory: "bike", metric: "lthr" },
+        ],
+        deferredIdentities: [],
+      },
+    });
     await expect(
       db.select().from(activityEfforts).where(eq(activityEfforts.activity_id, fixture.activityId)),
     ).resolves.toHaveLength(1);
