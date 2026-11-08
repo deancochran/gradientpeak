@@ -179,7 +179,8 @@ async function main() {
           "training-digest",
           id(132),
         ])
-      ).rows[0]!.id;
+      ).rows[0]?.id;
+      assert.equal(typeof trainingGrant, "string", "grant returns a persisted UUID");
       assert.equal(
         (
           await asService(pool, grant, [
@@ -191,7 +192,7 @@ async function main() {
             "training-digest",
             id(132),
           ])
-        ).rows[0]!.id,
+        ).rows[0]?.id,
         trainingGrant,
         "same actor/payload replay returns original grant",
       );
@@ -218,7 +219,8 @@ async function main() {
           "schedule-digest",
           id(133),
         ])
-      ).rows[0]!.id;
+      ).rows[0]?.id;
+      assert.equal(typeof scheduleGrant, "string", "schedule grant returns a persisted UUID");
       assert.equal(
         (
           await pool.query(
@@ -243,11 +245,11 @@ async function main() {
         /exact active engagement athlete/,
       );
       assert.equal(
-        (await asService(pool, revoke, [athlete, org, trainingGrant, id(135)])).rows[0]!.id,
+        (await asService(pool, revoke, [athlete, org, trainingGrant, id(135)])).rows[0]?.id,
         trainingGrant,
       );
       assert.equal(
-        (await asService(pool, revoke, [athlete, org, trainingGrant, id(135)])).rows[0]!.id,
+        (await asService(pool, revoke, [athlete, org, trainingGrant, id(135)])).rows[0]?.id,
         trainingGrant,
         "revoke replay is exact-id idempotent",
       );
@@ -261,7 +263,8 @@ async function main() {
           "training-digest",
           id(136),
         ])
-      ).rows[0]!.id;
+      ).rows[0]?.id;
+      assert.equal(typeof replacement, "string", "replacement returns a persisted UUID");
       await assert.rejects(
         () => asService(pool, revoke, [athlete, org, trainingGrant, id(137)]),
         /already revoked/,
@@ -297,7 +300,7 @@ async function main() {
             "training-digest",
             id(132),
           ])
-        ).rows[0]!.id,
+        ).rows[0]?.id,
         trainingGrant,
         "historical grant replay returns its original UUID after revoke and replacement",
       );
@@ -415,7 +418,7 @@ async function main() {
           (
             await laterPublisher.query(
               "select policy_version_id from public.athlete_coaching_write_grants where id=$1",
-              [secondGrant.rows[0]!.id],
+              [secondGrant.rows[0]?.id],
             )
           ).rows[0]?.policy_version_id,
           publishedPolicy,
