@@ -128,61 +128,74 @@ export const loadCoachAthleteOverview = createServerFn({ method: "POST" })
     z.object({ organizationId, athleteProfileId: z.string().uuid() }).strict().parse(input),
   )
   .handler(async ({ data }) => {
+    const caller = await createRequestApiCaller();
+    let metrics: Awaited<
+      ReturnType<typeof caller.athleteIntelligence.getOrganizationReadModel>
+    > | null = null;
+    let history: Awaited<
+      ReturnType<typeof caller.athleteIntelligence.getOrganizationReadModel>
+    > | null = null;
     try {
-      const caller = await createRequestApiCaller();
-      const model = await caller.athleteIntelligence.getOrganizationReadModel({
+      metrics = await caller.athleteIntelligence.getOrganizationReadModel({
         organizationId: data.organizationId,
         athleteProfileId: data.athleteProfileId,
         sections: { publishedState: true, status: true },
       });
-      const history = await caller.athleteIntelligence
-        .getOrganizationReadModel({
-          organizationId: data.organizationId,
-          athleteProfileId: data.athleteProfileId,
-          sections: { loadHistory: true },
-        })
-        .catch((error) => (isAccessError(error) ? null : Promise.reject(error)));
-      return {
-        status: "granted" as const,
-        model: {
-          publishedState: model.publishedState
-            ? {
-                publishedAt: model.publishedState.publishedAt,
-                baseline: model.publishedState.baseline,
-                estimates: model.publishedState.estimates.map((estimate) => ({
-                  activityCategory: estimate.activityCategory,
-                  capabilityKind: estimate.capabilityKind,
-                  value: estimate.value,
-                  unit: estimate.unit,
-                  confidence: estimate.confidence,
-                  effectiveAt: estimate.effectiveAt,
-                  computedAt: estimate.computedAt,
-                  algorithmVersion: estimate.algorithmVersion,
-                })),
-              }
-            : null,
-          ...(model.status
-            ? {
-                status: {
-                  freshness: model.status.freshness,
-                  importStatus: model.status.importStatus,
-                  coverage: { lastActivityAt: model.status.coverage.lastActivityAt },
-                },
-              }
-            : {}),
-          loadHistory: history?.loadHistory
-            ? {
-                publishedRevision: history.loadHistory.publishedRevision,
-                algorithmVersion: history.loadHistory.algorithmVersion,
-                result: history.loadHistory.result,
-              }
-            : null,
-        },
-      };
     } catch (error) {
-      if (isAccessError(error)) return { status: "unavailable" as const };
-      throw error;
+      if (!isAccessError(error)) throw error;
     }
+    try {
+      history = await caller.athleteIntelligence.getOrganizationReadModel({
+        organizationId: data.organizationId,
+        athleteProfileId: data.athleteProfileId,
+        sections: { loadHistory: true },
+      });
+    } catch (error) {
+      if (!isAccessError(error)) throw error;
+    }
+    if (!metrics && !history) return { status: "unavailable" as const };
+    return {
+      status: "granted" as const,
+      model: {
+        metricsAvailable: metrics !== null,
+        ...(metrics
+          ? {
+              publishedState: metrics.publishedState
+                ? {
+                    publishedAt: metrics.publishedState.publishedAt,
+                    baseline: metrics.publishedState.baseline,
+                    estimates: metrics.publishedState.estimates.map((estimate) => ({
+                      activityCategory: estimate.activityCategory,
+                      capabilityKind: estimate.capabilityKind,
+                      value: estimate.value,
+                      unit: estimate.unit,
+                      confidence: estimate.confidence,
+                      effectiveAt: estimate.effectiveAt,
+                      computedAt: estimate.computedAt,
+                      algorithmVersion: estimate.algorithmVersion,
+                    })),
+                  }
+                : null,
+              ...(metrics.status
+                ? {
+                    status: {
+                      freshness: metrics.status.freshness,
+                      importStatus: metrics.status.importStatus,
+                      coverage: { lastActivityAt: metrics.status.coverage.lastActivityAt },
+                    },
+                  }
+                : {}),
+            }
+          : { publishedState: null }),
+        loadHistory: history?.loadHistory
+          ? {
+              publishedRevision: history.loadHistory.publishedRevision,
+              algorithmVersion: history.loadHistory.algorithmVersion,
+              result: history.loadHistory.result,
+            }
+          : null,
+      },
+    };
   });
 
 /** The API remains authoritative for permission and idempotency; this function only binds it to the request session. */

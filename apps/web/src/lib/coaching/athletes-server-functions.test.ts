@@ -94,6 +94,50 @@ describe("athlete administration server functions", () => {
     ).resolves.toEqual({ status: "unavailable" });
   });
 
+  it("keeps activity history when only metrics consent is denied", async () => {
+    const history = {
+      loadHistory: { publishedRevision: 1, algorithmVersion: "load-v1", result: {} },
+    };
+    mocks.overview
+      .mockRejectedValueOnce(Object.assign(new Error("metrics revoked"), { code: "FORBIDDEN" }))
+      .mockResolvedValueOnce(history);
+
+    await expect(
+      loadCoachAthleteOverview({ data: { organizationId, athleteProfileId: engagementId } }),
+    ).resolves.toEqual({
+      status: "granted",
+      model: { metricsAvailable: false, publishedState: null, loadHistory: history.loadHistory },
+    });
+  });
+
+  it("keeps metrics when only activity-history consent is denied", async () => {
+    mocks.overview
+      .mockResolvedValueOnce({ publishedState: null, status: null })
+      .mockRejectedValueOnce(Object.assign(new Error("history revoked"), { code: "FORBIDDEN" }));
+
+    await expect(
+      loadCoachAthleteOverview({ data: { organizationId, athleteProfileId: engagementId } }),
+    ).resolves.toEqual({
+      status: "granted",
+      model: { metricsAvailable: true, publishedState: null, loadHistory: null },
+    });
+  });
+
+  it("propagates unexpected overview read failures", async () => {
+    mocks.overview.mockRejectedValueOnce(new Error("upstream unavailable"));
+
+    await expect(
+      loadCoachAthleteOverview({ data: { organizationId, athleteProfileId: engagementId } }),
+    ).rejects.toThrow("upstream unavailable");
+
+    mocks.overview
+      .mockResolvedValueOnce({ publishedState: null, status: null })
+      .mockRejectedValueOnce(new Error("history upstream unavailable"));
+    await expect(
+      loadCoachAthleteOverview({ data: { organizationId, athleteProfileId: engagementId } }),
+    ).rejects.toThrow("history upstream unavailable");
+  });
+
   it("discards directory search and profile cursor when falling back to the engagement roster", async () => {
     mocks.directory.mockRejectedValueOnce(
       Object.assign(new Error("coach role revoked"), { code: "FORBIDDEN" }),

@@ -37,7 +37,7 @@ const availableHistory = {
 describe("CoachAthleteOverview", () => {
   afterEach(cleanup);
 
-  it("shows a true zero daily load and separates measured load from modeled state and performance", () => {
+  it("shows a true zero daily load and separates completed load from modeled state and performance", () => {
     render(
       <CoachAthleteOverview
         athleteId="athlete-a"
@@ -50,6 +50,7 @@ describe("CoachAthleteOverview", () => {
     expect(screen.getByText(/Common Load points are derived/)).toBeTruthy();
     expect(screen.getByText(/Dates are planning dates in America\/Chicago/)).toBeTruthy();
     expect(screen.getByRole("table").textContent).toContain("Modeled recent load");
+    expect(screen.queryByText("Published load state")).toBeNull();
   });
 
   it("does not turn unavailable history into zeroes", () => {
@@ -71,6 +72,37 @@ describe("CoachAthleteOverview", () => {
 
     expect(screen.getByText(/Historical load is unavailable/)).toBeTruthy();
     expect(screen.queryByRole("table")).toBeNull();
+  });
+
+  it("renders shared activity history without exposing unshared metrics", () => {
+    render(
+      <CoachAthleteOverview
+        athleteId="athlete-a"
+        result={{
+          status: "granted",
+          model: { publishedState: null, loadHistory: availableHistory },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Recent completed daily Common Load")).toBeTruthy();
+    expect(screen.queryByText("Published load state")).toBeNull();
+    expect(screen.queryByText("Published performance estimates")).toBeNull();
+    expect(screen.queryByText("Projection status")).toBeNull();
+  });
+
+  it("retains the empty metrics presentation when metrics access is granted", () => {
+    render(
+      <CoachAthleteOverview
+        athleteId="athlete-a"
+        result={{
+          status: "granted",
+          model: { metricsAvailable: true, publishedState: null, loadHistory: null },
+        }}
+      />,
+    );
+    expect(screen.getByText("Published load state")).toBeTruthy();
+    expect(screen.getByText("Published performance estimates")).toBeTruthy();
   });
 
   it("removes private history when the selected identity is unavailable", () => {
