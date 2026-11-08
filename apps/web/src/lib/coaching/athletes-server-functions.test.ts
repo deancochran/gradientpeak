@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   directory: vi.fn(),
   end: vi.fn(),
+  overview: vi.fn(),
   createApiContext: vi.fn(),
   resolveSession: vi.fn(),
   headers: new Headers(),
@@ -27,6 +28,7 @@ vi.mock("@repo/api/server", () => ({
         coachAthletes: { listAssigned: mocks.directory },
         lifecycle: { adminRoster: { list: mocks.list }, endEngagement: mocks.end },
       },
+      athleteIntelligence: { getOrganizationReadModel: mocks.overview },
     }),
   },
   createApiContext: mocks.createApiContext,
@@ -36,6 +38,7 @@ vi.mock("@repo/db/client", () => ({ db: mocks.db }));
 
 import {
   loadAdministrativeAthleteRoster,
+  loadCoachAthleteOverview,
   loadOrganizationAthletesLanding,
   terminateAthleteEngagement,
 } from "./athletes-server-functions";
@@ -51,6 +54,11 @@ describe("athlete administration server functions", () => {
     mocks.createApiContext.mockResolvedValue({});
     mocks.list.mockResolvedValue({ items: [], nextCursor: null, hasMore: false });
     mocks.end.mockResolvedValue({ engagementId, status: "ended" });
+    mocks.overview.mockResolvedValue({
+      publishedState: null,
+      status: null,
+      loadHistory: null,
+    });
   });
 
   it("binds roster pagination to the explicit organization and current request session", async () => {
@@ -61,6 +69,29 @@ describe("athlete administration server functions", () => {
       auth: { session: { user: { id: "profile" } } },
       db: mocks.db,
     });
+  });
+
+  it("forwards only the selected organization athlete metrics request including bounded published history", async () => {
+    await loadCoachAthleteOverview({ data: { organizationId, athleteProfileId: engagementId } });
+
+    expect(mocks.overview).toHaveBeenNthCalledWith(1, {
+      organizationId,
+      athleteProfileId: engagementId,
+      sections: { publishedState: true, status: true },
+    });
+    expect(mocks.overview).toHaveBeenNthCalledWith(2, {
+      organizationId,
+      athleteProfileId: engagementId,
+      sections: { loadHistory: true },
+    });
+  });
+
+  it("removes all overview data when organization assignment or consent is revoked", async () => {
+    mocks.overview.mockRejectedValue(Object.assign(new Error("revoked"), { code: "FORBIDDEN" }));
+
+    await expect(
+      loadCoachAthleteOverview({ data: { organizationId, athleteProfileId: engagementId } }),
+    ).resolves.toEqual({ status: "unavailable" });
   });
 
   it("discards directory search and profile cursor when falling back to the engagement roster", async () => {

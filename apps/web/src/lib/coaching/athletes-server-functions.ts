@@ -135,6 +135,13 @@ export const loadCoachAthleteOverview = createServerFn({ method: "POST" })
         athleteProfileId: data.athleteProfileId,
         sections: { publishedState: true, status: true },
       });
+      const history = await caller.athleteIntelligence
+        .getOrganizationReadModel({
+          organizationId: data.organizationId,
+          athleteProfileId: data.athleteProfileId,
+          sections: { loadHistory: true },
+        })
+        .catch((error) => (isAccessError(error) ? null : Promise.reject(error)));
       return {
         status: "granted" as const,
         model: {
@@ -163,6 +170,13 @@ export const loadCoachAthleteOverview = createServerFn({ method: "POST" })
                 },
               }
             : {}),
+          loadHistory: history?.loadHistory
+            ? {
+                publishedRevision: history.loadHistory.publishedRevision,
+                algorithmVersion: history.loadHistory.algorithmVersion,
+                result: history.loadHistory.result,
+              }
+            : null,
         },
       };
     } catch (error) {

@@ -1,12 +1,21 @@
+import type { TestInfo } from "@playwright/test";
+import { calculateCyclingNormalizedPower } from "@repo/core/calculations/normalized-power";
+import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import {
+  activities,
+  activityArtifactLinks,
+  activityArtifacts,
+  activitySegments,
   athleteConsentPolicyVersions,
   athleteDataSharingConsents,
   coachingAssignments,
   coachingEngagements,
+  integrations,
   organizationMembershipRoleGrants,
   organizationMemberships,
   profileAthleteState,
   profilePerformanceEstimates,
+  providerSyncState,
 } from "@repo/db/schema";
 import { expect, test } from "../fixtures";
 import { withLocalE2EDatabase } from "../support/database";
@@ -20,7 +29,7 @@ test("non-admin coach switches assigned athletes without receiving unshared metr
   actorFactory,
   coachActor,
   e2eIdentity,
-}) => {
+}, testInfo: TestInfo) => {
   await athletePage.goto("/organizations/new");
   await athletePage.getByLabel("Organization name", { exact: true }).fill("Workspace acceptance");
   await athletePage
@@ -80,6 +89,11 @@ test("non-admin coach switches assigned athletes without receiving unshared metr
   await expect(page.getByRole("heading", { name: "Assigned athletes" })).toBeVisible();
   await page.getByRole("link", { name: athleteActor.username ?? "Assigned athlete" }).click();
   await expect(page.getByText("Athlete workspace unavailable")).toBeVisible();
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath("coach-athlete-history-unavailable.png"),
+    scale: "css",
+  });
   await page.getByRole("button", { name: "Switch athlete" }).click();
   const switcher = page.getByRole("list", { name: "Switch athlete" });
   await expect(switcher.getByRole("link")).toHaveCount(2);
@@ -146,17 +160,167 @@ test("non-admin coach switches assigned athletes without receiving unshared metr
           value: fixture.watts,
           unit: "watts",
           confidence: 0.8,
-          effective_at: now,
+          effective_at: new Date(now.getTime() - 90 * 86_400_000),
           computed_at: now,
           algorithm_version: "workspace-fixture-v1",
           source_revision: 1,
         });
+        if (fixture.id === secondAthlete.profileId) {
+          const activityPolicy = e2eIdentity.uuid("activity-history-policy");
+          await transaction.insert(athleteConsentPolicyVersions).values({
+            id: activityPolicy,
+            scope_key: "activities",
+            effective_from: new Date(now.getTime() - 1000),
+            jurisdiction: "e2e",
+            terms_text: "Disposable activity history consent",
+            content_digest: e2eIdentity.uuid("activity-history-digest"),
+          });
+          await transaction.insert(athleteDataSharingConsents).values({
+            organization_id: organizationId,
+            engagement_id: fixture.engagement,
+            athlete_profile_id: fixture.id,
+            scope_key: "activities",
+            policy_version_id: activityPolicy,
+            granted_by_profile_id: fixture.id,
+          });
+          const integrationId = e2eIdentity.uuid("history-integration");
+          const end = new Date(now);
+          end.setUTCHours(12, 0, 0, 0);
+          const start = new Date(end);
+          start.setUTCDate(start.getUTCDate() - 84);
+          await transaction.insert(integrations).values({
+            id: integrationId,
+            profile_id: fixture.id,
+            provider: "wahoo",
+            external_id: `history-${integrationId}`,
+          });
+          await transaction.insert(providerSyncState).values({
+            integration_id: integrationId,
+            provider: "wahoo",
+            resource: "historical_activities",
+            sync_mode: "full",
+            last_sync_succeeded_at: end,
+            high_watermark: end,
+            metadata: {
+              activityHistoryCoverage: { start: start.toISOString(), end: end.toISOString() },
+            },
+          });
+          for (let offset = 1; offset <= 84; offset += 1) {
+            const finishedAt = new Date(end);
+            finishedAt.setUTCDate(finishedAt.getUTCDate() - offset);
+            const activityId = e2eIdentity.uuid(`history-activity-${offset}`);
+            const artifactId = e2eIdentity.uuid(`history-artifact-${offset}`);
+            const segmentId = e2eIdentity.uuid(`history-segment-${offset}`);
+            const digestSeed = e2eIdentity.uuid(`history-digest-${offset}`).replaceAll("-", "");
+            const dailyLoad = offset === 1 ? 42 : 12;
+            const normalizedPower = calculateCyclingNormalizedPower({
+              samples: Array.from({ length: 720 }, (_, index) => ({
+                timestampSeconds: (index + 1) * 5,
+                powerWatts: offset === 1 ? 210 : 180,
+              })),
+            });
+            const targets = buildPerformanceTargetFactsFixture({
+              athleteId: fixture.id,
+              asOf: finishedAt.toISOString(),
+              bikeThresholdWatts: 250,
+            });
+            await transaction.insert(activities).values({
+              id: activityId,
+              profile_id: fixture.id,
+              name: `History activity ${offset}`,
+              started_at: new Date(finishedAt.getTime() - 3_600_000),
+              finished_at: finishedAt,
+              elapsed_ms: 3_600_000,
+              active_ms: 3_600_000,
+              moving_ms: 3_600_000,
+              timing_coverage: "complete",
+              segments_revision: 1,
+              parser_version: "e2e-history-v1",
+              decoded_contract_version: "e2e-history-v1",
+              materializer_version: "e2e-history-v1",
+              segments_generated_at: finishedAt,
+              athlete_state_common_load: dailyLoad,
+              athlete_state_activity_category: "bike",
+              athlete_state_evidence_confidence: 0.9,
+              athlete_state_capability_distance_meters: 1_000,
+              athlete_state_capability_duration_minutes: 60,
+              athlete_state_input_version: "e2e-history-v1",
+              athlete_state_computed_at: finishedAt,
+              performance_target_snapshot: {
+                contractVersion: "completed-activity-performance-target-snapshot-v2",
+                capturedAt: finishedAt.toISOString(),
+                publishedRevision: 1,
+                publicationStatus: "available",
+                targets,
+              },
+              created_at: finishedAt,
+              updated_at: finishedAt,
+            });
+            await transaction.insert(activityArtifacts).values({
+              id: artifactId,
+              profile_id: fixture.id,
+              digest_algorithm: "sha256",
+              digest: `${digestSeed}${digestSeed}`,
+              byte_size: 1_024,
+              bucket: "activity-files",
+              path: `artifacts/sha256/${fixture.id}/${digestSeed}${digestSeed}`,
+              media_type: "application/vnd.ant.fit",
+              format: "fit",
+              availability: "accepted",
+              first_accepted_at: finishedAt,
+            });
+            await transaction.insert(activityArtifactLinks).values({
+              id: e2eIdentity.uuid(`history-link-${offset}`),
+              activity_id: activityId,
+              artifact_id: artifactId,
+              profile_id: fixture.id,
+              role: "source",
+              ordinal: 0,
+              is_current: true,
+              linked_at: finishedAt,
+            });
+            await transaction.insert(activitySegments).values({
+              id: segmentId,
+              activity_id: activityId,
+              profile_id: fixture.id,
+              ordinal: 0,
+              role: "activity",
+              activity_category: "bike",
+              start_offset_ms: 0,
+              end_offset_ms: 3_600_000,
+              source_artifact_id: artifactId,
+              source_session_index: 0,
+              summary: {
+                version: 1,
+                timing: { timingCoverage: "complete", activeMs: 3_600_000, movingMs: 3_600_000 },
+                distanceMeters: 20_000,
+                averagePowerWatts: offset === 1 ? 210 : 180,
+                normalizedPowerResult: normalizedPower,
+              },
+              summary_version: 1,
+              timing_coverage: "complete",
+              active_ms: 3_600_000,
+              moving_ms: 3_600_000,
+              segment_revision: 1,
+              parser_version: "e2e-history-v1",
+              materializer_version: "e2e-history-v1",
+              created_at: finishedAt,
+            });
+          }
+        }
       }
     });
   });
   await page.reload();
   await waitForAppHydration(page);
   await expect(page.getByText("322 watts", { exact: true })).toBeVisible();
+  await expect(page.getByText("Recent completed daily Common Load", { exact: true })).toBeVisible();
+  await expect(page.getByRole("cell", { name: "42.0", exact: true })).toBeVisible();
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath("coach-athlete-history-populated.png"),
+    scale: "css",
+  });
   await expect(page.getByText("211 watts", { exact: true })).toHaveCount(0);
   await expect(page.getByText(`@${secondAthlete.username}`, { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Switch athlete" }).click();
@@ -166,6 +330,9 @@ test("non-admin coach switches assigned athletes without receiving unshared metr
     .click();
   await expect(page.getByText("211 watts", { exact: true })).toBeVisible();
   await expect(page.getByText("322 watts", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Recent completed daily Common Load", { exact: true })).toHaveCount(
+    0,
+  );
   await expect(page.getByText(`@${athleteActor.username}`, { exact: true })).toBeVisible();
   await page.reload();
   await waitForAppHydration(page);

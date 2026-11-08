@@ -11,6 +11,19 @@ import baseConfig from "./vite.config";
 export default defineConfig(async (environment) => {
   const base = typeof baseConfig === "function" ? await baseConfig(environment) : baseConfig;
   return mergeConfig(base, {
+    // Virtual Start entries discover these after the initial scan. Prebundle
+    // them before the first browser journey to avoid invalidating its imports.
+    optimizeDeps: {
+      include: [
+        "@tanstack/history",
+        "@tanstack/router-core",
+        "@tanstack/router-core/isServer",
+        "@tanstack/router-core/ssr/client",
+        "@tanstack/router-core/ssr/server",
+        "h3-v2",
+        "seroval",
+      ],
+    },
     resolve: {
       alias: {
         "@repo/api/chatbot/host": fileURLToPath(

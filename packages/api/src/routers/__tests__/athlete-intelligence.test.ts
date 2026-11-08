@@ -597,4 +597,61 @@ describe("athleteIntelligenceRouter.getOrganizationReadModel", () => {
       }),
     );
   });
+
+  it("treats organization load history as activity-scope data", async () => {
+    const readModel = vi.fn(async () => ({
+      contractVersion: "athlete-read-model-v1" as const,
+      profileId: OWNER_ID,
+      asOf: "2026-07-10T12:00:00.000Z",
+      publishedRevision: null,
+      algorithmVersion: null,
+      loadHistory: null,
+    }));
+    const authorizeOrganizationReadSpy = vi.fn();
+    const authorizeOrganizationRead: typeof withAuthorizedAthleteRead = async (request) => {
+      authorizeOrganizationReadSpy(request);
+      return {
+        decision: { outcome: "allow" as const, scope: request.scope },
+        value: await request.read({} as never),
+      };
+    };
+    const router = createAthleteIntelligenceRouter(
+      vi.fn(async () => publishedAssessment()),
+      vi.fn(async () => OWNER_ID),
+      readModel,
+      consentAuthorizer({ state: "missing", scopes: [] }),
+      undefined,
+      {},
+      authorizeOrganizationRead,
+    );
+    await createRouterCaller(router, { db: {}, userId: COACH_ID }).getOrganizationReadModel({
+      organizationId: "11111111-1111-4111-8111-111111111111",
+      athleteProfileId: OWNER_ID,
+      sections: { loadHistory: true },
+    });
+    expect(authorizeOrganizationReadSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ scope: "activities" }),
+    );
+    readModel.mockClear();
+    await expect(
+      createRouterCaller(router, { db: {}, userId: COACH_ID }).getOrganizationReadModel({
+        organizationId: "11111111-1111-4111-8111-111111111111",
+        athleteProfileId: OWNER_ID,
+        sections: { publishedState: true, loadHistory: true },
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(readModel).not.toHaveBeenCalled();
+    await expect(
+      createRouterCaller(router, { db: {}, userId: COACH_ID }).getReadModel({
+        profileId: OWNER_ID,
+        sections: { publishedState: true, loadHistory: true },
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(readModel).not.toHaveBeenCalled();
+    await createRouterCaller(router, { db: {}, userId: OWNER_ID }).getReadModel({
+      profileId: OWNER_ID,
+      sections: { publishedState: true, loadHistory: true },
+    });
+    expect(readModel).toHaveBeenCalledTimes(1);
+  });
 });

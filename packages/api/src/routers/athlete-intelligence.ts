@@ -214,12 +214,13 @@ export function createAthleteIntelligenceRouter(
           input.sections.publishedState ||
             input.sections.status ||
             input.sections.currentBaseline ||
-            input.sections.loadHistory ||
             input.sections.profileObservations ||
             input.sections.trendInsights,
         );
         const requestsActivities = Boolean(
-          input.sections.activityAnalytics || input.sections.trendInsights,
+          input.sections.activityAnalytics ||
+            input.sections.trendInsights ||
+            input.sections.loadHistory,
         );
         if (ctx.session.user.id !== profileId && requestsMetrics && requestsActivities) {
           throw new TRPCError({
@@ -256,12 +257,13 @@ export function createAthleteIntelligenceRouter(
           input.sections.publishedState ||
             input.sections.status ||
             input.sections.currentBaseline ||
-            input.sections.loadHistory ||
             input.sections.profileObservations ||
             input.sections.trendInsights,
         );
         const requestsActivities = Boolean(
-          input.sections.activityAnalytics || input.sections.trendInsights,
+          input.sections.activityAnalytics ||
+            input.sections.trendInsights ||
+            input.sections.loadHistory,
         );
         if (requestsMetrics && requestsActivities) {
           throw new TRPCError({
