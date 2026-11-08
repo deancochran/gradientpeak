@@ -1,12 +1,13 @@
 import type { AccessibilityRole } from "react-native";
 
 export type TestProps = {
-  accessibilityLabel?: string;
-  id?: string;
-  nativeID?: string;
-  role?: string;
-  testID?: string;
-  testId?: string;
+  /** Input boundary accepts forwarded optional values; helpers below omit absent attributes. */
+  accessibilityLabel?: string | undefined;
+  id?: string | undefined;
+  nativeID?: string | undefined;
+  role?: string | undefined;
+  testID?: string | undefined;
+  testId?: string | undefined;
 };
 
 export type WebTestProps = {

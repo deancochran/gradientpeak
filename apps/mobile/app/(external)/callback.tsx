@@ -54,10 +54,11 @@ export default function AuthCallbackScreen() {
 
         if (intent === "password-reset") {
           if (!isCancelled) {
-            router.replace({
-              pathname: "/(external)/reset-password",
-              params: token ? { token } : undefined,
-            });
+            router.replace(
+              token
+                ? { pathname: "/(external)/reset-password", params: { token } }
+                : { pathname: "/(external)/reset-password" },
+            );
           }
           return;
         }

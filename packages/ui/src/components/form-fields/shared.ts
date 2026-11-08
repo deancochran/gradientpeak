@@ -1,3 +1,4 @@
+import { ianaTimezoneSchema } from "@repo/core/athlete-intelligence";
 import type * as React from "react";
 import type {
   Control,
@@ -6,16 +7,18 @@ import type {
   FieldValues,
   RegisterOptions,
 } from "react-hook-form";
-import type { TextInputProps } from "../../lib/react-native";
+import type { TextInputProps } from "react-native";
 import type { BoundedNumberInputProps } from "../bounded-number-input/shared";
 import type { DateInputProps } from "../date-input/shared";
 import type { DurationInputProps } from "../duration-input/shared";
+import type { FileInputProps } from "../file-input/shared";
 import type { IntegerStepperProps } from "../integer-stepper/shared";
 import type { PaceInputProps } from "../pace-input/shared";
 import type { PercentSliderInputProps } from "../percent-slider-input/shared";
 import type { Option } from "../select/shared";
 import type { TimeInputProps } from "../time-input/shared";
 import type { WeightInputFieldProps } from "../weight-input-field/shared";
+import { BUNDLED_TIMEZONES } from "./timezones";
 
 type SharedTextFieldInputProps = {
   autoCapitalize?: TextInputProps["autoCapitalize"];
@@ -27,6 +30,7 @@ type SharedTextFieldInputProps = {
   placeholder?: TextInputProps["placeholder"];
   readOnly?: boolean;
   secureTextEntry?: TextInputProps["secureTextEntry"];
+  selectTextOnFocus?: TextInputProps["selectTextOnFocus"];
   type?: React.InputHTMLAttributes<HTMLInputElement>["type"];
 };
 
@@ -72,6 +76,8 @@ export type FormNumberFieldProps<
   TName extends FieldPath<TFieldValues>,
 > = ControlledFieldProps<TFieldValues, TName> & {
   allowDecimal?: boolean;
+  /** @deprecated Typed values are always validated without clamping. */
+  clampOnBlur?: boolean;
   emptyValue?: FieldPathValue<TFieldValues, TName>;
   formatValue?: (value: FieldPathValue<TFieldValues, TName>) => string;
   max?: number;
@@ -94,6 +100,7 @@ export type FormBoundedNumberFieldProps<
   TFieldValues extends FieldValues,
   TName extends FieldPath<TFieldValues>,
 > = ControlledFieldProps<TFieldValues, TName> & {
+  emptyValue?: FieldPathValue<TFieldValues, TName>;
   helperText?: string;
   min?: number;
   max?: number;
@@ -106,8 +113,9 @@ export type FormBoundedNumberFieldProps<
 export type FormIntegerStepperFieldProps<
   TFieldValues extends FieldValues,
   TName extends FieldPath<TFieldValues>,
-> = ControlledFieldProps<TFieldValues, TName> &
-  Omit<
+> = ControlledFieldProps<TFieldValues, TName> & {
+  emptyValue?: FieldPathValue<TFieldValues, TName> | null;
+} & Omit<
     IntegerStepperProps,
     "error" | "helperText" | "id" | "label" | "onChange" | "testId" | "value"
   >;
@@ -120,8 +128,11 @@ export type FormTextareaFieldProps<
   formatValue?: (value: FieldPathValue<TFieldValues, TName>) => string;
   maxLength?: TextInputProps["maxLength"];
   numberOfLines?: TextInputProps["numberOfLines"];
+  onContentSizeChange?: TextInputProps["onContentSizeChange"];
   parseValue?: (value: string) => FieldPathValue<TFieldValues, TName>;
   placeholder?: TextInputProps["placeholder"];
+  scrollEnabled?: TextInputProps["scrollEnabled"];
+  style?: TextInputProps["style"];
 };
 
 export type FormSelectFieldProps<
@@ -183,6 +194,30 @@ export type FormDurationFieldProps<
     | "value"
   >;
 
+export type FormFileFieldProps<
+  TFieldValues extends FieldValues,
+  TName extends FieldPath<TFieldValues>,
+> = ControlledFieldProps<TFieldValues, TName> &
+  Omit<
+    FileInputProps,
+    | "disabled"
+    | "error"
+    | "files"
+    | "helperText"
+    | "hideLabel"
+    | "id"
+    | "label"
+    | "name"
+    | "onBlur"
+    | "onFilesChange"
+    | "required"
+    | "testId"
+    | "testID"
+  > & {
+    /** Override the default cleared value (`[]`) for nullable schemas. */
+    emptyValue?: FieldPathValue<TFieldValues, TName>;
+  };
+
 export type FormPaceFieldProps<
   TFieldValues extends FieldValues,
   TName extends FieldPath<TFieldValues>,
@@ -205,16 +240,70 @@ export type FormPercentSliderFieldProps<
 > = ControlledFieldProps<TFieldValues, TName> &
   Omit<PercentSliderInputProps, "error" | "helperText" | "id" | "label" | "onChange" | "value"> & {
     valueMode?: "percent" | "fraction";
+    emptyValue?: FieldPathValue<TFieldValues, TName>;
   };
 
 export type FormWeightInputFieldProps<
   TFieldValues extends FieldValues,
   TName extends FieldPath<TFieldValues>,
-> = ControlledFieldProps<TFieldValues, TName> &
-  Omit<
+> = ControlledFieldProps<TFieldValues, TName> & {
+  emptyValue?: FieldPathValue<TFieldValues, TName> | null;
+} & Omit<
     WeightInputFieldProps,
     "error" | "helperText" | "id" | "label" | "onChangeKg" | "required" | "valueKg"
   >;
+
+export type FormTimezoneFieldProps<
+  TFieldValues extends FieldValues,
+  TName extends FieldPath<TFieldValues>,
+> = ControlledFieldProps<TFieldValues, TName> & {
+  /** An app-supplied device timezone is offered but never selected automatically. */
+  deviceTimeZone?: string | null;
+  placeholder?: string;
+};
+
+export function isValidIanaTimezone(value: string): boolean {
+  return ianaTimezoneSchema.safeParse(value).success;
+}
+
+export function getTimezoneOptions(currentValue?: string | null, deviceTimeZone?: string | null) {
+  const supportedValuesOf = (
+    Intl as typeof Intl & {
+      supportedValuesOf?: (key: "timeZone") => string[];
+    }
+  ).supportedValuesOf;
+  let zones: string[] = [];
+  try {
+    zones = supportedValuesOf?.("timeZone") ?? [];
+  } catch {
+    // Some native runtimes expose the function without supporting timeZone.
+  }
+
+  const extras = [currentValue, deviceTimeZone].filter(
+    (value): value is string => typeof value === "string",
+  );
+  // The bundle fills enumeration gaps, not gaps in the runtime's timezone rules.
+  // Reuse form/API validation, and keep supported aliases exactly as saved.
+  const values = [...new Set([...BUNDLED_TIMEZONES, ...zones, ...extras])]
+    .filter(isValidIanaTimezone)
+    .sort();
+  return [
+    { label: "Not set", value: "" },
+    ...values.map((value) => ({ label: value.replaceAll("_", " ").replaceAll("/", " / "), value })),
+  ];
+}
+
+export function filterTimezoneOptions(
+  options: ReturnType<typeof getTimezoneOptions>,
+  query: string,
+) {
+  const normalized = query.trim().toLowerCase().replaceAll("_", " ").replaceAll("/", " ");
+  const terms = normalized.split(/\s+/).filter(Boolean);
+  return options.filter((option) => {
+    const text = `${option.value} ${option.label}`.toLowerCase().replaceAll("_", " ");
+    return terms.every((term) => text.includes(term));
+  });
+}
 
 export function defaultFormatValue(value: unknown): string {
   if (typeof value === "string") {
@@ -227,3 +316,11 @@ export function defaultFormatValue(value: unknown): string {
 
   return "";
 }
+
+/**
+ * Omit absent optional props when forwarding them to an exact-optional
+ * component contract. `undefined` is not equivalent to an omitted prop for
+ * controlled form primitives (in particular when they distinguish clearing
+ * from retaining a value).
+ */
+export { omitUndefined } from "../../lib/omit-undefined";
