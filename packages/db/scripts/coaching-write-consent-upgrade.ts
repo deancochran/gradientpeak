@@ -145,15 +145,8 @@ export async function applyCoachingWriteConsentUpgrade(
   const sql = readFileSync(resolve(directory, "upgrade.sql"), "utf8");
   const before = JSON.parse(readFileSync(resolve(directory, "before-fingerprint.json"), "utf8"));
   const after = expectedCoachingWriteConsentAfterFingerprint();
-  const authoritativeAfter = JSON.parse(
-    readFileSync(resolve(dbPackageRoot, "schema-fingerprint.json"), "utf8"),
-  );
   assertUpgradeArtifact(sql);
   assertPrerequisiteArtifact(before);
-  if (JSON.stringify(after) !== JSON.stringify(authoritativeAfter))
-    throw new Error(
-      "post-upgrade fingerprint artifact differs from current authoritative fingerprint",
-    );
   const client = await pool.connect();
   try {
     await client.query("begin");

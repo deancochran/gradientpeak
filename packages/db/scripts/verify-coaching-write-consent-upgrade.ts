@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { bootstrapSupabaseSchemas, withDisposableDatabase } from "./_disposable-target";
@@ -48,8 +49,17 @@ async function main() {
         "utf8",
       ),
     ),
-    JSON.parse(readFileSync(resolve(dbPackageRoot, "schema-fingerprint.json"), "utf8")),
-    "post-upgrade artifact must match the current authoritative fingerprint",
+    JSON.parse(
+      execFileSync(
+        "git",
+        ["show", "b77dc2fd108ad914fcf9f41b8b4f594aa2bba046:packages/db/schema-fingerprint.json"],
+        {
+          cwd: dbPackageRoot,
+          encoding: "utf8",
+        },
+      ),
+    ),
+    "post-upgrade artifact must match the write-consent foundation fingerprint",
   );
   assert.throws(
     () =>

@@ -12089,6 +12089,12 @@
       "definition": "CREATE TRIGGER athlete_coaching_write_policy_versions_immutable BEFORE DELETE OR UPDATE ON athlete_coaching_write_policy_versions FOR EACH ROW EXECUTE FUNCTION prevent_athlete_coaching_write_policy_mutation()"
     },
     {
+      "name": "athlete_coaching_write_policy_versions_scope_lock",
+      "table": "athlete_coaching_write_policy_versions",
+      "schema": "public",
+      "definition": "CREATE TRIGGER athlete_coaching_write_policy_versions_scope_lock BEFORE INSERT ON athlete_coaching_write_policy_versions FOR EACH ROW EXECUTE FUNCTION lock_athlete_coaching_write_policy_scope()"
+    },
+    {
       "name": "athlete_coaching_write_policy_versions_supersession_guard",
       "table": "athlete_coaching_write_policy_versions",
       "schema": "public",
@@ -12709,6 +12715,15 @@
       "securityDefiner": true
     },
     {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "grant_athlete_coaching_write_access(uuid,uuid,uuid,text,uuid,text,uuid)",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.grant_athlete_coaching_write_access(p_actor_profile_id uuid, p_organization_id uuid, p_engagement_id uuid, p_scope_key text, p_policy_version_id uuid, p_policy_digest text, p_correlation_id uuid)\n RETURNS uuid\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE v_now timestamptz := pg_catalog.transaction_timestamp(); v_athlete_profile_id uuid; v_policy public.athlete_coaching_write_policy_versions%ROWTYPE; v_current_policy_id uuid; v_grant_id uuid; v_replay_count integer; v_matching_replay_count integer;\nBEGIN\n  IF p_scope_key NOT IN ('training_assignment', 'schedule_modification') OR p_policy_digest IS NULL OR pg_catalog.btrim(p_policy_digest) = '' OR p_correlation_id IS NULL THEN\n    RAISE EXCEPTION 'scope, policy digest, and correlation_id are required' USING ERRCODE = '22023';\n  END IF;\n  PERFORM 1 FROM public.organizations AS organization WHERE organization.id=p_organization_id AND organization.suspended_at IS NULL AND organization.closed_at IS NULL FOR UPDATE;\n  IF NOT FOUND THEN RAISE EXCEPTION 'organization not active' USING ERRCODE = '42501'; END IF;\n  PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('gradientpeak:athlete-coaching-write-policy:' || p_scope_key, 0));\n  SELECT engagement.athlete_profile_id INTO v_athlete_profile_id FROM public.coaching_engagements AS engagement WHERE engagement.organization_id=p_organization_id AND engagement.id=p_engagement_id AND engagement.paused_at IS NULL AND engagement.ended_at IS NULL AND engagement.created_at<=v_now FOR UPDATE;\n  IF v_athlete_profile_id IS NULL OR v_athlete_profile_id <> p_actor_profile_id THEN RAISE EXCEPTION 'only the exact active engagement athlete may grant write access' USING ERRCODE = '42501'; END IF;\n  SELECT policy.* INTO v_policy FROM public.athlete_coaching_write_policy_versions AS policy WHERE policy.id=p_policy_version_id AND policy.scope_key=p_scope_key FOR SHARE;\n  IF v_policy.id IS NULL OR v_policy.effective_from>v_now OR v_policy.content_digest<>p_policy_digest THEN RAISE EXCEPTION 'displayed policy is absent, future, or does not match its digest' USING ERRCODE = '22023'; END IF;\n  SELECT policy.id INTO v_current_policy_id FROM public.athlete_coaching_write_policy_versions AS policy WHERE policy.scope_key=p_scope_key AND policy.effective_from<=v_now ORDER BY policy.effective_from DESC, policy.id DESC LIMIT 1 FOR SHARE;\n  IF v_current_policy_id IS DISTINCT FROM p_policy_version_id THEN RAISE EXCEPTION 'displayed policy is stale or retired' USING ERRCODE = '22023'; END IF;\n  SELECT pg_catalog.count(*)::integer, pg_catalog.count(*) FILTER (WHERE audit.action='athlete.coaching_write_granted' AND audit.resource_type='athlete_coaching_write_grant' AND audit.actor_profile_id=p_actor_profile_id AND audit.details=pg_catalog.jsonb_build_object('engagement_id',p_engagement_id,'athlete_profile_id',p_actor_profile_id,'scope_key',p_scope_key,'policy_version_id',p_policy_version_id,'policy_digest',p_policy_digest))::integer INTO v_replay_count, v_matching_replay_count FROM public.organization_audit_events AS audit WHERE audit.organization_id=p_organization_id AND audit.correlation_id=p_correlation_id;\n  IF v_replay_count > 0 THEN\n    IF v_replay_count=1 AND v_matching_replay_count=1 THEN\n      SELECT audit.resource_id INTO v_grant_id FROM public.organization_audit_events AS audit WHERE audit.organization_id=p_organization_id AND audit.correlation_id=p_correlation_id;\n      RETURN v_grant_id;\n    END IF;\n    RAISE EXCEPTION 'correlation_id conflicts with another terminal request' USING ERRCODE = '23505';\n  END IF;\n  SELECT grant_row.id INTO v_grant_id FROM public.athlete_coaching_write_grants AS grant_row WHERE grant_row.organization_id=p_organization_id AND grant_row.engagement_id=p_engagement_id AND grant_row.athlete_profile_id=p_actor_profile_id AND grant_row.scope_key=p_scope_key AND grant_row.revoked_at IS NULL FOR UPDATE;\n  IF v_grant_id IS NOT NULL THEN RAISE EXCEPTION 'active write grant already exists for scope' USING ERRCODE = '23505'; END IF;\n  INSERT INTO public.athlete_coaching_write_grants(organization_id,engagement_id,athlete_profile_id,scope_key,policy_version_id,granted_by_profile_id,granted_at) VALUES(p_organization_id,p_engagement_id,p_actor_profile_id,p_scope_key,p_policy_version_id,p_actor_profile_id,v_now) RETURNING id INTO v_grant_id;\n  INSERT INTO public.organization_audit_events(organization_id,actor_profile_id,action,resource_type,resource_id,occurred_at,correlation_id,details) VALUES(p_organization_id,p_actor_profile_id,'athlete.coaching_write_granted','athlete_coaching_write_grant',v_grant_id,v_now,p_correlation_id,pg_catalog.jsonb_build_object('engagement_id',p_engagement_id,'athlete_profile_id',p_actor_profile_id,'scope_key',p_scope_key,'policy_version_id',p_policy_version_id,'policy_digest',p_policy_digest));\n  RETURN v_grant_id;\nEND $function$\n",
+      "volatility": "v",
+      "securityDefiner": true
+    },
+    {
       "acl": "",
       "config": ["search_path=pg_catalog"],
       "identity": "guard_athlete_coaching_write_grant_history()",
@@ -12747,9 +12762,18 @@
     {
       "acl": "",
       "config": ["search_path=pg_catalog"],
+      "identity": "lock_athlete_coaching_write_policy_scope()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.lock_athlete_coaching_write_policy_scope()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN\n  PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('gradientpeak:athlete-coaching-write-policy:' || NEW.scope_key, 0));\n  RETURN NEW;\nEND $function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": "",
+      "config": ["search_path=pg_catalog"],
       "identity": "prevent_athlete_coaching_write_policy_mutation()",
       "language": "plpgsql",
-      "definition": "CREATE OR REPLACE FUNCTION public.prevent_athlete_coaching_write_policy_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN RAISE EXCEPTION 'coaching write policy versions are immutable'; END $function$\n",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_athlete_coaching_write_policy_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN\n  PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('gradientpeak:athlete-coaching-write-policy:' || OLD.scope_key, 0));\n  RAISE EXCEPTION 'coaching write policy versions are immutable';\nEND $function$\n",
       "volatility": "v",
       "securityDefiner": false
     },
@@ -12885,6 +12909,15 @@
       "identity": "request_activity_artifact_deletion(uuid)",
       "language": "plpgsql",
       "definition": "CREATE OR REPLACE FUNCTION public.request_activity_artifact_deletion(target_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\nbegin\n  perform 1 from public.activity_artifacts where id=target_id and availability='accepted' for update;\n  if not found then raise exception 'artifact is not accepted or does not exist'; end if;\n  update public.activity_segments set source_artifact_id=null,source_session_index=null,source_message_index=null\n    where source_artifact_id=target_id;\n  update public.activity_file_ingestions set artifact_id=null,status='failed_terminal',uploaded_at=null,\n    staging_cleanup_pending=false,staging_cleanup_error=null,\n    failure_code='artifact_missing',completed_at=null,\n    failed_at=coalesce(failed_at,now()),updated_at=now()\n    where artifact_id=target_id;\n  delete from public.activity_artifact_links where artifact_id=target_id;\n  perform set_config('gradientpeak.artifact_lifecycle_authorized','on',true);\n  update public.activity_artifacts set availability='deletion_pending',deletion_requested_at=now()\n  where id=target_id and availability='accepted';\nend $function$\n",
+      "volatility": "v",
+      "securityDefiner": true
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "revoke_athlete_coaching_write_access(uuid,uuid,uuid,uuid)",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.revoke_athlete_coaching_write_access(p_actor_profile_id uuid, p_organization_id uuid, p_grant_id uuid, p_correlation_id uuid)\n RETURNS uuid\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE v_now timestamptz := pg_catalog.transaction_timestamp(); v_grant public.athlete_coaching_write_grants%ROWTYPE; v_replay_count integer; v_matching_replay_count integer;\nBEGIN\n  IF p_correlation_id IS NULL THEN RAISE EXCEPTION 'correlation_id is required' USING ERRCODE = '22023'; END IF;\n  PERFORM 1 FROM public.organizations AS organization WHERE organization.id=p_organization_id AND organization.suspended_at IS NULL AND organization.closed_at IS NULL FOR UPDATE;\n  IF NOT FOUND THEN RAISE EXCEPTION 'organization not active' USING ERRCODE = '42501'; END IF;\n  SELECT grant_row.* INTO v_grant FROM public.athlete_coaching_write_grants AS grant_row JOIN public.coaching_engagements AS engagement ON engagement.organization_id=grant_row.organization_id AND engagement.id=grant_row.engagement_id AND engagement.athlete_profile_id=grant_row.athlete_profile_id WHERE grant_row.organization_id=p_organization_id AND grant_row.id=p_grant_id AND engagement.paused_at IS NULL AND engagement.ended_at IS NULL AND engagement.created_at<=v_now FOR UPDATE OF grant_row, engagement;\n  IF v_grant.id IS NULL OR v_grant.athlete_profile_id<>p_actor_profile_id THEN RAISE EXCEPTION 'only the exact active engagement athlete may revoke write access' USING ERRCODE = '42501'; END IF;\n  SELECT pg_catalog.count(*)::integer, pg_catalog.count(*) FILTER (WHERE audit.action='athlete.coaching_write_revoked' AND audit.resource_type='athlete_coaching_write_grant' AND audit.resource_id=p_grant_id AND audit.actor_profile_id=p_actor_profile_id AND audit.details=pg_catalog.jsonb_build_object('engagement_id',v_grant.engagement_id,'athlete_profile_id',p_actor_profile_id,'scope_key',v_grant.scope_key,'policy_version_id',v_grant.policy_version_id))::integer INTO v_replay_count, v_matching_replay_count FROM public.organization_audit_events AS audit WHERE audit.organization_id=p_organization_id AND audit.correlation_id=p_correlation_id;\n  IF v_replay_count > 0 THEN\n    IF v_replay_count=1 AND v_matching_replay_count=1 THEN RETURN p_grant_id; END IF;\n    RAISE EXCEPTION 'correlation_id conflicts with another terminal request' USING ERRCODE = '23505';\n  END IF;\n  IF v_grant.revoked_at IS NOT NULL THEN RAISE EXCEPTION 'write grant is already revoked' USING ERRCODE = '23505'; END IF;\n  UPDATE public.athlete_coaching_write_grants SET revoked_at=v_now WHERE id=p_grant_id AND organization_id=p_organization_id AND revoked_at IS NULL;\n  IF NOT FOUND THEN RAISE EXCEPTION 'write grant state changed; refusing replacement revocation' USING ERRCODE = '40001'; END IF;\n  INSERT INTO public.organization_audit_events(organization_id,actor_profile_id,action,resource_type,resource_id,occurred_at,correlation_id,details) VALUES(p_organization_id,p_actor_profile_id,'athlete.coaching_write_revoked','athlete_coaching_write_grant',p_grant_id,v_now,p_correlation_id,pg_catalog.jsonb_build_object('engagement_id',v_grant.engagement_id,'athlete_profile_id',p_actor_profile_id,'scope_key',v_grant.scope_key,'policy_version_id',v_grant.policy_version_id));\n  RETURN p_grant_id;\nEND $function$\n",
       "volatility": "v",
       "securityDefiner": true
     },

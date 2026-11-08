@@ -83,6 +83,21 @@ database, upgrades it, compares the entire resulting fingerprint, proves an
 existing profile is unchanged, rejects unexpected schema/replay, and runs the
 coaching authorization and concurrency suite. It is part of `test:db`/`db:verify`.
 
+### Approved coaching write-grant RPC upgrade
+
+`supabase/approved-upgrades/coaching-write-grants/` is a separate additive
+upgrade from the already-installed coaching write-consent foundation. It only
+installs the reviewed service-role grant/revoke RPCs, their tight EXECUTE ACLs,
+and policy-scope serialization triggers;
+it never creates grants, policies, receipts, or data. `db:coaching:write-grants:upgrade:materialize`
+extracts the bounded SQL and fingerprints from the fresh baseline. The disposable
+test refuses an unexpected or already-upgraded target and proves rollback before
+checking the exact after fingerprint. It has no preserved-target or preview apply
+command: any later activation needs separate approval and an operation owner.
+Grant/revoke replays return the historical receipt's UUID only after the actor and
+engagement are revalidated; callers must reread current grant status and must not
+infer active write consent from a replayed historical UUID.
+
 Only the preview coordinator may run `db:coaching:upgrade:preview`, under the
 shared-preview lock, with `COACHING_PREVIEW_DATABASE_URL` supplied privately from
 the verified preview environment and `COACHING_PREVIEW_BACKUP` pointing to a
