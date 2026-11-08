@@ -2,6 +2,8 @@
 
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
+import { mkdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
   applySqlFile,
   bootstrapSupabaseAuthSchema,
@@ -21,6 +23,10 @@ type Fixture = {
 };
 
 const DAY = 86_400_000;
+const storageTemporaryDirectory = fileURLToPath(
+  new URL("../../../.logs/calibration-history-disposable/", import.meta.url),
+);
+mkdirSync(storageTemporaryDirectory, { recursive: true });
 const historyStart = Date.parse("2026-01-01T10:00:00.000Z");
 const expectedLatest = { bike: 266, run: 4.5, swim: 1.5 } as const;
 const expectedUnits = {
@@ -443,6 +449,8 @@ async function runProof(
     const diagnostics = await db
       .select({
         externalId: activitySourceReferences.provider_external_id,
+        activityCategory: thresholdEvaluations.activity_category,
+        metric: thresholdEvaluations.metric,
         outcome: thresholdEvaluations.outcome,
         reason: thresholdEvaluations.rejection_reason,
         evaluationId: thresholdEvaluations.id,
@@ -459,13 +467,42 @@ async function runProof(
         ),
       )
       .orderBy(asc(activitySourceReferences.provider_external_id));
+    const diagnosticKey = (diagnostic: {
+      externalId: string;
+      activityCategory: string;
+      metric: string;
+      reason: string | null;
+    }) =>
+      `${diagnostic.externalId}:${diagnostic.activityCategory}:${diagnostic.metric}:${diagnostic.reason}`;
     assert.deepEqual(
-      diagnostics.map(({ externalId, reason }) => ({ externalId, reason })),
-      [
-        { externalId: "gate6-bike-4", reason: "exact_window_incomplete" },
-        { externalId: "gate6-run-4", reason: "exact_window_incomplete" },
-        { externalId: "gate6-swim-4", reason: "exact_window_incomplete" },
-      ],
+      diagnostics
+        .map(({ externalId, activityCategory, metric, reason }) => ({
+          externalId,
+          activityCategory,
+          metric,
+          reason,
+        }))
+        .sort((left, right) => diagnosticKey(left).localeCompare(diagnosticKey(right))),
+      fixtures
+        .flatMap((fixture) => [
+          {
+            externalId: fixture.externalId,
+            activityCategory: fixture.activityCategory,
+            metric: "lthr",
+            reason: "series_missing",
+          },
+          ...(fixture.diagnostic === undefined
+            ? []
+            : [
+                {
+                  externalId: fixture.externalId,
+                  activityCategory: fixture.activityCategory,
+                  metric: fixture.activityCategory === "bike" ? "power" : "speed",
+                  reason: "exact_window_incomplete",
+                },
+              ]),
+        ])
+        .sort((left, right) => diagnosticKey(left).localeCompare(diagnosticKey(right))),
     );
     const rejectedLinks = await db
       .select({ id: thresholdEvaluationEfforts.evaluation_id })
@@ -488,7 +525,11 @@ async function runProof(
       .where(
         inArray(
           activitySourceReferences.provider_external_id,
-          diagnostics.map(({ externalId }) => externalId),
+          diagnostics
+            .filter(
+              ({ reason, metric }) => reason === "exact_window_incomplete" && metric !== "lthr",
+            )
+            .map(({ externalId }) => externalId),
         ),
       );
     const syntheticExactEfforts = await db
@@ -589,7 +630,7 @@ async function runProof(
       artifacts: 15,
       efforts: 135,
       ingestions: 15,
-      evaluations: 15,
+      evaluations: 30,
       evaluationLinks: 15,
       thresholds: 9,
       revisions: 15,
@@ -641,9 +682,14 @@ await withDisposableDatabase(
   "calibration_history",
   async (target, connectionString) => {
     await bootstrapSupabaseAuthSchema(target);
-    await withDisposableSupabaseStorage(target, connectionString, async (storage) => {
-      await applySqlFile(target, requireFreshBaseline().sourcePath);
-      await runProof(connectionString, storage);
-    });
+    await withDisposableSupabaseStorage(
+      target,
+      connectionString,
+      async (storage) => {
+        await applySqlFile(target, requireFreshBaseline().sourcePath);
+        await runProof(connectionString, storage);
+      },
+      { temporaryDirectory: storageTemporaryDirectory },
+    );
   },
 );

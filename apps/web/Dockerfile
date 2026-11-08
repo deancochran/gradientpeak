@@ -69,6 +69,10 @@ ENV HOST=0.0.0.0
 ENV NITRO_PORT=3000
 ENV NITRO_HOST=0.0.0.0
 
+RUN apt-get update \
+  && DEBIAN_FRONTEND=noninteractive apt-get upgrade --yes \
+  && rm -rf /var/lib/apt/lists/*
+
 RUN useradd --uid 1001 --create-home --shell /usr/sbin/nologin nodeapp
 
 # The production runtime only executes the built Nitro server with `node`.
