@@ -480,20 +480,25 @@ describe("atomic training-plan preview and commit against PostgreSQL", () => {
     const rows = await db
       .select({
         planningDate: plannedSessions.planning_date,
-        manifest: plannedSessions.resolution_manifest,
+        activityPlanId: plannedSessions.activity_plan_id,
+        activityPlanRevision: plannedSessions.activity_plan_revision,
+        resolutionManifest: plannedSessions.resolution_manifest,
+        prescriptionCapturedAt: plannedSessions.prescription_captured_at,
       })
       .from(plannedSessions)
       .where(eq(plannedSessions.profile_id, fixture.profileId));
     expect(rows).toHaveLength(preview.sessions.length);
-    expect(rows.map((row) => row.planningDate)).toEqual(
-      preview.sessions.map((session) => session.planningDate),
+    const previewManifests = preview.sessions.map((session) =>
+      prescriptionResolutionManifestSchema.parse(session.manifest),
     );
-    expect(
-      rows.map((row) => prescriptionResolutionManifestSchema.parse(row.manifest).fingerprint),
-    ).toEqual(
-      preview.sessions.map(
-        (session) => prescriptionResolutionManifestSchema.parse(session.manifest).fingerprint,
-      ),
+    expect(rows).toEqual(
+      preview.sessions.map((session, index) => ({
+        planningDate: session.planningDate,
+        activityPlanId: previewManifests[index]?.activity_plan_id,
+        activityPlanRevision: null,
+        resolutionManifest: null,
+        prescriptionCapturedAt: null,
+      })),
     );
     await expect(
       applyTrainingPlanApplication({
