@@ -14,17 +14,25 @@ import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { router } from "expo-router";
-import { Activity, Bike, Check, Dumbbell, Footprints, Waves } from "lucide-react-native";
+import {
+  Activity,
+  Bike,
+  Check,
+  Dumbbell,
+  Footprints,
+  type LucideIcon,
+  Waves,
+} from "lucide-react-native";
 import { useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
-import { useActivityStatus, useRecordingState } from "@/lib/hooks/useActivityRecorder";
-import { useRecordingSessionContract } from "@/lib/hooks/useRecordingConfig";
-import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
+import { useRecordingCommands } from "@/lib/hooks/useActivityRecorder";
+import { useRecordingConfig } from "@/lib/hooks/useRecordingConfig";
+import { useActivityRecorderService } from "@/lib/providers/ActivityRecorderProvider";
 
 const ACTIVITY_CATEGORIES: {
   value: RecordingActivityCategory;
   label: string;
-  icon: any;
+  icon: LucideIcon;
 }[] = [
   { value: "run", label: "Run", icon: Footprints },
   { value: "bike", label: "Bike", icon: Bike },
@@ -34,36 +42,33 @@ const ACTIVITY_CATEGORIES: {
 ];
 
 export default function ActivitySelectionScreen() {
-  const service = useSharedActivityRecorder();
-  const { activityCategory, gpsRecordingEnabled } = useActivityStatus(service);
-  const recordingState = useRecordingState(service);
-  const sessionContract = useRecordingSessionContract(service);
+  const { service } = useActivityRecorderService();
+  const { sessionContract, sessionView } = useRecordingConfig(service);
+  const activityCategory = sessionView?.recordingConfiguration.input.activityCategory ?? "bike";
+  const recordingState = service?.state ?? "pending";
+  const { selectActivityFromPayload } = useRecordingCommands(service);
 
   // Check if a plan is attached (category should be locked)
-  const hasPlan = sessionContract?.guidance.hasPlan ?? service?.hasPlan ?? false;
+  const hasPlan = sessionContract?.guidance.hasPlan ?? sessionView?.plan.hasPlan ?? false;
   const isSetupLocked = recordingState !== "pending" && recordingState !== "ready";
   const canEditActivity = sessionContract?.editing.canEditActivity ?? (!hasPlan && !isSetupLocked);
-  const canEditGps = sessionContract?.editing.canEditGps ?? !isSetupLocked;
 
   const [selectedCategory, setSelectedCategory] =
     useState<RecordingActivityCategory>(activityCategory);
-  const [selectedGpsRecordingEnabled, setSelectedGpsRecordingEnabled] =
-    useState(gpsRecordingEnabled);
   const handleSave = () => {
-    if (!service || (!canEditActivity && !canEditGps)) return;
+    if (!service || !canEditActivity) return;
 
     // The service will preserve any existing plan automatically.
-    service.selectActivityFromPayload({
-      category: canEditActivity ? selectedCategory : activityCategory,
-      gpsRecordingEnabled: canEditGps ? selectedGpsRecordingEnabled : gpsRecordingEnabled,
+    selectActivityFromPayload({
+      activity_category: canEditActivity ? selectedCategory : activityCategory,
+      gpsRecordingEnabled: false,
     });
 
     router.back();
   };
 
   const activityChanged = selectedCategory !== activityCategory;
-  const gpsChanged = selectedGpsRecordingEnabled !== gpsRecordingEnabled;
-  const hasChanges = (activityChanged && canEditActivity) || (gpsChanged && canEditGps);
+  const hasChanges = activityChanged && canEditActivity;
 
   return (
     <View className="flex-1 bg-background" testID="record-activity-screen">
@@ -87,52 +92,26 @@ export default function ActivitySelectionScreen() {
           </View>
         )}
 
-        <View className="mb-6">
-          <Text className="mb-3 text-sm font-medium text-muted-foreground">GPS Recording</Text>
-          {!canEditGps ? (
-            <Text className="mb-2 text-xs text-muted-foreground">
-              GPS recording is locked for the active session.
-            </Text>
-          ) : null}
-          <View className="flex-row gap-3">
-            <Pressable
-              onPress={() => canEditGps && setSelectedGpsRecordingEnabled(true)}
-              disabled={!canEditGps}
-              testID="record-gps-option-on"
-              className="flex-1 rounded-lg border border-border bg-card p-4"
-              style={{
-                borderColor: selectedGpsRecordingEnabled ? "rgb(34, 197, 94)" : undefined,
-                borderWidth: selectedGpsRecordingEnabled ? 2 : 1,
-                opacity: canEditGps ? 1 : 0.5,
-              }}
-            >
-              <Text className="text-center text-base font-medium text-foreground">GPS On</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => canEditGps && setSelectedGpsRecordingEnabled(false)}
-              disabled={!canEditGps}
-              testID="record-gps-option-off"
-              className="flex-1 rounded-lg border border-border bg-card p-4"
-              style={{
-                borderColor: !selectedGpsRecordingEnabled ? "rgb(34, 197, 94)" : undefined,
-                borderWidth: !selectedGpsRecordingEnabled ? 2 : 1,
-                opacity: canEditGps ? 1 : 0.5,
-              }}
-            >
-              <Text className="text-center text-base font-medium text-foreground">GPS Off</Text>
-            </Pressable>
-          </View>
-        </View>
-
         {/* Category Section */}
         <View className="mb-6">
           <Text className="text-sm font-medium text-muted-foreground mb-3">Activity Category</Text>
-          <View className="gap-3">
+          <View accessibilityRole="radiogroup" className="gap-3">
             {ACTIVITY_CATEGORIES.map((cat) => (
               <Pressable
                 key={cat.value}
                 onPress={() => canEditActivity && setSelectedCategory(cat.value)}
                 disabled={!canEditActivity}
+                accessibilityRole="radio"
+                accessibilityLabel={cat.label}
+                accessibilityHint={
+                  canEditActivity
+                    ? "Sets the activity category for this recording."
+                    : "Activity category is locked for this recording."
+                }
+                accessibilityState={{
+                  disabled: !canEditActivity,
+                  selected: selectedCategory === cat.value,
+                }}
                 testID={`record-activity-option-${cat.value}`}
                 className="bg-card p-4 rounded-lg border border-border"
                 style={{

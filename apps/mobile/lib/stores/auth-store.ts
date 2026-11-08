@@ -1,4 +1,6 @@
+import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
 import type { AuthSession, AuthUser } from "@repo/auth/session";
+import type { OnboardingStatus } from "@repo/core/schemas/onboarding";
 import { AppState } from "react-native";
 import { create } from "zustand";
 import {
@@ -12,20 +14,24 @@ let authUnsubscribe: (() => void) | null = null;
 let authAppStateUnsubscribe: (() => void) | null = null;
 let initializePromise: Promise<void> | null = null;
 
+type RouterOutputs = inferRouterOutputs<AppRouter>;
+
+export type AuthProfile = RouterOutputs["profiles"]["get"];
+
 export interface AuthState {
   session: AuthSession | null;
   user: AuthUser | null;
-  profile: any | null; // Profile data from API (synced from useAuth hook)
+  profile: AuthProfile | null; // Profile data from API (synced from useAuth hook)
   userStatus: "verified" | "unverified" | null;
-  onboardingStatus: boolean | null;
+  onboardingStatus: OnboardingStatus | null;
   loading: boolean;
   ready: boolean; // Replaces hydrated && initialized
   error: Error | null;
   setSession: (session: AuthSession | null) => void;
   setUser: (user: AuthUser | null) => void;
-  setProfile: (profile: any | null) => void;
+  setProfile: (profile: AuthProfile | null) => void;
   setUserStatus: (status: "verified" | "unverified" | null) => void;
-  setOnboardingStatus: (status: boolean | null) => void;
+  setOnboardingStatus: (status: OnboardingStatus | null) => void;
   setLoading: (loading: boolean) => void;
   setReady: (ready: boolean) => void;
   setError: (error: Error | null) => void;
@@ -61,7 +67,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
     });
   },
   setUser: (user: AuthUser | null) => set({ user }),
-  setProfile: (profile: any | null) => set({ profile }),
+  setProfile: (profile: AuthProfile | null) => set({ profile }),
   setUserStatus: (userStatus) => set({ userStatus }),
   setOnboardingStatus: (onboardingStatus) => set({ onboardingStatus }),
   setLoading: (loading: boolean) => set({ loading }),
@@ -72,7 +78,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       return;
     }
 
-    if (initializePromise) {
+    if (initializePromise !== null) {
       return initializePromise;
     }
 
