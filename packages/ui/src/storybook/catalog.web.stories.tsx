@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from "@storybook/react";
+import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Bell, CircleAlert, Info, LayoutGrid, Settings2 } from "lucide-react";
 import { ThemeProvider } from "next-themes";
 import type * as React from "react";
@@ -13,6 +13,7 @@ import {
 } from "../components/accordion/index.web";
 import * as AlertDialog from "../components/alert-dialog/index.web";
 import { Button } from "../components/button/index.web";
+import { ChartCard, ChartEmptyState } from "../components/chart/index.web";
 import {
   Command,
   CommandEmpty,
@@ -28,6 +29,7 @@ import * as Form from "../components/form/index.web";
 import { Icon } from "../components/icon/index.web";
 import { Input } from "../components/input/index.web";
 import * as NavigationMenu from "../components/navigation-menu/index.web";
+import { ProgressBar } from "../components/progress/index.web";
 import * as Resizable from "../components/resizable/index.web";
 import * as ScrollArea from "../components/scroll-area/index.web";
 import { Separator } from "../components/separator/index.web";
@@ -49,7 +51,27 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
-const ResizablePanelGroup = Resizable.ResizablePanelGroup as React.ComponentType<any>;
+export const ProgressStory: Story = {
+  name: "Progress",
+  render: () => (
+    <WebFrame>
+      <ProgressBar accessibilityLabel="Example progress" value={72} />
+    </WebFrame>
+  ),
+};
+
+const SCROLL_AREA_FIXTURE_KEYS = [
+  "overview",
+  "activity",
+  "duration",
+  "pace",
+  "distance",
+  "elevation",
+  "heart-rate",
+  "power",
+  "cadence",
+  "recovery",
+] as const;
 
 function WebFrame({ children }: { children: React.ReactNode }) {
   return <div className="min-w-[320px] max-w-3xl p-6">{children}</div>;
@@ -96,6 +118,24 @@ export const AccordionStory: Story = {
           </AccordionContent>
         </AccordionItem>
       </Accordion>
+    </WebFrame>
+  ),
+};
+
+export const ChartStory: Story = {
+  name: "Chart",
+  render: () => (
+    <WebFrame>
+      <ChartCard
+        legend={[{ color: "var(--primary)", id: "load", label: "Training load" }]}
+        summary={[
+          { label: "Latest", value: "412" },
+          { label: "Trend", value: "Up 6%" },
+        ]}
+        title="Training load trend"
+      >
+        <ChartEmptyState message="Renderer preview area" />
+      </ChartCard>
     </WebFrame>
   ),
 };
@@ -242,7 +282,7 @@ export const ResizableStory: Story = {
   render: () => (
     <WebFrame>
       <div className="h-56 w-full rounded-lg border">
-        <ResizablePanelGroup direction="horizontal">
+        <Resizable.ResizablePanelGroup orientation="horizontal">
           <Resizable.ResizablePanel defaultSize={45}>
             <div className="flex h-full items-center justify-center bg-muted/40">Plan summary</div>
           </Resizable.ResizablePanel>
@@ -250,7 +290,7 @@ export const ResizableStory: Story = {
           <Resizable.ResizablePanel defaultSize={55}>
             <div className="flex h-full items-center justify-center">Projected volume</div>
           </Resizable.ResizablePanel>
-        </ResizablePanelGroup>
+        </Resizable.ResizablePanelGroup>
       </div>
     </WebFrame>
   ),
@@ -262,8 +302,8 @@ export const ScrollAreaStory: Story = {
     <WebFrame>
       <ScrollArea.ScrollArea className="h-48 w-72 rounded-md border">
         <div className="space-y-2 p-4">
-          {Array.from({ length: 10 }, (_, index) => (
-            <div className="rounded-md bg-muted px-3 py-2 text-sm" key={`web-scroll-${index + 1}`}>
+          {SCROLL_AREA_FIXTURE_KEYS.map((key, index) => (
+            <div className="rounded-md bg-muted px-3 py-2 text-sm" key={key}>
               Component fixture {index + 1}
             </div>
           ))}

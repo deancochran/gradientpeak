@@ -1,494 +1,297 @@
-/**
- * Onboarding Router
- *
- * Handles the smart onboarding flow that derives activity_efforts and profile_metrics
- * from minimal user input. Supports experience-based paths:
- * - Beginner: Auto-apply conservative defaults
- * - Intermediate: Validate estimates
- * - Advanced: Manual entry
- * - Skip: Minimal setup
- */
-
-// Import calculation functions directly - they're exported from core package
-import {
-  calculateAgeFromDOB,
-  calculateVO2MaxFromHR,
-  estimateCSSFromGender,
-  estimateFTPFromWeight,
-  estimateLTHR,
-  estimateMaxHRFromAge,
-  estimateThresholdPaceFromGender,
-  getBaselineProfile,
-} from "@repo/core";
-import {
-  completeOnboardingSchema,
-  estimateMetricsInputSchema,
-  estimateMetricsOutputSchema,
-} from "@repo/core/schemas/onboarding";
-import { activities, profiles, publicIntegrationProviderSchema } from "@repo/db";
+import { executableIntegrationProviderIdSchema } from "@repo/core";
+import { completeOnboardingSchema, onboardingStatusSchema } from "@repo/core/schemas/onboarding";
+import { schema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { desc, eq } from "drizzle-orm";
+import { and, ne, sql } from "drizzle-orm";
 import { z } from "zod";
-import { OnboardingProviderEnrichmentService } from "../application/onboarding-provider-enrichment";
-import type { Context } from "../context";
-import { getRequiredDb } from "../db";
-import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { profileGoalWriteDataSchema } from "../application/goals/profile-goal-write";
+import { completeLifecycleSetup } from "../application/onboarding/complete-lifecycle-setup";
+import { saveOnboardingDraft } from "../application/onboarding/complete-onboarding";
+import { OnboardingProfileNotFoundError } from "../application/onboarding/persist-onboarding-profile";
 import {
-  batchInsertActivityEfforts,
-  batchInsertProfileMetrics,
-  deriveEffortsForSport,
-  prepareProfileMetrics,
-} from "../utils/onboarding-helpers";
+  getOnboardingProgress,
+  onboardingProgressSchema,
+} from "../application/onboarding/progress";
+import {
+  getOnboardingReadiness,
+  reconcileOnboardingStatus,
+} from "../application/onboarding/readiness";
+import {
+  OnboardingRestartConflictError,
+  restartOnboardingProviderSelection,
+} from "../application/onboarding/restart-provider-selection";
+import {
+  OnboardingProviderRecoveryConflictError,
+  retryOnboardingProviderProcessing,
+} from "../application/onboarding/retry-provider-processing";
+import {
+  OnboardingWorkOwnershipConflictError,
+  startOnboardingProcessing,
+} from "../application/onboarding/start-processing";
+import { getRequiredDb } from "../db";
+import {
+  OnboardingCompletedReplayConflictError,
+  OnboardingGoalContentConflictError,
+  OnboardingPendingOAuthError,
+  OnboardingProfileNotFoundForLockError,
+  OnboardingReadinessBarrierError,
+  OnboardingStatusConflictError,
+} from "../repositories/onboarding-lifecycle-repository";
+import { createTRPCRouter, protectedProcedure } from "../trpc";
 
-const completeOnboardingOutputSchema = z
+const completeLifecycleSetupInputSchema = z
   .object({
-    success: z.literal(true),
-    created: z
-      .object({
-        profile_metrics: z.number().int().nonnegative(),
-        activity_efforts: z.number().int().nonnegative(),
-      })
-      .strict(),
-    baseline_used: z.boolean(),
-    confidence: z.enum(["high", "medium", "low"]),
-    warnings: z.array(z.string()),
+    profile: completeOnboardingSchema,
+    goal: profileGoalWriteDataSchema.optional(),
   })
   .strict();
-
-const estimateMetricsQueryInputSchema = estimateMetricsInputSchema.strict();
-
-const estimateMetricsQueryOutputSchema = estimateMetricsOutputSchema.strict();
-
-const providerEnrichmentOverallStatusSchema = z.enum([
-  "idle",
-  "queued",
-  "running",
-  "succeeded",
-  "partial",
-  "failed",
-  "timed_out",
-]);
-
-const providerEnrichmentItemStatusSchema = z.enum([
-  "queued",
-  "running",
-  "succeeded",
-  "partial",
-  "failed",
-  "timed_out",
-  "skipped_unsupported",
-  "requirement_cleared",
-]);
-
-const providerEnrichmentStatusOutputSchema = z
+const completeLifecycleSetupOutputSchema = z
   .object({
-    status: providerEnrichmentOverallStatusSchema,
-    canContinue: z.boolean(),
+    status: z.enum(["completed", "already_completed"]),
+    goal: z.object({ status: z.enum(["saved", "unchanged", "skipped"]) }).strict(),
+    created: z.object({ profile_metrics: z.number().int().nonnegative() }).strict(),
+  })
+  .strict();
+const saveDraftInputSchema = z.object({ profile: completeOnboardingSchema }).strict();
+const saveDraftOutputSchema = z
+  .object({ status: z.enum(["provider_selection", "processing", "review"]) })
+  .strict();
+const startProcessingOutputSchema = z
+  .object({
+    status: z.enum(["processing", "review"]),
+    providers: z.array(executableIntegrationProviderIdSchema),
+  })
+  .strict();
+const retryProviderProcessingInputSchema = z
+  .object({ provider: executableIntegrationProviderIdSchema })
+  .strict();
+const retryProviderProcessingOutputSchema = z
+  .object({
+    provider: executableIntegrationProviderIdSchema,
+    status: z.literal("processing"),
+    queued: z.boolean(),
+  })
+  .strict();
+const restartProviderSelectionOutputSchema = z
+  .object({ status: z.literal("provider_selection") })
+  .strict();
+const nextActionSchema = z.enum([
+  "connect_provider",
+  "wait",
+  "retry",
+  "restart_selection",
+  "review",
+  "finalize",
+]);
+const readinessOutputSchema = z
+  .object({
+    status: onboardingStatusSchema,
+    ready_to_finalize: z.boolean(),
     providers: z.array(
       z
         .object({
-          provider: publicIntegrationProviderSchema,
-          status: providerEnrichmentItemStatusSchema,
-          blocking: z.boolean(),
-          connected: z.boolean(),
-          message: z.string().optional(),
-          lastSyncStartedAt: z.string().datetime().nullable(),
-          lastSyncSucceededAt: z.string().datetime().nullable(),
-          lastSyncFailedAt: z.string().datetime().nullable(),
+          provider: executableIntegrationProviderIdSchema,
+          state: z.enum([
+            "connected",
+            "queued",
+            "importing",
+            "deriving",
+            "complete",
+            "complete_no_data",
+            "complete_with_limitations",
+            "recovery_required",
+          ]),
+          executable: z.boolean(),
+          integration_active: z.boolean(),
+          progress: z
+            .object({
+              imported_count: z.number().int().nonnegative(),
+              skipped_count: z.number().int().nonnegative(),
+              failed_count: z.number().int().nonnegative(),
+              profile: z.enum(["queued", "running", "complete", "recovery_required"]),
+            })
+            .strict(),
+          next_actions: z.array(nextActionSchema),
         })
         .strict(),
     ),
+    next_actions: z.array(nextActionSchema),
   })
   .strict();
-
-const providerEnrichmentStartInputSchema = z
-  .object({
-    providers: z.array(publicIntegrationProviderSchema).min(1).max(5).optional(),
-  })
-  .strict()
-  .optional();
-
-const clearProviderRequirementInputSchema = z
-  .object({
-    provider: publicIntegrationProviderSchema,
-  })
+const checkUsernameAvailabilityInputSchema = z
+  .object({ username: completeOnboardingSchema.shape.username })
   .strict();
+const checkUsernameAvailabilityOutputSchema = z.object({ available: z.boolean() }).strict();
 
-const importedOnboardingValuesOutputSchema = z
-  .object({
-    profile: z
-      .object({
-        dob: z.string().nullable(),
-        gender: z.enum(["male", "female", "other"]).nullable(),
-        onboarded: z.boolean().nullable(),
-      })
-      .strict(),
-    values: z
-      .object({
-        dob: z.string().optional(),
-        gender: z.enum(["male", "female", "other"]).optional(),
-        weight_kg: z.number().optional(),
-        ftp: z.number().optional(),
-      })
-      .strict(),
-    sources: z
-      .object({
-        dob: z
-          .object({
-            provider: publicIntegrationProviderSchema,
-            label: z.string(),
-            sourceRecordedAt: z.string().datetime().nullable(),
-          })
-          .strict()
-          .optional(),
-        gender: z
-          .object({
-            provider: publicIntegrationProviderSchema,
-            label: z.string(),
-            sourceRecordedAt: z.string().datetime().nullable(),
-          })
-          .strict()
-          .optional(),
-        weight_kg: z
-          .object({
-            provider: publicIntegrationProviderSchema,
-            label: z.string(),
-            sourceRecordedAt: z.string().datetime().nullable(),
-          })
-          .strict()
-          .optional(),
-        ftp: z
-          .object({
-            provider: publicIntegrationProviderSchema,
-            label: z.string(),
-            sourceRecordedAt: z.string().datetime().nullable(),
-          })
-          .strict()
-          .optional(),
-      })
-      .strict(),
-  })
-  .strict();
+function isUsernameConflict(error: unknown): boolean {
+  let candidate = error;
+  const visited = new Set<unknown>();
+  while (candidate && typeof candidate === "object" && !visited.has(candidate)) {
+    visited.add(candidate);
+    const record = candidate as { code?: unknown; constraint?: unknown; cause?: unknown };
+    if (record.code === "23505" && record.constraint === "profiles_username_unique_idx")
+      return true;
+    candidate = record.cause;
+  }
+  return false;
+}
 
-function getOnboardingProviderEnrichmentService(ctx: Context) {
-  return new OnboardingProviderEnrichmentService({ db: getRequiredDb(ctx) });
+function throwOnboardingError(error: unknown): never {
+  if (
+    error instanceof OnboardingProfileNotFoundError ||
+    error instanceof OnboardingProfileNotFoundForLockError
+  ) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "Profile not found" });
+  }
+  if (
+    error instanceof OnboardingStatusConflictError ||
+    error instanceof OnboardingCompletedReplayConflictError ||
+    error instanceof OnboardingPendingOAuthError ||
+    error instanceof OnboardingReadinessBarrierError ||
+    error instanceof OnboardingGoalContentConflictError ||
+    error instanceof OnboardingProviderRecoveryConflictError ||
+    error instanceof OnboardingRestartConflictError ||
+    error instanceof OnboardingWorkOwnershipConflictError
+  ) {
+    throw new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
+  }
+  if (isUsernameConflict(error)) {
+    throw new TRPCError({ code: "CONFLICT", message: "That username is already taken" });
+  }
+  throw new TRPCError({
+    code: "INTERNAL_SERVER_ERROR",
+    message: "Onboarding operation failed",
+    cause: error,
+  });
 }
 
 export const onboardingRouter = createTRPCRouter({
-  startProviderEnrichment: protectedProcedure
-    .input(providerEnrichmentStartInputSchema)
-    .output(providerEnrichmentStatusOutputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const service = getOnboardingProviderEnrichmentService(ctx);
-      return service.start(ctx.session.user.id, input?.providers);
-    }),
-
-  getProviderEnrichmentStatus: protectedProcedure
-    .output(providerEnrichmentStatusOutputSchema)
-    .query(async ({ ctx }) => {
-      const service = getOnboardingProviderEnrichmentService(ctx);
-      return service.getStatus(ctx.session.user.id);
-    }),
-
-  getImportedOnboardingValues: protectedProcedure
-    .output(importedOnboardingValuesOutputSchema)
-    .query(async ({ ctx }) => {
-      const service = getOnboardingProviderEnrichmentService(ctx);
-      return service.getImportedOnboardingValues(ctx.session.user.id);
-    }),
-
-  /** @deprecated Use getImportedOnboardingValues. */
-  getDraft: protectedProcedure
-    .output(importedOnboardingValuesOutputSchema)
-    .query(async ({ ctx }) => {
-      const service = getOnboardingProviderEnrichmentService(ctx);
-      return service.getImportedOnboardingValues(ctx.session.user.id);
-    }),
-
-  clearProviderRequirement: protectedProcedure
-    .input(clearProviderRequirementInputSchema)
-    .output(providerEnrichmentStatusOutputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const service = getOnboardingProviderEnrichmentService(ctx);
-      return service.clearProviderRequirement(ctx.session.user.id, input.provider);
-    }),
-
-  /**
-   * Complete onboarding with smart derivations.
-   *
-   * Creates profile_metrics and activity_efforts from minimal input.
-   * Supports experience-based baseline profiles for beginners and intermediate users.
-   *
-   * @example
-   * // Beginner: Auto-apply defaults
-   * completeOnboarding({
-   *   experience_level: 'beginner',
-   *   dob: '1990-01-01',
-   *   weight_kg: 70,
-   *   gender: 'male',
-   *   primary_sport: 'cycling'
-   * })
-   * // Returns: 16 records created (5 metrics + 10 efforts + 1 profile update)
-   *
-   * @example
-   * // Advanced: Manual entry
-   * completeOnboarding({
-   *   experience_level: 'advanced',
-   *   dob: '1990-01-01',
-   *   weight_kg: 70,
-   *   gender: 'male',
-   *   primary_sport: 'triathlon',
-   *   ftp: 250,
-   *   threshold_pace_seconds_per_km: 270,
-   *   max_hr: 190,
-   *   resting_hr: 55
-   * })
-   * // Returns: 26 records created (5 metrics + 20 efforts + 1 profile update)
-   */
-  completeOnboarding: protectedProcedure
-    .input(completeOnboardingSchema)
-    .output(completeOnboardingOutputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      const userId = ctx.session.user.id;
-
-      try {
-        await new OnboardingProviderEnrichmentService({ db }).assertCanComplete(userId);
-      } catch (error) {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: error instanceof Error ? error.message : "Provider enrichment is still required",
-        });
-      }
-
-      // Calculate age from DOB (default to 30 if missing for calculations ONLY)
-      // DO NOT use this default for saving to the profile.
-      const ageForBaseline = input.dob ? calculateAgeFromDOB(input.dob) : 30;
-
-      // Determine if we have enough info for a baseline profile
-      // We need at least gender and weight for most calculations
-      // If the user skipped these, we cannot generate a reliable baseline
-      const canGenerateBaseline =
-        input.experience_level !== "skip" &&
-        input.experience_level !== "advanced" &&
-        input.weight_kg !== undefined &&
-        input.gender !== undefined;
-
-      const baseline = canGenerateBaseline
-        ? getBaselineProfile(
-            input.experience_level,
-            input.weight_kg!, // asserted by canGenerateBaseline
-            input.gender!, // asserted by canGenerateBaseline
-            ageForBaseline,
-            "other",
-          )
-        : null;
-
-      // 1. Update profiles table - ONLY with provided values.
-      try {
-        const profileUpdate = {
-          dob: input.dob ? new Date(input.dob) : undefined,
-          full_name: input.full_name,
-          gender: input.gender,
-          onboarded: true,
-          username: input.username,
-          updated_at: new Date(),
-        };
-
-        if (Object.values(profileUpdate).some((value) => value !== undefined)) {
-          const [updatedProfile] = await db
-            .update(profiles)
-            .set(profileUpdate)
-            .where(eq(profiles.id, userId))
-            .returning({ id: profiles.id });
-
-          if (!updatedProfile?.id) {
-            throw new TRPCError({
-              code: "NOT_FOUND",
-              message: "Profile not found",
-            });
-          }
-        } else {
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Profile not found",
-          });
-        }
-      } catch (error) {
-        if (error instanceof TRPCError) {
-          throw error;
-        }
-
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to update profile during onboarding",
-          cause: error,
-        });
-      }
-
-      // 2. Prepare and insert profile metrics
-      const metrics = prepareProfileMetrics(
-        {
-          weight_kg: input.weight_kg, // Pass undefined if missing, helper handles it
-          max_hr: input.max_hr,
-          resting_hr: input.resting_hr,
-          lthr: input.lthr,
-          vo2max: input.vo2max,
-        },
-        baseline,
-      );
-
-      try {
-        await batchInsertProfileMetrics(db, userId, metrics);
-      } catch (error) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to insert onboarding metrics",
-          cause: error,
-        });
-      }
-
-      // 3. Derive and insert all activity efforts
-      const allEfforts = [];
-      const warnings: string[] = [];
-
-      const [latestActivity] = await db
-        .select({ id: activities.id })
-        .from(activities)
-        .where(eq(activities.profile_id, userId))
-        .orderBy(desc(activities.started_at))
+  checkUsernameAvailability: protectedProcedure
+    .input(checkUsernameAvailabilityInputSchema)
+    .output(checkUsernameAvailabilityOutputSchema)
+    .query(async ({ ctx, input }) => {
+      const [conflict] = await getRequiredDb(ctx)
+        .select({ id: schema.profiles.id })
+        .from(schema.profiles)
+        .where(
+          and(
+            sql`lower(${schema.profiles.username}) = ${input.username.toLowerCase()}`,
+            ne(schema.profiles.id, ctx.session.user.id),
+          ),
+        )
         .limit(1);
-
-      const fallbackActivityId = latestActivity?.id ?? null;
-
-      // Merge user input with baseline for performance metrics
-      const finalFtp = input.ftp ?? baseline?.ftp;
-      const finalThresholdPace =
-        input.threshold_pace_seconds_per_km ?? baseline?.threshold_pace_seconds_per_km;
-      const finalCss =
-        input.css_seconds_per_hundred_meters ?? baseline?.css_seconds_per_hundred_meters;
-
-      // Cycling/Triathlon: Derive power curve from FTP
-      if (finalFtp) {
-        allEfforts.push(...deriveEffortsForSport("cycling", finalFtp));
-      }
-
-      // Running/Triathlon: Derive speed curve from threshold pace
-      if (finalThresholdPace) {
-        allEfforts.push(...deriveEffortsForSport("running", finalThresholdPace));
-      }
-
-      // Swimming/Triathlon: Derive swim pace curve from CSS
-      if (finalCss) {
-        allEfforts.push(...deriveEffortsForSport("swimming", finalCss));
-      }
-
-      // Batch insert all derived efforts
-      if (allEfforts.length > 0) {
-        try {
-          await batchInsertActivityEfforts(
-            db,
-            userId,
-            allEfforts,
-            input.experience_level,
-            fallbackActivityId,
-          );
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "";
-          const isActivityIdNotNullViolation =
-            message.includes("activity_id") && message.includes("not-null");
-
-          if (isActivityIdNotNullViolation && !fallbackActivityId) {
-            warnings.push(
-              "Skipped effort insertion because this environment requires activity_id and no activities exist yet.",
-            );
-          } else {
-            throw new TRPCError({
-              code: "INTERNAL_SERVER_ERROR",
-              message: "Failed to insert onboarding efforts",
-              cause: error,
-            });
-          }
-        }
-      }
-
-      // 4. Return summary
-      return {
-        success: true,
-        created: {
-          profile_metrics: metrics.length,
-          activity_efforts: warnings.length > 0 ? 0 : allEfforts.length,
-        },
-        baseline_used: !!baseline,
-        confidence: baseline?.confidence || "high",
-        warnings,
-      };
+      return { available: !conflict };
     }),
 
-  /**
-   * Estimate metrics based on athlete profile.
-   *
-   * Provides real-time estimates as user fills out onboarding form.
-   * Used for showing suggested values and validation.
-   *
-   * @example
-   * estimateMetrics({
-   *   weight_kg: 70,
-   *   gender: 'male',
-   *   age: 30,
-   *   experience_level: 'intermediate',
-   *   primary_sport: 'cycling'
-   * })
-   * // Returns: { estimated_ftp: 193, estimated_max_hr: 190, ... }
-   */
-  estimateMetrics: protectedProcedure
-    .input(estimateMetricsQueryInputSchema)
-    .output(estimateMetricsQueryOutputSchema)
-    .query(async ({ input }) => {
-      const experienceLevel = input.experience_level || "intermediate";
+  saveDraft: protectedProcedure
+    .input(saveDraftInputSchema)
+    .output(saveDraftOutputSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await saveOnboardingDraft({
+          db: getRequiredDb(ctx),
+          profileId: ctx.session.user.id,
+          data: input.profile,
+        });
+      } catch (error) {
+        throwOnboardingError(error);
+      }
+    }),
 
-      // Calculate heart rate estimates
-      const estimatedMaxHR = input.max_hr || estimateMaxHRFromAge(input.age);
-      const estimatedRestingHR =
-        input.resting_hr ||
-        (experienceLevel === "beginner"
-          ? input.gender === "male"
-            ? 70
-            : 75
-          : input.gender === "male"
-            ? 60
-            : 65);
+  startProcessing: protectedProcedure
+    .output(startProcessingOutputSchema)
+    .mutation(async ({ ctx }) => {
+      try {
+        return await startOnboardingProcessing({
+          db: getRequiredDb(ctx),
+          profileId: ctx.session.user.id,
+        });
+      } catch (error) {
+        throwOnboardingError(error);
+      }
+    }),
 
-      const estimatedLTHR = estimateLTHR(estimatedMaxHR);
-      const estimatedVO2Max = calculateVO2MaxFromHR(estimatedMaxHR, estimatedRestingHR);
+  retryProviderProcessing: protectedProcedure
+    .input(retryProviderProcessingInputSchema)
+    .output(retryProviderProcessingOutputSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await retryOnboardingProviderProcessing({
+          db: getRequiredDb(ctx),
+          profileId: ctx.session.user.id,
+          provider: input.provider,
+        });
+      } catch (error) {
+        throwOnboardingError(error);
+      }
+    }),
 
-      // Calculate performance estimates based on sport
-      let estimatedFTP: number | undefined;
-      let estimatedThresholdPace: number | undefined;
-      let estimatedCSS: number | undefined;
+  restartProviderSelection: protectedProcedure
+    .output(restartProviderSelectionOutputSchema)
+    .mutation(async ({ ctx }) => {
+      try {
+        return await restartOnboardingProviderSelection({
+          db: getRequiredDb(ctx),
+          profileId: ctx.session.user.id,
+        });
+      } catch (error) {
+        throwOnboardingError(error);
+      }
+    }),
 
-      // Use "intermediate" as default if "skip" is selected
-      const effectiveExperienceLevel =
-        input.experience_level === "skip" ? "intermediate" : input.experience_level;
+  getReadiness: protectedProcedure.output(readinessOutputSchema).query(async ({ ctx }) => {
+    try {
+      const readiness = await getOnboardingReadiness({
+        db: getRequiredDb(ctx),
+        profileId: ctx.session.user.id,
+      });
+      if (!readiness) throw new OnboardingProfileNotFoundForLockError();
+      return readiness;
+    } catch (error) {
+      throwOnboardingError(error);
+    }
+  }),
 
-      estimatedFTP = estimateFTPFromWeight(input.weight_kg, input.gender, effectiveExperienceLevel);
+  getProgress: protectedProcedure.output(onboardingProgressSchema).query(async ({ ctx }) => {
+    try {
+      const progress = await getOnboardingProgress({
+        db: getRequiredDb(ctx),
+        profileId: ctx.session.user.id,
+      });
+      if (!progress) throw new OnboardingProfileNotFoundForLockError();
+      return progress;
+    } catch (error) {
+      throwOnboardingError(error);
+    }
+  }),
 
-      estimatedThresholdPace = estimateThresholdPaceFromGender(
-        input.gender,
-        effectiveExperienceLevel,
-      );
+  reconcileStatus: protectedProcedure.output(readinessOutputSchema).mutation(async ({ ctx }) => {
+    try {
+      const readiness = await reconcileOnboardingStatus({
+        db: getRequiredDb(ctx),
+        profileId: ctx.session.user.id,
+      });
+      if (!readiness) throw new OnboardingProfileNotFoundForLockError();
+      return readiness;
+    } catch (error) {
+      throwOnboardingError(error);
+    }
+  }),
 
-      estimatedCSS = estimateCSSFromGender(input.gender, effectiveExperienceLevel);
-
-      return {
-        estimated_max_hr: estimatedMaxHR,
-        estimated_resting_hr: estimatedRestingHR,
-        estimated_lthr: estimatedLTHR,
-        estimated_vo2max: estimatedVO2Max,
-        estimated_ftp: estimatedFTP,
-        estimated_threshold_pace: estimatedThresholdPace,
-        estimated_css: estimatedCSS,
-        confidence: experienceLevel === "beginner" ? ("low" as const) : ("medium" as const),
-      };
+  completeLifecycleSetup: protectedProcedure
+    .input(completeLifecycleSetupInputSchema)
+    .output(completeLifecycleSetupOutputSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const { goal, ...lifecycleInput } = input;
+        return await completeLifecycleSetup({
+          db: getRequiredDb(ctx),
+          profileId: ctx.session.user.id,
+          ...lifecycleInput,
+          ...(goal === undefined ? {} : { goal }),
+        });
+      } catch (error) {
+        throwOnboardingError(error);
+      }
     }),
 });

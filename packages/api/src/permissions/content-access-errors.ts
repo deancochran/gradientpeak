@@ -1,9 +1,9 @@
-import { TRPCError } from "@trpc/server";
+import { forbiddenError, notFoundError } from "../lib/errors/trpc";
 
 export function permissionDeniedNotFound(message = "Resource not found") {
-  return new TRPCError({ code: "NOT_FOUND", message });
+  return notFoundError(message);
 }
 
 export function permissionDeniedForbidden(message = "You do not have permission for this action") {
-  return new TRPCError({ code: "FORBIDDEN", message });
+  return forbiddenError(message);
 }

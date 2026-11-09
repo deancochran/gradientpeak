@@ -28,7 +28,7 @@ function normalizeMessageInput(data: unknown) {
 }
 
 export const sendMessageAction = createServerFn({ method: "POST" })
-  .inputValidator((data) => normalizeMessageInput(data))
+  .validator((data) => normalizeMessageInput(data))
   .handler(async ({ data }) => {
     try {
       const caller = await createServerActionCaller();

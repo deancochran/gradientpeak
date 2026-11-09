@@ -1,66 +1,53 @@
-import { useEffect, useState } from "react";
-import { normalizeDurationInput, parseHmsToSeconds } from "../../lib/fitness-inputs";
-import { View } from "../../lib/react-native";
-import { Input } from "../input/index.native";
-import { Label } from "../label/index.native";
+import {
+  durationSegmentsApiText,
+  durationTextSegments,
+  parseDurationSegments,
+} from "@repo/core/utils/fitness-inputs";
+import { View } from "react-native";
+import { SegmentedDurationField } from "../segmented-duration-field/index.native";
 import { Text } from "../text/index.native";
 import type { DurationInputProps } from "./shared";
 
-function DurationInput({
-  accessibilityHint,
-  error,
-  helperText = "Use h:mm:ss format",
-  id,
-  label,
-  onChange,
-  onDurationSecondsChange,
-  placeholder = "e.g., 1:35:00",
-  required = false,
-  value,
-}: DurationInputProps) {
-  const [draftValue, setDraftValue] = useState(value);
-
-  useEffect(() => {
-    setDraftValue(value);
-  }, [value]);
-
+export function DurationInput(props: DurationInputProps) {
+  const policy = {
+    layout: props.layout ?? "hms",
+    minSeconds: props.minSeconds ?? 1,
+    maxSeconds: props.maxSeconds,
+    granularitySeconds: props.granularitySeconds,
+    allowOmittedSegments: true,
+  };
+  const segments = durationTextSegments(props.value, policy.layout);
   return (
     <View className="gap-2">
-      <Label nativeID={id}>
-        <Text className="text-sm font-medium text-foreground">
-          {label}
-          {required ? <Text className="text-destructive"> *</Text> : null}
-        </Text>
-      </Label>
-      <Input
-        accessibilityLabel={label}
-        accessibilityHint={accessibilityHint ?? "Enter a duration in h:mm:ss format"}
-        className={error ? "border-destructive bg-destructive/5" : undefined}
-        value={draftValue}
-        onBlur={() => {
-          const normalized = normalizeDurationInput(draftValue);
-          if (!normalized) {
-            return;
-          }
-
-          if (normalized !== draftValue) {
-            setDraftValue(normalized);
-            onChange(normalized);
-          }
-          onDurationSecondsChange?.(parseHmsToSeconds(normalized));
-        }}
-        onChangeText={(nextValue) => {
-          setDraftValue(nextValue);
-          onChange(nextValue);
-          onDurationSecondsChange?.(parseHmsToSeconds(nextValue));
-        }}
-        keyboardType="numbers-and-punctuation"
-        placeholder={placeholder}
+      <Text className="text-sm font-medium text-foreground">
+        {props.label}
+        {props.required ? " *" : ""}
+      </Text>
+      <SegmentedDurationField
+        presentation="native-overlay"
+        testId={props.testId ?? props.id}
+        {...policy}
+        ref={props.ref}
+        id={props.id ?? props.testId}
+        label={props.label}
+        required={props.required ?? false}
+        disabled={props.disabled}
+        formControl={props.formControl}
+        fieldName={props.fieldName}
+        resetKey={props.resetKey}
+        error={props.error}
+        accessibilityHint={props.accessibilityHint ?? props.helperText}
+        valueSeconds={parseDurationSegments(segments, policy)}
+        segments={segments}
+        onSegmentsChange={(next) => props.onChange(durationSegmentsApiText(next, policy, "hms"))}
+        onChangeSeconds={(value) => props.onDurationSecondsChange?.(value)}
+        onEmpty={() => props.onDurationSecondsChange?.(undefined)}
+        onInvalidChange={(invalid) => props.onInvalidChange?.(invalid)}
+        onBlur={props.onBlur}
       />
-      {helperText ? <Text className="text-xs text-muted-foreground">{helperText}</Text> : null}
-      {error ? <Text className="text-xs text-destructive">Adjust this field: {error}</Text> : null}
+      {props.helperText ? (
+        <Text className="text-xs text-muted-foreground">{props.helperText}</Text>
+      ) : null}
     </View>
   );
 }
-
-export { DurationInput };

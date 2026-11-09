@@ -1,6 +1,7 @@
+import { LoadingButton } from "@repo/ui/components/loading";
 import { ListSkeleton } from "@repo/ui/components/loading-skeletons";
 import { Text } from "@repo/ui/components/text";
-import type { ReactElement } from "react";
+import { type ReactElement, useRef, useState } from "react";
 import { FlatList, RefreshControl, View } from "react-native";
 
 type ResourceListProps<TItem> = {
@@ -8,6 +9,8 @@ type ResourceListProps<TItem> = {
   data: TItem[];
   emptyComponent?: ReactElement | null;
   emptyDescription?: string;
+  filteredEmptyDescription?: string;
+  filteredEmptyTitle?: string;
   emptyTitle?: string;
   errorDescription?: string;
   errorTitle?: string;
@@ -15,6 +18,8 @@ type ResourceListProps<TItem> = {
   isError?: boolean;
   isFetchingNextPage?: boolean;
   isLoading?: boolean;
+  isEmptyFiltered?: boolean;
+  isRetrying?: boolean;
   keyExtractor: (item: TItem, index: number) => string;
   ListHeaderComponent?: ReactElement | null;
   loadingComponent?: ReactElement | null;
@@ -22,6 +27,7 @@ type ResourceListProps<TItem> = {
   loadingMoreLabel?: string;
   onLoadMore?: () => void;
   onRefresh?: () => Promise<unknown> | undefined;
+  onRetry?: () => Promise<unknown> | unknown;
   renderItem: (item: TItem, index: number) => ReactElement | null;
   refreshing?: boolean;
   showsVerticalScrollIndicator?: boolean;
@@ -41,7 +47,17 @@ function DefaultEmptyState({ description, title }: { description?: string; title
   );
 }
 
-function DefaultErrorState({ description, title }: { description?: string; title?: string }) {
+export function DefaultErrorState({
+  description,
+  isRetrying = false,
+  onRetry,
+  title,
+}: {
+  description?: string;
+  isRetrying?: boolean;
+  onRetry?: () => Promise<unknown> | unknown;
+  title?: string;
+}) {
   return (
     <View className="items-center justify-center px-6 py-12">
       <Text className="text-center text-lg font-medium text-destructive">
@@ -50,8 +66,112 @@ function DefaultErrorState({ description, title }: { description?: string; title
       <Text className="mt-2 text-center text-sm text-muted-foreground">
         {description ?? "Please try again later."}
       </Text>
+      {onRetry ? (
+        <RetryButton className="mt-4" isRetrying={isRetrying} label="Try again" onRetry={onRetry} />
+      ) : null}
     </View>
   );
+}
+
+export function ResourceListErrorNotice({
+  description,
+  isRetrying = false,
+  onRetry,
+}: {
+  description?: string;
+  isRetrying?: boolean;
+  onRetry?: () => Promise<unknown> | unknown;
+}) {
+  return (
+    <View
+      accessibilityLiveRegion="polite"
+      className="flex-row items-center justify-between gap-3 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2"
+    >
+      <Text className="flex-1 text-sm text-destructive">
+        {description ?? "Some results could not be refreshed."}
+      </Text>
+      {onRetry ? <RetryButton isRetrying={isRetrying} label="Retry" onRetry={onRetry} /> : null}
+    </View>
+  );
+}
+
+function RetryButton({
+  className,
+  isRetrying,
+  label,
+  onRetry,
+}: {
+  className?: string;
+  isRetrying: boolean;
+  label: string;
+  onRetry: () => Promise<unknown> | unknown;
+}) {
+  const retryInFlight = useRef(false);
+  const [isLocallyRetrying, setIsLocallyRetrying] = useState(false);
+  const isPending = isRetrying || isLocallyRetrying;
+
+  const handleRetry = () => {
+    if (isPending || retryInFlight.current) return;
+
+    retryInFlight.current = true;
+    let result: unknown;
+    try {
+      result = onRetry();
+    } catch {
+      retryInFlight.current = false;
+      return;
+    }
+
+    if (!isPromiseLike(result)) {
+      retryInFlight.current = false;
+      return;
+    }
+
+    setIsLocallyRetrying(true);
+    void Promise.resolve(result)
+      .catch(() => undefined)
+      .finally(() => {
+        retryInFlight.current = false;
+        setIsLocallyRetrying(false);
+      });
+  };
+
+  return (
+    <LoadingButton
+      loading={isPending}
+      loadingLabel="Retrying"
+      onPress={handleRetry}
+      size="sm"
+      variant="outline"
+      {...(className === undefined ? {} : { className })}
+    >
+      {label}
+    </LoadingButton>
+  );
+}
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+  return (
+    (typeof value === "object" || typeof value === "function") &&
+    value !== null &&
+    "then" in value &&
+    typeof value.then === "function"
+  );
+}
+
+export function getResourceListMode({
+  dataLength,
+  isError,
+  isLoading,
+}: {
+  dataLength: number;
+  isError: boolean;
+  isLoading: boolean;
+}) {
+  if (dataLength === 0 && isLoading) return "loading" as const;
+  if (dataLength === 0 && isError) return "error" as const;
+  if (dataLength === 0) return "empty" as const;
+  return "data" as const;
 }
 
 export function ResourceList<TItem>({
@@ -59,6 +179,8 @@ export function ResourceList<TItem>({
   data,
   emptyComponent,
   emptyDescription,
+  filteredEmptyDescription = "Try adjusting your search or filters.",
+  filteredEmptyTitle = "No matching results",
   emptyTitle,
   errorDescription,
   errorTitle,
@@ -66,6 +188,8 @@ export function ResourceList<TItem>({
   isError = false,
   isFetchingNextPage = false,
   isLoading = false,
+  isEmptyFiltered = false,
+  isRetrying = false,
   keyExtractor,
   ListHeaderComponent,
   loadingComponent,
@@ -73,26 +197,39 @@ export function ResourceList<TItem>({
   loadingSkeletonCount = 6,
   onLoadMore,
   onRefresh,
+  onRetry,
   refreshing = false,
   renderItem,
   showsVerticalScrollIndicator = false,
   testID,
 }: ResourceListProps<TItem>) {
-  const showInitialLoading = isLoading && data.length === 0;
+  const mode = getResourceListMode({ dataLength: data.length, isError, isLoading });
+  const showInitialLoading = mode === "loading";
+  const showInitialError = mode === "error";
 
   return (
     <FlatList
       contentContainerClassName={contentContainerClassName}
-      data={showInitialLoading || isError ? [] : data}
+      data={showInitialLoading || showInitialError ? [] : data}
       keyExtractor={keyExtractor}
       ListEmptyComponent={
         showInitialLoading ? (
           (loadingComponent ?? <ListSkeleton count={loadingSkeletonCount} />)
-        ) : isError ? (
-          <DefaultErrorState description={errorDescription} title={errorTitle} />
+        ) : showInitialError ? (
+          <DefaultErrorState
+            isRetrying={isRetrying}
+            {...(errorDescription === undefined ? {} : { description: errorDescription })}
+            {...(onRetry === undefined ? {} : { onRetry })}
+            {...(errorTitle === undefined ? {} : { title: errorTitle })}
+          />
+        ) : isEmptyFiltered ? (
+          <DefaultEmptyState description={filteredEmptyDescription} title={filteredEmptyTitle} />
         ) : (
           (emptyComponent ?? (
-            <DefaultEmptyState description={emptyDescription} title={emptyTitle} />
+            <DefaultEmptyState
+              {...(emptyDescription === undefined ? {} : { description: emptyDescription })}
+              {...(emptyTitle === undefined ? {} : { title: emptyTitle })}
+            />
           ))
         )
       }
@@ -103,7 +240,20 @@ export function ResourceList<TItem>({
           </View>
         ) : null
       }
-      ListHeaderComponent={ListHeaderComponent}
+      ListHeaderComponent={
+        isError && data.length > 0 ? (
+          <View className="gap-3">
+            <ResourceListErrorNotice
+              isRetrying={isRetrying}
+              {...(errorDescription === undefined ? {} : { description: errorDescription })}
+              {...(onRetry === undefined ? {} : { onRetry })}
+            />
+            {ListHeaderComponent}
+          </View>
+        ) : (
+          ListHeaderComponent
+        )
+      }
       onEndReached={() => {
         if (hasNextPage && !isFetchingNextPage) {
           onLoadMore?.();
