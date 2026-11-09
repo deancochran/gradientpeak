@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
-import type { ReactNode } from "react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ComponentType, ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   organizationId: "organization-1",
   actorProfileId: "actor-1",
   pathname: "/organizations/organization-1/dashboard",
+  invalidate: vi.fn(),
   overview: {
     status: "granted" as const,
     overview: {
@@ -20,17 +21,19 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
-  createFileRoute: () => (options: object) => ({
-    ...options,
-    useLoaderData: () => ({
-      overview: state.overview,
-      organizationId: "organization-1",
-      actorProfileId: "actor-1",
-    }),
-    useParams: () => ({ organizationId: state.organizationId }),
-    useRouteContext: () => ({ actorProfileId: state.actorProfileId }),
-  }),
+  createFileRoute: () => (options: object) =>
+    ({
+      ...options,
+      useLoaderData: () => ({
+        overview: state.overview,
+        organizationId: "organization-1",
+        actorProfileId: "actor-1",
+      }),
+      useParams: () => ({ organizationId: state.organizationId }),
+      useRouteContext: () => ({ actorProfileId: state.actorProfileId }),
+    }) as Record<string, unknown>,
   useRouterState: () => state.pathname,
+  useRouter: () => ({ invalidate: state.invalidate }),
   Link: ({
     children,
     to,
@@ -53,6 +56,7 @@ afterEach(() => {
   state.organizationId = "organization-1";
   state.actorProfileId = "actor-1";
   state.pathname = "/organizations/organization-1/dashboard";
+  state.invalidate.mockReset();
   state.overview = {
     status: "granted",
     overview: {
@@ -111,6 +115,71 @@ describe("coach dashboard", () => {
     expect(screen.getByText(/Organization task assignments are not available/)).toBeTruthy();
   });
 
+  it("keeps the organization navigation while the overview is pending", () => {
+    const Pending = (Route as unknown as { pendingComponent: ComponentType }).pendingComponent;
+    render(<Pending />);
+
+    expect(screen.getByRole("status").textContent).toContain("Loading organization overview");
+    expect(screen.getByRole("navigation", { name: "Organization administration" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Assignments" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Organization overview" })).toBeNull();
+  });
+
+  it("keeps the error frame through a resolved failed retry and prevents duplicate invalidation", async () => {
+    let resolveRead: () => void = () => {
+      throw new Error("Read not started");
+    };
+    state.invalidate.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveRead = resolve;
+        }),
+    );
+    const ErrorView = (Route as unknown as { errorComponent: ComponentType }).errorComponent;
+    render(<ErrorView />);
+
+    expect(screen.getByRole("navigation", { name: "Organization administration" })).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toContain(
+      "We could not load the organization overview",
+    );
+    expect(screen.queryByText("24")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry organization overview" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retrying organization overview…" }));
+    expect(
+      screen
+        .getByRole("button", { name: "Retrying organization overview…" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    expect(state.invalidate).toHaveBeenCalledExactlyOnceWith({ sync: true });
+    resolveRead();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Retry organization overview" })).toBeTruthy(),
+    );
+    expect(screen.getByRole("alert").textContent).toContain(
+      "We could not load the organization overview",
+    );
+  });
+
+  it("renders an actionable empty state for a real zero-engagement overview", () => {
+    state.overview = {
+      status: "granted",
+      overview: {
+        activeStaff: 1,
+        activeEngagements: 0,
+        pausedEngagements: 0,
+        activeEngagementsWithoutPrimary: 0,
+      },
+    };
+    const Component = (Route as unknown as { component: React.ComponentType }).component;
+    render(<Component />);
+
+    expect(screen.getByRole("heading", { name: "No active athletes yet" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Invite athlete" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Assign coach" })).toBeTruthy();
+    expect(screen.queryByText("Coverage gaps")).toBeNull();
+    expect(screen.queryByText("Unavailable")).toBeNull();
+  });
+
   it("renders an explicit access-lost state instead of organization data", () => {
     state.overview = { status: "forbidden" };
     const Component = (Route as unknown as { component: React.ComponentType }).component;
@@ -118,5 +187,6 @@ describe("coach dashboard", () => {
 
     expect(screen.getByRole("heading", { name: "Coaching access required" })).toBeTruthy();
     expect(screen.queryByText("Casey Coach")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retry organization overview" })).toBeNull();
   });
 });

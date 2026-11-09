@@ -29,6 +29,10 @@ export function OrganizationManagementOverview({
   const { activeEngagements, activeEngagementsWithoutPrimary, activeStaff, pausedEngagements } =
     overview.overview;
 
+  if (activeEngagements === 0 && pausedEngagements === 0) {
+    return <EmptyOrganizationOverview organizationId={organizationId} />;
+  }
+
   return (
     <div className="space-y-4 sm:space-y-5">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -169,6 +173,49 @@ export function OrganizationManagementOverview({
           ) : null}
         </aside>
       </div>
+    </div>
+  );
+}
+
+function EmptyOrganizationOverview({ organizationId }: { organizationId: string }) {
+  return (
+    <div className="space-y-4 sm:space-y-5">
+      <header className="space-y-1.5">
+        <p className="text-sm text-slate-400">Organization administration / Service health</p>
+        <h1 className="text-3xl font-semibold tracking-tight text-white">Organization overview</h1>
+        <p className="text-sm text-slate-400">Operational membership and assignment signals.</p>
+      </header>
+      <Card className="mx-auto max-w-3xl border-slate-700 bg-slate-900 text-slate-50">
+        <CardHeader>
+          <CardTitle>
+            <h2>No active athletes yet</h2>
+          </CardTitle>
+          <CardDescription className="leading-6 text-slate-400">
+            There are no active or paused athlete engagements in this organization. Invite an
+            athlete or open assignments when someone is ready to join.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-3">
+          <Button asChild className="bg-cyan-400 text-slate-950 hover:bg-cyan-300">
+            <Link to="/organizations/$organizationId/invitations" params={{ organizationId }}>
+              Invite athlete
+            </Link>
+          </Button>
+          <Button
+            asChild
+            variant="outline"
+            className="border-slate-600 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
+          >
+            <Link
+              to="/organizations/$organizationId/assignments"
+              params={{ organizationId }}
+              search={{ status: "active", primary: "unassigned", cursor: undefined, q: undefined }}
+            >
+              Assign coach
+            </Link>
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   );
 }
