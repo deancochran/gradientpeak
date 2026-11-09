@@ -120,4 +120,87 @@ describe("recordActivityTrainingEffect", () => {
     });
     expect(coalesce).toHaveBeenCalledOnce();
   });
+
+  it("queues a future effect rather than publishing it before the materializer as-of time", async () => {
+    const coalesce = vi.fn(async ({ request }) => request);
+    const publish = vi.fn();
+    const repository = {
+      lockPublicationState: vi.fn(async () => state()),
+      upsertActivityTrainingEffect: vi.fn(async ({ effect: value }) => ({
+        status: "created" as const,
+        effect: value,
+      })),
+      coalesceRecalculationRequest: coalesce,
+      publishDailyTrainingLoad: publish,
+    } as unknown as AthleteDerivedStateRepositoryPort;
+
+    await expect(
+      recordActivityTrainingEffect({
+        repository,
+        requestedAt: "2026-08-10T11:59:59.999Z",
+        request: {
+          profileId,
+          expectedPublishedRevision: 1,
+          targetSourceRevision: 2,
+          effect: effect(),
+        },
+      }),
+    ).resolves.toMatchObject({
+      status: "rebuild_requested",
+      request: { earliestAffectedAt: "2026-08-10T12:00:00.000Z" },
+    });
+    expect(coalesce).toHaveBeenCalledOnce();
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it("allows an effect at the materializer as-of time to publish incrementally", async () => {
+    const publish = vi.fn(async () => ({ status: "published" as const, publishedRevision: 2 }));
+    const repository = {
+      lockPublicationState: vi.fn(async () => state()),
+      upsertActivityTrainingEffect: vi.fn(async ({ effect: value }) => ({
+        status: "created" as const,
+        effect: value,
+      })),
+      publishDailyTrainingLoad: publish,
+    } as unknown as AthleteDerivedStateRepositoryPort;
+
+    await expect(
+      recordActivityTrainingEffect({
+        repository,
+        requestedAt: "2026-08-10T12:00:00.000Z",
+        request: {
+          profileId,
+          expectedPublishedRevision: 1,
+          targetSourceRevision: 2,
+          effect: effect(),
+        },
+      }),
+    ).resolves.toMatchObject({ status: "applied", publishedRevision: 2 });
+    expect(publish).toHaveBeenCalledOnce();
+  });
+
+  it("fails closed before writing when the materializer as-of time is invalid", async () => {
+    const upsert = vi.fn();
+    const publish = vi.fn();
+    const repository = {
+      lockPublicationState: vi.fn(),
+      upsertActivityTrainingEffect: upsert,
+      publishDailyTrainingLoad: publish,
+    } as unknown as AthleteDerivedStateRepositoryPort;
+
+    await expect(
+      recordActivityTrainingEffect({
+        repository,
+        requestedAt: "not-a-timestamp",
+        request: {
+          profileId,
+          expectedPublishedRevision: 1,
+          targetSourceRevision: 2,
+          effect: effect(),
+        },
+      }),
+    ).rejects.toThrow("requestedAt is invalid");
+    expect(upsert).not.toHaveBeenCalled();
+    expect(publish).not.toHaveBeenCalled();
+  });
 });

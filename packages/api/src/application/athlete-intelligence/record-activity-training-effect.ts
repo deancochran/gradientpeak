@@ -70,6 +70,10 @@ export async function recordActivityTrainingEffect(input: {
 }) {
   const effect = activityTrainingEffectSchema.parse(input.request.effect);
   const requestedAt = input.requestedAt ?? new Date().toISOString();
+  const requestedAtMs = Date.parse(requestedAt);
+  if (!Number.isFinite(requestedAtMs)) {
+    throw new Error("Activity training effect requestedAt is invalid");
+  }
   const reason =
     input.reason ??
     (effect.activityAnalysisRevision === 1 ? "activity_created" : "analysis_replaced");
@@ -116,6 +120,7 @@ export async function recordActivityTrainingEffect(input: {
     effect.sourceRevision === input.request.targetSourceRevision &&
     state.dirtyFromAt === null &&
     state.leaseToken === null &&
+    Date.parse(effect.effectiveAt) <= requestedAtMs &&
     (state.computedAt === null || Date.parse(effect.effectiveAt) >= Date.parse(state.computedAt)) &&
     (coverageEndDate === null || effect.planningDate > coverageEndDate);
   if (!canApplyIncrementally) {
