@@ -10,7 +10,14 @@ import {
   SheetTrigger,
 } from "@repo/ui/components/sheet";
 import { Link, Outlet, useLocation } from "@tanstack/react-router";
-import { Building2, LayoutDashboard, Menu, UserRoundCheck, Users } from "lucide-react";
+import {
+  Building2,
+  ClipboardList,
+  LayoutDashboard,
+  Menu,
+  UserRoundCheck,
+  Users,
+} from "lucide-react";
 
 type CoachShellProps = {
   organization: {
@@ -76,6 +83,19 @@ export function CoachShell({ organization }: CoachShellProps) {
               Assignments
             </Link>
             <Link
+              to="/organizations/$organizationId/audit"
+              params={{ organizationId: organization.id }}
+              aria-current={
+                location.pathname.startsWith(`/organizations/${organization.id}/audit`)
+                  ? "page"
+                  : undefined
+              }
+              className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-slate-900 hover:text-white aria-[current=page]:bg-slate-800 aria-[current=page]:text-white"
+            >
+              <ClipboardList className="h-4 w-4" />
+              Audit history
+            </Link>
+            <Link
               to="/organizations/$organizationId/dashboard"
               params={{ organizationId: organization.id }}
               aria-current={location.pathname === dashboardPath ? "page" : undefined}
@@ -135,6 +155,16 @@ function CoachMobileNavigation({
           <SheetDescription className="text-slate-400">{organizationName}</SheetDescription>
         </SheetHeader>
         <nav className="grid gap-1 p-3" aria-label="Mobile coaching navigation">
+          <SheetClose asChild>
+            <Link
+              to="/organizations/$organizationId/audit"
+              params={{ organizationId }}
+              className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-900 hover:text-white"
+            >
+              <ClipboardList className="h-4 w-4" />
+              Audit history
+            </Link>
+          </SheetClose>
           <SheetClose asChild>
             <Link
               to="/organizations/$organizationId/athletes"

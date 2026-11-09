@@ -38,6 +38,7 @@ import {
   type OrganizationAccessRepository,
 } from "../repositories/organization-access-repository";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { organizationAuditHistoryRouter } from "./organization-audit-history";
 import { organizationCoachAthletesRouter } from "./organization-coach-athletes";
 import { organizationCoachingAssignmentsRouter } from "./organization-coaching-assignments";
 import { organizationGroupsRouter } from "./organization-groups";
@@ -529,6 +530,7 @@ export function createOrganizationsRouter(
         }),
     }),
     organizationGroups: organizationGroupsRouter,
+    auditHistory: organizationAuditHistoryRouter,
     coachingAssignments: organizationCoachingAssignmentsRouter,
     coachAthletes: organizationCoachAthletesRouter,
     lifecycle: organizationLifecycleRouter,
