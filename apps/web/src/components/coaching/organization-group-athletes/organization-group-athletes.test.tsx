@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   remove: vi.fn(),
   links: vi.fn(),
   candidates: vi.fn(),
+  invalidate: vi.fn(),
   uuid: vi.fn(),
 }));
 vi.mock("@tanstack/react-start", () => ({
@@ -18,6 +19,7 @@ vi.mock("@tanstack/react-start", () => ({
     return mocks.candidates;
   },
 }));
+vi.mock("@tanstack/react-router", () => ({ useRouter: () => ({ invalidate: mocks.invalidate }) }));
 vi.mock("../../../lib/coaching/organization-group-athletes-server-functions", () => ({
   addOrganizationGroupAthlete: mocks.add,
   removeOrganizationGroupAthlete: mocks.remove,
@@ -25,7 +27,11 @@ vi.mock("../../../lib/coaching/organization-group-athletes-server-functions", ()
   loadOrganizationGroupAthleteCandidates: mocks.candidates,
 }));
 
-import { OrganizationGroupAthletes } from "./organization-group-athletes";
+import {
+  OrganizationGroupAthletes,
+  OrganizationGroupAthletesError,
+  OrganizationGroupAthletesPending,
+} from "./organization-group-athletes";
 
 const organizationId = "11111111-1111-4111-8111-111111111111";
 const groupId = "22222222-2222-4222-8222-222222222222";
@@ -394,6 +400,18 @@ describe("OrganizationGroupAthletes", () => {
     expect(
       screen.getByRole("list", { name: "Assigned athletes" }).querySelectorAll("li"),
     ).toHaveLength(1);
+  });
+
+  it("names pending athlete reads and retries a failed child loader synchronously", async () => {
+    render(<OrganizationGroupAthletesPending />);
+    expect(screen.getByRole("status", { name: "Loading athlete assignments" })).toBeTruthy();
+    cleanup();
+    render(<OrganizationGroupAthletesError />);
+    fireEvent.click(screen.getByRole("button", { name: "Retry athlete assignments" }));
+    expect(mocks.invalidate).toHaveBeenCalledWith({ sync: true });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Retry athlete assignments" })).toBeTruthy(),
+    );
   });
 
   it("restores its mounted fence during StrictMode setup before a removal completes", async () => {

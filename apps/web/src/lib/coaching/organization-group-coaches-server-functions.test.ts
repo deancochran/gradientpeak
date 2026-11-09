@@ -167,4 +167,30 @@ describe("organization group coach server functions", () => {
     expect(mocks.assign).toHaveBeenCalledWith({ organizationId, groupId, linkId, membershipId });
     expect(mocks.remove).toHaveBeenCalledWith({ organizationId, groupId, linkId });
   });
+
+  it.each([
+    "FORBIDDEN",
+    "UNAUTHORIZED",
+    "NOT_FOUND",
+  ])("maps asynchronous %s assign and remove failures to forbidden", async (code) => {
+    mocks.assign.mockRejectedValueOnce(Object.assign(new Error("denied"), { code }));
+    mocks.remove.mockRejectedValueOnce(Object.assign(new Error("denied"), { code }));
+    await expect(
+      assignOrganizationGroupCoach({ data: { organizationId, groupId, linkId, membershipId } }),
+    ).resolves.toEqual({ status: "forbidden" });
+    await expect(
+      removeOrganizationGroupCoach({ data: { organizationId, groupId, linkId } }),
+    ).resolves.toEqual({ status: "forbidden" });
+  });
+
+  it("rethrows unexpected asynchronous assign and remove failures", async () => {
+    mocks.assign.mockRejectedValueOnce(new Error("database unavailable"));
+    mocks.remove.mockRejectedValueOnce(new Error("database unavailable"));
+    await expect(
+      assignOrganizationGroupCoach({ data: { organizationId, groupId, linkId, membershipId } }),
+    ).rejects.toThrow("database unavailable");
+    await expect(
+      removeOrganizationGroupCoach({ data: { organizationId, groupId, linkId } }),
+    ).rejects.toThrow("database unavailable");
+  });
 });

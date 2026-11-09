@@ -43,28 +43,46 @@ import { Route } from "./coaches";
 describe("organization group coaches route", () => {
   it("loads the child scope and fails closed when its independent server boundary denies access", async () => {
     const config = mocks.config as {
-      loader: (input: { params: typeof mocks.params }) => Promise<unknown>;
+      loader: (input: {
+        params: typeof mocks.params;
+        context: { actorProfileId: string };
+      }) => Promise<unknown>;
       component: () => ReactNode;
+      pendingMs: number;
+      pendingComponent: () => ReactNode;
+      errorComponent: () => ReactNode;
     };
     mocks.load.mockResolvedValue({ status: "granted" });
-    await config.loader({ params: mocks.params });
+    await expect(
+      config.loader({ params: mocks.params, context: { actorProfileId: "profile-1" } }),
+    ).resolves.toEqual({
+      organizationId: mocks.params.organizationId,
+      groupId: mocks.params.groupId,
+      actorProfileId: "profile-1",
+      result: { status: "granted" },
+    });
     expect(mocks.load).toHaveBeenCalledWith({
       data: { ...mocks.params, limit: 20, linkCursor: null, candidateCursor: null },
     });
-    mocks.loaderData = { status: "forbidden" };
+    mocks.loaderData = { result: { status: "forbidden" } };
     render(config.component());
     expect(screen.getByText("Coaching access required")).toBeTruthy();
+    expect(config.pendingComponent).toBeTruthy();
+    expect(config.errorComponent).toBeTruthy();
+    expect(config.pendingMs).toBe(0);
   });
 
   it("passes the scoped assignment page into child composition", () => {
     const config = mocks.config as { component: () => ReactNode };
     mocks.loaderData = {
-      status: "granted",
-      links: { items: [], nextCursor: null, hasMore: false },
-      candidates: {
-        items: [{ membershipId: "33333333-3333-4333-8333-333333333333", label: "Coach Ada" }],
-        nextCursor: null,
-        hasMore: false,
+      result: {
+        status: "granted",
+        links: { items: [], nextCursor: null, hasMore: false },
+        candidates: {
+          items: [{ membershipId: "33333333-3333-4333-8333-333333333333", label: "Coach Ada" }],
+          nextCursor: null,
+          hasMore: false,
+        },
       },
     };
     render(config.component());

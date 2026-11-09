@@ -17,7 +17,7 @@ import {
 } from "@repo/ui/components/form";
 import { Input } from "@repo/ui/components/input";
 import { Textarea } from "@repo/ui/components/textarea";
-import { Link } from "@tanstack/react-router";
+import { Link, useRouter } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -36,6 +36,39 @@ type GroupDraft = z.input<typeof groupDraftSchema>;
 type Group = { id: string; name: string; description: string | null; createdAt: Date };
 type Page = { items: Group[]; nextCursor: string | null; hasMore: boolean };
 type ListResult = ({ status: "granted" } & Page) | { status: "forbidden" };
+
+export function OrganizationGroupsPending() {
+  return (
+    <p aria-label="Loading organization groups" role="status" className="text-sm text-slate-400">
+      Loading organization groups…
+    </p>
+  );
+}
+
+export function OrganizationGroupsError() {
+  const router = useRouter();
+  const [retrying, setRetrying] = useState(false);
+  async function retry() {
+    setRetrying(true);
+    try {
+      await router.invalidate({ sync: true });
+    } catch {
+      // Keep the failed read visible until an authoritative reread succeeds.
+    } finally {
+      setRetrying(false);
+    }
+  }
+  return (
+    <div className="space-y-3">
+      <p role="alert" className="text-sm text-red-300">
+        Organization groups could not be loaded. Retry the current organization group read.
+      </p>
+      <Button disabled={retrying} onClick={() => void retry()} type="button">
+        {retrying ? "Retrying organization groups…" : "Retry organization groups"}
+      </Button>
+    </div>
+  );
+}
 
 export function OrganizationGroupList({
   organizationId,

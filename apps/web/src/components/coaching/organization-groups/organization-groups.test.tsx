@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { StrictMode } from "react";
+import { StrictMode, useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -26,8 +26,17 @@ vi.mock("../../../lib/coaching/organization-groups-server-functions", () => ({
   archiveOrganizationGroup: mocks.archive,
 }));
 
-import { OrganizationGroupDetail } from "./organization-group-detail";
-import { OrganizationGroupList } from "./organization-group-list";
+import { useOrganizationGroupAccessLoss } from "./organization-group-access";
+import {
+  OrganizationGroupDetail,
+  OrganizationGroupDetailError,
+  OrganizationGroupDetailPending,
+} from "./organization-group-detail";
+import {
+  OrganizationGroupList,
+  OrganizationGroupsError,
+  OrganizationGroupsPending,
+} from "./organization-group-list";
 
 const organizationId = "11111111-1111-4111-8111-111111111111";
 const otherOrganizationId = "33333333-3333-4333-8333-333333333333";
@@ -59,6 +68,17 @@ function deferred<T>() {
     reject = rej;
   });
   return { promise, resolve, reject };
+}
+function DeferredChildAccessReporter({ capture }: { capture: (complete: () => void) => void }) {
+  const accessLoss = useOrganizationGroupAccessLoss();
+  useEffect(() => {
+    const completion = deferred<void>();
+    capture(() => completion.resolve());
+    void completion.promise.then(() => {
+      if (accessLoss) accessLoss.reportAccessLost(accessLoss.scope);
+    });
+  }, [accessLoss, capture]);
+  return null;
 }
 describe("organization group workflows", () => {
   beforeEach(() => {
@@ -154,7 +174,9 @@ describe("organization group workflows", () => {
         <OrganizationGroupDetail
           group={page.items[0] as (typeof page.items)[number]}
           organizationId={organizationId}
-        />
+        >
+          <div>nested child</div>
+        </OrganizationGroupDetail>
       </StrictMode>,
     );
     fireEvent.click(screen.getByRole("button", { name: "Archive group" }));
@@ -218,12 +240,188 @@ describe("organization group workflows", () => {
         <OrganizationGroupDetail
           group={page.items[0] as (typeof page.items)[number]}
           organizationId={organizationId}
-        />
+        >
+          <div>nested child</div>
+        </OrganizationGroupDetail>
       </StrictMode>,
     );
     fireEvent.click(screen.getByRole("button", { name: "Archive group" }));
     fireEvent.click(screen.getByRole("button", { name: "Confirm archive" }));
-    expect(await screen.findByText(/access changed/)).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Group access required" })).toBeTruthy();
     expect(screen.queryByText("Tempo archived")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Archive group" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Tempo" })).toBeNull();
+    expect(screen.queryByText("nested child")).toBeNull();
+  });
+  it.each([
+    "coach",
+    "athlete",
+  ])("does not let a stale %s child completion redact a replacement parent, but redacts its current scope", async (_child) => {
+    const initial = page.items[0] as (typeof page.items)[number];
+    const replacement = {
+      id: secondGroupId,
+      name: "Threshold",
+      description: "Destination detail",
+      createdAt: new Date(),
+    };
+    const completions: Array<() => void> = [];
+    const capture = (complete: () => void) => completions.push(complete);
+    const view = render(
+      <OrganizationGroupDetail
+        actorProfileId="profile-1"
+        group={initial}
+        organizationId={organizationId}
+      >
+        <DeferredChildAccessReporter capture={capture} />
+      </OrganizationGroupDetail>,
+    );
+    await waitFor(() => expect(completions).toHaveLength(1));
+    const staleCompletion = completions[0];
+    if (!staleCompletion) throw new Error("stale child completion missing");
+
+    view.rerender(
+      <OrganizationGroupDetail
+        actorProfileId="profile-2"
+        group={replacement}
+        organizationId={otherOrganizationId}
+      >
+        <DeferredChildAccessReporter capture={capture} />
+      </OrganizationGroupDetail>,
+    );
+    await waitFor(() => expect(completions).toHaveLength(2));
+    staleCompletion();
+    await Promise.resolve();
+    expect(screen.getByRole("heading", { name: "Threshold" })).toBeTruthy();
+    expect(screen.getByText("Destination detail")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Archive group" })).toBeTruthy();
+
+    const currentCompletion = completions[1];
+    if (!currentCompletion) throw new Error("current child completion missing");
+    currentCompletion();
+    expect(await screen.findByRole("heading", { name: "Group access required" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Threshold" })).toBeNull();
+    expect(screen.queryByText("Destination detail")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Archive group" })).toBeNull();
+  });
+  it("does not let an ABA actor-scope child completion redact the restored parent", async () => {
+    const initial = page.items[0] as (typeof page.items)[number];
+    const completions: Array<() => void> = [];
+    const capture = (complete: () => void) => completions.push(complete);
+    const view = render(
+      <OrganizationGroupDetail
+        actorProfileId="profile-1"
+        group={initial}
+        organizationId={organizationId}
+      >
+        <DeferredChildAccessReporter capture={capture} />
+      </OrganizationGroupDetail>,
+    );
+    await waitFor(() => expect(completions).toHaveLength(1));
+    const firstCompletion = completions[0];
+    if (!firstCompletion) throw new Error("initial child completion missing");
+    view.rerender(
+      <OrganizationGroupDetail
+        actorProfileId="profile-2"
+        group={initial}
+        organizationId={organizationId}
+      >
+        <DeferredChildAccessReporter capture={capture} />
+      </OrganizationGroupDetail>,
+    );
+    await waitFor(() => expect(completions).toHaveLength(2));
+    view.rerender(
+      <OrganizationGroupDetail
+        actorProfileId="profile-1"
+        group={initial}
+        organizationId={organizationId}
+      >
+        <DeferredChildAccessReporter capture={capture} />
+      </OrganizationGroupDetail>,
+    );
+    await waitFor(() => expect(completions).toHaveLength(3));
+    firstCompletion();
+    await Promise.resolve();
+    expect(screen.getByRole("heading", { name: "Tempo" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Archive group" })).toBeTruthy();
+    const currentCompletion = completions[2];
+    if (!currentCompletion) throw new Error("restored child completion missing");
+    currentCompletion();
+    expect(await screen.findByRole("heading", { name: "Group access required" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Tempo" })).toBeNull();
+  });
+  it("accepts a current child access-loss report after StrictMode replays its parent lifetime", async () => {
+    const completions: Array<() => void> = [];
+    const capture = (complete: () => void) => completions.push(complete);
+    render(
+      <StrictMode>
+        <OrganizationGroupDetail
+          actorProfileId="profile-1"
+          group={page.items[0] as (typeof page.items)[number]}
+          organizationId={organizationId}
+        >
+          <DeferredChildAccessReporter capture={capture} />
+        </OrganizationGroupDetail>
+      </StrictMode>,
+    );
+    await waitFor(() => expect(completions.length).toBeGreaterThanOrEqual(2));
+    const currentCompletion = completions.at(-1);
+    if (!currentCompletion) throw new Error("current StrictMode child completion missing");
+    currentCompletion();
+    expect(await screen.findByRole("heading", { name: "Group access required" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Tempo" })).toBeNull();
+  });
+  it("clears a denied actor scope when a different actor opens the same group", async () => {
+    const completions: Array<() => void> = [];
+    const capture = (complete: () => void) => completions.push(complete);
+    const group = page.items[0] as (typeof page.items)[number];
+    const view = render(
+      <OrganizationGroupDetail
+        actorProfileId="profile-1"
+        group={group}
+        organizationId={organizationId}
+      >
+        <DeferredChildAccessReporter capture={capture} />
+      </OrganizationGroupDetail>,
+    );
+    await waitFor(() => expect(completions).toHaveLength(1));
+    const deniedCompletion = completions[0];
+    if (!deniedCompletion) throw new Error("denied actor child completion missing");
+    deniedCompletion();
+    expect(await screen.findByRole("heading", { name: "Group access required" })).toBeTruthy();
+
+    view.rerender(
+      <OrganizationGroupDetail
+        actorProfileId="profile-2"
+        group={group}
+        organizationId={organizationId}
+      >
+        <DeferredChildAccessReporter capture={capture} />
+      </OrganizationGroupDetail>,
+    );
+    expect(await screen.findByRole("heading", { name: "Tempo" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Archive group" })).toBeTruthy();
+  });
+  it.each([
+    ["groups", OrganizationGroupsPending, "Loading organization groups"],
+    ["group detail", OrganizationGroupDetailPending, "Loading organization group"],
+  ])("keeps %s controls hidden while the route read is pending", (_name, Pending, label) => {
+    render(<Pending />);
+    expect(screen.getByRole("status", { name: label })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /archive|create/i })).toBeNull();
+  });
+  it.each([
+    ["groups", OrganizationGroupsError, "Retry organization groups"],
+    ["group detail", OrganizationGroupDetailError, "Retry organization group"],
+  ])("keeps failed %s reads visible and retries synchronously", async (_name, ErrorComponent, retryName) => {
+    render(<ErrorComponent />);
+    expect(screen.getByRole("alert").textContent).toContain("could not be loaded");
+    fireEvent.click(screen.getByRole("button", { name: retryName }));
+    expect(mocks.invalidate).toHaveBeenCalledWith({ sync: true });
+    await waitFor(() => expect(screen.getByRole("button", { name: retryName })).toBeTruthy());
+    mocks.invalidate.mockRejectedValueOnce(new Error("read failed"));
+    const retry = screen.getByRole("button", { name: retryName });
+    fireEvent.click(retry);
+    await waitFor(() => expect((retry as HTMLButtonElement).disabled).toBe(false));
+    expect(screen.getByRole("alert")).toBeTruthy();
   });
 });

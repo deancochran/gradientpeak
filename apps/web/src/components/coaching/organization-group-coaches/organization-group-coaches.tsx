@@ -24,6 +24,7 @@ import {
   loadOrganizationGroupCoachLinks,
   removeOrganizationGroupCoach,
 } from "../../../lib/coaching/organization-group-coaches-server-functions";
+import { useOrganizationGroupAccessLoss } from "../organization-groups/organization-group-access";
 
 export type CoachLink = { id: string; membershipId: string };
 export type CoachCandidate = { membershipId: string; label: string };
@@ -69,6 +70,7 @@ function OrganizationGroupCoachesContents({
   candidatePage: Page<CoachCandidate>;
 }) {
   const router = useRouter();
+  const accessLoss = useOrganizationGroupAccessLoss();
   const assignCoach = useServerFn(assignOrganizationGroupCoach);
   const removeCoach = useServerFn(removeOrganizationGroupCoach);
   const loadLinks = useServerFn(loadOrganizationGroupCoachLinks);
@@ -90,6 +92,7 @@ function OrganizationGroupCoachesContents({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [locked, setLocked] = useState(false);
+  const [accessLost, setAccessLost] = useState(false);
   const [mutationPending, setMutationPending] = useState(false);
   const [linksPending, setLinksPending] = useState(false);
   const [candidatesPending, setCandidatesPending] = useState(false);
@@ -167,8 +170,8 @@ function OrganizationGroupCoachesContents({
     const result = await loadLinks({ data: { organizationId, groupId, limit: 20, cursor: null } });
     if (!mounted.current || request !== linkRequest.current) return;
     if (result.status === "forbidden") {
-      setLocked(true);
-      setError("Your access changed. Refresh before changing coach assignments.");
+      setAccessLost(true);
+      if (accessLoss) accessLoss.reportAccessLost(accessLoss.scope);
       return;
     }
     const confirmed = new Set(result.page.items.map((link) => link.id));
@@ -193,8 +196,8 @@ function OrganizationGroupCoachesContents({
       });
       if (!mounted.current || request !== linkRequest.current) return;
       if (result.status === "forbidden") {
-        setLocked(true);
-        setError("Your access changed. Refresh before changing coach assignments.");
+        setAccessLost(true);
+        if (accessLoss) accessLoss.reportAccessLost(accessLoss.scope);
         return;
       }
       const loaded = result.page.items.filter((link) => !removedLinkIds.current.has(link.id));
@@ -238,8 +241,8 @@ function OrganizationGroupCoachesContents({
       });
       if (!mounted.current || request !== candidateRequest.current) return;
       if (result.status === "forbidden") {
-        setLocked(true);
-        setError("Your access changed. Refresh before changing coach assignments.");
+        setAccessLost(true);
+        if (accessLoss) accessLoss.reportAccessLost(accessLoss.scope);
         return;
       }
       setCandidates((current) =>
@@ -277,8 +280,8 @@ function OrganizationGroupCoachesContents({
       const result = await assignCoach({ data: command });
       if (!mounted.current) return;
       if (result.status === "forbidden") {
-        setLocked(true);
-        setError("Your access changed. Refresh before changing coach assignments.");
+        setAccessLost(true);
+        if (accessLoss) accessLoss.reportAccessLost(accessLoss.scope);
         return;
       }
       const added = { id: result.id, membershipId: command.membershipId };
@@ -313,8 +316,8 @@ function OrganizationGroupCoachesContents({
       const result = await removeCoach({ data: command });
       if (!mounted.current) return;
       if (result.status === "forbidden") {
-        setLocked(true);
-        setError("Your access changed. Refresh before changing coach assignments.");
+        setAccessLost(true);
+        if (accessLoss) accessLoss.reportAccessLost(accessLoss.scope);
         return;
       }
       removedLinkIds.current.add(command.linkId);
@@ -334,6 +337,7 @@ function OrganizationGroupCoachesContents({
     }
   }
 
+  if (accessLost) return <GroupCoachAccessLost />;
   return (
     <section aria-labelledby="group-coaches-heading" className="space-y-4">
       <div>
@@ -489,15 +493,42 @@ function OrganizationGroupCoachesContents({
 
 export function OrganizationGroupCoachesPending() {
   return (
-    <p role="status" className="text-sm text-slate-400">
+    <p aria-label="Loading coach assignments" role="status" className="text-sm text-slate-400">
       Loading coach assignments…
     </p>
   );
 }
 export function OrganizationGroupCoachesError() {
+  const router = useRouter();
+  const [retrying, setRetrying] = useState(false);
+  async function retry() {
+    setRetrying(true);
+    try {
+      await router.invalidate({ sync: true });
+    } catch {
+      // The failed loader remains the only visible assignment state.
+    } finally {
+      setRetrying(false);
+    }
+  }
   return (
-    <p role="alert" className="text-sm text-red-300">
-      We could not load coach assignments.
-    </p>
+    <div className="space-y-3">
+      <p role="alert" className="text-sm text-red-300">
+        We could not load coach assignments.
+      </p>
+      <Button disabled={retrying} onClick={() => void retry()} type="button">
+        {retrying ? "Retrying coach assignments…" : "Retry coach assignments"}
+      </Button>
+    </div>
+  );
+}
+function GroupCoachAccessLost() {
+  return (
+    <section>
+      <h2 className="text-xl font-semibold tracking-tight text-white">Group access required</h2>
+      <p className="mt-1 text-sm text-slate-400">
+        Your access changed. Coach assignments are no longer shown.
+      </p>
+    </section>
   );
 }
