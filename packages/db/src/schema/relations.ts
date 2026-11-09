@@ -17,6 +17,12 @@ import {
   athleteConsentPolicyVersions,
   athleteDataSharingConsents,
   athleteRecalculationQueue,
+  checkInFollowUps,
+  checkInOccurrences,
+  checkInSchedules,
+  checkInSubmissions,
+  checkInTemplates,
+  checkInTemplateVersions,
   coachingAssignments,
   coachingEngagements,
   comments,
@@ -111,6 +117,7 @@ export const profilesRelations = relations(profiles, ({ one, many }) => ({
     relationName: "organizationInvitationAccepter",
   }),
   coachingEngagements: many(coachingEngagements),
+  checkInSubmissions: many(checkInSubmissions),
   profileGoals: many(profileGoals),
   profileMetrics: many(profileMetrics),
   athleteState: one(profileAthleteState),
@@ -160,6 +167,11 @@ export const organizationsRelations = relations(organizations, ({ one, many }) =
   invitations: many(organizationInvitations),
   groups: many(organizationGroups),
   auditEvents: many(organizationAuditEvents),
+  checkInTemplates: many(checkInTemplates),
+  checkInSchedules: many(checkInSchedules),
+  checkInOccurrences: many(checkInOccurrences),
+  checkInSubmissions: many(checkInSubmissions),
+  checkInFollowUps: many(checkInFollowUps),
 }));
 
 export const organizationMembershipsRelations = relations(
@@ -201,6 +213,94 @@ export const coachingEngagementsRelations = relations(coachingEngagements, ({ on
   assignments: many(coachingAssignments),
   groupMemberships: many(organizationGroupAthletes),
   consents: many(athleteDataSharingConsents),
+  checkInSchedules: many(checkInSchedules),
+  checkInOccurrences: many(checkInOccurrences),
+  checkInSubmissions: many(checkInSubmissions),
+  checkInFollowUps: many(checkInFollowUps),
+}));
+
+export const checkInTemplatesRelations = relations(checkInTemplates, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [checkInTemplates.organization_id],
+    references: [organizations.id],
+  }),
+  createdByMembership: one(organizationMemberships, {
+    fields: [checkInTemplates.created_by_membership_id],
+    references: [organizationMemberships.id],
+  }),
+  versions: many(checkInTemplateVersions),
+}));
+
+export const checkInTemplateVersionsRelations = relations(
+  checkInTemplateVersions,
+  ({ one, many }) => ({
+    template: one(checkInTemplates, {
+      fields: [checkInTemplateVersions.template_id],
+      references: [checkInTemplates.id],
+    }),
+    publishedByMembership: one(organizationMemberships, {
+      fields: [checkInTemplateVersions.published_by_membership_id],
+      references: [organizationMemberships.id],
+    }),
+    schedules: many(checkInSchedules),
+    occurrences: many(checkInOccurrences),
+    submissions: many(checkInSubmissions),
+  }),
+);
+
+export const checkInSchedulesRelations = relations(checkInSchedules, ({ one, many }) => ({
+  engagement: one(coachingEngagements, {
+    fields: [checkInSchedules.engagement_id],
+    references: [coachingEngagements.id],
+  }),
+  templateVersion: one(checkInTemplateVersions, {
+    fields: [checkInSchedules.template_version_id],
+    references: [checkInTemplateVersions.id],
+  }),
+  occurrences: many(checkInOccurrences),
+}));
+
+export const checkInOccurrencesRelations = relations(checkInOccurrences, ({ one, many }) => ({
+  schedule: one(checkInSchedules, {
+    fields: [checkInOccurrences.schedule_id],
+    references: [checkInSchedules.id],
+  }),
+  templateVersion: one(checkInTemplateVersions, {
+    fields: [checkInOccurrences.template_version_id],
+    references: [checkInTemplateVersions.id],
+  }),
+  submissions: many(checkInSubmissions),
+}));
+
+export const checkInSubmissionsRelations = relations(checkInSubmissions, ({ one, many }) => ({
+  occurrence: one(checkInOccurrences, {
+    fields: [checkInSubmissions.occurrence_id],
+    references: [checkInOccurrences.id],
+  }),
+  reviewer: one(organizationMemberships, {
+    fields: [checkInSubmissions.reviewed_by_membership_id],
+    references: [organizationMemberships.id],
+  }),
+  reviewedByProfile: one(profiles, {
+    fields: [checkInSubmissions.reviewed_by_profile_id],
+    references: [profiles.id],
+  }),
+  followUps: many(checkInFollowUps),
+}));
+
+export const checkInFollowUpsRelations = relations(checkInFollowUps, ({ one }) => ({
+  submission: one(checkInSubmissions, {
+    fields: [checkInFollowUps.submission_id],
+    references: [checkInSubmissions.id],
+  }),
+  createdByMembership: one(organizationMemberships, {
+    fields: [checkInFollowUps.created_by_membership_id],
+    references: [organizationMemberships.id],
+  }),
+  assignedToMembership: one(organizationMemberships, {
+    fields: [checkInFollowUps.assigned_to_membership_id],
+    references: [organizationMemberships.id],
+  }),
 }));
 
 export const coachingAssignmentsRelations = relations(coachingAssignments, ({ one }) => ({

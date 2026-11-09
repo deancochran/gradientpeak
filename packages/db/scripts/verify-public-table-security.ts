@@ -36,6 +36,7 @@ const coachingAuthorityReadOnlyTableSet = new Set<string>(coachingAuthorityReadO
 const immutableDerivedTables = [
   "activity_efforts",
   "activity_training_effects",
+  "check_in_template_versions",
   "threshold_evaluations",
   "threshold_evaluation_efforts",
   "thresholds",

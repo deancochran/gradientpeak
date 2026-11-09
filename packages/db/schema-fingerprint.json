@@ -312,6 +312,42 @@
       "forceRls": false
     },
     {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "name": "check_in_follow_ups",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "name": "check_in_occurrences",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "name": "check_in_schedules",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "name": "check_in_submissions",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arm/postgres}",
+      "rls": true,
+      "name": "check_in_template_versions",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "name": "check_in_templates",
+      "forceRls": false
+    },
+    {
       "acl": "{postgres=arwdDxtm/postgres,service_role=rm/postgres}",
       "rls": true,
       "name": "coaching_assignments",
@@ -4259,6 +4295,556 @@
       "notNull": false,
       "identity": "",
       "position": 12,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "check_in_follow_ups",
+      "default": "gen_random_uuid()",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "organization_id",
+      "type": "uuid",
+      "table": "check_in_follow_ups",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "submission_id",
+      "type": "uuid",
+      "table": "check_in_follow_ups",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "engagement_id",
+      "type": "uuid",
+      "table": "check_in_follow_ups",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "athlete_profile_id",
+      "type": "uuid",
+      "table": "check_in_follow_ups",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "created_by_membership_id",
+      "type": "uuid",
+      "table": "check_in_follow_ups",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "assigned_to_membership_id",
+      "type": "uuid",
+      "table": "check_in_follow_ups",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "description",
+      "type": "text",
+      "table": "check_in_follow_ups",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "due_date",
+      "type": "date",
+      "table": "check_in_follow_ups",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "check_in_follow_ups",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 10,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "check_in_occurrences",
+      "default": "gen_random_uuid()",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "organization_id",
+      "type": "uuid",
+      "table": "check_in_occurrences",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "schedule_id",
+      "type": "uuid",
+      "table": "check_in_occurrences",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "engagement_id",
+      "type": "uuid",
+      "table": "check_in_occurrences",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "athlete_profile_id",
+      "type": "uuid",
+      "table": "check_in_occurrences",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "template_version_id",
+      "type": "uuid",
+      "table": "check_in_occurrences",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "period_start_date",
+      "type": "date",
+      "table": "check_in_occurrences",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "scheduled_local_time",
+      "type": "text",
+      "table": "check_in_occurrences",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "time_zone",
+      "type": "text",
+      "table": "check_in_occurrences",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "check_in_occurrences",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 10,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "check_in_schedules",
+      "default": "gen_random_uuid()",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "organization_id",
+      "type": "uuid",
+      "table": "check_in_schedules",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "engagement_id",
+      "type": "uuid",
+      "table": "check_in_schedules",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "athlete_profile_id",
+      "type": "uuid",
+      "table": "check_in_schedules",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "template_version_id",
+      "type": "uuid",
+      "table": "check_in_schedules",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "weekday",
+      "type": "text",
+      "table": "check_in_schedules",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "local_time",
+      "type": "text",
+      "table": "check_in_schedules",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "time_zone",
+      "type": "text",
+      "table": "check_in_schedules",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "check_in_schedules",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "check_in_submissions",
+      "default": "gen_random_uuid()",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "organization_id",
+      "type": "uuid",
+      "table": "check_in_submissions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "occurrence_id",
+      "type": "uuid",
+      "table": "check_in_submissions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "engagement_id",
+      "type": "uuid",
+      "table": "check_in_submissions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "athlete_profile_id",
+      "type": "uuid",
+      "table": "check_in_submissions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "template_version_id",
+      "type": "uuid",
+      "table": "check_in_submissions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "submission_revision",
+      "type": "integer",
+      "table": "check_in_submissions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "idempotency_key",
+      "type": "uuid",
+      "table": "check_in_submissions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "answers",
+      "type": "jsonb",
+      "table": "check_in_submissions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
+      "name": "submitted_at",
+      "type": "timestamp with time zone",
+      "table": "check_in_submissions",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 10,
+      "generated": ""
+    },
+    {
+      "name": "reviewed_at",
+      "type": "timestamp with time zone",
+      "table": "check_in_submissions",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 11,
+      "generated": ""
+    },
+    {
+      "name": "reviewed_by_membership_id",
+      "type": "uuid",
+      "table": "check_in_submissions",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 12,
+      "generated": ""
+    },
+    {
+      "name": "reviewed_by_profile_id",
+      "type": "uuid",
+      "table": "check_in_submissions",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 13,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "check_in_template_versions",
+      "default": "gen_random_uuid()",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "organization_id",
+      "type": "uuid",
+      "table": "check_in_template_versions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "template_id",
+      "type": "uuid",
+      "table": "check_in_template_versions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "version_number",
+      "type": "integer",
+      "table": "check_in_template_versions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "name",
+      "type": "text",
+      "table": "check_in_template_versions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "questions",
+      "type": "jsonb",
+      "table": "check_in_template_versions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "published_by_membership_id",
+      "type": "uuid",
+      "table": "check_in_template_versions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "published_at",
+      "type": "timestamp with time zone",
+      "table": "check_in_template_versions",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "check_in_templates",
+      "default": "gen_random_uuid()",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "organization_id",
+      "type": "uuid",
+      "table": "check_in_templates",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "name",
+      "type": "text",
+      "table": "check_in_templates",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "created_by_membership_id",
+      "type": "uuid",
+      "table": "check_in_templates",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "check_in_templates",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
       "generated": ""
     },
     {
@@ -10679,6 +11265,116 @@
       "definition": "CREATE UNIQUE INDEX chatbot_turns_thread_id_request_id_key ON public.chatbot_turns USING btree (thread_id, request_id)"
     },
     {
+      "name": "check_in_follow_ups_pkey",
+      "table": "check_in_follow_ups",
+      "definition": "CREATE UNIQUE INDEX check_in_follow_ups_pkey ON public.check_in_follow_ups USING btree (id)"
+    },
+    {
+      "name": "check_in_follow_ups_submission_idx",
+      "table": "check_in_follow_ups",
+      "definition": "CREATE INDEX check_in_follow_ups_submission_idx ON public.check_in_follow_ups USING btree (submission_id, created_at)"
+    },
+    {
+      "name": "check_in_occurrences_athlete_period_idx",
+      "table": "check_in_occurrences",
+      "definition": "CREATE INDEX check_in_occurrences_athlete_period_idx ON public.check_in_occurrences USING btree (organization_id, athlete_profile_id, period_start_date)"
+    },
+    {
+      "name": "check_in_occurrences_organization_id_id_unique",
+      "table": "check_in_occurrences",
+      "definition": "CREATE UNIQUE INDEX check_in_occurrences_organization_id_id_unique ON public.check_in_occurrences USING btree (organization_id, id)"
+    },
+    {
+      "name": "check_in_occurrences_pkey",
+      "table": "check_in_occurrences",
+      "definition": "CREATE UNIQUE INDEX check_in_occurrences_pkey ON public.check_in_occurrences USING btree (id)"
+    },
+    {
+      "name": "check_in_occurrences_schedule_period_unique",
+      "table": "check_in_occurrences",
+      "definition": "CREATE UNIQUE INDEX check_in_occurrences_schedule_period_unique ON public.check_in_occurrences USING btree (schedule_id, period_start_date)"
+    },
+    {
+      "name": "check_in_occurrences_submission_binding_unique",
+      "table": "check_in_occurrences",
+      "definition": "CREATE UNIQUE INDEX check_in_occurrences_submission_binding_unique ON public.check_in_occurrences USING btree (organization_id, id, engagement_id, athlete_profile_id, template_version_id)"
+    },
+    {
+      "name": "check_in_schedules_athlete_idx",
+      "table": "check_in_schedules",
+      "definition": "CREATE INDEX check_in_schedules_athlete_idx ON public.check_in_schedules USING btree (organization_id, athlete_profile_id, created_at)"
+    },
+    {
+      "name": "check_in_schedules_occurrence_binding_unique",
+      "table": "check_in_schedules",
+      "definition": "CREATE UNIQUE INDEX check_in_schedules_occurrence_binding_unique ON public.check_in_schedules USING btree (organization_id, id, engagement_id, athlete_profile_id, template_version_id, local_time, time_zone)"
+    },
+    {
+      "name": "check_in_schedules_organization_id_id_unique",
+      "table": "check_in_schedules",
+      "definition": "CREATE UNIQUE INDEX check_in_schedules_organization_id_id_unique ON public.check_in_schedules USING btree (organization_id, id)"
+    },
+    {
+      "name": "check_in_schedules_pkey",
+      "table": "check_in_schedules",
+      "definition": "CREATE UNIQUE INDEX check_in_schedules_pkey ON public.check_in_schedules USING btree (id)"
+    },
+    {
+      "name": "check_in_submissions_athlete_idempotency_unique",
+      "table": "check_in_submissions",
+      "definition": "CREATE UNIQUE INDEX check_in_submissions_athlete_idempotency_unique ON public.check_in_submissions USING btree (athlete_profile_id, idempotency_key)"
+    },
+    {
+      "name": "check_in_submissions_athlete_submitted_idx",
+      "table": "check_in_submissions",
+      "definition": "CREATE INDEX check_in_submissions_athlete_submitted_idx ON public.check_in_submissions USING btree (organization_id, athlete_profile_id, submitted_at)"
+    },
+    {
+      "name": "check_in_submissions_follow_up_binding_unique",
+      "table": "check_in_submissions",
+      "definition": "CREATE UNIQUE INDEX check_in_submissions_follow_up_binding_unique ON public.check_in_submissions USING btree (organization_id, id, engagement_id, athlete_profile_id)"
+    },
+    {
+      "name": "check_in_submissions_occurrence_athlete_unique",
+      "table": "check_in_submissions",
+      "definition": "CREATE UNIQUE INDEX check_in_submissions_occurrence_athlete_unique ON public.check_in_submissions USING btree (occurrence_id, athlete_profile_id)"
+    },
+    {
+      "name": "check_in_submissions_organization_id_id_unique",
+      "table": "check_in_submissions",
+      "definition": "CREATE UNIQUE INDEX check_in_submissions_organization_id_id_unique ON public.check_in_submissions USING btree (organization_id, id)"
+    },
+    {
+      "name": "check_in_submissions_pkey",
+      "table": "check_in_submissions",
+      "definition": "CREATE UNIQUE INDEX check_in_submissions_pkey ON public.check_in_submissions USING btree (id)"
+    },
+    {
+      "name": "check_in_template_versions_organization_id_id_unique",
+      "table": "check_in_template_versions",
+      "definition": "CREATE UNIQUE INDEX check_in_template_versions_organization_id_id_unique ON public.check_in_template_versions USING btree (organization_id, id)"
+    },
+    {
+      "name": "check_in_template_versions_pkey",
+      "table": "check_in_template_versions",
+      "definition": "CREATE UNIQUE INDEX check_in_template_versions_pkey ON public.check_in_template_versions USING btree (id)"
+    },
+    {
+      "name": "check_in_template_versions_template_version_unique",
+      "table": "check_in_template_versions",
+      "definition": "CREATE UNIQUE INDEX check_in_template_versions_template_version_unique ON public.check_in_template_versions USING btree (template_id, version_number)"
+    },
+    {
+      "name": "check_in_templates_organization_id_id_unique",
+      "table": "check_in_templates",
+      "definition": "CREATE UNIQUE INDEX check_in_templates_organization_id_id_unique ON public.check_in_templates USING btree (organization_id, id)"
+    },
+    {
+      "name": "check_in_templates_pkey",
+      "table": "check_in_templates",
+      "definition": "CREATE UNIQUE INDEX check_in_templates_pkey ON public.check_in_templates USING btree (id)"
+    },
+    {
       "name": "coaching_assignments_active_coach_membership_idx",
       "table": "coaching_assignments",
       "definition": "CREATE INDEX coaching_assignments_active_coach_membership_idx ON public.coaching_assignments USING btree (organization_id, coach_membership_id) WHERE (ended_at IS NULL)"
@@ -11869,6 +12565,48 @@
       "definition": "CREATE CONSTRAINT TRIGGER athlete_data_sharing_consents_supersession_guard AFTER INSERT OR UPDATE ON athlete_data_sharing_consents DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_consent_supersession()"
     },
     {
+      "name": "check_in_occurrences_retained",
+      "table": "check_in_occurrences",
+      "schema": "public",
+      "definition": "CREATE TRIGGER check_in_occurrences_retained BEFORE DELETE OR UPDATE ON check_in_occurrences FOR EACH ROW EXECUTE FUNCTION prevent_check_in_occurrence_mutation()"
+    },
+    {
+      "name": "check_in_occurrences_schedule_weekday_guard",
+      "table": "check_in_occurrences",
+      "schema": "public",
+      "definition": "CREATE TRIGGER check_in_occurrences_schedule_weekday_guard BEFORE INSERT OR UPDATE ON check_in_occurrences FOR EACH ROW EXECUTE FUNCTION validate_check_in_occurrence_schedule()"
+    },
+    {
+      "name": "check_in_schedules_identity_guard",
+      "table": "check_in_schedules",
+      "schema": "public",
+      "definition": "CREATE TRIGGER check_in_schedules_identity_guard BEFORE UPDATE ON check_in_schedules FOR EACH ROW EXECUTE FUNCTION prevent_check_in_schedule_identity_mutation()"
+    },
+    {
+      "name": "check_in_submissions_payload_guard",
+      "table": "check_in_submissions",
+      "schema": "public",
+      "definition": "CREATE TRIGGER check_in_submissions_payload_guard BEFORE INSERT OR UPDATE ON check_in_submissions FOR EACH ROW EXECUTE FUNCTION validate_check_in_submission_payload()"
+    },
+    {
+      "name": "check_in_submissions_retained",
+      "table": "check_in_submissions",
+      "schema": "public",
+      "definition": "CREATE TRIGGER check_in_submissions_retained BEFORE INSERT OR DELETE OR UPDATE ON check_in_submissions FOR EACH ROW EXECUTE FUNCTION prevent_check_in_submission_mutation()"
+    },
+    {
+      "name": "check_in_template_versions_immutable",
+      "table": "check_in_template_versions",
+      "schema": "public",
+      "definition": "CREATE TRIGGER check_in_template_versions_immutable BEFORE DELETE OR UPDATE ON check_in_template_versions FOR EACH ROW EXECUTE FUNCTION prevent_check_in_template_version_mutation()"
+    },
+    {
+      "name": "check_in_template_versions_payload_guard",
+      "table": "check_in_template_versions",
+      "schema": "public",
+      "definition": "CREATE TRIGGER check_in_template_versions_payload_guard BEFORE INSERT ON check_in_template_versions FOR EACH ROW EXECUTE FUNCTION validate_check_in_template_version_payload()"
+    },
+    {
       "name": "coaching_assignments_assigned_at_not_future",
       "table": "coaching_assignments",
       "schema": "public",
@@ -12326,6 +13064,69 @@
     {
       "acl": "{postgres=X/postgres}",
       "config": ["search_path=pg_catalog"],
+      "identity": "check_in_is_valid_time_zone(text)",
+      "language": "sql",
+      "definition": "CREATE OR REPLACE FUNCTION public.check_in_is_valid_time_zone(target_time_zone text)\n RETURNS boolean\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_catalog'\nAS $function$\n  SELECT EXISTS (\n    SELECT 1 FROM pg_catalog.pg_timezone_names WHERE name = target_time_zone\n  );\n$function$\n",
+      "volatility": "s",
+      "securityDefiner": false
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "check_in_js_trim(text)",
+      "language": "sql",
+      "definition": "CREATE OR REPLACE FUNCTION public.check_in_js_trim(value text)\n RETURNS text\n LANGUAGE sql\n IMMUTABLE STRICT\n SET search_path TO 'pg_catalog'\nAS $function$\n  SELECT btrim(value, U&' \\0009\\000A\\000B\\000C\\000D\\00A0\\1680\\2000\\2001\\2002\\2003\\2004\\2005\\2006\\2007\\2008\\2009\\200A\\2028\\2029\\202F\\205F\\3000\\FEFF');\n$function$\n",
+      "volatility": "i",
+      "securityDefiner": false
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "check_in_json_has_exact_keys(jsonb,text[])",
+      "language": "sql",
+      "definition": "CREATE OR REPLACE FUNCTION public.check_in_json_has_exact_keys(payload jsonb, expected_keys text[])\n RETURNS boolean\n LANGUAGE sql\n IMMUTABLE STRICT\n SET search_path TO 'pg_catalog'\nAS $function$\n  SELECT jsonb_typeof(payload) = 'object'\n    AND coalesce(array_agg(key ORDER BY key), ARRAY[]::text[]) = expected_keys\n  FROM jsonb_object_keys(payload) AS key;\n$function$\n",
+      "volatility": "i",
+      "securityDefiner": false
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=\"\""],
+      "identity": "check_in_local_civil_time_is_valid(date,text,text)",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.check_in_local_civil_time_is_valid(target_date date, target_time text, target_time_zone text)\n RETURNS boolean\n LANGUAGE plpgsql\n STABLE\n SET search_path TO ''\nAS $function$\nDECLARE\n  local_value timestamp;\n  resolved_value timestamptz;\n  round_trip timestamp;\n  offset_before interval;\n  offset_after interval;\n  alternate_value timestamptz;\nBEGIN\n  IF NOT public.check_in_is_valid_time_zone(target_time_zone) THEN RETURN false; END IF;\n  IF target_time !~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' THEN RETURN false; END IF;\n  local_value := target_date + target_time::time;\n  resolved_value := pg_catalog.timezone(target_time_zone, local_value);\n  round_trip := pg_catalog.timezone(target_time_zone, resolved_value);\n  IF round_trip IS DISTINCT FROM local_value THEN RETURN false; END IF;\n\n  offset_before := pg_catalog.timezone(target_time_zone, resolved_value - interval '1 day')\n    - pg_catalog.timezone('UTC', resolved_value - interval '1 day');\n  offset_after := pg_catalog.timezone(target_time_zone, resolved_value + interval '1 day')\n    - pg_catalog.timezone('UTC', resolved_value + interval '1 day');\n  FOR alternate_value IN\n    SELECT pg_catalog.timezone('UTC', local_value - offset_before)\n    UNION\n    SELECT pg_catalog.timezone('UTC', local_value - offset_after)\n  LOOP\n    IF alternate_value <> resolved_value\n      AND pg_catalog.timezone(target_time_zone, alternate_value) = local_value THEN\n      RETURN false;\n    END IF;\n  END LOOP;\n  RETURN true;\nEXCEPTION WHEN datetime_field_overflow OR invalid_datetime_format THEN\n  RETURN false;\nEND;\n$function$\n",
+      "volatility": "s",
+      "securityDefiner": false
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=\"\""],
+      "identity": "check_in_submission_answers_are_valid(jsonb,jsonb)",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.check_in_submission_answers_are_valid(target_questions jsonb, target_answers jsonb)\n RETURNS boolean\n LANGUAGE plpgsql\n IMMUTABLE STRICT\n SET search_path TO ''\nAS $function$\nDECLARE\n  question jsonb;\n  answer jsonb;\n  matching_question jsonb;\n  question_id text;\n  answer_ids text[] := ARRAY[]::text[];\nBEGIN\n  IF NOT public.check_in_template_questions_are_valid(target_questions)\n    OR jsonb_typeof(target_answers) <> 'array'\n    OR jsonb_array_length(target_answers) > 20 THEN RETURN false; END IF;\n  FOR answer IN SELECT value FROM jsonb_array_elements(target_answers)\n  LOOP\n    question_id := answer->>'questionId';\n    SELECT value INTO matching_question\n    FROM jsonb_array_elements(target_questions)\n    WHERE value->>'questionId' = question_id;\n    IF matching_question IS NULL OR NOT public.check_in_uuid_is_valid(question_id)\n      OR question_id = ANY(answer_ids) OR answer->>'kind' <> matching_question->>'kind' THEN RETURN false; END IF;\n    IF (answer->>'kind' = 'scale_1_to_10'\n          AND (NOT public.check_in_json_has_exact_keys(answer, ARRAY['kind','questionId','value'])\n            OR jsonb_typeof(answer->'value') <> 'number'\n            OR (answer->>'value')::numeric < 1 OR (answer->>'value')::numeric > 10\n            OR trunc((answer->>'value')::numeric) <> (answer->>'value')::numeric))\n      OR (answer->>'kind' = 'single_select'\n          AND (NOT public.check_in_json_has_exact_keys(answer, ARRAY['choiceId','kind','questionId'])\n            OR NOT public.check_in_uuid_is_valid(answer->>'choiceId')\n            OR NOT EXISTS (SELECT 1 FROM jsonb_array_elements(matching_question->'choices') choice WHERE choice->>'choiceId' = answer->>'choiceId')))\n      OR (answer->>'kind' = 'long_text'\n          AND (NOT public.check_in_json_has_exact_keys(answer, ARRAY['kind','questionId','text'])\n            OR jsonb_typeof(answer->'text') <> 'string'\n            OR char_length(public.check_in_js_trim(answer->>'text')) NOT BETWEEN 1 AND 2000))\n    THEN RETURN false; END IF;\n    answer_ids := array_append(answer_ids, question_id);\n  END LOOP;\n  FOR question IN SELECT value FROM jsonb_array_elements(target_questions)\n  LOOP\n    IF (question->>'required')::boolean AND NOT (question->>'questionId' = ANY(answer_ids)) THEN\n      RETURN false;\n    END IF;\n  END LOOP;\n  RETURN true;\nEND;\n$function$\n",
+      "volatility": "i",
+      "securityDefiner": false
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=\"\""],
+      "identity": "check_in_template_questions_are_valid(jsonb)",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.check_in_template_questions_are_valid(target_questions jsonb)\n RETURNS boolean\n LANGUAGE plpgsql\n IMMUTABLE STRICT\n SET search_path TO ''\nAS $function$\nDECLARE\n  question jsonb;\n  choice jsonb;\n  question_ids text[] := ARRAY[]::text[];\n  choice_ids text[];\n  question_id text;\n  kind text;\n  choices jsonb;\nBEGIN\n  IF jsonb_typeof(target_questions) <> 'array'\n    OR jsonb_array_length(target_questions) NOT BETWEEN 1 AND 20 THEN RETURN false; END IF;\n  FOR question IN SELECT value FROM jsonb_array_elements(target_questions)\n  LOOP\n    kind := question->>'kind';\n    IF (kind = 'single_select' AND NOT public.check_in_json_has_exact_keys(question, ARRAY['audience','choices','helpText','kind','label','questionId','required']))\n      OR (kind IN ('scale_1_to_10','long_text') AND NOT public.check_in_json_has_exact_keys(question, ARRAY['audience','helpText','kind','label','questionId','required']))\n      OR kind NOT IN ('scale_1_to_10','single_select','long_text')\n      OR NOT public.check_in_uuid_is_valid(question->>'questionId')\n      OR question->>'questionId' = ANY(question_ids)\n      OR char_length(public.check_in_js_trim(coalesce(question->>'label', ''))) NOT BETWEEN 1 AND 240\n      OR jsonb_typeof(question->'required') <> 'boolean'\n      OR question->>'audience' <> 'athlete_and_assigned_coaches'\n      OR (jsonb_typeof(question->'helpText') <> 'null' AND (jsonb_typeof(question->'helpText') <> 'string' OR char_length(public.check_in_js_trim(question->>'helpText')) NOT BETWEEN 1 AND 1000))\n    THEN RETURN false; END IF;\n    question_id := question->>'questionId';\n    question_ids := array_append(question_ids, question_id);\n    IF kind = 'single_select' THEN\n      choices := question->'choices';\n      IF jsonb_typeof(choices) <> 'array' OR jsonb_array_length(choices) NOT BETWEEN 2 AND 12 THEN RETURN false; END IF;\n      choice_ids := ARRAY[]::text[];\n      FOR choice IN SELECT value FROM jsonb_array_elements(choices)\n      LOOP\n        IF NOT public.check_in_json_has_exact_keys(choice, ARRAY['choiceId','label'])\n          OR NOT public.check_in_uuid_is_valid(choice->>'choiceId')\n          OR choice->>'choiceId' = ANY(choice_ids)\n          OR char_length(public.check_in_js_trim(coalesce(choice->>'label', ''))) NOT BETWEEN 1 AND 160\n        THEN RETURN false; END IF;\n        choice_ids := array_append(choice_ids, choice->>'choiceId');\n      END LOOP;\n    END IF;\n  END LOOP;\n  RETURN true;\nEND;\n$function$\n",
+      "volatility": "i",
+      "securityDefiner": false
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "check_in_uuid_is_valid(text)",
+      "language": "sql",
+      "definition": "CREATE OR REPLACE FUNCTION public.check_in_uuid_is_valid(value text)\n RETURNS boolean\n LANGUAGE sql\n IMMUTABLE STRICT\n SET search_path TO 'pg_catalog'\nAS $function$\n  SELECT value ~* '^(00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$';\n$function$\n",
+      "volatility": "i",
+      "securityDefiner": false
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=pg_catalog"],
       "identity": "close_organization(uuid,uuid,boolean,text,uuid)",
       "language": "plpgsql",
       "definition": "CREATE OR REPLACE FUNCTION public.close_organization(p_actor_profile_id uuid, p_organization_id uuid, p_recent_reauthentication_verified boolean, p_reason_code text, p_correlation_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE\n  v_now timestamp with time zone := pg_catalog.transaction_timestamp();\n  v_organization public.organizations%ROWTYPE;\n  v_replay_count integer;\n  v_matching_replay_count integer;\n  v_revoked_grants integer;\n  v_ended_engagements integer;\n  v_ended_assignments integer;\n  v_ended_consents integer;\nBEGIN\n  IF p_recent_reauthentication_verified IS DISTINCT FROM true\n    OR p_correlation_id IS NULL\n    OR p_reason_code IS NULL\n    OR p_reason_code !~ '^[a-z0-9][a-z0-9_]{0,63}$' THEN\n    RAISE EXCEPTION 'reauthentication, a lowercase reason_code, and correlation_id are required';\n  END IF;\n\n  SELECT organization.*\n  INTO v_organization\n  FROM public.organizations AS organization\n  WHERE organization.id = p_organization_id\n  FOR UPDATE;\n\n  IF NOT FOUND THEN\n    RAISE EXCEPTION 'organization not found';\n  END IF;\n\n  SELECT\n    pg_catalog.count(*)::integer,\n    pg_catalog.count(*) FILTER (\n      WHERE audit.action = 'organization.closed'\n        AND audit.resource_id = p_organization_id\n        AND audit.actor_profile_id = p_actor_profile_id\n        AND audit.details ->> 'reason_code' = p_reason_code\n    )::integer\n  INTO v_replay_count, v_matching_replay_count\n  FROM public.organization_audit_events AS audit\n  WHERE audit.organization_id = p_organization_id\n    AND audit.correlation_id = p_correlation_id;\n\n  IF v_replay_count > 0 THEN\n    IF v_replay_count = 1 AND v_matching_replay_count = 1 THEN\n      RETURN;\n    END IF;\n    RAISE EXCEPTION 'correlation_id conflicts with another terminal request';\n  END IF;\n\n  IF v_organization.closed_at IS NOT NULL THEN\n    RAISE EXCEPTION 'organization is closed';\n  END IF;\n\n  IF NOT EXISTS (\n    SELECT 1\n    FROM public.organization_memberships AS root_membership\n    WHERE root_membership.organization_id = p_organization_id\n      AND root_membership.id = v_organization.root_owner_membership_id\n      AND root_membership.profile_id = p_actor_profile_id\n      AND root_membership.suspended_at IS NULL\n      AND root_membership.ended_at IS NULL\n    FOR UPDATE\n  ) THEN\n    RAISE EXCEPTION 'only the active root owner may close organization';\n  END IF;\n\n  UPDATE public.organizations\n  SET closed_at = v_now, suspended_at = NULL\n  WHERE id = p_organization_id;\n\n  UPDATE public.organization_membership_role_grants\n  SET revoked_at = v_now\n  WHERE organization_id = p_organization_id\n    AND revoked_at IS NULL;\n  GET DIAGNOSTICS v_revoked_grants = ROW_COUNT;\n\n  UPDATE public.coaching_engagements\n  SET ended_at = v_now, paused_at = NULL\n  WHERE organization_id = p_organization_id\n    AND ended_at IS NULL;\n  GET DIAGNOSTICS v_ended_engagements = ROW_COUNT;\n\n  UPDATE public.coaching_assignments\n  SET ended_at = v_now\n  WHERE organization_id = p_organization_id\n    AND ended_at IS NULL;\n  GET DIAGNOSTICS v_ended_assignments = ROW_COUNT;\n\n  UPDATE public.athlete_data_sharing_consents\n  SET ended_at = v_now\n  WHERE organization_id = p_organization_id\n    AND ended_at IS NULL;\n  GET DIAGNOSTICS v_ended_consents = ROW_COUNT;\n\n  -- Membership rows intentionally remain unchanged. The closed organization is\n  -- the authority fence; memberships retain historical identity/attribution.\n  INSERT INTO public.organization_audit_events (\n    organization_id,\n    actor_profile_id,\n    actor_membership_id,\n    action,\n    resource_type,\n    resource_id,\n    occurred_at,\n    correlation_id,\n    details\n  ) VALUES (\n    p_organization_id,\n    p_actor_profile_id,\n    v_organization.root_owner_membership_id,\n    'organization.closed',\n    'organization',\n    p_organization_id,\n    v_now,\n    p_correlation_id,\n    pg_catalog.jsonb_build_object(\n      'reason_code', p_reason_code,\n      'revoked_grants', v_revoked_grants,\n      'ended_engagements', v_ended_engagements,\n      'ended_assignments', v_ended_assignments,\n      'ended_consents', v_ended_consents\n    )\n  );\nEND\n$function$\n",
@@ -12475,6 +13276,42 @@
       "definition": "CREATE OR REPLACE FUNCTION public.handle_new_user()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare\n    full_name text;\n    user_email text;\n    base_username text;\n    unique_suffix text;\n    final_username text;\nbegin\n    full_name := nullif(btrim(coalesce(\n        new.raw_user_meta_data->>'full_name',\n        new.raw_user_meta_data->>'name',\n        concat_ws(' ',\n            new.raw_user_meta_data->>'first_name',\n            new.raw_user_meta_data->>'last_name'\n        )\n    )), '');\n\n    user_email := coalesce(\n        nullif(new.email, ''),\n        nullif(new.raw_user_meta_data->>'email', ''),\n        new.id::text || '@users.local'\n    );\n\n    base_username := coalesce(\n        nullif(concat_ws('',\n            new.raw_user_meta_data->>'first_name',\n            new.raw_user_meta_data->>'last_name'\n        ), ''),\n        split_part(user_email, '@', 1),\n        'user'\n    );\n\n    unique_suffix := substring(replace(new.id::text, '-', '') from 1 for 6);\n    final_username := left(base_username || unique_suffix, 50);\n\n    insert into public.users (id, name, email, email_verified, image)\n    values (\n        new.id,\n        coalesce(full_name, split_part(user_email, '@', 1), 'User'),\n        user_email,\n        coalesce(new.email_confirmed_at is not null, false),\n        new.raw_user_meta_data->>'avatar_url'\n    )\n    on conflict (id) do update\n    set\n        name = coalesce(public.users.name, excluded.name),\n        email = coalesce(public.users.email, excluded.email),\n        image = coalesce(public.users.image, excluded.image),\n        updated_at = now();\n\n    insert into public.profiles (id, email, full_name, username, avatar_url)\n    values (\n        new.id,\n        new.email,\n        full_name,\n        final_username,\n        new.raw_user_meta_data->>'avatar_url'\n    )\n    on conflict (id) do update\n    set\n        email = coalesce(public.profiles.email, excluded.email),\n        full_name = coalesce(public.profiles.full_name, excluded.full_name),\n        username = coalesce(public.profiles.username, excluded.username),\n        avatar_url = coalesce(public.profiles.avatar_url, excluded.avatar_url),\n        updated_at = now();\n\n    return new;\nend;\n$function$\n",
       "volatility": "v",
       "securityDefiner": true
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=\"\""],
+      "identity": "prevent_check_in_occurrence_mutation()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_check_in_occurrence_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\nBEGIN\n  RAISE EXCEPTION 'check-in occurrences are append-only snapshots'\n    USING ERRCODE = '23514', CONSTRAINT = 'check_in_occurrences_immutable';\nEND;\n$function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=\"\""],
+      "identity": "prevent_check_in_schedule_identity_mutation()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_check_in_schedule_identity_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\nBEGIN\n  IF EXISTS (SELECT 1 FROM public.check_in_occurrences WHERE schedule_id = OLD.id)\n    AND (NEW.organization_id IS DISTINCT FROM OLD.organization_id\n      OR NEW.engagement_id IS DISTINCT FROM OLD.engagement_id\n      OR NEW.athlete_profile_id IS DISTINCT FROM OLD.athlete_profile_id\n      OR NEW.template_version_id IS DISTINCT FROM OLD.template_version_id\n      OR NEW.weekday IS DISTINCT FROM OLD.weekday\n      OR NEW.local_time IS DISTINCT FROM OLD.local_time\n      OR NEW.time_zone IS DISTINCT FROM OLD.time_zone)\n  THEN\n    RAISE EXCEPTION 'check-in schedule identity is immutable after an occurrence exists; create a replacement schedule'\n      USING ERRCODE = '23514', CONSTRAINT = 'check_in_schedules_identity_immutable';\n  END IF;\n  RETURN NEW;\nEND;\n$function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=\"\""],
+      "identity": "prevent_check_in_submission_mutation()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_check_in_submission_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\nBEGIN\n  IF TG_OP = 'INSERT' THEN\n    IF NEW.reviewed_at IS NOT NULL\n      OR NEW.reviewed_by_membership_id IS NOT NULL\n      OR NEW.reviewed_by_profile_id IS NOT NULL THEN\n      RAISE EXCEPTION 'check-in submissions must begin unreviewed'\n        USING ERRCODE = '23514', CONSTRAINT = 'check_in_submissions_initial_review_check';\n    END IF;\n    RETURN NEW;\n  END IF;\n  IF TG_OP = 'DELETE' THEN\n    RAISE EXCEPTION 'check-in submissions are retained'\n      USING ERRCODE = '23514', CONSTRAINT = 'check_in_submissions_immutable';\n  END IF;\n  IF NEW.id IS DISTINCT FROM OLD.id\n    OR NEW.organization_id IS DISTINCT FROM OLD.organization_id\n    OR NEW.occurrence_id IS DISTINCT FROM OLD.occurrence_id\n    OR NEW.engagement_id IS DISTINCT FROM OLD.engagement_id\n    OR NEW.athlete_profile_id IS DISTINCT FROM OLD.athlete_profile_id\n    OR NEW.template_version_id IS DISTINCT FROM OLD.template_version_id\n    OR NEW.submission_revision IS DISTINCT FROM OLD.submission_revision\n    OR NEW.idempotency_key IS DISTINCT FROM OLD.idempotency_key\n    OR NEW.answers IS DISTINCT FROM OLD.answers\n    OR NEW.submitted_at IS DISTINCT FROM OLD.submitted_at THEN\n    RAISE EXCEPTION 'check-in submission answers and identity are immutable'\n      USING ERRCODE = '23514', CONSTRAINT = 'check_in_submissions_immutable';\n  END IF;\n  IF OLD.reviewed_at IS NOT NULL\n    OR OLD.reviewed_by_membership_id IS NOT NULL\n    OR OLD.reviewed_by_profile_id IS NOT NULL\n    OR NEW.reviewed_at IS NULL\n    OR NEW.reviewed_by_membership_id IS NULL\n    OR NEW.reviewed_by_profile_id IS NULL THEN\n    RAISE EXCEPTION 'check-in review may be recorded exactly once'\n      USING ERRCODE = '23514', CONSTRAINT = 'check_in_submissions_review_once';\n  END IF;\n  RETURN NEW;\nEND;\n$function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=\"\""],
+      "identity": "prevent_check_in_template_version_mutation()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_check_in_template_version_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\nBEGIN\n  RAISE EXCEPTION 'published check-in template versions are immutable'\n    USING ERRCODE = '23514', CONSTRAINT = 'check_in_template_versions_immutable';\nEND;\n$function$\n",
+      "volatility": "v",
+      "securityDefiner": false
     },
     {
       "acl": "",
@@ -12655,6 +13492,33 @@
       "definition": "CREATE OR REPLACE FUNCTION public.validate_activity_segment_set(target_activity_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare\n  parent_record record;\n  segment_count integer;\n  max_ordinal integer;\n  summed_active bigint;\n  summed_moving bigint;\n  complete_count integer;\nbegin\n  select elapsed_ms, active_ms, moving_ms, timing_coverage,\n    entry_provenance, manual_activity_category, diary_date, diary_timezone,\n    started_at, finished_at\n    into parent_record\n  from public.activities where id = target_activity_id;\n  if not found then return; end if;\n\n  -- Manual diary observations are scalar evidence. The immediate manual\n  -- contract check owns their nullable measurement fields; they have no segment set.\n  if parent_record.entry_provenance = 'manual'\n    and parent_record.manual_activity_category is not null\n    and parent_record.diary_date is not null\n    and parent_record.diary_timezone is not null\n    and ((parent_record.started_at is null and parent_record.finished_at is null)\n      or (parent_record.started_at is not null and parent_record.finished_at is not null)) then\n    return;\n  end if;\n\n  select count(*), max(ordinal), sum(active_ms), sum(moving_ms),\n    count(*) filter(where timing_coverage='complete' and active_ms is not null and moving_ms is not null)\n    into segment_count, max_ordinal, summed_active, summed_moving, complete_count\n  from public.activity_segments where activity_id = target_activity_id;\n  if segment_count = 0 or max_ordinal <> segment_count - 1 then\n    raise exception 'activity % segment ordinals must be contiguous from zero', target_activity_id;\n  end if;\n  if exists (select 1 from public.activity_segments where activity_id = target_activity_id and end_offset_ms > parent_record.elapsed_ms) then\n    raise exception 'activity % segment exceeds parent elapsed bounds', target_activity_id;\n  end if;\n  if exists (\n    select 1 from public.activity_segments s\n    left join public.activity_segments p on p.activity_id=s.activity_id and p.ordinal=s.ordinal-1\n    left join public.activity_segments n on n.activity_id=s.activity_id and n.ordinal=s.ordinal+1\n    where s.activity_id=target_activity_id and s.role='transition'\n      and (p.role is distinct from 'activity' or n.role is distinct from 'activity')\n  ) then raise exception 'activity % transition must be between activity segments', target_activity_id; end if;\n  if exists (\n    select 1 from public.activity_segments s join public.activity_segments n\n      on n.activity_id=s.activity_id and n.ordinal=s.ordinal+1\n    where s.activity_id=target_activity_id and s.role='rest' and n.role='rest'\n  ) then raise exception 'activity % has consecutive rest segments', target_activity_id; end if;\n  if parent_record.timing_coverage='complete' then\n    if complete_count<>segment_count then\n      raise exception 'activity % complete parent requires complete timing for every segment',target_activity_id;\n    end if;\n    if parent_record.active_ms is distinct from summed_active or parent_record.moving_ms is distinct from summed_moving then\n      raise exception 'activity % complete timing does not reconcile with segments',target_activity_id;\n    end if;\n  elsif parent_record.active_ms is not null or parent_record.moving_ms is not null then\n    raise exception 'activity % partial/unavailable parent timing totals must be null',target_activity_id;\n  end if;\n  if exists (\n    select 1 from public.activity_segments s\n    where s.activity_id=target_activity_id\n      and (s.summary->>'version' is distinct from s.summary_version::text\n        or s.summary#>>'{timing,timingCoverage}' is distinct from s.timing_coverage\n        or (s.summary#>>'{timing,activeMs}')::bigint is distinct from s.active_ms\n        or (s.summary#>>'{timing,movingMs}')::bigint is distinct from s.moving_ms)\n  ) then raise exception 'activity % segment summary timing/version mismatch', target_activity_id; end if;\nend $function$\n",
       "volatility": "v",
       "securityDefiner": true
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=\"\""],
+      "identity": "validate_check_in_occurrence_schedule()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.validate_check_in_occurrence_schedule()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\nDECLARE\n  expected_weekday text;\n  actual_weekday text;\nBEGIN\n  SELECT schedule.weekday INTO expected_weekday\n  FROM public.check_in_schedules AS schedule\n  WHERE schedule.organization_id = NEW.organization_id AND schedule.id = NEW.schedule_id;\n  actual_weekday := CASE extract(dow FROM NEW.period_start_date)::integer\n    WHEN 0 THEN 'sunday' WHEN 1 THEN 'monday' WHEN 2 THEN 'tuesday' WHEN 3 THEN 'wednesday'\n    WHEN 4 THEN 'thursday' WHEN 5 THEN 'friday' WHEN 6 THEN 'saturday'\n  END;\n  IF expected_weekday IS NULL OR actual_weekday <> expected_weekday THEN\n    RAISE EXCEPTION 'check-in occurrence period must match its schedule weekday'\n      USING ERRCODE = '23514', CONSTRAINT = 'check_in_occurrences_schedule_weekday_check';\n  END IF;\n  IF NOT public.check_in_local_civil_time_is_valid(\n    NEW.period_start_date, NEW.scheduled_local_time, NEW.time_zone\n  ) THEN\n    RAISE EXCEPTION 'check-in occurrence must use an unambiguous existing local civil time'\n      USING ERRCODE = '23514', CONSTRAINT = 'check_in_occurrences_local_civil_time_check';\n  END IF;\n  RETURN NEW;\nEND;\n$function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=\"\""],
+      "identity": "validate_check_in_submission_payload()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.validate_check_in_submission_payload()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\nDECLARE\n  version_questions jsonb;\nBEGIN\n  SELECT questions INTO version_questions\n  FROM public.check_in_template_versions\n  WHERE organization_id = NEW.organization_id AND id = NEW.template_version_id;\n  IF NOT public.check_in_submission_answers_are_valid(version_questions, NEW.answers) THEN\n    RAISE EXCEPTION 'check-in submission answers do not match the published version contract'\n      USING ERRCODE = '23514', CONSTRAINT = 'check_in_submissions_answers_contract';\n  END IF;\n  RETURN NEW;\nEND;\n$function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=\"\""],
+      "identity": "validate_check_in_template_version_payload()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.validate_check_in_template_version_payload()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\nBEGIN\n  IF NOT public.check_in_template_questions_are_valid(NEW.questions) THEN\n    RAISE EXCEPTION 'check-in template questions do not match the published contract'\n      USING ERRCODE = '23514', CONSTRAINT = 'check_in_template_versions_questions_contract';\n  END IF;\n  RETURN NEW;\nEND;\n$function$\n",
+      "volatility": "v",
+      "securityDefiner": false
     },
     {
       "acl": "",
@@ -14293,6 +15157,321 @@
       "table": "chatbot_turns",
       "validated": true,
       "definition": "UNIQUE (thread_id, request_id)"
+    },
+    {
+      "kind": "f",
+      "name": "check_in_follow_ups_assignee_fkey",
+      "table": "check_in_follow_ups",
+      "validated": true,
+      "definition": "FOREIGN KEY (organization_id, assigned_to_membership_id) REFERENCES organization_memberships(organization_id, id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "f",
+      "name": "check_in_follow_ups_creator_fkey",
+      "table": "check_in_follow_ups",
+      "validated": true,
+      "definition": "FOREIGN KEY (organization_id, created_by_membership_id) REFERENCES organization_memberships(organization_id, id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "check_in_follow_ups_description_non_empty",
+      "table": "check_in_follow_ups",
+      "validated": true,
+      "definition": "CHECK (btrim(description) <> ''::text)"
+    },
+    {
+      "kind": "p",
+      "name": "check_in_follow_ups_pkey",
+      "table": "check_in_follow_ups",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "kind": "f",
+      "name": "check_in_follow_ups_submission_fkey",
+      "table": "check_in_follow_ups",
+      "validated": true,
+      "definition": "FOREIGN KEY (organization_id, submission_id, engagement_id, athlete_profile_id) REFERENCES check_in_submissions(organization_id, id, engagement_id, athlete_profile_id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "check_in_occurrences_local_time_check",
+      "table": "check_in_occurrences",
+      "validated": true,
+      "definition": "CHECK (scheduled_local_time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'::text)"
+    },
+    {
+      "kind": "u",
+      "name": "check_in_occurrences_organization_id_id_unique",
+      "table": "check_in_occurrences",
+      "validated": true,
+      "definition": "UNIQUE (organization_id, id)"
+    },
+    {
+      "kind": "p",
+      "name": "check_in_occurrences_pkey",
+      "table": "check_in_occurrences",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "kind": "f",
+      "name": "check_in_occurrences_schedule_binding_fkey",
+      "table": "check_in_occurrences",
+      "validated": true,
+      "definition": "FOREIGN KEY (organization_id, schedule_id, engagement_id, athlete_profile_id, template_version_id, scheduled_local_time, time_zone) REFERENCES check_in_schedules(organization_id, id, engagement_id, athlete_profile_id, template_version_id, local_time, time_zone) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "u",
+      "name": "check_in_occurrences_schedule_period_unique",
+      "table": "check_in_occurrences",
+      "validated": true,
+      "definition": "UNIQUE (schedule_id, period_start_date)"
+    },
+    {
+      "kind": "u",
+      "name": "check_in_occurrences_submission_binding_unique",
+      "table": "check_in_occurrences",
+      "validated": true,
+      "definition": "UNIQUE (organization_id, id, engagement_id, athlete_profile_id, template_version_id)"
+    },
+    {
+      "kind": "c",
+      "name": "check_in_occurrences_time_zone_non_empty",
+      "table": "check_in_occurrences",
+      "validated": true,
+      "definition": "CHECK (btrim(time_zone) <> ''::text)"
+    },
+    {
+      "kind": "c",
+      "name": "check_in_occurrences_time_zone_valid",
+      "table": "check_in_occurrences",
+      "validated": true,
+      "definition": "CHECK (check_in_is_valid_time_zone(time_zone))"
+    },
+    {
+      "kind": "f",
+      "name": "check_in_schedules_engagement_fkey",
+      "table": "check_in_schedules",
+      "validated": true,
+      "definition": "FOREIGN KEY (organization_id, engagement_id, athlete_profile_id) REFERENCES coaching_engagements(organization_id, id, athlete_profile_id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "check_in_schedules_local_time_check",
+      "table": "check_in_schedules",
+      "validated": true,
+      "definition": "CHECK (local_time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'::text)"
+    },
+    {
+      "kind": "u",
+      "name": "check_in_schedules_occurrence_binding_unique",
+      "table": "check_in_schedules",
+      "validated": true,
+      "definition": "UNIQUE (organization_id, id, engagement_id, athlete_profile_id, template_version_id, local_time, time_zone)"
+    },
+    {
+      "kind": "u",
+      "name": "check_in_schedules_organization_id_id_unique",
+      "table": "check_in_schedules",
+      "validated": true,
+      "definition": "UNIQUE (organization_id, id)"
+    },
+    {
+      "kind": "p",
+      "name": "check_in_schedules_pkey",
+      "table": "check_in_schedules",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "kind": "f",
+      "name": "check_in_schedules_template_version_fkey",
+      "table": "check_in_schedules",
+      "validated": true,
+      "definition": "FOREIGN KEY (organization_id, template_version_id) REFERENCES check_in_template_versions(organization_id, id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "check_in_schedules_time_zone_non_empty",
+      "table": "check_in_schedules",
+      "validated": true,
+      "definition": "CHECK (btrim(time_zone) <> ''::text)"
+    },
+    {
+      "kind": "c",
+      "name": "check_in_schedules_time_zone_valid",
+      "table": "check_in_schedules",
+      "validated": true,
+      "definition": "CHECK (check_in_is_valid_time_zone(time_zone))"
+    },
+    {
+      "kind": "c",
+      "name": "check_in_schedules_weekday_check",
+      "table": "check_in_schedules",
+      "validated": true,
+      "definition": "CHECK (weekday = ANY (ARRAY['monday'::text, 'tuesday'::text, 'wednesday'::text, 'thursday'::text, 'friday'::text, 'saturday'::text, 'sunday'::text]))"
+    },
+    {
+      "kind": "c",
+      "name": "check_in_submissions_answers_check",
+      "table": "check_in_submissions",
+      "validated": true,
+      "definition": "CHECK (jsonb_typeof(answers) = 'array'::text AND jsonb_array_length(answers) <= 20 AND pg_column_size(answers) <= 65536)"
+    },
+    {
+      "kind": "u",
+      "name": "check_in_submissions_athlete_idempotency_unique",
+      "table": "check_in_submissions",
+      "validated": true,
+      "definition": "UNIQUE (athlete_profile_id, idempotency_key)"
+    },
+    {
+      "kind": "u",
+      "name": "check_in_submissions_follow_up_binding_unique",
+      "table": "check_in_submissions",
+      "validated": true,
+      "definition": "UNIQUE (organization_id, id, engagement_id, athlete_profile_id)"
+    },
+    {
+      "kind": "u",
+      "name": "check_in_submissions_occurrence_athlete_unique",
+      "table": "check_in_submissions",
+      "validated": true,
+      "definition": "UNIQUE (occurrence_id, athlete_profile_id)"
+    },
+    {
+      "kind": "f",
+      "name": "check_in_submissions_occurrence_fkey",
+      "table": "check_in_submissions",
+      "validated": true,
+      "definition": "FOREIGN KEY (organization_id, occurrence_id, engagement_id, athlete_profile_id, template_version_id) REFERENCES check_in_occurrences(organization_id, id, engagement_id, athlete_profile_id, template_version_id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "u",
+      "name": "check_in_submissions_organization_id_id_unique",
+      "table": "check_in_submissions",
+      "validated": true,
+      "definition": "UNIQUE (organization_id, id)"
+    },
+    {
+      "kind": "p",
+      "name": "check_in_submissions_pkey",
+      "table": "check_in_submissions",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "kind": "c",
+      "name": "check_in_submissions_review_check",
+      "table": "check_in_submissions",
+      "validated": true,
+      "definition": "CHECK ((reviewed_at IS NULL) = (reviewed_by_membership_id IS NULL) AND (reviewed_at IS NULL) = (reviewed_by_profile_id IS NULL) AND (reviewed_at IS NULL OR reviewed_at >= submitted_at))"
+    },
+    {
+      "kind": "f",
+      "name": "check_in_submissions_reviewer_fkey",
+      "table": "check_in_submissions",
+      "validated": true,
+      "definition": "FOREIGN KEY (organization_id, reviewed_by_membership_id, reviewed_by_profile_id) REFERENCES organization_memberships(organization_id, id, profile_id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "check_in_submissions_revision_check",
+      "table": "check_in_submissions",
+      "validated": true,
+      "definition": "CHECK (submission_revision > 0)"
+    },
+    {
+      "kind": "c",
+      "name": "check_in_template_versions_name_non_empty",
+      "table": "check_in_template_versions",
+      "validated": true,
+      "definition": "CHECK (btrim(name) <> ''::text)"
+    },
+    {
+      "kind": "c",
+      "name": "check_in_template_versions_number_check",
+      "table": "check_in_template_versions",
+      "validated": true,
+      "definition": "CHECK (version_number > 0)"
+    },
+    {
+      "kind": "u",
+      "name": "check_in_template_versions_organization_id_id_unique",
+      "table": "check_in_template_versions",
+      "validated": true,
+      "definition": "UNIQUE (organization_id, id)"
+    },
+    {
+      "kind": "p",
+      "name": "check_in_template_versions_pkey",
+      "table": "check_in_template_versions",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "kind": "f",
+      "name": "check_in_template_versions_publisher_fkey",
+      "table": "check_in_template_versions",
+      "validated": true,
+      "definition": "FOREIGN KEY (organization_id, published_by_membership_id) REFERENCES organization_memberships(organization_id, id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "check_in_template_versions_questions_check",
+      "table": "check_in_template_versions",
+      "validated": true,
+      "definition": "CHECK (jsonb_typeof(questions) = 'array'::text AND jsonb_array_length(questions) >= 1 AND jsonb_array_length(questions) <= 20 AND pg_column_size(questions) <= 65536)"
+    },
+    {
+      "kind": "f",
+      "name": "check_in_template_versions_template_fkey",
+      "table": "check_in_template_versions",
+      "validated": true,
+      "definition": "FOREIGN KEY (organization_id, template_id) REFERENCES check_in_templates(organization_id, id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "u",
+      "name": "check_in_template_versions_template_version_unique",
+      "table": "check_in_template_versions",
+      "validated": true,
+      "definition": "UNIQUE (template_id, version_number)"
+    },
+    {
+      "kind": "f",
+      "name": "check_in_templates_creator_fkey",
+      "table": "check_in_templates",
+      "validated": true,
+      "definition": "FOREIGN KEY (organization_id, created_by_membership_id) REFERENCES organization_memberships(organization_id, id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "check_in_templates_name_non_empty",
+      "table": "check_in_templates",
+      "validated": true,
+      "definition": "CHECK (btrim(name) <> ''::text)"
+    },
+    {
+      "kind": "f",
+      "name": "check_in_templates_organization_id_fkey",
+      "table": "check_in_templates",
+      "validated": true,
+      "definition": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "u",
+      "name": "check_in_templates_organization_id_id_unique",
+      "table": "check_in_templates",
+      "validated": true,
+      "definition": "UNIQUE (organization_id, id)"
+    },
+    {
+      "kind": "p",
+      "name": "check_in_templates_pkey",
+      "table": "check_in_templates",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
     },
     {
       "kind": "c",
@@ -16914,6 +18093,54 @@
       "rls": true,
       "kind": "r",
       "name": "chatbot_turns",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "check_in_follow_ups",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "check_in_occurrences",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "check_in_schedules",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "check_in_submissions",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "check_in_template_versions",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "check_in_templates",
       "managed": true,
       "forceRls": false
     },

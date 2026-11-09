@@ -880,6 +880,336 @@ export const athleteDataSharingConsents = pgTable(
   ],
 );
 
+/**
+ * A template is the organization-owned container; only its published versions
+ * are used for schedules and submissions. Published content lives on the
+ * version so a later template edit cannot reinterpret historical answers.
+ */
+export const checkInTemplates = pgTable(
+  "check_in_templates",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organization_id: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "restrict" }),
+    name: text("name").notNull(),
+    created_by_membership_id: uuid("created_by_membership_id").notNull(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("check_in_templates_organization_id_id_unique").on(table.organization_id, table.id),
+    foreignKey({
+      columns: [table.organization_id, table.created_by_membership_id],
+      foreignColumns: [organizationMemberships.organization_id, organizationMemberships.id],
+      name: "check_in_templates_creator_fkey",
+    }).onDelete("restrict"),
+    check("check_in_templates_name_non_empty", sql`btrim(${table.name}) <> ''`),
+  ],
+);
+
+export const checkInTemplateVersions = pgTable(
+  "check_in_template_versions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organization_id: uuid("organization_id").notNull(),
+    template_id: uuid("template_id").notNull(),
+    version_number: integer("version_number").notNull(),
+    name: text("name").notNull(),
+    questions: jsonb("questions").notNull(),
+    published_by_membership_id: uuid("published_by_membership_id").notNull(),
+    published_at: timestamp("published_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("check_in_template_versions_organization_id_id_unique").on(
+      table.organization_id,
+      table.id,
+    ),
+    unique("check_in_template_versions_template_version_unique").on(
+      table.template_id,
+      table.version_number,
+    ),
+    foreignKey({
+      columns: [table.organization_id, table.template_id],
+      foreignColumns: [checkInTemplates.organization_id, checkInTemplates.id],
+      name: "check_in_template_versions_template_fkey",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.organization_id, table.published_by_membership_id],
+      foreignColumns: [organizationMemberships.organization_id, organizationMemberships.id],
+      name: "check_in_template_versions_publisher_fkey",
+    }).onDelete("restrict"),
+    check("check_in_template_versions_number_check", sql`${table.version_number} > 0`),
+    check("check_in_template_versions_name_non_empty", sql`btrim(${table.name}) <> ''`),
+    check(
+      "check_in_template_versions_questions_check",
+      sql`jsonb_typeof(${table.questions}) = 'array' and jsonb_array_length(${table.questions}) between 1 and 20 and pg_column_size(${table.questions}) <= 65536`,
+    ),
+  ],
+);
+
+export const checkInSchedules = pgTable(
+  "check_in_schedules",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organization_id: uuid("organization_id").notNull(),
+    engagement_id: uuid("engagement_id").notNull(),
+    athlete_profile_id: uuid("athlete_profile_id").notNull(),
+    template_version_id: uuid("template_version_id").notNull(),
+    weekday: text("weekday", {
+      enum: ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"],
+    }).notNull(),
+    local_time: text("local_time").notNull(),
+    time_zone: text("time_zone").notNull(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("check_in_schedules_organization_id_id_unique").on(table.organization_id, table.id),
+    unique("check_in_schedules_occurrence_binding_unique").on(
+      table.organization_id,
+      table.id,
+      table.engagement_id,
+      table.athlete_profile_id,
+      table.template_version_id,
+      table.local_time,
+      table.time_zone,
+    ),
+    foreignKey({
+      columns: [table.organization_id, table.engagement_id, table.athlete_profile_id],
+      foreignColumns: [
+        coachingEngagements.organization_id,
+        coachingEngagements.id,
+        coachingEngagements.athlete_profile_id,
+      ],
+      name: "check_in_schedules_engagement_fkey",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.organization_id, table.template_version_id],
+      foreignColumns: [checkInTemplateVersions.organization_id, checkInTemplateVersions.id],
+      name: "check_in_schedules_template_version_fkey",
+    }).onDelete("restrict"),
+    index("check_in_schedules_athlete_idx").on(
+      table.organization_id,
+      table.athlete_profile_id,
+      table.created_at,
+    ),
+    check(
+      "check_in_schedules_weekday_check",
+      sql`${table.weekday} in ('monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday')`,
+    ),
+    check(
+      "check_in_schedules_local_time_check",
+      sql`${table.local_time} ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'`,
+    ),
+    check("check_in_schedules_time_zone_non_empty", sql`btrim(${table.time_zone}) <> ''`),
+    check(
+      "check_in_schedules_time_zone_valid",
+      sql`public.check_in_is_valid_time_zone(${table.time_zone})`,
+    ),
+  ],
+);
+
+export const checkInOccurrences = pgTable(
+  "check_in_occurrences",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organization_id: uuid("organization_id").notNull(),
+    schedule_id: uuid("schedule_id").notNull(),
+    engagement_id: uuid("engagement_id").notNull(),
+    athlete_profile_id: uuid("athlete_profile_id").notNull(),
+    template_version_id: uuid("template_version_id").notNull(),
+    period_start_date: date("period_start_date", { mode: "string" }).notNull(),
+    scheduled_local_time: text("scheduled_local_time").notNull(),
+    time_zone: text("time_zone").notNull(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("check_in_occurrences_organization_id_id_unique").on(table.organization_id, table.id),
+    unique("check_in_occurrences_submission_binding_unique").on(
+      table.organization_id,
+      table.id,
+      table.engagement_id,
+      table.athlete_profile_id,
+      table.template_version_id,
+    ),
+    unique("check_in_occurrences_schedule_period_unique").on(
+      table.schedule_id,
+      table.period_start_date,
+    ),
+    foreignKey({
+      columns: [
+        table.organization_id,
+        table.schedule_id,
+        table.engagement_id,
+        table.athlete_profile_id,
+        table.template_version_id,
+        table.scheduled_local_time,
+        table.time_zone,
+      ],
+      foreignColumns: [
+        checkInSchedules.organization_id,
+        checkInSchedules.id,
+        checkInSchedules.engagement_id,
+        checkInSchedules.athlete_profile_id,
+        checkInSchedules.template_version_id,
+        checkInSchedules.local_time,
+        checkInSchedules.time_zone,
+      ],
+      name: "check_in_occurrences_schedule_binding_fkey",
+    }).onDelete("restrict"),
+    index("check_in_occurrences_athlete_period_idx").on(
+      table.organization_id,
+      table.athlete_profile_id,
+      table.period_start_date,
+    ),
+    check(
+      "check_in_occurrences_local_time_check",
+      sql`${table.scheduled_local_time} ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'`,
+    ),
+    check("check_in_occurrences_time_zone_non_empty", sql`btrim(${table.time_zone}) <> ''`),
+    check(
+      "check_in_occurrences_time_zone_valid",
+      sql`public.check_in_is_valid_time_zone(${table.time_zone})`,
+    ),
+  ],
+);
+
+export const checkInSubmissions = pgTable(
+  "check_in_submissions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organization_id: uuid("organization_id").notNull(),
+    occurrence_id: uuid("occurrence_id").notNull(),
+    engagement_id: uuid("engagement_id").notNull(),
+    athlete_profile_id: uuid("athlete_profile_id").notNull(),
+    template_version_id: uuid("template_version_id").notNull(),
+    submission_revision: integer("submission_revision").notNull(),
+    idempotency_key: uuid("idempotency_key").notNull(),
+    answers: jsonb("answers").notNull(),
+    submitted_at: timestamp("submitted_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    reviewed_at: timestamp("reviewed_at", { withTimezone: true, mode: "date" }),
+    reviewed_by_membership_id: uuid("reviewed_by_membership_id"),
+    reviewed_by_profile_id: uuid("reviewed_by_profile_id"),
+  },
+  (table) => [
+    unique("check_in_submissions_organization_id_id_unique").on(table.organization_id, table.id),
+    unique("check_in_submissions_follow_up_binding_unique").on(
+      table.organization_id,
+      table.id,
+      table.engagement_id,
+      table.athlete_profile_id,
+    ),
+    unique("check_in_submissions_occurrence_athlete_unique").on(
+      table.occurrence_id,
+      table.athlete_profile_id,
+    ),
+    unique("check_in_submissions_athlete_idempotency_unique").on(
+      table.athlete_profile_id,
+      table.idempotency_key,
+    ),
+    foreignKey({
+      columns: [
+        table.organization_id,
+        table.occurrence_id,
+        table.engagement_id,
+        table.athlete_profile_id,
+        table.template_version_id,
+      ],
+      foreignColumns: [
+        checkInOccurrences.organization_id,
+        checkInOccurrences.id,
+        checkInOccurrences.engagement_id,
+        checkInOccurrences.athlete_profile_id,
+        checkInOccurrences.template_version_id,
+      ],
+      name: "check_in_submissions_occurrence_fkey",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [
+        table.organization_id,
+        table.reviewed_by_membership_id,
+        table.reviewed_by_profile_id,
+      ],
+      foreignColumns: [
+        organizationMemberships.organization_id,
+        organizationMemberships.id,
+        organizationMemberships.profile_id,
+      ],
+      name: "check_in_submissions_reviewer_fkey",
+    }).onDelete("restrict"),
+    index("check_in_submissions_athlete_submitted_idx").on(
+      table.organization_id,
+      table.athlete_profile_id,
+      table.submitted_at,
+    ),
+    check("check_in_submissions_revision_check", sql`${table.submission_revision} > 0`),
+    check(
+      "check_in_submissions_answers_check",
+      sql`jsonb_typeof(${table.answers}) = 'array' and jsonb_array_length(${table.answers}) <= 20 and pg_column_size(${table.answers}) <= 65536`,
+    ),
+    check(
+      "check_in_submissions_review_check",
+      sql`(${table.reviewed_at} is null) = (${table.reviewed_by_membership_id} is null) and (${table.reviewed_at} is null) = (${table.reviewed_by_profile_id} is null) and (${table.reviewed_at} is null or ${table.reviewed_at} >= ${table.submitted_at})`,
+    ),
+  ],
+);
+
+export const checkInFollowUps = pgTable(
+  "check_in_follow_ups",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organization_id: uuid("organization_id").notNull(),
+    submission_id: uuid("submission_id").notNull(),
+    engagement_id: uuid("engagement_id").notNull(),
+    athlete_profile_id: uuid("athlete_profile_id").notNull(),
+    created_by_membership_id: uuid("created_by_membership_id").notNull(),
+    assigned_to_membership_id: uuid("assigned_to_membership_id"),
+    description: text("description").notNull(),
+    due_date: date("due_date", { mode: "string" }),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [
+        table.organization_id,
+        table.submission_id,
+        table.engagement_id,
+        table.athlete_profile_id,
+      ],
+      foreignColumns: [
+        checkInSubmissions.organization_id,
+        checkInSubmissions.id,
+        checkInSubmissions.engagement_id,
+        checkInSubmissions.athlete_profile_id,
+      ],
+      name: "check_in_follow_ups_submission_fkey",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.organization_id, table.created_by_membership_id],
+      foreignColumns: [organizationMemberships.organization_id, organizationMemberships.id],
+      name: "check_in_follow_ups_creator_fkey",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.organization_id, table.assigned_to_membership_id],
+      foreignColumns: [organizationMemberships.organization_id, organizationMemberships.id],
+      name: "check_in_follow_ups_assignee_fkey",
+    }).onDelete("restrict"),
+    index("check_in_follow_ups_submission_idx").on(table.submission_id, table.created_at),
+    check("check_in_follow_ups_description_non_empty", sql`btrim(${table.description}) <> ''`),
+  ],
+);
+
 export const organizationAuditEvents = pgTable(
   "organization_audit_events",
   {

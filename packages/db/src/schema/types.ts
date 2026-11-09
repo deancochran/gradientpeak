@@ -18,6 +18,12 @@ import type {
   athleteConsentPolicyVersions,
   athleteDataSharingConsents,
   athleteRecalculationQueue,
+  checkInFollowUps,
+  checkInOccurrences,
+  checkInSchedules,
+  checkInSubmissions,
+  checkInTemplates,
+  checkInTemplateVersions,
   coachingAssignments,
   coachingEngagements,
   comments,
@@ -114,6 +120,18 @@ export type AthleteConsentPolicyVersionInsert = InferInsertModel<
 >;
 export type AthleteDataSharingConsentRow = InferSelectModel<typeof athleteDataSharingConsents>;
 export type AthleteDataSharingConsentInsert = InferInsertModel<typeof athleteDataSharingConsents>;
+export type CheckInTemplateRow = InferSelectModel<typeof checkInTemplates>;
+export type CheckInTemplateInsert = InferInsertModel<typeof checkInTemplates>;
+export type CheckInTemplateVersionRow = InferSelectModel<typeof checkInTemplateVersions>;
+export type CheckInTemplateVersionInsert = InferInsertModel<typeof checkInTemplateVersions>;
+export type CheckInScheduleRow = InferSelectModel<typeof checkInSchedules>;
+export type CheckInScheduleInsert = InferInsertModel<typeof checkInSchedules>;
+export type CheckInOccurrenceRow = InferSelectModel<typeof checkInOccurrences>;
+export type CheckInOccurrenceInsert = InferInsertModel<typeof checkInOccurrences>;
+export type CheckInSubmissionRow = InferSelectModel<typeof checkInSubmissions>;
+export type CheckInSubmissionInsert = InferInsertModel<typeof checkInSubmissions>;
+export type CheckInFollowUpRow = InferSelectModel<typeof checkInFollowUps>;
+export type CheckInFollowUpInsert = InferInsertModel<typeof checkInFollowUps>;
 export type OrganizationAuditEventRow = InferSelectModel<typeof organizationAuditEvents>;
 export type OrganizationAuditEventInsert = InferInsertModel<typeof organizationAuditEvents>;
 
