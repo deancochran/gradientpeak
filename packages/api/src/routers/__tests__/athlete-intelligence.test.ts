@@ -655,3 +655,86 @@ describe("athleteIntelligenceRouter.getOrganizationReadModel", () => {
     expect(readModel).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("athleteIntelligenceRouter.getCoachAthleteBikeZones", () => {
+  it("binds the current bike-zone read to the selected organization and metrics scope", async () => {
+    const organizationId = "33333333-3333-4333-8333-333333333333";
+    const readCoachAthleteBikeZones = vi.fn(async () => ({
+      asOf: "2026-08-10T12:00:00.000Z",
+      sport: "bike" as const,
+      publication: { status: "available" as const, publishedRevision: 4, computedAt: null },
+      power: {
+        source: {
+          availability: "unavailable" as const,
+          value: null,
+          unit: "watts" as const,
+          state: "unavailable" as const,
+          freshness: "unavailable" as const,
+          effectiveAt: null,
+          policyVersion: null,
+          method: null,
+          calculationVersion: null,
+          provenance: "unavailable" as const,
+        },
+        zoneAvailability: "unavailable" as const,
+        policyVersion: null,
+        zones: null,
+      },
+      heartRate: {
+        source: {
+          availability: "unavailable" as const,
+          value: null,
+          unit: "beats_per_minute" as const,
+          state: "unavailable" as const,
+          freshness: "unavailable" as const,
+          effectiveAt: null,
+          policyVersion: null,
+          method: null,
+          calculationVersion: null,
+          provenance: "unavailable" as const,
+        },
+        zoneAvailability: "unavailable" as const,
+        policyVersion: null,
+        zones: null,
+      },
+    }));
+    const authorizeOrganizationReadSpy = vi.fn();
+    const authorizeOrganizationRead: typeof withAuthorizedAthleteRead = async (request) => {
+      authorizeOrganizationReadSpy(request);
+      return {
+        decision: { outcome: "allow", scope: request.scope },
+        value: await request.read({} as never),
+      };
+    };
+    const router = createAthleteIntelligenceRouter(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { readCoachAthleteBikeZones },
+      authorizeOrganizationRead,
+    );
+
+    const result = await createRouterCaller(router, {
+      db: {},
+      userId: COACH_ID,
+    }).getCoachAthleteBikeZones({
+      organizationId,
+      athleteProfileId: OWNER_ID,
+    });
+
+    expect(result.sport).toBe("bike");
+    expect(readCoachAthleteBikeZones).toHaveBeenCalledWith(
+      expect.objectContaining({ profileId: OWNER_ID, db: {}, now: expect.any(Date) }),
+    );
+    expect(authorizeOrganizationReadSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorProfileId: COACH_ID,
+        organizationId,
+        athleteProfileId: OWNER_ID,
+        scope: "metrics",
+      }),
+    );
+  });
+});
