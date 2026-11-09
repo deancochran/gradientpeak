@@ -13,7 +13,3 @@ export async function updateMobilePassword(input: {
 }) {
   return authClient.changePassword(input);
 }
-
-export async function deleteMobileAccount() {
-  return authClient.deleteUser({});
-}

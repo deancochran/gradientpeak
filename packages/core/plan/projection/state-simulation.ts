@@ -4,7 +4,7 @@ import type {
   InferredCurrentStateMean,
   InferredCurrentStateUncertainty,
   InferredStateSnapshotMetadata,
-} from "../../schemas/training_plan_structure";
+} from "../../schemas/training-plan-structure";
 import { diffDateOnlyUtcDays } from "../dateOnlyUtc";
 
 export interface PriorInferredStateSnapshotInput {
@@ -17,20 +17,20 @@ export interface PriorInferredStateSnapshotInput {
 
 export function inferCurrentState(input: {
   startDate: string;
-  startingCtl: number;
-  startingAtl: number;
+  startingLongTermLoad: number;
+  startingRecentLoad: number;
   evidenceScore: number;
   priorSnapshot?: PriorInferredStateSnapshotInput;
 }): InferredCurrentState & { metadata: InferredStateSnapshotMetadata } {
   const asOf = toDateTimeUtc(input.startDate);
-  const bootstrapCtl = Math.max(0, input.startingCtl);
-  const bootstrapAtl = Math.max(0, input.startingAtl);
-  const bootstrapTsb = bootstrapCtl - bootstrapAtl;
-  const bootstrapSlb = bootstrapAtl / Math.max(bootstrapCtl, 1);
+  const bootstrapLongTermLoad = Math.max(0, input.startingLongTermLoad);
+  const bootstrapRecentLoad = Math.max(0, input.startingRecentLoad);
+  const bootstrapLoadBalance = bootstrapLongTermLoad - bootstrapRecentLoad;
+  const bootstrapSlb = bootstrapRecentLoad / Math.max(bootstrapLongTermLoad, 1);
   const bootstrapDurability = clamp01(input.evidenceScore) * 100;
   const bootstrapReadiness = Math.max(
     0,
-    Math.min(100, Math.round(50 + bootstrapTsb * 2 + (bootstrapDurability - 50) * 0.25)),
+    Math.min(100, Math.round(50 + bootstrapLoadBalance * 2 + (bootstrapDurability - 50) * 0.25)),
   );
 
   const hasPrior = input.priorSnapshot !== undefined;
@@ -38,9 +38,9 @@ export function inferCurrentState(input: {
     const bootstrapVariance = clamp01(0.8 - clamp01(input.evidenceScore) * 0.6);
     return {
       mean: {
-        ctl: round1(bootstrapCtl),
-        atl: round1(bootstrapAtl),
-        tsb: round1(bootstrapTsb),
+        longTermLoad: round1(bootstrapLongTermLoad),
+        recentLoad: round1(bootstrapRecentLoad),
+        loadBalance: round1(bootstrapLoadBalance),
         slb: round3(Math.max(0, bootstrapSlb)),
         durability: round1(bootstrapDurability),
         readiness: bootstrapReadiness,
@@ -68,13 +68,18 @@ export function inferCurrentState(input: {
     typeof priorAsOf === "string"
       ? Math.max(0, diffDateOnlyUtcDays(priorAsOf.slice(0, 10), input.startDate))
       : 0;
-  const ctlPredictBlend = 1 - Math.exp(-daysSincePrior / 42);
-  const atlPredictBlend = 1 - Math.exp(-daysSincePrior / 7);
+  const longTermLoadPredictBlend = 1 - Math.exp(-daysSincePrior / 42);
+  const recentLoadPredictBlend = 1 - Math.exp(-daysSincePrior / 7);
 
-  const priorCtl = Math.max(0, safeFinite(prior?.mean?.ctl, bootstrapCtl));
-  const priorAtl = Math.max(0, safeFinite(prior?.mean?.atl, bootstrapAtl));
-  const predictedCtl = priorCtl + (bootstrapCtl - priorCtl) * ctlPredictBlend;
-  const predictedAtl = priorAtl + (bootstrapAtl - priorAtl) * atlPredictBlend;
+  const priorLongTermLoad = Math.max(
+    0,
+    safeFinite(prior?.mean?.longTermLoad, bootstrapLongTermLoad),
+  );
+  const priorRecentLoad = Math.max(0, safeFinite(prior?.mean?.recentLoad, bootstrapRecentLoad));
+  const predictedLongTermLoad =
+    priorLongTermLoad + (bootstrapLongTermLoad - priorLongTermLoad) * longTermLoadPredictBlend;
+  const predictedRecentLoad =
+    priorRecentLoad + (bootstrapRecentLoad - priorRecentLoad) * recentLoadPredictBlend;
 
   const priorVariance = clamp01(safeFinite(prior?.uncertainty?.state_variance, 0.5));
   const priorMissingnessCounter = Math.max(
@@ -93,16 +98,21 @@ export function inferCurrentState(input: {
   );
   const assimilationGain = 1 / (1 + predictedVariance * 6);
 
-  const posteriorCtl = predictedCtl + (bootstrapCtl - predictedCtl) * assimilationGain;
-  const posteriorAtl = predictedAtl + (bootstrapAtl - predictedAtl) * assimilationGain;
-  const posteriorTsb = posteriorCtl - posteriorAtl;
-  const posteriorSlb = posteriorAtl / Math.max(1, posteriorCtl);
+  const posteriorLongTermLoad =
+    predictedLongTermLoad + (bootstrapLongTermLoad - predictedLongTermLoad) * assimilationGain;
+  const posteriorRecentLoad =
+    predictedRecentLoad + (bootstrapRecentLoad - predictedRecentLoad) * assimilationGain;
+  const posteriorLoadBalance = posteriorLongTermLoad - posteriorRecentLoad;
+  const posteriorSlb = posteriorRecentLoad / Math.max(1, posteriorLongTermLoad);
   const posteriorDurability = clamp01(
     safeFinite(prior?.mean?.durability, bootstrapDurability) / 100,
   );
   const posteriorReadiness = Math.max(
     0,
-    Math.min(100, Math.round(50 + posteriorTsb * 2 + (posteriorDurability * 100 - 50) * 0.25)),
+    Math.min(
+      100,
+      Math.round(50 + posteriorLoadBalance * 2 + (posteriorDurability * 100 - 50) * 0.25),
+    ),
   );
   const posteriorVariance = clamp01(predictedVariance * (1 - assimilationGain * 0.5));
   const currentEvidenceScore = clamp01(
@@ -116,9 +126,9 @@ export function inferCurrentState(input: {
 
   return {
     mean: {
-      ctl: round1(posteriorCtl),
-      atl: round1(posteriorAtl),
-      tsb: round1(posteriorTsb),
+      longTermLoad: round1(posteriorLongTermLoad),
+      recentLoad: round1(posteriorRecentLoad),
+      loadBalance: round1(posteriorLoadBalance),
       slb: round3(Math.max(0, posteriorSlb)),
       durability: round1(posteriorDurability * 100),
       readiness: posteriorReadiness,

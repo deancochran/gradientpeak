@@ -43,7 +43,7 @@ describe("auth callback screen", () => {
       data: { intent: "password-reset", token: "reset-token", error: null },
     });
 
-    renderNative(<AuthCallbackScreen />);
+    await renderNative(<AuthCallbackScreen />);
 
     await waitFor(() => {
       expect(replaceMock).toHaveBeenCalledWith({
@@ -61,7 +61,7 @@ describe("auth callback screen", () => {
       data: { intent: "post-sign-in", token: null, error: null },
     });
 
-    renderNative(<AuthCallbackScreen />);
+    await renderNative(<AuthCallbackScreen />);
 
     await waitFor(() => {
       expect(refreshSessionMock).toHaveBeenCalled();
@@ -80,7 +80,7 @@ describe("auth callback screen", () => {
       user: { email: "athlete@example.com", emailVerified: true },
     });
 
-    renderNative(<AuthCallbackScreen />);
+    await renderNative(<AuthCallbackScreen />);
 
     await waitFor(() => {
       expect(refreshSessionMock).toHaveBeenCalled();
@@ -99,7 +99,7 @@ describe("auth callback screen", () => {
       user: { email: "athlete@example.com", emailVerified: false },
     });
 
-    renderNative(<AuthCallbackScreen />);
+    await renderNative(<AuthCallbackScreen />);
 
     await waitFor(() => {
       expect(replaceMock).toHaveBeenCalledWith({
