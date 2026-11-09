@@ -70,6 +70,7 @@ import { Route as CoachingOrganizationsOrganizationIdIndexRouteImport } from './
 import { Route as CoachingOrganizationsOrganizationIdAssignmentsRouteImport } from './routes/_coaching/organizations/$organizationId/assignments'
 import { Route as CoachingOrganizationsOrganizationIdAthletesRouteImport } from './routes/_coaching/organizations/$organizationId/athletes'
 import { Route as CoachingOrganizationsOrganizationIdAuditRouteImport } from './routes/_coaching/organizations/$organizationId/audit'
+import { Route as CoachingOrganizationsOrganizationIdCoachingRouteImport } from './routes/_coaching/organizations/$organizationId/coaching'
 import { Route as CoachingOrganizationsOrganizationIdDashboardRouteImport } from './routes/_coaching/organizations/$organizationId/dashboard'
 import { Route as CoachingOrganizationsOrganizationIdGroupsRouteImport } from './routes/_coaching/organizations/$organizationId/groups'
 import { Route as CoachingOrganizationsOrganizationIdInvitationsRouteImport } from './routes/_coaching/organizations/$organizationId/invitations'
@@ -429,6 +430,12 @@ const CoachingOrganizationsOrganizationIdAuditRoute =
     path: '/audit',
     getParentRoute: () => CoachingOrganizationsOrganizationIdRoute,
   } as any)
+const CoachingOrganizationsOrganizationIdCoachingRoute =
+  CoachingOrganizationsOrganizationIdCoachingRouteImport.update({
+    id: '/coaching',
+    path: '/coaching',
+    getParentRoute: () => CoachingOrganizationsOrganizationIdRoute,
+  } as any)
 const CoachingOrganizationsOrganizationIdDashboardRoute =
   CoachingOrganizationsOrganizationIdDashboardRouteImport.update({
     id: '/dashboard',
@@ -717,6 +724,7 @@ export interface FileRoutesByFullPath {
   '/organizations/$organizationId/assignments': typeof CoachingOrganizationsOrganizationIdAssignmentsRoute
   '/organizations/$organizationId/athletes': typeof CoachingOrganizationsOrganizationIdAthletesRouteWithChildren
   '/organizations/$organizationId/audit': typeof CoachingOrganizationsOrganizationIdAuditRoute
+  '/organizations/$organizationId/coaching': typeof CoachingOrganizationsOrganizationIdCoachingRoute
   '/organizations/$organizationId/dashboard': typeof CoachingOrganizationsOrganizationIdDashboardRoute
   '/organizations/$organizationId/groups': typeof CoachingOrganizationsOrganizationIdGroupsRouteWithChildren
   '/organizations/$organizationId/invitations': typeof CoachingOrganizationsOrganizationIdInvitationsRoute
@@ -811,6 +819,7 @@ export interface FileRoutesByTo {
   '/training-plans': typeof ProtectedTrainingPlansIndexRoute
   '/organizations/$organizationId/assignments': typeof CoachingOrganizationsOrganizationIdAssignmentsRoute
   '/organizations/$organizationId/audit': typeof CoachingOrganizationsOrganizationIdAuditRoute
+  '/organizations/$organizationId/coaching': typeof CoachingOrganizationsOrganizationIdCoachingRoute
   '/organizations/$organizationId/dashboard': typeof CoachingOrganizationsOrganizationIdDashboardRoute
   '/organizations/$organizationId/invitations': typeof CoachingOrganizationsOrganizationIdInvitationsRoute
   '/organizations/$organizationId/roles': typeof CoachingOrganizationsOrganizationIdRolesRoute
@@ -912,6 +921,7 @@ export interface FileRoutesById {
   '/_coaching/organizations/$organizationId/assignments': typeof CoachingOrganizationsOrganizationIdAssignmentsRoute
   '/_coaching/organizations/$organizationId/athletes': typeof CoachingOrganizationsOrganizationIdAthletesRouteWithChildren
   '/_coaching/organizations/$organizationId/audit': typeof CoachingOrganizationsOrganizationIdAuditRoute
+  '/_coaching/organizations/$organizationId/coaching': typeof CoachingOrganizationsOrganizationIdCoachingRoute
   '/_coaching/organizations/$organizationId/dashboard': typeof CoachingOrganizationsOrganizationIdDashboardRoute
   '/_coaching/organizations/$organizationId/groups': typeof CoachingOrganizationsOrganizationIdGroupsRouteWithChildren
   '/_coaching/organizations/$organizationId/invitations': typeof CoachingOrganizationsOrganizationIdInvitationsRoute
@@ -1013,6 +1023,7 @@ export interface FileRouteTypes {
     | '/organizations/$organizationId/assignments'
     | '/organizations/$organizationId/athletes'
     | '/organizations/$organizationId/audit'
+    | '/organizations/$organizationId/coaching'
     | '/organizations/$organizationId/dashboard'
     | '/organizations/$organizationId/groups'
     | '/organizations/$organizationId/invitations'
@@ -1107,6 +1118,7 @@ export interface FileRouteTypes {
     | '/training-plans'
     | '/organizations/$organizationId/assignments'
     | '/organizations/$organizationId/audit'
+    | '/organizations/$organizationId/coaching'
     | '/organizations/$organizationId/dashboard'
     | '/organizations/$organizationId/invitations'
     | '/organizations/$organizationId/roles'
@@ -1207,6 +1219,7 @@ export interface FileRouteTypes {
     | '/_coaching/organizations/$organizationId/assignments'
     | '/_coaching/organizations/$organizationId/athletes'
     | '/_coaching/organizations/$organizationId/audit'
+    | '/_coaching/organizations/$organizationId/coaching'
     | '/_coaching/organizations/$organizationId/dashboard'
     | '/_coaching/organizations/$organizationId/groups'
     | '/_coaching/organizations/$organizationId/invitations'
@@ -1710,6 +1723,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CoachingOrganizationsOrganizationIdAuditRouteImport
       parentRoute: typeof CoachingOrganizationsOrganizationIdRoute
     }
+    '/_coaching/organizations/$organizationId/coaching': {
+      id: '/_coaching/organizations/$organizationId/coaching'
+      path: '/coaching'
+      fullPath: '/organizations/$organizationId/coaching'
+      preLoaderRoute: typeof CoachingOrganizationsOrganizationIdCoachingRouteImport
+      parentRoute: typeof CoachingOrganizationsOrganizationIdRoute
+    }
     '/_coaching/organizations/$organizationId/dashboard': {
       id: '/_coaching/organizations/$organizationId/dashboard'
       path: '/dashboard'
@@ -2037,6 +2057,7 @@ interface CoachingOrganizationsOrganizationIdRouteChildren {
   CoachingOrganizationsOrganizationIdAssignmentsRoute: typeof CoachingOrganizationsOrganizationIdAssignmentsRoute
   CoachingOrganizationsOrganizationIdAthletesRoute: typeof CoachingOrganizationsOrganizationIdAthletesRouteWithChildren
   CoachingOrganizationsOrganizationIdAuditRoute: typeof CoachingOrganizationsOrganizationIdAuditRoute
+  CoachingOrganizationsOrganizationIdCoachingRoute: typeof CoachingOrganizationsOrganizationIdCoachingRoute
   CoachingOrganizationsOrganizationIdDashboardRoute: typeof CoachingOrganizationsOrganizationIdDashboardRoute
   CoachingOrganizationsOrganizationIdGroupsRoute: typeof CoachingOrganizationsOrganizationIdGroupsRouteWithChildren
   CoachingOrganizationsOrganizationIdInvitationsRoute: typeof CoachingOrganizationsOrganizationIdInvitationsRoute
@@ -2053,6 +2074,8 @@ const CoachingOrganizationsOrganizationIdRouteChildren: CoachingOrganizationsOrg
       CoachingOrganizationsOrganizationIdAthletesRouteWithChildren,
     CoachingOrganizationsOrganizationIdAuditRoute:
       CoachingOrganizationsOrganizationIdAuditRoute,
+    CoachingOrganizationsOrganizationIdCoachingRoute:
+      CoachingOrganizationsOrganizationIdCoachingRoute,
     CoachingOrganizationsOrganizationIdDashboardRoute:
       CoachingOrganizationsOrganizationIdDashboardRoute,
     CoachingOrganizationsOrganizationIdGroupsRoute:

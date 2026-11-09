@@ -90,7 +90,8 @@ type OrganizationAdministrationTab =
   | "assignments"
   | "invitations"
   | "groups"
-  | "audit";
+  | "audit"
+  | "coaching";
 
 function OrganizationAdministrationNavigation({
   organizationId,
@@ -111,6 +112,14 @@ function OrganizationAdministrationNavigation({
       aria-label="Organization administration"
       className="-mx-4 flex gap-1 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0"
     >
+      <Link
+        to="/organizations/$organizationId/coaching"
+        params={{ organizationId }}
+        aria-current={activeTab === "coaching" ? "page" : undefined}
+        className={tabClassName("coaching")}
+      >
+        Coaching
+      </Link>
       <Link
         to="/organizations/$organizationId/dashboard"
         params={{ organizationId }}

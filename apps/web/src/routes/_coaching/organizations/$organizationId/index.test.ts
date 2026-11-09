@@ -12,7 +12,7 @@ vi.mock("@tanstack/react-router", () => ({
 import { Route } from "./index";
 
 describe("organization coaching index", () => {
-  it("redirects to the organization dashboard", () => {
+  it("redirects to coaching assignment facts without requiring administration access", () => {
     const beforeLoad = (
       Route as unknown as {
         beforeLoad: (input: { params: { organizationId: string } }) => void;
@@ -23,7 +23,7 @@ describe("organization coaching index", () => {
       beforeLoad({ params: { organizationId: "11111111-1111-4111-8111-111111111111" } }),
     ).toThrow();
     expect(mocks.redirect).toHaveBeenCalledWith({
-      to: "/organizations/$organizationId/dashboard",
+      to: "/organizations/$organizationId/coaching",
       params: { organizationId: "11111111-1111-4111-8111-111111111111" },
     });
   });

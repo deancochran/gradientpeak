@@ -111,6 +111,7 @@ export const apiDomainPolicy = {
   notifications: policy("api/notifications"),
   onboarding: policy("api/onboarding"),
   organizations: policy("api/organizations", {
+    resourceAuthorizationPolicy: "organization.coaching-quality-scope.v1",
     scope: "web_only",
   }),
   plannedSessions: policy("api/planned-sessions"),
@@ -174,6 +175,7 @@ export const apiOperationPolicyOverrides = {
   "publicShare.activity": { authorizationAssurance: "resource_boundary" },
   "publicShare.activityPlan": { authorizationAssurance: "resource_boundary" },
   "publicShare.route": { authorizationAssurance: "resource_boundary" },
+  "organizations.coachingQuality.overview": { authorizationAssurance: "resource_boundary" },
   "publicShare.trainingPlan": { authorizationAssurance: "resource_boundary" },
   "routes.upload": { mutationSafety: "non_idempotent" },
   "social.addComment": { mutationSafety: "non_idempotent" },
@@ -335,6 +337,10 @@ export const apiResourceBoundaryEvidence = {
   "publicShare.route": {
     path: "packages/api/src/routers/__tests__/public-share-visibility.live-db.test.ts",
     testName: "returns only public routes and hides private and missing ids",
+  },
+  "organizations.coachingQuality.overview": {
+    path: "packages/api/src/routers/__tests__/organization-coaching-quality.disposable.live-db.test.ts",
+    testName: "returns only authorized aggregate scope and denies inactive actors",
   },
 } as const satisfies Record<string, z.input<typeof resourceBoundaryEvidenceBindingSchema>>;
 

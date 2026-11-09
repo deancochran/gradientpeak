@@ -40,7 +40,7 @@ export function CoachShell({ organization }: CoachShellProps) {
             organizationName={organization.name}
           />
           <Link
-            to="/organizations/$organizationId/dashboard"
+            to="/organizations/$organizationId/coaching"
             params={{ organizationId: organization.id }}
             className="flex min-w-0 items-center gap-3"
           >
@@ -56,6 +56,18 @@ export function CoachShell({ organization }: CoachShellProps) {
             Coach workspace
           </Badge>
           <nav className="ml-5 hidden items-center xl:flex" aria-label="Coaching navigation">
+            <Link
+              to="/organizations/$organizationId/coaching"
+              params={{ organizationId: organization.id }}
+              aria-current={
+                location.pathname === `/organizations/${organization.id}/coaching`
+                  ? "page"
+                  : undefined
+              }
+              className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-slate-900 hover:text-white aria-[current=page]:bg-slate-800 aria-[current=page]:text-white"
+            >
+              Assignment facts
+            </Link>
             <Link
               to="/organizations/$organizationId/athletes"
               params={{ organizationId: organization.id }}
@@ -137,6 +149,7 @@ function CoachMobileNavigation({
   organizationId: string;
   organizationName: string;
 }) {
+  const location = useLocation();
   return (
     <Sheet>
       <SheetTrigger asChild>
@@ -155,6 +168,20 @@ function CoachMobileNavigation({
           <SheetDescription className="text-slate-400">{organizationName}</SheetDescription>
         </SheetHeader>
         <nav className="grid gap-1 p-3" aria-label="Mobile coaching navigation">
+          <SheetClose asChild>
+            <Link
+              to="/organizations/$organizationId/coaching"
+              params={{ organizationId }}
+              aria-current={
+                location.pathname === `/organizations/${organizationId}/coaching`
+                  ? "page"
+                  : undefined
+              }
+              className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-900 hover:text-white aria-[current=page]:bg-slate-800 aria-[current=page]:text-white"
+            >
+              Assignment facts
+            </Link>
+          </SheetClose>
           <SheetClose asChild>
             <Link
               to="/organizations/$organizationId/audit"
@@ -189,7 +216,12 @@ function CoachMobileNavigation({
             <Link
               to="/organizations/$organizationId/dashboard"
               params={{ organizationId }}
-              className="flex items-center gap-2 rounded-md bg-slate-800 px-3 py-2 text-sm font-medium text-white"
+              aria-current={
+                location.pathname === `/organizations/${organizationId}/dashboard`
+                  ? "page"
+                  : undefined
+              }
+              className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-900 hover:text-white aria-[current=page]:bg-slate-800 aria-[current=page]:text-white"
             >
               <LayoutDashboard className="h-4 w-4" />
               Dashboard

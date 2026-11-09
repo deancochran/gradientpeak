@@ -41,6 +41,7 @@ import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { organizationAuditHistoryRouter } from "./organization-audit-history";
 import { organizationCoachAthletesRouter } from "./organization-coach-athletes";
 import { organizationCoachingAssignmentsRouter } from "./organization-coaching-assignments";
+import { organizationCoachingQualityRouter } from "./organization-coaching-quality";
 import { organizationGroupsRouter } from "./organization-groups";
 import { organizationLifecycleRouter } from "./organization-lifecycle";
 
@@ -532,6 +533,7 @@ export function createOrganizationsRouter(
     organizationGroups: organizationGroupsRouter,
     auditHistory: organizationAuditHistoryRouter,
     coachingAssignments: organizationCoachingAssignmentsRouter,
+    coachingQuality: organizationCoachingQualityRouter,
     coachAthletes: organizationCoachAthletesRouter,
     lifecycle: organizationLifecycleRouter,
     listMine: protectedProcedure

@@ -39,7 +39,7 @@ afterEach(() => {
 });
 
 describe("OrganizationSelector", () => {
-  it("renders safe organization metadata and explicit dashboard links without athlete content", () => {
+  it("keeps the administration overview as the default for an organization administrator", () => {
     render(
       <OrganizationSelectorFrame heading="Coaching organizations">
         <OrganizationSelector
@@ -83,6 +83,34 @@ describe("OrganizationSelector", () => {
     );
     expect(mocks.links).toContainEqual(
       expect.objectContaining({ to: "/organizations", search: { cursor: "next-page" } }),
+    );
+  });
+
+  it("sends a coach-only membership directly to assignment facts", () => {
+    render(
+      <OrganizationSelector
+        page={{
+          items: [
+            {
+              organization: { organizationId: "organization-1", name: "Summit Coaching" },
+              membership: { roles: ["coach"] },
+              isRootOwner: false,
+            },
+          ],
+          nextCursor: null,
+          hasMore: false,
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByRole("link", { name: "Open Summit Coaching coaching workspace" }),
+    ).toBeTruthy();
+    expect(mocks.links).toContainEqual(
+      expect.objectContaining({
+        to: "/organizations/$organizationId/coaching",
+        params: { organizationId: "organization-1" },
+      }),
     );
   });
 

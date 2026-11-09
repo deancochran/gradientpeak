@@ -420,10 +420,13 @@ test("deferred directory response does not retain a prior organization during cl
   await clickCoachNavigationLink(page, "Organizations");
   await expect(page).toHaveURL("/organizations");
   await page
-    .getByRole("link", { name: "Open Other workspace coaching dashboard", exact: true })
+    .getByRole("link", { name: "Open Other workspace coaching workspace", exact: true })
     .click();
-  await expect(page).toHaveURL(`/organizations/${otherOrganizationId}/dashboard`);
-  await expect(page.getByText("Coaching workspace", { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(`/organizations/${otherOrganizationId}/coaching`);
+  await expect(page.getByTestId("coaching-assignment-facts")).toBeVisible();
+  await expect(
+    page.getByText("Assignment scope includes only current direct assignments"),
+  ).toBeVisible();
 
   let resolveOrganization!: () => void;
   let arriveOrganization!: () => void;

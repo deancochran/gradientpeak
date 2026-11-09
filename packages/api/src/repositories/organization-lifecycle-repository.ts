@@ -76,26 +76,31 @@ export function createOrganizationLifecycleRepository(db: DrizzleQueryExecutor) 
              and role_grant.granted_at <= transaction_timestamp()
              and role_grant.revoked_at is null
            where staff.organization_id = ${organizationId}::uuid
-             and staff.suspended_at is null and staff.ended_at is null)`.mapWith(Number),
+              and staff.suspended_at is null and staff.ended_at is null
+              and staff.created_at <= transaction_timestamp())`.mapWith(Number),
           activeEngagements: sql`(select count(*)
            from coaching_engagements engagement
            where engagement.organization_id = ${organizationId}::uuid
-             and engagement.ended_at is null and engagement.paused_at is null)`.mapWith(Number),
+              and engagement.ended_at is null and engagement.paused_at is null
+              and engagement.created_at <= transaction_timestamp())`.mapWith(Number),
           pausedEngagements: sql`(select count(*)
            from coaching_engagements engagement
            where engagement.organization_id = ${organizationId}::uuid
-             and engagement.ended_at is null and engagement.paused_at is not null)`.mapWith(Number),
+              and engagement.ended_at is null and engagement.paused_at is not null
+              and engagement.created_at <= transaction_timestamp())`.mapWith(Number),
           activeEngagementsWithoutPrimary: sql`(select count(*)
            from coaching_engagements engagement
            where engagement.organization_id = ${organizationId}::uuid
-             and engagement.ended_at is null
-             and engagement.paused_at is null
+              and engagement.ended_at is null
+              and engagement.paused_at is null
+              and engagement.created_at <= transaction_timestamp()
              and not exists (
                select 1 from coaching_assignments assignment
                where assignment.organization_id = engagement.organization_id
                  and assignment.engagement_id = engagement.id
-                 and assignment.assignment_kind = 'primary'
-                 and assignment.ended_at is null
+                  and assignment.assignment_kind = 'primary'
+                  and assignment.ended_at is null
+                  and assignment.assigned_at <= transaction_timestamp()
               ))`.mapWith(Number),
         })
         .from(organizationMemberships)

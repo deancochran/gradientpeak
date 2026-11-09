@@ -207,7 +207,7 @@ test("[P2] profile and privacy settings persist together and can be restored", a
   }
 });
 
-test("coaching.view-dashboard opens an authorized organization dashboard", async ({
+test("coaching.view-assignment-facts opens a coach's scoped assignment facts", async ({
   athleteActor,
   coachActor,
   coachPage,
@@ -223,15 +223,14 @@ test("coaching.view-dashboard opens an authorized organization dashboard", async
     const organizationSelectorResponse = await coachPage.goto("/organizations");
     expect(organizationSelectorResponse?.headers()["cache-control"]).toBe("private, no-store");
     await coachPage
-      .getByRole("link", { name: `Open ${organization.organizationName} coaching dashboard` })
+      .getByRole("link", { name: `Open ${organization.organizationName} coaching workspace` })
       .click();
 
     await expect(coachPage).toHaveURL(
-      new RegExp(`/organizations/${organization.organizationId}/dashboard$`),
+      new RegExp(`/organizations/${organization.organizationId}/coaching$`),
     );
-    await expect(coachPage.getByText("Coaching workspace", { exact: true })).toBeVisible();
     await expect(
-      coachPage.getByText(/Administrative staff and athlete roster details are available only/),
+      coachPage.getByRole("heading", { name: "No coaching assignment facts in this scope" }),
     ).toBeVisible();
     await expect(coachPage.getByRole("heading", { name: "Organization management" })).toHaveCount(
       0,
@@ -372,7 +371,7 @@ test("[variation:settings.profile:keyboard-save] keyboard save persists profile 
   }
 });
 
-test("[variation:coaching.dashboard:narrow-history] narrow organization card opens the role-limited workspace and returns through history", async ({
+test("[variation:coaching.assignment-facts:narrow-history] narrow organization card opens scoped assignment facts and returns through history", async ({
   athleteActor,
   coachActor,
   coachPage,
@@ -387,24 +386,25 @@ test("[variation:coaching.dashboard:narrow-history] narrow organization card ope
     await coachPage.setViewportSize({ width: 390, height: 844 });
     await coachPage.goto("/organizations");
     const open = coachPage.getByRole("link", {
-      name: `Open ${organization.organizationName} coaching dashboard`,
+      name: `Open ${organization.organizationName} coaching workspace`,
     });
     await open.scrollIntoViewIfNeeded();
     await open.click();
-    await expect(coachPage.getByText("Coaching workspace", { exact: true })).toBeVisible();
     await expect(
-      coachPage.getByText(/Administrative staff and athlete roster details are available only/),
+      coachPage.getByRole("heading", { name: "No coaching assignment facts in this scope" }),
     ).toBeVisible();
     await coachPage.goBack();
     await expect(open).toBeVisible();
     await coachPage.goForward();
-    await expect(coachPage.getByText("Coaching workspace", { exact: true })).toBeVisible();
+    await expect(
+      coachPage.getByRole("heading", { name: "No coaching assignment facts in this scope" }),
+    ).toBeVisible();
   } finally {
     await organization.cleanup();
   }
 });
 
-test("[variation:coaching.dashboard:revoked-role] dashboard access fails closed after the fixture coach role is revoked", async ({
+test("[variation:coaching.assignment-facts:revoked-role] assignment facts fail closed after the fixture coach role is revoked", async ({
   athleteActor,
   coachActor,
   coachPage,
@@ -416,8 +416,10 @@ test("[variation:coaching.dashboard:revoked-role] dashboard access fails closed 
     coachActor.profileId,
   );
   try {
-    await coachPage.goto(`/organizations/${organization.organizationId}/dashboard`);
-    await expect(coachPage.getByText("Coaching workspace", { exact: true })).toBeVisible();
+    await coachPage.goto(`/organizations/${organization.organizationId}/coaching`);
+    await expect(
+      coachPage.getByRole("heading", { name: "No coaching assignment facts in this scope" }),
+    ).toBeVisible();
     await organization.revokeCoach();
     await coachPage.reload();
     await expect(

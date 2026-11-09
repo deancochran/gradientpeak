@@ -48,37 +48,47 @@ export function OrganizationSelector({
         </p>
       </div>
       <ul className="grid gap-4" aria-label="Coaching organizations">
-        {page.items.map(({ organization, membership, isRootOwner }) => (
-          <li key={organization.organizationId}>
-            <Card className="border-slate-800 bg-slate-900 text-slate-50">
-              <CardHeader>
-                <CardTitle>
-                  <h3>{organization.name}</h3>
-                </CardTitle>
-                <CardDescription className="flex flex-wrap gap-2 text-slate-400">
-                  {membership.roles.filter(isFixedRole).map((role) => (
-                    <Badge key={role} className="border-slate-700 bg-slate-800 text-slate-200">
-                      {ROLE_LABELS[role]}
-                    </Badge>
-                  ))}
-                  {isRootOwner ? (
-                    <Badge className="border-cyan-700 bg-cyan-950 text-cyan-200">Root owner</Badge>
-                  ) : null}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Button asChild variant="outline" className="border-slate-700 text-slate-100">
-                  <Link
-                    to="/organizations/$organizationId/dashboard"
-                    params={{ organizationId: organization.organizationId }}
-                  >
-                    Open {organization.name} coaching dashboard
-                  </Link>
-                </Button>
-              </CardContent>
-            </Card>
-          </li>
-        ))}
+        {page.items.map(({ organization, membership, isRootOwner }) => {
+          const opensAdministration = isRootOwner || membership.roles.includes("admin");
+          const defaultWorkspace = opensAdministration
+            ? "/organizations/$organizationId/dashboard"
+            : "/organizations/$organizationId/coaching";
+
+          return (
+            <li key={organization.organizationId}>
+              <Card className="border-slate-800 bg-slate-900 text-slate-50">
+                <CardHeader>
+                  <CardTitle>
+                    <h3>{organization.name}</h3>
+                  </CardTitle>
+                  <CardDescription className="flex flex-wrap gap-2 text-slate-400">
+                    {membership.roles.filter(isFixedRole).map((role) => (
+                      <Badge key={role} className="border-slate-700 bg-slate-800 text-slate-200">
+                        {ROLE_LABELS[role]}
+                      </Badge>
+                    ))}
+                    {isRootOwner ? (
+                      <Badge className="border-cyan-700 bg-cyan-950 text-cyan-200">
+                        Root owner
+                      </Badge>
+                    ) : null}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button asChild variant="outline" className="border-slate-700 text-slate-100">
+                    <Link
+                      to={defaultWorkspace}
+                      params={{ organizationId: organization.organizationId }}
+                    >
+                      Open {organization.name} coaching{" "}
+                      {opensAdministration ? "dashboard" : "workspace"}
+                    </Link>
+                  </Button>
+                </CardContent>
+              </Card>
+            </li>
+          );
+        })}
       </ul>
       <Pagination
         nextCursor={page.nextCursor}
