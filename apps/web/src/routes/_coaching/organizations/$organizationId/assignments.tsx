@@ -22,8 +22,9 @@ export const Route = createFileRoute("/_coaching/organizations/$organizationId/a
     status: search.status ?? null,
   }),
   pendingMs: 0,
-  loader: async ({ params, deps }) => ({
+  loader: async ({ params, deps, context }) => ({
     organizationId: params.organizationId,
+    actorProfileId: context.actorProfileId,
     search: deps.search,
     cursor: deps.cursor,
     primary: deps.primary,
@@ -71,7 +72,8 @@ function AssignmentDirectoryPage() {
     loaded.search !== (q ?? null) ||
     loaded.cursor !== (cursor ?? null) ||
     loaded.primary !== (primary ?? null) ||
-    loaded.status !== (status ?? null)
+    loaded.status !== (status ?? null) ||
+    loaded.actorProfileId !== actorProfileId
   )
     return <p role="status">Loading coach assignments…</p>;
 
