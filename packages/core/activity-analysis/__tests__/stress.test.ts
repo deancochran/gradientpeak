@@ -1,146 +1,409 @@
 import { describe, expect, it } from "vitest";
-import { activityDerivedMetricsSchema, analyzeActivityDerivedMetrics } from "..";
+import { CYCLING_NUMERICAL_TRUST_FIXTURES_V1 } from "../../calculations/__tests__/fixtures/cycling-numerical-trust-v1";
+import { calculateCyclingNormalizedPower } from "../../calculations/normalized-power";
+import { SWIMMING_DURATION_PERFORMANCE_FIXTURE_V1 } from "../../duration-performance/__tests__/fixtures/duration-performance-v1";
+import { aggregateCommonLoad } from "../../load/common-relative-load";
+import { athletePerformanceTargetFactsSchema } from "../../performance-model";
+import { buildPerformanceTargetFactsFixture } from "../../testing/performance-model";
+import {
+  activityDerivedMetricsSchema,
+  activityDerivedStressSchema,
+  activityListDerivedSummarySchema,
+  analyzeActivityDerivedMetrics,
+} from "..";
 
-describe("activity analysis", () => {
-  it("derives stress metrics from activity-local facts", () => {
-    const derived = analyzeActivityDerivedMetrics({
-      activity: {
-        id: "activity-1",
-        type: "bike",
-        started_at: "2026-03-01T10:00:00.000Z",
-        finished_at: "2026-03-01T11:00:00.000Z",
-        duration_seconds: 3600,
-        avg_power: 240,
-        normalized_power: 250,
-        avg_heart_rate: 160,
-      },
-      context: {
-        profileMetrics: {
-          ftp: 250,
-          lthr: 165,
-          max_hr: 190,
-          resting_hr: 50,
-        },
-        recentEfforts: [],
-        profile: {},
-      },
-    });
+const timestamps = {
+  started_at: "2026-03-01T10:00:00.000Z",
+  finished_at: "2026-03-01T11:00:00.000Z",
+} as const;
 
-    expect(activityDerivedMetricsSchema.parse(derived)).toEqual(derived);
-    expect(derived.stress.tss).toBe(100);
-    expect(derived.stress.intensity_factor).toBe(1);
-    expect(derived.stress.trimp).toBeGreaterThan(0);
-    expect(derived.stress.trimp_source).toBe("hr");
-    expect(derived.stress.training_effect).toBe("vo2max");
-    expect(derived.computed_as_of).toBe("2026-03-01T11:00:00.000Z");
+const unavailableNormalizedPowerResult = calculateCyclingNormalizedPower({ samples: [] });
+
+function constantNormalizedPowerResult(powerWatts: number, durationSeconds = 3_600) {
+  return calculateCyclingNormalizedPower({
+    samples: Array.from({ length: durationSeconds + 1 }, (_, timestampSeconds) => ({
+      timestampSeconds,
+      powerWatts,
+    })),
   });
+}
 
-  it("returns empty zones without stream data", () => {
+describe("activity analysis Common Load", () => {
+  it("emits Common Load only from canonical modeled target evidence", () => {
     const derived = analyzeActivityDerivedMetrics({
       activity: {
-        id: "activity-2",
-        type: "run",
-        started_at: "2026-03-01T10:00:00.000Z",
-        finished_at: "2026-03-01T10:30:00.000Z",
-        duration_seconds: 1800,
+        id: "bike-canonical-target",
+        type: "bike",
+        ...timestamps,
+        duration_seconds: 3600,
+        normalized_power_result: constantNormalizedPowerResult(200),
       },
       context: {
         profileMetrics: {},
+        performanceTargets: (() => {
+          const targets = buildPerformanceTargetFactsFixture({
+            bikeThresholdWatts: 250,
+            lthrBpm: { bike: 175 },
+          });
+          return athletePerformanceTargetFactsSchema.parse({
+            ...targets,
+            thresholds: {
+              ...targets.thresholds,
+              bike: {
+                ...targets.thresholds.bike,
+                state: "provisional",
+                confidence: 0.6,
+              },
+            },
+          });
+        })(),
         recentEfforts: [],
         profile: {},
       },
     });
 
-    expect(derived.zones.hr).toEqual([]);
-    expect(derived.zones.power).toEqual([]);
-    expect(derived.stress.tss).toBeNull();
-    expect(derived.stress.trimp).toBeNull();
+    expect(derived.stress.common_load).toMatchObject({
+      status: "available",
+      method: "power_threshold",
+      intensity: 0.8,
+      quality: {
+        evidence_fingerprint: "bike-threshold-test-fixture:bike-evaluation-test-fixture",
+      },
+    });
+    expect(derived.stress).toMatchObject({
+      trimp: null,
+      trimp_source: null,
+      training_effect: "tempo",
+    });
+    expect(activityDerivedMetricsSchema.parse(derived)).toEqual(derived);
   });
 
-  it("estimates TSS and IF from heart-rate reserve when power threshold data is unavailable", () => {
+  it("uses a provisional canonical swim-speed threshold for swimming Common Load", () => {
+    const fixture = SWIMMING_DURATION_PERFORMANCE_FIXTURE_V1;
+    const projectedTargets = buildPerformanceTargetFactsFixture({
+      asOf: fixture.input.assessmentAsOf,
+      athleteId: fixture.input.athleteId,
+      swimThresholdMetersPerSecond: 1.25,
+    });
+    const performanceTargets = athletePerformanceTargetFactsSchema.parse({
+      ...projectedTargets,
+      thresholds: {
+        ...projectedTargets.thresholds,
+        swim: {
+          ...projectedTargets.thresholds.swim,
+          state: "provisional",
+          confidence: 0.6,
+        },
+      },
+    });
+    const thresholdSpeed = 1.25;
+
     const derived = analyzeActivityDerivedMetrics({
       activity: {
-        id: "activity-hr-only",
-        type: "run",
-        started_at: "2026-03-01T10:00:00.000Z",
-        finished_at: "2026-03-01T11:00:00.000Z",
-        duration_seconds: 3600,
-        avg_heart_rate: 150,
+        id: "swim-canonical-threshold",
+        type: "swim",
+        started_at: "2026-07-02T10:00:00.000Z",
+        finished_at: "2026-07-02T11:00:00.000Z",
+        duration_seconds: 3_600,
+        moving_seconds: 3_600,
+        avg_speed_mps: thresholdSpeed,
+        normalized_speed_mps: thresholdSpeed,
+        normalized_power_result: unavailableNormalizedPowerResult,
       },
       context: {
-        profileMetrics: {
-          max_hr: 190,
-          resting_hr: 50,
-        },
+        profileMetrics: {},
+        performanceTargets,
         recentEfforts: [],
         profile: {},
       },
     });
 
-    expect(derived.stress.intensity_factor).toBe(0.71);
-    expect(derived.stress.tss).toBe(50);
-    expect(derived.stress.trimp).toBeGreaterThan(0);
-    expect(derived.stress.training_effect).toBe("base");
+    expect(performanceTargets.thresholds.swim).toMatchObject({
+      status: "available",
+      state: "provisional",
+      sourceEvaluationIds: ["swim-evaluation-test-fixture"],
+    });
+    expect(derived.stress.common_load).toMatchObject({
+      status: "available",
+      method: "swim_pace_threshold",
+      load: 100,
+      intensity: 1,
+      quality: {
+        evidence_fingerprint: "swim-threshold-test-fixture:swim-evaluation-test-fixture",
+      },
+    });
   });
 
-  it("derives running TSS and IF from effort-based threshold speed before heart-rate fallback", () => {
+  it("retains numeric partial Normalized Power coverage without promoting Common Load", () => {
+    const fixture = CYCLING_NUMERICAL_TRUST_FIXTURES_V1.missing;
+    const normalizedPowerResult = calculateCyclingNormalizedPower({ samples: fixture.samples });
+    if (normalizedPowerResult.status !== "partial") {
+      throw new Error("Expected the shared missing-power vector to remain partial");
+    }
     const derived = analyzeActivityDerivedMetrics({
       activity: {
-        id: "activity-run-speed",
-        type: "run",
-        started_at: "2026-03-01T10:00:00.000Z",
-        finished_at: "2026-03-01T11:00:00.000Z",
-        duration_seconds: 3600,
-        avg_heart_rate: 120,
-        normalized_graded_speed_mps: 4,
+        id: "bike-partial-normalized-power",
+        type: "bike",
+        ...timestamps,
+        duration_seconds: 61,
+        moving_seconds: 61,
+        normalized_power_result: normalizedPowerResult,
       },
       context: {
-        profileMetrics: {
-          max_hr: 190,
-          resting_hr: 50,
-          threshold_speed_mps: 5,
-        },
+        profileMetrics: {},
+        performanceTargets: buildPerformanceTargetFactsFixture({
+          bikeThresholdWatts: 200,
+        }),
         recentEfforts: [],
         profile: {},
       },
     });
 
-    expect(derived.stress.intensity_factor).toBe(0.8);
-    expect(derived.stress.tss).toBe(64);
-    expect(derived.stress.training_effect).toBe("tempo");
+    expect(derived.stress.common_load).toMatchObject({
+      status: "partial",
+      method: "power_threshold",
+      load: (60 / 3_600) * 100,
+      intensity: 1,
+      contributingDurationSeconds: 60,
+      eligibleDurationSeconds: 61,
+      sourceTimeCoverage: 60 / 61,
+      reason: "activity_data_partial",
+    });
   });
 
-  it("derives TSS and IF from as-of threshold context", () => {
-    const activity = {
-      id: "activity-3",
-      type: "bike",
-      started_at: "2026-03-01T10:00:00.000Z",
-      finished_at: "2026-03-01T11:00:00.000Z",
-      duration_seconds: 3600,
-      normalized_power: 250,
-    } as const;
-
-    const lowerFtpDerived = analyzeActivityDerivedMetrics({
-      activity,
+  it("keeps an unavailable Normalized Power result numeric-free", () => {
+    const normalizedPowerResult = calculateCyclingNormalizedPower({
+      samples: CYCLING_NUMERICAL_TRUST_FIXTURES_V1.exactBoundary.before,
+    });
+    expect(normalizedPowerResult).toMatchObject({
+      status: "unavailable",
+      valueWatts: null,
+      reason: "insufficient_window",
+    });
+    const derived = analyzeActivityDerivedMetrics({
+      activity: {
+        id: "bike-unavailable-normalized-power",
+        type: "bike",
+        ...timestamps,
+        duration_seconds: 29,
+        normalized_power_result: normalizedPowerResult,
+      },
       context: {
-        profileMetrics: { ftp: 200 },
+        profileMetrics: {},
+        performanceTargets: buildPerformanceTargetFactsFixture({
+          bikeThresholdWatts: 200,
+        }),
         recentEfforts: [],
         profile: {},
       },
     });
 
-    const higherFtpDerived = analyzeActivityDerivedMetrics({
-      activity,
+    expect(derived.stress.common_load.status).toBe("unavailable");
+    expect("load" in derived.stress.common_load).toBe(false);
+    expect("intensity" in derived.stress.common_load).toBe(false);
+  });
+
+  it("keeps low-coverage HR Common Load and training effect unavailable", () => {
+    const derived = analyzeActivityDerivedMetrics({
+      activity: {
+        id: "partial-hr",
+        type: "run",
+        ...timestamps,
+        duration_seconds: 3600,
+        normalized_power_result: unavailableNormalizedPowerResult,
+      },
       context: {
-        profileMetrics: { ftp: 250 },
+        profileMetrics: {},
+        performanceTargets: buildPerformanceTargetFactsFixture({ lthrBpm: { run: 150 } }),
+        recentEfforts: [],
+        profile: {},
+      },
+      heartRateDistribution: {
+        status: "partial",
+        reason: "source_incomplete",
+        calculationVersion: "heart-rate-zone-duration-v1",
+        coverageSeconds: 1800,
+        eligibleDurationSeconds: 3600,
+        sourceTimeCoverage: 0.5,
+        timeWeightedAverageBpm: 150,
+        buckets: [{ bpm: 150, seconds: 1800 }],
+        diagnostics: {
+          sourceSampleCount: 0,
+          acceptedTimestampCount: 0,
+          contributingIntervalCount: 0,
+          observedSpanSeconds: 3600,
+          pausedDurationSeconds: 0,
+          excludedGapDurationSeconds: 0,
+          excludedMissingDurationSeconds: 1800,
+          excludedInvalidDurationSeconds: 0,
+          duplicateTimestampCount: 0,
+          reversedTimestampCount: 0,
+          invalidTimestampCount: 0,
+        },
+      },
+    });
+
+    expect(derived.stress.common_load).toMatchObject({
+      status: "unavailable",
+      method: "heart_rate_zones",
+      sourceTimeCoverage: 0.5,
+      reason: "insufficient_coverage",
+    });
+    expect(derived.stress.training_effect).toBeNull();
+  });
+
+  it("keeps Common Load unavailable without fabricating a parallel stress result", () => {
+    const derived = analyzeActivityDerivedMetrics({
+      activity: {
+        id: "missing",
+        type: "bike",
+        ...timestamps,
+        duration_seconds: 3600,
+        normalized_power_result: unavailableNormalizedPowerResult,
+      },
+      context: { profileMetrics: {}, recentEfforts: [], profile: {} },
+    });
+
+    expect(derived.stress.common_load).toMatchObject({
+      status: "unavailable",
+      reason: "threshold_missing",
+    });
+    expect(derived.stress).toMatchObject({
+      trimp: null,
+      trimp_source: null,
+      training_effect: null,
+    });
+  });
+
+  it("keeps cycling Common Load unavailable when normalized power has no threshold", () => {
+    const derived = analyzeActivityDerivedMetrics({
+      activity: {
+        id: "missing-cycling-threshold",
+        type: "bike",
+        ...timestamps,
+        duration_seconds: 3_600,
+        normalized_power_result: constantNormalizedPowerResult(250),
+      },
+      context: { profileMetrics: {}, recentEfforts: [], profile: {} },
+    });
+
+    expect(derived.stress.common_load).toMatchObject({
+      status: "unavailable",
+      method: "power_threshold",
+      reason: "threshold_missing",
+    });
+    expect("load" in derived.stress.common_load).toBe(false);
+  });
+
+  it("does not substitute average cycling power for unavailable Normalized Power", () => {
+    const derived = analyzeActivityDerivedMetrics({
+      activity: {
+        id: "average-power-only",
+        type: "bike",
+        ...timestamps,
+        duration_seconds: 3_600,
+        avg_power: 250,
+        normalized_power_result: unavailableNormalizedPowerResult,
+      },
+      context: {
+        profileMetrics: {},
+        performanceTargets: buildPerformanceTargetFactsFixture({
+          bikeThresholdWatts: 250,
+        }),
         recentEfforts: [],
         profile: {},
       },
     });
 
-    expect(lowerFtpDerived.stress.intensity_factor).toBe(1.25);
-    expect(lowerFtpDerived.stress.tss).toBe(156);
-    expect(higherFtpDerived.stress.intensity_factor).toBe(1);
-    expect(higherFtpDerived.stress.tss).toBe(100);
+    expect(derived.stress.common_load).toMatchObject({
+      status: "unavailable",
+      reason: "activity_data_missing",
+    });
+    expect("load" in derived.stress.common_load).toBe(false);
+  });
+
+  it("preserves measured zero-power coasting as available zero cycling Load", () => {
+    const derived = analyzeActivityDerivedMetrics({
+      activity: {
+        id: "zero-power-coasting",
+        type: "bike",
+        ...timestamps,
+        duration_seconds: 3_600,
+        normalized_power_result: constantNormalizedPowerResult(0),
+      },
+      context: {
+        profileMetrics: {},
+        performanceTargets: buildPerformanceTargetFactsFixture({
+          bikeThresholdWatts: 250,
+        }),
+        recentEfforts: [],
+        profile: {},
+      },
+    });
+
+    expect(derived.stress.common_load).toMatchObject({
+      status: "available",
+      load: 0,
+      intensity: 0,
+      contributingDurationSeconds: 3_600,
+    });
+  });
+
+  it("excludes known rest by using moving rather than elapsed cycling duration", () => {
+    const derived = analyzeActivityDerivedMetrics({
+      activity: {
+        id: "cycling-rest-excluded",
+        type: "bike",
+        ...timestamps,
+        duration_seconds: 3_600,
+        moving_seconds: 1_800,
+        normalized_power_result: constantNormalizedPowerResult(250, 1_800),
+      },
+      context: {
+        profileMetrics: {},
+        performanceTargets: buildPerformanceTargetFactsFixture({
+          bikeThresholdWatts: 250,
+        }),
+        recentEfforts: [],
+        profile: {},
+      },
+    });
+
+    expect(derived.stress.common_load).toMatchObject({
+      status: "available",
+      load: 50,
+      intensity: 1,
+      contributingDurationSeconds: 1_800,
+    });
+  });
+
+  it("requires Common Load for detail and list stress contracts, including parent aggregates", () => {
+    const detail = analyzeActivityDerivedMetrics({
+      activity: {
+        id: "aggregate-source",
+        type: "bike",
+        ...timestamps,
+        duration_seconds: 3600,
+        normalized_power_result: unavailableNormalizedPowerResult,
+      },
+      context: { profileMetrics: {}, recentEfforts: [], profile: {} },
+    }).stress;
+    if (!("activity_category" in detail.common_load)) {
+      throw new Error("Expected an activity-level Common Load result");
+    }
+    const aggregate = aggregateCommonLoad([detail.common_load]);
+
+    expect(
+      activityDerivedStressSchema.safeParse({ ...detail, common_load: aggregate }).success,
+    ).toBe(true);
+    expect(
+      activityDerivedStressSchema.safeParse({ ...detail, common_load: undefined }).success,
+    ).toBe(false);
+    expect(
+      activityListDerivedSummarySchema.safeParse({
+        common_load: aggregate,
+        computed_as_of: timestamps.started_at,
+      }).success,
+    ).toBe(true);
   });
 });

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { renderWeb, screen } from "../../test/render-web";
 import { commandFixtures } from "./fixtures";
-import { Command, CommandInput } from "./index.web";
+import { Command, CommandDialog, CommandInput } from "./index.web";
 
 describe("Command web", () => {
   it("renders the web-only command input with accessible queries", () => {
@@ -16,5 +16,15 @@ describe("Command web", () => {
       "aria-label",
       commandFixtures.search.accessibilityLabel,
     );
+  });
+
+  it("labels a CommandDialog input from its title", () => {
+    renderWeb(
+      <CommandDialog open title="Search GradientPeak">
+        <CommandInput />
+      </CommandDialog>,
+    );
+
+    expect(screen.getByRole("combobox", { name: "Search GradientPeak" })).toBeInTheDocument();
   });
 });

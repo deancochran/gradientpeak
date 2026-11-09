@@ -2,7 +2,7 @@
  * Calibration Constants for Training Plan Calculations
  *
  * This file centralizes all magic numbers used in readiness score calculations,
- * demand CTL estimation, and other training plan computations.
+ * demand LongTermLoad estimation, and other training plan computations.
  *
  * Each constant includes documentation explaining:
  * - What it controls
@@ -16,14 +16,14 @@
  * Constants for goal readiness score calculation
  *
  * Goal readiness is a blend of:
- * - State readiness (CTL/ATL/TSB physiological state)
+ * - State readiness (LongTermLoad/RecentLoad/LoadBalance physiological state)
  * - Target attainment (how achievable the goal is)
  * - Alignment loss (multi-goal conflicts)
  */
 export const READINESS_CALCULATION = {
   /**
    * Weight for physiological state component
-   * Higher = readiness more influenced by current CTL/ATL/TSB
+   * Higher = readiness more influenced by current LongTermLoad/RecentLoad/LoadBalance
    * Range: 0.4-0.7
    */
   STATE_WEIGHT: 0.55,
@@ -85,42 +85,42 @@ export const READINESS_CALCULATION = {
 } as const;
 
 /**
- * Constants for race distance to CTL demand conversion
+ * Constants for race distance to LongTermLoad demand conversion
  *
- * Formula: CTL = DISTANCE_CTL_BASE + DISTANCE_CTL_SCALE * log(1 + distanceKm)
+ * Formula: LongTermLoad = DISTANCE_LongTermLoad_BASE + DISTANCE_LongTermLoad_SCALE * log(1 + distanceKm)
  *
  * This logarithmic formula reflects diminishing returns:
- * - First 10km adds more CTL demand than 10-20km
- * - Marathon (42km) doesn't require 8x the CTL of 5km
+ * - First 10km adds more LongTermLoad demand than 10-20km
+ * - Marathon (42km) doesn't require 8x the LongTermLoad of 5km
  */
-export const DISTANCE_TO_CTL = {
+export const DISTANCE_TO_LongTermLoad = {
   /**
-   * Base CTL required for any race distance
+   * Base LongTermLoad required for any race distance
    * Represents minimum fitness for racing
    * Range: 20-35
    */
-  DISTANCE_CTL_BASE: 28,
+  DISTANCE_LongTermLoad_BASE: 28,
 
   /**
    * Logarithmic scaling factor for distance
-   * Controls how much additional CTL each km adds
+   * Controls how much additional LongTermLoad each km adds
    * Range: 10-15
    */
-  DISTANCE_CTL_SCALE: 13,
+  DISTANCE_LongTermLoad_SCALE: 13,
 } as const;
 
 /**
- * Constants for pace/speed to CTL boost conversion
+ * Constants for pace/speed to LongTermLoad boost conversion
  *
  * Faster race goals require higher fitness beyond just distance.
  * Formula: boost = (speedKph - baseline) * multiplier
  * Capped at PACE_BOOST_CAP to prevent extreme values.
  */
-export const PACE_TO_CTL = {
+export const PACE_TO_LongTermLoad = {
   /**
    * Activity-specific pace baselines (km/h)
    *
-   * Speed above this baseline adds CTL demand.
+   * Speed above this baseline adds LongTermLoad demand.
    * Below baseline = minimal/no boost.
    */
   BASELINES: {
@@ -143,26 +143,26 @@ export const PACE_TO_CTL = {
   },
 
   /**
-   * CTL boost per km/h above baseline
-   * Higher = faster paces add more CTL demand
+   * LongTermLoad boost per km/h above baseline
+   * Higher = faster paces add more LongTermLoad demand
    * Range: 2.0-4.0
    */
   PACE_BOOST_MULTIPLIER: 3.2,
 
   /**
    * Maximum pace boost (prevents extreme values)
-   * Elite speeds capped to avoid unrealistic CTL demands
+   * Elite speeds capped to avoid unrealistic LongTermLoad demands
    * Range: 20-30
    */
   PACE_BOOST_CAP: 24,
 } as const;
 
 /**
- * Constants for target-specific CTL demands
+ * Constants for target-specific LongTermLoad demands
  *
- * Different goal types have different base CTL requirements
+ * Different goal types have different base LongTermLoad requirements
  */
-export const TARGET_TYPE_CTL = {
+export const TARGET_TYPE_LongTermLoad = {
   /**
    * Pace threshold test (e.g., lactate threshold run)
    */
@@ -182,28 +182,28 @@ export const TARGET_TYPE_CTL = {
 /**
  * Constants for projection point readiness timeline calculation
  *
- * These control how daily readiness scores are computed from CTL/ATL/TSB
+ * These control how daily readiness scores are computed from LongTermLoad/RecentLoad/LoadBalance
  */
 export const READINESS_TIMELINE = {
   /**
-   * Optimal TSB (form) at goal date
+   * Optimal LoadBalance (form) at goal date
    *
-   * Changed to be event-duration-aware (see computeOptimalTsb function).
+   * Changed to be event-duration-aware (see computeOptimalLoadBalance function).
    * This is the default fallback value.
    *
-   * Research shows optimal TSB varies by event:
-   * - Sprint events (< 30min): TSB 15+ (high taper)
-   * - Short events (30min-1.5hr): TSB 12
-   * - Medium events (1.5-3hr): TSB 8
-   * - Long events (3-5hr): TSB 5
-   * - Ultra events (5hr+): TSB 3 (minimal taper)
+   * Research shows optimal LoadBalance varies by event:
+   * - Sprint events (< 30min): LoadBalance 15+ (high taper)
+   * - Short events (30min-1.5hr): LoadBalance 12
+   * - Medium events (1.5-3hr): LoadBalance 8
+   * - Long events (3-5hr): LoadBalance 5
+   * - Ultra events (5hr+): LoadBalance 3 (minimal taper)
    *
    * Range: 3-15
    */
-  TARGET_TSB_DEFAULT: 8,
+  TARGET_LoadBalance_DEFAULT: 8,
 
   /**
-   * Form tolerance (how far from target TSB is acceptable)
+   * Form tolerance (how far from target LoadBalance is acceptable)
    * Larger = more lenient form signal
    * Range: 15-25
    */
@@ -211,7 +211,7 @@ export const READINESS_TIMELINE = {
 
   /**
    * Fatigue overflow scale
-   * Controls penalty when ATL exceeds CTL
+   * Controls penalty when RecentLoad exceeds LongTermLoad
    * Range: 0.3-0.5
    */
   FATIGUE_OVERFLOW_SCALE: 0.4,
@@ -234,7 +234,7 @@ export const READINESS_TIMELINE = {
    * Changed to be dynamic based on training stage (see implementation).
    * This is the default fallback value.
    *
-   * Original: 0.5 (50% weight on TSB/form)
+   * Original: 0.5 (50% weight on LoadBalance/form)
    * New: Dynamic (lower early in plan, higher near goal)
    *
    * Readiness = form * weight + fitness * weight + fatigue * 0.2
@@ -263,7 +263,7 @@ export const READINESS_TIMELINE = {
 
   /**
    * Progressive fitness exponent
-   * Controls how CTL progress is scaled
+   * Controls how LongTermLoad progress is scaled
    * Range: 1.2-1.5
    */
   PROGRESSIVE_FITNESS_EXPONENT: 1.35,
@@ -279,15 +279,15 @@ export const READINESS_TIMELINE = {
   ABSOLUTE_FITNESS_WEIGHT: 0.3,
 
   /**
-   * Peak CTL scaling factor for absolute fitness signal
+   * Peak LongTermLoad scaling factor for absolute fitness signal
    * Higher = harder to reach 100% fitness signal
    */
-  PEAK_CTL_SCALING: 1.15,
+  PEAK_LongTermLoad_SCALING: 1.15,
 } as const;
 
 export interface NoHistoryStartingPrior {
-  starting_ctl: number;
-  starting_weekly_tss: number;
+  starting_longTermLoad: number;
+  starting_weekly_load: number;
   recommended_sessions_per_week_range: {
     min: number;
     max: number;
@@ -322,19 +322,28 @@ function interpolateAgeCurve(points: AgeCurvePoint[], age?: number | null): numb
   }
 
   const sorted = [...points].sort((a, b) => a.age - b.age);
-  const first = sorted[0]!;
+  const first = sorted.at(0);
+  if (!first) {
+    return undefined;
+  }
   if (age <= first.age) {
     return first.value;
   }
 
-  const last = sorted[sorted.length - 1]!;
+  const last = sorted.at(-1);
+  if (!last) {
+    return undefined;
+  }
   if (age >= last.age) {
     return last.value;
   }
 
   for (let index = 1; index < sorted.length; index += 1) {
-    const left = sorted[index - 1]!;
-    const right = sorted[index]!;
+    const left = sorted[index - 1];
+    const right = sorted[index];
+    if (!left || !right) {
+      continue;
+    }
     if (age > right.age) {
       continue;
     }
@@ -355,19 +364,28 @@ function interpolateContinuousCurve(
   }
 
   const sorted = [...points].sort((a, b) => a.input - b.input);
-  const first = sorted[0]!;
+  const first = sorted.at(0);
+  if (!first) {
+    return undefined;
+  }
   if (input <= first.input) {
     return first.value;
   }
 
-  const last = sorted[sorted.length - 1]!;
+  const last = sorted.at(-1);
+  if (!last) {
+    return undefined;
+  }
   if (input >= last.input) {
     return last.value;
   }
 
   for (let index = 1; index < sorted.length; index += 1) {
-    const left = sorted[index - 1]!;
-    const right = sorted[index]!;
+    const left = sorted[index - 1];
+    const right = sorted[index];
+    if (!left || !right) {
+      continue;
+    }
     if (input > right.input) {
       continue;
     }
@@ -387,8 +405,8 @@ export function resolveNoHistoryStartingPrior(input: {
   age?: number | null;
 }): NoHistoryStartingPrior {
   const ageKnown = typeof input.age === "number" && Number.isFinite(input.age) ? input.age : null;
-  const sustainableCtl = getMaxSustainableCTL(ageKnown ?? undefined);
-  const startingCtl = Math.round(clamp(sustainableCtl * 0.15, 16, 22));
+  const sustainableLongTermLoad = getMaxSustainableLongTermLoad(ageKnown ?? undefined);
+  const startingLongTermLoad = Math.round(clamp(sustainableLongTermLoad * 0.15, 16, 22));
   const sessionMax = Math.round(
     interpolateAgeCurve(
       [
@@ -416,8 +434,8 @@ export function resolveNoHistoryStartingPrior(input: {
 
   if (isYouthAthlete(input.age)) {
     return {
-      starting_ctl: startingCtl,
-      starting_weekly_tss: startingCtl * 7,
+      starting_longTermLoad: startingLongTermLoad,
+      starting_weekly_load: startingLongTermLoad * 7,
       recommended_sessions_per_week_range: {
         min: 3,
         max: Math.max(4, sessionMax),
@@ -431,8 +449,8 @@ export function resolveNoHistoryStartingPrior(input: {
 
   if (typeof input.age === "number" && Number.isFinite(input.age)) {
     return {
-      starting_ctl: startingCtl,
-      starting_weekly_tss: startingCtl * 7,
+      starting_longTermLoad: startingLongTermLoad,
+      starting_weekly_load: startingLongTermLoad * 7,
       recommended_sessions_per_week_range: {
         min: 3,
         max: Math.max(4, sessionMax),
@@ -445,8 +463,8 @@ export function resolveNoHistoryStartingPrior(input: {
   }
 
   return {
-    starting_ctl: 18,
-    starting_weekly_tss: 126,
+    starting_longTermLoad: 18,
+    starting_weekly_load: 126,
     recommended_sessions_per_week_range: { min: 3, max: 4 },
     max_single_session_duration_minutes: 90,
     is_youth: false,
@@ -456,17 +474,17 @@ export function resolveNoHistoryStartingPrior(input: {
 }
 
 /**
- * Helper function to get event-duration-aware optimal TSB
+ * Helper function to get event-duration-aware optimal LoadBalance
  *
- * Shorter races need more taper (higher TSB) for peak performance.
- * Longer races need less taper (lower TSB) to maintain endurance.
+ * Shorter races need more taper (higher LoadBalance) for peak performance.
+ * Longer races need less taper (lower LoadBalance) to maintain endurance.
  *
  * @param durationHours - Event duration in hours
- * @returns Optimal TSB for this event duration
+ * @returns Optimal LoadBalance for this event duration
  */
-export function computeOptimalTsb(durationHours: number | undefined): number {
+export function computeOptimalLoadBalance(durationHours: number | undefined): number {
   if (durationHours === undefined || durationHours <= 0) {
-    return READINESS_TIMELINE.TARGET_TSB_DEFAULT;
+    return READINESS_TIMELINE.TARGET_LoadBalance_DEFAULT;
   }
 
   return Math.round(
@@ -479,14 +497,14 @@ export function computeOptimalTsb(durationHours: number | undefined): number {
         { input: 10, value: 3 },
       ],
       durationHours,
-    ) ?? READINESS_TIMELINE.TARGET_TSB_DEFAULT,
+    ) ?? READINESS_TIMELINE.TARGET_LoadBalance_DEFAULT,
   );
 }
 
 /**
  * Helper function to get activity and distance-specific pace baseline
  *
- * @param activityCategory - Activity type (run, bike, swim)
+ * @param activityCategory - Activity category (run, bike, swim)
  * @param distanceKm - Event distance in kilometers
  * @returns Baseline speed in km/h
  */
@@ -497,14 +515,14 @@ export function getPaceBaseline(activityCategory: string, distanceKm: number): n
         interpolateContinuousCurve(
           [
             { input: 3, value: 14.5 },
-            { input: 5, value: PACE_TO_CTL.BASELINES.run.short },
+            { input: 5, value: PACE_TO_LongTermLoad.BASELINES.run.short },
             { input: 10, value: 11.2 },
-            { input: 21.1, value: PACE_TO_CTL.BASELINES.run.medium },
-            { input: 42.2, value: PACE_TO_CTL.BASELINES.run.long },
-            { input: 80, value: PACE_TO_CTL.BASELINES.run.ultra },
+            { input: 21.1, value: PACE_TO_LongTermLoad.BASELINES.run.medium },
+            { input: 42.2, value: PACE_TO_LongTermLoad.BASELINES.run.long },
+            { input: 80, value: PACE_TO_LongTermLoad.BASELINES.run.ultra },
           ],
           distanceKm,
-        ) ?? PACE_TO_CTL.BASELINES.run.medium
+        ) ?? PACE_TO_LongTermLoad.BASELINES.run.medium
       ).toFixed(2),
     );
   }
@@ -515,23 +533,23 @@ export function getPaceBaseline(activityCategory: string, distanceKm: number): n
         interpolateContinuousCurve(
           [
             { input: 20, value: 36 },
-            { input: 40, value: PACE_TO_CTL.BASELINES.bike.sprint },
-            { input: 100, value: PACE_TO_CTL.BASELINES.bike.short },
-            { input: 160, value: PACE_TO_CTL.BASELINES.bike.medium },
-            { input: 220, value: PACE_TO_CTL.BASELINES.bike.long },
+            { input: 40, value: PACE_TO_LongTermLoad.BASELINES.bike.sprint },
+            { input: 100, value: PACE_TO_LongTermLoad.BASELINES.bike.short },
+            { input: 160, value: PACE_TO_LongTermLoad.BASELINES.bike.medium },
+            { input: 220, value: PACE_TO_LongTermLoad.BASELINES.bike.long },
           ],
           distanceKm,
-        ) ?? PACE_TO_CTL.BASELINES.bike.medium
+        ) ?? PACE_TO_LongTermLoad.BASELINES.bike.medium
       ).toFixed(2),
     );
   }
 
   if (activityCategory === "swim") {
-    return PACE_TO_CTL.BASELINES.swim.default;
+    return PACE_TO_LongTermLoad.BASELINES.swim.default;
   }
 
   // Default to run medium baseline for unknown activities
-  return PACE_TO_CTL.BASELINES.run.medium;
+  return PACE_TO_LongTermLoad.BASELINES.run.medium;
 }
 
 /**
@@ -562,10 +580,10 @@ export function computeDynamicFormWeight(daysUntilGoal: number): number {
 }
 
 /**
- * Get age-adjusted ATL time constant.
+ * Get age-adjusted RecentLoad time constant.
  * Falls back to standard 7-day constant when age is unavailable.
  */
-export function getAgeAdjustedATLTimeConstant(age?: number): number {
+export function getAgeAdjustedRecentLoadTimeConstant(age?: number): number {
   return Math.round(
     interpolateAgeCurve(
       [
@@ -582,10 +600,10 @@ export function getAgeAdjustedATLTimeConstant(age?: number): number {
 }
 
 /**
- * Get age-adjusted CTL time constant.
+ * Get age-adjusted LongTermLoad time constant.
  * Falls back to standard 42-day constant when age is unavailable.
  */
-export function getAgeAdjustedCTLTimeConstant(age?: number): number {
+export function getAgeAdjustedLongTermLoadTimeConstant(age?: number): number {
   return Math.round(
     interpolateAgeCurve(
       [
@@ -601,9 +619,9 @@ export function getAgeAdjustedCTLTimeConstant(age?: number): number {
 }
 
 /**
- * Age-adjusted sustainable CTL ceiling.
+ * Age-adjusted sustainable LongTermLoad ceiling.
  */
-export function getMaxSustainableCTL(age?: number): number {
+export function getMaxSustainableLongTermLoad(age?: number): number {
   return Math.round(
     interpolateAgeCurve(
       [
@@ -641,8 +659,8 @@ export function getAgeAdjustedRampRateMultiplier(age?: number): number {
 /**
  * Get gender-adjusted fatigue time multiplier.
  *
- * ATL is a fatigue time constant: higher value means slower fatigue decay
- * (longer recovery window). Female adjustment increases ATL time constant.
+ * RecentLoad is a fatigue time constant: higher value means slower fatigue decay
+ * (longer recovery window). Female adjustment increases RecentLoad time constant.
  */
 export function getGenderAdjustedFatigueTimeMultiplier(gender?: "male" | "female" | null): number {
   if (gender === "female") return 1.08;
@@ -658,13 +676,13 @@ export function getGenderAdjustedRecoveryLoadMultiplier(gender?: "male" | "femal
 }
 
 /**
- * Combine age and gender ATL adjustments.
+ * Combine age and gender RecentLoad adjustments.
  */
-export function getPersonalizedATLTimeConstant(
+export function getPersonalizedRecentLoadTimeConstant(
   age?: number,
   gender?: "male" | "female" | null,
 ): number {
-  const base = getAgeAdjustedATLTimeConstant(age);
+  const base = getAgeAdjustedRecentLoadTimeConstant(age);
   const multiplier = getGenderAdjustedFatigueTimeMultiplier(gender);
   return Math.round(base * multiplier);
 }
