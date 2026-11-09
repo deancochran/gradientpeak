@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { profileGoalTargetSchema } from "../goals/profile_goals";
-import { canonicalSportSchema, planningSportSchema } from "../sport";
+import { canonicalActivityCategorySchema } from "../activity-category";
+import { trainingPlanGoalTargetSchema } from "../training-plan-structure";
 
 const nonNegativeFiniteNumberSchema = z.number().finite().min(0);
 
@@ -59,9 +59,9 @@ export const feasibilityAssessmentSchema = z
   .object({
     status: feasibilityAssessmentStatusSchema,
     limiting_constraints: z.array(z.string().min(1)).default([]),
-    required_peak_ctl: nonNegativeFiniteNumberSchema.optional(),
-    achievable_peak_ctl: nonNegativeFiniteNumberSchema.optional(),
-    readiness_gap_ctl: nonNegativeFiniteNumberSchema.optional(),
+    required_peak_longTermLoad: nonNegativeFiniteNumberSchema.optional(),
+    achievable_peak_longTermLoad: nonNegativeFiniteNumberSchema.optional(),
+    readiness_gap_longTermLoad: nonNegativeFiniteNumberSchema.optional(),
     rationale_codes: z.array(z.string().min(1)).default([]),
   })
   .strict();
@@ -69,9 +69,9 @@ export const feasibilityAssessmentSchema = z
 export const referenceTrajectoryPointSchema = z
   .object({
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    target_ctl: nonNegativeFiniteNumberSchema,
-    target_tss: nonNegativeFiniteNumberSchema,
-    target_atl_ceiling: nonNegativeFiniteNumberSchema.optional(),
+    target_longTermLoad: nonNegativeFiniteNumberSchema,
+    target_load: nonNegativeFiniteNumberSchema,
+    target_recentLoad_ceiling: nonNegativeFiniteNumberSchema.optional(),
     phase: trajectoryPhaseSchema,
     goal_ids_in_effect: z.array(z.string().uuid()).default([]),
     rationale_codes: z.array(z.string().min(1)).default([]),
@@ -81,7 +81,7 @@ export const referenceTrajectoryPointSchema = z
 export const referenceTrajectorySchema = z
   .object({
     mode: trajectoryModeSchema,
-    sport: planningSportSchema,
+    activity_category: canonicalActivityCategorySchema,
     points: z.array(referenceTrajectoryPointSchema),
     feasibility: feasibilityAssessmentSchema,
     calculated_parameters: z.record(z.string(), calculatedParameterSchema),
@@ -111,8 +111,8 @@ export const normalizedPlanningGoalSchema = z
     target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     priority: z.number().int().min(0).max(10),
     priority_class: planningGoalPriorityClassSchema,
-    activity_category: canonicalSportSchema,
-    targets: z.array(profileGoalTargetSchema).min(1),
+    activity_category: canonicalActivityCategorySchema,
+    targets: z.array(trainingPlanGoalTargetSchema).min(1),
     rationale_codes: z.array(z.string().min(1)).default([]),
   })
   .strict();
@@ -129,7 +129,7 @@ export const eventDemandTargetContributionSchema = z
     target_type: z.enum(["race_performance", "pace_threshold", "power_threshold", "hr_threshold"]),
     weight: z.number().positive().finite(),
     weight_share: z.number().min(0).max(1),
-    required_peak_ctl: nonNegativeFiniteNumberSchema,
+    required_peak_longTermLoad: nonNegativeFiniteNumberSchema,
     rationale_codes: z.array(z.string().min(1)).default([]),
   })
   .strict();
@@ -137,10 +137,10 @@ export const eventDemandTargetContributionSchema = z
 export const eventDemandSchema = z
   .object({
     goal_id: z.string().uuid(),
-    sport: canonicalSportSchema,
+    activity_category: canonicalActivityCategorySchema,
     demand_family: eventDemandFamilySchema,
     demand_duration_minutes: nonNegativeFiniteNumberSchema,
-    required_peak_ctl: nonNegativeFiniteNumberSchema,
+    required_peak_longTermLoad: nonNegativeFiniteNumberSchema,
     required_weekly_load_floor: nonNegativeFiniteNumberSchema,
     target_contributions: z.array(eventDemandTargetContributionSchema).min(1),
     rationale_codes: z.array(z.string().min(1)).default([]),

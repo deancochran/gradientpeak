@@ -1,24 +1,25 @@
-import type { ActivityPayload, RecordingActivityCategory, RecordingState } from "@repo/core";
+import {
+  type ActivityPayload,
+  type AthletePerformanceTargetFacts,
+  activityPlanStructureSchema,
+  createUnavailableAthletePerformanceTargetFacts,
+  type RecordingActivityCategory,
+  type RecordingState,
+} from "@repo/core";
 import { useRouter } from "expo-router";
 import React from "react";
 import { Alert } from "react-native";
 import type { ResourcePickerItem, ResourcePickerScope } from "@/components/shared/resource-picker";
 import { api } from "@/lib/api";
 import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
-import {
-  useActivityStatus,
-  usePlan,
-  useRecorderActions,
-  useRecordingLifecycle,
-  useRecordingState,
-  useSensors,
-} from "@/lib/hooks/useActivityRecorder";
+import { ROUTES } from "@/lib/constants/routes";
+import { useRecordingCommands } from "@/lib/hooks/useActivityRecorder";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { useRecordingSessionContract } from "@/lib/hooks/useRecordingConfig";
-import { useAllPermissionsGranted } from "@/lib/hooks/useStandalonePermissions";
+import { useRecordingConfig } from "@/lib/hooks/useRecordingConfig";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
-import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
-import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
+import { omitUndefined } from "@/lib/omitUndefined";
+import { useActivityRecorderService } from "@/lib/providers/ActivityRecorderProvider";
+import type { ActivityRecorderService, RecordingLifecycle } from "@/lib/services/ActivityRecorder";
 import {
   activitySelectionStore,
   defaultRecordLaunchPayload,
@@ -29,7 +30,8 @@ export function useRecordScreenController() {
   const router = useRouter();
   const navigateTo = useAppNavigate();
   const { user } = useAuth();
-  const service = useSharedActivityRecorder();
+  const { service } = useActivityRecorderService();
+  const apiUtils = api.useUtils();
   const [isInitialized, setIsInitialized] = React.useState(false);
   const [activityQuickEditVisible, setActivityQuickEditVisible] = React.useState(false);
   const [isFinishing, setIsFinishing] = React.useState(false);
@@ -37,21 +39,45 @@ export function useRecordScreenController() {
     null,
   );
   const [pendingPlanId, setPendingPlanId] = React.useState<string | null>(null);
+  const selectionOwner = React.useRef<{
+    userId: string | undefined;
+    service: typeof service;
+  } | null>(null);
+  const [planSelectionError, setPlanSelectionError] = React.useState<string | null>(null);
+  const performanceModelAsOf = React.useRef(new Date().toISOString()).current;
 
-  const state = useRecordingState(service);
-  const recordingLifecycle = useRecordingLifecycle(service);
-  const { count: sensorCount, sensors } = useSensors(service);
-  const plan = usePlan(service);
-  const { gpsRecordingEnabled, activityCategory } = useActivityStatus(service);
-  const { start, pause, resume, finish } = useRecorderActions(service);
-  const { allGranted: allPermissionsGranted, isLoading: permissionsLoading } =
-    useAllPermissionsGranted();
-  const sessionContract = useRecordingSessionContract(service);
+  const { sessionContract, sessionView } = useRecordingConfig(service);
+  const state = service?.state ?? "pending";
+  const recordingLifecycle = (service?.recordingLifecycle ??
+    sessionView?.lifecycle ??
+    "idle") as RecordingLifecycle;
+  const sensors = service?.sensorsManager?.getConnectedSensors() ?? [];
+  const sensorCount = sensors.length;
+  const plan = sessionView?.plan;
+  const activityCategory = sessionView?.recordingConfiguration.input.activityCategory ?? "bike";
+  const { start, pause, resume, finish } = useRecordingCommands(service);
 
-  const { data: zones } = api.profiles.getZones.useQuery(undefined, {
-    enabled: !!user && !!service && hasSessionAuthCredentials(),
-    staleTime: 1000 * 60 * 5,
-  });
+  const { data: publishedAthleteState } = api.athleteIntelligence.getReadModel.useQuery(
+    {
+      profileId: user?.id ?? "",
+      sections: {
+        publishedState: true,
+        status: true,
+        currentBaseline: { includePlanningContext: true },
+      },
+    },
+    {
+      enabled: !!user && !!service && hasSessionAuthCredentials(),
+    },
+  );
+  const performanceTargets = React.useMemo(() => {
+    if (publishedAthleteState?.publishedState?.performanceTargets) {
+      return publishedAthleteState.publishedState.performanceTargets;
+    }
+    return createUnavailableAthletePerformanceTargetFacts(
+      publishedAthleteState?.publishedState?.publishedAt ?? performanceModelAsOf,
+    );
+  }, [performanceModelAsOf, publishedAthleteState]);
 
   const pendingPlanQuery = api.activityPlans.getById.useQuery(
     { id: pendingPlanId ?? "" },
@@ -59,59 +85,68 @@ export function useRecordScreenController() {
   );
 
   React.useEffect(() => {
-    if (!pendingPlanId || !pendingPlanQuery.data || !service) {
+    if (!pendingPlanId || !pendingPlanQuery.data?.detail || !service) {
       return;
     }
+    if (
+      selectionOwner.current?.userId !== user?.id ||
+      selectionOwner.current?.service !== service ||
+      resourcePickerScope !== "activityPlans"
+    )
+      return;
+    if (pendingPlanQuery.isError || pendingPlanQuery.data.detail.id !== pendingPlanId) return;
 
     try {
-      service.selectPlan(pendingPlanQuery.data as any);
+      const planDetail = pendingPlanQuery.data.detail;
+      const structure = activityPlanStructureSchema.safeParse(planDetail.structure);
+      if (!planDetail.capabilities.canRecord || !structure.success) {
+        throw new Error(
+          "Duplicate this plan into your library before attaching it to a recording.",
+        );
+      }
+      service.selectPlan(
+        omitUndefined({
+          id: planDetail.id,
+          name: planDetail.name,
+          structure: structure.data,
+        }),
+      );
+      setPlanSelectionError(null);
       setPendingPlanId(null);
       setResourcePickerScope(null);
     } catch (error) {
-      Alert.alert(
-        "Plan Attachment Failed",
+      setPlanSelectionError(
         error instanceof Error ? error.message : "Unable to attach this activity plan.",
       );
-      setPendingPlanId(null);
     }
-  }, [pendingPlanId, pendingPlanQuery.data, service]);
+  }, [
+    pendingPlanId,
+    pendingPlanQuery.data,
+    pendingPlanQuery.isError,
+    service,
+    user?.id,
+    resourcePickerScope,
+  ]);
 
   React.useEffect(() => {
-    if (!pendingPlanId || !pendingPlanQuery.error) {
-      return;
-    }
-
-    Alert.alert("Plan Attachment Failed", "Unable to load this activity plan.");
-    setPendingPlanId(null);
-  }, [pendingPlanId, pendingPlanQuery.error]);
+    if (!service || !performanceTargets) return;
+    service.updatePerformanceTargets(performanceTargets);
+  }, [performanceTargets, service]);
 
   React.useEffect(() => {
-    if (!service || !zones?.profile) return;
+    if (!service || !publishedAthleteState?.currentBaseline?.planningContext) return;
 
-    const { ftp, threshold_hr, weight_kg, threshold_pace } = zones.profile;
+    const weight_kg = publishedAthleteState.currentBaseline.planningContext.body.weightKg.value;
 
-    if (ftp || threshold_hr || weight_kg || threshold_pace) {
+    if (weight_kg) {
       console.log("[RecordModal] Applying derived metrics:", {
-        ftp,
-        threshold_hr,
         weight_kg,
-        threshold_pace,
       });
       service.updateMetrics({
-        ftp: ftp || undefined,
-        thresholdHr: threshold_hr || undefined,
-        weightKg: weight_kg || undefined,
-        thresholdPaceSecondsPerKm: threshold_pace || undefined,
+        weightKg: weight_kg,
       });
     }
-  }, [service, zones?.profile]);
-
-  React.useEffect(() => {
-    console.log("[RecordModal] Permission status changed:", {
-      allPermissionsGranted,
-      permissionsLoading,
-    });
-  }, [allPermissionsGranted, permissionsLoading]);
+  }, [publishedAthleteState?.currentBaseline, service]);
 
   React.useEffect(() => {
     if (!service || isInitialized) return;
@@ -148,11 +183,11 @@ export function useRecordScreenController() {
 
         console.log("[RecordModal] Selection loaded:", {
           launchSource: selection.launchSource,
-          category: selection.category,
+          activity_category: selection.activity_category,
           gpsRecordingEnabled: selection.gpsRecordingEnabled,
           hasPlan: !!selection.plan,
           eventId: selection.eventId,
-          routeId: selection.routeId ?? selection.plan?.route_id ?? null,
+          routeId: selection.routeId ?? null,
         });
 
         console.log("[RecordModal] Processing selection with service method");
@@ -176,155 +211,129 @@ export function useRecordScreenController() {
   }, [service, isInitialized, router, recordingLifecycle]);
 
   const handleActivityQuickEdit = React.useCallback(
-    (category: RecordingActivityCategory, nextGpsRecordingEnabled: boolean) => {
+    (activity_category: RecordingActivityCategory) => {
       if (!service) {
         Alert.alert("Error", "Service not initialized");
         return;
       }
 
       const canEditActivity = sessionContract?.editing.canEditActivity ?? true;
-      const canEditGps = sessionContract?.editing.canEditGps ?? true;
-      const categoryChanged = category !== activityCategory;
-      const gpsChanged = nextGpsRecordingEnabled !== gpsRecordingEnabled;
+      const categoryChanged = activity_category !== activityCategory;
 
       if (categoryChanged && !canEditActivity) {
-        Alert.alert("Activity Locked", "The attached plan owns this session's activity category.");
+        Alert.alert(
+          "Activity Locked",
+          "The attached plan owns this session's activity activity_category.",
+        );
         return;
       }
 
-      if (gpsChanged && !canEditGps) {
-        Alert.alert("GPS Locked", "GPS recording cannot be changed for this session.");
-        return;
-      }
-
-      console.log("[RecordModal] Activity quick edit selected:", {
-        category,
-        gpsRecordingEnabled: nextGpsRecordingEnabled,
-      });
+      console.log("[RecordModal] Activity quick edit selected:", { activity_category });
 
       const payload: ActivityPayload = {
-        category: canEditActivity ? category : activityCategory,
-        gpsRecordingEnabled: nextGpsRecordingEnabled,
+        activity_category: canEditActivity ? activity_category : activityCategory,
+        gpsRecordingEnabled: false,
       };
 
       console.log("[RecordModal] Updating activity configuration:", {
-        category,
-        gpsRecordingEnabled: nextGpsRecordingEnabled,
+        activity_category,
         hasPlan: !!service.plan,
       });
 
       service.selectActivityFromPayload(payload);
     },
-    [
-      activityCategory,
-      gpsRecordingEnabled,
-      service,
-      sessionContract?.editing.canEditActivity,
-      sessionContract?.editing.canEditGps,
-    ],
+    [activityCategory, service, sessionContract?.editing.canEditActivity],
+  );
+
+  const fetchStartPerformanceTargets = React.useCallback(async () => {
+    const asOf = new Date().toISOString();
+    if (!user?.id) return createUnavailableAthletePerformanceTargetFacts(asOf);
+    try {
+      const published = await apiUtils.athleteIntelligence.getReadModel.fetch({
+        profileId: user.id,
+        sections: { publishedState: true, status: true },
+      });
+      if (!published.publishedState?.performanceTargets) {
+        console.warn(
+          `[RecordModal] Start-time performance targets ${published.status?.freshness ?? "unavailable"}`,
+        );
+        return createUnavailableAthletePerformanceTargetFacts(
+          published.publishedState?.publishedAt ?? asOf,
+        );
+      }
+      return published.publishedState.performanceTargets;
+    } catch {
+      console.warn("[RecordModal] Start-time performance targets unavailable");
+      return createUnavailableAthletePerformanceTargetFacts(asOf);
+    }
+  }, [apiUtils, user?.id]);
+
+  const startRecording = React.useCallback(
+    (startPerformanceTargets: AthletePerformanceTargetFacts) => start(startPerformanceTargets),
+    [start],
   );
 
   const handleStart = React.useCallback(async () => {
-    console.log("[RecordModal] Start clicked, checking permissions");
-    console.log("[RecordModal] allPermissionsGranted:", allPermissionsGranted);
+    console.log("[RecordModal] Start clicked");
 
-    const hasRequiredPermissions = gpsRecordingEnabled
-      ? allPermissionsGranted
-      : await service?.refreshAndCheckRecordingPermissions(false);
-
-    if (!hasRequiredPermissions) {
-      console.log("[RecordModal] Permissions not granted, requesting permissions");
-
-      if (!service) {
-        Alert.alert("Error", "Service not initialized");
-        return;
-      }
-
-      try {
-        const granted = await service.refreshAndCheckRecordingPermissions(gpsRecordingEnabled);
-
-        if (!granted) {
-          const { requestPermission } = await import("@/lib/services/permissions-check");
-
-          await requestPermission("bluetooth");
-
-          if (gpsRecordingEnabled) {
-            await requestPermission("location");
-            await requestPermission("location-background");
-          }
-
-          const finalCheck = await service.refreshAndCheckRecordingPermissions(gpsRecordingEnabled);
-
-          if (!finalCheck) {
-            Alert.alert(
-              "Permissions Required",
-              gpsRecordingEnabled
-                ? "This app requires Bluetooth, Location, and Background Location permissions to record GPS activities. Please enable them in your device settings."
-                : "This app requires Bluetooth permission to record indoor activities. Please enable it in your device settings.",
-              [{ text: "OK", style: "cancel" }],
-            );
-            return;
-          }
-        }
-      } catch (error) {
-        console.error("[RecordModal] Error requesting permissions:", error);
-        Alert.alert("Error", "Failed to request permissions. Please try again.");
-        return;
-      }
+    if (!service) {
+      Alert.alert("Error", "Service not initialized");
+      return;
     }
 
-    if (service) {
-      const validation = service.validatePlanRequirements();
+    const startPerformanceTargets = await fetchStartPerformanceTargets();
+    service.updatePerformanceTargets(startPerformanceTargets);
 
-      if (validation && !validation.isValid) {
-        const metricDetails = validation.missingMetrics
-          .map((m) => `- ${m.name}\n  ${m.description}`)
-          .join("\n\n");
+    const validation = service.validatePlanRequirements(startPerformanceTargets);
 
-        Alert.alert(
-          "Profile Setup Required",
-          `This activity requires the following metrics:\n\n${metricDetails}\n\nWithout these, automatic trainer control (ERG mode) and accurate targets will not be available.\n\nSet these in Settings > Profile.`,
-          [
-            {
-              text: "Go to Profile",
-              onPress: () => {
-                navigateTo("/profile");
-              },
+    if (validation && !validation.isValid) {
+      const metricDetails = validation.missingMetrics
+        .map((m) => `- ${m.name}\n  ${m.description}`)
+        .join("\n\n");
+
+      Alert.alert(
+        "Profile Setup Required",
+        `This activity requires the following metrics:\n\n${metricDetails}\n\nWithout these, automatic trainer control (ERG mode) and accurate targets will not be available.\n\nSet these from Me.`,
+        [
+          {
+            text: "Go to Me",
+            onPress: () => {
+              navigateTo(ROUTES.ME);
             },
-            {
-              text: "Continue Anyway",
-              style: "destructive",
-              onPress: async () => {
-                console.log("[RecordModal] User chose to continue without required metrics");
-                try {
-                  await start();
-                  console.log("[RecordModal] Recording started successfully");
-                } catch (error) {
-                  console.error("[RecordModal] Error starting recording:", error);
-                  Alert.alert("Error", "Failed to start recording. Please try again.");
-                }
-              },
+          },
+          {
+            text: "Continue Anyway",
+            style: "destructive",
+            onPress: async () => {
+              console.log("[RecordModal] User chose to continue without required metrics");
+              try {
+                await startRecording(startPerformanceTargets);
+                console.log("[RecordModal] Recording started successfully");
+              } catch (error) {
+                console.error("[RecordModal] Error starting recording:", error);
+                Alert.alert("Error", "Failed to start recording. Please try again.");
+              }
             },
-            { text: "Cancel", style: "cancel" },
-          ],
-        );
-        return;
-      }
-
-      if (validation && validation.warnings.length > 0) {
-        console.log("[RecordModal] Plan validation warnings:", validation.warnings);
-      }
+          },
+          { text: "Cancel", style: "cancel" },
+        ],
+      );
+      return;
     }
 
-    console.log("[RecordModal] Permissions granted, starting recording");
+    if (validation && validation.warnings.length > 0) {
+      console.log("[RecordModal] Plan validation warnings:", validation.warnings);
+    }
+
+    console.log("[RecordModal] Starting recording");
     try {
-      await start();
+      await startRecording(startPerformanceTargets);
       console.log("[RecordModal] Recording started successfully");
     } catch (error) {
       console.error("[RecordModal] Error starting recording:", error);
       Alert.alert("Error", "Failed to start recording. Please try again.");
     }
-  }, [allPermissionsGranted, gpsRecordingEnabled, navigateTo, start, service]);
+  }, [fetchStartPerformanceTargets, navigateTo, service, startRecording]);
 
   const handleFinish = React.useCallback(async () => {
     if (isFinishing) return;
@@ -358,22 +367,20 @@ export function useRecordScreenController() {
   }, []);
 
   const onBack = React.useCallback(() => {
-    router.back();
-  }, [router]);
-
-  const onGpsPress = React.useCallback(() => {
-    if (!service) return;
-
-    if (sessionContract && !sessionContract.editing.canEditGps) {
-      Alert.alert("GPS Locked", "GPS recording cannot be changed for this session.");
+    if (recordingLifecycle === "active") {
+      Alert.alert(
+        "Keep recording?",
+        "Your recording will continue while you return to the app. You can return to it from the Record tab.",
+        [
+          { text: "Stay", style: "cancel" },
+          { text: "Finish activity", style: "destructive", onPress: () => void handleFinish() },
+          { text: "Leave recording", onPress: () => router.back() },
+        ],
+      );
       return;
     }
-
-    service.selectActivityFromPayload({
-      category: activityCategory,
-      gpsRecordingEnabled: !gpsRecordingEnabled,
-    });
-  }, [activityCategory, gpsRecordingEnabled, service, sessionContract]);
+    router.back();
+  }, [handleFinish, recordingLifecycle, router]);
 
   const onOpenActivity = React.useCallback(() => {
     navigateTo("/record/activity");
@@ -389,6 +396,8 @@ export function useRecordScreenController() {
 
   const onCloseResourcePicker = React.useCallback(() => {
     setResourcePickerScope(null);
+    setPendingPlanId(null);
+    setPlanSelectionError(null);
   }, []);
 
   const onSelectResource = React.useCallback(
@@ -408,9 +417,11 @@ export function useRecordScreenController() {
         return;
       }
 
+      selectionOwner.current = { userId: user?.id, service };
+      setPlanSelectionError(null);
       setPendingPlanId(item.id);
     },
-    [resourcePickerScope, service],
+    [resourcePickerScope, service, user?.id],
   );
 
   const onOpenSensors = React.useCallback(() => {
@@ -436,10 +447,9 @@ export function useRecordScreenController() {
 
   React.useEffect(() => {
     console.log("[RecordModal] Activity status changed:", {
-      gpsRecordingEnabled,
-      hasPlan: plan.hasPlan,
+      hasPlan: plan?.hasPlan ?? false,
     });
-  }, [gpsRecordingEnabled, plan.hasPlan]);
+  }, [plan?.hasPlan]);
 
   return React.useMemo(
     () => ({
@@ -447,16 +457,14 @@ export function useRecordScreenController() {
       activityQuickEditVisible,
       closeActivityQuickEdit,
       disconnectedSensors,
-      gpsRecordingEnabled,
       handleActivityQuickEdit,
       handleFinish,
       handleLap,
       handleStart,
-      hasPlan: plan.hasPlan,
+      hasPlan: plan?.hasPlan ?? false,
       isFinishing,
       isInitialized,
       onBack,
-      onGpsPress,
       onOpenActivity,
       onOpenFtms,
       onOpenPlan,
@@ -470,6 +478,13 @@ export function useRecordScreenController() {
       onResume: resume,
       recordingState,
       resourcePickerScope,
+      selectedPlanId: pendingPlanId ?? service?.plan?.id ?? null,
+      planSelectionPending: Boolean(pendingPlanId && pendingPlanQuery.isLoading),
+      planSelectionError:
+        pendingPlanId && pendingPlanQuery.error
+          ? "Unable to load this activity plan."
+          : planSelectionError,
+      retrySelectedPlan: () => void pendingPlanQuery.refetch(),
       sensorCount,
       service,
       serviceState: state,
@@ -480,7 +495,6 @@ export function useRecordScreenController() {
       activityQuickEditVisible,
       closeActivityQuickEdit,
       disconnectedSensors,
-      gpsRecordingEnabled,
       handleActivityQuickEdit,
       handleFinish,
       handleLap,
@@ -488,7 +502,6 @@ export function useRecordScreenController() {
       isFinishing,
       isInitialized,
       onBack,
-      onGpsPress,
       onOpenActivity,
       onOpenFtms,
       onOpenPlan,
@@ -499,9 +512,14 @@ export function useRecordScreenController() {
       onRemoveRoute,
       onSelectResource,
       pause,
-      plan.hasPlan,
+      plan?.hasPlan,
       recordingState,
       resourcePickerScope,
+      pendingPlanId,
+      pendingPlanQuery.isLoading,
+      pendingPlanQuery.error,
+      pendingPlanQuery.refetch,
+      planSelectionError,
       resume,
       sensorCount,
       service,
@@ -523,9 +541,8 @@ function prepareStandaloneRouteIfNeeded(
   selection: RecordingLaunchPayload,
 ) {
   const explicitRouteId = selection.routeId ?? null;
-  const planRouteId = selection.plan?.route_id ?? null;
 
-  if (!explicitRouteId || explicitRouteId === planRouteId) return;
+  if (!explicitRouteId) return;
 
   console.log("[RecordModal] Preparing standalone route from launch payload:", explicitRouteId);
   service.prepareRouteAttachment(explicitRouteId);

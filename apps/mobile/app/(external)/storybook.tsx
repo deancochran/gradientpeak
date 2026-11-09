@@ -1,15 +1,32 @@
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
-import { router } from "expo-router";
+import { UiPreviewSurface } from "@repo/ui/testing/ui-preview";
+import { router, useLocalSearchParams } from "expo-router";
 import * as React from "react";
 import { View } from "react-native";
+import { MobileCardPreviewSurface } from "@/components/dev/MobileCardPreviewSurface";
 
 type StorybookModule = {
   default: React.ComponentType;
 };
 
-function getStorybookRoot() {
-  if (!__DEV__ || process.env.EXPO_PUBLIC_STORYBOOK_ENABLED !== "1") {
+function getDeveloperRoot(surface?: string) {
+  const e2eEnabled = process.env.EXPO_PUBLIC_MAESTRO_E2E === "1";
+  if (!__DEV__ && !e2eEnabled) {
+    return null;
+  }
+
+  const developerSurfaceEnabled = e2eEnabled || process.env.EXPO_PUBLIC_STORYBOOK_ENABLED === "1";
+
+  if (surface === "mobile-cards" && developerSurfaceEnabled) {
+    return MobileCardPreviewSurface;
+  }
+
+  if (e2eEnabled) {
+    return UiPreviewSurface;
+  }
+
+  if (process.env.EXPO_PUBLIC_STORYBOOK_ENABLED !== "1") {
     return null;
   }
 
@@ -29,9 +46,13 @@ function UnavailableRoute({ title, description }: { title: string; description: 
 }
 
 export default function StorybookScreen() {
-  const StorybookRoot = React.useMemo(() => getStorybookRoot(), []);
+  const { surface } = useLocalSearchParams<{ surface?: string }>();
+  const DeveloperRoot = React.useMemo(
+    () => getDeveloperRoot(Array.isArray(surface) ? surface[0] : surface),
+    [surface],
+  );
 
-  if (!__DEV__) {
+  if (!__DEV__ && process.env.EXPO_PUBLIC_MAESTRO_E2E !== "1") {
     return (
       <UnavailableRoute
         title="Developer route unavailable"
@@ -40,14 +61,14 @@ export default function StorybookScreen() {
     );
   }
 
-  if (!StorybookRoot) {
+  if (!DeveloperRoot) {
     return (
       <UnavailableRoute
         title="Storybook is disabled"
-        description="Start the mobile app with `pnpm --filter mobile storybook` and reopen this route to load the on-device component catalog."
+        description="Start the mobile app with `pnpm --filter mobile storybook:start` and reopen this route to load the on-device component catalog."
       />
     );
   }
 
-  return <StorybookRoot />;
+  return <DeveloperRoot />;
 }
