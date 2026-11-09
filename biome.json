@@ -10,13 +10,15 @@
     "includes": [
       "**",
       "!**/.expo",
-      "!**/.next",
       "!**/.worktrees",
       "!**/.turbo",
       "!**/coverage",
       "!**/dist",
       "!**/storybook-static",
-      "!**/routeTree.gen.ts"
+      "!**/routeTree.gen.ts",
+      "!**/architecture-baseline.json",
+      "!**/selectors.generated.json",
+      "!**/manifest.generated.json"
     ]
   },
   "formatter": {
@@ -64,6 +66,14 @@
         "noShadowRestrictedNames": "warn",
         "noThenProperty": "warn",
         "useIterableCallbackReturn": "warn"
+      },
+      "nursery": {
+        "noFloatingPromises": "error",
+        "noMisusedPromises": "error",
+        "useExhaustiveSwitchCases": "error"
+      },
+      "style": {
+        "useImportType": "error"
       }
     }
   },

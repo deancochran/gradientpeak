@@ -23,13 +23,13 @@ export function buildPeriodizedObjectiveComponents(input: {
   const tracking = input.reference_tracking;
   const trackingReward = tracking ? clamp01(1 - tracking.tracking_error / 8) * 0.35 : 0;
   const trackingReadinessReward = tracking
-    ? clamp01(1 - tracking.ctl_mean_absolute_error / 6) * 0.2
+    ? clamp01(1 - tracking.longTermLoad_mean_absolute_error / 6) * 0.2
     : 0;
   const trackingRiskPenalty = tracking
     ? tracking.safety_penalty + tracking.taper_pressure * 0.75
     : 0;
   const trackingVolatilityPenalty = tracking ? tracking.tracking_error * 0.04 : 0;
-  const trackingChurnPenalty = tracking ? tracking.tss_mean_absolute_error / 140 : 0;
+  const trackingChurnPenalty = tracking ? tracking.load_mean_absolute_error / 140 : 0;
 
   return {
     goal_attainment: round(input.preparedness_primary + trackingReward),

@@ -1,3 +1,11 @@
+import {
+  addDaysDateOnlyUtc,
+  formatDeviceCalendarDate,
+  isValidDateOnlyUtc,
+  parseDateOnlyUtc,
+  scheduledDateTimeToIsoInstant,
+} from "@repo/core/calendar";
+
 export type PlanningEvent = {
   id: string;
   title?: string | null;
@@ -15,14 +23,14 @@ export type PlanningEvent = {
     name?: string | null;
     description?: string | null;
     activity_category?: string | null;
+    common_load?: unknown;
   } | null;
 };
 
+const recurrenceWeekdays = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"] as const;
+
 export function toDateKey(value: Date) {
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, "0");
-  const day = String(value.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return formatDeviceCalendarDate(value);
 }
 
 export function getTodayDateKey() {
@@ -52,24 +60,7 @@ export function parseMonthKey(monthKey: string) {
 }
 
 export function isValidDateKey(dateKey: string) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
-    return false;
-  }
-
-  const [year = Number.NaN, month = Number.NaN, day = Number.NaN] = dateKey.split("-").map(Number);
-  if (
-    !Number.isInteger(year) ||
-    !Number.isInteger(month) ||
-    !Number.isInteger(day) ||
-    month < 1 ||
-    month > 12 ||
-    day < 1 ||
-    day > 31
-  ) {
-    return false;
-  }
-
-  return toDateKey(new Date(year, month - 1, day, 12, 0, 0, 0)) === dateKey;
+  return isValidDateOnlyUtc(dateKey);
 }
 
 export function getMonthWindow(monthKey: string) {
@@ -88,6 +79,42 @@ export function getMonthWindow(monthKey: string) {
 export function shiftMonthKey(monthKey: string, offset: number) {
   const base = parseMonthKey(monthKey);
   return getMonthKey(new Date(base.getFullYear(), base.getMonth() + offset, 1, 12, 0, 0, 0));
+}
+
+export function shiftDateKey(dateKey: string, offset: number) {
+  return addDaysDateOnlyUtc(dateKey, offset);
+}
+
+export function getWeekWindow(dateKey: string) {
+  const value = parseDateOnlyUtc(dateKey);
+  const startKey = shiftDateKey(dateKey, -value.getUTCDay());
+  const days = Array.from({ length: 7 }, (_, index) => shiftDateKey(startKey, index));
+
+  return {
+    startKey,
+    endKey: days[6] ?? startKey,
+    days,
+  };
+}
+
+export function buildWeeklyRecurrence({
+  count,
+  scheduledDate,
+  timezone,
+}: {
+  count: number;
+  scheduledDate: string;
+  timezone: string;
+}) {
+  if (!Number.isInteger(count) || count <= 1) return null;
+
+  const weekday = recurrenceWeekdays[parseDateOnlyUtc(scheduledDate).getUTCDay()];
+  if (!weekday) return null;
+
+  return {
+    rule: `FREQ=WEEKLY;INTERVAL=1;COUNT=${count};BYDAY=${weekday}`,
+    timezone,
+  };
 }
 
 export function getCalendarGrid(monthKey: string) {
@@ -143,6 +170,7 @@ export function formatEventTimeRange(event: PlanningEvent) {
   const startLabel = start.toLocaleTimeString([], {
     hour: "numeric",
     minute: "2-digit",
+    timeZone: event.timezone ?? "UTC",
   });
 
   if (!event.ends_at) {
@@ -154,7 +182,11 @@ export function formatEventTimeRange(event: PlanningEvent) {
     return startLabel;
   }
 
-  return `${startLabel} - ${end.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+  return `${startLabel} - ${end.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: event.timezone ?? "UTC",
+  })}`;
 }
 
 export function compareEventsByStart(a: PlanningEvent, b: PlanningEvent) {
@@ -163,18 +195,6 @@ export function compareEventsByStart(a: PlanningEvent, b: PlanningEvent) {
 
 export function buildAllDayStartIso(dateKey: string) {
   return new Date(`${dateKey}T00:00:00.000Z`).toISOString();
-}
-
-export function buildTimedStartIso(dateKey: string, time: string) {
-  return new Date(`${dateKey}T${time}:00`).toISOString();
-}
-
-export function buildTimedEndIso(startsAtIso: string, durationMs: number | null) {
-  if (durationMs === null) {
-    return null;
-  }
-
-  return new Date(new Date(startsAtIso).getTime() + durationMs).toISOString();
 }
 
 export function getEventDurationMs(event: PlanningEvent) {
@@ -188,6 +208,45 @@ export function getEventDurationMs(event: PlanningEvent) {
   }
 
   return duration;
+}
+
+export function buildCalendarEventUpdatePatch({
+  allDay,
+  event,
+  notes,
+  scheduledDate,
+  time,
+  title,
+}: {
+  allDay: boolean;
+  event: PlanningEvent;
+  notes?: string;
+  scheduledDate: string;
+  time?: string;
+  title: string;
+}) {
+  const timezone = event.timezone ?? "UTC";
+  const startsAt = allDay
+    ? buildAllDayStartIso(scheduledDate)
+    : scheduledDateTimeToIsoInstant({
+        scheduledDate,
+        time: time ?? "09:00",
+        timeZone: timezone,
+      });
+  const durationMs = getEventDurationMs(event);
+
+  return {
+    all_day: allDay,
+    ends_at:
+      allDay || durationMs === null
+        ? undefined
+        : new Date(new Date(startsAt).getTime() + durationMs).toISOString(),
+    notes: notes?.trim() ? notes.trim() : null,
+    scheduled_date: scheduledDate,
+    starts_at: startsAt,
+    timezone,
+    title,
+  };
 }
 
 export function getEventTypeLabel(eventType: string | null | undefined) {

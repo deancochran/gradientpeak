@@ -1,0 +1,1 @@
+await supabase.functions.invoke('{{FUNCTION_SLUG}}', { body: payload });

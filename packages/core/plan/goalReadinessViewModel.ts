@@ -23,7 +23,9 @@ export function resolveGoalReadinessViewModel(input: {
     typeof input.target === "number" && Number.isFinite(input.target)
       ? input.target
       : resolveGoalReadinessTarget({
-          target_surplus_preference: input.targetSurplusPreference,
+          ...(input.targetSurplusPreference === undefined
+            ? {}
+            : { target_surplus_preference: input.targetSurplusPreference }),
         });
   const value =
     typeof input.value === "number" && Number.isFinite(input.value) ? input.value : null;

@@ -1,51 +1,76 @@
+import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
+import type {
+  ExecutableIntegrationProviderId,
+  GoalEditorDraft,
+  OnboardingIntent,
+  OnboardingStatus,
+} from "@repo/core";
 import type { ComponentType } from "react";
+import type { AthleteBaselineFieldSource } from "@/components/athlete-baseline";
+
+export type OnboardingSocialActionStatus = "pending" | "saved" | "failed" | "abandoned";
+
+export type OnboardingGroupAction = {
+  action: "join" | "request";
+  action_key: string;
+  group_id: string;
+};
 
 export interface OnboardingData {
   full_name: string;
   username: string;
-  intent:
-    | "train_event"
-    | "improve_fitness"
-    | "track_activities"
-    | "groups"
-    | "follow_people"
-    | "coach_group"
-    | "explore"
-    | null;
+  planning_timezone: string | null;
+  intent: OnboardingIntent[];
   experience_level: "beginner" | "intermediate" | "advanced" | "skip" | null;
   dob: string | null;
   weight_kg: number | null;
   weight_unit: "kg" | "lbs";
   gender: "male" | "female" | "other" | null;
-  sport_interests: Array<"cycling" | "running" | "swimming" | "strength" | "other">;
+  activity_category_interests: Array<"cycling" | "running" | "swimming" | "strength" | "other">;
   max_hr: number | null;
   resting_hr: number | null;
-  lthr: number | null;
-  ftp: number | null;
-  threshold_pace: number | null;
-  css: number | null;
   vo2max: number | null;
   training_frequency: "1-2" | "3-4" | "5-6" | "7+" | null;
   equipment: string[];
   goals: string[];
+  goal_draft: GoalEditorDraft | null;
+  should_create_goal: boolean;
+  selected_invitation_ids: string[];
+  selected_group_ids: string[];
+  selected_group_actions: OnboardingGroupAction[];
+  selected_follow_profile_ids: string[];
+  social_action_statuses: Record<string, OnboardingSocialActionStatus>;
 }
 
-export type StepId = "profile" | "connect_import" | "training_baseline" | "summary";
+export type StepId =
+  | "profile"
+  | "connect_import"
+  | "training_baseline"
+  | "goals_preferences"
+  | "groups_people"
+  | "summary";
 
-export type IntegrationProvider = "strava" | "wahoo" | "trainingpeaks" | "garmin" | "zwift";
+export type OnboardingStatusModal = {
+  title: string;
+  description: string;
+  primaryLabel?: string;
+  onPrimary?: () => void | Promise<void>;
+  secondaryLabel?: string;
+  onSecondary?: () => void | Promise<void>;
+};
 
-export type OnboardingFieldSources = Partial<Record<keyof OnboardingData, string>>;
+export type IntegrationProvider = ExecutableIntegrationProviderId;
 
-export interface ProviderSyncStatus {
-  status: "idle" | "queued" | "running" | "succeeded" | "partial" | "failed" | "timed_out";
-  canContinue: boolean;
-  providers: Array<{
-    provider: IntegrationProvider;
-    status: string;
-    blocking: boolean;
-    message?: string;
-  }>;
-}
+type IntegrationOverviewItem =
+  inferRouterOutputs<AppRouter>["integrations"]["getSyncOverview"][number];
+export type OnboardingIntegrationOverview<TProvider extends string = IntegrationProvider> = Omit<
+  IntegrationOverviewItem,
+  "provider"
+> & { provider: TProvider };
+
+export type OnboardingFieldSources = Partial<
+  Record<keyof OnboardingData, AthleteBaselineFieldSource>
+>;
 
 export interface StepConfig {
   canSkip: boolean;
@@ -57,24 +82,25 @@ export interface StepConfig {
 }
 
 export interface StepProps {
+  accountIdentity?: string | null;
   data: OnboardingData;
   updateData: (
     updates: Partial<OnboardingData>,
-    options?: { source?: "estimated" | "imported" | "user" },
+    options?: {
+      source?: "estimated" | "imported" | "user";
+      sourceLabels?: Partial<Record<keyof OnboardingData, string>>;
+    },
   ) => void;
   fieldSources?: OnboardingFieldSources;
-  integrations?: Array<{ provider: IntegrationProvider }>;
-  connectionOverview?: Array<{
-    canConnect: boolean;
-    connected: boolean;
-    provider: IntegrationProvider;
-  }>;
-  providerSyncStatus?: ProviderSyncStatus;
-  onRetryProviderSync?: () => void;
-  onRefreshIntegrations?: () => void;
-  onClearProviderRequirement?: (provider: IntegrationProvider) => void;
+  integrationOverview?: OnboardingIntegrationOverview[];
+  integrationOverviewError?: unknown;
+  integrationOverviewLoading?: boolean;
+  onRefreshIntegrations?: () => unknown;
+  onboardingStatus?: OnboardingStatus;
+  providersMutable?: boolean;
   usernameAvailability?: {
     available?: boolean;
+    isError: boolean;
     isChecking: boolean;
   };
 }

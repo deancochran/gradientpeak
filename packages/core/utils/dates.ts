@@ -99,10 +99,12 @@ export function formatDateTime(
   },
 ): string {
   const dateStr = formatDate(date, {
-    relative: options?.relative,
-    includeYear: options?.includeYear,
+    ...(options?.relative === undefined ? {} : { relative: options.relative }),
+    ...(options?.includeYear === undefined ? {} : { includeYear: options.includeYear }),
   });
-  const timeStr = formatTime(date, { use24Hour: options?.use24Hour });
+  const timeStr = formatTime(date, {
+    ...(options?.use24Hour === undefined ? {} : { use24Hour: options.use24Hour }),
+  });
 
   return `${dateStr} at ${timeStr}`;
 }
@@ -140,6 +142,13 @@ export function formatDurationMs(ms: number): string {
  */
 export function formatDurationSec(seconds: number): string {
   return formatDuration(Math.round(seconds / 60));
+}
+
+/** Adds calendar days in local-Date semantics without mutating the input. */
+export function addDays(date: Date, days: number): Date {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
 }
 
 /**
