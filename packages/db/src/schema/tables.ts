@@ -3661,16 +3661,6 @@ export const activitySourceReferences = pgTable(
       foreignColumns: [activities.id, activities.profile_id],
       name: "activity_source_references_activity_profile_fkey",
     }).onDelete("cascade"),
-    foreignKey({
-      columns: [table.last_import_run_id, table.profile_id],
-      foreignColumns: [activityImportRuns.id, activityImportRuns.profile_id],
-      name: "activity_source_refs_last_import_run_profile_fk",
-    }).onDelete("set null"),
-    foreignKey({
-      columns: [table.last_material_import_run_id, table.profile_id],
-      foreignColumns: [activityImportRuns.id, activityImportRuns.profile_id],
-      name: "activity_source_refs_material_import_run_profile_fk",
-    }).onDelete("set null"),
     unique("activity_source_references_provider_unique").on(
       table.profile_id,
       table.provider,

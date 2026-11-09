@@ -4,6 +4,11 @@ import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Pool } from "pg";
+import {
+  activitySourceReferenceImportRunOwnershipFunctionNames,
+  activitySourceReferenceImportRunOwnershipSql,
+  activitySourceReferenceImportRunOwnershipTriggerNames,
+} from "../src/schema/import-run-ownership";
 import { dbPackageRoot, defaultLocalDatabaseUrl } from "./_local-database-config";
 import {
   activityPlanSqlArtifacts,
@@ -13,6 +18,65 @@ import {
 } from "./activity-plan-sql-artifacts";
 
 const materializedDatabase = "gradientpeak_schema_materialization";
+
+export function exportDrizzleSchemaSql(databaseUrl: string) {
+  const exported = spawnSync(
+    resolve(dbPackageRoot, "../../node_modules/.bin/drizzle-kit"),
+    ["export", "--config", "drizzle.config.ts"],
+    {
+      cwd: dbPackageRoot,
+      encoding: "utf8",
+      env: { ...process.env, DATABASE_URL: databaseUrl, POSTGRES_URL: databaseUrl },
+      stdio: ["ignore", "pipe", "inherit"],
+    },
+  );
+  if (exported.status !== 0 || !exported.stdout?.includes("CREATE TABLE")) {
+    throw new Error("Drizzle schema export failed or returned no tables.");
+  }
+  return exported.stdout;
+}
+
+export async function installActivitySourceReferenceImportRunOwnership(pool: Pick<Pool, "query">) {
+  await pool.query(activitySourceReferenceImportRunOwnershipSql);
+}
+
+/** Builds only an already-created materialization target; callers own target guarding and lifecycle. */
+export async function buildMaterializedSchemaTarget(
+  targetPool: Pool,
+  databaseUrl: string,
+  functionDefinitions: string[] = [],
+  triggerDefinitions: string[] = [],
+) {
+  await targetPool.query(`
+    create schema if not exists extensions;
+    create extension if not exists btree_gist with schema extensions;
+    create function public.activity_artifact_content_path(target_profile_id uuid, target_digest text)
+      returns text language sql immutable strict set search_path = pg_catalog
+      as $$ select 'artifacts/sha256/' || target_profile_id::text || '/' || target_digest $$;
+    create function public.activity_plan_v5_structure_is_valid(input jsonb)
+      returns boolean language sql immutable strict set search_path = pg_catalog
+      as $$ select true $$;
+  `);
+  await targetPool.query(exportDrizzleSchemaSql(databaseUrl));
+  await installActivityPlanSqlFunctions(targetPool);
+  await installActivitySourceReferenceImportRunOwnership(targetPool);
+  for (const definition of functionDefinitions) await targetPool.query(definition);
+  for (const definition of triggerDefinitions) await targetPool.query(definition);
+  await targetPool.query(activityPlanSqlArtifacts().triggers);
+  await targetPool.query(`
+    do $block$
+    declare relation record;
+    begin
+      for relation in
+        select quote_ident(schemaname) as schema_name, quote_ident(tablename) as table_name
+        from pg_tables where schemaname = 'public'
+      loop
+        execute format('alter table %s.%s enable row level security', relation.schema_name, relation.table_name);
+      end loop;
+    end
+    $block$;
+  `);
+}
 
 export function requireGuardedLocalMaterialization(databaseUrl: string) {
   const url = new URL(databaseUrl);
@@ -43,7 +107,12 @@ async function materialize() {
          where namespace.nspname = 'public' and procedure_record.proname <> all($1::text[])
          order by procedure_record.oid
        `,
-        [pinnedActivityPlanFunctionNames],
+        [
+          [
+            ...pinnedActivityPlanFunctionNames,
+            ...activitySourceReferenceImportRunOwnershipFunctionNames,
+          ],
+        ],
       ),
       adminPool.query<{ definition: string }>(
         `
@@ -54,7 +123,12 @@ async function materialize() {
          where namespace.nspname = 'public' and not trigger_record.tgisinternal and trigger_record.tgname <> all($1::text[])
          order by trigger_record.oid
        `,
-        [pinnedActivityPlanTriggerNames],
+        [
+          [
+            ...pinnedActivityPlanTriggerNames,
+            ...activitySourceReferenceImportRunOwnershipTriggerNames,
+          ],
+        ],
       ),
     ]);
     functionDefinitions = functions.rows.map(({ definition }) => definition);
@@ -69,47 +143,14 @@ async function materialize() {
     await adminPool.end();
   }
 
-  const exported = spawnSync(
-    resolve(dbPackageRoot, "../../node_modules/.bin/drizzle-kit"),
-    ["export", "--config", "drizzle.config.ts"],
-    {
-      cwd: dbPackageRoot,
-      encoding: "utf8",
-      env: { ...process.env, DATABASE_URL: materializedUrl, POSTGRES_URL: materializedUrl },
-      stdio: ["ignore", "pipe", "inherit"],
-    },
-  );
-  if (exported.status !== 0 || !exported.stdout?.includes("CREATE TABLE")) {
-    throw new Error("Drizzle schema export failed or returned no tables.");
-  }
-
   const targetPool = new Pool({ connectionString: materializedUrl, max: 1 });
   try {
-    await targetPool.query(`
-      create schema if not exists extensions;
-      create extension if not exists btree_gist with schema extensions;
-      create function public.activity_artifact_content_path(target_profile_id uuid, target_digest text)
-        returns text language sql immutable strict set search_path = pg_catalog
-        as $$ select 'artifacts/sha256/' || target_profile_id::text || '/' || target_digest $$;
-    `);
-    await installActivityPlanSqlFunctions(targetPool);
-    await targetPool.query(exported.stdout);
-    for (const definition of functionDefinitions) await targetPool.query(definition);
-    for (const definition of triggerDefinitions) await targetPool.query(definition);
-    await targetPool.query(activityPlanSqlArtifacts().triggers);
-    await targetPool.query(`
-      do $block$
-      declare relation record;
-      begin
-        for relation in
-          select quote_ident(schemaname) as schema_name, quote_ident(tablename) as table_name
-          from pg_tables where schemaname = 'public'
-        loop
-          execute format('alter table %s.%s enable row level security', relation.schema_name, relation.table_name);
-        end loop;
-      end
-      $block$;
-    `);
+    await buildMaterializedSchemaTarget(
+      targetPool,
+      materializedUrl,
+      functionDefinitions,
+      triggerDefinitions,
+    );
   } finally {
     await targetPool.end();
   }
