@@ -52,10 +52,10 @@ export function CoachShell({ organization }: CoachShellProps) {
               <span className="block truncate text-xs text-slate-400">{organization.name}</span>
             </span>
           </Link>
-          <Badge className="hidden border-cyan-700 bg-cyan-950 text-cyan-200 sm:inline-flex">
+          <Badge className="hidden border-cyan-700 bg-cyan-950 text-cyan-200 xl:inline-flex">
             Coach workspace
           </Badge>
-          <nav className="ml-5 hidden items-center md:flex" aria-label="Coaching navigation">
+          <nav className="ml-5 hidden items-center xl:flex" aria-label="Coaching navigation">
             <Link
               to="/organizations/$organizationId/athletes"
               params={{ organizationId: organization.id }}
@@ -143,7 +143,7 @@ function CoachMobileNavigation({
         <Button
           variant="ghost"
           size="icon"
-          className="text-slate-200 hover:bg-slate-900 hover:text-white md:hidden"
+          className="text-slate-200 hover:bg-slate-900 hover:text-white xl:hidden"
           aria-label="Open coaching navigation"
         >
           <Menu className="h-5 w-5" />

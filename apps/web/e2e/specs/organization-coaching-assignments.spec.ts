@@ -49,9 +49,57 @@ test("owner assigns and ends direct coach responsibility without changing consen
       });
     });
   });
-  await athletePage.getByRole("link", { name: "Manage coach assignments", exact: true }).click();
+  const organizationNavigation = athletePage.getByRole("navigation", {
+    name: "Organization administration",
+  });
+  await organizationNavigation.getByRole("link", { name: "Assignments", exact: true }).click();
   const directory = athletePage.getByRole("list", { name: "Athlete coach assignments" });
   await expect(directory.getByText("Unassigned", { exact: true })).toBeVisible();
+  await expect(
+    organizationNavigation.getByRole("link", { name: "Assignments", exact: true }),
+  ).toHaveAttribute("aria-current", "page");
+  await expect(athletePage.getByLabel("Primary coach filter")).toBeVisible();
+  await expect(athletePage.getByText("Coverage unavailable", { exact: true })).toBeVisible();
+  for (const width of [768, 1024, 1100]) {
+    await athletePage.setViewportSize({ width, height: 1000 });
+    await athletePage.getByRole("button", { name: "Open coaching navigation" }).click();
+    const compactNavigation = athletePage.getByRole("navigation", {
+      name: "Mobile coaching navigation",
+    });
+    await expect(
+      compactNavigation.getByRole("link", { name: "Dashboard", exact: true }),
+    ).toBeVisible();
+    await compactNavigation.getByRole("link", { name: "Assignments", exact: true }).click();
+    await expect(compactNavigation).toBeHidden();
+    await expect(
+      athletePage.getByRole("button", { name: "Manage coaches", exact: true }),
+    ).toBeVisible();
+    await expect
+      .poll(() =>
+        athletePage.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+      )
+      .toBe(true);
+    await athletePage.screenshot({
+      path: testInfo.outputPath(`O05--ready--${width}.png`),
+      fullPage: true,
+    });
+  }
+  await athletePage.setViewportSize({ width: 1440, height: 1000 });
+  await athletePage.screenshot({
+    path: testInfo.outputPath("O05--ready--desktop.png"),
+    fullPage: true,
+  });
+  expect(
+    await athletePage.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+  ).toBe(true);
+  await athletePage.setViewportSize({ width: 390, height: 844 });
+  await athletePage.screenshot({
+    path: testInfo.outputPath("O05--ready--mobile.png"),
+    fullPage: true,
+  });
+  expect(
+    await athletePage.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+  ).toBe(true);
   await athletePage.getByRole("button", { name: "Manage coaches", exact: true }).click();
   await expect(athletePage.getByText(/separate from athlete consent/)).toBeVisible();
   await athletePage.getByRole("combobox", { name: "Eligible coach" }).click();
@@ -64,8 +112,26 @@ test("owner assigns and ends direct coach responsibility without changing consen
   await athletePage
     .getByRole("button", { name: /Back to (athlete roster|assignment directory)/ })
     .click();
-  await expect(directory.getByText(/^Primary:/)).toBeVisible();
+  const primaryColumn = directory.getByText("Primary coach", { exact: true }).locator("..");
+  await expect(primaryColumn.locator("p").nth(1)).toHaveText(/\S/);
   await expect(directory.getByText("Unassigned", { exact: true })).toHaveCount(0);
+  await athletePage.getByLabel("Primary coach filter").selectOption("unassigned");
+  await athletePage.getByRole("button", { name: "Apply filters", exact: true }).click();
+  await expect(athletePage).toHaveURL(/primary=unassigned/);
+  await expect(
+    athletePage.getByRole("button", { name: "Manage coaches", exact: true }),
+  ).toHaveCount(0);
+  await athletePage.getByLabel("Primary coach filter").selectOption("all");
+  await athletePage.getByLabel("Athlete status filter").selectOption("paused");
+  await athletePage.getByRole("button", { name: "Apply filters", exact: true }).click();
+  await expect(athletePage).toHaveURL(/status=paused/);
+  await expect(
+    athletePage.getByRole("button", { name: "Manage coaches", exact: true }),
+  ).toHaveCount(0);
+  await athletePage.getByLabel("Athlete status filter").selectOption("active");
+  await athletePage.getByRole("button", { name: "Apply filters", exact: true }).click();
+  await expect(athletePage).toHaveURL(/status=active/);
+  await expect(primaryColumn.locator("p").nth(1)).toHaveText(/\S/);
   await athletePage.screenshot({
     path: testInfo.outputPath("directory-assigned.png"),
     fullPage: true,
@@ -84,10 +150,10 @@ test("owner assigns and ends direct coach responsibility without changing consen
   await athletePage
     .getByRole("textbox", { name: "Search athletes on this page" })
     .fill("no-matching-athlete");
-  await athletePage.getByRole("button", { name: "Search", exact: true }).click();
+  await athletePage.getByRole("button", { name: "Apply filters", exact: true }).click();
   await expect(athletePage.getByText("No athletes on this page match this search.")).toBeVisible();
   await athletePage.getByRole("textbox", { name: "Search athletes on this page" }).fill("");
-  await athletePage.getByRole("button", { name: "Search", exact: true }).click();
+  await athletePage.getByRole("button", { name: "Apply filters", exact: true }).click();
   await expect(directory.getByText("Unassigned", { exact: true })).toBeVisible();
   await withLocalE2EDatabase(async (database) => {
     const rows = await database.db

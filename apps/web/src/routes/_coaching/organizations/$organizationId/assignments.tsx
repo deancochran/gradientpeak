@@ -2,6 +2,7 @@ import { createFileRoute, useRouterState } from "@tanstack/react-router";
 import { z } from "zod";
 import { CoachAccessDenied } from "../../../../components/coaching/coach-access-denied";
 import { AssignmentDirectory } from "../../../../components/coaching/organization-coaching-assignments/assignment-directory";
+import { OrganizationOverviewFrame } from "../../../../components/coaching/organization-overview-frame";
 import { loadOrganizationAssignmentDirectory } from "../../../../lib/coaching/assignment-directory-server-functions";
 
 const searchSchema = z
@@ -79,15 +80,17 @@ function AssignmentDirectoryPage() {
 
   if (loaded.page.status === "forbidden") return <CoachAccessDenied />;
   return (
-    <AssignmentDirectory
-      key={`${actorProfileId}:${organizationId}:${cursor ?? ""}:${q ?? ""}:${primary ?? ""}:${status ?? ""}`}
-      actorProfileId={actorProfileId}
-      organizationId={organizationId}
-      page={loaded.page}
-      search={q ?? null}
-      primary={primary ?? null}
-      status={status ?? null}
-    />
+    <OrganizationOverviewFrame activeTab="assignments" organizationId={organizationId}>
+      <AssignmentDirectory
+        key={`${actorProfileId}:${organizationId}:${cursor ?? ""}:${q ?? ""}:${primary ?? ""}:${status ?? ""}`}
+        actorProfileId={actorProfileId}
+        organizationId={organizationId}
+        page={loaded.page}
+        search={q ?? null}
+        primary={primary ?? null}
+        status={status ?? null}
+      />
+    </OrganizationOverviewFrame>
   );
 }
 

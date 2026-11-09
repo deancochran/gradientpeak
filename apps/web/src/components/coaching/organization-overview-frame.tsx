@@ -6,13 +6,15 @@ import { useState } from "react";
 export function OrganizationOverviewFrame({
   organizationId,
   children,
+  activeTab = "overview",
 }: {
   organizationId: string;
   children: React.ReactNode;
+  activeTab?: OrganizationAdministrationTab;
 }) {
   return (
     <div className="space-y-6">
-      <OrganizationAdministrationNavigation organizationId={organizationId} />
+      <OrganizationAdministrationNavigation activeTab={activeTab} organizationId={organizationId} />
       {children}
     </div>
   );
@@ -80,9 +82,28 @@ export function OrganizationOverviewError({ organizationId }: { organizationId: 
   );
 }
 
-function OrganizationAdministrationNavigation({ organizationId }: { organizationId: string }) {
+type OrganizationAdministrationTab =
+  | "overview"
+  | "staff"
+  | "athletes"
+  | "assignments"
+  | "invitations"
+  | "groups"
+  | "audit";
+
+function OrganizationAdministrationNavigation({
+  organizationId,
+  activeTab,
+}: {
+  organizationId: string;
+  activeTab: OrganizationAdministrationTab;
+}) {
   const navigationClassName =
     "inline-flex shrink-0 rounded-md px-3 py-2 text-sm text-slate-300 hover:bg-slate-900 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2";
+  const activeNavigationClassName =
+    "inline-flex shrink-0 rounded-md bg-slate-800 px-3 py-2 text-sm font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2";
+  const tabClassName = (tab: OrganizationAdministrationTab) =>
+    activeTab === tab ? activeNavigationClassName : navigationClassName;
 
   return (
     <nav
@@ -92,8 +113,8 @@ function OrganizationAdministrationNavigation({ organizationId }: { organization
       <Link
         to="/organizations/$organizationId/dashboard"
         params={{ organizationId }}
-        aria-current="page"
-        className="inline-flex shrink-0 rounded-md bg-slate-800 px-3 py-2 text-sm font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2"
+        aria-current={activeTab === "overview" ? "page" : undefined}
+        className={tabClassName("overview")}
       >
         Overview
       </Link>
@@ -101,42 +122,48 @@ function OrganizationAdministrationNavigation({ organizationId }: { organization
         to="/organizations/$organizationId/staff"
         params={{ organizationId }}
         search={{ status: "active", cursor: undefined }}
-        className={navigationClassName}
+        aria-current={activeTab === "staff" ? "page" : undefined}
+        className={tabClassName("staff")}
       >
         Staff
       </Link>
       <Link
         to="/organizations/$organizationId/athletes"
         params={{ organizationId }}
-        className={navigationClassName}
+        aria-current={activeTab === "athletes" ? "page" : undefined}
+        className={tabClassName("athletes")}
       >
         Athletes
       </Link>
       <Link
         to="/organizations/$organizationId/assignments"
         params={{ organizationId }}
-        className={navigationClassName}
+        aria-current={activeTab === "assignments" ? "page" : undefined}
+        className={tabClassName("assignments")}
       >
         Assignments
       </Link>
       <Link
         to="/organizations/$organizationId/invitations"
         params={{ organizationId }}
-        className={navigationClassName}
+        aria-current={activeTab === "invitations" ? "page" : undefined}
+        className={tabClassName("invitations")}
       >
         Invitations
       </Link>
       <Link
         to="/organizations/$organizationId/groups"
         params={{ organizationId }}
-        className={navigationClassName}
+        aria-current={activeTab === "groups" ? "page" : undefined}
+        className={tabClassName("groups")}
       >
         Groups
       </Link>
       <Link
         to="/organizations/$organizationId/audit"
         params={{ organizationId }}
-        className={navigationClassName}
+        aria-current={activeTab === "audit" ? "page" : undefined}
+        className={tabClassName("audit")}
       >
         Audit
       </Link>

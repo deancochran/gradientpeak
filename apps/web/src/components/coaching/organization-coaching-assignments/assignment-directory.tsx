@@ -9,7 +9,7 @@ import {
 } from "@repo/ui/components/card";
 import { Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { Search } from "lucide-react";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import { OrganizationCoachingAssignments } from "./organization-coaching-assignments";
 
@@ -48,6 +48,7 @@ export function AssignmentDirectory({
   const [selected, setSelected] = useState<Athlete | null>(null);
   const [accessLost, setAccessLost] = useState(false);
   const [refreshState, setRefreshState] = useState<"idle" | "loading" | "error">("idle");
+  const searchInput = useRef<HTMLInputElement>(null);
   useEffect(() => setQuery(search ?? ""), [search]);
 
   const visibleAthletes = useMemo(() => {
@@ -60,14 +61,17 @@ export function AssignmentDirectory({
 
   function applySearch(event: React.FormEvent) {
     event.preventDefault();
+    const formData = new FormData(event.currentTarget as HTMLFormElement);
+    const nextPrimary = formData.get("primary") === "unassigned" ? "unassigned" : undefined;
+    const nextStatus = formData.get("status");
     void navigate({
       to: "/organizations/$organizationId/assignments",
       params: { organizationId },
       search: {
         q: query.trim() || undefined,
         cursor: undefined,
-        primary: primary ?? undefined,
-        status: status ?? undefined,
+        primary: nextPrimary,
+        status: nextStatus === "active" || nextStatus === "paused" ? nextStatus : undefined,
       },
     });
   }
@@ -81,6 +85,10 @@ export function AssignmentDirectory({
     } catch {
       setRefreshState("error");
     }
+  }
+
+  function focusAthleteSearch() {
+    searchInput.current?.focus();
   }
 
   if (accessLost)
@@ -113,115 +121,232 @@ export function AssignmentDirectory({
 
   return (
     <div className="space-y-6">
-      <header className="space-y-2">
-        <p className="text-sm font-medium uppercase tracking-[0.18em] text-cyan-300">
-          Administration
-        </p>
-        <h1 className="text-3xl font-semibold tracking-tight text-white">Coach assignments</h1>
-        <p className="max-w-3xl text-sm leading-6 text-slate-400">
-          Direct coach responsibility is separate from membership, billing, athlete consent, and
-          private training access. Temporary coverage and handovers are not available yet.
-        </p>
-      </header>
-      <form onSubmit={applySearch} className="flex max-w-xl gap-2">
-        <label className="sr-only" htmlFor="assignment-athlete-search">
-          Search athletes on this page
-        </label>
-        <input
-          id="assignment-athlete-search"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search this loaded page by athlete name"
-          className="min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-500"
-        />
-        <Button type="submit" className="bg-cyan-400 text-slate-950 hover:bg-cyan-300">
-          <Search className="mr-2 h-4 w-4" />
-          Search
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div className="space-y-2">
+          <p className="text-sm font-medium uppercase tracking-[0.18em] text-cyan-300">
+            Administration
+          </p>
+          <h1 className="text-3xl font-semibold tracking-tight text-white">Coach assignments</h1>
+          <p className="max-w-3xl text-sm leading-6 text-slate-400">
+            Primary coaches and supporting responsibility. Temporary coverage and handovers are
+            unavailable in this directory.
+          </p>
+        </div>
+        <Button
+          type="button"
+          className="bg-cyan-400 text-slate-950 hover:bg-cyan-300"
+          onClick={focusAthleteSearch}
+        >
+          Find an athlete to assign
         </Button>
-      </form>
-      <Card className="border-slate-800 bg-slate-900 text-slate-50">
-        <CardHeader>
-          <CardTitle>Direct assignment directory</CardTitle>
-          <CardDescription className="text-slate-400">
-            {primary === "unassigned"
-              ? "Showing athletes without a current primary coach. Supporting responsibility alone does not satisfy this filter."
-              : "Current primary and supporting responsibilities are listed below; unassigned athletes have no direct coach responsibility."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {visibleAthletes.length === 0 ? (
-            <p className="text-sm text-slate-400">No athletes on this page match this search.</p>
-          ) : (
-            <ul aria-label="Athlete coach assignments" className="space-y-3">
-              {visibleAthletes.map((athlete) => (
+      </header>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,0.38fr)]">
+        <Card className="@container min-w-0 border-slate-800 bg-slate-900 text-slate-50">
+          <CardHeader>
+            <CardTitle>Assignment directory</CardTitle>
+            <CardDescription className="text-slate-400">
+              {primary === "unassigned"
+                ? "Showing athletes without a current primary coach. Supporting responsibility alone does not satisfy this filter."
+                : "Choose an athlete to view or change their direct coaching responsibility."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <form onSubmit={applySearch} className="flex flex-wrap gap-2">
+              <div className="min-w-52 flex-1">
+                <label className="sr-only" htmlFor="assignment-athlete-search">
+                  Search athletes on this page
+                </label>
+                <input
+                  ref={searchInput}
+                  id="assignment-athlete-search"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search this loaded page by athlete name"
+                  className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white placeholder:text-slate-500"
+                />
+              </div>
+              <label className="sr-only" htmlFor="assignment-primary-filter">
+                Primary coach filter
+              </label>
+              <select
+                id="assignment-primary-filter"
+                name="primary"
+                defaultValue={primary ?? "all"}
+                className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+              >
+                <option value="all">All primary states</option>
+                <option value="unassigned">Unassigned primary</option>
+              </select>
+              <label className="sr-only" htmlFor="assignment-status-filter">
+                Athlete status filter
+              </label>
+              <select
+                id="assignment-status-filter"
+                name="status"
+                defaultValue={status ?? "all"}
+                className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+              >
+                <option value="all">All athlete states</option>
+                <option value="active">Active athletes</option>
+                <option value="paused">Paused athletes</option>
+              </select>
+              <Button type="submit" className="bg-cyan-400 text-slate-950 hover:bg-cyan-300">
+                <Search className="mr-2 h-4 w-4" />
+                Apply filters
+              </Button>
+            </form>
+            {visibleAthletes.length === 0 ? (
+              <p className="text-sm text-slate-400">No athletes on this page match this search.</p>
+            ) : (
+              <ul
+                aria-label="Athlete coach assignments"
+                className="divide-y divide-slate-700 border-y border-slate-700"
+              >
                 <li
-                  key={athlete.engagementId}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-slate-800 p-4"
+                  aria-hidden="true"
+                  className="hidden grid-cols-[minmax(10rem,1.2fr)_minmax(9rem,1fr)_minmax(9rem,1fr)_minmax(8rem,0.8fr)_9rem] gap-3 px-3 py-2 text-xs font-medium uppercase tracking-wide text-slate-400 @min-[54rem]:grid"
                 >
-                  <div className="min-w-0 space-y-1">
-                    <p className="font-medium">{identityName(athlete)}</p>
-                    {athlete.identity.username ? (
-                      <p className="text-sm text-slate-400">@{athlete.identity.username}</p>
-                    ) : null}
-                    <fieldset className="flex flex-wrap gap-2">
-                      <legend className="sr-only">
-                        Responsibilities for {identityName(athlete)}
-                      </legend>
-                      {athlete.assignments.length ? (
-                        athlete.assignments.map((assignment) => (
-                          <Fragment key={assignment.assignmentId}>
-                            <Badge className="border-slate-700 bg-slate-800 text-slate-200">
-                              {assignment.assignmentKind === "primary" ? "Primary" : "Supporting"}:{" "}
-                              {assignment.coachName}
-                            </Badge>
-                            {assignment.coachMembershipStatus !== "active" ? (
-                              <Badge className="border-amber-800 bg-amber-950 capitalize text-amber-200">
-                                Coach {assignment.coachMembershipStatus}
-                              </Badge>
-                            ) : null}
-                          </Fragment>
-                        ))
-                      ) : (
-                        <Badge className="border-amber-800 bg-amber-950 text-amber-200">
-                          Unassigned
-                        </Badge>
-                      )}
+                  <span>Athlete</span>
+                  <span>Primary coach</span>
+                  <span>Supporting coach</span>
+                  <span>Coverage</span>
+                  <span className="sr-only">Actions</span>
+                </li>
+                {visibleAthletes.map((athlete) => (
+                  <li
+                    key={athlete.engagementId}
+                    className="grid gap-3 px-3 py-4 @min-[54rem]:grid-cols-[minmax(10rem,1.2fr)_minmax(9rem,1fr)_minmax(9rem,1fr)_minmax(8rem,0.8fr)_9rem] @min-[54rem]:items-center"
+                  >
+                    <div className="min-w-0 space-y-1 break-words">
+                      <p className="font-medium">{identityName(athlete)}</p>
+                      {athlete.identity.username ? (
+                        <p className="text-sm text-slate-400">@{athlete.identity.username}</p>
+                      ) : null}
                       {athlete.status === "paused" ? (
                         <Badge className="border-slate-700 bg-slate-800 text-slate-300">
                           Paused
                         </Badge>
                       ) : null}
-                    </fieldset>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="border-slate-600 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
-                    onClick={() => setSelected(athlete)}
-                  >
-                    Manage coaches
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          )}
-          {page.hasMore && page.nextCursor ? (
-            <Link
-              to="/organizations/$organizationId/assignments"
-              params={{ organizationId }}
-              search={{
-                q: search ?? undefined,
-                cursor: page.nextCursor,
-                primary: primary ?? undefined,
-                status: status ?? undefined,
-              }}
-              className="inline-block text-sm text-cyan-300 hover:text-cyan-100"
-            >
-              Next page of athletes
-            </Link>
-          ) : null}
-        </CardContent>
-      </Card>
+                    </div>
+                    <ResponsibilityColumn
+                      label="Primary coach"
+                      assignments={athlete.assignments.filter(
+                        (assignment) => assignment.assignmentKind === "primary",
+                      )}
+                      empty="Unassigned"
+                    />
+                    <ResponsibilityColumn
+                      label="Supporting coach"
+                      assignments={athlete.assignments.filter(
+                        (assignment) => assignment.assignmentKind === "supporting",
+                      )}
+                      empty="No supporting coach"
+                    />
+                    <div className="space-y-1 text-sm">
+                      <p className="text-xs font-medium uppercase tracking-wide text-slate-400 @min-[54rem]:sr-only">
+                        Coverage
+                      </p>
+                      <Badge className="border-slate-700 bg-slate-800 text-slate-300">
+                        Coverage unavailable
+                      </Badge>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="border-slate-600 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
+                      onClick={() => setSelected(athlete)}
+                    >
+                      Manage coaches
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {page.hasMore && page.nextCursor ? (
+              <Link
+                to="/organizations/$organizationId/assignments"
+                params={{ organizationId }}
+                search={{
+                  q: search ?? undefined,
+                  cursor: page.nextCursor,
+                  primary: primary ?? undefined,
+                  status: status ?? undefined,
+                }}
+                className="inline-block text-sm text-cyan-300 hover:text-cyan-100"
+              >
+                Next page of athletes
+              </Link>
+            ) : null}
+          </CardContent>
+        </Card>
+        <aside className="space-y-4" aria-label="Assignment scope and guidance">
+          <Card className="border-slate-700 bg-slate-900 text-slate-50">
+            <CardHeader>
+              <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
+                Organization scope
+              </p>
+              <CardTitle className="text-base">Authorized assignment directory</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm leading-6 text-slate-400">
+                This directory only shows athletes and eligible coaches within your authorized
+                organization scope. It does not grant billing, consent, or private training access.
+              </p>
+            </CardContent>
+          </Card>
+          <Card className="border-slate-700 bg-slate-900 text-slate-50">
+            <CardHeader>
+              <CardTitle className="text-base">Next useful action</CardTitle>
+              <CardDescription className="text-slate-400">
+                Find the athlete whose primary responsibility needs review, then manage coaches from
+                their row.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button
+                type="button"
+                variant="outline"
+                className="border-slate-600 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
+                onClick={focusAthleteSearch}
+              >
+                Find an athlete to assign
+              </Button>
+            </CardContent>
+          </Card>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+function ResponsibilityColumn({
+  label,
+  assignments,
+  empty,
+}: {
+  label: string;
+  assignments: Assignment[];
+  empty: string;
+}) {
+  return (
+    <div className="min-w-0 space-y-1 break-words text-sm">
+      <p className="text-xs font-medium uppercase tracking-wide text-slate-400 @min-[54rem]:sr-only">
+        {label}
+      </p>
+      {assignments.length ? (
+        assignments.map((assignment) => (
+          <Fragment key={assignment.assignmentId}>
+            <p>{assignment.coachName}</p>
+            {assignment.coachMembershipStatus !== "active" ? (
+              <Badge className="border-amber-800 bg-amber-950 capitalize text-amber-200">
+                Coach {assignment.coachMembershipStatus}
+              </Badge>
+            ) : null}
+          </Fragment>
+        ))
+      ) : (
+        <Badge className="border-amber-800 bg-amber-950 text-amber-200">{empty}</Badge>
+      )}
     </div>
   );
 }

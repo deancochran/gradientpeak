@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
-import type { ComponentType } from "react";
+import type { ComponentType, ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
@@ -48,6 +48,15 @@ vi.mock(
     AssignmentDirectory: () => <div>Private assignment roster</div>,
   }),
 );
+vi.mock("../../../../components/coaching/organization-overview-frame", () => ({
+  OrganizationOverviewFrame: ({
+    children,
+    activeTab,
+  }: {
+    children: ReactNode;
+    activeTab?: string;
+  }) => <div data-active-tab={activeTab}>{children}</div>,
+}));
 
 import { Route } from "./assignments";
 
@@ -145,11 +154,14 @@ describe("coach assignment directory route", () => {
     expect(screen.queryByText("Private assignment roster")).toBeNull();
   });
 
-  it("renders the roster only when route, filters, and actor all match", () => {
+  it("renders the roster in the shared organization frame only when route, filters, and actor all match", () => {
     const Page = state.options.component as ComponentType;
     render(<Page />);
 
     expect(screen.getByText("Private assignment roster")).toBeTruthy();
+    expect(
+      screen.getByText("Private assignment roster").parentElement?.getAttribute("data-active-tab"),
+    ).toBe("assignments");
     expect(screen.queryByRole("status")).toBeNull();
   });
 });

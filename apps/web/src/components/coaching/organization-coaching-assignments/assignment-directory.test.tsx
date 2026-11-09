@@ -81,14 +81,14 @@ describe("AssignmentDirectory", () => {
     const manage = screen.getAllByRole("button", { name: "Manage coaches" })[0];
     if (!manage) throw new Error("Missing management control");
     fireEvent.click(manage);
-    expect(screen.queryByText("Primary: Casey Coach")).toBeNull();
+    expect(screen.queryByText("Casey Coach")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Close editor" }));
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Retry assignment refresh" })).toBeTruthy(),
     );
-    expect(screen.queryByText("Primary: Casey Coach")).toBeNull();
+    expect(screen.queryByText("Casey Coach")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Retry assignment refresh" }));
-    await waitFor(() => expect(screen.getByText("Primary: Casey Coach")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("Casey Coach")).toBeTruthy());
     expect(mocks.invalidate).toHaveBeenCalledWith({ sync: true });
   });
   it("shows primary, supporting, and genuinely unassigned direct responsibility without timed-cover claims", () => {
@@ -100,18 +100,27 @@ describe("AssignmentDirectory", () => {
         search={null}
       />,
     );
-    expect(screen.getByText("Primary: Casey Coach")).toBeTruthy();
-    expect(screen.getByText("Supporting: Morgan Coach")).toBeTruthy();
+    expect(screen.getByText("Casey Coach")).toBeTruthy();
+    expect(screen.getByText("Morgan Coach")).toBeTruthy();
     expect(screen.getByText("Coach suspended")).toBeTruthy();
     expect(screen.getByText("Unassigned")).toBeTruthy();
-    expect(screen.getByText(/Temporary coverage and handovers are not available yet/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Search" }).className).toContain("bg-cyan-400");
+    expect(screen.getAllByText("Coverage unavailable")).toHaveLength(2);
+    expect(
+      screen.getByText(/Temporary coverage and handovers are unavailable in this directory/),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Apply filters" }).className).toContain(
+      "bg-cyan-400",
+    );
+    const findAthlete = screen.getAllByRole("button", { name: "Find an athlete to assign" })[0];
+    if (!findAthlete) throw new Error("Missing assignment workflow entry point");
+    fireEvent.click(findAthlete);
+    expect(document.activeElement).toBe(screen.getByLabelText("Search athletes on this page"));
     expect(screen.getAllByRole("button", { name: "Manage coaches" })[0]?.className).toContain(
       "bg-slate-900",
     );
   });
 
-  it("keeps page-local search explicit and opens the established responsibility controls", () => {
+  it("keeps page-local search explicit, applies real route filters, and opens responsibility controls", () => {
     render(
       <AssignmentDirectory
         actorProfileId="profile"
@@ -123,13 +132,19 @@ describe("AssignmentDirectory", () => {
     fireEvent.change(screen.getByLabelText("Search athletes on this page"), {
       target: { value: "Jordan" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    fireEvent.change(screen.getByLabelText("Primary coach filter"), {
+      target: { value: "unassigned" },
+    });
+    fireEvent.change(screen.getByLabelText("Athlete status filter"), {
+      target: { value: "paused" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
     expect(mocks.navigate).toHaveBeenCalledWith({
       to: "/organizations/$organizationId/assignments",
       params: { organizationId },
-      search: { q: "Jordan", cursor: undefined },
+      search: { q: "Jordan", cursor: undefined, primary: "unassigned", status: "paused" },
     });
-    expect(screen.queryByText("Primary: Casey Coach")).toBeTruthy();
+    expect(screen.queryByText("Casey Coach")).toBeTruthy();
     const manageButton = screen.getAllByRole("button", { name: "Manage coaches" })[0];
     if (!manageButton) throw new Error("Expected an athlete responsibility control");
     fireEvent.click(manageButton);
