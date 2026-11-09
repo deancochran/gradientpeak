@@ -85,6 +85,7 @@ export function OrganizationOverviewError({ organizationId }: { organizationId: 
 type OrganizationAdministrationTab =
   | "overview"
   | "staff"
+  | "roles"
   | "athletes"
   | "assignments"
   | "invitations"
@@ -126,6 +127,14 @@ function OrganizationAdministrationNavigation({
         className={tabClassName("staff")}
       >
         Staff
+      </Link>
+      <Link
+        to="/organizations/$organizationId/roles"
+        params={{ organizationId }}
+        aria-current={activeTab === "roles" ? "page" : undefined}
+        className={tabClassName("roles")}
+      >
+        Roles
       </Link>
       <Link
         to="/organizations/$organizationId/athletes"
