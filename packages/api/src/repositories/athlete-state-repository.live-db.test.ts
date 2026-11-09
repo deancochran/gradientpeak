@@ -487,6 +487,11 @@ describe("athlete state persistence", () => {
   it("publishes a chronological contribution incrementally and agrees with a fenced rebuild", async () => {
     const profileId = await seedProfile();
     const firstFinishedAt = new Date("2026-01-01T10:00:00.000Z");
+    await seedHistoricalBikePowerThreshold({
+      profileId,
+      // The first segment starts at 09:30; history resolves targets at segment start.
+      observedAt: new Date("2026-01-01T08:00:00.000Z"),
+    });
     const firstActivityId = await seedActivity({
       profileId,
       finishedAt: firstFinishedAt,
@@ -1052,6 +1057,11 @@ describe("athlete state persistence", () => {
     const currentFinishedAt = new Date("2026-08-06T10:00:00.000Z");
     const futureFinishedAt = new Date("2026-08-07T10:00:00.000Z");
     const futureEffortRecordedAt = new Date("2026-08-07T08:00:00.000Z");
+    await seedHistoricalBikePowerThreshold({
+      profileId,
+      // The current segment starts at 09:30; history resolves targets at segment start.
+      observedAt: new Date("2026-08-06T08:00:00.000Z"),
+    });
     const currentActivityId = await seedActivity({
       profileId,
       finishedAt: currentFinishedAt,
