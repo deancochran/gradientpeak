@@ -4,6 +4,7 @@ import { Card, CardContent } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
 import type { ReactNode } from "react";
 import { Image, TouchableOpacity, View } from "react-native";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
 
 export type ProfileSummary = {
@@ -30,6 +31,7 @@ type ProfileSummaryCardProps = {
   onProfilePress?: () => void;
   profile: ProfileSummary;
   showMetadata?: boolean;
+  socialCountsStatus?: "error" | "loading" | "ready";
   supportingText?: string | null;
   testID?: string;
 };
@@ -64,6 +66,7 @@ export function ProfileSummaryCard({
   onProfilePress,
   profile,
   showMetadata = false,
+  socialCountsStatus = "ready",
   supportingText,
   testID,
 }: ProfileSummaryCardProps) {
@@ -78,6 +81,7 @@ export function ProfileSummaryCard({
     !!profile.gender ||
     !!profile.preferred_units ||
     !!profile.language;
+  const hasActions = Boolean(actions);
 
   return (
     <Card className="overflow-hidden rounded-3xl border border-border bg-card" testID={testID}>
@@ -138,18 +142,18 @@ export function ProfileSummaryCard({
 
         <View className="flex-row gap-3">
           <ProfileStatButton
+            {...omitUndefined({ onPress: onFollowersPress })}
             disabled={!onFollowersPress}
             label="Followers"
-            onPress={onFollowersPress}
             testID={testID ? `${testID}-followers` : "profile-summary-followers"}
-            value={profile.followers_count ?? 0}
+            value={formatSocialCount(profile.followers_count, socialCountsStatus)}
           />
           <ProfileStatButton
+            {...omitUndefined({ onPress: onFollowingPress })}
             disabled={!onFollowingPress}
             label="Following"
-            onPress={onFollowingPress}
             testID={testID ? `${testID}-following` : "profile-summary-following"}
-            value={profile.following_count ?? 0}
+            value={formatSocialCount(profile.following_count, socialCountsStatus)}
           />
         </View>
 
@@ -159,7 +163,7 @@ export function ProfileSummaryCard({
           </Button>
         ) : null}
 
-        {actions ? <View className="gap-3">{actions}</View> : null}
+        {hasActions ? <View className="gap-3">{actions}</View> : null}
 
         {showMetadata && hasProfileMetadata ? (
           <View className="gap-3 border-t border-border pt-4">
@@ -189,6 +193,15 @@ export function ProfileSummaryCard({
   );
 }
 
+function formatSocialCount(
+  count: number | null | undefined,
+  status: "error" | "loading" | "ready",
+): number | string {
+  if (status === "loading") return "Loading...";
+  if (status === "error") return "Unavailable";
+  return count ?? "—";
+}
+
 function ProfileStatButton({
   disabled,
   label,
@@ -200,7 +213,7 @@ function ProfileStatButton({
   label: string;
   onPress?: () => void;
   testID: string;
-  value: number;
+  value: number | string;
 }) {
   return (
     <TouchableOpacity

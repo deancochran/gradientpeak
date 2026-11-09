@@ -1,14 +1,15 @@
 import type { TrainingPlanBuilderSession, TrainingPlanBuilderState } from "./types";
 
-export const BUILDER_WEEKDAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"] as const;
+// Reusable template offsets have no fixed weekday until the plan is anchored.
+export const BUILDER_WEEKDAY_LABELS = ["1", "2", "3", "4", "5", "6", "7"] as const;
 export const BUILDER_WEEKDAY_NAMES = [
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-  "Sunday",
+  "Day 1",
+  "Day 2",
+  "Day 3",
+  "Day 4",
+  "Day 5",
+  "Day 6",
+  "Day 7",
 ] as const;
 
 export function getBuilderWeekdayIndex(offsetDays: number) {
@@ -36,7 +37,7 @@ export function formatBuilderWeekLabel(weekIndex: number) {
 }
 
 export function formatBuilderSessionTitle(session: TrainingPlanBuilderSession) {
-  return session.eventOverrides?.title ?? session.activityPlan?.name ?? "Unassigned workout";
+  return session.eventOverrides?.title ?? session.activityPlan?.name ?? "Unassigned activity";
 }
 
 export function formatBuilderCompactDateLabel(dateKey: string) {

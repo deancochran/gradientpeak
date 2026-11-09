@@ -1,14 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
-
-vi.mock("@/lib/utils/plan/dateGrouping", () => ({
-  isActivityCompleted: (event: { completed?: boolean | null }) => event.completed === true,
-}));
+import { describe, expect, it } from "vitest";
+import { createPrescriptionQuantificationBundleFixture } from "@/components/shared/__tests__/activityQuantificationFixture";
 
 import {
   getEventPrimaryMeta,
   getEventStatusLabel,
   getEventSupportingLine,
   getEventTimeLabel,
+  isAuthoritativeCompletedCalendarEvent,
 } from "../eventPresentation";
 
 describe("calendar event presentation", () => {
@@ -19,38 +17,113 @@ describe("calendar event presentation", () => {
       starts_at: "2026-03-23T06:30:00.000Z",
       activity_plan: {
         id: "plan-1",
-        activity_category: "outdoor_run",
-        authoritative_metrics: {
-          estimated_duration: 3600,
-          estimated_tss: 72,
-        },
+        activity_category: "run",
+        prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+          durationSeconds: 3_600,
+          estimated: false,
+        }),
         description: "Progressive tempo with a strong finish.",
       },
     };
 
     expect(getEventTimeLabel(event)).not.toBe("Scheduled");
-    expect(getEventPrimaryMeta(event)).toEqual(["Outdoor Run", "~1h"]);
+    expect(getEventPrimaryMeta(event)).toEqual(["Run", "1h", "Common Load ~64"]);
     expect(getEventSupportingLine(event)).toBe("Progressive tempo with a strong finish.");
     expect(getEventStatusLabel(event)).toBeNull();
   });
 
-  it("prefers a single calm status label when planned activity is completed", () => {
+  it("prefers a single calm status label when a planned activity has a persisted link", () => {
     const event = {
       id: "planned-2",
       event_type: "planned",
-      completed: true,
+      linked_activity_id: "activity-2",
       recurrence_rule: "RRULE:FREQ=WEEKLY",
       activity_plan: {
         id: "plan-2",
-        activity_category: "indoor_bike",
-        authoritative_metrics: {
-          estimated_tss: 88,
-        },
+        activity_category: "bike",
+        prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+          activityCategory: "bike",
+          estimated: false,
+        }),
       },
     };
 
-    expect(getEventPrimaryMeta(event)).toEqual(["Indoor Bike", "~88 TSS"]);
+    expect(getEventPrimaryMeta(event)).toEqual(["Bike", "1h", "Common Load ~64"]);
     expect(getEventStatusLabel(event)).toBe("Completed");
+  });
+
+  it("marks a complete estimated planned duration", () => {
+    const event = {
+      id: "planned-estimated-duration",
+      event_type: "planned",
+      activity_plan: {
+        id: "plan-estimated-duration",
+        activity_category: "run",
+      },
+      projectionMetrics: [
+        {
+          key: "elapsed_duration" as const,
+          label: "Duration",
+          status: "available" as const,
+          value: 3_600,
+          unit: "seconds",
+          reason: null,
+          provenance: "estimated" as const,
+        },
+      ],
+    };
+
+    expect(getEventPrimaryMeta(event)).toEqual(["Run", "~1h"]);
+  });
+
+  it("hides a partial planned Common Load value", () => {
+    const event = {
+      id: "planned-partial-load",
+      event_type: "planned",
+      activity_plan: {
+        id: "plan-partial-load",
+        activity_category: "run",
+      },
+      projectionMetrics: [
+        {
+          key: "common_load" as const,
+          label: "Common Load",
+          status: "partial" as const,
+          value: 32,
+          unit: "score",
+          reason: "incomplete_members",
+          provenance: "estimated" as const,
+        },
+      ],
+    };
+
+    expect(getEventPrimaryMeta(event)).toEqual(["Run", "Common Load —"]);
+    expect(getEventPrimaryMeta(event).join(" ")).not.toContain("32");
+  });
+
+  it("shows completion labels without a persisted activity link as unverified", () => {
+    const event = {
+      id: "planned-unverified",
+      event_type: "planned",
+      status: "completed",
+      completed: true,
+      activity_plan: { id: "plan-unverified", activity_category: "run" },
+    };
+
+    expect(getEventStatusLabel(event)).toBe("Unverified");
+  });
+
+  it("gives cancellation precedence over a retained activity link", () => {
+    const event = {
+      id: "planned-cancelled",
+      event_type: "planned",
+      status: "cancelled",
+      linked_activity_id: "activity-cancelled",
+      activity_plan: { id: "plan-cancelled", activity_category: "run" },
+    };
+
+    expect(isAuthoritativeCompletedCalendarEvent(event)).toBe(false);
+    expect(getEventStatusLabel(event)).toBe("Cancelled");
   });
 
   it("keeps non-planned events focused on time state and one supporting line", () => {
@@ -65,6 +138,17 @@ describe("calendar event presentation", () => {
     expect(getEventTimeLabel(event)).toBe("All day");
     expect(getEventPrimaryMeta(event)).toEqual([]);
     expect(getEventSupportingLine(event)).toBe("Bring passport and race packet.");
+  });
+
+  it("formats scheduled event times in the event timezone", () => {
+    expect(
+      getEventTimeLabel({
+        id: "timezone-1",
+        event_type: "custom",
+        starts_at: "2026-06-02T16:30:00.000Z",
+        timezone: "America/Los_Angeles",
+      }),
+    ).toBe("9:30 AM");
   });
 
   it("does not present planned-event metadata when no activity plan is associated", () => {
@@ -82,6 +166,20 @@ describe("calendar event presentation", () => {
     expect(getEventStatusLabel(event)).toBeNull();
   });
 
+  it("omits missing planned metrics instead of substituting zero", () => {
+    const event = {
+      id: "planned-external-load",
+      event_type: "planned",
+      activity_plan: {
+        id: "plan-external-load",
+        activity_category: "run",
+      },
+    };
+
+    expect(getEventPrimaryMeta(event)).toEqual(["Run"]);
+    expect(getEventPrimaryMeta(event).join(" ")).not.toMatch(/TSS|\bIF\b/);
+  });
+
   it("does not treat plan-shaped rows without an id as associated activity plans", () => {
     const event = {
       id: "planned-empty-plan",
@@ -90,24 +188,10 @@ describe("calendar event presentation", () => {
       completed: true,
       activity_plan: {
         activity_category: "run",
-        authoritative_metrics: { estimated_tss: 55 },
       },
     };
 
     expect(getEventPrimaryMeta(event)).toEqual([]);
     expect(getEventStatusLabel(event)).toBeNull();
-  });
-
-  it("marks imported events as read-only without extra secondary badges", () => {
-    const event = {
-      id: "imported-1",
-      event_type: "imported",
-      starts_at: "2026-03-23T14:00:00.000Z",
-      description: "Pulled in from provider sync.",
-    };
-
-    expect(getEventTimeLabel(event)).not.toBe("Scheduled");
-    expect(getEventSupportingLine(event)).toBe("Pulled in from provider sync.");
-    expect(getEventStatusLabel(event)).toBe("Read-only");
   });
 });

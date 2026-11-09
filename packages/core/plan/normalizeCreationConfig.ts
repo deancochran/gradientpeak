@@ -1,6 +1,6 @@
 import {
   type CreationAvailabilityConfig,
-  type CreationBehaviorControlsV1,
+  type CreationBehaviorControls,
   type CreationCalibrationCompositeLocks,
   type CreationConfigLocks,
   type CreationConstraints,
@@ -9,7 +9,7 @@ import {
   type CreationRecentInfluenceAction,
   type CreationValueSource,
   creationAvailabilityConfigSchema,
-  creationBehaviorControlsV1Schema,
+  creationBehaviorControlsSchema,
   creationCalibrationCompositeLocksSchema,
   creationConfigLocksSchema,
   creationConstraintsSchema,
@@ -21,7 +21,7 @@ import {
   type TrainingPlanCreationConfig,
   trainingPlanCalibrationConfigSchema,
   trainingPlanCreationConfigSchema,
-} from "../schemas/training_plan_structure";
+} from "../schemas/training-plan-structure";
 
 const WEEK_DAYS = [
   "monday",
@@ -40,7 +40,7 @@ type CreationConfigValues = {
   constraints: CreationConstraints;
   optimization_profile: "outcome_first" | "balanced" | "sustainable";
   post_goal_recovery_days: number;
-  behavior_controls_v1: CreationBehaviorControlsV1;
+  behavior_controls: CreationBehaviorControls;
   calibration_composite_locks: CreationCalibrationCompositeLocks;
   calibration: TrainingPlanCalibrationConfig;
 };
@@ -117,7 +117,7 @@ const DEFAULT_VALUES: CreationConfigValues = {
   constraints: CONSERVATIVE_DEFAULT_CONSTRAINTS,
   optimization_profile: "balanced",
   post_goal_recovery_days: 5,
-  behavior_controls_v1: {
+  behavior_controls: {
     aggressiveness: 0.5,
     variability: 0.5,
     spike_frequency: 0.35,
@@ -204,6 +204,7 @@ function toCreationProvenance(
   override?: Partial<CreationProvenance>,
 ): CreationProvenance {
   const base: CreationProvenance = {
+    method_version: "creation-config-normalization-v1",
     source,
     confidence:
       source === creationValueSourceEnum.enum.user
@@ -309,8 +310,8 @@ export function normalizeCreationConfig(
       ...input.defaults?.constraints,
     }),
     calibration: mergeCalibration(DEFAULT_VALUES.calibration, input.defaults?.calibration),
-    behavior_controls_v1: creationBehaviorControlsV1Schema.parse(
-      input.defaults?.behavior_controls_v1 ?? DEFAULT_VALUES.behavior_controls_v1,
+    behavior_controls: creationBehaviorControlsSchema.parse(
+      input.defaults?.behavior_controls ?? DEFAULT_VALUES.behavior_controls,
     ),
     calibration_composite_locks: creationCalibrationCompositeLocksSchema.parse(
       input.defaults?.calibration_composite_locks ?? DEFAULT_VALUES.calibration_composite_locks,
@@ -360,10 +361,10 @@ export function normalizeCreationConfig(
   );
 
   const behaviorControlsPick = pickByPrecedence(
-    input.user_values?.behavior_controls_v1,
-    input.confirmed_suggestions?.behavior_controls_v1,
-    defaultValues.behavior_controls_v1,
-    locks.behavior_controls_v1.locked,
+    input.user_values?.behavior_controls,
+    input.confirmed_suggestions?.behavior_controls,
+    defaultValues.behavior_controls,
+    locks.behavior_controls.locked,
   );
 
   const calibrationPick = pickByPrecedence(
@@ -412,7 +413,7 @@ export function normalizeCreationConfig(
     constraints,
     optimization_profile: creationOptimizationProfileEnum.parse(optimizationProfilePick.value),
     post_goal_recovery_days: postGoalRecoveryDaysPick.value,
-    behavior_controls_v1: creationBehaviorControlsV1Schema.parse(behaviorControlsPick.value),
+    behavior_controls: creationBehaviorControlsSchema.parse(behaviorControlsPick.value),
     calibration_composite_locks: creationCalibrationCompositeLocksSchema.parse(
       calibrationCompositeLocksPick.value,
     ),
