@@ -2,18 +2,18 @@
  * Recording Configuration System
  *
  * Defines what features are available and should be shown based on:
- * - Activity type (run, bike, etc.)
+ * - Activity category (run, bike, etc.)
  * - Recording mode (planned vs unplanned)
  * - Connected devices (FTMS trainer, sensors)
  * - Plan structure (has steps, route, etc.)
  * - GPS intent + availability
  */
 
+import type { FTMSFeatures } from "@deancochran/ftms";
 import { z } from "zod";
 
-import type { FTMSFeatures } from "../ftms-types";
-import type { ActivityPlanStructureV2 } from "./activity_plan_v2";
-import type { CanonicalSport } from "./sport";
+import type { ActivityPlanStructure } from "../activity-plan";
+import type { CanonicalActivityCategory } from "./activity-category";
 
 export const recordingPrimaryMetricSchema = z.enum(["time", "distance", "reps", "power"]);
 export const recordingAutoFollowPrioritySchema = z.enum([
@@ -44,12 +44,12 @@ export type RecordingBackdropMode =
 
 export type RecordingInsightCard =
   | "metrics"
-  | "workout_interval"
+  | "activity_interval"
   | "trainer"
   | "route_progress"
   | "climb";
 
-export type RecordingQuickAction = "activity" | "gps" | "plan" | "route" | "sensors" | "trainer";
+export type RecordingQuickAction = "activity" | "plan" | "route" | "sensors" | "trainer";
 
 export const recordingCapabilitiesSchema = z
   .object({
@@ -83,7 +83,7 @@ export interface RecordingConfigInput {
   launchSource?: RecordingLaunchSource;
 
   // Core activity details
-  activityCategory: CanonicalSport;
+  activityCategory: CanonicalActivityCategory;
   gpsRecordingEnabled: boolean;
   mode: "planned" | "unplanned";
   eventId?: string | null;
@@ -94,10 +94,9 @@ export interface RecordingConfigInput {
   // Plan details (if planned)
   plan?: {
     hasStructure: boolean; // Has steps to follow
-    hasRoute: boolean; // Has GPS route
     stepCount: number;
     requiresManualAdvance: boolean; // Any "untilFinished" steps
-    structure?: ActivityPlanStructureV2 | null;
+    structure?: ActivityPlanStructure | null;
   };
 
   // Connected devices
@@ -158,10 +157,10 @@ export interface RecordingCapabilities {
 }
 
 export interface RecordingSessionAuthority {
-  category: "user" | "plan";
+  activity_category: "user" | "plan";
   structure: "none" | "plan";
   spatial: "none" | "route";
-  locationCapture: "gps";
+  locationCapture: "none";
   trainerExecution: "none" | "trainer";
 }
 

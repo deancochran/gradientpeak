@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   GROUP_ACCESS_LEVELS,
   GROUP_DESCRIPTION_MAX_LENGTH,
-  GROUP_EVENT_ACTIVITY_PLAN_OPTION_LIMIT_MAX,
   GROUP_EVENT_DESCRIPTION_MAX_LENGTH,
   GROUP_EVENT_RSVP_STATUSES,
   GROUP_EVENT_TITLE_MAX_LENGTH,
@@ -14,14 +13,12 @@ import {
   GROUP_NAME_MAX_LENGTH,
 } from "../constants";
 import {
-  copySeriesActivityPlansToOccurrenceInputSchema,
   createGroupInputSchema,
   createOneOffGroupEventInputSchema,
   createRecurringEventSeriesInputSchema,
   inviteProfilesInputSchema,
   listGroupsInputSchema,
   listOneOffGroupEventsInputSchema,
-  resolveGroupEventFallbackFields,
   reviewJoinRequestInputSchema,
   rsvpEventSeriesInputSchema,
   rsvpOneOffGroupEventInputSchema,
@@ -37,13 +34,12 @@ const validProfileId = "00000000-0000-4000-8000-000000000002";
 const otherValidProfileId = "00000000-0000-4000-8000-000000000003";
 const validGroupEventId = "00000000-0000-4000-8000-000000000004";
 const validActivityPlanId = "00000000-0000-4000-8000-000000000005";
-const validGroupEventActivityPlanId = "00000000-0000-4000-8000-000000000006";
 const validRouteId = "00000000-0000-4000-8000-000000000007";
 const [publicAccessLevel, membersOnlyAccessLevel] = GROUP_ACCESS_LEVELS;
 const [openJoinPolicy, requestToJoinPolicy, inviteOnlyJoinPolicy] = GROUP_JOIN_POLICIES;
 const [adminRole, memberRole] = GROUP_MANAGEABLE_MEMBERSHIP_ROLES;
 const [approveDecision] = GROUP_JOIN_REQUEST_REVIEW_DECISIONS;
-const [acceptedRsvpStatus, declinedRsvpStatus] = GROUP_EVENT_RSVP_STATUSES;
+const [goingRsvpStatus, declinedRsvpStatus] = GROUP_EVENT_RSVP_STATUSES;
 
 describe("group input schemas", () => {
   it("normalizes create input and applies MVP defaults", () => {
@@ -146,7 +142,7 @@ describe("recurring group event input schemas", () => {
         recurrenceTimezone: "  America/New_York  ",
         startsAt: "2026-06-06T14:00:00.000Z",
         timezone: "  America/New_York  ",
-        activityPlans: [{ activityPlanId: validActivityPlanId }],
+        activityPlanId: validActivityPlanId,
       }),
     ).toMatchObject({
       groupId: validGroupId,
@@ -158,7 +154,7 @@ describe("recurring group event input schemas", () => {
     });
   });
 
-  it("validates recurrence rule, timezone, occurrence overrides, RSVP, and copy contracts", () => {
+  it("validates recurrence rule, timezone, occurrence overrides, and RSVP contracts", () => {
     expect(
       createRecurringEventSeriesInputSchema.safeParse({
         groupId: validGroupId,
@@ -171,9 +167,9 @@ describe("recurring group event input schemas", () => {
     expect(
       updateEventOccurrenceInputSchema.safeParse({
         groupEventId: validGroupEventId,
-        title: null,
+        title: "Updated occurrence",
         description: null,
-        timezone: null,
+        timezone: "America/New_York",
         routeId: null,
       }).success,
     ).toBe(true);
@@ -183,40 +179,21 @@ describe("recurring group event input schemas", () => {
     expect(
       rsvpEventSeriesInputSchema.parse({
         groupEventSeriesId: validGroupEventId,
-        status: acceptedRsvpStatus,
+        status: goingRsvpStatus,
       }),
-    ).toEqual({ groupEventSeriesId: validGroupEventId, status: acceptedRsvpStatus });
+    ).toEqual({ groupEventSeriesId: validGroupEventId, status: goingRsvpStatus });
     expect(
-      copySeriesActivityPlansToOccurrenceInputSchema.safeParse({
-        groupEventSeriesId: validGroupEventId,
-        groupEventOccurrenceId: "00000000-0000-4000-8000-000000000008",
+      updateEventOccurrenceInputSchema.safeParse({
+        groupEventId: validGroupEventId,
+        activityPlanId: validActivityPlanId,
+        timezone: "America/New_York",
       }).success,
     ).toBe(true);
-  });
-
-  it("resolves occurrence display fields from series fallback", () => {
-    expect(
-      resolveGroupEventFallbackFields(
-        { title: null, description: null, timezone: null, locationName: "Park", routeId: null },
-        {
-          title: "Series",
-          description: "Default",
-          timezone: "America/New_York",
-          routeId: validRouteId,
-        },
-      ),
-    ).toEqual({
-      title: "Series",
-      description: "Default",
-      timezone: "America/New_York",
-      locationName: "Park",
-      routeId: validRouteId,
-    });
   });
 });
 
 describe("one-off group event input schemas", () => {
-  it("normalizes create input with optional one-off event fields and activity plans", () => {
+  it("normalizes create input with optional one-off event fields and activity plan", () => {
     expect(
       createOneOffGroupEventInputSchema.parse({
         groupId: validGroupId,
@@ -227,13 +204,7 @@ describe("one-off group event input schemas", () => {
         timezone: "  America/New_York  ",
         locationName: "  Clubhouse  ",
         routeId: validRouteId,
-        activityPlans: [
-          {
-            activityPlanId: validActivityPlanId,
-            label: "  A group  ",
-            sortOrder: 1,
-          },
-        ],
+        activityPlanId: validActivityPlanId,
       }),
     ).toEqual({
       groupId: validGroupId,
@@ -244,23 +215,18 @@ describe("one-off group event input schemas", () => {
       timezone: "America/New_York",
       locationName: "Clubhouse",
       routeId: validRouteId,
-      activityPlans: [
-        {
-          activityPlanId: validActivityPlanId,
-          label: "A group",
-          sortOrder: 1,
-        },
-      ],
+      activityPlanId: validActivityPlanId,
     });
   });
 
-  it("enforces one-off event title, description, time window, and option limits", () => {
+  it("enforces one-off event title, description, and time window", () => {
     expect(
       createOneOffGroupEventInputSchema.safeParse({
         groupId: validGroupId,
         title: "x".repeat(GROUP_EVENT_TITLE_MAX_LENGTH),
         description: "x".repeat(GROUP_EVENT_DESCRIPTION_MAX_LENGTH),
         startsAt: "2026-06-06T14:00:00.000Z",
+        timezone: "UTC",
       }).success,
     ).toBe(true);
     expect(
@@ -286,19 +252,6 @@ describe("one-off group event input schemas", () => {
         endsAt: "2026-06-06T13:00:00.000Z",
       }).success,
     ).toBe(false);
-    expect(
-      createOneOffGroupEventInputSchema.safeParse({
-        groupId: validGroupId,
-        title: "Saturday Ride",
-        startsAt: "2026-06-06T14:00:00.000Z",
-        activityPlans: Array.from(
-          { length: GROUP_EVENT_ACTIVITY_PLAN_OPTION_LIMIT_MAX + 1 },
-          () => ({
-            activityPlanId: validActivityPlanId,
-          }),
-        ),
-      }).success,
-    ).toBe(false);
   });
 
   it("validates update, list, and RSVP contracts", () => {
@@ -310,6 +263,7 @@ describe("one-off group event input schemas", () => {
         groupEventId: validGroupEventId,
         title: "Updated Ride",
         cancelledAt: null,
+        timezone: "UTC",
       }).success,
     ).toBe(true);
     expect(listOneOffGroupEventsInputSchema.parse({ groupId: validGroupId })).toEqual({
@@ -320,20 +274,23 @@ describe("one-off group event input schemas", () => {
     expect(
       rsvpOneOffGroupEventInputSchema.parse({
         groupEventId: validGroupEventId,
-        status: acceptedRsvpStatus,
-        selectedGroupEventActivityPlanId: validGroupEventActivityPlanId,
+        status: declinedRsvpStatus,
       }),
     ).toEqual({
       groupEventId: validGroupEventId,
-      status: acceptedRsvpStatus,
-      selectedGroupEventActivityPlanId: validGroupEventActivityPlanId,
+      status: declinedRsvpStatus,
     });
     expect(
       rsvpOneOffGroupEventInputSchema.safeParse({
         groupEventId: validGroupEventId,
-        status: declinedRsvpStatus,
-        selectedGroupEventActivityPlanId: null,
+        status: goingRsvpStatus,
       }).success,
     ).toBe(true);
+    expect(
+      rsvpOneOffGroupEventInputSchema.safeParse({
+        groupEventId: validGroupEventId,
+        status: "accepted",
+      }).success,
+    ).toBe(false);
   });
 });
