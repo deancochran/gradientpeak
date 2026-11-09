@@ -63,12 +63,16 @@ const dbCheck = [
     "src/routers/__tests__/public-share-visibility.live-db.test.ts",
   ],
 ];
+const dbDisposableRunnerCheck = [
+  "pnpm",
+  ["--filter", "@repo/api", "test:live-db:runner:disposable"],
+];
 
 const commands = {
   static: [["pnpm", ["quality:agent:static"]]],
-  db: [["pnpm", ["quality:agent:db:static"]], dbCheck],
+  db: [["pnpm", ["quality:agent:db:static"]], dbCheck, dbDisposableRunnerCheck],
   web: [["pnpm", ["quality:agent:static"]], webSmoke],
-  full: [["pnpm", ["quality:agent:db:static"]], dbCheck, webSmoke],
+  full: [["pnpm", ["quality:agent:db:static"]], dbCheck, dbDisposableRunnerCheck, webSmoke],
 };
 
 function command([executable, args]) {
