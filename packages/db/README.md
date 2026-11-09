@@ -195,6 +195,38 @@ held, bind a private backup and isolated-restore rehearsal to the target and the
 pinned artifacts, then invoke the exported guarded function from that reviewed
 operation. Do not run `upgrade.sql` directly.
 
+### Check-in persistence compatibility source proof
+
+`supabase/approved-upgrades/check-in-persistence/` is a source artifact for the
+six-table, versioned check-in checkpoint `ba6b78bf5aac96227a4b05e97c2f8e57c2a58e8c`.
+It pins the direct canonical predecessor
+`0644f4441c7941ce820a45846dd92dd55a359586`, not the evolving preview or current
+fresh fingerprint. The materializer proves that the checkpoint changed the pinned
+baseline only by inserting the bounded check-in block before the baseline's final
+transaction terminator, then derives the exact tables, functions, triggers, RLS,
+and ACL SQL plus complete pre/post fingerprints from immutable Git history.
+
+The only executable proof is a repository-managed disposable database. It starts
+from that predecessor, refuses tampered artifacts or an unknown precondition,
+executes one transaction, byte-compares the complete postcondition fingerprint,
+and rejects replay. Its `--disposable --local` target validation is mandatory;
+the source and artifact hashes are recomputed from the pinned sources:
+
+```bash
+pnpm --filter @repo/db db:check-ins:upgrade:test
+```
+
+Coordinator-owned workflow serializes this disposable command with the shared
+coaching-publication flock when concurrent coaching publication work exists. The
+portable package command deliberately contains no machine-local lock path or
+orchestration sentinel.
+
+There is deliberately **no preserved-target apply, backup, or restore runner**.
+This tooling must not be used to infer preview compatibility or authorize a live
+operation. A future activation needs separate target authority plus a reviewed,
+target-bound backup and restore-rehearsal design; do not run `upgrade.sql`
+directly on any preserved target.
+
 ### Activity-plan authoring and revision ownership
 
 `20260929000000_fixed_v4_activity_plan_contract.sql` is a hard V4 cutover: the fixed V4 `blocks` structure replaces V3/adaptive prescriptions, the `adaptation` column is removed, and semantic hashes use the V2 contract. It fails closed with SQLSTATE `55000` if `activity_plans` or `planned_sessions` contains rows, before any destructive DDL. Repository-managed local targets must therefore be reset and reseeded; the migration chain remains valid for a fresh target.
