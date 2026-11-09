@@ -4,6 +4,6 @@ export const Route = createFileRoute("/_protected/record")({
   component: RecordLayout,
 });
 
-function RecordLayout() {
+export function RecordLayout() {
   return <Outlet />;
 }

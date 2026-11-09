@@ -10,11 +10,9 @@
  */
 
 import { z } from "zod";
-import { saveableActivityPlanStructureSchemaV2 } from "./activity_plan_v2";
-import {
-  type ActivityTargetCategory,
-  addActivityTargetCompatibilityIssuesToZodContext,
-} from "./activity_target_capabilities";
+import { activityPlanStructureSchema } from "../activity-plan";
+import { canonicalActivityCategorySchema } from "./activity-category";
+import { contentVisibilitySchema } from "./content_visibility";
 import {
   completionTimeHmsSchema,
   dateStringSchema,
@@ -38,37 +36,20 @@ import {
   ageSchema,
   bioSchema,
   dobSchema,
-  ftpSchema,
   genderSchema,
   optionalAgeSchema,
   optionalBioSchema,
   optionalDobSchema,
-  optionalFtpSchema,
   optionalGenderSchema,
   optionalMaxHrSchema,
   optionalRestingHrSchema,
-  optionalThresholdHrSchema,
   optionalWeightKgSchema,
   profileQuickUpdateSchema,
   profileSettingsFormSchema,
   restingHrSchema,
-  thresholdHrSchema,
   weightKgSchema,
 } from "./forms/profile";
-import { profileGoalTargetSchema } from "./goals/profile_goals";
-import {
-  eventLifecycleSchema,
-  eventMutationScopeSchema,
-  eventRecurrenceSchema,
-  eventTypeInputSchema,
-  importedEventSourceMetadataSchema,
-} from "./planned_activity";
-import { canonicalSportSchema } from "./sport";
-import {
-  creationProvenanceSchema,
-  creationRecentInfluenceActionEnum,
-  trainingPlanCreationConfigSchema,
-} from "./training_plan_structure";
+import { trainingPlanGoalTargetSchema } from "./training-plan-structure";
 
 export {
   completionTimeHmsSchema,
@@ -97,6 +78,8 @@ export {
 } from "./forms/primitives";
 export type {
   ProfileAvatarUpdateData,
+  ProfilePatch,
+  ProfilePatchInput,
   ProfileQuickUpdateData,
   ProfileSettingsFormData,
 } from "./forms/profile";
@@ -104,23 +87,20 @@ export {
   ageSchema,
   bioSchema,
   dobSchema,
-  ftpSchema,
   genderSchema,
   maxHrSchema,
   optionalAgeSchema,
   optionalBioSchema,
   optionalDobSchema,
-  optionalFtpSchema,
   optionalGenderSchema,
   optionalMaxHrSchema,
   optionalRestingHrSchema,
-  optionalThresholdHrSchema,
   optionalWeightKgSchema,
   profileAvatarUpdateSchema,
+  profilePatchInputSchema,
   profileQuickUpdateSchema,
   profileSettingsFormSchema,
   restingHrSchema,
-  thresholdHrSchema,
   weightKgSchema,
 } from "./forms/profile";
 
@@ -132,19 +112,19 @@ export {
 // ./forms/primitives. They are re-exported here to preserve the public module API.
 
 const activityInsertShapeSchema = z.object({
-  is_private: z.boolean().optional(),
+  content_visibility: contentVisibilitySchema.optional(),
   name: z.string(),
   notes: z.string().nullable().optional(),
 });
 
-const activityPlanInsertShapeSchema = z.object({
-  activity_category: canonicalSportSchema,
-  description: z.string().nullable().optional(),
-  name: z.string(),
-  notes: z.string().nullable().optional(),
-  route_id: z.string().uuid().nullable().optional(),
-  structure: z.unknown().nullable().optional(),
-});
+const activityPlanInsertShapeSchema = z
+  .object({
+    description: z.string().nullable().optional(),
+    name: z.string(),
+    notes: z.string().nullable().optional(),
+    structure: activityPlanStructureSchema,
+  })
+  .strict();
 
 // ============================================================================
 // ACTIVITY SUBMISSION FORM SCHEMAS
@@ -192,20 +172,19 @@ export const optionalActivityNotesSchema = z
  * Fields:
  * - name: required, 1-100 characters
  * - notes: optional, max 5000 characters
- * - is_private: optional boolean, defaults to false
+ * - content_visibility: optional explicit visibility; omitted inherits profile default
  */
 export const activitySubmissionFormSchema = activityInsertShapeSchema
   .pick({
     name: true,
     notes: true,
-    is_private: true,
+    content_visibility: true,
   })
   .extend({
     // Override name with stricter validation
     name: activityNameSchema,
     // Override notes with length limit
     notes: optionalActivityNotesSchema,
-    // Keep is_private optional in the shared insert shape
   });
 
 export type ActivitySubmissionFormData = z.infer<typeof activitySubmissionFormSchema>;
@@ -291,30 +270,30 @@ export const optionalEstimatedDurationSchema = z.preprocess(
 );
 
 /**
- * Estimated TSS validation
+ * Estimated Common Load validation
  * Range: 1 - 1000 (covers easy recovery to multi-hour epic rides)
  */
-export const estimatedTssSchema = z.preprocess(
+export const estimatedCommonLoadSchema = z.preprocess(
   stringToNumber,
   z
     .number({
-      message: "TSS must be a number",
+      message: "Common Load must be a number",
     })
-    .min(1, "TSS must be at least 1")
-    .max(1000, "TSS must be less than 1000")
-    .positive("TSS must be positive"),
+    .min(1, "Common Load must be at least 1")
+    .max(1000, "Common Load must be less than 1000")
+    .positive("Common Load must be positive"),
 );
 
 /**
- * Optional estimated TSS
+ * Optional estimated Common Load
  */
-export const optionalEstimatedTssSchema = z.preprocess(
+export const optionalEstimatedLoadSchema = z.preprocess(
   (val) => stringToNumber(emptyStringToNull(val)),
   z
     .number()
-    .min(1, "TSS must be at least 1")
-    .max(1000, "TSS must be less than 1000")
-    .positive("TSS must be positive")
+    .min(1, "Common Load must be at least 1")
+    .max(1000, "Common Load must be less than 1000")
+    .positive("Common Load must be positive")
     .nullable(),
 );
 
@@ -324,9 +303,9 @@ export const optionalEstimatedTssSchema = z.preprocess(
 export const gpsRecordingEnabledSchema = z.boolean();
 
 /**
- * Activity category validation
+ * Activity activity_category validation
  */
-export const activityCategorySchema = canonicalSportSchema;
+export const activityCategorySchema = canonicalActivityCategorySchema;
 
 /**
  * Activity Plan Create Form Schema
@@ -337,21 +316,13 @@ export const activityCategorySchema = canonicalSportSchema;
  * - name: required string (enhanced: 1-100 chars)
  * - description: optional nullable string (enhanced: max 1000 chars)
  * - notes: optional nullable string (enhanced: max 2000 chars)
- * - activity_category: enum ["run", "bike", "swim", "strength", "other"]
- * - route_id: optional nullable UUID
- * - structure: required V2 structure
- *
- * Note: Route-backed plans are still required to carry structure.
- * The route adds geography/context, but the structure remains the
- * canonical effort definition used for validation and derived metrics.
+ * - structure: required current structure
  */
 const activityPlanFormFieldsBaseSchema = activityPlanInsertShapeSchema
   .pick({
     name: true,
     description: true,
     notes: true,
-    activity_category: true,
-    route_id: true,
     structure: true,
   })
   .extend({
@@ -362,93 +333,22 @@ const activityPlanFormFieldsBaseSchema = activityPlanInsertShapeSchema
       z.string().max(1000, "Description must be less than 1000 characters").nullable().optional(),
     ),
     notes: activityPlanNotesSchema,
-    structure: saveableActivityPlanStructureSchemaV2,
-  });
+    structure: activityPlanStructureSchema,
+  })
+  .strict();
 
-const activityPlanFormFieldsSchema = activityPlanFormFieldsBaseSchema.superRefine((plan, ctx) => {
-  addActivityTargetCompatibilityIssuesToZodContext({
-    activityCategory: plan.activity_category as ActivityTargetCategory,
-    ctx,
-    pathPrefix: ["structure"],
-    structure: plan.structure,
-  });
-});
-
-export const activityPlanCreateFormSchema = activityPlanFormFieldsSchema;
+export const activityPlanCreateFormSchema = activityPlanFormFieldsBaseSchema;
 
 export type ActivityPlanCreateFormData = z.infer<typeof activityPlanCreateFormSchema>;
 
 /**
  * Activity Plan Update Form Schema
  */
-export const activityPlanUpdateFormSchema = activityPlanFormFieldsBaseSchema
-  .partial()
-  .safeExtend({
-    id: z.string().uuid("Invalid activity plan ID"),
-  })
-  .superRefine((plan, ctx) => {
-    if (plan.structure && plan.activity_category) {
-      addActivityTargetCompatibilityIssuesToZodContext({
-        activityCategory: plan.activity_category as ActivityTargetCategory,
-        ctx,
-        pathPrefix: ["structure"],
-        structure: plan.structure,
-      });
-    }
-  });
+export const activityPlanUpdateFormSchema = activityPlanFormFieldsBaseSchema.partial().safeExtend({
+  id: z.string().uuid("Invalid activity plan ID"),
+});
 
 export type ActivityPlanUpdateFormData = z.infer<typeof activityPlanUpdateFormSchema>;
-
-// ============================================================================
-// PLANNED ACTIVITY FORM SCHEMAS
-// ============================================================================
-
-/**
- * Planned Activity Schedule Form Schema
- * Used when scheduling an activity from a plan
- */
-export const plannedActivityScheduleFormSchema = z.object({
-  activity_plan_id: z.string().uuid("Please select an activity plan"),
-  scheduled_date: dateStringSchema,
-  notes: activityPlanNotesSchema,
-  training_plan_id: z.string().uuid().optional().nullable(),
-  event_type: eventTypeInputSchema.default("planned").optional(),
-  recurrence: eventRecurrenceSchema.optional(),
-  lifecycle: eventLifecycleSchema.optional(),
-  source: importedEventSourceMetadataSchema.optional(),
-  read_only: z.boolean().optional(),
-});
-
-export type PlannedActivityScheduleFormData = z.infer<typeof plannedActivityScheduleFormSchema>;
-
-/**
- * Planned Activity Update Form Schema
- */
-export const plannedActivityUpdateFormSchema = z.object({
-  activity_plan_id: z.string().uuid("Please select an activity plan").optional(),
-  scheduled_date: dateStringSchema.optional(),
-  notes: activityPlanNotesSchema,
-  event_type: eventTypeInputSchema.optional(),
-  recurrence: eventRecurrenceSchema.optional(),
-  lifecycle: eventLifecycleSchema.optional(),
-  scope: eventMutationScopeSchema.default("single").optional(),
-});
-
-export type PlannedActivityUpdateFormData = z.infer<typeof plannedActivityUpdateFormSchema>;
-
-/**
- * Planned Activity Reschedule Form Schema
- */
-export const plannedActivityRescheduleFormSchema = z.object({
-  new_date: futureDateSchema,
-  reason: z.preprocess(
-    trimString,
-    z.string().max(500, "Reason must be less than 500 characters").optional(),
-  ),
-  scope: eventMutationScopeSchema.default("single"),
-});
-
-export type PlannedActivityRescheduleFormData = z.infer<typeof plannedActivityRescheduleFormSchema>;
 
 // ============================================================================
 // TRAINING PLAN FORM SCHEMAS
@@ -488,7 +388,7 @@ export const trainingPlanGoalPrioritySchema = z.preprocess(
     .max(10, "Priority must be at most 10"),
 );
 
-export const trainingPlanGoalTargetFormSchema = profileGoalTargetSchema;
+export const trainingPlanGoalTargetFormSchema = trainingPlanGoalTargetSchema;
 
 export const trainingPlanMinimalGoalFormSchema = z.object({
   goal_name: trainingPlanNameSchema,
@@ -520,93 +420,32 @@ export const trainingPlanMinimalSubmitFormSchema = z.object({
 export type TrainingPlanMinimalSubmitFormData = z.infer<typeof trainingPlanMinimalSubmitFormSchema>;
 
 /**
- * Training plan creation provenance metadata at form boundary.
- * Allows confidence to be submitted as a number or numeric string.
- */
-export const trainingPlanCreationProvenanceFormSchema = creationProvenanceSchema.extend({
-  confidence: z.preprocess(
-    (val) => stringToNumber(emptyStringToNull(val)),
-    z.number().min(0).max(1).nullable(),
-  ),
-});
-
-export type TrainingPlanCreationProvenanceFormData = z.infer<
-  typeof trainingPlanCreationProvenanceFormSchema
->;
-
-/**
- * Form-level validator for creation config used by preview/create MVP endpoints.
- * Adds cross-field checks that are specific to submission semantics.
- */
-export const trainingPlanCreationConfigFormSchema = trainingPlanCreationConfigSchema.superRefine(
-  (data, ctx) => {
-    if (
-      data.recent_influence_action === creationRecentInfluenceActionEnum.enum.disabled &&
-      data.recent_influence.influence_score !== 0
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["recent_influence", "influence_score"],
-        message:
-          'recent_influence.influence_score must be 0 when recent_influence_action is "disabled"',
-      });
-    }
-
-    if (
-      data.recent_influence_action === creationRecentInfluenceActionEnum.enum.accepted &&
-      data.recent_influence_provenance.source !== "suggested"
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["recent_influence_provenance", "source"],
-        message: 'recent_influence_provenance.source must be "suggested" when action is "accepted"',
-      });
-    }
-
-    if (
-      data.recent_influence_action === creationRecentInfluenceActionEnum.enum.edited &&
-      data.recent_influence_provenance.source !== "user"
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["recent_influence_provenance", "source"],
-        message: 'recent_influence_provenance.source must be "user" when action is "edited"',
-      });
-    }
-  },
-);
-
-export type TrainingPlanCreationConfigFormData = z.infer<
-  typeof trainingPlanCreationConfigFormSchema
->;
-
-/**
- * Weekly TSS target validation
+ * Weekly Common Load target validation
  * Range: 50 - 2000 (covers recovery weeks to peak training)
  */
-export const weeklyTssTargetSchema = z.preprocess(
+export const weeklyLoadTargetSchema = z.preprocess(
   stringToNumber,
   z
     .number({
-      message: "Weekly TSS must be a number",
+      message: "Weekly Common Load must be a number",
     })
-    .int("Weekly TSS must be a whole number")
-    .min(50, "Weekly TSS must be at least 50")
-    .max(2000, "Weekly TSS must be less than 2000")
-    .positive("Weekly TSS must be positive"),
+    .int("Weekly Common Load must be a whole number")
+    .min(50, "Weekly Common Load must be at least 50")
+    .max(2000, "Weekly Common Load must be less than 2000")
+    .positive("Weekly Common Load must be positive"),
 );
 
 /**
- * Optional weekly TSS target
+ * Optional weekly Common Load target
  */
-export const optionalWeeklyTssTargetSchema = z.preprocess(
+export const optionalWeeklyLoadTargetSchema = z.preprocess(
   (val) => stringToNumber(emptyStringToNull(val)),
   z
     .number()
-    .int("Weekly TSS must be a whole number")
-    .min(50, "Weekly TSS must be at least 50")
-    .max(2000, "Weekly TSS must be less than 2000")
-    .positive("Weekly TSS must be positive")
+    .int("Weekly Common Load must be a whole number")
+    .min(50, "Weekly Common Load must be at least 50")
+    .max(2000, "Weekly Common Load must be less than 2000")
+    .positive("Weekly Common Load must be positive")
     .nullable(),
 );
 
@@ -628,9 +467,9 @@ export type TrainingPlanBasicInfoFormData = z.infer<typeof trainingPlanBasicInfo
  * Step 2 of training plan creation wizard
  */
 export const trainingPlanWeeklyTargetsFormSchema = z.object({
-  weekly_tss_target: weeklyTssTargetSchema,
+  weekly_load_target: weeklyLoadTargetSchema,
   weekly_duration_target: optionalEstimatedDurationSchema,
-  workouts_per_week: z.preprocess(
+  activities_per_week: z.preprocess(
     stringToNumber,
     z
       .number()
@@ -657,12 +496,12 @@ export const trainingPlanRecoveryRulesFormSchema = z.object({
       .max(8, "Recovery week must occur at least every 8 weeks")
       .positive(),
   ),
-  recovery_week_tss_percentage: z.preprocess(
+  recovery_week_load_percentage: z.preprocess(
     stringToNumber,
     z
       .number()
-      .min(30, "Recovery week TSS must be at least 30% of normal")
-      .max(80, "Recovery week TSS must be at most 80% of normal")
+      .min(30, "Recovery week Common Load must be at least 30% of normal")
+      .max(80, "Recovery week Common Load must be at most 80% of normal")
       .positive(),
   ),
   rest_days_per_week: z.preprocess(
@@ -683,21 +522,21 @@ export type TrainingPlanRecoveryRulesFormData = z.infer<typeof trainingPlanRecov
 export const trainingPlanPeriodizationFormSchema = z
   .object({
     use_periodization: z.boolean().default(false),
-    starting_ctl: z.preprocess(
+    starting_longTermLoad: z.preprocess(
       stringToNumber,
       z
         .number()
-        .min(0, "Starting CTL must be at least 0")
-        .max(200, "Starting CTL must be less than 200")
+        .min(0, "Starting LongTermLoad must be at least 0")
+        .max(200, "Starting LongTermLoad must be less than 200")
         .optional()
         .nullable(),
     ),
-    target_ctl: z.preprocess(
+    target_longTermLoad: z.preprocess(
       stringToNumber,
       z
         .number()
-        .min(0, "Target CTL must be at least 0")
-        .max(250, "Target CTL must be less than 250")
+        .min(0, "Target LongTermLoad must be at least 0")
+        .max(250, "Target LongTermLoad must be less than 250")
         .optional()
         .nullable(),
     ),
@@ -714,14 +553,14 @@ export const trainingPlanPeriodizationFormSchema = z
   .refine(
     (data) => {
       if (data.use_periodization) {
-        if (!data.starting_ctl || !data.target_ctl) return false;
-        return data.target_ctl > data.starting_ctl;
+        if (!data.starting_longTermLoad || !data.target_longTermLoad) return false;
+        return data.target_longTermLoad > data.starting_longTermLoad;
       }
       return true;
     },
     {
-      message: "Target CTL must be greater than starting CTL",
-      path: ["target_ctl"],
+      message: "Target LongTermLoad must be greater than starting LongTermLoad",
+      path: ["target_longTermLoad"],
     },
   );
 
@@ -738,21 +577,21 @@ export const trainingPlanCreateFormSchema = z
     description: optionalTrainingPlanDescriptionSchema,
 
     // Step 2: Weekly Targets
-    tss_min: z.preprocess(
+    load_min: z.preprocess(
       stringToNumber,
       z
-        .number({ message: "Min TSS must be a number" })
-        .int("Min TSS must be a whole number")
-        .min(50, "Min TSS must be at least 50")
-        .max(1000, "Min TSS must be less than 1000"),
+        .number({ message: "Min Common Load must be a number" })
+        .int("Min Common Load must be a whole number")
+        .min(50, "Min Common Load must be at least 50")
+        .max(1000, "Min Common Load must be less than 1000"),
     ),
-    tss_max: z.preprocess(
+    load_max: z.preprocess(
       stringToNumber,
       z
-        .number({ message: "Max TSS must be a number" })
-        .int("Max TSS must be a whole number")
-        .min(100, "Max TSS must be at least 100")
-        .max(1500, "Max TSS must be less than 1500"),
+        .number({ message: "Max Common Load must be a number" })
+        .int("Max Common Load must be a whole number")
+        .min(100, "Max Common Load must be at least 100")
+        .max(1500, "Max Common Load must be less than 1500"),
     ),
     activities_per_week: z.preprocess(
       stringToNumber,
@@ -783,8 +622,8 @@ export const trainingPlanCreateFormSchema = z
 
     // Step 4: Periodization (Optional)
     use_periodization: z.boolean().optional().default(false),
-    starting_ctl: optionalWeeklyTssTargetSchema,
-    target_ctl: optionalWeeklyTssTargetSchema,
+    starting_longTermLoad: optionalWeeklyLoadTargetSchema,
+    target_longTermLoad: optionalWeeklyLoadTargetSchema,
     ramp_rate: z.preprocess(
       stringToNumber,
       z
@@ -795,9 +634,9 @@ export const trainingPlanCreateFormSchema = z
         .nullable(),
     ),
   })
-  .refine((data) => data.tss_max > data.tss_min, {
-    message: "Max TSS must be greater than min TSS",
-    path: ["tss_max"],
+  .refine((data) => data.load_max > data.load_min, {
+    message: "Max Common Load must be greater than min Common Load",
+    path: ["load_max"],
   })
   .refine((data) => data.min_rest_days + data.max_consecutive_days <= 7, {
     message: "Training days + rest days must fit in a week (7 days)",
@@ -805,14 +644,14 @@ export const trainingPlanCreateFormSchema = z
   })
   .refine(
     (data) => {
-      if (data.use_periodization && data.starting_ctl && data.target_ctl) {
-        return data.target_ctl > data.starting_ctl;
+      if (data.use_periodization && data.starting_longTermLoad && data.target_longTermLoad) {
+        return data.target_longTermLoad > data.starting_longTermLoad;
       }
       return true;
     },
     {
-      message: "Target CTL must be greater than starting CTL",
-      path: ["target_ctl"],
+      message: "Target LongTermLoad must be greater than starting LongTermLoad",
+      path: ["target_longTermLoad"],
     },
   )
   .refine(
@@ -830,14 +669,15 @@ export const trainingPlanCreateFormSchema = z
   )
   .refine(
     (data) => {
-      // Validate reasonable TSS per activity (not too high)
-      const avgTSS = (data.tss_min + data.tss_max) / 2;
-      const avgPerActivity = avgTSS / data.activities_per_week;
-      return avgPerActivity <= 500; // Max 500 TSS per activity
+      // Validate reasonable Common Load per activity (not too high)
+      const avgCommonLoad = (data.load_min + data.load_max) / 2;
+      const avgPerActivity = avgCommonLoad / data.activities_per_week;
+      return avgPerActivity <= 500; // Max 500 Common Load per activity
     },
     {
-      message: "Average TSS per activity is unreasonably high (>500). Please adjust your targets.",
-      path: ["tss_max"],
+      message:
+        "Average Common Load per activity is unreasonably high (>500). Please adjust your targets.",
+      path: ["load_max"],
     },
   );
 
@@ -976,10 +816,6 @@ export const formSchemas = {
   // Profile fields
   weightKg: weightKgSchema,
   optionalWeightKg: optionalWeightKgSchema,
-  ftp: ftpSchema,
-  optionalFtp: optionalFtpSchema,
-  threshold_hr: thresholdHrSchema,
-  optionalThresholdHr: optionalThresholdHrSchema,
   optionalMaxHr: optionalMaxHrSchema,
   restingHr: restingHrSchema,
   optionalRestingHr: optionalRestingHrSchema,
@@ -996,9 +832,6 @@ export const formSchemas = {
   profileSettings: profileSettingsFormSchema,
   profileQuickUpdate: profileQuickUpdateSchema,
   activitySubmission: activitySubmissionFormSchema,
-  plannedActivitySchedule: plannedActivityScheduleFormSchema,
-  plannedActivityUpdate: plannedActivityUpdateFormSchema,
-  plannedActivityReschedule: plannedActivityRescheduleFormSchema,
 
   // Activity plan schemas
   activityPlanCreate: activityPlanCreateFormSchema,
@@ -1009,8 +842,6 @@ export const formSchemas = {
   trainingPlanMinimalGoal: trainingPlanMinimalGoalFormSchema,
   trainingPlanAdvancedGoal: trainingPlanAdvancedGoalFormSchema,
   trainingPlanMinimalSubmit: trainingPlanMinimalSubmitFormSchema,
-  trainingPlanCreationProvenance: trainingPlanCreationProvenanceFormSchema,
-  trainingPlanCreationConfig: trainingPlanCreationConfigFormSchema,
   distanceKm: distanceKmSchema,
   completionTimeHms: completionTimeHmsSchema,
   paceMmSs: paceMmSsSchema,
