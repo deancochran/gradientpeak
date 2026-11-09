@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from "@storybook/react";
+import type { Meta, StoryObj } from "@storybook/react-native";
 import * as React from "react";
 import { View } from "react-native";
 
@@ -20,7 +20,7 @@ type Story = StoryObj<typeof meta>;
 
 export const Playground: Story = {
   render: (args) => {
-    const [value, setValue] = React.useState<string>(durationInputFixtures.activity.value);
+    const [value, setValue] = React.useState<string>(args.value);
 
     return (
       <View className="bg-background p-6">
@@ -28,4 +28,19 @@ export const Playground: Story = {
       </View>
     );
   },
+};
+export const PreciseGoalTime: Story = { ...Playground, args: { value: "0:25:42" } };
+export const GoalBeyondDay: Story = { ...Playground, args: { value: "25:00:01" } };
+export const OptionalUnset: Story = { ...Playground, args: { value: "", required: false } };
+export const TestTimeMinutesSeconds: Story = {
+  ...Playground,
+  args: durationInputFixtures.testTime,
+};
+export const ExplicitHoursMinutesSeconds: Story = {
+  ...Playground,
+  args: durationInputFixtures.longGoal,
+};
+export const RequiredZeroNeedsCorrection: Story = {
+  ...Playground,
+  args: { value: "0:00:00", required: true },
 };

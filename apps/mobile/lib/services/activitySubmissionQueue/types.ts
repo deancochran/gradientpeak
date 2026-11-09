@@ -1,4 +1,15 @@
-import type { RecordingActivityCategory } from "@repo/core";
+import type {
+  BeginMobileRecordingUploadInput,
+  BeginMobileRecordingUploadOutput,
+  MobileRecordingSubmissionRequest,
+} from "@repo/api/recording-submission";
+import {
+  canonicalActivityCategorySchema,
+  contentVisibilitySchema,
+  recordingExecutionManifestSchema,
+  recordingPlanExecutionSnapshotSchema,
+} from "@repo/core";
+import { z } from "zod";
 
 export type ActivitySubmissionQueueJobStatus =
   | "draft"
@@ -8,48 +19,71 @@ export type ActivitySubmissionQueueJobStatus =
   | "processing"
   | "complete"
   | "failed";
+const activitySubmissionQueueJobStatusSchema = z.enum([
+  "draft",
+  "creating_activity",
+  "queued",
+  "uploading",
+  "processing",
+  "complete",
+  "failed",
+]);
 
-export type ActivitySubmissionQueueDraft = {
-  profileId: string;
-  startedAt: string;
-  finishedAt: string;
-  name: string;
-  activityType: RecordingActivityCategory;
-  durationSeconds: number;
-  movingSeconds: number;
-  distanceMeters: number;
-  calories?: number | null;
-  notes?: string | null;
-  is_private?: boolean;
-  activityPlanId?: string | null;
-};
+export const activitySubmissionQueueDraftSchema = z
+  .object({
+    recordingSessionId: z.string().min(1),
+    profileId: z.string().min(1),
+    startedAt: z.string().min(1),
+    finishedAt: z.string().min(1),
+    name: z.string().min(1),
+    activity_category: canonicalActivityCategorySchema,
+    durationSeconds: z.number().int().nonnegative(),
+    movingSeconds: z.number().int().nonnegative(),
+    distanceMeters: z.number().nonnegative(),
+    calories: z.number().nonnegative().nullable().optional(),
+    notes: z.string().nullable().optional(),
+    content_visibility: contentVisibilitySchema.optional(),
+    activityPlanId: z.string().uuid().nullable().optional(),
+  })
+  .strict();
+export type ActivitySubmissionQueueDraft = z.infer<typeof activitySubmissionQueueDraftSchema>;
 
-export type ActivitySubmissionQueueJob = {
-  id: string;
-  artifactId: string;
-  sessionId?: string | null;
-  localActivityFilePath: string;
-  localActivityFileSize?: number | null;
-  streamArtifactPaths: string[];
-  draft: ActivitySubmissionQueueDraft;
-  activityId?: string;
-  ingestionId?: string;
-  remoteFilePath?: string;
-  status: ActivitySubmissionQueueJobStatus;
-  attempts: number;
-  lastError?: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
+export const activitySubmissionQueueJobSchema = z
+  .object({
+    schemaVersion: z.literal(3),
+    id: z.string().min(1),
+    artifactId: z.string().min(1),
+    sessionId: z.string().min(1),
+    localActivityFilePath: z.string().min(1),
+    localActivityFileSize: z.number().nonnegative().nullable().optional(),
+    streamArtifactPaths: z.array(z.string().min(1)),
+    executionManifest: recordingExecutionManifestSchema,
+    planExecution: recordingPlanExecutionSnapshotSchema.nullable().optional(),
+    draft: activitySubmissionQueueDraftSchema,
+    activityId: z.string().min(1).optional(),
+    ingestionId: z.string().min(1).optional(),
+    uploadCompletedAt: z.string().datetime({ offset: true }).optional(),
+    artifactSha256: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/)
+      .optional(),
+    status: activitySubmissionQueueJobStatusSchema,
+    attempts: z.number().int().nonnegative(),
+    lastError: z.string().nullable().optional(),
+    /** Persisted scheduler/lease metadata. Error text is never used as a durable activity_category. */
+    retryClass: z.enum(["none", "transient", "permanent", "auth", "validation"]).optional(),
+    nextAttemptAt: z.string().datetime({ offset: true }).nullable().optional(),
+    errorCategory: z.string().max(80).nullable().optional(),
+    leaseOwner: z.string().min(1).nullable().optional(),
+    leaseToken: z.string().min(1).nullable().optional(),
+    leaseExpiresAt: z.string().datetime({ offset: true }).nullable().optional(),
+    createdAt: z.string().min(1),
+    updatedAt: z.string().min(1),
+  })
+  .strict();
+export type ActivitySubmissionQueueJob = z.infer<typeof activitySubmissionQueueJobSchema>;
 
-export type CreateFromRecordingSummaryInput = ActivitySubmissionQueueDraft & {
-  localFileMetadata?: {
-    fileType?: string | null;
-    fileSize?: number | null;
-    filePath?: string | null;
-  };
-  source: "mobile_recording";
-};
+export type CreateFromRecordingSummaryInput = MobileRecordingSubmissionRequest;
 
 export type CreateFromRecordingSummaryResult = {
   id: string;
@@ -58,16 +92,6 @@ export type CreateFromRecordingSummaryResult = {
     status?: string;
     source?: string;
   };
-};
-
-export type GetSignedUploadUrlInput = {
-  fileName: string;
-  fileSize?: number;
-};
-
-export type GetSignedUploadUrlResult = {
-  signedUrl: string;
-  filePath: string;
 };
 
 export type UploadToSignedUrlResult = {
@@ -91,14 +115,14 @@ export type ActivitySubmissionQueueRunnerDeps = {
   createFromRecordingSummary: (
     input: CreateFromRecordingSummaryInput,
   ) => Promise<CreateFromRecordingSummaryResult>;
-  getSignedUploadUrl: (input: GetSignedUploadUrlInput) => Promise<GetSignedUploadUrlResult>;
+  beginMobileRecordingUpload: (
+    input: BeginMobileRecordingUploadInput,
+  ) => Promise<BeginMobileRecordingUploadOutput>;
   uploadToSignedUrl: (
     localPath: string,
     signedUrl: string,
-  ) => Promise<UploadToSignedUrlResult | void>;
-  markUploadedAndProcess: (
-    input: MarkUploadedAndProcessInput,
-  ) => Promise<MarkUploadedAndProcessResult | void>;
+  ) => Promise<UploadToSignedUrlResult | undefined>;
+  getLocalArtifactMetadata: (localPath: string) => Promise<{ sha256: string; byteSize: number }>;
   onJobUpdated?: (job: ActivitySubmissionQueueJob) => Promise<void> | void;
   now?: () => string;
 };

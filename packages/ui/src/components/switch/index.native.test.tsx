@@ -1,21 +1,24 @@
 import * as React from "react";
 
+type SwitchMockProps = React.PropsWithChildren<Record<string, unknown>>;
+
 jest.mock("@rn-primitives/switch", () => {
   return {
-    Root: (props: any) => React.createElement("SwitchRoot", props, props.children),
-    Thumb: (props: any) => React.createElement("SwitchThumb", props, props.children),
+    Root: (props: SwitchMockProps) => React.createElement("SwitchRoot", props, props.children),
+    Thumb: (props: SwitchMockProps) => React.createElement("SwitchThumb", props, props.children),
   };
 });
 
 import { fireEvent, renderNative } from "../../test/render-native";
 import { switchFixtures } from "./fixtures";
 import { Switch } from "./index.native";
+import { SWITCH_NATIVE_MINIMUM_HIT_SLOP } from "./shared";
 
 describe("Switch native", () => {
-  it("maps normalized test props for the native-only switch", () => {
+  it("maps normalized test props for the native-only switch", async () => {
     const onCheckedChange = jest.fn();
 
-    const { getByLabelText } = renderNative(
+    const { getByLabelText } = await renderNative(
       <Switch {...switchFixtures.notifications} checked onCheckedChange={onCheckedChange} />,
     );
 
@@ -23,8 +26,9 @@ describe("Switch native", () => {
 
     expect(switchRoot.props.testID).toBe(switchFixtures.notifications.testId);
     expect(switchRoot.props.nativeID).toBe(switchFixtures.notifications.id);
+    expect(switchRoot.props.hitSlop).toEqual(SWITCH_NATIVE_MINIMUM_HIT_SLOP);
 
-    fireEvent(switchRoot, "onCheckedChange", false);
+    await fireEvent(switchRoot, "onCheckedChange", false);
     expect(onCheckedChange).toHaveBeenCalledWith(false);
   });
 });

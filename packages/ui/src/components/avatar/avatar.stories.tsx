@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from "@storybook/react";
+import type { Meta, StoryObj } from "@storybook/react-vite";
 
 import { avatarFixtures } from "./fixtures";
 import { Avatar, AvatarFallback, AvatarImage } from "./index.web";

@@ -24,7 +24,7 @@ export interface SystemActivityTemplateCoverageTemplateRow
 
 export interface SystemActivityTemplateCoverageCellSummary {
   key: FirstWaveCoverageCellKey;
-  sport: "run" | "bike";
+  activity_category: "run" | "bike";
   label: string;
   status: SystemActivityTemplateCoverageStatus;
   template_ids: string[];
@@ -48,7 +48,7 @@ export interface SystemActivityTemplateCoverageMatrix {
 type CoverageMatrixInputEntry = Pick<
   NormalizedSystemActivityTemplateCatalogEntry,
   | "template_id"
-  | "sport"
+  | "activity_category"
   | "session_archetype"
   | "intensity_family"
   | "duration_seconds"
@@ -58,10 +58,10 @@ type CoverageMatrixInputEntry = Pick<
 export function resolveFirstWaveCoverageCellKey(
   entry: Pick<
     NormalizedSystemActivityTemplateCatalogEntry,
-    "sport" | "session_archetype" | "intensity_family"
+    "activity_category" | "session_archetype" | "intensity_family"
   >,
 ): FirstWaveCoverageCellKey | null {
-  if (entry.sport === "run") {
+  if (entry.activity_category === "run") {
     if (
       entry.session_archetype === "easy_recovery" ||
       entry.session_archetype === "aerobic_endurance"
@@ -84,7 +84,7 @@ export function resolveFirstWaveCoverageCellKey(
     }
   }
 
-  if (entry.sport === "bike") {
+  if (entry.activity_category === "bike") {
     if (
       entry.session_archetype === "easy_recovery" ||
       entry.session_archetype === "aerobic_endurance"
@@ -125,7 +125,10 @@ export function findDuplicateRiskTemplateIds(
     if (group.length < 2) {
       continue;
     }
-    const durations = group.map((entry) => entry.duration_seconds);
+    const durations = group.flatMap((entry) =>
+      entry.duration_seconds === null ? [] : [entry.duration_seconds],
+    );
+    if (durations.length < 2) continue;
     const minDuration = Math.min(...durations);
     const maxDuration = Math.max(...durations);
 
@@ -177,7 +180,7 @@ export function buildCoverageCellSummaries(
 
     return {
       key: cell.key,
-      sport: cell.sport,
+      activity_category: cell.activity_category,
       label: cell.label,
       status,
       template_ids: cellEntries.map((entry) => entry.template_id).sort(),

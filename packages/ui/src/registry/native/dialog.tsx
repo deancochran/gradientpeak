@@ -56,7 +56,7 @@ function DialogContent({
   portalHost?: string;
 }) {
   return (
-    <DialogPortal hostName={portalHost}>
+    <DialogPortal {...(portalHost === undefined ? {} : { hostName: portalHost })}>
       <DialogOverlay>
         <DialogPrimitive.Content
           className={cn(

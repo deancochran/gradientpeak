@@ -1,7 +1,7 @@
 import React from "react";
 
 const createHost = (type: string) =>
-  function MockComponent(props: any) {
+  function MockComponent(props: React.PropsWithChildren<Record<string, unknown>>) {
     return React.createElement(type, props, props.children);
   };
 

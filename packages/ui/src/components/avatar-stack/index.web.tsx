@@ -38,8 +38,8 @@ function AvatarStack({ avatars, className, maxAvatarsAmount = 3, orientation }: 
         orientation === "horizontal" ? "-space-x-0" : "-space-y-0",
       )}
     >
-      {shownAvatars.map(({ image, name }, index) => (
-        <Tooltip key={`${name}-${image}-${index}`}>
+      {shownAvatars.map(({ id, image, name }) => (
+        <Tooltip key={id}>
           <TooltipTrigger asChild>
             <Avatar className="hover:z-10">
               <AvatarImage src={image} />
@@ -60,8 +60,8 @@ function AvatarStack({ avatars, className, maxAvatarsAmount = 3, orientation }: 
             </Avatar>
           </TooltipTrigger>
           <TooltipContent>
-            {hiddenAvatars.map(({ name }, index) => (
-              <p key={`${name}-${index}`}>{name}</p>
+            {hiddenAvatars.map(({ id, name }) => (
+              <p key={id}>{name}</p>
             ))}
           </TooltipContent>
         </Tooltip>
