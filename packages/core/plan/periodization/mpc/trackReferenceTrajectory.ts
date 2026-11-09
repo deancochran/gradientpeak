@@ -2,16 +2,16 @@ import type { ReferenceTrajectory } from "../../../schemas/planning";
 
 export interface ProjectedDailyState {
   date: string;
-  predicted_load_tss: number;
-  predicted_fitness_ctl: number;
-  predicted_fatigue_atl: number;
-  predicted_form_tsb: number;
+  predicted_load: number;
+  predicted_fitness_longTermLoad: number;
+  predicted_fatigue_recentLoad: number;
+  predicted_form_loadBalance: number;
 }
 
 export interface ReferenceTrackingEvaluation {
   matched_points: number;
-  ctl_mean_absolute_error: number;
-  tss_mean_absolute_error: number;
+  longTermLoad_mean_absolute_error: number;
+  load_mean_absolute_error: number;
   tracking_error: number;
   taper_pressure: number;
   safety_penalty: number;
@@ -30,8 +30,8 @@ export function evaluateReferenceTrackingWindow(input: {
   if (!input.reference_trajectory || input.projected_states.length === 0) {
     return {
       matched_points: 0,
-      ctl_mean_absolute_error: 0,
-      tss_mean_absolute_error: 0,
+      longTermLoad_mean_absolute_error: 0,
+      load_mean_absolute_error: 0,
       tracking_error: 0,
       taper_pressure: 0,
       safety_penalty: 0,
@@ -43,8 +43,8 @@ export function evaluateReferenceTrackingWindow(input: {
     input.reference_by_date ??
     new Map(input.reference_trajectory.points.map((point) => [point.date, point]));
   let matchedPoints = 0;
-  let ctlErrorSum = 0;
-  let tssErrorSum = 0;
+  let longTermLoadErrorSum = 0;
+  let loadErrorSum = 0;
   let weightedErrorSum = 0;
   let taperPressure = 0;
   let safetyPenalty = 0;
@@ -56,19 +56,21 @@ export function evaluateReferenceTrackingWindow(input: {
     }
 
     matchedPoints += 1;
-    const ctlError = Math.abs(state.predicted_fitness_ctl - referencePoint.target_ctl);
-    const tssError = Math.abs(state.predicted_load_tss - referencePoint.target_tss);
+    const longTermLoadError = Math.abs(
+      state.predicted_fitness_longTermLoad - referencePoint.target_longTermLoad,
+    );
+    const loadError = Math.abs(state.predicted_load - referencePoint.target_load);
     const phaseWeight =
       referencePoint.phase === "event"
         ? 2
         : referencePoint.phase === "taper" || referencePoint.phase === "recovery"
           ? 1.5
           : 1;
-    const positiveTssOvershoot = Math.max(0, state.predicted_load_tss - referencePoint.target_tss);
+    const positiveLoadOvershoot = Math.max(0, state.predicted_load - referencePoint.target_load);
 
-    ctlErrorSum += ctlError;
-    tssErrorSum += tssError;
-    weightedErrorSum += ctlError * phaseWeight + (tssError / 7) * phaseWeight;
+    longTermLoadErrorSum += longTermLoadError;
+    loadErrorSum += loadError;
+    weightedErrorSum += longTermLoadError * phaseWeight + (loadError / 7) * phaseWeight;
 
     if (
       referencePoint.phase === "taper" ||
@@ -76,13 +78,13 @@ export function evaluateReferenceTrackingWindow(input: {
       referencePoint.phase === "recovery"
     ) {
       taperPressure +=
-        (positiveTssOvershoot / Math.max(1, referencePoint.target_tss + 15)) * phaseWeight;
+        (positiveLoadOvershoot / Math.max(1, referencePoint.target_load + 15)) * phaseWeight;
     }
 
-    if (state.predicted_form_tsb < -12 && positiveTssOvershoot > 0) {
+    if (state.predicted_form_loadBalance < -12 && positiveLoadOvershoot > 0) {
       safetyPenalty +=
-        ((Math.abs(state.predicted_form_tsb) - 12) / 12) *
-        (positiveTssOvershoot / Math.max(1, referencePoint.target_tss + 20)) *
+        ((Math.abs(state.predicted_form_loadBalance) - 12) / 12) *
+        (positiveLoadOvershoot / Math.max(1, referencePoint.target_load + 20)) *
         phaseWeight;
     }
   }
@@ -90,8 +92,8 @@ export function evaluateReferenceTrackingWindow(input: {
   if (matchedPoints === 0) {
     return {
       matched_points: 0,
-      ctl_mean_absolute_error: 0,
-      tss_mean_absolute_error: 0,
+      longTermLoad_mean_absolute_error: 0,
+      load_mean_absolute_error: 0,
       tracking_error: 0,
       taper_pressure: 0,
       safety_penalty: 0,
@@ -101,8 +103,8 @@ export function evaluateReferenceTrackingWindow(input: {
 
   return {
     matched_points: matchedPoints,
-    ctl_mean_absolute_error: round(ctlErrorSum / matchedPoints),
-    tss_mean_absolute_error: round(tssErrorSum / matchedPoints),
+    longTermLoad_mean_absolute_error: round(longTermLoadErrorSum / matchedPoints),
+    load_mean_absolute_error: round(loadErrorSum / matchedPoints),
     tracking_error: round(weightedErrorSum / matchedPoints),
     taper_pressure: round(taperPressure / matchedPoints),
     safety_penalty: round(safetyPenalty / matchedPoints),

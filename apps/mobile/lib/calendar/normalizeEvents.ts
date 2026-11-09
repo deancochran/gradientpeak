@@ -1,4 +1,8 @@
-import { toDateKey } from "@/lib/calendar/dateMath";
+import type {
+  ActivityObservationQuantificationBundle,
+  ActivityPrescriptionQuantificationBundle,
+  SemanticMetric,
+} from "@repo/core";
 
 export interface CalendarEventActivityPlan {
   id?: string | null;
@@ -6,23 +10,8 @@ export interface CalendarEventActivityPlan {
   description?: string | null;
   notes?: string | null;
   activity_category?: string | null;
-  authoritative_metrics?: {
-    estimated_duration?: number | null;
-    estimated_tss?: number | null;
-    intensity_factor?: number | null;
-    estimated_distance?: number | null;
-  } | null;
-  estimated_duration?: number | null;
-  estimated_tss?: number | null;
-  intensity_factor?: number | null;
-  estimated_distance?: number | null;
-  route?: {
-    distance?: number | null;
-    ascent?: number | null;
-    descent?: number | null;
-  } | null;
-  route_id?: string | null;
   structure?: unknown;
+  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
 }
 
 export interface CalendarEventOwner {
@@ -38,6 +27,7 @@ export interface CalendarEvent {
   description?: string | null;
   notes?: string | null;
   scheduled_date?: string | null;
+  timezone?: string | null;
   starts_at?: string | null;
   ends_at?: string | null;
   all_day?: boolean | null;
@@ -50,48 +40,34 @@ export interface CalendarEvent {
   status?: string | null;
   owner?: CalendarEventOwner | null;
   activity_plan?: CalendarEventActivityPlan | null;
+  route_id?: string | null;
+  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
+  observationQuantification?: ActivityObservationQuantificationBundle | null;
+  projectionMetrics?: readonly SemanticMetric[];
 }
 
 export type CalendarEventsByDate = Map<string, CalendarEvent[]>;
-
-function getEventStartDateKey(event: CalendarEvent): string | null {
-  if (event.scheduled_date) {
-    return event.scheduled_date;
-  }
-
-  if (event.starts_at) {
-    const startsAt = new Date(event.starts_at);
-    if (!Number.isNaN(startsAt.getTime())) {
-      return toDateKey(startsAt);
-    }
-  }
-
-  return null;
-}
-
-function getScheduledDateKey(event: CalendarEvent): string | null {
-  const startDateKey = getEventStartDateKey(event);
-  if (!startDateKey) {
-    return null;
-  }
-
-  return startDateKey;
-}
 
 function compareEvents(left: CalendarEvent, right: CalendarEvent): number {
   if (left.all_day && !right.all_day) return -1;
   if (!left.all_day && right.all_day) return 1;
 
-  const leftTime = left.starts_at ? new Date(left.starts_at).getTime() : 0;
-  const rightTime = right.starts_at ? new Date(right.starts_at).getTime() : 0;
-  return leftTime - rightTime;
+  const getTime = (value?: string | null) => {
+    const time = value ? new Date(value).getTime() : Number.POSITIVE_INFINITY;
+    return Number.isNaN(time) ? Number.POSITIVE_INFINITY : time;
+  };
+  const leftTime = getTime(left.starts_at);
+  const rightTime = getTime(right.starts_at);
+  if (leftTime !== rightTime) return leftTime < rightTime ? -1 : 1;
+
+  return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
 }
 
 export function buildEventsByDate(events: CalendarEvent[]): CalendarEventsByDate {
   const map = new Map<string, CalendarEvent[]>();
 
   for (const event of events) {
-    const dateKey = getScheduledDateKey(event);
+    const dateKey = event.scheduled_date;
     if (!dateKey) continue;
     const current = map.get(dateKey) ?? [];
     current.push(event);
@@ -106,6 +82,5 @@ export function buildEventsByDate(events: CalendarEvent[]): CalendarEventsByDate
 }
 
 export function getMonthDensity(eventsByDate: CalendarEventsByDate, dateKey: string): number {
-  return (eventsByDate.get(dateKey) ?? []).filter((event) => event.event_type !== "rest_day")
-    .length;
+  return (eventsByDate.get(dateKey) ?? []).length;
 }

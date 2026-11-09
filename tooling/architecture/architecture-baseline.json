@@ -1,0 +1,1016 @@
+{
+  "version": 2,
+  "categories": {
+    "combined-dependency-cycle": {
+      "count": 2,
+      "fingerprints": [
+        "312513da82484ff41b23",
+        "9395b5d3f0151350fc43"
+      ]
+    },
+    "contract-name-collision": {
+      "count": 17,
+      "fingerprints": [
+        "0f523e368251711d8d5a",
+        "16e1a0f8817b976a480d",
+        "1f3c1839f0ba6312ac80",
+        "2fc476e81813e41e7e61",
+        "33c4043a61d7a9534d65",
+        "342c64bdb4ab71c05cc5",
+        "3f1821c5877f76504b05",
+        "4fb3add61ff6bd7dbf82",
+        "5013ec3eb9981b83bed4",
+        "53be09ab3d2479be84e8",
+        "6d16ba97f2cba3291f8f",
+        "84a917293c61280d4a08",
+        "a60516f5870e8576be4a",
+        "b3e2eaa9e76236a83b2c",
+        "b5b05a698e341a0b9e13",
+        "b7600fe04269ebc92534",
+        "d5ed86595ccbfc5fcaac"
+      ]
+    },
+    "contract-structural-collision": {
+      "count": 13,
+      "fingerprints": [
+        "1410a9f3c186f3d9ebeb",
+        "1b3c62254e0ee13e961d",
+        "21350c8031f449471401",
+        "235bbae0250327b0719b",
+        "38a479917ac938bf0613",
+        "4f51c46e30042d7fdc80",
+        "8fd7ff10816da49568a7",
+        "ab9fc372d77b198beff8",
+        "b8c56f6740b427c83471",
+        "c80ed351ddb55944f54f",
+        "cd8abc78ec0e027c5154",
+        "d3120f6c135442bff384",
+        "d6f1662f7995c8087a4d"
+      ]
+    },
+    "cross-workspace-relative-import": {
+      "count": 6,
+      "fingerprints": [
+        "22e32895a1aff863bbe4",
+        "42d09afe86f8cba88b5e",
+        "50560014e26b0bedb474",
+        "6770c8ab1b65af1e78fa",
+        "68f3bb55c45e3e9e66c4",
+        "d36c0ecd71b6d68cf459"
+      ]
+    },
+    "dependency-direction": {
+      "count": 2,
+      "fingerprints": [
+        "35d3db7d8f9a688ce621",
+        "c6017407351a56018d00"
+      ]
+    },
+    "runtime-dependency-cycle": {
+      "count": 2,
+      "fingerprints": [
+        "362a9337eaaab4ac830e",
+        "e5073b9521d53ce6e47a"
+      ]
+    },
+    "unsafe-as-any": {
+      "count": 13,
+      "fingerprints": [
+        "0cedbe37dc04a4d53904",
+        "19bbdca499f03b5e898a",
+        "1afdac26cbe67c0ee63a",
+        "6ff020997e098de1d109",
+        "9453d88299f6305d28ad",
+        "951c70a9627a1abc854a",
+        "991553ead316ab23e988",
+        "b6b26e3069fd05665b8a",
+        "ba0f1f6d8c5d04495563",
+        "d6a5ed112b86bf31993f",
+        "d8434f5b7b408c3d7fda",
+        "da878d10660fedcc1db3",
+        "e9bfba74ed41f43d0067"
+      ]
+    },
+    "unsafe-double-cast": {
+      "count": 12,
+      "fingerprints": [
+        "0e2797d7c494d90c65b6",
+        "17c5d3626714f9fe1719",
+        "1f79b6eb6d560c8e4b0b",
+        "2f4d98e993cfce0e20a1",
+        "391659876b374f390d25",
+        "6a339ed445f7157f8f93",
+        "74a8a34e7f34d5393873",
+        "84f4f75cd3577ef518df",
+        "a97facff74515277b92d",
+        "b2010b19ab0846b85db0",
+        "bb310136c71beefec4f4",
+        "d2251f93ef1fdd8f9e0e"
+      ]
+    },
+    "unsafe-explicit-any": {
+      "count": 73,
+      "fingerprints": [
+        "0416c62fbd507a27056d",
+        "0ab1741e63a3c1dbf8ed",
+        "0cedba03e150ab9c110a",
+        "19e850bc07036d9ad4d1",
+        "1acbc3790079db348410",
+        "1d807b45bbe7dbaffabd",
+        "1da916bdbd1fdcfd9ff5",
+        "21b7786c9267dd5eaa7a",
+        "21cbe9b76d44a77f3752",
+        "2306a83b659ebd8f51d7",
+        "243d782b79506e43a9de",
+        "272ad2378a8caa777987",
+        "2a13e214a00b45eb410e",
+        "2dc2f799f2cf95772776",
+        "367b7c10c98245e63ba6",
+        "3df24eeaaa9a9f9e5f13",
+        "41740ff9d7d1a1960807",
+        "419356654c02b84e966a",
+        "4376eaba55c2d540bf3e",
+        "4bc45e77c48aec99cfe7",
+        "4d4a0f295cb919991775",
+        "4e560308e90560432267",
+        "4f1837e582f0eb285b3e",
+        "518062a495c4decf51ab",
+        "5235b75606f9f30fc57c",
+        "5ded254fd87af7bc37b2",
+        "6190dc189adcdc7f326e",
+        "68745b2f71d921fcd215",
+        "690106bc77d44aa33a37",
+        "696646e035e054e5f4a6",
+        "6c83a1399023483961d8",
+        "6f0ed9d1fb7216b986b6",
+        "70f1c3f731b6ed37f991",
+        "7161fe2d610da9096082",
+        "71ff82598a56b7bd7550",
+        "72bc72cdceae07dab6a6",
+        "7635a26427ae1d0f1d24",
+        "77bca0ea5d75ab9dcde4",
+        "7b1d3f53cc2b275cc4c1",
+        "7b9fa14126a11d7e2af7",
+        "828e8d8bc9bf9f6b395c",
+        "84212bd559d263a38712",
+        "845bff573cb8079e3f6f",
+        "85fe4a36a980bf4002f2",
+        "868b062a85bf80303dea",
+        "8d5a7e1067bd47fed715",
+        "9029d4b5a88a596ae551",
+        "908a1403ae39f0557862",
+        "9abdb5013506795af474",
+        "9afd4333918a798be8dd",
+        "9bc6e8c20211d4019bb1",
+        "9bdd19f1847048ee7981",
+        "9dd78bb7c7d5b45f6eaa",
+        "a0aed4b5a8406dd27c72",
+        "a34be717ab61caba31cd",
+        "a5a37e194d11939ef86d",
+        "a78c15ca5db7d9c83ec8",
+        "c2380667147a22372c61",
+        "c651c78099255f12718a",
+        "c6750a58083aefd760fb",
+        "cada57312dc4175b80e1",
+        "ccc1ba0c8888f2bd3538",
+        "cf8d6cc9458c23dbd7a2",
+        "d15da5b679d91a57b3f0",
+        "e0796c3cebd42320d096",
+        "e79254af5aca2766bc0c",
+        "e87bb007307cb95dace0",
+        "f2392616357aeb9af551",
+        "f67664ab4e5ea203c1ef",
+        "f6f3d428382d545d1b69",
+        "f718b2663763c99fbb36",
+        "f9541e437b42294477e6",
+        "f9722319d385f517a9aa"
+      ]
+    },
+    "unsafe-non-null-assertion": {
+      "count": 61,
+      "fingerprints": [
+        "025d58665385c5b844aa",
+        "05d8ffcc2fe8c3180d29",
+        "064713380fccdb31956d",
+        "07e0938abb7242c89599",
+        "07e3b9f823c8d0c082d1",
+        "0ed5be957377da55fdc6",
+        "120a1ef658c9b533c506",
+        "18af586674b13fc55590",
+        "19a9a6cd5579137cd6c4",
+        "1e1a7f66a4e63da98eb0",
+        "2b88a3aed86229acc4c3",
+        "2e73eb440ffd284a9ef4",
+        "2eb01732cc10b37d7154",
+        "35e20b18968e77fdd9e6",
+        "3a35ab97d69ac28b3836",
+        "3fdbfd3054f45cea7f51",
+        "46f4f383aac1924d0aeb",
+        "4980f8d896bdf5137d51",
+        "49ef3b9912d2e7445a5b",
+        "4d676a6cb32c0ea359b8",
+        "4de28864abcfa73666eb",
+        "4fcf49bbefb164690bf0",
+        "51d4825958d53d00ed0e",
+        "55700ea068db14e7cf74",
+        "56841aeb3df3fdd1c8e2",
+        "5b5280fc114895d08d23",
+        "5d446271155f0758704c",
+        "609f2d21a1f63ab78bf3",
+        "618d326a2f4ba7b33648",
+        "68f9fa2b4f7fa3a0b020",
+        "6f29dca05c8dacc7ee3a",
+        "72444e3cd595c4dcb90c",
+        "743934ee223a88a0961c",
+        "76545a5abca39d31da99",
+        "77ba1c8fc244a02c5a4e",
+        "84048e3097899b26cfd7",
+        "924c170ada889f95247a",
+        "9517793f6b5dd836b533",
+        "964110367af687645409",
+        "9913621c1b60e7d02e6f",
+        "9a11a6785f4c97012745",
+        "9d2d313cc1f3184061e4",
+        "9e4add8a90d0515e37e6",
+        "a32b24d8f0fe18405cf9",
+        "ab8df2810433aa3ab5b5",
+        "ad0014f5c1a903fff36e",
+        "ae9ec0f91bda3aa98ae3",
+        "b05bafa2dc94e3ee5638",
+        "c617b0c9905bd23d771d",
+        "d37445fa075f7fd9b25d",
+        "d3fea9f442d2099ee652",
+        "dc598021fe06de1b8e64",
+        "de721ebd7fa349adc0be",
+        "ea265b3d81b5cd0147e6",
+        "f66f040370190f70ea1e",
+        "f99669bd26c8ded4e3fa",
+        "fa3dc9edc52f3a634ace",
+        "fbdee5157533ef504a9c",
+        "fc3f4f146f02d144308b",
+        "fefbede1be1b6c5e6a1e",
+        "ff1aedbf2f3ca07f3ae3"
+      ]
+    },
+    "unsafe-ts-expect-error": {
+      "count": 6,
+      "fingerprints": [
+        "075b02e81c231a888418",
+        "8a4115626b101b89a567",
+        "a0ef2492d6a5015066d1",
+        "a0fa4d1d2a505398383a",
+        "ce9c84450ac32dbe1531",
+        "dbebcec34d0a4e569ff7"
+      ]
+    },
+    "unsafe-ts-ignore": {
+      "count": 3,
+      "fingerprints": [
+        "affa3d57e60ad7a24710",
+        "cdb83514d16ec1095846",
+        "da64465feb2c0888c9e6"
+      ]
+    }
+  },
+  "unsafe": {
+    "unsafe-as-any": {
+      "owners": {
+        "api": {
+          "count": 11,
+          "fingerprints": [
+            "0cedbe37dc04a4d53904",
+            "19bbdca499f03b5e898a",
+            "6ff020997e098de1d109",
+            "9453d88299f6305d28ad",
+            "951c70a9627a1abc854a",
+            "991553ead316ab23e988",
+            "b6b26e3069fd05665b8a",
+            "ba0f1f6d8c5d04495563",
+            "d6a5ed112b86bf31993f",
+            "da878d10660fedcc1db3",
+            "e9bfba74ed41f43d0067"
+          ]
+        },
+        "auth": {
+          "count": 1,
+          "fingerprints": [
+            "d8434f5b7b408c3d7fda"
+          ]
+        },
+        "core": {
+          "count": 1,
+          "fingerprints": [
+            "1afdac26cbe67c0ee63a"
+          ]
+        }
+      },
+      "files": {
+        "packages/api/src/infrastructure/repositories/drizzle-event-read-repository.ts": {
+          "count": 1,
+          "fingerprints": [
+            "951c70a9627a1abc854a"
+          ]
+        },
+        "packages/api/src/routers/events.ts": {
+          "count": 1,
+          "fingerprints": [
+            "9453d88299f6305d28ad"
+          ]
+        },
+        "packages/api/src/routers/goals.ts": {
+          "count": 2,
+          "fingerprints": [
+            "d6a5ed112b86bf31993f",
+            "e9bfba74ed41f43d0067"
+          ]
+        },
+        "packages/api/src/routers/home.ts": {
+          "count": 1,
+          "fingerprints": [
+            "6ff020997e098de1d109"
+          ]
+        },
+        "packages/api/src/routers/planning/training-plans/base.ts": {
+          "count": 5,
+          "fingerprints": [
+            "0cedbe37dc04a4d53904",
+            "19bbdca499f03b5e898a",
+            "b6b26e3069fd05665b8a",
+            "ba0f1f6d8c5d04495563",
+            "da878d10660fedcc1db3"
+          ]
+        },
+        "packages/api/src/storage-service.ts": {
+          "count": 1,
+          "fingerprints": [
+            "991553ead316ab23e988"
+          ]
+        },
+        "packages/auth/src/runtime/server.ts": {
+          "count": 1,
+          "fingerprints": [
+            "d8434f5b7b408c3d7fda"
+          ]
+        }
+      }
+    },
+    "unsafe-double-cast": {
+      "owners": {
+        "api": {
+          "count": 5,
+          "fingerprints": [
+            "0e2797d7c494d90c65b6",
+            "2f4d98e993cfce0e20a1",
+            "84f4f75cd3577ef518df",
+            "bb310136c71beefec4f4",
+            "d2251f93ef1fdd8f9e0e"
+          ]
+        },
+        "auth": {
+          "count": 1,
+          "fingerprints": [
+            "a97facff74515277b92d"
+          ]
+        },
+        "mobile": {
+          "count": 5,
+          "fingerprints": [
+            "17c5d3626714f9fe1719",
+            "1f79b6eb6d560c8e4b0b",
+            "391659876b374f390d25",
+            "6a339ed445f7157f8f93",
+            "74a8a34e7f34d5393873"
+          ]
+        },
+        "web": {
+          "count": 1,
+          "fingerprints": [
+            "b2010b19ab0846b85db0"
+          ]
+        }
+      },
+      "files": {
+        "apps/mobile/components/groups/GroupEventDetail.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "1f79b6eb6d560c8e4b0b"
+          ]
+        },
+        "apps/mobile/components/plan/training-path/TrainingPathChart.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "6a339ed445f7157f8f93"
+          ]
+        },
+        "apps/mobile/components/recording/cockpit/RouteElevationBackdrop.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "74a8a34e7f34d5393873"
+          ]
+        },
+        "apps/mobile/lib/services/ActivityRecorder/index.ts": {
+          "count": 2,
+          "fingerprints": [
+            "17c5d3626714f9fe1719",
+            "391659876b374f390d25"
+          ]
+        },
+        "apps/web/src/routes/_protected/activity-efforts/index.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "b2010b19ab0846b85db0"
+          ]
+        },
+        "packages/api/src/application/activities/activity-reads.ts": {
+          "count": 1,
+          "fingerprints": [
+            "bb310136c71beefec4f4"
+          ]
+        },
+        "packages/api/src/application/events/deleteEventUseCase.ts": {
+          "count": 1,
+          "fingerprints": [
+            "2f4d98e993cfce0e20a1"
+          ]
+        },
+        "packages/api/src/routers/events.ts": {
+          "count": 1,
+          "fingerprints": [
+            "0e2797d7c494d90c65b6"
+          ]
+        },
+        "packages/api/src/routers/home.ts": {
+          "count": 1,
+          "fingerprints": [
+            "84f4f75cd3577ef518df"
+          ]
+        },
+        "packages/api/src/routers/planning/training-plans/base.ts": {
+          "count": 1,
+          "fingerprints": [
+            "d2251f93ef1fdd8f9e0e"
+          ]
+        },
+        "packages/auth/src/client/expo.ts": {
+          "count": 1,
+          "fingerprints": [
+            "a97facff74515277b92d"
+          ]
+        }
+      }
+    },
+    "unsafe-explicit-any": {
+      "owners": {
+        "api": {
+          "count": 56,
+          "fingerprints": [
+            "0416c62fbd507a27056d",
+            "0ab1741e63a3c1dbf8ed",
+            "0cedba03e150ab9c110a",
+            "1d807b45bbe7dbaffabd",
+            "21b7786c9267dd5eaa7a",
+            "2306a83b659ebd8f51d7",
+            "243d782b79506e43a9de",
+            "272ad2378a8caa777987",
+            "2dc2f799f2cf95772776",
+            "3df24eeaaa9a9f9e5f13",
+            "41740ff9d7d1a1960807",
+            "419356654c02b84e966a",
+            "4376eaba55c2d540bf3e",
+            "4bc45e77c48aec99cfe7",
+            "4f1837e582f0eb285b3e",
+            "518062a495c4decf51ab",
+            "5235b75606f9f30fc57c",
+            "5ded254fd87af7bc37b2",
+            "6190dc189adcdc7f326e",
+            "690106bc77d44aa33a37",
+            "696646e035e054e5f4a6",
+            "6c83a1399023483961d8",
+            "70f1c3f731b6ed37f991",
+            "7161fe2d610da9096082",
+            "71ff82598a56b7bd7550",
+            "72bc72cdceae07dab6a6",
+            "7635a26427ae1d0f1d24",
+            "7b1d3f53cc2b275cc4c1",
+            "7b9fa14126a11d7e2af7",
+            "828e8d8bc9bf9f6b395c",
+            "84212bd559d263a38712",
+            "845bff573cb8079e3f6f",
+            "85fe4a36a980bf4002f2",
+            "868b062a85bf80303dea",
+            "8d5a7e1067bd47fed715",
+            "908a1403ae39f0557862",
+            "9afd4333918a798be8dd",
+            "9bc6e8c20211d4019bb1",
+            "9bdd19f1847048ee7981",
+            "a0aed4b5a8406dd27c72",
+            "a34be717ab61caba31cd",
+            "a5a37e194d11939ef86d",
+            "a78c15ca5db7d9c83ec8",
+            "c2380667147a22372c61",
+            "c651c78099255f12718a",
+            "c6750a58083aefd760fb",
+            "cada57312dc4175b80e1",
+            "ccc1ba0c8888f2bd3538",
+            "cf8d6cc9458c23dbd7a2",
+            "e0796c3cebd42320d096",
+            "e79254af5aca2766bc0c",
+            "f2392616357aeb9af551",
+            "f67664ab4e5ea203c1ef",
+            "f6f3d428382d545d1b69",
+            "f718b2663763c99fbb36",
+            "f9722319d385f517a9aa"
+          ]
+        },
+        "core": {
+          "count": 6,
+          "fingerprints": [
+            "19e850bc07036d9ad4d1",
+            "1acbc3790079db348410",
+            "21cbe9b76d44a77f3752",
+            "4d4a0f295cb919991775",
+            "68745b2f71d921fcd215",
+            "f9541e437b42294477e6"
+          ]
+        },
+        "ui": {
+          "count": 8,
+          "fingerprints": [
+            "1da916bdbd1fdcfd9ff5",
+            "2a13e214a00b45eb410e",
+            "4e560308e90560432267",
+            "6f0ed9d1fb7216b986b6",
+            "77bca0ea5d75ab9dcde4",
+            "9029d4b5a88a596ae551",
+            "9abdb5013506795af474",
+            "e87bb007307cb95dace0"
+          ]
+        },
+        "web": {
+          "count": 3,
+          "fingerprints": [
+            "367b7c10c98245e63ba6",
+            "9dd78bb7c7d5b45f6eaa",
+            "d15da5b679d91a57b3f0"
+          ]
+        }
+      },
+      "files": {
+        "apps/web/src/components/protected/activity-route-primitives.tsx": {
+          "count": 3,
+          "fingerprints": [
+            "367b7c10c98245e63ba6",
+            "9dd78bb7c7d5b45f6eaa",
+            "d15da5b679d91a57b3f0"
+          ]
+        },
+        "packages/api/src/application/training-plan/upcomingActivityImpact.ts": {
+          "count": 1,
+          "fingerprints": [
+            "7b9fa14126a11d7e2af7"
+          ]
+        },
+        "packages/api/src/infrastructure/repositories/drizzle-event-completion-repository.ts": {
+          "count": 1,
+          "fingerprints": [
+            "7635a26427ae1d0f1d24"
+          ]
+        },
+        "packages/api/src/infrastructure/repositories/drizzle-training-plan-repository.ts": {
+          "count": 4,
+          "fingerprints": [
+            "3df24eeaaa9a9f9e5f13",
+            "419356654c02b84e966a",
+            "c6750a58083aefd760fb",
+            "cf8d6cc9458c23dbd7a2"
+          ]
+        },
+        "packages/api/src/lib/integrations/wahoo/client.ts": {
+          "count": 4,
+          "fingerprints": [
+            "1d807b45bbe7dbaffabd",
+            "518062a495c4decf51ab",
+            "845bff573cb8079e3f6f",
+            "f2392616357aeb9af551"
+          ]
+        },
+        "packages/api/src/lib/integrations/wahoo/sync-service.ts": {
+          "count": 2,
+          "fingerprints": [
+            "272ad2378a8caa777987",
+            "a0aed4b5a8406dd27c72"
+          ]
+        },
+        "packages/api/src/routers/events.ts": {
+          "count": 7,
+          "fingerprints": [
+            "0cedba03e150ab9c110a",
+            "5235b75606f9f30fc57c",
+            "690106bc77d44aa33a37",
+            "8d5a7e1067bd47fed715",
+            "9bc6e8c20211d4019bb1",
+            "a5a37e194d11939ef86d",
+            "cada57312dc4175b80e1"
+          ]
+        },
+        "packages/api/src/routers/home.ts": {
+          "count": 3,
+          "fingerprints": [
+            "0ab1741e63a3c1dbf8ed",
+            "7161fe2d610da9096082",
+            "f6f3d428382d545d1b69"
+          ]
+        },
+        "packages/api/src/routers/planning/training-plans/base.ts": {
+          "count": 30,
+          "fingerprints": [
+            "21b7786c9267dd5eaa7a",
+            "2306a83b659ebd8f51d7",
+            "243d782b79506e43a9de",
+            "2dc2f799f2cf95772776",
+            "41740ff9d7d1a1960807",
+            "4376eaba55c2d540bf3e",
+            "4bc45e77c48aec99cfe7",
+            "4f1837e582f0eb285b3e",
+            "5ded254fd87af7bc37b2",
+            "696646e035e054e5f4a6",
+            "6c83a1399023483961d8",
+            "70f1c3f731b6ed37f991",
+            "72bc72cdceae07dab6a6",
+            "7b1d3f53cc2b275cc4c1",
+            "828e8d8bc9bf9f6b395c",
+            "85fe4a36a980bf4002f2",
+            "868b062a85bf80303dea",
+            "908a1403ae39f0557862",
+            "9afd4333918a798be8dd",
+            "9bdd19f1847048ee7981",
+            "a34be717ab61caba31cd",
+            "a78c15ca5db7d9c83ec8",
+            "c2380667147a22372c61",
+            "c651c78099255f12718a",
+            "ccc1ba0c8888f2bd3538",
+            "e0796c3cebd42320d096",
+            "e79254af5aca2766bc0c",
+            "f67664ab4e5ea203c1ef",
+            "f718b2663763c99fbb36",
+            "f9722319d385f517a9aa"
+          ]
+        },
+        "packages/api/src/utils/estimation-helpers.ts": {
+          "count": 3,
+          "fingerprints": [
+            "0416c62fbd507a27056d",
+            "71ff82598a56b7bd7550",
+            "84212bd559d263a38712"
+          ]
+        },
+        "packages/api/src/utils/profile-identity.ts": {
+          "count": 1,
+          "fingerprints": [
+            "6190dc189adcdc7f326e"
+          ]
+        },
+        "packages/core/types/garmin-fitsdk.d.ts": {
+          "count": 4,
+          "fingerprints": [
+            "1acbc3790079db348410",
+            "21cbe9b76d44a77f3752",
+            "4d4a0f295cb919991775",
+            "f9541e437b42294477e6"
+          ]
+        },
+        "packages/ui/src/components/icon/shared.ts": {
+          "count": 3,
+          "fingerprints": [
+            "1da916bdbd1fdcfd9ff5",
+            "4e560308e90560432267",
+            "9029d4b5a88a596ae551"
+          ]
+        },
+        "packages/ui/src/hooks/use-zod-form-submit.ts": {
+          "count": 1,
+          "fingerprints": [
+            "77bca0ea5d75ab9dcde4"
+          ]
+        },
+        "packages/ui/src/registry/native/icon.tsx": {
+          "count": 3,
+          "fingerprints": [
+            "2a13e214a00b45eb410e",
+            "6f0ed9d1fb7216b986b6",
+            "e87bb007307cb95dace0"
+          ]
+        },
+        "packages/ui/src/storybook/catalog.web.stories.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "9abdb5013506795af474"
+          ]
+        }
+      }
+    },
+    "unsafe-non-null-assertion": {
+      "owners": {
+        "api": {
+          "count": 13,
+          "fingerprints": [
+            "025d58665385c5b844aa",
+            "120a1ef658c9b533c506",
+            "19a9a6cd5579137cd6c4",
+            "35e20b18968e77fdd9e6",
+            "49ef3b9912d2e7445a5b",
+            "4d676a6cb32c0ea359b8",
+            "68f9fa2b4f7fa3a0b020",
+            "6f29dca05c8dacc7ee3a",
+            "77ba1c8fc244a02c5a4e",
+            "ae9ec0f91bda3aa98ae3",
+            "d37445fa075f7fd9b25d",
+            "dc598021fe06de1b8e64",
+            "ea265b3d81b5cd0147e6"
+          ]
+        },
+        "core": {
+          "count": 48,
+          "fingerprints": [
+            "05d8ffcc2fe8c3180d29",
+            "064713380fccdb31956d",
+            "07e0938abb7242c89599",
+            "07e3b9f823c8d0c082d1",
+            "0ed5be957377da55fdc6",
+            "18af586674b13fc55590",
+            "1e1a7f66a4e63da98eb0",
+            "2b88a3aed86229acc4c3",
+            "2e73eb440ffd284a9ef4",
+            "2eb01732cc10b37d7154",
+            "3a35ab97d69ac28b3836",
+            "3fdbfd3054f45cea7f51",
+            "46f4f383aac1924d0aeb",
+            "4980f8d896bdf5137d51",
+            "4de28864abcfa73666eb",
+            "4fcf49bbefb164690bf0",
+            "51d4825958d53d00ed0e",
+            "55700ea068db14e7cf74",
+            "56841aeb3df3fdd1c8e2",
+            "5b5280fc114895d08d23",
+            "5d446271155f0758704c",
+            "609f2d21a1f63ab78bf3",
+            "618d326a2f4ba7b33648",
+            "72444e3cd595c4dcb90c",
+            "743934ee223a88a0961c",
+            "76545a5abca39d31da99",
+            "84048e3097899b26cfd7",
+            "924c170ada889f95247a",
+            "9517793f6b5dd836b533",
+            "964110367af687645409",
+            "9913621c1b60e7d02e6f",
+            "9a11a6785f4c97012745",
+            "9d2d313cc1f3184061e4",
+            "9e4add8a90d0515e37e6",
+            "a32b24d8f0fe18405cf9",
+            "ab8df2810433aa3ab5b5",
+            "ad0014f5c1a903fff36e",
+            "b05bafa2dc94e3ee5638",
+            "c617b0c9905bd23d771d",
+            "d3fea9f442d2099ee652",
+            "de721ebd7fa349adc0be",
+            "f66f040370190f70ea1e",
+            "f99669bd26c8ded4e3fa",
+            "fa3dc9edc52f3a634ace",
+            "fbdee5157533ef504a9c",
+            "fc3f4f146f02d144308b",
+            "fefbede1be1b6c5e6a1e",
+            "ff1aedbf2f3ca07f3ae3"
+          ]
+        }
+      },
+      "files": {
+        "packages/api/src/application/training-plan/scheduleRecommendation.ts": {
+          "count": 2,
+          "fingerprints": [
+            "6f29dca05c8dacc7ee3a",
+            "ae9ec0f91bda3aa98ae3"
+          ]
+        },
+        "packages/api/src/application/trends/consistencyMetrics.ts": {
+          "count": 4,
+          "fingerprints": [
+            "025d58665385c5b844aa",
+            "4d676a6cb32c0ea359b8",
+            "77ba1c8fc244a02c5a4e",
+            "ea265b3d81b5cd0147e6"
+          ]
+        },
+        "packages/api/src/lib/integrations/wahoo/client.ts": {
+          "count": 2,
+          "fingerprints": [
+            "120a1ef658c9b533c506",
+            "dc598021fe06de1b8e64"
+          ]
+        },
+        "packages/api/src/lib/provider-sync/imported-activity.ts": {
+          "count": 2,
+          "fingerprints": [
+            "35e20b18968e77fdd9e6",
+            "d37445fa075f7fd9b25d"
+          ]
+        },
+        "packages/api/src/routers/events.ts": {
+          "count": 1,
+          "fingerprints": [
+            "19a9a6cd5579137cd6c4"
+          ]
+        },
+        "packages/api/src/routers/planning/training-plans/base.ts": {
+          "count": 2,
+          "fingerprints": [
+            "49ef3b9912d2e7445a5b",
+            "68f9fa2b4f7fa3a0b020"
+          ]
+        },
+        "packages/core/activity-files/activity-file-parser.ts": {
+          "count": 4,
+          "fingerprints": [
+            "0ed5be957377da55fdc6",
+            "924c170ada889f95247a",
+            "964110367af687645409",
+            "fc3f4f146f02d144308b"
+          ]
+        },
+        "packages/core/calculations/threshold-detection.ts": {
+          "count": 2,
+          "fingerprints": [
+            "609f2d21a1f63ab78bf3",
+            "9517793f6b5dd836b533"
+          ]
+        },
+        "packages/core/calculations/training-effect.ts": {
+          "count": 1,
+          "fingerprints": [
+            "3a35ab97d69ac28b3836"
+          ]
+        },
+        "packages/core/estimation/fatigue.ts": {
+          "count": 7,
+          "fingerprints": [
+            "07e0938abb7242c89599",
+            "18af586674b13fc55590",
+            "4de28864abcfa73666eb",
+            "4fcf49bbefb164690bf0",
+            "618d326a2f4ba7b33648",
+            "f99669bd26c8ded4e3fa",
+            "fa3dc9edc52f3a634ace"
+          ]
+        },
+        "packages/core/load/progression.ts": {
+          "count": 2,
+          "fingerprints": [
+            "9a11a6785f4c97012745",
+            "a32b24d8f0fe18405cf9"
+          ]
+        },
+        "packages/core/load/replay.ts": {
+          "count": 1,
+          "fingerprints": [
+            "4980f8d896bdf5137d51"
+          ]
+        },
+        "packages/core/plan/calibration-constants.ts": {
+          "count": 8,
+          "fingerprints": [
+            "07e3b9f823c8d0c082d1",
+            "2e73eb440ffd284a9ef4",
+            "55700ea068db14e7cf74",
+            "5b5280fc114895d08d23",
+            "ad0014f5c1a903fff36e",
+            "c617b0c9905bd23d771d",
+            "d3fea9f442d2099ee652",
+            "ff1aedbf2f3ca07f3ae3"
+          ]
+        },
+        "packages/core/plan/goalAnchoredProjectionPlan.ts": {
+          "count": 3,
+          "fingerprints": [
+            "56841aeb3df3fdd1c8e2",
+            "ab8df2810433aa3ab5b5",
+            "de721ebd7fa349adc0be"
+          ]
+        },
+        "packages/core/plan/goalReadinessTrajectory.ts": {
+          "count": 1,
+          "fingerprints": [
+            "fefbede1be1b6c5e6a1e"
+          ]
+        },
+        "packages/core/plan/periodization/heuristics/mergeGoalTrajectories.ts": {
+          "count": 2,
+          "fingerprints": [
+            "9d2d313cc1f3184061e4",
+            "b05bafa2dc94e3ee5638"
+          ]
+        },
+        "packages/core/plan/projection/safety-caps.ts": {
+          "count": 1,
+          "fingerprints": [
+            "743934ee223a88a0961c"
+          ]
+        },
+        "packages/core/plan/trainingPrescription.ts": {
+          "count": 1,
+          "fingerprints": [
+            "2b88a3aed86229acc4c3"
+          ]
+        },
+        "packages/core/plan/verification/comparePlanLoadToHeuristic.ts": {
+          "count": 4,
+          "fingerprints": [
+            "2eb01732cc10b37d7154",
+            "76545a5abca39d31da99",
+            "9e4add8a90d0515e37e6",
+            "fbdee5157533ef504a9c"
+          ]
+        },
+        "packages/core/plan/verification/deriveFixtureBackedSystemPlanContracts.ts": {
+          "count": 1,
+          "fingerprints": [
+            "05d8ffcc2fe8c3180d29"
+          ]
+        },
+        "packages/core/zones/hr.ts": {
+          "count": 5,
+          "fingerprints": [
+            "3fdbfd3054f45cea7f51",
+            "51d4825958d53d00ed0e",
+            "5d446271155f0758704c",
+            "9913621c1b60e7d02e6f",
+            "f66f040370190f70ea1e"
+          ]
+        },
+        "packages/core/zones/power.ts": {
+          "count": 5,
+          "fingerprints": [
+            "064713380fccdb31956d",
+            "1e1a7f66a4e63da98eb0",
+            "46f4f383aac1924d0aeb",
+            "72444e3cd595c4dcb90c",
+            "84048e3097899b26cfd7"
+          ]
+        }
+      }
+    },
+    "unsafe-ts-expect-error": {
+      "owners": {
+        "mobile": {
+          "count": 6,
+          "fingerprints": [
+            "075b02e81c231a888418",
+            "8a4115626b101b89a567",
+            "a0ef2492d6a5015066d1",
+            "a0fa4d1d2a505398383a",
+            "ce9c84450ac32dbe1531",
+            "dbebcec34d0a4e569ff7"
+          ]
+        }
+      },
+      "files": {
+        "apps/mobile/lib/hooks/useReliableMutation.typecheck.ts": {
+          "count": 5,
+          "fingerprints": [
+            "075b02e81c231a888418",
+            "8a4115626b101b89a567",
+            "a0ef2492d6a5015066d1",
+            "a0fa4d1d2a505398383a",
+            "ce9c84450ac32dbe1531"
+          ]
+        },
+        "apps/mobile/lib/providers/QueryProvider.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "dbebcec34d0a4e569ff7"
+          ]
+        }
+      }
+    },
+    "unsafe-ts-ignore": {
+      "owners": {
+        "mobile": {
+          "count": 3,
+          "fingerprints": [
+            "affa3d57e60ad7a24710",
+            "cdb83514d16ec1095846",
+            "da64465feb2c0888c9e6"
+          ]
+        }
+      },
+      "files": {
+        "apps/mobile/.rnstorybook/storybook.requires.ts": {
+          "count": 3,
+          "fingerprints": [
+            "affa3d57e60ad7a24710",
+            "cdb83514d16ec1095846",
+            "da64465feb2c0888c9e6"
+          ]
+        }
+      }
+    }
+  }
+}

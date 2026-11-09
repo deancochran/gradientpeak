@@ -5,6 +5,7 @@ import {
   type GroupAccessLevel,
   type GroupJoinPolicy,
 } from "@repo/core/groups";
+import { THEME } from "@repo/tailwindcss/native";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -20,13 +21,14 @@ import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { File as ExpoFile } from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import { Camera, ImagePlus } from "lucide-react-native";
-import { forwardRef, useEffect, useImperativeHandle, useState } from "react";
-import { ActivityIndicator, Alert, Image, TouchableOpacity, View } from "react-native";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { ActivityIndicator, Image, TouchableOpacity, View } from "react-native";
 import { z } from "zod";
 import { AppSelectionModal } from "@/components/shared/AppSelectionModal";
 import { api } from "@/lib/api";
 import type { GroupDetail } from "@/lib/groups";
 import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
+import { useTheme } from "@/lib/stores/theme-store";
 
 const groupFormSchema = createGroupInputSchema.extend({
   description: z.string().trim().nullable().optional(),
@@ -41,6 +43,7 @@ type GroupFormProps = {
   group?: GroupDetail | null;
   isSubmitting?: boolean;
   onCancel?: () => void;
+  onDirtyChange?: (isDirty: boolean) => void;
   onSubmit: (values: CreateGroupInput) => Promise<void> | void;
   showFooterActions?: boolean;
   submitLabel: string;
@@ -124,6 +127,9 @@ function GroupImageUploadField({
   label,
   onClear,
   onOpenSourcePicker,
+  onRetry,
+  onKeepCurrent,
+  uploadError,
 }: {
   aspect: [number, number];
   disabled?: boolean;
@@ -133,7 +139,11 @@ function GroupImageUploadField({
   label: string;
   onClear: () => void;
   onOpenSourcePicker: () => void;
+  onRetry?: () => void;
+  onKeepCurrent?: () => void;
+  uploadError?: string | null;
 }) {
+  const { resolvedTheme } = useTheme();
   const isAvatar = aspect[0] === aspect[1];
 
   return (
@@ -158,7 +168,7 @@ function GroupImageUploadField({
             </Avatar>
             <View className="absolute bottom-0 right-0 rounded-full bg-primary p-2">
               {isUploading ? (
-                <ActivityIndicator color="white" size="small" />
+                <ActivityIndicator color={THEME[resolvedTheme].primaryForeground} size="small" />
               ) : (
                 <Icon as={Camera} className="text-primary-foreground" size={18} />
               )}
@@ -223,12 +233,47 @@ function GroupImageUploadField({
           ) : null}
         </View>
       )}
+      {uploadError ? (
+        <View accessibilityLiveRegion="polite" className="gap-2" role="alert">
+          <Text className="text-sm text-destructive">{uploadError}</Text>
+          <View className="flex-row gap-3">
+            {onRetry ? (
+              <Button
+                disabled={disabled || isUploading}
+                onPress={onRetry}
+                size="sm"
+                variant="outline"
+              >
+                <Text>Retry upload</Text>
+              </Button>
+            ) : null}
+            {onKeepCurrent ? (
+              <Button
+                disabled={disabled || isUploading}
+                onPress={onKeepCurrent}
+                size="sm"
+                variant="ghost"
+              >
+                <Text>Keep current image</Text>
+              </Button>
+            ) : null}
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 }
 
 export const GroupForm = forwardRef<GroupFormHandle, GroupFormProps>(function GroupForm(
-  { group, isSubmitting = false, onCancel, onSubmit, showFooterActions = true, submitLabel },
+  {
+    group,
+    isSubmitting = false,
+    onCancel,
+    onDirtyChange,
+    onSubmit,
+    showFooterActions = true,
+    submitLabel,
+  },
   ref,
 ) {
   const createImageUploadUrlMutation = api.storage.createSignedUploadUrl.useMutation();
@@ -239,18 +284,41 @@ export const GroupForm = forwardRef<GroupFormHandle, GroupFormProps>(function Gr
   const avatarUrl = form.watch("avatar_url");
   const coverUrl = form.watch("cover_url");
   const groupName = form.watch("name");
-  const previewAvatarUrl = nullableUrl(avatarUrl)
-    ? getReachableSupabaseStorageUrl(nullableUrl(avatarUrl)!)
+  const normalizedAvatarUrl = nullableUrl(avatarUrl);
+  const normalizedCoverUrl = nullableUrl(coverUrl);
+  const previewAvatarUrl = normalizedAvatarUrl
+    ? getReachableSupabaseStorageUrl(normalizedAvatarUrl)
     : null;
-  const previewCoverUrl = nullableUrl(coverUrl)
-    ? getReachableSupabaseStorageUrl(nullableUrl(coverUrl)!)
+  const previewCoverUrl = normalizedCoverUrl
+    ? getReachableSupabaseStorageUrl(normalizedCoverUrl)
     : null;
   const [uploadingImageField, setUploadingImageField] = useState<GroupImageFieldName | null>(null);
   const [imageSourceField, setImageSourceField] = useState<GroupImageFieldName | null>(null);
+  const [imageUploadError, setImageUploadError] = useState<
+    Partial<Record<GroupImageFieldName, string>>
+  >({});
+  const [imageUploadRetry, setImageUploadRetry] = useState<
+    Partial<Record<GroupImageFieldName, string>>
+  >({});
+  const groupRef = useRef(group);
+  const previousGroupIdRef = useRef(group?.id);
+  const imageUploadInFlightRef = useRef(false);
+  const imageUploadAttemptRef = useRef(0);
+  const groupId = group?.id;
+  groupRef.current = group;
 
   useEffect(() => {
-    form.reset(toFormValues(group));
-  }, [form, group]);
+    if (previousGroupIdRef.current === groupId) return;
+
+    previousGroupIdRef.current = groupId;
+    form.reset(toFormValues(groupRef.current));
+    imageUploadAttemptRef.current += 1;
+    imageUploadInFlightRef.current = false;
+    setUploadingImageField(null);
+    setImageUploadError({});
+    setImageUploadRetry({});
+  }, [form.reset, groupId]);
+  useEffect(() => onDirtyChange?.(form.formState.isDirty), [form.formState.isDirty, onDirtyChange]);
 
   const submitForm = useZodFormSubmit<GroupFormValues>({
     form,
@@ -269,8 +337,9 @@ export const GroupForm = forwardRef<GroupFormHandle, GroupFormProps>(function Gr
 
   const disabled = isSubmitting || submitForm.isSubmitting;
   const isUploadingImage = Boolean(uploadingImageField) || createImageUploadUrlMutation.isPending;
+  const hasImageUploadReview = Boolean(imageUploadRetry.avatar_url || imageUploadRetry.cover_url);
   const submitButtonState = submitForm.getSubmitButtonState({
-    disabled: disabled || isUploadingImage,
+    disabled: disabled || isUploadingImage || hasImageUploadReview,
     label: submitLabel,
     submittingLabel: "Saving...",
   });
@@ -279,15 +348,15 @@ export const GroupForm = forwardRef<GroupFormHandle, GroupFormProps>(function Gr
     ref,
     () => ({
       submit: () => {
-        if (!disabled && !isUploadingImage) {
+        if (!disabled && !isUploadingImage && !hasImageUploadReview) {
           void submitForm.handleSubmit();
         }
       },
     }),
-    [disabled, isUploadingImage, submitForm.handleSubmit],
+    [disabled, hasImageUploadReview, isUploadingImage, submitForm.handleSubmit],
   );
 
-  const uploadGroupImage = async (fieldName: GroupImageFieldName, uri: string) => {
+  const uploadGroupImage = async (fieldName: GroupImageFieldName, uri: string, attempt: number) => {
     const { extension, mimeType } = imageMimeTypeForUri(uri);
     const fileName = `group-${fieldName.replace("_url", "")}-${Date.now()}.${extension}`;
     const { signedUrl, publicUrl } = await createImageUploadUrlMutation.mutateAsync({
@@ -314,10 +383,42 @@ export const GroupForm = forwardRef<GroupFormHandle, GroupFormProps>(function Gr
       throw new Error(`Upload failed: ${uploadResponse.statusText}`);
     }
 
+    if (attempt !== imageUploadAttemptRef.current) return;
+
     form.setValue(fieldName, reachablePublicUrl, { shouldDirty: true, shouldValidate: true });
+    setImageUploadError((errors) => ({ ...errors, [fieldName]: undefined }));
+    setImageUploadRetry((retries) => ({ ...retries, [fieldName]: undefined }));
+  };
+
+  const retryGroupImageUpload = async (fieldName: GroupImageFieldName) => {
+    const uri = imageUploadRetry[fieldName];
+    if (!uri || imageUploadInFlightRef.current) return;
+
+    const attempt = ++imageUploadAttemptRef.current;
+    imageUploadInFlightRef.current = true;
+    setUploadingImageField(fieldName);
+    try {
+      await uploadGroupImage(fieldName, uri, attempt);
+    } catch (error) {
+      if (attempt === imageUploadAttemptRef.current) {
+        setImageUploadError((errors) => ({
+          ...errors,
+          [fieldName]: error instanceof Error ? error.message : "Image upload failed. Try again.",
+        }));
+      }
+    } finally {
+      if (attempt === imageUploadAttemptRef.current) {
+        imageUploadInFlightRef.current = false;
+        setUploadingImageField(null);
+      }
+    }
   };
 
   const pickGroupImage = async (fieldName: GroupImageFieldName, source: "camera" | "library") => {
+    if (imageUploadInFlightRef.current) return;
+
+    const attempt = ++imageUploadAttemptRef.current;
+    imageUploadInFlightRef.current = true;
     try {
       setImageSourceField(null);
       setUploadingImageField(fieldName);
@@ -328,12 +429,15 @@ export const GroupForm = forwardRef<GroupFormHandle, GroupFormProps>(function Gr
           : await ImagePicker.requestMediaLibraryPermissionsAsync();
 
       if (permission.status !== "granted") {
-        Alert.alert(
-          "Permission required",
-          source === "camera"
-            ? "Camera permission is required to take a group photo."
-            : "Photo library permission is required to choose a group image.",
-        );
+        if (attempt === imageUploadAttemptRef.current) {
+          setImageUploadError((errors) => ({
+            ...errors,
+            [fieldName]:
+              source === "camera"
+                ? "Camera permission is required to take a group photo."
+                : "Photo library permission is required to choose a group image.",
+          }));
+        }
         return;
       }
 
@@ -353,15 +457,24 @@ export const GroupForm = forwardRef<GroupFormHandle, GroupFormProps>(function Gr
             });
 
       if (!result.canceled && result.assets[0]?.uri) {
-        await uploadGroupImage(fieldName, result.assets[0].uri);
+        const uri = result.assets[0].uri;
+        if (attempt !== imageUploadAttemptRef.current) return;
+
+        setImageUploadRetry((retries) => ({ ...retries, [fieldName]: uri }));
+        await uploadGroupImage(fieldName, uri, attempt);
       }
     } catch (error) {
-      Alert.alert(
-        "Image upload failed",
-        error instanceof Error ? error.message : "Failed to upload image",
-      );
+      if (attempt === imageUploadAttemptRef.current) {
+        setImageUploadError((errors) => ({
+          ...errors,
+          [fieldName]: error instanceof Error ? error.message : "Image upload failed. Try again.",
+        }));
+      }
     } finally {
-      setUploadingImageField(null);
+      if (attempt === imageUploadAttemptRef.current) {
+        imageUploadInFlightRef.current = false;
+        setUploadingImageField(null);
+      }
     }
   };
 
@@ -376,10 +489,16 @@ export const GroupForm = forwardRef<GroupFormHandle, GroupFormProps>(function Gr
             imageUrl={previewCoverUrl}
             isUploading={uploadingImageField === "cover_url"}
             label=""
+            onKeepCurrent={() => {
+              setImageUploadError(({ cover_url: _cover, ...errors }) => errors);
+              setImageUploadRetry(({ cover_url: _cover, ...retries }) => retries);
+            }}
             onClear={() =>
               form.setValue("cover_url", "", { shouldDirty: true, shouldValidate: true })
             }
             onOpenSourcePicker={() => setImageSourceField("cover_url")}
+            onRetry={() => void retryGroupImageUpload("cover_url")}
+            uploadError={imageUploadError.cover_url ?? null}
           />
 
           <View className="flex-row items-start gap-4">
@@ -390,10 +509,16 @@ export const GroupForm = forwardRef<GroupFormHandle, GroupFormProps>(function Gr
               imageUrl={previewAvatarUrl}
               isUploading={uploadingImageField === "avatar_url"}
               label=""
+              onKeepCurrent={() => {
+                setImageUploadError(({ avatar_url: _avatar, ...errors }) => errors);
+                setImageUploadRetry(({ avatar_url: _avatar, ...retries }) => retries);
+              }}
               onClear={() =>
                 form.setValue("avatar_url", "", { shouldDirty: true, shouldValidate: true })
               }
               onOpenSourcePicker={() => setImageSourceField("avatar_url")}
+              onRetry={() => void retryGroupImageUpload("avatar_url")}
+              uploadError={imageUploadError.avatar_url ?? null}
             />
             <View className="min-w-0 flex-1">
               <FormTextField
@@ -410,7 +535,7 @@ export const GroupForm = forwardRef<GroupFormHandle, GroupFormProps>(function Gr
             label="Description"
             name="description"
             numberOfLines={6}
-            placeholder="Describe the group, location, sport, and who it is for."
+            placeholder="Describe the group, location, activity category, and who it is for."
             className="min-h-[140px]"
           />
           <FormSegmentedSelectField
@@ -458,14 +583,14 @@ export const GroupForm = forwardRef<GroupFormHandle, GroupFormProps>(function Gr
             <TouchableOpacity
               activeOpacity={0.8}
               className="rounded-xl border border-border bg-card px-4 py-4"
-              onPress={() => void pickGroupImage(imageSourceField, "camera")}
+              onPress={() => pickGroupImage(imageSourceField, "camera")}
             >
               <Text className="text-sm font-semibold text-foreground">Take photo</Text>
             </TouchableOpacity>
             <TouchableOpacity
               activeOpacity={0.8}
               className="rounded-xl border border-border bg-card px-4 py-4"
-              onPress={() => void pickGroupImage(imageSourceField, "library")}
+              onPress={() => pickGroupImage(imageSourceField, "library")}
             >
               <Text className="text-sm font-semibold text-foreground">Choose from library</Text>
             </TouchableOpacity>

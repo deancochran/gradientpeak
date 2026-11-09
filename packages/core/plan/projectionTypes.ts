@@ -3,26 +3,29 @@ import type {
   ReferenceTrajectory,
   TrajectoryMode,
 } from "../schemas/planning";
+import type { DailyLoadDistributionPoint } from "./dailyLoadDistribution";
 import { deterministicUuidFromSeed } from "./normalizeGoalInput";
 import type {
   DeterministicProjectionMicrocycle,
   DeterministicProjectionPayload,
   DeterministicProjectionPoint,
+  ProjectionActivityCategoryLoadState,
   ProjectionDiagnostics,
   ProjectionDoseRecommendation,
   ProjectionLoadResolutionSummary,
   ProjectionRecoverySegment,
   ProjectionSafetyConfig,
-  ProjectionSportLoadState,
 } from "./projectionCalculations";
+import type { TrainingPrescription } from "./trainingPrescription";
+import type { WeeklyAllocation } from "./weeklyAllocation";
 
 export interface ProjectionPeriodizationPhase {
   id: string;
   name: string;
   start_date: string;
   end_date: string;
-  target_weekly_tss_min: number;
-  target_weekly_tss_max: number;
+  target_weekly_load_min: number;
+  target_weekly_load_max: number;
 }
 
 export type ProjectionMicrocycleWithDeterministicId = DeterministicProjectionMicrocycle & {
@@ -36,7 +39,7 @@ export interface ProjectionChartAssemblyPlan {
     name: string;
     start_date: string;
     end_date: string;
-    target_weekly_tss_range?: {
+    target_weekly_load_range?: {
       min: number;
       max: number;
     };
@@ -61,9 +64,9 @@ export interface DemandBand {
 }
 
 export interface ProjectionDemandGap {
-  required_weekly_tss_target: number;
-  feasible_weekly_tss_applied: number;
-  unmet_weekly_tss: number;
+  required_weekly_load_target: number;
+  feasible_weekly_load_applied: number;
+  unmet_weekly_load: number;
   unmet_ratio: number;
 }
 
@@ -80,9 +83,9 @@ export interface ProjectionFeasibilityMetadata {
     execution_confidence: number;
   };
   projection_uncertainty?: {
-    tss_low: number;
-    tss_likely: number;
-    tss_high: number;
+    load_low: number;
+    load_likely: number;
+    load_high: number;
     confidence: number;
   };
   readiness_rationale_codes?: string[];
@@ -91,19 +94,19 @@ export interface ProjectionFeasibilityMetadata {
 export interface NoHistoryProjectionMetadata {
   projection_floor_applied: boolean;
   projection_floor_values: {
-    start_ctl: number;
-    start_weekly_tss: number;
+    start_longTermLoad: number;
+    start_weekly_load: number;
   } | null;
   fitness_level: "weak" | "strong" | null;
   fitness_signal_0_1?: number | null;
   fitness_inference_reasons: string[];
   projection_floor_confidence: "high" | "medium" | "low" | null;
   floor_clamped_by_availability: boolean;
-  starting_ctl_for_projection?: number | null;
-  starting_weekly_tss_for_projection?: number | null;
+  starting_longTermLoad_for_projection?: number | null;
+  starting_weekly_load_for_projection?: number | null;
   goal_demand_score_0_1?: number;
   required_event_demand_range?: DemandBand | null;
-  required_peak_weekly_tss?: DemandBand | null;
+  required_peak_weekly_load?: DemandBand | null;
   demand_confidence?: DemandConfidence | null;
   projection_feasibility?: ProjectionFeasibilityMetadata | null;
   evidence_confidence?: {
@@ -124,22 +127,22 @@ export interface NoHistoryProjectionMetadata {
 
 export interface ProjectionConstraintSummary {
   normalized_creation_config: ProjectionSafetyConfig;
-  tss_ramp_clamp_weeks: number;
-  ctl_ramp_clamp_weeks: number;
+  load_ramp_clamp_weeks: number;
+  longTermLoad_ramp_clamp_weeks: number;
   recovery_weeks: number;
   starting_state?: {
-    starting_ctl: number;
-    starting_atl: number;
-    starting_tsb: number;
+    starting_longTermLoad: number;
+    starting_recentLoad: number;
+    starting_loadBalance: number;
     starting_state_is_prior: boolean;
   };
 }
 
 export interface ProjectionInferredCurrentState {
   mean: {
-    ctl: number;
-    atl: number;
-    tsb: number;
+    longTermLoad: number;
+    recentLoad: number;
+    loadBalance: number;
     slb: number;
     durability: number;
     readiness: number;
@@ -168,7 +171,8 @@ export interface ProjectionChartPayload {
   start_date: string;
   end_date: string;
   points: DeterministicProjectionPoint[];
-  display_points?: DeterministicProjectionPoint[];
+  /** Daily recommended load suitable for day-level charts. */
+  daily_load_points?: DailyLoadDistributionPoint[];
   goal_markers: ProjectionGoalMarker[];
   periodization_phases: ProjectionPeriodizationPhase[];
   microcycles: DeterministicProjectionMicrocycle[];
@@ -202,10 +206,12 @@ export interface ProjectionChartPayload {
   prediction_uncertainty?: ProjectionPredictionUncertainty;
   goal_target_distributions?: ProjectionGoalTargetDistribution[];
   optimization_tradeoff_summary?: ProjectionDiagnostics["optimization_tradeoff_summary"];
+  training_prescription?: TrainingPrescription;
+  weekly_allocation?: WeeklyAllocation;
   reference_trajectory?: ReferenceTrajectory;
   trajectory_mode?: TrajectoryMode;
   feasibility_assessment?: FeasibilityAssessment;
-  sport_load_states?: ProjectionSportLoadState[];
+  activity_category_load_states?: ProjectionActivityCategoryLoadState[];
   dose_recommendation?: ProjectionDoseRecommendation;
   goal_assessments?: Array<{
     goal_id: string;
@@ -262,13 +268,14 @@ export function buildProjectionChartPayloadFromDeterministicProjection(input: {
       prediction_uncertainty?: ProjectionChartPayload["prediction_uncertainty"];
       goal_target_distributions?: ProjectionChartPayload["goal_target_distributions"];
     };
+  const noHistory = toNoHistoryMetadataOrUndefined(deterministicProjection.no_history);
 
   return {
     start_date: expandedPlan.start_date,
     end_date: expandedPlan.end_date,
-    points: deterministicProjection.points,
-    display_points: deterministicProjection.display_points,
-    goal_markers: deterministicProjection.goal_markers,
+    points: deterministicProjection.points ?? [],
+    daily_load_points: deterministicProjection.daily_load_points ?? [],
+    goal_markers: deterministicProjection.goal_markers ?? [],
     periodization_phases: expandedPlan.blocks.map((block, index) => ({
       id: deterministicUuidFromSeed(
         `projection-phase|${expandedPlan.start_date}|${expandedPlan.end_date}|${index}|${block.name}|${block.start_date}|${block.end_date}`,
@@ -276,8 +283,8 @@ export function buildProjectionChartPayloadFromDeterministicProjection(input: {
       name: block.name,
       start_date: block.start_date,
       end_date: block.end_date,
-      target_weekly_tss_min: Math.round((block.target_weekly_tss_range?.min ?? 0) * 10) / 10,
-      target_weekly_tss_max: Math.round((block.target_weekly_tss_range?.max ?? 0) * 10) / 10,
+      target_weekly_load_min: Math.round((block.target_weekly_load_range?.min ?? 0) * 10) / 10,
+      target_weekly_load_max: Math.round((block.target_weekly_load_range?.max ?? 0) * 10) / 10,
     })),
     microcycles: deterministicProjection.microcycles.map((microcycle) => ({
       id: deterministicUuidFromSeed(
@@ -287,31 +294,85 @@ export function buildProjectionChartPayloadFromDeterministicProjection(input: {
     })),
     recovery_segments: deterministicProjection.recovery_segments,
     constraint_summary: deterministicProjection.constraint_summary,
-    inferred_current_state: deterministicProjection.inferred_current_state,
-    no_history: toNoHistoryMetadataOrUndefined(deterministicProjection.no_history),
-    readiness_score: deterministicProjection.readiness_score,
-    physiological_readiness_score: deterministicProjection.physiological_readiness_score,
-    readiness_confidence: deterministicProjection.readiness_confidence,
-    planning_confidence: deterministicProjection.planning_confidence,
-    planning_confidence_reasons: deterministicProjection.planning_confidence_reasons,
-    readiness_rationale_codes: deterministicProjection.readiness_rationale_codes,
-    capacity_envelope: deterministicProjection.capacity_envelope,
-    feasibility_band: deterministicProjection.feasibility_band,
-    risk_score: deterministicProjection.risk_score,
-    risk_level: deterministicProjection.risk_level,
-    risk_flags: deterministicProjection.risk_flags,
-    caps_applied: deterministicProjection.caps_applied,
-    load_resolution_summary: deterministicProjection.load_resolution_summary,
-    projection_diagnostics: deterministicProjection.projection_diagnostics,
-    prediction_uncertainty: deterministicProjectionCompat.prediction_uncertainty,
-    goal_target_distributions: deterministicProjectionCompat.goal_target_distributions,
-    optimization_tradeoff_summary: deterministicProjection.optimization_tradeoff_summary,
-    reference_trajectory: deterministicProjection.reference_trajectory,
-    trajectory_mode: deterministicProjection.trajectory_mode,
-    feasibility_assessment: deterministicProjection.feasibility_assessment,
-    sport_load_states: deterministicProjection.sport_load_states,
-    dose_recommendation: deterministicProjection.dose_recommendation,
-    goal_assessments: deterministicProjection.goal_assessments,
+    ...(deterministicProjection.inferred_current_state === undefined
+      ? {}
+      : { inferred_current_state: deterministicProjection.inferred_current_state }),
+    ...(noHistory === undefined ? {} : { no_history: noHistory }),
+    ...(deterministicProjection.readiness_score === undefined
+      ? {}
+      : { readiness_score: deterministicProjection.readiness_score }),
+    ...(deterministicProjection.physiological_readiness_score === undefined
+      ? {}
+      : { physiological_readiness_score: deterministicProjection.physiological_readiness_score }),
+    ...(deterministicProjection.readiness_confidence === undefined
+      ? {}
+      : { readiness_confidence: deterministicProjection.readiness_confidence }),
+    ...(deterministicProjection.planning_confidence === undefined
+      ? {}
+      : { planning_confidence: deterministicProjection.planning_confidence }),
+    ...(deterministicProjection.planning_confidence_reasons === undefined
+      ? {}
+      : { planning_confidence_reasons: deterministicProjection.planning_confidence_reasons }),
+    ...(deterministicProjection.readiness_rationale_codes === undefined
+      ? {}
+      : { readiness_rationale_codes: deterministicProjection.readiness_rationale_codes }),
+    ...(deterministicProjection.capacity_envelope === undefined
+      ? {}
+      : { capacity_envelope: deterministicProjection.capacity_envelope }),
+    ...(deterministicProjection.feasibility_band === undefined
+      ? {}
+      : { feasibility_band: deterministicProjection.feasibility_band }),
+    ...(deterministicProjection.risk_score === undefined
+      ? {}
+      : { risk_score: deterministicProjection.risk_score }),
+    ...(deterministicProjection.risk_level === undefined
+      ? {}
+      : { risk_level: deterministicProjection.risk_level }),
+    ...(deterministicProjection.risk_flags === undefined
+      ? {}
+      : { risk_flags: deterministicProjection.risk_flags }),
+    ...(deterministicProjection.caps_applied === undefined
+      ? {}
+      : { caps_applied: deterministicProjection.caps_applied }),
+    ...(deterministicProjection.load_resolution_summary === undefined
+      ? {}
+      : { load_resolution_summary: deterministicProjection.load_resolution_summary }),
+    ...(deterministicProjection.projection_diagnostics === undefined
+      ? {}
+      : { projection_diagnostics: deterministicProjection.projection_diagnostics }),
+    ...(deterministicProjectionCompat.prediction_uncertainty === undefined
+      ? {}
+      : { prediction_uncertainty: deterministicProjectionCompat.prediction_uncertainty }),
+    ...(deterministicProjectionCompat.goal_target_distributions === undefined
+      ? {}
+      : { goal_target_distributions: deterministicProjectionCompat.goal_target_distributions }),
+    ...(deterministicProjection.optimization_tradeoff_summary === undefined
+      ? {}
+      : { optimization_tradeoff_summary: deterministicProjection.optimization_tradeoff_summary }),
+    ...(deterministicProjection.training_prescription === undefined
+      ? {}
+      : { training_prescription: deterministicProjection.training_prescription }),
+    ...(deterministicProjection.weekly_allocation === undefined
+      ? {}
+      : { weekly_allocation: deterministicProjection.weekly_allocation }),
+    ...(deterministicProjection.reference_trajectory === undefined
+      ? {}
+      : { reference_trajectory: deterministicProjection.reference_trajectory }),
+    ...(deterministicProjection.trajectory_mode === undefined
+      ? {}
+      : { trajectory_mode: deterministicProjection.trajectory_mode }),
+    ...(deterministicProjection.feasibility_assessment === undefined
+      ? {}
+      : { feasibility_assessment: deterministicProjection.feasibility_assessment }),
+    ...(deterministicProjection.activity_category_load_states === undefined
+      ? {}
+      : { activity_category_load_states: deterministicProjection.activity_category_load_states }),
+    ...(deterministicProjection.dose_recommendation === undefined
+      ? {}
+      : { dose_recommendation: deterministicProjection.dose_recommendation }),
+    ...(deterministicProjection.goal_assessments === undefined
+      ? {}
+      : { goal_assessments: deterministicProjection.goal_assessments }),
   };
 }
 

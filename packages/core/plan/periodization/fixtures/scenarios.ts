@@ -2,7 +2,7 @@ import { defaultAthletePreferenceProfile } from "../../../schemas/settings/profi
 
 export const periodizationScenarioFixtures = {
   feasibleSingleAGoal: {
-    currentCtl: 45,
+    currentLongTermLoad: 45,
     weeksToPeak: 4,
     goals: [
       {
@@ -24,7 +24,7 @@ export const periodizationScenarioFixtures = {
     expectedMode: "target_seeking" as const,
   },
   boundaryFeasible: {
-    currentCtl: 45,
+    currentLongTermLoad: 45,
     weeksToPeak: 4,
     goals: [
       {
@@ -46,7 +46,7 @@ export const periodizationScenarioFixtures = {
     expectedMode: "target_seeking" as const,
   },
   infeasibleBeginnerStretch: {
-    currentCtl: 20,
+    currentLongTermLoad: 20,
     weeksToPeak: 2,
     goals: [
       {
@@ -68,7 +68,7 @@ export const periodizationScenarioFixtures = {
     expectedMode: "capacity_bounded" as const,
   },
   bBeforeA: {
-    currentCtl: 40,
+    currentLongTermLoad: 40,
     weeksToPeak: 8,
     goals: [
       {
@@ -104,7 +104,7 @@ export const periodizationScenarioFixtures = {
     expectedMicroTaperDays: 4,
   },
   twoCloseAGoals: {
-    currentCtl: 48,
+    currentLongTermLoad: 48,
     weeksToPeak: 6,
     goals: [
       {
@@ -139,7 +139,7 @@ export const periodizationScenarioFixtures = {
     preferenceProfile: defaultAthletePreferenceProfile,
   },
   sameDayAB: {
-    currentCtl: 42,
+    currentLongTermLoad: 42,
     weeksToPeak: 5,
     goals: [
       {
@@ -174,7 +174,7 @@ export const periodizationScenarioFixtures = {
     preferenceProfile: defaultAthletePreferenceProfile,
   },
   noGoals: {
-    currentCtl: 32,
+    currentLongTermLoad: 32,
     weeksToPeak: 6,
     goals: [],
     preferenceProfile: defaultAthletePreferenceProfile,
