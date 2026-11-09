@@ -9,7 +9,7 @@ import type {
   ProjectionWeekMetadata,
   WeeklyOptimizationPath,
 } from "../projectionCalculations";
-import { buildDeterministicProjectionPayload as buildDeterministicProjectionPayloadInternal } from "../projectionCalculations";
+import { buildDeterministicProjectionPayloadInternal } from "../projectionCalculations";
 
 export type {
   BuildDeterministicProjectionInput,

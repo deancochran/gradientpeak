@@ -10,8 +10,8 @@ import { View } from "react-native";
 
 interface WeeklyTargetsFormProps {
   data: {
-    target_weekly_tss_min: number;
-    target_weekly_tss_max: number;
+    target_weekly_load_min: number;
+    target_weekly_load_max: number;
     target_activities_per_week: number;
   };
   onChange: (updates: Partial<WeeklyTargetsFormProps["data"]>) => void;
@@ -19,39 +19,41 @@ interface WeeklyTargetsFormProps {
 }
 
 export function WeeklyTargetsForm({ data, onChange, errors }: WeeklyTargetsFormProps) {
-  const TSS_MIN = 0;
-  const TSS_MAX = 2000;
+  const COMMON_LOAD_MIN = 0;
+  const COMMON_LOAD_MAX = 2000;
 
-  // Calculate average TSS per activity
-  const avgTssPerActivity = React.useMemo(() => {
-    const avgWeekly = (data.target_weekly_tss_min + data.target_weekly_tss_max) / 2;
+  // Calculate average Common Load per activity.
+  const averageLoadPerActivity = React.useMemo(() => {
+    const avgWeekly = (data.target_weekly_load_min + data.target_weekly_load_max) / 2;
     const activities = Math.max(1, data.target_activities_per_week);
     return Math.round(avgWeekly / activities);
-  }, [data.target_weekly_tss_min, data.target_weekly_tss_max, data.target_activities_per_week]);
+  }, [data.target_weekly_load_min, data.target_weekly_load_max, data.target_activities_per_week]);
 
   // Validation states
-  const tssRangeValid =
-    !errors.tss_min && !errors.tss_max && data.target_weekly_tss_max >= data.target_weekly_tss_min;
+  const loadRangeValid =
+    !errors.load_min &&
+    !errors.load_max &&
+    data.target_weekly_load_max >= data.target_weekly_load_min;
   const activitiesValid = !errors.activities_per_week;
 
-  const clampTss = (value: number) => Math.min(TSS_MAX, Math.max(TSS_MIN, value));
+  const clampLoad = (value: number) => Math.min(COMMON_LOAD_MAX, Math.max(COMMON_LOAD_MIN, value));
 
-  const handleMinTssChange = (value: number) => {
-    const nextMin = clampTss(value);
-    if (data.target_weekly_tss_max < nextMin) {
+  const handleMinLoadChange = (value: number) => {
+    const nextMin = clampLoad(value);
+    if (data.target_weekly_load_max < nextMin) {
       onChange({
-        target_weekly_tss_min: nextMin,
-        target_weekly_tss_max: nextMin,
+        target_weekly_load_min: nextMin,
+        target_weekly_load_max: nextMin,
       });
       return;
     }
 
-    onChange({ target_weekly_tss_min: nextMin });
+    onChange({ target_weekly_load_min: nextMin });
   };
 
-  const handleMaxTssChange = (value: number) => {
-    const nextMax = Math.max(clampTss(value), data.target_weekly_tss_min);
-    onChange({ target_weekly_tss_max: nextMax });
+  const handleMaxLoadChange = (value: number) => {
+    const nextMax = Math.max(clampLoad(value), data.target_weekly_load_min);
+    onChange({ target_weekly_load_max: nextMax });
   };
 
   return (
@@ -60,43 +62,43 @@ export function WeeklyTargetsForm({ data, onChange, errors }: WeeklyTargetsFormP
       <View className="gap-2">
         <Text className="text-2xl font-bold">Weekly Training Targets</Text>
         <Text className="text-muted-foreground">
-          Set your weekly Training Stress Score (TSS) range and activity frequency goals.
+          Set your weekly Load range and activity frequency goals.
         </Text>
       </View>
 
-      {/* TSS Range */}
+      {/* Load Range */}
       <View className="gap-3">
-        <Label className="text-base font-semibold">Weekly TSS Range</Label>
+        <Label className="text-base font-semibold">Weekly Load Range</Label>
         <View className="flex-row gap-3">
           <View className="flex-1">
             <IntegerStepper
-              id="weekly-target-min-tss"
-              label="Min TSS"
-              value={data.target_weekly_tss_min}
-              min={TSS_MIN}
-              max={TSS_MAX}
-              onChange={handleMinTssChange}
-              error={errors.tss_min}
+              id="weekly-target-min-common-load"
+              label="Min Load"
+              value={data.target_weekly_load_min}
+              min={COMMON_LOAD_MIN}
+              max={COMMON_LOAD_MAX}
+              onChange={handleMinLoadChange}
+              {...(errors.load_min === undefined ? {} : { error: errors.load_min })}
             />
           </View>
           <View className="flex-1">
             <IntegerStepper
-              id="weekly-target-max-tss"
-              label="Max TSS"
-              value={data.target_weekly_tss_max}
-              min={TSS_MIN}
-              max={TSS_MAX}
-              onChange={handleMaxTssChange}
-              error={errors.tss_max}
+              id="weekly-target-max-common-load"
+              label="Max Load"
+              value={data.target_weekly_load_max}
+              min={COMMON_LOAD_MIN}
+              max={COMMON_LOAD_MAX}
+              onChange={handleMaxLoadChange}
+              {...(errors.load_max === undefined ? {} : { error: errors.load_max })}
             />
           </View>
         </View>
 
         {/* Validation indicator */}
-        {tssRangeValid && data.target_weekly_tss_min > 0 && data.target_weekly_tss_max > 0 && (
+        {loadRangeValid && data.target_weekly_load_min > 0 && data.target_weekly_load_max > 0 && (
           <View className="flex-row items-center gap-2 bg-success/10 p-2 rounded-md">
             <Icon as={CheckCircle} size={16} className="text-success" />
-            <Text className="text-success text-sm">Valid TSS range</Text>
+            <Text className="text-success text-sm">Valid Load range</Text>
           </View>
         )}
       </View>
@@ -111,7 +113,9 @@ export function WeeklyTargetsForm({ data, onChange, errors }: WeeklyTargetsFormP
           max={14}
           onChange={(nextActivities) => onChange({ target_activities_per_week: nextActivities })}
           helperText="Typical range is 3 to 6 sessions"
-          error={errors.activities_per_week}
+          {...(errors.activities_per_week === undefined
+            ? {}
+            : { error: errors.activities_per_week })}
         />
 
         {/* Validation indicator */}
@@ -124,8 +128,8 @@ export function WeeklyTargetsForm({ data, onChange, errors }: WeeklyTargetsFormP
       </View>
 
       {/* Preview Card */}
-      {data.target_weekly_tss_min > 0 &&
-        data.target_weekly_tss_max > 0 &&
+      {data.target_weekly_load_min > 0 &&
+        data.target_weekly_load_max > 0 &&
         data.target_activities_per_week > 0 && (
           <Card className="bg-primary/5 border-primary/20">
             <CardContent className="p-4 gap-3">
@@ -136,13 +140,13 @@ export function WeeklyTargetsForm({ data, onChange, errors }: WeeklyTargetsFormP
 
               <View className="gap-2">
                 <View className="flex-row justify-between">
-                  <Text className="text-muted-foreground">Average TSS per activity:</Text>
-                  <Text className="font-semibold">{avgTssPerActivity} TSS</Text>
+                  <Text className="text-muted-foreground">Average Load per activity:</Text>
+                  <Text className="font-semibold">{averageLoadPerActivity} Load</Text>
                 </View>
                 <View className="flex-row justify-between">
-                  <Text className="text-muted-foreground">Weekly TSS range:</Text>
+                  <Text className="text-muted-foreground">Weekly Load range:</Text>
                   <Text className="font-semibold">
-                    {data.target_weekly_tss_min} - {data.target_weekly_tss_max} TSS
+                    {data.target_weekly_load_min} - {data.target_weekly_load_max} Load
                   </Text>
                 </View>
                 <View className="flex-row justify-between">
@@ -159,13 +163,13 @@ export function WeeklyTargetsForm({ data, onChange, errors }: WeeklyTargetsFormP
         <CardContent className="p-4 gap-2">
           <Text className="font-semibold mb-1">💡 Tips</Text>
           <Text className="text-sm text-muted-foreground">
-            • Start conservative with TSS targets and build gradually
+            • Start conservative with Load targets and build gradually
           </Text>
           <Text className="text-sm text-muted-foreground">
-            • A typical recovery week is 50-80 TSS per activity
+            • A typical recovery week is 50-80 Load per activity
           </Text>
           <Text className="text-sm text-muted-foreground">
-            • Hard training sessions are typically 100-200 TSS
+            • Hard training sessions are typically 100-200 Load
           </Text>
           <Text className="text-sm text-muted-foreground">
             • Most athletes train 3-6 times per week
@@ -174,11 +178,11 @@ export function WeeklyTargetsForm({ data, onChange, errors }: WeeklyTargetsFormP
       </Card>
 
       {/* Warning for unrealistic values */}
-      {avgTssPerActivity > 300 && (
+      {averageLoadPerActivity > 300 && (
         <Alert icon={AlertCircle} variant="destructive">
-          <AlertTitle>Warning: Very High TSS</AlertTitle>
+          <AlertTitle>Warning: Very High Load</AlertTitle>
           <AlertDescription>
-            Your average TSS per activity ({avgTssPerActivity}) is very high. This might be
+            Your average Load per activity ({averageLoadPerActivity}) is very high. This might be
             unrealistic for most athletes. Consider adjusting your targets.
           </AlertDescription>
         </Alert>

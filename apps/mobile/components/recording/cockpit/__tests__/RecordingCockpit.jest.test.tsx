@@ -1,17 +1,30 @@
-import React from "react";
-import { createHost } from "../../../../test/mock-components";
-import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
+import {
+  calculateProvisionalRecordingMetrics,
+  createUnavailableAthletePerformanceTargetFacts,
+  type RecordingSessionContract,
+} from "@repo/core";
+import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
+import { THEME } from "@repo/tailwindcss/native";
+import React, { type ComponentProps } from "react";
+import type { TestInstance as ReactTestInstance } from "test-renderer";
+import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
+import { createHost, type HostProps } from "../../../../test/mock-components";
+import { fireEvent, renderNative, screen } from "../../../../test/render-native";
+import type { TrainerInsightCard as TrainerInsightCardComponent } from "../cards/TrainerInsightCard";
 
+jest.mock("@/lib/services/ActivityRecorder", () => ({
+  __esModule: true,
+  ActivityRecorderService: class ActivityRecorderService {},
+}));
 const addCallbackMock = jest.fn();
 const removeCallbackMock = jest.fn();
-const getLastKnownLocationMock = jest.fn<Promise<any>, []>(async () => null);
-
+const getLastKnownLocationMock = jest.fn<Promise<unknown>, []>(async () => null);
 const baseContract = {
   authority: {
-    category: "user",
+    activity_category: "user",
     structure: "none",
     spatial: "none",
-    locationCapture: "gps",
+    locationCapture: "none",
     trainerExecution: "none",
   },
   guidance: {
@@ -35,7 +48,7 @@ const baseContract = {
     canEditActivity: true,
     canEditPlan: true,
     canEditRoute: true,
-    canEditGps: true,
+    canEditGps: false,
     locksIdentityAfterStart: true,
   },
   metrics: { primaryMetric: "time", emphasizedMetrics: ["time"] },
@@ -45,20 +58,47 @@ const baseContract = {
     quickActions: [],
   },
   validation: { consequences: [] },
-};
-
+} satisfies Omit<RecordingSessionContract, "ui">;
 const mockPlanPrevious = jest.fn();
 const mockPlanSkip = jest.fn();
-
-function buildContract(overrides: any = {}) {
+const mockPlanAdvance = jest.fn();
+let mockManualAdvance = false;
+let mockCurrentTargets: Array<{
+  type: "%FTP" | "%ThresholdHR" | "%MaxHR";
+  intensity: number;
+}> = [{ type: "%FTP", intensity: 88 }];
+const mockProvisionalMetrics = calculateProvisionalRecordingMetrics({
+  config: {
+    activityCategory: "bike",
+    performanceTargets: createUnavailableAthletePerformanceTargetFacts("2026-06-01T00:00:00.000Z"),
+    recordingSessionId: "cockpit-session",
+  },
+  samples: [
+    { timestampMs: Date.parse("2026-06-01T00:00:00.000Z"), distanceMeters: 0 },
+    { timestampMs: Date.parse("2026-06-01T00:01:15.000Z"), distanceMeters: 1200 },
+  ],
+});
+type DeepPartial<T> = T extends readonly unknown[]
+  ? T
+  : T extends object
+    ? {
+        [Key in keyof T]?: DeepPartial<T[Key]>;
+      }
+    : T;
+function buildContract(
+  overrides: DeepPartial<RecordingSessionContract> = {},
+): RecordingSessionContract {
   const uiOverrides = overrides.ui ?? {};
-
   return {
     ...baseContract,
     ...overrides,
+    authority: { ...baseContract.authority, ...overrides.authority },
     guidance: { ...baseContract.guidance, ...overrides.guidance },
     devices: { ...baseContract.devices, ...overrides.devices },
     editing: { ...baseContract.editing, ...overrides.editing },
+    metrics: { ...baseContract.metrics, ...overrides.metrics },
+    surfaces: { ...baseContract.surfaces, ...overrides.surfaces },
+    validation: { ...baseContract.validation, ...overrides.validation },
     ui: {
       backdropMode: "ambient",
       ...uiOverrides,
@@ -70,16 +110,28 @@ function buildContract(overrides: any = {}) {
         ...uiOverrides.floatingPanel,
       },
       controls: {
-        quickActions: ["gps", "plan", "route", "sensors"],
+        quickActions: ["plan", "route", "sensors"],
         ...uiOverrides.controls,
       },
     },
-  };
+  } satisfies RecordingSessionContract;
 }
-
-function buildService(overrides: any = {}) {
-  return {
-    currentRoute: null,
+type RecordingServiceOverrides = Omit<Partial<ActivityRecorderService>, "currentRoute"> & {
+  currentRoute?: Partial<NonNullable<ActivityRecorderService["currentRoute"]>> | null;
+};
+function buildService(overrides: RecordingServiceOverrides = {}): ActivityRecorderService {
+  const service: ActivityRecorderService = Object.create(ActivityRecorderService.prototype);
+  const { currentRoute, ...serviceOverrides } = overrides;
+  const performanceTargets = buildPerformanceTargetFactsFixture({
+    asOf: "2026-06-01T00:00:00.000Z",
+    bikeThresholdWatts: 250,
+  });
+  Object.assign(service, {
+    selectedActivityCategory: "bike",
+    currentRoute:
+      currentRoute === undefined || currentRoute === null
+        ? null
+        : { id: "route-1", name: "Test route", coordinates: [], ...currentRoute },
     routeDistance: 0,
     currentRouteDistance: 0,
     routeProgress: 0,
@@ -88,16 +140,18 @@ function buildService(overrides: any = {}) {
     isGpsRecordingEnabled: () => false,
     allSteps: [
       {
+        type: "step",
         id: "00000000-0000-4000-8000-000000000001",
         name: "Warmup",
         duration: { type: "time", seconds: 300 },
         targets: [{ type: "%FTP", intensity: 55 }],
       },
       {
+        type: "step",
         id: "00000000-0000-4000-8000-000000000002",
         name: "Tempo block",
         duration: { type: "time", seconds: 600 },
-        targets: [{ type: "%FTP", intensity: 88 }],
+        targets: mockCurrentTargets,
       },
     ],
     locationManager: {
@@ -105,8 +159,8 @@ function buildService(overrides: any = {}) {
       removeCallback: removeCallbackMock,
       getLastKnownLocation: getLastKnownLocationMock,
     },
-    getBaseFtp: () => 250,
-    getBaseThresholdHr: () => 170,
+    getIntensityScale: () => 1,
+    getPerformanceTargets: () => performanceTargets,
     getSessionView: () => ({
       overrideState: { trainerMode: "auto", preferredSources: {}, intensityScale: 1 },
       runtimeSourceState: {
@@ -119,17 +173,16 @@ function buildService(overrides: any = {}) {
         lastCommandStatus: null,
       },
     }),
-    ...overrides,
-  };
+    ...serviceOverrides,
+  });
+  return service;
 }
-
 jest.mock("react-native-maps", () => {
   const React = require("react");
-  const MapView = React.forwardRef((props: any, ref: any) => {
+  const MapView = React.forwardRef((props: HostProps, ref: React.ForwardedRef<unknown>) => {
     React.useImperativeHandle(ref, () => ({ animateCamera: jest.fn() }));
     return React.createElement("MapView", props, props.children);
   });
-
   return {
     __esModule: true,
     default: MapView,
@@ -137,39 +190,44 @@ jest.mock("react-native-maps", () => {
     PROVIDER_DEFAULT: "default",
   };
 });
-
 jest.mock("react-native-safe-area-context", () => ({
   __esModule: true,
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
-
+jest.mock("@/lib/stores/theme-store", () => ({
+  __esModule: true,
+  useTheme: () => ({ resolvedTheme: "light" }),
+}));
 jest.mock("@gorhom/bottom-sheet", () => {
   const React = require("react");
-  const BottomSheet = React.forwardRef((props: any, ref: any) => {
-    React.useImperativeHandle(ref, () => ({
-      snapToIndex: (index: number) => props.onChange?.(index),
-    }));
-
-    return React.createElement("BottomSheet", props, props.children);
-  });
-
+  const BottomSheet = React.forwardRef(
+    (
+      props: HostProps & {
+        onChange?: (index: number) => void;
+      },
+      ref: React.ForwardedRef<unknown>,
+    ) => {
+      React.useImperativeHandle(ref, () => ({
+        snapToIndex: (index: number) => props.onChange?.(index),
+      }));
+      return React.createElement("BottomSheet", props, props.children);
+    },
+  );
   return {
     __esModule: true,
     default: BottomSheet,
+    BottomSheetScrollView: createHost("BottomSheetScrollView"),
     BottomSheetView: createHost("BottomSheetView"),
   };
 });
-
 jest.mock("@repo/ui/components/text", () => ({
   __esModule: true,
   Text: createHost("Text"),
 }));
-
 jest.mock("@repo/ui/components/icon", () => ({
   __esModule: true,
   Icon: createHost("Icon"),
 }));
-
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
   Activity: createHost("Activity"),
@@ -193,7 +251,6 @@ jest.mock("lucide-react-native", () => ({
   Watch: createHost("Watch"),
   Zap: createHost("Zap"),
 }));
-
 jest.mock("@shopify/react-native-skia", () => ({
   __esModule: true,
   Circle: createHost("Circle"),
@@ -203,11 +260,21 @@ jest.mock("@shopify/react-native-skia", () => ({
   useFont: () => ({}),
   vec: (x: number, y: number) => ({ x, y }),
 }));
-
 jest.mock("victory-native", () => ({
   __esModule: true,
   Area: createHost("Area"),
-  CartesianChart: ({ children, data }: any) =>
+  CartesianChart: ({
+    children,
+    data,
+  }: {
+    children: (context: {
+      points: {
+        elevation: unknown[];
+      };
+      chartBounds: HostProps;
+    }) => React.ReactNode;
+    data: unknown[];
+  }) =>
     React.createElement(
       "CartesianChart",
       { data },
@@ -218,28 +285,39 @@ jest.mock("victory-native", () => ({
     ),
   Line: createHost("Line"),
 }));
-
 jest.mock("@/assets/fonts/SpaceMono-Regular.ttf", () => ({
   __esModule: true,
   default: "mock-font",
 }));
-
 jest.mock("@/components/recording/footer", () => ({
   __esModule: true,
   RecordingControls: createHost("RecordingControls"),
 }));
-
 jest.mock("@/lib/hooks/useActivityRecorder", () => ({
   __esModule: true,
-  useActivityRecorderLiveData: () => ({
-    current: { power: 245, heartRate: 144, cadence: 88, speed: 3.2 },
+  useSessionView: () => ({
+    currentReadings: { power: 245, heartRate: 144, cadence: 88, speed: 3.2 },
     plan: {
       hasPlan: true,
       currentStep: {
+        type: "step",
         id: "00000000-0000-4000-8000-000000000002",
+        occurrenceId: "activity:segment-1:interval-1:0:step-1",
+        globalOrdinal: 1,
+        segmentId: "00000000-0000-4000-8000-000000000010",
+        segmentIndex: 0,
+        role: "activity",
+        category: "bike",
+        activity_category: "bike",
+        intervalId: "00000000-0000-4000-8000-000000000011",
+        intervalIndex: 0,
+        stepId: "00000000-0000-4000-8000-000000000002",
+        stepIndex: 1,
+        repeatIteration: 0,
+        completionPolicy: "time",
         name: "Tempo block",
         duration: { type: "time", seconds: 600 },
-        targets: [{ type: "%FTP", intensity: 88 }],
+        targets: mockCurrentTargets,
       },
       stepIndex: 1,
       stepCount: 2,
@@ -247,20 +325,22 @@ jest.mock("@/lib/hooks/useActivityRecorder", () => ({
         movingTime: 120000,
         duration: 600000,
         progress: 0.2,
-        requiresManualAdvance: false,
-        canAdvance: false,
+        requiresManualAdvance: mockManualAdvance,
+        canAutoAdvance: false,
+        canManualAdvance: mockManualAdvance,
+        canAdvance: mockManualAdvance,
       },
       canGoBack: true,
-      canSkip: true,
+      canSkip: !mockManualAdvance,
       previous: mockPlanPrevious,
       skip: mockPlanSkip,
+      advance: mockPlanAdvance,
     },
-    stats: {
+    sessionStats: {
       duration: 75,
       distance: 1200,
       normalizedPower: 241,
-      trainingStressScore: 12,
-      intensityFactor: 0.83,
+      provisionalMetrics: mockProvisionalMetrics,
       currentHeartRateZone: 2,
       currentPowerZone: 3,
       currentGrade: 4.2,
@@ -268,56 +348,50 @@ jest.mock("@/lib/hooks/useActivityRecorder", () => ({
       verticalSpeedMetersPerHour: 640,
     },
   }),
-  useCurrentReadings: () => ({ power: 245, heartRate: 144, cadence: 88, speed: 3.2 }),
-  usePlan: () => ({
-    hasPlan: true,
-    currentStep: {
-      id: "00000000-0000-4000-8000-000000000002",
-      name: "Tempo block",
-      duration: { type: "time", seconds: 600 },
-      targets: [{ type: "%FTP", intensity: 88 }],
-    },
-    stepIndex: 1,
-    stepCount: 2,
-    progress: {
-      movingTime: 120000,
-      duration: 600000,
-      progress: 0.2,
-      requiresManualAdvance: false,
-      canAdvance: false,
-    },
-    canGoBack: true,
-    canSkip: true,
-    previous: mockPlanPrevious,
-    skip: mockPlanSkip,
-  }),
-  useSessionStats: () => ({
-    duration: 75,
-    distance: 1200,
-    normalizedPower: 241,
-    trainingStressScore: 12,
-    intensityFactor: 0.83,
-    currentHeartRateZone: 2,
-    currentPowerZone: 3,
-    currentGrade: 4.2,
-    gradeAdjustedPaceSecondsPerKm: 315,
-    verticalSpeedMetersPerHour: 640,
+  useRecordingCommands: () => ({
+    advancePlanStep: mockPlanAdvance,
+    previousPlanStep: mockPlanPrevious,
+    skipPlanStep: mockPlanSkip,
   }),
 }));
-
 const { RecordingBackdrop } = require("../RecordingBackdrop");
 const { RecordingControlSheet } = require("../RecordingControlSheet");
 const { RecordingFloatingPanel } = require("../RecordingFloatingPanel");
 const { TrainerInsightCard } = require("../cards/TrainerInsightCard");
-
+function findHostNodes(rendered: Awaited<ReturnType<typeof renderNative>>, type: string) {
+  return rendered.container.queryAll((node: ReactTestInstance) => node.type === type);
+}
+function buildSessionStats(): ComponentProps<typeof TrainerInsightCardComponent>["stats"] {
+  return {
+    duration: 0,
+    movingTime: 0,
+    pausedTime: 0,
+    distance: 0,
+    calories: 0,
+    work: 0,
+    ascent: 0,
+    descent: 0,
+    avgHeartRate: 0,
+    avgPower: 0,
+    avgSpeed: 0,
+    avgCadence: 0,
+    maxHeartRate: 0,
+    maxPower: 0,
+    maxSpeed: 0,
+    maxCadence: 0,
+    hrZones: [0, 0, 0, 0, 0],
+    powerZones: [0, 0, 0, 0, 0, 0, 0],
+  };
+}
 describe("recording cockpit", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockManualAdvance = false;
+    mockCurrentTargets = [{ type: "%FTP", intensity: 88 }];
     getLastKnownLocationMock.mockResolvedValue(null);
   });
-
-  it("renders a route elevation profile in the carousel without subscribing to GPS", () => {
-    const result = renderNative(
+  it("renders a route elevation profile in the carousel without subscribing to GPS", async () => {
+    const result = await renderNative(
       <>
         <RecordingBackdrop
           recordingState="pending"
@@ -362,7 +436,6 @@ describe("recording cockpit", () => {
         />
       </>,
     );
-
     expect(screen.queryByTestId("route-elevation-backdrop")).toBeNull();
     expect(screen.getByTestId("route-progress-insight-card")).toBeTruthy();
     expect(screen.getByTestId("route-profile-card-content")).toBeTruthy();
@@ -374,13 +447,12 @@ describe("recording cockpit", () => {
     expect(screen.getAllByText("+4.2%").length).toBeGreaterThan(0);
     expect(screen.queryByText("50% complete")).toBeNull();
     expect(screen.queryByText("Done")).toBeNull();
-    expect(result.UNSAFE_queryByType("MapView" as any)).toBeNull();
-    expect(result.UNSAFE_queryByType("Polyline" as any)).toBeNull();
+    expect(findHostNodes(result, "MapView")[0] ?? null).toBeNull();
+    expect(findHostNodes(result, "Polyline")[0] ?? null).toBeNull();
     expect(addCallbackMock).not.toHaveBeenCalled();
   });
-
-  it("clamps route progress after the route is complete", () => {
-    renderNative(
+  it("clamps route progress after the route is complete", async () => {
+    await renderNative(
       <RecordingFloatingPanel
         bottomObstructionHeight={80}
         hasPlan={false}
@@ -410,15 +482,13 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.getByTestId("route-profile-current-dot")).toBeTruthy();
     expect(screen.getByText("6.0 km / 6.0 km")).toBeTruthy();
     expect(screen.getAllByText("-1.8%").length).toBeGreaterThan(0);
     expect(screen.queryByText("120% complete")).toBeNull();
   });
-
-  it("renders distance progress fallback when route elevation is unavailable", () => {
-    const result = renderNative(
+  it("renders distance progress fallback when route elevation is unavailable", async () => {
+    const result = await renderNative(
       <RecordingFloatingPanel
         bottomObstructionHeight={80}
         hasPlan={false}
@@ -447,17 +517,15 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.getByTestId("route-distance-fallback")).toBeTruthy();
     expect(screen.getByTestId("route-distance-current-dot")).toBeTruthy();
     expect(screen.getByText("Route distance")).toBeTruthy();
     expect(screen.getByText("2.5 km / 10.0 km")).toBeTruthy();
     expect(screen.queryByText("Done")).toBeNull();
-    expect(result.UNSAFE_queryByType("MapView" as any)).toBeNull();
+    expect(findHostNodes(result, "MapView")[0] ?? null).toBeNull();
   });
-
-  it("previews route elevation without a progress marker when GPS is off course", () => {
-    renderNative(
+  it("shows sensor-derived virtual route progress without live location", async () => {
+    await renderNative(
       <RecordingFloatingPanel
         bottomObstructionHeight={80}
         hasPlan={false}
@@ -472,7 +540,6 @@ describe("recording cockpit", () => {
           },
           currentRouteDistance: 3000,
           currentRouteGrade: 4.2,
-          isGpsRecordingEnabled: () => true,
           isOnRoute: false,
           routeDistance: 6000,
           routeProgress: 50,
@@ -490,54 +557,56 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.getByTestId("route-elevation-chart")).toBeTruthy();
-    expect(screen.queryByTestId("route-profile-current-dot")).toBeNull();
+    expect(screen.getByTestId("route-profile-current-dot")).toBeTruthy();
     expect(screen.getAllByText("Distance").length).toBeGreaterThan(0);
     expect(screen.getByText("Remaining")).toBeTruthy();
     expect(screen.getByText("Grade")).toBeTruthy();
-    expect(screen.getAllByText("--").length).toBeGreaterThanOrEqual(3);
+    expect(screen.getByText("3.00 km")).toBeTruthy();
+    expect(screen.getByText("3.0 km")).toBeTruthy();
+    expect(screen.getByText("+4.2%")).toBeTruthy();
   });
-
-  it("does not show a fake map when GPS mode has no live location yet", () => {
-    const result = renderNative(
+  it("renders a GPS-free recording focus when legacy GPS backdrop input is supplied", async () => {
+    const result = await renderNative(
       <RecordingBackdrop
         recordingState="pending"
         service={buildService()}
         sessionContract={buildContract({ ui: { backdropMode: "gps_map" } })}
       />,
     );
-
-    expect(result.UNSAFE_queryByType("MapView" as any)).toBeNull();
+    expect(findHostNodes(result, "MapView")[0] ?? null).toBeNull();
     expect(screen.queryByText("GPS map")).toBeNull();
-    expect(screen.getByTestId("recording-map-pending-backdrop")).toBeTruthy();
-    expect(screen.getByText("Acquiring GPS")).toBeTruthy();
-    expect(addCallbackMock).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("recording-map-pending-backdrop")).toBeNull();
+    expect(screen.queryByText("Acquiring GPS")).toBeNull();
+    expect(screen.getByText("Recording focus")).toBeTruthy();
+    expect(screen.getByText(/connected sensor metrics without location/i)).toBeTruthy();
+    expect(addCallbackMock).not.toHaveBeenCalled();
   });
-
-  it("uses a valid last-known location to render the GPS map immediately", async () => {
-    getLastKnownLocationMock.mockResolvedValueOnce({
-      coords: { latitude: 39.75, longitude: -104.99 },
-      timestamp: Date.now(),
-    });
-
-    const result = renderNative(
+  it("renders an attached route as a static preview without user location", async () => {
+    const result = await renderNative(
       <RecordingBackdrop
         recordingState="pending"
-        service={buildService()}
-        sessionContract={buildContract({ ui: { backdropMode: "gps_map" } })}
+        service={buildService({
+          currentRoute: {
+            coordinates: [
+              { latitude: 39.75, longitude: -104.99 },
+              { latitude: 39.76, longitude: -104.98 },
+            ],
+          },
+        })}
+        sessionContract={buildContract({
+          guidance: { hasRoute: true, hasRouteGeometry: true, routeMode: "preview" },
+          ui: { backdropMode: "route_preview" },
+        })}
       />,
     );
-
-    await waitFor(() => {
-      expect(result.UNSAFE_queryByType("MapView" as any)).toBeTruthy();
-    });
-
-    expect(screen.queryByTestId("recording-map-pending-backdrop")).toBeNull();
+    const map = findHostNodes(result, "MapView")[0];
+    expect(map).toBeTruthy();
+    expect(map?.props.showsUserLocation).toBe(false);
+    expect(screen.getByTestId("recording-backdrop-map")).toBeTruthy();
   });
-
-  it("renders route unavailable copy without a map when route geometry is missing", () => {
-    const result = renderNative(
+  it("renders route unavailable copy without a map when route geometry is missing", async () => {
+    const result = await renderNative(
       <RecordingBackdrop
         recordingState="pending"
         service={buildService()}
@@ -547,16 +616,14 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
-    expect(result.UNSAFE_queryByType("MapView" as any)).toBeNull();
+    expect(findHostNodes(result, "MapView")[0] ?? null).toBeNull();
     expect(screen.getByText("Route unavailable")).toBeTruthy();
     expect(
       screen.getByText("The route is attached, but there is no map geometry to preview."),
     ).toBeTruthy();
   });
-
-  it("renders live activity and metric context in the floating panel", () => {
-    renderNative(
+  it("renders live activity and metric context in the floating panel", async () => {
+    await renderNative(
       <RecordingFloatingPanel
         bottomObstructionHeight={80}
         hasPlan
@@ -567,8 +634,8 @@ describe("recording cockpit", () => {
           devices: { hasTrainer: true, trainerControllable: true },
           ui: {
             floatingPanel: {
-              defaultCard: "workout_interval",
-              availableCards: ["workout_interval", "metrics", "trainer"],
+              defaultCard: "activity_interval",
+              availableCards: ["activity_interval", "metrics", "trainer"],
               forcedExpanded: false,
               canMinimize: true,
             },
@@ -576,12 +643,23 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.getByTestId("recording-card-carousel")).toBeTruthy();
     expect(screen.getAllByText("Tempo block").length).toBeGreaterThan(0);
     expect(screen.getByText("10m @ 220W")).toBeTruthy();
+    expect(screen.getByText("PWR 245W")).toBeTruthy();
     expect(screen.getByLabelText("Previous interval")).toBeTruthy();
     expect(screen.getByLabelText("Skip interval")).toBeTruthy();
+    expect(screen.getByLabelText("Previous interval").props).toMatchObject({
+      accessibilityHint: "Moves to the previous interval.",
+      accessibilityState: { disabled: false },
+      style: { height: 44 },
+    });
+    expect(screen.getByLabelText("Skip interval").props).toMatchObject({
+      accessibilityHint: "Skips the current interval and moves to the next interval.",
+      accessibilityState: { disabled: false },
+      style: { height: 44 },
+    });
+    expect(screen.getByLabelText("Skip interval").props.className).toContain("active:opacity-80");
     expect(screen.getByTestId("activity-plan-interval-progress-bar")).toBeTruthy();
     expect(screen.getAllByText("245").length).toBeGreaterThan(0);
     expect(screen.getAllByText("W").length).toBeGreaterThan(0);
@@ -590,19 +668,98 @@ describe("recording cockpit", () => {
     expect(screen.getByText("Power Zone")).toBeTruthy();
     expect(screen.getByText("Z3")).toBeTruthy();
     expect(screen.getByTestId("trainer-insight-card")).toBeTruthy();
-
-    fireEvent.press(screen.getByLabelText("Previous interval"));
-    fireEvent.press(screen.getByLabelText("Skip interval"));
-
+    await fireEvent.press(screen.getByLabelText("Previous interval"));
+    await fireEvent.press(screen.getByLabelText("Skip interval"));
     expect(mockPlanPrevious).toHaveBeenCalledTimes(1);
     expect(mockPlanSkip).toHaveBeenCalledTimes(1);
-
     expect(screen.getAllByLabelText("Expand recording cards").length).toBeGreaterThan(0);
     expect(screen.queryByLabelText("Minimize recording cards")).toBeNull();
   });
-
-  it("shows every metric cell in the expanded metrics card", () => {
-    renderNative(
+  it("keeps percentage targets relative when canonical targets are unavailable", async () => {
+    const unavailable = createUnavailableAthletePerformanceTargetFacts("2026-06-01T00:00:00.000Z");
+    await renderNative(
+      <RecordingFloatingPanel
+        bottomObstructionHeight={80}
+        hasPlan
+        sensorCount={2}
+        service={buildService({ getPerformanceTargets: () => unavailable })}
+        sessionContract={buildContract({
+          guidance: { hasPlan: true, hasStructuredSteps: true },
+          ui: {
+            floatingPanel: {
+              defaultCard: "activity_interval",
+              availableCards: ["activity_interval", "metrics"],
+              forcedExpanded: false,
+              canMinimize: true,
+            },
+          },
+        })}
+      />,
+    );
+    expect(screen.getByText("10m @ 88% FTP")).toBeTruthy();
+    expect(screen.queryByText("Target 176 W")).toBeNull();
+  });
+  it("resolves max-HR targets from max HR rather than LTHR", async () => {
+    mockCurrentTargets = [{ type: "%MaxHR", intensity: 80 }];
+    const performanceTargets = buildPerformanceTargetFactsFixture({
+      asOf: "2026-06-01T00:00:00.000Z",
+      heartRateObservedAt: "2026-05-30T00:00:00.000Z",
+      lthrBpm: { bike: 170 },
+      maxHrBpm: { bike: 190 },
+    });
+    await renderNative(
+      <RecordingFloatingPanel
+        bottomObstructionHeight={80}
+        hasPlan
+        sensorCount={2}
+        service={buildService({ getPerformanceTargets: () => performanceTargets })}
+        sessionContract={buildContract({
+          guidance: { hasPlan: true, hasStructuredSteps: true },
+          ui: {
+            floatingPanel: {
+              defaultCard: "activity_interval",
+              availableCards: ["activity_interval", "metrics"],
+              forcedExpanded: false,
+              canMinimize: true,
+            },
+          },
+        })}
+      />,
+    );
+    expect(screen.getByText("10m @ 152 bpm")).toBeTruthy();
+    expect(screen.getByText("Target 152 bpm")).toBeTruthy();
+    expect(screen.queryByText("136 bpm")).toBeNull();
+  });
+  it("uses the normal advance action for a manual completion occurrence", async () => {
+    mockManualAdvance = true;
+    await renderNative(
+      <RecordingFloatingPanel
+        bottomObstructionHeight={80}
+        hasPlan
+        sensorCount={0}
+        service={buildService()}
+        sessionContract={buildContract({
+          guidance: { hasPlan: true, hasStructuredSteps: true },
+          ui: {
+            floatingPanel: {
+              defaultCard: "activity_interval",
+              availableCards: ["activity_interval"],
+              forcedExpanded: false,
+              canMinimize: true,
+            },
+          },
+        })}
+      />,
+    );
+    const advance = screen.getByLabelText("Advance interval");
+    expect(advance.props.accessibilityState).toEqual({ disabled: false });
+    expect(screen.queryByLabelText("Skip interval")).toBeNull();
+    await fireEvent.press(advance);
+    expect(mockPlanAdvance).toHaveBeenCalledTimes(1);
+    expect(mockPlanSkip).not.toHaveBeenCalled();
+  });
+  it("shows every metric cell in the expanded metrics card", async () => {
+    await renderNative(
       <RecordingFloatingPanel
         bottomObstructionHeight={80}
         hasPlan
@@ -621,7 +778,6 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.getByText("Time")).toBeTruthy();
     expect(screen.getByText("Distance")).toBeTruthy();
     expect(screen.getByText("HR")).toBeTruthy();
@@ -630,8 +786,9 @@ describe("recording cockpit", () => {
     expect(screen.getByText("Power Zone")).toBeTruthy();
     expect(screen.getByText("GAP")).toBeTruthy();
     expect(screen.getByText("NP")).toBeTruthy();
-    expect(screen.getByText("TSS")).toBeTruthy();
-    expect(screen.getByText("IF")).toBeTruthy();
+    expect(screen.getByText("Provisional Load")).toBeTruthy();
+    expect(screen.getByText("Normalized Intensity")).toBeTruthy();
+    expect(screen.queryByText(/TSS|\bIF\b/)).toBeNull();
     expect(screen.getByText("Grade")).toBeTruthy();
     expect(screen.getByText("VAM")).toBeTruthy();
     expect(screen.getAllByText("Z2").length).toBeGreaterThan(0);
@@ -643,9 +800,8 @@ describe("recording cockpit", () => {
     expect(screen.getAllByText("--").length).toBeGreaterThan(0);
     expect(screen.queryByTestId("recording-card-page-indicator")).toBeNull();
   });
-
-  it("expands the floating panel when the card surface is pressed and minimizes from the corner", () => {
-    renderNative(
+  it("expands the floating panel when the card surface is pressed and minimizes from the corner", async () => {
+    await renderNative(
       <RecordingFloatingPanel
         bottomObstructionHeight={80}
         hasPlan
@@ -655,8 +811,8 @@ describe("recording cockpit", () => {
           guidance: { hasPlan: true, hasStructuredSteps: true },
           ui: {
             floatingPanel: {
-              defaultCard: "workout_interval",
-              availableCards: ["workout_interval", "metrics"],
+              defaultCard: "activity_interval",
+              availableCards: ["activity_interval", "metrics"],
               forcedExpanded: false,
               canMinimize: true,
             },
@@ -664,22 +820,50 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.queryByLabelText("Minimize recording cards")).toBeNull();
-
-    fireEvent.press(screen.getByTestId("recording-card-workout_interval-surface"));
-
+    await fireEvent.press(screen.getByTestId("recording-card-activity_interval-surface"));
     expect(screen.getByLabelText("Minimize recording cards")).toBeTruthy();
     expect(screen.getByLabelText("Skip interval")).toBeTruthy();
-
-    fireEvent.press(screen.getByLabelText("Minimize recording cards"));
-
+    await fireEvent.press(screen.getByLabelText("Minimize recording cards"));
     expect(screen.queryByLabelText("Minimize recording cards")).toBeNull();
-    expect(screen.getByTestId("recording-card-workout_interval-surface")).toBeTruthy();
+    expect(screen.getByTestId("recording-card-activity_interval-surface")).toBeTruthy();
   });
-
-  it("renders route progress cards when route context is attached", () => {
-    renderNative(
+  it("exposes accessible 44-point panel controls with expansion state and pressed feedback", async () => {
+    await renderNative(
+      <RecordingFloatingPanel
+        bottomObstructionHeight={80}
+        hasPlan
+        sensorCount={2}
+        service={buildService()}
+        sessionContract={buildContract({
+          guidance: { hasPlan: true, hasStructuredSteps: true },
+          ui: {
+            floatingPanel: {
+              defaultCard: "activity_interval",
+              availableCards: ["activity_interval", "metrics"],
+              forcedExpanded: false,
+              canMinimize: true,
+            },
+          },
+        })}
+      />,
+    );
+    const expandSurface = screen.getByTestId("recording-card-activity_interval-surface");
+    expect(expandSurface.props.accessibilityHint).toBe("Shows the full recording cards view");
+    expect(expandSurface.props.accessibilityState).toEqual({ expanded: false });
+    expect(expandSurface.props.className).toContain("active:opacity-80");
+    await fireEvent.press(expandSurface);
+    const minimizeButton = screen.getByTestId("recording-card-minimize-button");
+    expect(minimizeButton.props.accessibilityHint).toBe(
+      "Returns to the compact recording cards view",
+    );
+    expect(minimizeButton.props.accessibilityState).toEqual({ expanded: true });
+    expect(minimizeButton.props.className).toContain("h-11");
+    expect(minimizeButton.props.className).toContain("w-11");
+    expect(minimizeButton.props.className).toContain("active:opacity-80");
+  });
+  it("renders route progress cards when route context is attached", async () => {
+    await renderNative(
       <RecordingFloatingPanel
         bottomObstructionHeight={80}
         hasPlan={false}
@@ -702,13 +886,11 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.getByTestId("metrics-insight-card")).toBeTruthy();
     expect(screen.getByTestId("route-progress-insight-card")).toBeTruthy();
   });
-
-  it("renders a stable plan metrics trainer carousel with optional route cards", () => {
-    renderNative(
+  it("renders a stable plan metrics trainer carousel with optional route cards", async () => {
+    await renderNative(
       <RecordingFloatingPanel
         bottomObstructionHeight={80}
         hasPlan
@@ -729,8 +911,8 @@ describe("recording cockpit", () => {
           devices: { hasTrainer: true, trainerControllable: true },
           ui: {
             floatingPanel: {
-              defaultCard: "workout_interval",
-              availableCards: ["workout_interval", "route_progress", "metrics", "trainer"],
+              defaultCard: "activity_interval",
+              availableCards: ["activity_interval", "route_progress", "metrics", "trainer"],
               forcedExpanded: false,
               canMinimize: true,
             },
@@ -738,18 +920,16 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.getAllByText("Tempo block").length).toBeGreaterThan(0);
     expect(screen.getByTestId("metrics-insight-card")).toBeTruthy();
     expect(screen.getByText("Auto Target")).toBeTruthy();
     expect(screen.getByText("88%")).toBeTruthy();
     expect(screen.getByTestId("route-progress-insight-card")).toBeTruthy();
   });
-
-  it("does not re-notify expansion when live trainer updates rebuild parent callbacks", () => {
+  it("does not re-notify expansion when live trainer updates rebuild parent callbacks", async () => {
     const firstExpandedChange = jest.fn();
     const secondExpandedChange = jest.fn();
-    const result = renderNative(
+    const result = await renderNative(
       <RecordingFloatingPanel
         bottomObstructionHeight={80}
         hasPlan
@@ -760,8 +940,8 @@ describe("recording cockpit", () => {
           devices: { hasTrainer: true, trainerControllable: true },
           ui: {
             floatingPanel: {
-              defaultCard: "workout_interval",
-              availableCards: ["workout_interval", "metrics", "trainer"],
+              defaultCard: "activity_interval",
+              availableCards: ["activity_interval", "metrics", "trainer"],
               forcedExpanded: false,
               canMinimize: true,
             },
@@ -770,10 +950,8 @@ describe("recording cockpit", () => {
         onExpandedChange={firstExpandedChange}
       />,
     );
-
     expect(firstExpandedChange).toHaveBeenCalledTimes(1);
-
-    result.rerender(
+    await result.rerender(
       <RecordingFloatingPanel
         bottomObstructionHeight={80}
         hasPlan
@@ -784,8 +962,8 @@ describe("recording cockpit", () => {
           devices: { hasTrainer: true, trainerControllable: true },
           ui: {
             floatingPanel: {
-              defaultCard: "workout_interval",
-              availableCards: ["workout_interval", "metrics", "trainer"],
+              defaultCard: "activity_interval",
+              availableCards: ["activity_interval", "metrics", "trainer"],
               forcedExpanded: false,
               canMinimize: true,
             },
@@ -794,12 +972,11 @@ describe("recording cockpit", () => {
         onExpandedChange={secondExpandedChange}
       />,
     );
-
     expect(secondExpandedChange).not.toHaveBeenCalled();
   });
-
-  it("keeps trainer remote controls stable when BLE descriptors are rebuilt", () => {
-    const service = {
+  it("keeps trainer remote controls stable when BLE descriptors are rebuilt", async () => {
+    const service = buildService();
+    Object.assign(service, {
       getSessionView: () => ({
         overrideState: { trainerMode: "manual" },
         trainer: {
@@ -826,29 +1003,40 @@ describe("recording cockpit", () => {
       }),
       applyManualTrainerPower: jest.fn(async () => true),
       applyManualTrainerResistance: jest.fn(async () => true),
-    };
-    const props = {
+    });
+    const props: ComponentProps<typeof TrainerInsightCardComponent> = {
       mode: "expanded",
-      plan: { hasPlan: false, select: jest.fn(), clear: jest.fn() },
+      plan: {
+        hasPlan: false,
+        stepIndex: 0,
+        stepCount: 0,
+        currentSegment: null,
+        nextSegment: null,
+        progress: null,
+        isLast: false,
+        isFinished: false,
+        canAdvance: false,
+        canSkip: false,
+        canGoBack: false,
+        planTimeRemaining: 0,
+        advance: jest.fn(),
+        previous: jest.fn(),
+        skip: jest.fn(),
+      },
       readings: { power: 210 },
       sensorCount: 1,
       service,
       sessionContract: buildContract({ devices: { hasTrainer: true, trainerControllable: true } }),
-      stats: {},
+      stats: buildSessionStats(),
     };
-
-    const result = renderNative(<TrainerInsightCard {...(props as any)} />);
-
+    const result = await renderNative(<TrainerInsightCard {...props} />);
     expect(screen.getByTestId("trainer-insight-card")).toBeTruthy();
     expect(screen.getAllByText("Power").length).toBeGreaterThan(0);
-
-    result.rerender(<TrainerInsightCard {...(props as any)} />);
-
+    await result.rerender(<TrainerInsightCard {...props} />);
     expect(screen.getAllByText("Power").length).toBeGreaterThan(0);
   });
-
-  it("centers expanded recording cards with interval momentum disabled", () => {
-    renderNative(
+  it("centers expanded recording cards with interval momentum disabled", async () => {
+    await renderNative(
       <RecordingFloatingPanel
         bottomObstructionHeight={80}
         hasPlan
@@ -868,8 +1056,8 @@ describe("recording cockpit", () => {
           },
           ui: {
             floatingPanel: {
-              defaultCard: "workout_interval",
-              availableCards: ["workout_interval", "route_progress", "metrics"],
+              defaultCard: "activity_interval",
+              availableCards: ["activity_interval", "route_progress", "metrics"],
               forcedExpanded: true,
               canMinimize: false,
             },
@@ -877,18 +1065,15 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     const carousel = screen.getByTestId("recording-card-carousel");
-
     expect(carousel.props.disableIntervalMomentum).toBe(true);
     expect(carousel.props.contentContainerStyle.paddingHorizontal).toBeGreaterThanOrEqual(28);
     expect(carousel.props.snapToInterval).toBeGreaterThan(
-      screen.getByTestId("recording-card-workout_interval").props.style.width,
+      screen.getByTestId("recording-card-activity_interval").props.style.width,
     );
   });
-
-  it("hides unavailable plan and trainer cards from the carousel", () => {
-    renderNative(
+  it("hides unavailable plan and trainer cards from the carousel", async () => {
+    await renderNative(
       <RecordingFloatingPanel
         bottomObstructionHeight={80}
         hasPlan={false}
@@ -899,8 +1084,8 @@ describe("recording cockpit", () => {
           devices: { hasTrainer: false, trainerControllable: false },
           ui: {
             floatingPanel: {
-              defaultCard: "workout_interval",
-              availableCards: ["workout_interval", "trainer", "metrics"],
+              defaultCard: "activity_interval",
+              availableCards: ["activity_interval", "trainer", "metrics"],
               forcedExpanded: false,
               canMinimize: true,
             },
@@ -908,15 +1093,13 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.getByTestId("recording-card-carousel")).toBeTruthy();
     expect(screen.getByTestId("metrics-insight-card")).toBeTruthy();
     expect(screen.queryByTestId("activity-interval-insight-card")).toBeNull();
     expect(screen.queryByTestId("trainer-insight-card")).toBeNull();
   });
-
-  it("hides data-only trainer and route-without-geometry cards from the carousel", () => {
-    renderNative(
+  it("hides data-only trainer and route-without-geometry cards from the carousel", async () => {
+    await renderNative(
       <RecordingFloatingPanel
         bottomObstructionHeight={80}
         hasPlan={false}
@@ -936,14 +1119,12 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.getByTestId("metrics-insight-card")).toBeTruthy();
     expect(screen.queryByTestId("route-progress-insight-card")).toBeNull();
     expect(screen.queryByTestId("trainer-insight-card")).toBeNull();
   });
-
-  it("forces expanded metrics when no route is attached and GPS is off", () => {
-    renderNative(
+  it("forces expanded metrics when no route is attached and GPS is off", async () => {
+    await renderNative(
       <RecordingFloatingPanel
         bottomObstructionHeight={80}
         hasPlan={false}
@@ -964,19 +1145,17 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.getByTestId("metrics-insight-card")).toBeTruthy();
     expect(screen.queryByText("Compact")).toBeNull();
     expect(screen.queryByText("Expand")).toBeNull();
   });
-
-  it("resets selected contextual card to metrics when route capability disappears", () => {
+  it("resets selected contextual card to metrics when route capability disappears", async () => {
     const routeService = buildService({
       routeDistance: 10000,
       currentRouteDistance: 3750,
       routeProgress: 37.5,
     });
-    const result = renderNative(
+    const result = await renderNative(
       <RecordingFloatingPanel
         bottomObstructionHeight={80}
         hasPlan={false}
@@ -995,11 +1174,9 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.getByTestId("metrics-insight-card")).toBeTruthy();
     expect(screen.getByTestId("route-progress-insight-card")).toBeTruthy();
-
-    result.rerender(
+    await result.rerender(
       <RecordingFloatingPanel
         bottomObstructionHeight={80}
         hasPlan={false}
@@ -1018,13 +1195,11 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.getByTestId("metrics-insight-card")).toBeTruthy();
     expect(screen.queryByTestId("route-progress-insight-card")).toBeNull();
   });
-
-  it("renders current climb values from the recorder service", () => {
-    renderNative(
+  it("renders current climb values from the recorder service", async () => {
+    await renderNative(
       <RecordingFloatingPanel
         bottomObstructionHeight={80}
         hasPlan={false}
@@ -1053,14 +1228,12 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.getByText("+4.3%")).toBeTruthy();
     expect(screen.getByText("Climbing")).toBeTruthy();
     expect(screen.getByText("6.0 km")).toBeTruthy();
   });
-
-  it("hides climb cards when route elevation data is unavailable", () => {
-    renderNative(
+  it("hides climb cards when route elevation data is unavailable", async () => {
+    await renderNative(
       <RecordingFloatingPanel
         bottomObstructionHeight={80}
         hasPlan={false}
@@ -1083,17 +1256,13 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.getByTestId("metrics-insight-card")).toBeTruthy();
     expect(screen.queryByTestId("climb-insight-card")).toBeNull();
   });
-
-  it("disables locked secondary actions in the control sheet", () => {
-    const result = renderNative(
+  it("disables locked secondary actions in the control sheet", async () => {
+    const result = await renderNative(
       <RecordingControlSheet
         activityCategory="bike"
-        gpsRecordingEnabled={false}
-        onGpsPress={jest.fn()}
         onOpenActivity={jest.fn()}
         onOpenFtms={jest.fn()}
         onOpenPlan={jest.fn()}
@@ -1110,26 +1279,65 @@ describe("recording cockpit", () => {
         sensorCount={0}
         sessionContract={buildContract({
           editing: { canEditGps: false, canEditPlan: false, canEditRoute: false },
-          ui: { controls: { quickActions: ["gps", "plan", "route", "sensors"] } },
+          ui: { controls: { quickActions: ["plan", "route", "sensors"] } },
         })}
       />,
     );
-
     expect(screen.getByTestId("recording-activity-control-button")).toBeTruthy();
     expect(screen.getByTestId("recording-setup-action-rail")).toBeTruthy();
-    expect(screen.getByTestId("recording-gps-toggle")).toBeTruthy();
-    expect(screen.getByText("GPS")).toBeTruthy();
-    expect(screen.getByText("Off")).toBeTruthy();
+    expect(screen.queryByTestId("recording-gps-toggle")).toBeNull();
+    expect(screen.queryByText("GPS")).toBeNull();
     expect(screen.queryByTestId("recording-session-mode-button")).toBeNull();
-    expect(screen.queryByText("Guidance")).toBeNull();
-
-    expect(screen.getByText("Activity")).toBeTruthy();
+    expect(screen.getByText("Guidance")).toBeTruthy();
+    expect(screen.getByText("Activity plan")).toBeTruthy();
     expect(screen.getAllByText("Add")).toHaveLength(2);
-
-    const disabledActions = result
-      .UNSAFE_getAllByType("Pressable" as any)
-      .filter((node: any) => node.props.accessibilityState?.disabled === true);
-
-    expect(disabledActions).toHaveLength(3);
+    const disabledActions = findHostNodes(result, "Pressable").filter(
+      (node: ReactTestInstance) => node.props.accessibilityState?.disabled === true,
+    );
+    expect(disabledActions).toHaveLength(2);
+  });
+  it("resolves native control-sheet colors from semantic theme tokens", async () => {
+    const result = await renderNative(
+      <RecordingControlSheet
+        activityCategory="bike"
+        onOpenActivity={jest.fn()}
+        onOpenFtms={jest.fn()}
+        onOpenPlan={jest.fn()}
+        onOpenRoute={jest.fn()}
+        onOpenSensors={jest.fn()}
+        onRemovePlan={jest.fn()}
+        onRemoveRoute={jest.fn()}
+        onStart={jest.fn()}
+        onPause={jest.fn()}
+        onResume={jest.fn()}
+        onLap={jest.fn()}
+        onFinish={jest.fn()}
+        recordingState="not_started"
+        sensorCount={0}
+        sessionContract={buildContract({
+          guidance: { hasPlan: true },
+          ui: { controls: { quickActions: ["plan", "route"] } },
+        })}
+      />,
+    );
+    const getHostProps = (
+      type: string,
+    ): {
+      backgroundStyle?: {
+        backgroundColor?: string;
+      };
+      color?: string;
+    } => {
+      const node = findHostNodes(result, type)[0];
+      if (!node) throw new Error(`Expected ${type} host node`);
+      return node.props;
+    };
+    expect(getHostProps("BottomSheet").backgroundStyle).toEqual({
+      backgroundColor: THEME.light.popover,
+    });
+    expect(getHostProps("Activity").color).toBe(THEME.light.foreground);
+    expect(getHostProps("Route").color).toBe(THEME.light.foreground);
+    expect(getHostProps("CalendarDays").color).toBe(THEME.light.chart2);
+    expect(getHostProps("Trash2").color).toBe(THEME.light.destructive);
   });
 });

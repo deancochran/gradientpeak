@@ -1,50 +1,108 @@
 import { defaultShouldDehydrateQuery, QueryClient, type QueryKey } from "@tanstack/react-query";
 import superjson from "superjson";
+import type { ApiCacheTag } from "./contracts/cache-receipts";
 
 const DEFAULT_QUERY_STALE_TIME = 5 * 60 * 1000;
 const SCHEDULING_QUERY_STALE_TIME = 30 * 1000;
 
+type TrpcQueryKeyPrefix = readonly [readonly string[]];
+
+/**
+ * Exact tRPC Query key prefixes for every cache tag returned by the API.
+ * The prefix intentionally omits input so every cached input for the procedure is invalidated.
+ */
+export const API_CACHE_TAG_QUERY_KEYS = {
+  "activities.getById": [["activities", "getById"]],
+  "activities.listPaginated": [["activities", "listPaginated"]],
+  "activityFiles.getIngestionStatus": [["activityFiles", "getIngestionStatus"]],
+  "activityPlans.getById": [["activityPlans", "getById"]],
+  "athleteIntelligence.getThresholdEvidence": [["athleteIntelligence", "getThresholdEvidence"]],
+  "athleteIntelligence.getTrainingEffects": [["athleteIntelligence", "getTrainingEffects"]],
+  "calendar.day": [["calendar", "day"]],
+  "calendar.range": [
+    ["calendar", "range"],
+    ["calendar", "page"],
+  ],
+  "home.getDashboard": [["home", "getDashboard"]],
+  "plannedSessions.range": [["plannedSessions", "range"]],
+  "trainingPlans.get": [["trainingPlans", "get"]],
+  "trainingPlans.getPlanTabProjection": [
+    ["trainingPlans", "getPlanTabProjection"],
+    ["trainingPlans", "getPlanPeriodReview"],
+  ],
+  "trainingPlans.getPlanningLedger": [["trainingPlans", "getPlanningLedger"]],
+  "trainingPlans.list": [["trainingPlans", "list"]],
+} as const satisfies Record<ApiCacheTag, readonly (readonly string[])[]>;
+
+export const IDEMPOTENT_INGESTION_MUTATION_RETRY_OPTIONS = {
+  retry: 1,
+  retryDelay: 1000,
+} as const;
+
+export function queryKeysForCacheTags(
+  cacheTags: readonly ApiCacheTag[],
+): readonly TrpcQueryKeyPrefix[] {
+  const seen = new Set<string>();
+  return cacheTags
+    .flatMap((tag) => API_CACHE_TAG_QUERY_KEYS[tag].map((path) => [path] as TrpcQueryKeyPrefix))
+    .filter((queryKey) => {
+      const key = queryKey[0].join(".");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+/** Invalidates every tRPC query named by a server mutation receipt. */
+export async function invalidateReceiptCacheTags(
+  queryClient: QueryClient,
+  receipt: { readonly cache_tags: readonly ApiCacheTag[] },
+): Promise<void> {
+  await Promise.all(
+    queryKeysForCacheTags(receipt.cache_tags).map((queryKey) =>
+      queryClient.invalidateQueries({ queryKey }),
+    ),
+  );
+}
+
 export const SCHEDULING_REFRESH_CONTRACT = {
   eventMutation: [
-    ["events", "list"],
+    ["calendar", "range"],
+    ["calendar", "page"],
+    ["calendar", "day"],
     ["events", "getById"],
-    ["events", "getToday"],
-    ["events", "validateConstraints"],
+    ["plannedSessions", "range"],
     ["trainingPlans", "list"],
-    ["trainingPlans", "getActivePlan"],
+    ["trainingPlans", "getPlanTabProjection"],
+    ["trainingPlans", "getPlanPeriodReview"],
+    ["trainingPlans", "getPlanningLedger"],
     ["trainingPlans", "get"],
-    ["trainingPlans", "getCurrentStatus"],
-    ["trainingPlans", "getInsightTimeline"],
-    ["trainingPlans", "getActualCurve"],
-    ["trainingPlans", "getIdealCurve"],
-    ["trainingPlans", "getWeeklySummary"],
+    ["trainingPlans", "preview"],
   ],
   eventDeletionMutation: [
-    ["events", "list"],
-    ["events", "getToday"],
-    ["events", "validateConstraints"],
+    ["calendar", "range"],
+    ["calendar", "page"],
+    ["calendar", "day"],
+    ["plannedSessions", "range"],
     ["trainingPlans", "list"],
-    ["trainingPlans", "getActivePlan"],
+    ["trainingPlans", "getPlanTabProjection"],
+    ["trainingPlans", "getPlanPeriodReview"],
+    ["trainingPlans", "getPlanningLedger"],
     ["trainingPlans", "get"],
-    ["trainingPlans", "getCurrentStatus"],
-    ["trainingPlans", "getInsightTimeline"],
-    ["trainingPlans", "getActualCurve"],
-    ["trainingPlans", "getIdealCurve"],
-    ["trainingPlans", "getWeeklySummary"],
+    ["trainingPlans", "preview"],
   ],
   trainingPlanSchedulingMutation: [
-    ["events", "list"],
+    ["calendar", "range"],
+    ["calendar", "page"],
+    ["calendar", "day"],
     ["events", "getById"],
-    ["events", "getToday"],
-    ["events", "validateConstraints"],
+    ["plannedSessions", "range"],
     ["trainingPlans", "list"],
-    ["trainingPlans", "getActivePlan"],
+    ["trainingPlans", "getPlanTabProjection"],
+    ["trainingPlans", "getPlanPeriodReview"],
+    ["trainingPlans", "getPlanningLedger"],
     ["trainingPlans", "get"],
-    ["trainingPlans", "getCurrentStatus"],
-    ["trainingPlans", "getInsightTimeline"],
-    ["trainingPlans", "getActualCurve"],
-    ["trainingPlans", "getIdealCurve"],
-    ["trainingPlans", "getWeeklySummary"],
+    ["trainingPlans", "preview"],
   ],
 } as const;
 
@@ -100,16 +158,30 @@ export async function invalidateSchedulingQueries(
 }
 
 export async function invalidatePostActivityIngestionQueries(queryClient: QueryClient) {
+  const paths = [
+    ["activities", "listPaginated"],
+    ["calendar", "range"],
+    ["calendar", "page"],
+    ["calendar", "day"],
+    ["events", "getById"],
+    ["plannedSessions", "range"],
+    // Activity analytics still have no API v1 replacement; preserve that bounded legacy cache.
+    ["athleteIntelligence", "getReadModel"],
+    ["trainingPlans", "getPlanTabProjection"],
+    ["trainingPlans", "getPlanPeriodReview"],
+    ["trainingPlans", "getPlanningLedger"],
+  ] as const;
   await Promise.all([
-    queryClient.invalidateQueries({ queryKey: queryKeys.activities.lists() }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.trainingPlans.status() }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.events.all }),
+    ...paths.map((path) =>
+      queryClient.invalidateQueries({
+        predicate: (query) => matchesQueryPath(query.queryKey, path),
+      }),
+    ),
     queryClient.invalidateQueries({
       predicate: (query) =>
         query.queryKey[0] === "home" ||
         (Array.isArray(query.queryKey) && query.queryKey[0]?.[0] === "home"),
     }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.trends.all() }),
   ]);
 }
 
@@ -176,9 +248,9 @@ export function createQueryClient() {
       },
 
       mutations: {
-        // Retry mutations once in case of network issues
-        // But not too many times since mutations have side effects
-        retry: 1,
+        // A lost response does not prove that a write failed. Do not replay mutations by default;
+        // proven idempotent ingestion calls may opt into the exported one-retry policy.
+        retry: false,
 
         // Shorter retry delay for mutations (1 second)
         retryDelay: 1000,
@@ -217,7 +289,7 @@ export function createQueryClient() {
  * Use these to ensure query keys are consistent across the app.
  *
  * @example
- * const { data } = trpc.activities.list.useQuery(
+ * const { data } = trpc.activities.listPaginated.useQuery(
  *   { limit: 10 },
  *   { queryKey: queryKeys.activities.list({ limit: 10 }) }
  * );
@@ -241,25 +313,22 @@ export const queryKeys = {
     details: () => [...queryKeys.trainingPlans.all, "detail"] as const,
     detail: (id: string) => [...queryKeys.trainingPlans.details(), id] as const,
     status: () => [...queryKeys.trainingPlans.all, "status"] as const,
-    weeklySummary: (planId: string) =>
-      [...queryKeys.trainingPlans.all, "weeklySummary", planId] as const,
-    curve: (planId: string, type: "actual" | "ideal") =>
-      [...queryKeys.trainingPlans.all, "curve", planId, type] as const,
   },
 
-  // Events query keys
+  calendar: {
+    all: ["calendar"] as const,
+    range: (filters: Record<string, unknown>) =>
+      [...queryKeys.calendar.all, "range", filters] as const,
+    day: (date: string) => [...queryKeys.calendar.all, "day", date] as const,
+  },
+
+  // Event identity and mutation query keys
   events: {
     all: ["events"] as const,
-    lists: () => [...queryKeys.events.all, "list"] as const,
-    list: (filters: Record<string, unknown>) => [...queryKeys.events.lists(), filters] as const,
     details: () => [...queryKeys.events.all, "detail"] as const,
     detail: (id: string) => [...queryKeys.events.details(), id] as const,
-    today: () => [...queryKeys.events.all, "today"] as const,
-    weekCount: () => [...queryKeys.events.all, "weekCount"] as const,
     constraints: (filters: Record<string, unknown>) =>
       [...queryKeys.events.all, "constraints", filters] as const,
-    byWeek: (weekStart: string, weekEnd: string) =>
-      [...queryKeys.events.all, "byWeek", weekStart, weekEnd] as const,
   },
 
   // Profile query keys
@@ -275,9 +344,9 @@ export const queryKeys = {
       [...queryKeys.home.all, "dashboard", filters] as const,
   },
 
-  // Trends query keys
-  trends: {
-    all: () => ["trends"] as const,
+  athleteReadModel: {
+    all: ["athleteIntelligence", "getReadModel"] as const,
+    profile: (profileId: string) => [...queryKeys.athleteReadModel.all, profileId] as const,
   },
 } as const;
 
@@ -286,9 +355,9 @@ export const queryKeys = {
  * Use this in mutation onSuccess callbacks for granular cache invalidation.
  *
  * @example
- * const mutation = trpc.activities.create.useMutation({
+ * const mutation = trpc.activities.update.useMutation({
  *   onSuccess: () => {
- *     invalidateQueries(queryClient, queryKeys.activities.all);
+ *     invalidateQueries(queryClient, [["activities", "listPaginated"]]);
  *   }
  * });
  */
@@ -305,7 +374,7 @@ export function invalidateQueries(queryClient: QueryClient, queryKey: readonly u
  *   onMutate: async (variables) => {
  *     await updateQueryData(
  *       queryClient,
- *       queryKeys.activities.detail(variables.id),
+ *       [["activities", "getById"], { input: { id: variables.id }, type: "query" }],
  *       (old) => ({ ...old, ...variables })
  *     );
  *   }
