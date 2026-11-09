@@ -6,19 +6,34 @@
  * Wahoo API accepts GPX, TCX, and FIT formats - we use GPX for simplicity.
  */
 
-import type { ActivityType } from "./activity-type-utils";
+import type { WahooActivityType } from "./activity-type-utils";
 import { supportsRoutes, toSportName } from "./activity-type-utils";
 
 export interface RouteFileData {
   filePath: string;
   name: string;
   description?: string;
-  activityType: ActivityType;
+  activityType: WahooActivityType;
   totalDistance: number;
   totalAscent?: number;
   totalDescent?: number;
   startLat?: number;
   startLng?: number;
+}
+
+export function hasValidRouteStartCoordinates(
+  routeData: Pick<RouteFileData, "startLat" | "startLng">,
+): routeData is { startLat: number; startLng: number } {
+  return (
+    typeof routeData.startLat === "number" &&
+    Number.isFinite(routeData.startLat) &&
+    routeData.startLat >= -90 &&
+    routeData.startLat <= 90 &&
+    typeof routeData.startLng === "number" &&
+    Number.isFinite(routeData.startLng) &&
+    routeData.startLng >= -180 &&
+    routeData.startLng <= 180
+  );
 }
 
 /**
@@ -62,11 +77,15 @@ export function validateRouteForWahoo(routeData: RouteFileData): {
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  // Check activity type supports routes
+  // Check whether the activity category supports Wahoo routes
   if (!supportsRoutes(routeData.activityType)) {
     errors.push(
-      `Activity type '${routeData.activityType}' does not support routes in Wahoo. Only bike and run support routes.`,
+      `Activity category '${routeData.activityType}' does not support routes in Wahoo. Only bike and run support routes.`,
     );
+  }
+
+  if (!hasValidRouteStartCoordinates(routeData)) {
+    errors.push("Route start coordinates must be within valid latitude and longitude bounds.");
   }
 
   // Check distance
@@ -86,9 +105,9 @@ export function validateRouteForWahoo(routeData: RouteFileData): {
 }
 
 /**
- * Get workout type family ID for route
+ * Get the Wahoo workout type family ID for a route
  */
-export function getWorkoutTypeFamilyForRoute(activityType: ActivityType): number {
+export function getWorkoutTypeFamilyForRoute(activityType: WahooActivityType): number {
   const sport = toSportName(activityType);
 
   switch (sport) {

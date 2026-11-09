@@ -1,10 +1,7 @@
 
-<svg width="1024" height="1024" viewBox="0 0 1024 1024"
-     xmlns="http://www.w3.org/2000/svg">
-
-  <path fill="orange" fill-rule="evenodd" d="
-    M128 128 H896 V896 H128 Z
-    M128 286 H748 V896 H128 Z
-    M428 616 m-280,0 a280,280 0 1,0 560,0 a280,280 0 1,0 -560,0
-  "/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <g fill="#ffa500" transform="translate(-9 9)">
+    <path d="M370 256 H756 Q768 256 768 268 V654 Q768 660 764 664 L686 742 Q674 754 674 738 V362 Q674 350 662 350 H286 Q270 350 282 338 L360 260 Q364 256 370 256 Z"/>
+    <circle cx="467" cy="557" r="147"/>
+  </g>
 </svg>

@@ -1,23 +1,50 @@
-import React from "react";
+import mockReact from "react";
 
 import "@repo/ui/test/setup-native";
 
 (globalThis as { __DEV__?: boolean }).__DEV__ = false;
 
-type HostProps = Record<string, unknown> & { children?: React.ReactNode };
+globalThis.requestIdleCallback = jest.fn((callback: IdleRequestCallback) => {
+  callback({
+    didTimeout: false,
+    timeRemaining: () => 50,
+  });
+  return 0;
+});
+globalThis.cancelIdleCallback = jest.fn();
+
+type HostProps = Record<string, unknown> & { children?: mockReact.ReactNode };
 type CartesianChartProps = Record<string, unknown> & {
-  children?: React.ReactNode | ((context: Record<string, unknown>) => React.ReactNode);
+  children?: mockReact.ReactNode | ((context: Record<string, unknown>) => mockReact.ReactNode);
   data?: Record<string, unknown>[];
 };
+type BottomSheetFlatListMockProps<Item = unknown> = Record<string, unknown> & {
+  data?: Item[];
+  keyExtractor?: (item: Item, index: number) => mockReact.Key;
+  ListEmptyComponent?: mockReact.ComponentType | mockReact.ReactNode;
+  ListFooterComponent?: mockReact.ComponentType | mockReact.ReactNode;
+  ListHeaderComponent?: mockReact.ComponentType | mockReact.ReactNode;
+  renderItem: (info: { item: Item; index: number }) => mockReact.ReactNode;
+};
 
-const createHost = (type: string) =>
+const mockRenderHostChildren = (type: string, children: mockReact.ReactNode) => {
+  if (type === "Text") return children;
+
+  return mockReact.Children.map(children, (child) =>
+    typeof child === "string" || typeof child === "number"
+      ? mockReact.createElement("Text", null, String(child))
+      : child,
+  );
+};
+
+const mockCreateHost = (type: string) =>
   function HostComponent({ children, ...props }: HostProps) {
-    return React.createElement(type, props, children);
+    return mockReact.createElement(type, props, mockRenderHostChildren(type, children));
   };
 
-const createLeafHost = (type: string) =>
+const mockCreateLeafHost = (type: string) =>
   function LeafHostComponent(props: Record<string, unknown>) {
-    return React.createElement(type, props);
+    return mockReact.createElement(type, props);
   };
 
 process.env.EXPO_PUBLIC_API_URL ??= "http://localhost:3000";
@@ -38,6 +65,13 @@ jest.mock("expo-constants", () => ({
 jest.mock("expo-linking", () => ({
   __esModule: true,
   createURL: jest.fn((path = "") => `gradientpeak-dev://${String(path).replace(/^\//, "")}`),
+}));
+
+jest.mock("expo-crypto", () => ({
+  __esModule: true,
+  CryptoDigestAlgorithm: { SHA256: "SHA-256" },
+  digestStringAsync: jest.fn(async () => "test-digest"),
+  randomUUID: jest.fn(() => "00000000-0000-4000-8000-000000000000"),
 }));
 
 jest.mock("expo-file-system", () => ({
@@ -71,26 +105,6 @@ jest.mock("expo-image-picker", () => ({
   requestMediaLibraryPermissionsAsync: jest.fn(async () => ({ granted: true, status: "granted" })),
 }));
 
-jest.mock("expo-location", () => ({
-  __esModule: true,
-  Accuracy: { Balanced: 3, BestForNavigation: 6, High: 4 },
-  PermissionStatus: { GRANTED: "granted", DENIED: "denied", UNDETERMINED: "undetermined" },
-  getCurrentPositionAsync: jest.fn(async () => null),
-  requestBackgroundPermissionsAsync: jest.fn(async () => ({ granted: true, status: "granted" })),
-  requestForegroundPermissionsAsync: jest.fn(async () => ({ granted: true, status: "granted" })),
-  startLocationUpdatesAsync: jest.fn(async () => undefined),
-  stopLocationUpdatesAsync: jest.fn(async () => undefined),
-  watchPositionAsync: jest.fn(async () => ({ remove: jest.fn() })),
-}));
-
-jest.mock("expo-task-manager", () => ({
-  __esModule: true,
-  defineTask: jest.fn(),
-  isTaskDefined: jest.fn(() => false),
-  isTaskRegisteredAsync: jest.fn(async () => false),
-  unregisterTaskAsync: jest.fn(async () => undefined),
-}));
-
 jest.mock(
   "app.config",
   () => ({
@@ -107,57 +121,95 @@ jest.mock("expo-haptics", () => ({
   selectionAsync: jest.fn(async () => undefined),
 }));
 
+jest.mock("@sentry/react-native", () => ({
+  __esModule: true,
+  init: jest.fn(),
+  wrap: <Component>(component: Component) => component,
+}));
+
 jest.mock("react-native-gesture-handler", () => ({
   __esModule: true,
-  GestureHandlerRootView: createHost("GestureHandlerRootView"),
+  GestureHandlerRootView: mockCreateHost("GestureHandlerRootView"),
+  ScrollView: mockCreateHost("GestureHandlerScrollView"),
 }));
+
+jest.mock("react-native-draggable-flatlist", () => {
+  const { MockDraggableFlatList } =
+    jest.requireActual<typeof import("./draggable-flat-list")>("./draggable-flat-list");
+  return {
+    __esModule: true,
+    default: MockDraggableFlatList,
+    NestableDraggableFlatList: MockDraggableFlatList,
+    NestableScrollContainer: mockCreateHost("NestableScrollContainer"),
+  };
+});
 
 jest.mock("react-native-maps", () => ({
   __esModule: true,
-  default: createHost("MapView"),
-  Marker: createHost("Marker"),
-  Polyline: createLeafHost("Polyline"),
+  default: mockCreateHost("MapView"),
+  Marker: mockCreateHost("Marker"),
+  Polyline: mockCreateLeafHost("Polyline"),
   PROVIDER_DEFAULT: "default",
 }));
 
-jest.mock("@gorhom/bottom-sheet", () => ({
-  __esModule: true,
-  default: createHost("BottomSheet"),
-  BottomSheetBackdrop: createLeafHost("BottomSheetBackdrop"),
-  BottomSheetFlatList: ({
-    data = [],
-    keyExtractor,
-    ListEmptyComponent,
-    ListFooterComponent,
-    ListHeaderComponent,
-    renderItem,
+jest.mock("@gorhom/bottom-sheet", () => {
+  const renderSheet = ({
+    children,
+    footerComponent: FooterComponent,
     ...props
-  }: any) =>
-    React.createElement(
-      "BottomSheetFlatList",
+  }: HostProps & {
+    footerComponent?: mockReact.ComponentType<Record<string, unknown>>;
+  }) =>
+    mockReact.createElement(
+      "BottomSheet",
       props,
-      typeof ListHeaderComponent === "function"
-        ? React.createElement(ListHeaderComponent)
-        : ListHeaderComponent,
-      data.length === 0
-        ? typeof ListEmptyComponent === "function"
-          ? React.createElement(ListEmptyComponent)
-          : ListEmptyComponent
-        : data.map((item: any, index: number) =>
-            React.createElement(
-              React.Fragment,
-              { key: keyExtractor ? keyExtractor(item, index) : index },
-              renderItem({ item, index }),
+      children,
+      FooterComponent
+        ? mockReact.createElement(FooterComponent, { animatedFooterPosition: 0 })
+        : null,
+    );
+
+  return {
+    __esModule: true,
+    default: renderSheet,
+    BottomSheetModal: renderSheet,
+    BottomSheetModalProvider: ({ children }: { children?: mockReact.ReactNode }) => children,
+    BottomSheetBackdrop: mockCreateLeafHost("BottomSheetBackdrop"),
+    BottomSheetFlatList: ({
+      data = [],
+      keyExtractor,
+      ListEmptyComponent,
+      ListFooterComponent,
+      ListHeaderComponent,
+      renderItem,
+      ...props
+    }: BottomSheetFlatListMockProps) =>
+      mockReact.createElement(
+        "BottomSheetFlatList",
+        props,
+        typeof ListHeaderComponent === "function"
+          ? mockReact.createElement(ListHeaderComponent)
+          : ListHeaderComponent,
+        data.length === 0
+          ? typeof ListEmptyComponent === "function"
+            ? mockReact.createElement(ListEmptyComponent)
+            : ListEmptyComponent
+          : data.map((item, index) =>
+              mockReact.createElement(
+                mockReact.Fragment,
+                { key: keyExtractor ? keyExtractor(item, index) : index },
+                renderItem({ item, index }),
+              ),
             ),
-          ),
-      typeof ListFooterComponent === "function"
-        ? React.createElement(ListFooterComponent)
-        : ListFooterComponent,
-    ),
-  BottomSheetFooter: createHost("BottomSheetFooter"),
-  BottomSheetScrollView: createHost("BottomSheetScrollView"),
-  BottomSheetView: createHost("BottomSheetView"),
-}));
+        typeof ListFooterComponent === "function"
+          ? mockReact.createElement(ListFooterComponent)
+          : ListFooterComponent,
+      ),
+    BottomSheetFooter: mockCreateHost("BottomSheetFooter"),
+    BottomSheetScrollView: mockCreateHost("BottomSheetScrollView"),
+    BottomSheetView: mockCreateHost("BottomSheetView"),
+  };
+});
 
 jest.mock("@better-auth/expo", () => ({
   __esModule: true,
@@ -166,7 +218,12 @@ jest.mock("@better-auth/expo", () => ({
 
 jest.mock("@better-auth/expo/client", () => ({
   __esModule: true,
-  expoClient: jest.fn(() => ({})),
+  expoClient: jest.fn(() => ({
+    id: "expo",
+    version: "test",
+    getActions: jest.fn(() => ({ getCookie: jest.fn(async () => "") })),
+    fetchPlugins: [],
+  })),
 }));
 
 jest.mock("better-auth/react", () => ({
@@ -212,8 +269,22 @@ jest.mock("react-native-css/native", () => ({
 
 jest.mock("react-native-css/components/react-native-safe-area-context", () => ({
   __esModule: true,
-  SafeAreaProvider: createHost("SafeAreaProvider"),
-  SafeAreaView: createHost("SafeAreaView"),
+  SafeAreaProvider: mockCreateHost("SafeAreaProvider"),
+  SafeAreaView: mockCreateHost("SafeAreaView"),
+}));
+
+jest.mock("react-native-safe-area-context", () => ({
+  __esModule: true,
+  initialWindowMetrics: {
+    frame: { height: 844, width: 390, x: 0, y: 0 },
+    insets: { bottom: 0, left: 0, right: 0, top: 0 },
+  },
+  SafeAreaConsumer: ({ children }: { children: (insets: unknown) => unknown }) =>
+    children({ bottom: 0, left: 0, right: 0, top: 0 }),
+  SafeAreaProvider: mockCreateHost("SafeAreaProvider"),
+  SafeAreaView: mockCreateHost("SafeAreaView"),
+  useSafeAreaFrame: () => ({ height: 844, width: 390, x: 0, y: 0 }),
+  useSafeAreaInsets: () => ({ bottom: 0, left: 0, right: 0, top: 0 }),
 }));
 
 jest.mock("@garmin/fitsdk", () => ({
@@ -264,27 +335,27 @@ jest.mock("@garmin/fitsdk", () => ({
 
 jest.mock("@shopify/react-native-skia", () => ({
   __esModule: true,
-  Canvas: createHost("Canvas"),
-  Circle: createLeafHost("Circle"),
-  DashPathEffect: createLeafHost("DashPathEffect"),
-  Group: createHost("Group"),
-  LinearGradient: createLeafHost("LinearGradient"),
-  Line: createLeafHost("SkiaLine"),
-  Path: createLeafHost("Path"),
-  Rect: createLeafHost("Rect"),
+  Canvas: mockCreateHost("Canvas"),
+  Circle: mockCreateLeafHost("Circle"),
+  DashPathEffect: mockCreateLeafHost("DashPathEffect"),
+  Group: mockCreateHost("Group"),
+  LinearGradient: mockCreateLeafHost("LinearGradient"),
+  Line: mockCreateLeafHost("SkiaLine"),
+  Path: mockCreateLeafHost("Path"),
+  Rect: mockCreateLeafHost("Rect"),
   Skia: {
     Path: { Make: () => ({ lineTo: jest.fn(), moveTo: jest.fn() }) },
   },
-  Text: createLeafHost("SkiaText"),
+  Text: mockCreateLeafHost("SkiaText"),
   useFont: jest.fn(() => ({ getTextWidth: () => 24 })),
   vec: jest.fn((x: number, y: number) => ({ x, y })),
 }));
 
 jest.mock("victory-native", () => ({
   __esModule: true,
-  Area: createLeafHost("Area"),
-  Bar: createLeafHost("Bar"),
-  CartesianChart: ({ children, data = [] }: CartesianChartProps) => {
+  Area: mockCreateLeafHost("Area"),
+  Bar: mockCreateLeafHost("Bar"),
+  CartesianChart: ({ children, data = [], xKey, yAxis, yKeys }: CartesianChartProps) => {
     const pointSeries = (key: string) =>
       data.map((datum, index) => ({
         x: index,
@@ -292,23 +363,28 @@ jest.mock("victory-native", () => ({
         yValue: typeof datum[key] === "number" ? Number(datum[key]) : null,
       }));
 
-    return React.createElement(
+    return mockReact.createElement(
       "CartesianChart",
-      { data },
+      { data, xKey, yAxis, yKeys },
       typeof children === "function"
         ? children({
             chartBounds: { bottom: 100, left: 0, right: 100, top: 0 },
             points: {
               actual: data,
               actualFitness: pointSeries("actualFitness"),
+              actualFatigue: pointSeries("actualFatigue"),
+              actualForm: pointSeries("actualForm"),
               completedLoad: pointSeries("completedLoad"),
               fitness: pointSeries("fitness"),
+              fatigue: pointSeries("fatigue"),
+              form: pointSeries("form"),
               goal: data,
               planned: data,
               plannedLoad: pointSeries("plannedLoad"),
-              plannedLoadWithTentative: pointSeries("plannedLoadWithTentative"),
               projection: data,
               projectedFitness: pointSeries("projectedFitness"),
+              projectedFatigue: pointSeries("projectedFatigue"),
+              projectedForm: pointSeries("projectedForm"),
               recommendedFitness: pointSeries("recommendedFitness"),
               scheduledFitness: pointSeries("scheduledFitness"),
               targetFitness: pointSeries("targetFitness"),
@@ -319,8 +395,8 @@ jest.mock("victory-native", () => ({
         : children,
     );
   },
-  Line: createLeafHost("Line"),
-  Scatter: createLeafHost("Scatter"),
+  Line: mockCreateLeafHost("Line"),
+  Scatter: mockCreateLeafHost("Scatter"),
   useChartPressState: jest.fn(() => ({
     isActive: false,
     state: {
@@ -334,8 +410,8 @@ jest.mock("victory-native", () => ({
 }));
 
 jest.mock("react-native-svg", () => {
-  const MockSvg = createHost("svg");
-  const MockCircle = createHost("circle");
+  const MockSvg = mockCreateHost("svg");
+  const MockCircle = mockCreateHost("circle");
 
   return {
     __esModule: true,
@@ -346,13 +422,25 @@ jest.mock("react-native-svg", () => {
 
 jest.mock("expo-secure-store", () => {
   const store = new Map<string, string>();
+  const assertValidKey = (key: string) => {
+    if (!/^[A-Za-z0-9._-]+$/.test(key)) {
+      throw new Error(
+        'Invalid key provided to SecureStore. Keys must not be empty and contain only alphanumeric characters, ".", "-", and "_".',
+      );
+    }
+  };
 
   return {
-    getItemAsync: jest.fn(async (key: string) => store.get(key) ?? null),
+    getItemAsync: jest.fn(async (key: string) => {
+      assertValidKey(key);
+      return store.get(key) ?? null;
+    }),
     setItemAsync: jest.fn(async (key: string, value: string) => {
+      assertValidKey(key);
       store.set(key, value);
     }),
     deleteItemAsync: jest.fn(async (key: string) => {
+      assertValidKey(key);
       store.delete(key);
     }),
     __store: store,

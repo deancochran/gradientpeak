@@ -50,21 +50,16 @@ export function normalizeConversationSummary(value: unknown): ConversationSummar
     is_group?: unknown;
     last_message?: unknown;
     last_message_at?: unknown;
-    messages?: readonly unknown[];
     peer_profile?: unknown;
     unread_count?: unknown;
   };
-
-  const lastMessageFromLegacyArray = Array.isArray(candidate.messages)
-    ? normalizeMessageListItem(candidate.messages[0])
-    : null;
 
   const parsed = conversationSummarySchema.safeParse({
     created_at: candidate.created_at,
     group_name: candidate.group_name,
     id: candidate.id,
     is_group: candidate.is_group,
-    last_message: normalizeMessageListItem(candidate.last_message) ?? lastMessageFromLegacyArray,
+    last_message: normalizeMessageListItem(candidate.last_message),
     last_message_at:
       typeof candidate.last_message_at === "string" ? candidate.last_message_at : null,
     peer_profile: normalizeProfileSummary(candidate.peer_profile),

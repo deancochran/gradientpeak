@@ -1,31 +1,59 @@
-import type { RecordingServiceActivityPlan } from "../schemas";
-import { SAMPLE_DEV_ACTIVITIES } from "./dev";
+import type { CanonicalActivityCategory } from "../schemas/activity-category";
+import { REFERENCE_ASSESSMENT_ACTIVITIES } from "./assessment-activities";
+import {
+  createVersionedSystemContentDefinition,
+  type VersionedSystemContentDefinition,
+} from "./content-identity";
+import { EXPANDED_ENDURANCE_BIKE_ACTIVITIES } from "./endurance-expansion-bike";
+import { EXPANDED_ENDURANCE_OTHER_ACTIVITIES } from "./endurance-expansion-other";
+import { EXPANDED_ENDURANCE_RUN_ACTIVITIES } from "./endurance-expansion-run";
+import { EXPANDED_ENDURANCE_STRENGTH_ACTIVITIES } from "./endurance-expansion-strength";
+import { EXPANDED_ENDURANCE_SWIM_ACTIVITIES } from "./endurance-expansion-swim";
+import { fixedActivityPlanStructureForTemplate } from "./fixed-v5-activity-plan-structures";
+import { ICONIC_ENDURANCE_ACTIVITIES } from "./iconic-endurance";
 import { SAMPLE_INDOOR_TRAINER_ACTIVITIES } from "./indoor-bike-activity";
 import { SAMPLE_INDOOR_STRENGTH_ACTIVITIES } from "./indoor-strength";
 import { SAMPLE_INDOOR_SWIM_ACTIVITIES } from "./indoor-swim";
 import { SAMPLE_TREADMILL_ACTIVITIES } from "./indoor-treadmill";
+import { SAMPLE_MULTISPORT_COMPONENT_ACTIVITIES } from "./multisport";
 import { SAMPLE_OTHER_ACTIVITIES } from "./other-activity";
 import { SAMPLE_OUTDOOR_BIKE_ACTIVITIES } from "./outdoor-bike";
 import { SAMPLE_OUTDOOR_RUN_ACTIVITIES } from "./outdoor-run";
+import { classifySystemActivityTemplate } from "./system-activity-template-taxonomy";
 import { normalizeSystemActivityTemplateId } from "./template-ids";
 import { ALL_SAMPLE_PLANS } from "./training-plans";
+import {
+  deriveSystemActivityTemplateActivityCategory,
+  type SystemActivityPlanTemplate,
+} from "./types";
 
-// Export individual activity type modules
-export * from "./dev";
+export * from "./activity-plan-portfolio";
+export * from "./assessment-activities";
+export * from "./content-identity";
+export * from "./endurance-expansion-bike";
+export * from "./endurance-expansion-other";
+export * from "./endurance-expansion-run";
+export * from "./endurance-expansion-strength";
+export * from "./endurance-expansion-swim";
+export * from "./fixed-v5-activity-plan-structures";
+export * from "./iconic-endurance";
+// Export individual activity category modules
 export * from "./indoor-bike-activity";
 export * from "./indoor-strength";
 export * from "./indoor-swim";
 export * from "./indoor-treadmill";
+export * from "./multisport";
 export * from "./other-activity";
 export * from "./outdoor-bike";
 export * from "./outdoor-run";
+export * from "./retired-system-content";
 export * from "./system-activity-template-taxonomy";
 export * from "./system-routes";
-
 // Export training plan samples
 export * from "./training-plans";
+export * from "./types";
 
-// Combined sample activities array with all activity types
+// Combined sample activities array with all activity categories
 export const SAMPLE_ACTIVITIES = [
   // Indoor bike trainer (6 activities)
   ...SAMPLE_INDOOR_TRAINER_ACTIVITIES,
@@ -42,14 +70,14 @@ export const SAMPLE_ACTIVITIES = [
   // Indoor strength training (5 activities)
   ...SAMPLE_INDOOR_STRENGTH_ACTIVITIES,
 
-  // Indoor swimming (5 activities)
+  // Indoor swimming (6 activities)
   ...SAMPLE_INDOOR_SWIM_ACTIVITIES,
 
   // Other activities (5 activities)
   ...SAMPLE_OTHER_ACTIVITIES,
 ];
 
-// Activity type specific collections for easier filtering
+// Activity-category-specific collections for easier filtering
 export const SAMPLE_ACTIVITIES_BY_TYPE = {
   indoor_bike_trainer: SAMPLE_INDOOR_TRAINER_ACTIVITIES,
   indoor_treadmill: SAMPLE_TREADMILL_ACTIVITIES,
@@ -58,101 +86,159 @@ export const SAMPLE_ACTIVITIES_BY_TYPE = {
   indoor_strength: SAMPLE_INDOOR_STRENGTH_ACTIVITIES,
   indoor_swim: SAMPLE_INDOOR_SWIM_ACTIVITIES,
   other: SAMPLE_OTHER_ACTIVITIES,
-  dev: SAMPLE_DEV_ACTIVITIES,
 } as const;
 
-// Helper function to get sample activities by type (legacy)
-export function getSampleActivitiesByType(activityType: keyof typeof SAMPLE_ACTIVITIES_BY_TYPE) {
-  return SAMPLE_ACTIVITIES_BY_TYPE[activityType] || [];
-}
-
-// Helper function to get sample activities by category and GPS intent
+// Helper function to get sample activities by activity_category and GPS intent
 export function getSampleActivitiesByCategory(
-  category: "run" | "bike" | "swim" | "strength" | "other" | "dev",
+  activity_category: "run" | "bike" | "swim" | "strength" | "other",
   gpsRecordingEnabled: boolean,
 ) {
-  if (category === "run") {
+  if (activity_category === "run") {
     return gpsRecordingEnabled
       ? SAMPLE_ACTIVITIES_BY_TYPE.outdoor_run
       : SAMPLE_ACTIVITIES_BY_TYPE.indoor_treadmill;
   }
 
-  if (category === "bike") {
+  if (activity_category === "bike") {
     return gpsRecordingEnabled
       ? SAMPLE_ACTIVITIES_BY_TYPE.outdoor_bike
       : SAMPLE_ACTIVITIES_BY_TYPE.indoor_bike_trainer;
   }
 
-  if (category === "swim") return SAMPLE_ACTIVITIES_BY_TYPE.indoor_swim;
-  if (category === "strength") return SAMPLE_ACTIVITIES_BY_TYPE.indoor_strength;
-  if (category === "other") return SAMPLE_ACTIVITIES_BY_TYPE.other;
-  if (category === "dev") return SAMPLE_ACTIVITIES_BY_TYPE.dev;
+  if (activity_category === "swim") return SAMPLE_ACTIVITIES_BY_TYPE.indoor_swim;
+  if (activity_category === "strength") return SAMPLE_ACTIVITIES_BY_TYPE.indoor_strength;
+  if (activity_category === "other") return SAMPLE_ACTIVITIES_BY_TYPE.other;
   return [];
 }
 
-// Total count of sample activities: 36 activities across 7 activity types
+// Total count of sample activities: 49 activities across 7 activity categories
 export const TOTAL_SAMPLE_ACTIVITIES = SAMPLE_ACTIVITIES.length;
 
 // ============================================================================
 // SYSTEM TEMPLATE REGISTRY
 // ============================================================================
 
-export type SystemTemplate = RecordingServiceActivityPlan & { id: string };
+export type SystemTemplate = SystemActivityPlanTemplate & {
+  id: string;
+  training_intent: NonNullable<SystemActivityPlanTemplate["training_intent"]>;
+};
 
 /**
  * Helper to map raw sample plans to SystemTemplate
  */
-function mapToTemplate(plan: RecordingServiceActivityPlan): SystemTemplate {
+function mapToTemplate(plan: SystemActivityPlanTemplate): SystemTemplate {
+  if (!plan.id) {
+    throw new Error(`System activity template ${plan.name} must declare an RFC 4122 UUID`);
+  }
+
   const normalizedId = normalizeSystemActivityTemplateId({
     id: plan.id,
-    activityCategory: plan.activity_category ?? "other",
+    activityCategory: deriveSystemActivityTemplateActivityCategory(plan.structure),
     name: plan.name ?? "template",
   });
+  const metadata = classifySystemActivityTemplate(plan);
+  const trainingIntent = plan.training_intent ?? metadata.training_intent;
 
   return {
     ...plan,
     id: normalizedId,
-  } as SystemTemplate;
+    // The frozen V4 materialization is the executable catalogue authority.
+    // Source builders remain authoring provenance, not a second runtime shape.
+    structure: fixedActivityPlanStructureForTemplate(normalizedId),
+    training_intent: trainingIntent,
+  };
+}
+
+function mapActiveTemplates(plans: readonly SystemActivityPlanTemplate[]): SystemTemplate[] {
+  return plans.map(mapToTemplate);
 }
 
 // Convert samples to templates with appropriate tags
 const indoorBikeTemplates = SAMPLE_INDOOR_TRAINER_ACTIVITIES.filter(
   (p) => !p.name.includes("Schema Test"),
-).map(mapToTemplate);
+);
 
-const treadmillTemplates = SAMPLE_TREADMILL_ACTIVITIES.map(mapToTemplate);
+const activeIndoorBikeTemplates = mapActiveTemplates(indoorBikeTemplates);
+const treadmillTemplates = mapActiveTemplates(SAMPLE_TREADMILL_ACTIVITIES);
 
-const outdoorRunTemplates = SAMPLE_OUTDOOR_RUN_ACTIVITIES.map(mapToTemplate);
+const outdoorRunTemplates = mapActiveTemplates(SAMPLE_OUTDOOR_RUN_ACTIVITIES);
 
-const outdoorBikeTemplates = SAMPLE_OUTDOOR_BIKE_ACTIVITIES.map(mapToTemplate);
+const outdoorBikeTemplates = mapActiveTemplates(SAMPLE_OUTDOOR_BIKE_ACTIVITIES);
 
-const strengthTemplates = SAMPLE_INDOOR_STRENGTH_ACTIVITIES.map(mapToTemplate);
+const strengthTemplates = mapActiveTemplates(SAMPLE_INDOOR_STRENGTH_ACTIVITIES);
 
-const swimTemplates = SAMPLE_INDOOR_SWIM_ACTIVITIES.map(mapToTemplate);
+const swimTemplates = mapActiveTemplates(SAMPLE_INDOOR_SWIM_ACTIVITIES);
 
-const otherTemplates = SAMPLE_OTHER_ACTIVITIES.map(mapToTemplate);
+const otherTemplates = mapActiveTemplates(SAMPLE_OTHER_ACTIVITIES);
+const multisportComponentTemplates = mapActiveTemplates(SAMPLE_MULTISPORT_COMPONENT_ACTIVITIES);
+const expandedEnduranceBikeTemplates = mapActiveTemplates(EXPANDED_ENDURANCE_BIKE_ACTIVITIES);
+const expandedEnduranceRunTemplates = mapActiveTemplates(EXPANDED_ENDURANCE_RUN_ACTIVITIES);
+const expandedEnduranceSwimTemplates = mapActiveTemplates(EXPANDED_ENDURANCE_SWIM_ACTIVITIES);
+const expandedEnduranceOtherTemplates = mapActiveTemplates(EXPANDED_ENDURANCE_OTHER_ACTIVITIES);
+const expandedEnduranceStrengthTemplates = mapActiveTemplates(
+  EXPANDED_ENDURANCE_STRENGTH_ACTIVITIES,
+);
+const iconicEnduranceTemplates = mapActiveTemplates(ICONIC_ENDURANCE_ACTIVITIES);
+const referenceAssessmentTemplates = mapActiveTemplates(REFERENCE_ASSESSMENT_ACTIVITIES);
 
 /**
  * All system templates that should be uploaded to the database.
  * Add new templates here and they'll automatically be included in the seed script.
  */
 export const SYSTEM_TEMPLATES: SystemTemplate[] = [
-  ...indoorBikeTemplates,
+  ...referenceAssessmentTemplates,
+  ...activeIndoorBikeTemplates,
   ...treadmillTemplates,
   ...outdoorRunTemplates,
   ...outdoorBikeTemplates,
+  ...expandedEnduranceBikeTemplates,
+  ...expandedEnduranceRunTemplates,
+  ...expandedEnduranceSwimTemplates,
+  ...expandedEnduranceStrengthTemplates,
+  ...expandedEnduranceOtherTemplates,
+  ...iconicEnduranceTemplates,
   ...strengthTemplates,
   ...swimTemplates,
   ...otherTemplates,
+  ...multisportComponentTemplates,
 ];
 
+export type SystemActivityTemplateDefinition = VersionedSystemContentDefinition<SystemTemplate>;
+
+export async function getSystemActivityTemplateDefinitions(): Promise<
+  SystemActivityTemplateDefinition[]
+> {
+  return Promise.all(
+    SYSTEM_TEMPLATES.map((content) =>
+      createVersionedSystemContentDefinition({
+        key: `activity-plan:${content.id}`,
+        content,
+      }),
+    ),
+  );
+}
+
+export async function getSystemTrainingPlanDefinitions() {
+  return Promise.all(
+    ALL_SAMPLE_PLANS.map((content) =>
+      createVersionedSystemContentDefinition({
+        key: `training-plan:${content.id}`,
+        content,
+      }),
+    ),
+  );
+}
+
 /**
- * Get templates filtered by category
+ * Get templates filtered by activity_category
  */
 export function getTemplatesByCategory(
-  category: SystemTemplate["activity_category"],
+  activity_category: CanonicalActivityCategory,
 ): SystemTemplate[] {
-  return SYSTEM_TEMPLATES.filter((t) => t.activity_category === category);
+  return SYSTEM_TEMPLATES.filter(
+    (template) =>
+      deriveSystemActivityTemplateActivityCategory(template.structure) === activity_category,
+  );
 }
 
 /**

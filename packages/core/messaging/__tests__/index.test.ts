@@ -9,7 +9,7 @@ import {
 } from "../index";
 
 describe("messaging adapters", () => {
-  it("normalizes legacy conversation payloads with message arrays", () => {
+  it("does not use message arrays when last_message is absent", () => {
     const conversation = normalizeConversationSummary({
       created_at: "2026-03-22T00:00:00.000Z",
       group_name: null,
@@ -33,9 +33,11 @@ describe("messaging adapters", () => {
     });
 
     expect(conversation).not.toBeNull();
-    expect(getConversationDisplayName(conversation!)).toBe("Alex Runner");
-    expect(getConversationInitials(conversation!)).toBe("AL");
-    expect(getConversationPreviewText(conversation!)).toBe("See you at 6");
+    if (!conversation) throw new Error("expected valid conversation summary");
+    expect(getConversationDisplayName(conversation)).toBe("Alex Runner");
+    expect(getConversationInitials(conversation)).toBe("AL");
+    expect(conversation.last_message).toBeNull();
+    expect(getConversationPreviewText(conversation)).toBe("No messages");
   });
 
   it("drops invalid message records instead of leaking unknown shapes", () => {
