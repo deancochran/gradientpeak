@@ -99,6 +99,9 @@ export const apiDomainPolicy = {
   activityFiles: policy("api/activity-files"),
   activityPlans: policy("api/activity-plans"),
   athleteIntelligence: policy("api/athlete-intelligence"),
+  athleteCheckIns: policy("api/athlete-check-ins", {
+    resourceAuthorizationPolicy: "athlete-check-ins.athlete-owned-occurrence.v1",
+  }),
   calendar: policy("api/calendar"),
   events: policy("api/events"),
   feed: policy("api/feed"),
@@ -151,6 +154,12 @@ export const apiOperationPolicyOverrides = {
   "activityFiles.retryPendingMobileRecordingCleanup": { mutationSafety: "idempotency_key" },
   "activityPlans.create": { mutationSafety: "non_idempotent" },
   "activityPlans.duplicate": { mutationSafety: "non_idempotent" },
+  "athleteCheckIns.get": { authorizationAssurance: "resource_boundary" },
+  "athleteCheckIns.list": { authorizationAssurance: "resource_boundary" },
+  "athleteCheckIns.submit": {
+    authorizationAssurance: "resource_boundary",
+    mutationSafety: "idempotency_key",
+  },
   "plannedSessions.changePlanOnly": { mutationSafety: "transactional" },
   "athleteIntelligence.requestRecalculationRepair": { mutationSafety: "idempotency_key" },
   "events.create": { mutationSafety: "non_idempotent" },
@@ -320,6 +329,21 @@ const resourceBoundaryEvidenceBindingSchema = z.strictObject({
 });
 
 export const apiResourceBoundaryEvidence = {
+  "athleteCheckIns.get": {
+    path: "packages/api/src/routers/__tests__/athlete-check-ins.disposable.live-db.test.ts",
+    testName:
+      "fences private athlete data and proves submission, replay, lifecycle, concurrency and pagination",
+  },
+  "athleteCheckIns.list": {
+    path: "packages/api/src/routers/__tests__/athlete-check-ins.disposable.live-db.test.ts",
+    testName:
+      "fences private athlete data and proves submission, replay, lifecycle, concurrency and pagination",
+  },
+  "athleteCheckIns.submit": {
+    path: "packages/api/src/routers/__tests__/athlete-check-ins.disposable.live-db.test.ts",
+    testName:
+      "fences private athlete data and proves submission, replay, lifecycle, concurrency and pagination",
+  },
   "publicShare.activity": {
     path: "packages/api/src/routers/__tests__/public-share-visibility.live-db.test.ts",
     testName: "returns only public activities and hides private and missing ids",

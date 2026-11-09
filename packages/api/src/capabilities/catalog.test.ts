@@ -148,6 +148,22 @@ describe("generated API inventory", () => {
 });
 
 describe("API capability proof decisions", () => {
+  it("classifies athlete-owned check-ins with resource authorization and durable retry safety", () => {
+    const byId = new Map(apiCapabilityCatalog.map((capability) => [capability.id, capability]));
+    for (const id of ["athleteCheckIns.get", "athleteCheckIns.list", "athleteCheckIns.submit"]) {
+      expect(byId.get(id)).toMatchObject({
+        access: "authenticated_session",
+        authorizationAssurance: "resource_boundary",
+        authorizationPolicy: "athlete-check-ins.athlete-owned-occurrence.v1",
+        owner: "api/athlete-check-ins",
+        platform: { scope: "both_platforms" },
+      });
+    }
+    expect(byId.get("athleteCheckIns.submit")?.mutationSafety?.classification).toBe(
+      "idempotency_key",
+    );
+  });
+
   it("fails when required executable proof is missing or bound to a generic operation list", () => {
     const evidence = capabilityEvidenceRegistry.map((item) =>
       item.id === "authorization:profiles.get"
