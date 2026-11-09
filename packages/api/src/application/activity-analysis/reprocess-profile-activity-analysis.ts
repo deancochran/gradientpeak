@@ -171,7 +171,7 @@ async function evaluate(
       and(
         eq(activities.profile_id, input.profileId),
         isNotNull(activities.started_at),
-        input.from ? gte(activities.started_at, input.from) : undefined,
+        input.from ? gte(activities.finished_at, input.from) : undefined,
         input.to ? lt(activities.started_at, input.to) : undefined,
         input.claimedAthleteState?.activityAnalysisCursor
           ? or(
@@ -192,7 +192,9 @@ async function evaluate(
         .orderBy(asc(activities.started_at), asc(activities.id))
         .limit(ACTIVITY_ANALYSIS_REFRESH_BATCH_SIZE + 1)
     : await scopedQuery.orderBy(asc(activities.started_at), asc(activities.id));
-  const hasMore = scopedRowsWithLookahead.length > ACTIVITY_ANALYSIS_REFRESH_BATCH_SIZE;
+  const hasMore =
+    input.claimedAthleteState !== undefined &&
+    scopedRowsWithLookahead.length > ACTIVITY_ANALYSIS_REFRESH_BATCH_SIZE;
   const scopedRows = (
     hasMore
       ? scopedRowsWithLookahead.slice(0, ACTIVITY_ANALYSIS_REFRESH_BATCH_SIZE)

@@ -104,6 +104,7 @@ const partial = {
 function createFakeDb(
   input: {
     activityCount?: number;
+    activityTimings?: Array<{ startedAt: Date; finishedAt: Date }>;
     profileExists?: boolean;
     sharedStartGroupSize?: number;
     withoutSegments?: boolean;
@@ -113,29 +114,38 @@ function createFakeDb(
     contractVersion: "completed-activity-performance-target-snapshot-v2",
     original: "immutable",
   });
-  const activityRows = Array.from({ length: input.activityCount ?? 1 }, (_, index) => ({
-    id:
-      index === 0 ? ACTIVITY_ID : `aaaaaaaa-aaaa-4aaa-8aaa-${String(index + 1).padStart(12, "0")}`,
-    profile_id: PROFILE_ID,
-    started_at: new Date(
-      startedAt.getTime() + Math.floor(index / (input.sharedStartGroupSize ?? 1)) * 60_000,
-    ),
-    finished_at: new Date(
-      finishedAt.getTime() + Math.floor(index / (input.sharedStartGroupSize ?? 1)) * 60_000,
-    ),
-    elapsed_ms: 3_600_000,
-    active_ms: 3_600_000,
-    moving_ms: 3_600_000,
-    timing_coverage: "complete",
-    distance_meters: 10_000,
-    avg_heart_rate: null,
-    max_heart_rate: null,
-    segments_revision: 3,
-    performance_target_snapshot: originalSnapshot,
-    athlete_state_common_load: 10,
-    athlete_state_activity_category: "run",
-    athlete_state_evidence_confidence: 0.5,
-  }));
+  const activityRows = Array.from(
+    { length: input.activityTimings?.length ?? input.activityCount ?? 1 },
+    (_, index) => ({
+      id:
+        index === 0
+          ? ACTIVITY_ID
+          : `aaaaaaaa-aaaa-4aaa-8aaa-${String(index + 1).padStart(12, "0")}`,
+      profile_id: PROFILE_ID,
+      started_at:
+        input.activityTimings?.[index]?.startedAt ??
+        new Date(
+          startedAt.getTime() + Math.floor(index / (input.sharedStartGroupSize ?? 1)) * 60_000,
+        ),
+      finished_at:
+        input.activityTimings?.[index]?.finishedAt ??
+        new Date(
+          finishedAt.getTime() + Math.floor(index / (input.sharedStartGroupSize ?? 1)) * 60_000,
+        ),
+      elapsed_ms: 3_600_000,
+      active_ms: 3_600_000,
+      moving_ms: 3_600_000,
+      timing_coverage: "complete",
+      distance_meters: 10_000,
+      avg_heart_rate: null,
+      max_heart_rate: null,
+      segments_revision: 3,
+      performance_target_snapshot: originalSnapshot,
+      athlete_state_common_load: 10,
+      athlete_state_activity_category: "run",
+      athlete_state_evidence_confidence: 0.5,
+    }),
+  );
   const segmentRows = input.withoutSegments
     ? []
     : activityRows.map((activityRow, index) => ({
@@ -158,6 +168,7 @@ function createFakeDb(
   const select = vi.fn(() => {
     let table: unknown;
     let activityCursor: { startedAt: Date; activityId: string } | null = null;
+    let activityRange: { column: "finished_at" | "started_at"; from: Date } | null = null;
     const rows = (limit?: number) => {
       if (table === profiles) {
         return input.profileExists === false ? [] : [{ id: PROFILE_ID }];
@@ -166,10 +177,12 @@ function createFakeDb(
         const ordered = [...activityRows]
           .filter(
             (activityRow) =>
-              activityCursor === null ||
-              activityRow.started_at > activityCursor.startedAt ||
-              (activityRow.started_at.getTime() === activityCursor.startedAt.getTime() &&
-                activityRow.id > activityCursor.activityId),
+              (activityRange === null ||
+                activityRow[activityRange.column].getTime() >= activityRange.from.getTime()) &&
+              (activityCursor === null ||
+                activityRow.started_at > activityCursor.startedAt ||
+                (activityRow.started_at.getTime() === activityCursor.startedAt.getTime() &&
+                  activityRow.id > activityCursor.activityId)),
           )
           .sort(
             (left, right) =>
@@ -200,6 +213,23 @@ function createFakeDb(
         if (table === activities && isSQLWrapper(condition)) {
           const query = dialect.sqlToQuery(condition.getSQL());
           activityWhereQueries.push({ params: query.params, sql: query.sql });
+          const rangeMatch = query.sql.match(/"activities"\."(finished_at|started_at)" >= \$(\d+)/);
+          if (rangeMatch) {
+            const parameter = query.params[Number(rangeMatch[2]) - 1];
+            const from =
+              parameter instanceof Date
+                ? parameter
+                : typeof parameter === "string"
+                  ? new Date(parameter)
+                  : null;
+            if (
+              (rangeMatch[1] === "finished_at" || rangeMatch[1] === "started_at") &&
+              from !== null &&
+              Number.isFinite(from.getTime())
+            ) {
+              activityRange = { column: rangeMatch[1], from };
+            }
+          }
           const candidateActivityId = query.params.at(-1);
           const candidateStartedAtValue = query.params.at(-2);
           const duplicateStartedAtValue = query.params.at(-3);
@@ -475,6 +505,34 @@ describe("manual profile activity analysis reprocessing", () => {
     expect(mocks.coalesceRecalculationRequest).not.toHaveBeenCalled();
     expect(mocks.claim).not.toHaveBeenCalled();
     expect(mocks.rebuild).not.toHaveBeenCalled();
+  });
+
+  it("does not truncate an unclaimed dry run at the claimed batch boundary", async () => {
+    const activityCount = ACTIVITY_ANALYSIS_REFRESH_BATCH_SIZE + 1;
+    const { activityRows, db, segmentRows } = createFakeDb({ activityCount });
+    mocks.buildSummaries.mockResolvedValueOnce(
+      activityRows.map((activityRow, index) => {
+        const segment = segmentRows[index];
+        if (!segment) throw new Error("Expected segment");
+        return {
+          activity_id: activityRow.id,
+          segment_id: segment.id,
+          activity_category: "run",
+          common_load: available,
+          observationQuantification: { members: [{ commonLoad: available }] },
+        };
+      }),
+    );
+    await expect(
+      reprocessProfileActivityAnalysis(db, {
+        profileId: PROFILE_ID,
+        apply: false,
+        from: startedAt,
+        now: new Date("2026-03-01T00:00:00.000Z"),
+      }),
+    ).resolves.toMatchObject({ scopedActivities: activityCount, availableSegments: activityCount });
+    expect(mocks.append).not.toHaveBeenCalled();
+    expect(mocks.advanceRefresh).not.toHaveBeenCalled();
   });
 
   it("commits a bounded claimed batch and persists its continuation cursor", async () => {
@@ -761,6 +819,97 @@ describe("manual profile activity analysis reprocessing", () => {
         ([, input]) => input.preparedSegmentSummaries?.length === 1,
       ),
     ).toBe(true);
+  });
+
+  it("replays activities that finish at the dirty boundary exactly once across checkpoints", async () => {
+    const dirtyFromAt = new Date("2026-01-15T08:00:00.000Z");
+    const activityTimings = [
+      {
+        startedAt: new Date("2026-01-15T06:00:00.000Z"),
+        finishedAt: new Date("2026-01-15T07:59:59.999Z"),
+      },
+      {
+        startedAt: new Date("2026-01-15T07:00:00.000Z"),
+        finishedAt: dirtyFromAt,
+      },
+      ...Array.from({ length: ACTIVITY_ANALYSIS_REFRESH_BATCH_SIZE }, (_, index) => ({
+        startedAt: new Date(dirtyFromAt.getTime() + (index + 1) * 60_000),
+        finishedAt: new Date(dirtyFromAt.getTime() + (index + 61) * 60_000),
+      })),
+    ];
+    const fixture = createFakeDb({ activityTimings });
+    const olderFinishedActivity = fixture.activityRows[0];
+    const boundaryActivity = fixture.activityRows[1];
+    if (!olderFinishedActivity || !boundaryActivity) {
+      throw new Error("Expected boundary replay activities");
+    }
+    const expectedIds = fixture.activityRows
+      .filter((activity) => activity.finished_at >= dirtyFromAt)
+      .sort(
+        (left, right) =>
+          left.started_at.getTime() - right.started_at.getTime() || left.id.localeCompare(right.id),
+      )
+      .map((activity) => activity.id);
+    mocks.buildSummaries.mockImplementation(async ({ activities: batchActivities }) =>
+      batchActivities.flatMap((activityRow: { id: string; segments: Array<{ id: string }> }) =>
+        activityRow.segments.map((segmentRow) => ({
+          activity_id: activityRow.id,
+          segment_id: segmentRow.id,
+          activity_category: "run",
+          common_load: available,
+          observationQuantification: { members: [{ commonLoad: available }] },
+        })),
+      ),
+    );
+    const claim = {
+      profileId: PROFILE_ID,
+      sourceRevision: 7,
+      leaseToken: "22222222-2222-4222-8222-222222222222",
+      planningTimezone: "UTC",
+      dirtyFromAt,
+      activityAnalysisCursor: null,
+    };
+
+    const first = await reprocessProfileActivityAnalysis(fixture.db, {
+      profileId: PROFILE_ID,
+      apply: true,
+      confirmProfileId: PROFILE_ID,
+      from: dirtyFromAt,
+      claimedAthleteState: claim,
+    });
+    const nextCursor = mocks.advanceRefresh.mock.calls.at(-1)?.[1]?.nextCursor;
+    if (!nextCursor) throw new Error("Expected a continuation cursor");
+
+    const continuationFixture = createFakeDb({ activityTimings });
+    const second = await reprocessProfileActivityAnalysis(continuationFixture.db, {
+      profileId: PROFILE_ID,
+      apply: true,
+      confirmProfileId: PROFILE_ID,
+      from: dirtyFromAt,
+      claimedAthleteState: {
+        ...claim,
+        leaseToken: "33333333-3333-4333-8333-333333333333",
+        activityAnalysisCursor: nextCursor,
+      },
+    });
+
+    const replayedIds = mocks.materialize.mock.calls.map(([, input]) => input.activityId);
+    expect(first).toMatchObject({
+      scopedActivities: ACTIVITY_ANALYSIS_REFRESH_BATCH_SIZE,
+      durableRefresh: "continued",
+    });
+    expect(second).toMatchObject({ scopedActivities: 1, durableRefresh: "completed" });
+    expect(expectedIds).toContain(boundaryActivity.id);
+    expect(expectedIds).not.toContain(olderFinishedActivity.id);
+    expect(replayedIds).toEqual(expectedIds);
+    expect(new Set(replayedIds).size).toBe(expectedIds.length);
+    for (const query of [
+      ...fixture.activityWhereQueries,
+      ...continuationFixture.activityWhereQueries,
+    ]) {
+      expect(query.sql).toContain('"activities"."finished_at" >=');
+      expect(query.sql).not.toContain('"activities"."started_at" >=');
+    }
   });
 
   it("rolls back a bounded batch when its claim is fenced before cursor advancement", async () => {
