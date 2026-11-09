@@ -4,7 +4,7 @@ export default {
   rootDir: ".",
   setupFilesAfterEnv: ["<rootDir>/src/test/setup-native.ts"],
   testEnvironment: "node",
-  testMatch: ["<rootDir>/src/**/*.native.test.tsx"],
+  testMatch: ["<rootDir>/src/**/*.native.test.{ts,tsx}"],
   transform: {
     "^.+\\.(t|j)sx?$": [
       "@swc/jest",

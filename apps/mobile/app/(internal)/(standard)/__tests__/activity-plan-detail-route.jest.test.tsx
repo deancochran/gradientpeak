@@ -41,8 +41,8 @@ describe("activity plan detail route", () => {
     activityPlanDetailScreenMock.mockClear();
   });
 
-  it("passes normalized params into the feature screen", () => {
-    renderNative(<ActivityPlanDetailRoute />);
+  it("passes normalized params into the feature screen", async () => {
+    await renderNative(<ActivityPlanDetailRoute />);
 
     expect(activityPlanDetailScreenMock.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({

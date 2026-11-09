@@ -1,4 +1,4 @@
-import type { TrainingPlanBuilderSessionIntent } from "./types";
+import type { SessionDemand } from "@repo/core";
 
 export interface ActivityPlanFitSummary {
   score: number;
@@ -7,18 +7,20 @@ export interface ActivityPlanFitSummary {
 }
 
 export function scoreActivityPlanFit(input: {
-  intent: TrainingPlanBuilderSessionIntent | undefined;
-  estimatedTss: number | null | undefined;
+  demand: SessionDemand | undefined;
+  estimatedCommonLoad: number | null | undefined;
   estimatedDurationSeconds: number | null | undefined;
 }): ActivityPlanFitSummary | null {
-  if (!input.intent) {
+  if (!input.demand) {
     return null;
   }
 
   let score = 50;
   const reasons: string[] = [];
-  const targetDuration = input.intent.targetDurationSeconds;
-  const targetTss = input.intent.targetTss;
+  const targetDuration = input.demand.target_duration_minutes
+    ? input.demand.target_duration_minutes * 60
+    : null;
+  const targetLoad = input.demand.target_common_load;
 
   if (targetDuration && input.estimatedDurationSeconds) {
     const durationRatio =
@@ -27,20 +29,26 @@ export function scoreActivityPlanFit(input: {
     reasons.push("duration");
   }
 
-  if (targetTss && input.estimatedTss) {
-    const tssRatio = Math.abs(input.estimatedTss - targetTss) / targetTss;
-    score += Math.max(0, 30 - Math.round(tssRatio * 60));
+  if (targetLoad && input.estimatedCommonLoad) {
+    const loadRatio = Math.abs(input.estimatedCommonLoad - targetLoad) / targetLoad;
+    score += Math.max(0, 30 - Math.round(loadRatio * 60));
     reasons.push("load");
   }
 
-  if (input.intent.type === "endurance") {
+  if (input.demand.training_intent === "durable_endurance") {
     score += (input.estimatedDurationSeconds ?? 0) >= 3600 ? 20 : -20;
   }
-  if (input.intent.type === "recovery") {
-    score += (input.estimatedTss ?? 0) <= 40 ? 20 : -20;
+  if (
+    input.demand.training_intent === "recovery" &&
+    typeof input.estimatedCommonLoad === "number"
+  ) {
+    score += input.estimatedCommonLoad <= 40 ? 20 : -20;
   }
-  if (input.intent.type === "threshold") {
-    score += (input.estimatedTss ?? 0) >= 60 ? 15 : -10;
+  if (
+    input.demand.training_intent === "threshold_development" &&
+    typeof input.estimatedCommonLoad === "number"
+  ) {
+    score += input.estimatedCommonLoad >= 60 ? 15 : -10;
   }
 
   const boundedScore = Math.max(0, Math.min(100, score));
@@ -50,6 +58,6 @@ export function scoreActivityPlanFit(input: {
     reason:
       reasons.length > 0
         ? `Matches ${reasons.join(" and ")}`
-        : `Matches ${input.intent.type} intent`,
+        : `Matches ${input.demand.training_intent} intent`,
   };
 }
