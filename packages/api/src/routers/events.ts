@@ -26,10 +26,18 @@ import { z } from "zod";
 import { toActivityDisplayModel } from "../application/activities/activity-display";
 import { estimateActivityPlans } from "../application/activity-plans/estimate-activity-plans";
 import { assembleCalendarProjectionRange } from "../application/calendar/assemble-projection";
+import {
+  DelegatedCalendarAccessDeniedError,
+  readDelegatedCalendar,
+} from "../application/calendar/read-delegated-calendar";
 import { createEventUseCase, deleteEventUseCase, updateEventUseCase } from "../application/events";
 import { readSelectedGroupEventsForCalendar } from "../application/groups/groupEventViews";
 import { readPlanningRange } from "../application/training-plan/planningLedgerService";
 import type { Context } from "../context";
+import {
+  delegatedCalendarRangeRequestSchema,
+  delegatedCalendarRangeResponseSchema,
+} from "../contracts/delegated-calendar";
 import { planningRangeRequestSchema, planningRangeSchema } from "../contracts/planning-range";
 import { type DrizzleTransactionClient, getRequiredDb } from "../db";
 import { InvalidStoredActivityPlanError } from "../dto/activity-plan";
@@ -1191,6 +1199,23 @@ export const eventsRouter = createTRPCRouter({
 
 /** Date-keyed personal schedule projections. Event identity and mutations remain on eventsRouter. */
 export const calendarRouter = createTRPCRouter({
+  coachAthleteRange: protectedProcedure
+    .input(delegatedCalendarRangeRequestSchema)
+    .output(delegatedCalendarRangeResponseSchema)
+    .query(async ({ ctx, input }) => {
+      try {
+        return await readDelegatedCalendar({
+          actorProfileId: ctx.session.user.id,
+          db: getRequiredDb(ctx),
+          request: input,
+        });
+      } catch (error) {
+        if (error instanceof DelegatedCalendarAccessDeniedError) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Calendar access is unavailable" });
+        }
+        throw error;
+      }
+    }),
   planningRange: protectedProcedure
     .input(planningRangeRequestSchema)
     .output(planningRangeSchema)

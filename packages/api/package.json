@@ -125,6 +125,7 @@
     "test:activity-ingestion:disposable": "tsx scripts/activity-ingestion.disposable.test.ts --disposable --local",
     "test:activity-plan-authoring:disposable": "tsx scripts/activity-plan-authoring.disposable.test.ts --disposable --local",
     "test:planned-sessions:disposable": "tsx scripts/planned-sessions.disposable.test.ts --disposable --local",
+    "test:delegated-calendar:disposable": "tsx scripts/delegated-calendar.disposable.test.ts --disposable --local",
     "test:chatbot-writes:disposable": "tsx scripts/chatbot-writes.disposable.test.ts --disposable --local",
     "test:chatbot-host:disposable": "tsx scripts/chatbot-host.disposable.test.ts --disposable --local",
     "test:garmin-training-sync:disposable": "tsx scripts/garmin-training-sync.disposable.test.ts --disposable --local",
