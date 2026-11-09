@@ -21,12 +21,12 @@ type AuditEvent = {
 };
 type AuditPage = { items: AuditEvent[]; nextCursor: string | null; hasMore: boolean };
 type Filters = {
-  action?: string;
-  actorProfileId?: string;
-  resourceType?: string;
-  resourceId?: string;
-  fromInclusive?: string;
-  toExclusive?: string;
+  action?: string | undefined;
+  actorProfileId?: string | undefined;
+  resourceType?: string | undefined;
+  resourceId?: string | undefined;
+  fromInclusive?: string | undefined;
+  toExclusive?: string | undefined;
 };
 
 export function OrganizationAuditHistory({

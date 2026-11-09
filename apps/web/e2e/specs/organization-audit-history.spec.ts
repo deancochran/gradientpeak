@@ -1,3 +1,4 @@
+import type { Route } from "@playwright/test";
 import {
   organizationAuditEvents,
   organizationMembershipRoleGrants,
@@ -83,6 +84,59 @@ test("admin reads redacted UTC audit history and filters resources while coach i
     20,
   );
   await expect(athletePage.getByText(/Export is unavailable/)).toBeVisible();
+  // Fault only this browser's synthetic read, never the shared service or database.
+  let releaseRead: () => void = () => {};
+  const heldRead = new Promise<void>((resolve) => {
+    releaseRead = resolve;
+  });
+  let failedReads = 0;
+  const failRead = async (route: Route) => {
+    if (
+      route.request().method() !== "POST" ||
+      !(route.request().postData() ?? "").includes("audit-recovery-probe")
+    )
+      return route.continue();
+    failedReads += 1;
+    await heldRead;
+    return route.abort("failed");
+  };
+  await athletePage.route("**/*", failRead);
+  try {
+    await athletePage.getByLabel("Action", { exact: true }).fill("audit-recovery-probe");
+    await athletePage.getByRole("button", { name: "Filter", exact: true }).click();
+    await expect(athletePage.getByRole("status")).toHaveText("Loading audit history…");
+    await expect(athletePage.getByRole("button", { name: "View event", exact: true })).toHaveCount(
+      0,
+    );
+    await athletePage.screenshot({
+      path: testInfo.outputPath("audit-loading.png"),
+      fullPage: true,
+    });
+    releaseRead();
+    await expect(athletePage.getByRole("alert")).toContainText("submitted filters are retained");
+    await expect(athletePage).toHaveURL(/action=audit-recovery-probe/);
+    await expect(athletePage.getByText("No audit events match the current scope.")).toHaveCount(0);
+    await athletePage.screenshot({ path: testInfo.outputPath("audit-error.png"), fullPage: true });
+    expect(failedReads).toBe(1);
+  } finally {
+    releaseRead();
+    await athletePage.unroute("**/*", failRead);
+  }
+  await athletePage.getByRole("button", { name: "Retry audit history", exact: true }).click();
+  await expect(athletePage.getByText("No audit events match the current scope.")).toBeVisible();
+  await expect(athletePage.getByLabel("Action", { exact: true })).toHaveValue(
+    "audit-recovery-probe",
+  );
+  await expect(athletePage.getByRole("alert")).toHaveCount(0);
+  await athletePage.getByLabel("Action", { exact: true }).fill("organization.membership_ended");
+  await athletePage.getByRole("button", { name: "Filter", exact: true }).click();
+  await expect(athletePage.getByRole("button", { name: "View event", exact: true })).toHaveCount(
+    20,
+  );
+  await athletePage.screenshot({
+    path: testInfo.outputPath("audit-recovered.png"),
+    fullPage: true,
+  });
   await coachPage.goto(`/organizations/${organizationId}/audit`);
   await expect(coachPage.getByRole("button", { name: "View event", exact: true })).toHaveCount(0);
   await expect(coachPage.getByText(/access|permission/i).first()).toBeVisible();
