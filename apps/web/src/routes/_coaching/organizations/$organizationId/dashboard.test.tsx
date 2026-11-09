@@ -67,25 +67,34 @@ describe("coach dashboard", () => {
     const Component = (Route as unknown as { component: React.ComponentType }).component;
     render(<Component />);
     expect(screen.getByRole("status").textContent).toContain("Loading organization overview");
-    expect(screen.queryByRole("heading", { name: "Organization management" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Organization overview" })).toBeNull();
   });
   it("shows exact operational counts without implying private athlete data access", () => {
     const Component = (Route as unknown as { component: React.ComponentType }).component;
     render(<Component />);
 
-    expect(screen.getByRole("heading", { name: "Organization management" })).toBeTruthy();
-    expect(screen.getByText("3")).toBeTruthy();
-    expect(screen.getByText("24")).toBeTruthy();
-    expect(screen.getByText("2")).toBeTruthy();
-    expect(screen.getByText("4")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Manage coach assignments" })).toBeTruthy();
-    expect(
-      screen.getByText(/does not grant access to private athlete training, health, or messages/),
-    ).toBeTruthy();
-    expect(screen.getAllByRole("link", { name: "View matching records" })).toHaveLength(4);
+    expect(screen.getByRole("heading", { name: "Organization overview" })).toBeTruthy();
+    const metrics = screen.getByTestId("organization-overview-metrics");
+    expect(metrics.textContent).toContain("Active athletes");
+    expect(metrics.textContent).toContain("24");
+    expect(metrics.textContent).toContain("Active staff");
+    expect(metrics.textContent).toContain("3");
+    expect(metrics.textContent).toContain("Unassigned");
+    expect(metrics.textContent).toContain("4");
+    expect(metrics.textContent).toContain("Coverage gaps");
+    expect(metrics.textContent).toContain("Unavailable");
+    expect(screen.getByRole("link", { name: "Assignments" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Assign coach" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "View unassigned athletes" })).toBeTruthy();
+    expect(screen.getAllByRole("link", { name: "View matching records" })).toHaveLength(3);
+    expect(screen.getByText(/Supporting coaches do not satisfy this assignment gap/)).toBeTruthy();
     expect(
       screen.getByText(/Timed coverage and plan-horizon signals are not available/),
     ).toBeTruthy();
+    expect(
+      screen.getByText(/Workout-review and check-in priority data are not available/),
+    ).toBeTruthy();
+    expect(screen.getByText(/Organization task assignments are not available/)).toBeTruthy();
   });
 
   it("renders an explicit access-lost state instead of organization data", () => {

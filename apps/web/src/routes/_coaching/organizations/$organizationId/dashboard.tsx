@@ -33,42 +33,60 @@ function CoachDashboardPage() {
 
   return (
     <div className="space-y-6">
-      <nav aria-label="Organization administration" className="flex flex-wrap gap-3">
+      <nav
+        aria-label="Organization administration"
+        className="-mx-4 flex gap-1 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0"
+      >
+        <Link
+          to="/organizations/$organizationId/dashboard"
+          params={{ organizationId }}
+          aria-current="page"
+          className="inline-flex shrink-0 rounded-md bg-slate-800 px-3 py-2 text-sm font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2"
+        >
+          Overview
+        </Link>
         <Link
           to="/organizations/$organizationId/staff"
           params={{ organizationId }}
           search={{ status: "active", cursor: undefined }}
-          className="inline-flex rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2"
+          className="inline-flex shrink-0 rounded-md px-3 py-2 text-sm text-slate-300 hover:bg-slate-900 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2"
         >
-          Manage staff
+          Staff
         </Link>
         <Link
           to="/organizations/$organizationId/athletes"
           params={{ organizationId }}
-          className="inline-flex rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2"
+          className="inline-flex shrink-0 rounded-md px-3 py-2 text-sm text-slate-300 hover:bg-slate-900 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2"
         >
-          Manage athletes
+          Athletes
         </Link>
         <Link
           to="/organizations/$organizationId/assignments"
           params={{ organizationId }}
-          className="inline-flex rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2"
+          className="inline-flex shrink-0 rounded-md px-3 py-2 text-sm text-slate-300 hover:bg-slate-900 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2"
         >
-          Manage coach assignments
+          Assignments
         </Link>
         <Link
           to="/organizations/$organizationId/invitations"
           params={{ organizationId }}
-          className="inline-flex rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2"
+          className="inline-flex shrink-0 rounded-md px-3 py-2 text-sm text-slate-300 hover:bg-slate-900 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2"
         >
-          Manage invitations
+          Invitations
         </Link>
         <Link
           to="/organizations/$organizationId/groups"
           params={{ organizationId }}
-          className="inline-flex rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2"
+          className="inline-flex shrink-0 rounded-md px-3 py-2 text-sm text-slate-300 hover:bg-slate-900 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2"
         >
-          Manage organization groups
+          Groups
+        </Link>
+        <Link
+          to="/organizations/$organizationId/audit"
+          params={{ organizationId }}
+          className="inline-flex shrink-0 rounded-md px-3 py-2 text-sm text-slate-300 hover:bg-slate-900 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2"
+        >
+          Audit
         </Link>
       </nav>
       <OrganizationManagementOverview organizationId={organizationId} overview={overview} />

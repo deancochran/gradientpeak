@@ -17,6 +17,11 @@ test("organization totals drill into exact active, paused and primary-gap record
   coachActor,
   e2eIdentity,
 }, testInfo) => {
+  await page.setViewportSize(
+    testInfo.project.name.includes("Mobile")
+      ? { width: 390, height: 844 }
+      : { width: 1440, height: 1000 },
+  );
   await page.goto("/organizations/new");
   await page.getByLabel("Organization name", { exact: true }).fill("Overview acceptance");
   await page
@@ -77,41 +82,97 @@ test("organization totals drill into exact active, paused and primary-gap record
     });
   });
   await page.reload();
-  const card = (label: string) => page.locator('[data-slot="card"]').filter({ hasText: label });
+  const metricCard = (label: string) =>
+    page
+      .getByTestId("organization-overview-metrics")
+      .locator('[data-slot="card"]')
+      .filter({ hasText: label });
   for (const [label, count] of [
+    ["Active athletes", "22"],
     ["Active staff", "2"],
-    ["Active athlete engagements", "22"],
-    ["Paused athlete engagements", "1"],
-    ["Need a primary coach", "21"],
+    ["Unassigned", "21"],
   ] as const) {
-    await expect(card(label).locator('[data-slot="card-title"]')).toHaveText(count);
+    await expect(metricCard(label).locator('[data-slot="card-title"]')).toHaveText(count);
   }
+  await expect(metricCard("Coverage gaps").locator('[data-slot="card-title"]')).toHaveText(
+    "Unavailable",
+  );
+  await expect(metricCard("Coverage gaps").getByRole("link")).toHaveCount(0);
   await expect(
     page.getByText(/Timed coverage and plan-horizon signals are not available/),
   ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Needs an owner" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Follow-up priorities" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Coverage" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "My tasks" })).toBeVisible();
+  await expect(page.getByText(/task assignments are not available/i)).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+    true,
+  );
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const desktopMetrics = await page
+    .getByTestId("organization-overview-metrics")
+    .locator('[data-slot="card"]')
+    .evaluateAll((cards) =>
+      cards.map((card) => {
+        const { x, y } = card.getBoundingClientRect();
+        return { x: Math.round(x), y: Math.round(y) };
+      }),
+    );
+  expect(desktopMetrics).toHaveLength(4);
+  expect(new Set(desktopMetrics.map((card) => card.y)).size).toBe(1);
+  expect(desktopMetrics.map((card) => card.x)).toEqual(
+    [...desktopMetrics.map((card) => card.x)].sort((a, b) => a - b),
+  );
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
     true,
   );
   await page.screenshot({ path: testInfo.outputPath("overview-counts.png"), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobileMetrics = await page
+    .getByTestId("organization-overview-metrics")
+    .locator('[data-slot="card"]')
+    .evaluateAll((cards) =>
+      cards.map((card) => {
+        const { x, y } = card.getBoundingClientRect();
+        return { x: Math.round(x), y: Math.round(y) };
+      }),
+    );
+  expect(mobileMetrics).toHaveLength(4);
+  expect(mobileMetrics[0]?.y).toBe(mobileMetrics[1]?.y);
+  expect(mobileMetrics[2]?.y).toBe(mobileMetrics[3]?.y);
+  expect(mobileMetrics[0]?.y).toBeLessThan(mobileMetrics[2]?.y ?? 0);
+  expect(mobileMetrics[0]?.x).toBeLessThan(mobileMetrics[1]?.x ?? 0);
+  expect(mobileMetrics[2]?.x).toBeLessThan(mobileMetrics[3]?.x ?? 0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+    true,
+  );
+  await page.screenshot({ path: testInfo.outputPath("overview-mobile.png"), fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.getByRole("link", { name: "Assign coach", exact: true }).click();
+  await expect(page).toHaveURL(/\/organizations\/[^/]+\/assignments/);
+  const assignmentSearch = new URL(page.url()).searchParams;
+  expect(assignmentSearch.get("primary")).toBe("unassigned");
+  expect(assignmentSearch.get("status")).toBe("active");
+  await page.goto(dashboard);
   const rows = page.getByRole("list", { name: "Athlete coach assignments" }).getByRole("listitem");
   for (const [label, firstPage, secondPage] of [
-    ["Active athlete engagements", 20, 2],
-    ["Need a primary coach", 20, 1],
+    ["Active athletes", 20, 2],
+    ["Unassigned", 20, 1],
   ] as const) {
-    await card(label).getByRole("link", { name: "View matching records" }).click();
+    await metricCard(label).getByRole("link", { name: "View matching records" }).click();
     await expect(rows).toHaveCount(firstPage);
     await expect(page.getByText("Overview athlete 22", { exact: true })).toHaveCount(0);
     await expect(page.getByText("Overview athlete 23", { exact: true })).toHaveCount(0);
-    if (label === "Need a primary coach")
+    if (label === "Unassigned")
       await expect(page.getByText("Overview athlete 0", { exact: true })).toHaveCount(0);
     await page.getByRole("link", { name: "Next page of athletes" }).click();
     await expect(rows).toHaveCount(secondPage);
     await expect(page.getByRole("link", { name: "Next page of athletes" })).toHaveCount(0);
     await page.goto(dashboard);
   }
-  await card("Paused athlete engagements")
-    .getByRole("link", { name: "View matching records" })
-    .click();
+  await page.getByRole("link", { name: "View paused athletes" }).click();
+  await expect(page).toHaveURL(/\/assignments\?.*status=paused/);
   await expect(rows).toHaveCount(1);
   await expect(page.getByText("Overview athlete 22", { exact: true })).toBeVisible();
   await expect(page.getByText("Paused", { exact: true })).toBeVisible();
@@ -120,7 +181,7 @@ test("organization totals drill into exact active, paused and primary-gap record
     fullPage: true,
   });
   await page.goto(dashboard);
-  await card("Active staff").getByRole("link", { name: "View matching records" }).click();
+  await metricCard("Active staff").getByRole("link", { name: "View matching records" }).click();
   await expect(
     page.getByRole("list", { name: "Active staff roster" }).getByRole("listitem"),
   ).toHaveCount(2);
