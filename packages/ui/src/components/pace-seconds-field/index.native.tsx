@@ -1,38 +1,68 @@
-import { useEffect, useState } from "react";
-import { formatSecondsToMmSs } from "../../lib/fitness-inputs";
+import { View } from "react-native";
+import { Button } from "../button/index.native";
 import { PaceInput } from "../pace-input/index.native";
+import { Text } from "../text/index.native";
 import type { PaceSecondsFieldProps } from "./shared";
+import { usePaceSecondsField } from "./use-pace-seconds-field";
 
-function PaceSecondsField({
-  helperText,
-  id,
-  label,
-  onChangeSeconds,
-  placeholder,
-  required = false,
-  unitLabel,
-  valueSeconds,
-}: PaceSecondsFieldProps) {
-  const [draftValue, setDraftValue] = useState(
-    valueSeconds == null ? "" : formatSecondsToMmSs(valueSeconds),
-  );
-
-  useEffect(() => {
-    setDraftValue(valueSeconds == null ? "" : formatSecondsToMmSs(valueSeconds));
-  }, [valueSeconds]);
+function PaceSecondsField(props: PaceSecondsFieldProps) {
+  const {
+    error,
+    helperText,
+    id,
+    label,
+    placeholder,
+    required = false,
+    showAdjustmentButtons = true,
+    testId,
+    unitLabel,
+  } = props;
+  const draft = usePaceSecondsField(props);
 
   return (
-    <PaceInput
-      helperText={helperText}
-      id={id}
-      label={label}
-      onChange={setDraftValue}
-      onPaceSecondsChange={(nextValue) => onChangeSeconds(nextValue ?? null)}
-      placeholder={placeholder}
-      required={required}
-      unitLabel={unitLabel}
-      value={draftValue}
-    />
+    <View className="flex-row items-end gap-2">
+      {showAdjustmentButtons ? (
+        <Button
+          disabled={props.disabled}
+          accessibilityLabel={`Decrease ${label}`}
+          onPress={() => draft.adjust(-1)}
+          size="sm"
+          variant="outline"
+        >
+          <Text>-5s</Text>
+        </Button>
+      ) : null}
+      <View className="flex-1">
+        <PaceInput
+          formControl={props.formControl}
+          ref={props.ref}
+          disabled={props.disabled}
+          resetKey={props.resetKey}
+          error={error}
+          helperText={helperText}
+          id={id}
+          label={label}
+          onBlur={draft.onBlur}
+          onChange={draft.onChange}
+          placeholder={placeholder}
+          required={required}
+          testId={testId}
+          unitLabel={unitLabel}
+          value={draft.draftValue}
+        />
+      </View>
+      {showAdjustmentButtons ? (
+        <Button
+          disabled={props.disabled}
+          accessibilityLabel={`Increase ${label}`}
+          onPress={() => draft.adjust(1)}
+          size="sm"
+          variant="outline"
+        >
+          <Text>+5s</Text>
+        </Button>
+      ) : null}
+    </View>
   );
 }
 

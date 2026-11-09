@@ -1,13 +1,14 @@
+import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { AlertTriangle, ChevronLeft, Upload } from "lucide-react-native";
 import { Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useActivityPlanRouteUpload } from "@/components/activity-plan/useActivityPlanRouteUpload";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { RecordingLiveCockpit } from "@/components/recording/cockpit";
 import { RecordingActivityQuickEdit } from "@/components/recording/RecordingActivityQuickEdit";
 import { ResourcePickerModal } from "@/components/shared/resource-picker";
+import { useRouteUpload } from "@/lib/hooks/useRouteUpload";
 import { usePerformanceScreenReady } from "@/lib/performance";
 import { useRecordScreenController } from "@/lib/recording/useRecordScreenController";
 
@@ -15,8 +16,8 @@ function RecordScreen() {
   const insets = useSafeAreaInsets();
   const controller = useRecordScreenController();
   usePerformanceScreenReady("route-record", controller.isInitialized);
-  const routeUpload = useActivityPlanRouteUpload({
-    planName: "recording session",
+  const routeUpload = useRouteUpload({
+    contextLabel: "recording session",
     onRouteUploaded: (routeId) => {
       controller.service?.attachRoute(routeId).catch(() => null);
       controller.onCloseResourcePicker();
@@ -56,15 +57,15 @@ function RecordScreen() {
         onClose={controller.closeActivityQuickEdit}
         onActivitySelect={controller.handleActivityQuickEdit}
         currentCategory={controller.activityCategory || "run"}
-        currentGpsRecordingEnabled={controller.gpsRecordingEnabled}
         canEditActivity={controller.sessionContract?.editing.canEditActivity ?? true}
-        canEditGps={controller.sessionContract?.editing.canEditGps ?? true}
       />
 
       <ResourcePickerModal
         visible={!!controller.resourcePickerScope}
         scope={controller.resourcePickerScope ?? "routes"}
-        selectedId={null}
+        selectedId={
+          controller.resourcePickerScope === "activityPlans" ? controller.selectedPlanId : null
+        }
         title={
           controller.resourcePickerScope === "activityPlans"
             ? "Attach Activity Plan"
@@ -73,7 +74,7 @@ function RecordScreen() {
         description={
           controller.resourcePickerScope === "activityPlans"
             ? "Search activity plans visible to your profile."
-            : "Search routes visible to your profile, or upload a new GPX route."
+            : "Search routes visible to your profile, or upload a new route file."
         }
         onClose={controller.onCloseResourcePicker}
         onSelect={controller.onSelectResource}
@@ -87,10 +88,24 @@ function RecordScreen() {
             >
               <Icon as={Upload} size={16} className="text-foreground" />
               <Text className="text-sm font-semibold text-foreground">
-                {routeUpload.isUploadingRoute ? "Uploading route..." : "Upload New GPX Route"}
+                {routeUpload.isUploadingRoute ? "Uploading route..." : "Upload New Route"}
               </Text>
             </Pressable>
-          ) : undefined
+          ) : (
+            <View>
+              {controller.planSelectionPending ? (
+                <Text accessibilityLiveRegion="polite">Loading selected plan...</Text>
+              ) : null}
+              {controller.planSelectionError ? (
+                <View accessibilityRole="alert">
+                  <Text>{controller.planSelectionError}</Text>
+                  <Button onPress={controller.retrySelectedPlan}>
+                    <Text>Retry selected plan</Text>
+                  </Button>
+                </View>
+              ) : null}
+            </View>
+          )
         }
       />
 
@@ -114,12 +129,10 @@ function RecordScreen() {
 
       <RecordingLiveCockpit
         activityCategory={controller.activityCategory}
-        gpsRecordingEnabled={controller.gpsRecordingEnabled}
         hasPlan={controller.hasPlan}
         sensorCount={controller.sensorCount}
         service={controller.service}
         serviceState={controller.serviceState}
-        onGpsPress={controller.onGpsPress}
         onOpenActivity={controller.onOpenActivity}
         onOpenFtms={controller.onOpenFtms}
         onOpenPlan={controller.onOpenPlan}

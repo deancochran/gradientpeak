@@ -14,6 +14,10 @@ export const authPasswordSchema = z
   .string({ message: "Password is required" })
   .min(8, "Password must be at least 8 characters");
 
+export function isStrongPassword(password: string): boolean {
+  return password.length >= 8 && /[A-Z]/.test(password) && /[0-9]/.test(password);
+}
+
 export const authStrongPasswordSchema = authPasswordSchema
   .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
   .regex(/[0-9]/, "Password must contain at least one number");
@@ -57,16 +61,11 @@ export const updatePasswordFormSchema = z
     path: ["confirmPassword"],
   });
 
-export const resetPasswordSchema = updatePasswordFormSchema;
-
 export type LoginFormValues = z.output<typeof loginFormSchema>;
-export type SignInFields = z.output<typeof signInSchema>;
+export type SignInFormValues = z.output<typeof signInSchema>;
 export type SignUpFormValues = z.output<typeof signUpFormSchema>;
-export type SignUpFields = SignUpFormValues;
 export type ForgotPasswordFormValues = z.output<typeof forgotPasswordFormSchema>;
-export type ForgotPasswordFields = ForgotPasswordFormValues;
 export type UpdatePasswordFormValues = z.output<typeof updatePasswordFormSchema>;
-export type ResetPasswordFields = z.output<typeof resetPasswordSchema>;
 
 export type AuthFormErrorTarget = "root" | "email" | "password";
 
@@ -74,6 +73,10 @@ export type AuthFormError = {
   message: string;
   target: AuthFormErrorTarget;
 };
+
+/** Public recovery acknowledgement used regardless of whether an identity exists. */
+export const passwordRecoveryAcknowledgement =
+  "If an account matches that email address, password reset instructions will arrive shortly.";
 
 export type SignInErrorResult =
   | { type: "verify-email" }
@@ -162,7 +165,7 @@ export function getForgotPasswordFormError(error: unknown): AuthFormError {
   const message = getErrorMessage(error, "Failed to send reset email");
 
   if (message.includes("User not found")) {
-    return { message: "No account found with this email address", target: "email" };
+    return { message: passwordRecoveryAcknowledgement, target: "email" };
   }
 
   if (message.includes("Email rate limit")) {
