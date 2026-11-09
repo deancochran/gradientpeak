@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CoachAthleteZonesCard } from "./coach-athlete-zones";
 
 const identity = { organizationId: "org-private", athleteProfileId: "athlete-private" };
@@ -52,6 +52,8 @@ const zones = {
   },
 } as const;
 
+afterEach(cleanup);
+
 describe("CoachAthleteZonesCard", () => {
   it("presents only bike canonical facts with semantic headings and honest stale/provisional labels", () => {
     render(
@@ -62,11 +64,37 @@ describe("CoachAthleteZonesCard", () => {
     expect(screen.getByText(/237.5 W/)).toBeTruthy();
     expect(screen.getByText(/provisional · stale/)).toBeTruthy();
     expect(screen.getByText(/publication stale/)).toBeTruthy();
+    expect(screen.getByText("publication revision 3")).toBeTruthy();
     expect(screen.getByText(/Published-state computed/)).toBeTruthy();
     expect(screen.getByText(/Rounded policy reference boundaries/)).toBeTruthy();
     expect(screen.getByText("zone1").parentElement?.textContent).toContain("0 to 130 W");
     expect(screen.getByText(/Threshold unavailable/)).toBeTruthy();
     expect(screen.queryByText(/max hr|run|swim/i)).toBeNull();
+    const card = screen.getByTestId("coach-athlete-zones");
+    expect(card.className).toContain("bg-slate-950");
+    expect(card.className).toContain("text-slate-50");
+    expect(screen.getByLabelText("Power").className).toContain("bg-slate-900");
+  });
+
+  it("uses explicit unavailable publication copy when the canonical computation time is unknown", () => {
+    render(
+      <CoachAthleteZonesCard
+        identity={identity}
+        result={
+          {
+            status: "granted",
+            zones: {
+              ...zones,
+              publication: { status: "unavailable", publishedRevision: null, computedAt: null },
+            },
+          } as never
+        }
+      />,
+    );
+
+    expect(screen.getByText("publication revision not available")).toBeTruthy();
+    expect(screen.getByText(/Published-state computed not available/)).toBeTruthy();
+    expect(screen.queryByText(/not published/)).toBeNull();
   });
 
   it("does not render private identity or prior metric values when access is denied", () => {
@@ -75,6 +103,7 @@ describe("CoachAthleteZonesCard", () => {
     expect(screen.queryByText("org-private")).toBeNull();
     expect(screen.queryByText("athlete-private")).toBeNull();
     expect(screen.queryByText("237.5")).toBeNull();
+    expect(screen.getByTestId("coach-athlete-zones").className).toContain("bg-slate-950");
   });
 
   it("shows a local error without retained values and deduplicates retry while pending", () => {
@@ -89,10 +118,12 @@ describe("CoachAthleteZonesCard", () => {
     );
     expect(screen.getByRole("alert").textContent).toContain("could not be loaded");
     expect(screen.queryByText("237.5")).toBeNull();
+    expect(screen.getByTestId("coach-athlete-zones").className).toContain("bg-slate-950");
     fireEvent.click(screen.getByRole("button", { name: "Retry bike zones" }));
     expect(retry).toHaveBeenCalledTimes(1);
     view.rerender(<CoachAthleteZonesCard identity={identity} result={null} retryPending />);
     expect(screen.getByText("Loading bike zones…")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Retry bike zones" })).toBeNull();
+    expect(screen.getByTestId("coach-athlete-zones").className).toContain("bg-slate-950");
   });
 });

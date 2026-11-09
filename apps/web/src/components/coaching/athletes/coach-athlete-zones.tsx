@@ -29,8 +29,11 @@ function date(value: string | null) {
     ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(
         new Date(value),
       )
-    : "not published";
+    : "not available";
 }
+
+const cardTheme = "border-cyan-900 bg-slate-950 text-slate-50";
+const mutedText = "text-slate-300";
 
 function ZoneGroup({
   title,
@@ -44,12 +47,19 @@ function ZoneGroup({
   const source = value.source;
   return (
     <section
-      className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950"
+      className="rounded-xl border border-slate-700 bg-slate-900 p-4 text-slate-50"
       aria-label={title}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="font-medium text-slate-950 dark:text-slate-50">{title}</h3>
-        <Badge variant={value.zoneAvailability === "available" ? "secondary" : "outline"}>
+        <h3 className="font-medium">{title}</h3>
+        <Badge
+          className={
+            value.zoneAvailability === "available"
+              ? "border-cyan-700 bg-cyan-950 text-cyan-100"
+              : "border-slate-600 bg-slate-800 text-slate-200"
+          }
+          variant={value.zoneAvailability === "available" ? "secondary" : "outline"}
+        >
           {value.zoneAvailability}
         </Badge>
       </div>
@@ -61,19 +71,17 @@ function ZoneGroup({
           </strong>
         </p>
       ) : (
-        <p className="mt-2 text-sm text-muted-foreground">
-          Threshold unavailable. No ranges are shown.
-        </p>
+        <p className={`mt-2 text-sm ${mutedText}`}>Threshold unavailable. No ranges are shown.</p>
       )}
       {source.availability === "available" ? (
-        <p className="mt-1 text-xs text-muted-foreground">
+        <p className={`mt-1 text-xs ${mutedText}`}>
           {label(source.state)} · {label(source.freshness)} · {label(source.provenance)} · effective{" "}
           {date(source.effectiveAt)}
         </p>
       ) : null}
       {value.zones ? (
         <>
-          <p className="mt-3 text-xs text-muted-foreground">
+          <p className={`mt-3 text-xs ${mutedText}`}>
             Rounded policy reference boundaries; not exact classification thresholds.
           </p>
           <ol className="mt-1 grid gap-1 text-sm sm:grid-cols-2">
@@ -100,7 +108,7 @@ export function CoachAthleteZonesCard({
 }: Props) {
   if (error || retryPending)
     return (
-      <Card data-testid="coach-athlete-zones">
+      <Card className={cardTheme} data-testid="coach-athlete-zones">
         <CardHeader>
           <CardTitle>
             <h2>Bike zones</h2>
@@ -111,13 +119,19 @@ export function CoachAthleteZonesCard({
             <div role="alert" className="space-y-3">
               <p>Bike zones could not be loaded.</p>
               {onRetry ? (
-                <Button type="button" variant="outline" onClick={onRetry} disabled={retryPending}>
+                <Button
+                  className="border-cyan-700 bg-slate-900 text-slate-50 hover:bg-slate-800"
+                  type="button"
+                  variant="outline"
+                  onClick={onRetry}
+                  disabled={retryPending}
+                >
                   Retry bike zones
                 </Button>
               ) : null}
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">Loading bike zones…</p>
+            <p className={`text-sm ${mutedText}`}>Loading bike zones…</p>
           )}
         </CardContent>
       </Card>
@@ -125,22 +139,21 @@ export function CoachAthleteZonesCard({
   if (!result) return null;
   if (result.status === "forbidden")
     return (
-      <Card data-testid="coach-athlete-zones">
+      <Card className={cardTheme} data-testid="coach-athlete-zones">
         <CardHeader>
           <CardTitle>
             <h2>Bike zones</h2>
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground">
-            Bike metrics are not available for this athlete.
-          </p>
+          <p className={`text-sm ${mutedText}`}>Bike metrics are not available for this athlete.</p>
         </CardContent>
       </Card>
     );
   const { zones } = result;
   return (
     <Card
+      className={cardTheme}
       data-testid="coach-athlete-zones"
       data-organization={identity.organizationId}
       data-athlete={identity.athleteProfileId}
@@ -149,19 +162,29 @@ export function CoachAthleteZonesCard({
         <CardTitle>
           <h2>Bike zones</h2>
         </CardTitle>
-        <CardDescription>
+        <CardDescription className={mutedText}>
           Canonical cycling thresholds; this is not a readiness or approval assessment.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex flex-wrap gap-2">
-          <Badge variant={zones.publication.status === "available" ? "secondary" : "outline"}>
+          <Badge
+            className={
+              zones.publication.status === "available"
+                ? "border-cyan-700 bg-cyan-950 text-cyan-100"
+                : "border-slate-600 bg-slate-800 text-slate-200"
+            }
+            variant={zones.publication.status === "available" ? "secondary" : "outline"}
+          >
             publication {zones.publication.status}
           </Badge>
-          <Badge variant="outline">
-            published {zones.publication.publishedRevision ?? "not available"}
+          <Badge className="border-slate-600 bg-slate-800 text-slate-200" variant="outline">
+            {zones.publication.status === "unavailable" ||
+            zones.publication.publishedRevision === null
+              ? "publication revision not available"
+              : `publication revision ${zones.publication.publishedRevision}`}
           </Badge>
-          <span className="text-xs text-muted-foreground">
+          <span className={`text-xs ${mutedText}`}>
             Published-state computed {date(zones.publication.computedAt)} · canonical as of{" "}
             {date(zones.asOf)}
           </span>
