@@ -1,3 +1,4 @@
+import type { Route } from "@playwright/test";
 import {
   coachingAssignments,
   coachingEngagements,
@@ -10,6 +11,129 @@ import { expect, test } from "../fixtures";
 import { withLocalE2EDatabase } from "../support/database";
 
 test.beforeEach(() => expect(process.env.E2E_DISPOSABLE_DATABASE).toBe("1"));
+
+test("overview keeps organization navigation through a disposable-browser read failure and retries", async ({
+  athletePage: page,
+  e2eIdentity,
+}, testInfo) => {
+  await page.setViewportSize(
+    testInfo.project.name.includes("Mobile")
+      ? { width: 390, height: 844 }
+      : { width: 1440, height: 1000 },
+  );
+  await page.goto("/organizations/new");
+  const initialOverviewResponse = page.waitForResponse(async (response) => {
+    if (response.request().method() !== "POST") return false;
+    try {
+      return (await response.text()).includes("activeEngagementsWithoutPrimary");
+    } catch {
+      return false;
+    }
+  });
+  await page.getByLabel("Organization name", { exact: true }).fill("Overview recovery");
+  await page
+    .getByLabel("Organization URL name", { exact: true })
+    .fill(`overview-recovery-${e2eIdentity.uuid("organization")}`);
+  await page.getByRole("button", { name: "Create organization", exact: true }).click();
+  await expect(page).toHaveURL(/\/organizations\/[^/]+\/dashboard$/);
+  const dashboard = page.url();
+  const overviewEndpoint = (await initialOverviewResponse).url();
+  await page.getByRole("link", { name: "Staff", exact: true }).click();
+  await expect(page).toHaveURL(/\/staff/);
+
+  let releaseInitialRead: () => void = () => {};
+  const initialReadHeld = new Promise<void>((resolve) => {
+    releaseInitialRead = resolve;
+  });
+  let releaseRetryRead: () => void = () => {};
+  const retryReadHeld = new Promise<void>((resolve) => {
+    releaseRetryRead = resolve;
+  });
+  let overviewReadAttempts = 0;
+  const overviewRequestEndpoints: string[] = [];
+  const failOverviewRead = async (route: Route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    overviewRequestEndpoints.push(route.request().url());
+    overviewReadAttempts += 1;
+    if (overviewReadAttempts === 1) {
+      await initialReadHeld;
+    }
+    if (overviewReadAttempts === 2) {
+      await retryReadHeld;
+    }
+    return route.abort("failed");
+  };
+  const matchesOverviewEndpoint = (url: URL) => url.toString() === overviewEndpoint;
+  await page.route(matchesOverviewEndpoint, failOverviewRead);
+  try {
+    await page.getByRole("link", { name: "Dashboard", exact: true }).click();
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect(page.getByRole("status", { name: "Loading organization overview" })).toContainText(
+      "Loading organization overview",
+    );
+    await expect(
+      page.getByRole("navigation", { name: "Organization administration" }),
+    ).toBeVisible();
+    await expect(page.getByTestId("organization-overview-metrics")).toHaveCount(0);
+    await expect(page.getByText("No active athletes yet")).toHaveCount(0);
+    await page.screenshot({
+      path: testInfo.outputPath("overview-recovery-loading.png"),
+      fullPage: true,
+    });
+    releaseInitialRead();
+    await expect(page.getByRole("alert")).toContainText("could not load the organization overview");
+    await expect(
+      page.getByRole("navigation", { name: "Organization administration" }),
+    ).toBeVisible();
+    await expect(page.getByText("No active athletes yet")).toHaveCount(0);
+    await expect(page.getByTestId("organization-overview-metrics")).toHaveCount(0);
+    await page.screenshot({
+      path: testInfo.outputPath("overview-recovery-error-initial.png"),
+      fullPage: true,
+    });
+
+    await page.getByRole("button", { name: "Retry organization overview", exact: true }).click();
+    await expect.poll(() => overviewReadAttempts).toBe(2);
+    const retryingButton = page.getByRole("button", { name: "Retrying organization overview…" });
+    if (await retryingButton.count()) {
+      await expect(retryingButton).toBeDisabled();
+    } else {
+      await expect(
+        page.getByRole("status", { name: "Loading organization overview" }),
+      ).toContainText("Loading organization overview");
+    }
+    releaseRetryRead();
+    await expect(
+      page.getByRole("button", { name: "Retry organization overview", exact: true }),
+    ).toBeEnabled();
+    await expect(page.getByRole("alert")).toContainText("could not load the organization overview");
+    await expect(
+      page.getByRole("navigation", { name: "Organization administration" }),
+    ).toBeVisible();
+    await expect(page.getByText("No active athletes yet")).toHaveCount(0);
+    await expect(page.getByTestId("organization-overview-metrics")).toHaveCount(0);
+    await page.screenshot({
+      path: testInfo.outputPath("overview-recovery-error-retry.png"),
+      fullPage: true,
+    });
+    expect(overviewReadAttempts).toBe(2);
+    expect(overviewRequestEndpoints).toEqual([overviewEndpoint, overviewEndpoint]);
+  } finally {
+    releaseInitialRead();
+    releaseRetryRead();
+    await page.unroute(matchesOverviewEndpoint, failOverviewRead);
+  }
+
+  await page.getByRole("button", { name: "Retry organization overview", exact: true }).click();
+  await expect(page).toHaveURL(dashboard);
+  await expect(page.getByRole("heading", { name: "No active athletes yet" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Invite athlete", exact: true })).toBeVisible();
+  await expect(page.getByText("Unavailable", { exact: true })).toHaveCount(0);
+  await page.screenshot({
+    path: testInfo.outputPath("overview-recovery-empty.png"),
+    fullPage: true,
+  });
+});
 
 test("organization totals drill into exact active, paused and primary-gap records", async ({
   athletePage: page,
