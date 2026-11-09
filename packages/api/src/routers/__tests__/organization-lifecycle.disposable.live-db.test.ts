@@ -247,6 +247,86 @@ describe("organization lifecycle API against a disposable migrated PostgreSQL da
               }),
             ],
           });
+          // Operational overview counts are full-scope aggregates, not first-page lengths. Build
+          // more athletes than the normal UI page and compare each count to its matching filtered
+          // paginated read. Supporting responsibility intentionally does not satisfy primary.
+          const overviewBefore = await ownerCaller.lifecycle.operationalOverview({
+            organizationId,
+          });
+          const overviewEngagements: Array<{ id: string; active: boolean }> = [];
+          for (let index = 0; index < 23; index += 1) {
+            const overviewAthlete = await person(client.db, `overview-athlete-${index}`);
+            const id = randomUUID();
+            const active = index < 21;
+            overviewEngagements.push({ id, active });
+            await client.db.insert(coachingEngagements).values({
+              id,
+              organization_id: organizationId,
+              athlete_profile_id: overviewAthlete.id,
+              ...(active ? {} : { paused_at: new Date() }),
+            });
+            if (active && index < 10)
+              await client.db.insert(coachingAssignments).values({
+                organization_id: organizationId,
+                engagement_id: id,
+                coach_membership_id: coachMembershipId,
+                assignment_kind: "primary",
+              });
+            if (active && index === 10)
+              await client.db.insert(coachingAssignments).values({
+                organization_id: organizationId,
+                engagement_id: id,
+                coach_membership_id: coachMembershipId,
+                assignment_kind: "supporting",
+              });
+          }
+          const overview = await ownerCaller.lifecycle.operationalOverview({ organizationId });
+          expect(overview).toMatchObject({
+            activeStaff: overviewBefore.activeStaff,
+            activeEngagements: overviewBefore.activeEngagements + 21,
+            pausedEngagements: overviewBefore.pausedEngagements + 2,
+            activeEngagementsWithoutPrimary: overviewBefore.activeEngagementsWithoutPrimary + 11,
+          });
+          const activeOverviewPage = await ownerCaller.lifecycle.adminRoster.list({
+            organizationId,
+            limit: 50,
+            engagementStatus: "active",
+            withoutPrimaryAssignment: false,
+          });
+          const pausedOverviewPage = await ownerCaller.lifecycle.adminRoster.list({
+            organizationId,
+            limit: 50,
+            engagementStatus: "paused",
+            withoutPrimaryAssignment: false,
+          });
+          const primaryGapPage = await ownerCaller.lifecycle.adminRoster.list({
+            organizationId,
+            limit: 50,
+            engagementStatus: "active",
+            withoutPrimaryAssignment: true,
+          });
+          const activeStaffPage = await ownerCaller.lifecycle.staff.list({
+            organizationId,
+            status: "active",
+            limit: 50,
+          });
+          expect(activeOverviewPage.items).toHaveLength(overview.activeEngagements);
+          expect(pausedOverviewPage.items).toHaveLength(overview.pausedEngagements);
+          expect(primaryGapPage.items).toHaveLength(overview.activeEngagementsWithoutPrimary);
+          expect(activeStaffPage.items).toHaveLength(overview.activeStaff);
+          expect(primaryGapPage.items).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({ engagementId: overviewEngagements[10]?.id }),
+            ]),
+          );
+          expect(primaryGapPage.items).not.toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({ engagementId: overviewEngagements[0]?.id }),
+            ]),
+          );
+          await expect(
+            caller(client.db, foreignOwner.id).lifecycle.operationalOverview({ organizationId }),
+          ).rejects.toMatchObject({ code: "FORBIDDEN" });
           await expect(
             caller(client.db, foreignOwner.id).lifecycle.endMembership({
               organizationId,
@@ -308,7 +388,9 @@ describe("organization lifecycle API against a disposable migrated PostgreSQL da
               .select({ endedAt: coachingAssignments.ended_at })
               .from(coachingAssignments)
               .where(eq(coachingAssignments.coach_membership_id, coachMembershipId)),
-          ).resolves.toEqual([expect.objectContaining({ endedAt: expect.any(Date) })]);
+          ).resolves.toEqual(
+            expect.arrayContaining([expect.objectContaining({ endedAt: expect.any(Date) })]),
+          );
           await expect(
             client.db
               .select({ id: organizationAuditEvents.id })
@@ -327,6 +409,9 @@ describe("organization lifecycle API against a disposable migrated PostgreSQL da
             );
           await expect(
             caller(client.db, admin.id).lifecycle.adminRoster.list({ organizationId, limit: 50 }),
+          ).rejects.toMatchObject({ code: "FORBIDDEN" });
+          await expect(
+            caller(client.db, admin.id).lifecycle.operationalOverview({ organizationId }),
           ).rejects.toMatchObject({ code: "FORBIDDEN" });
 
           const engagementCorrelation = randomUUID();

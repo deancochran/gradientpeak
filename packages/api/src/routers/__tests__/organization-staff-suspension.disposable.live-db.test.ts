@@ -214,12 +214,23 @@ describe("organization staff suspension API against a fresh disposable PostgreSQ
             }),
           ).rejects.toMatchObject({ code: "FORBIDDEN" });
           const operationId = randomUUID();
+          const beforeSuspension = await ownerCaller.lifecycle.operationalOverview({
+            organizationId,
+          });
           // Deliberately discard the first completed response, as a client that lost its ACK would.
           await ownerCaller.lifecycle.suspendMembership({
             organizationId,
             membershipId: coachMembershipId,
             operationId,
             reason: "administrative_review",
+          });
+          const afterSuspension = await ownerCaller.lifecycle.operationalOverview({
+            organizationId,
+          });
+          expect(afterSuspension).toEqual({
+            ...beforeSuspension,
+            activeStaff: beforeSuspension.activeStaff - 1,
+            activeEngagementsWithoutPrimary: beforeSuspension.activeEngagementsWithoutPrimary + 1,
           });
           await expect(
             ownerCaller.lifecycle.suspendMembership({
@@ -386,6 +397,10 @@ describe("organization staff suspension API against a fresh disposable PostgreSQ
             status: "resumed",
           });
           // A delayed suspend retry is only a receipt replay; it cannot undo the resume.
+          expect(await ownerCaller.lifecycle.operationalOverview({ organizationId })).toEqual({
+            ...beforeSuspension,
+            activeEngagementsWithoutPrimary: beforeSuspension.activeEngagementsWithoutPrimary + 1,
+          });
           await expect(
             ownerCaller.lifecycle.suspendMembership({
               organizationId,

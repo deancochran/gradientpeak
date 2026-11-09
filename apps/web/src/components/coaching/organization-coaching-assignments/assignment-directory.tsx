@@ -9,7 +9,7 @@ import {
 } from "@repo/ui/components/card";
 import { Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { Search } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 
 import { OrganizationCoachingAssignments } from "./organization-coaching-assignments";
 
@@ -17,6 +17,7 @@ type Assignment = {
   assignmentId: string;
   assignmentKind: "primary" | "supporting";
   coachName: string;
+  coachMembershipStatus: "active" | "suspended" | "ended";
 };
 type Athlete = {
   engagementId: string;
@@ -31,11 +32,15 @@ export function AssignmentDirectory({
   organizationId,
   page,
   search,
+  primary = null,
+  status = null,
 }: {
   actorProfileId: string;
   organizationId: string;
   page: Page;
   search: string | null;
+  primary?: "unassigned" | null;
+  status?: "active" | "paused" | null;
 }) {
   const navigate = useNavigate();
   const router = useRouter();
@@ -58,7 +63,12 @@ export function AssignmentDirectory({
     void navigate({
       to: "/organizations/$organizationId/assignments",
       params: { organizationId },
-      search: { q: query.trim() || undefined, cursor: undefined },
+      search: {
+        q: query.trim() || undefined,
+        cursor: undefined,
+        primary: primary ?? undefined,
+        status: status ?? undefined,
+      },
     });
   }
 
@@ -121,7 +131,7 @@ export function AssignmentDirectory({
           id="assignment-athlete-search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search this page by athlete name"
+          placeholder="Search this loaded page by athlete name"
           className="min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-500"
         />
         <Button type="submit" className="bg-cyan-400 text-slate-950 hover:bg-cyan-300">
@@ -133,8 +143,9 @@ export function AssignmentDirectory({
         <CardHeader>
           <CardTitle>Direct assignment directory</CardTitle>
           <CardDescription className="text-slate-400">
-            Search filters the loaded roster page. Current primary and supporting responsibilities
-            are listed below; unassigned athletes have no direct coach responsibility.
+            {primary === "unassigned"
+              ? "Showing athletes without a current primary coach. Supporting responsibility alone does not satisfy this filter."
+              : "Current primary and supporting responsibilities are listed below; unassigned athletes have no direct coach responsibility."}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -158,13 +169,17 @@ export function AssignmentDirectory({
                       </legend>
                       {athlete.assignments.length ? (
                         athlete.assignments.map((assignment) => (
-                          <Badge
-                            key={assignment.assignmentId}
-                            className="border-slate-700 bg-slate-800 text-slate-200"
-                          >
-                            {assignment.assignmentKind === "primary" ? "Primary" : "Supporting"}:{" "}
-                            {assignment.coachName}
-                          </Badge>
+                          <Fragment key={assignment.assignmentId}>
+                            <Badge className="border-slate-700 bg-slate-800 text-slate-200">
+                              {assignment.assignmentKind === "primary" ? "Primary" : "Supporting"}:{" "}
+                              {assignment.coachName}
+                            </Badge>
+                            {assignment.coachMembershipStatus !== "active" ? (
+                              <Badge className="border-amber-800 bg-amber-950 capitalize text-amber-200">
+                                Coach {assignment.coachMembershipStatus}
+                              </Badge>
+                            ) : null}
+                          </Fragment>
                         ))
                       ) : (
                         <Badge className="border-amber-800 bg-amber-950 text-amber-200">
@@ -194,7 +209,12 @@ export function AssignmentDirectory({
             <Link
               to="/organizations/$organizationId/assignments"
               params={{ organizationId }}
-              search={{ q: search ?? undefined, cursor: page.nextCursor }}
+              search={{
+                q: search ?? undefined,
+                cursor: page.nextCursor,
+                primary: primary ?? undefined,
+                status: status ?? undefined,
+              }}
               className="inline-block text-sm text-cyan-300 hover:text-cyan-100"
             >
               Next page of athletes

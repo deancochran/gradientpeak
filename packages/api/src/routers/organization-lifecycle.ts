@@ -6,6 +6,7 @@ import {
   listAdministrativeAthleteRoster,
   listOrganizationStaff,
   OrganizationLifecycleError,
+  readAdministrativeOperationalOverview,
   withdrawAthleteConsent,
 } from "../application/organizations/manage-organization-lifecycle";
 import {
@@ -26,6 +27,14 @@ const organizationPageInput = z
   .object({
     organizationId: z.string().uuid(),
     status: z.enum(["active", "suspended"]).default("active"),
+  })
+  .merge(pageInput)
+  .strict();
+const administrativeRosterInput = z
+  .object({
+    organizationId: z.string().uuid(),
+    engagementStatus: z.enum(["active", "paused"]).nullable().default(null),
+    withoutPrimaryAssignment: z.boolean().default(false),
   })
   .merge(pageInput)
   .strict();
@@ -66,6 +75,14 @@ const staffSuspensionOutput = z
     status: z.enum(["suspended", "resumed"]),
   })
   .strict();
+const operationalOverviewOutput = z
+  .object({
+    activeStaff: z.number().int().nonnegative(),
+    activeEngagements: z.number().int().nonnegative(),
+    pausedEngagements: z.number().int().nonnegative(),
+    activeEngagementsWithoutPrimary: z.number().int().nonnegative(),
+  })
+  .strict();
 
 function fail(error: unknown): never {
   if (error instanceof OrganizationStaffSuspensionError)
@@ -101,6 +118,18 @@ function fail(error: unknown): never {
 const run = <T>(promise: Promise<T>) => promise.catch(fail);
 
 export const organizationLifecycleRouter = createTRPCRouter({
+  operationalOverview: protectedProcedure
+    .input(z.object({ organizationId: z.string().uuid() }).strict())
+    .output(operationalOverviewOutput)
+    .query(({ ctx, input }) =>
+      run(
+        readAdministrativeOperationalOverview({
+          db: getRequiredDb(ctx),
+          actorProfileId: ctx.session.user.id,
+          organizationId: input.organizationId,
+        }),
+      ),
+    ),
   staff: createTRPCRouter({
     list: protectedProcedure
       .input(organizationPageInput)
@@ -161,7 +190,7 @@ export const organizationLifecycleRouter = createTRPCRouter({
   }),
   adminRoster: createTRPCRouter({
     list: protectedProcedure
-      .input(organizationPageInput)
+      .input(administrativeRosterInput)
       .output(
         pageOutput(
           z

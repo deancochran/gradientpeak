@@ -146,22 +146,48 @@ export async function listOrganizationStaff(input: {
   };
 }
 
+/** Counts remain an administrative metadata read; no training, messages, or health content is selected. */
+export async function readAdministrativeOperationalOverview(input: {
+  db: DrizzleDbClient;
+  actorProfileId: string;
+  organizationId: string;
+}) {
+  const result = await createOrganizationLifecycleRepository(
+    input.db,
+  ).getAdministrativeOperationalOverview(input.organizationId, input.actorProfileId);
+  if (!result) throw new OrganizationLifecycleError("forbidden");
+  return result;
+}
+
 export async function listAdministrativeAthleteRoster(input: {
   db: DrizzleDbClient;
   actorProfileId: string;
   organizationId: string;
   limit: number;
   cursor: string | null;
+  engagementStatus: "active" | "paused" | null;
+  withoutPrimaryAssignment: boolean;
 }) {
   const repository = createOrganizationLifecycleRepository(input.db);
   await requireAdmin(repository, input.organizationId, input.actorProfileId);
   if (
     input.cursor !== null &&
-    !(await repository.rosterCursorBelongsToOrganization(input.organizationId, input.cursor))
+    !(await repository.rosterCursorBelongsToOrganization(
+      input.organizationId,
+      input.cursor,
+      input.engagementStatus,
+      input.withoutPrimaryAssignment,
+    ))
   )
     throw new OrganizationLifecycleError("invalid_cursor");
   return page(
-    await repository.listCurrentAthleteRoster(input.organizationId, input.limit, input.cursor),
+    await repository.listCurrentAthleteRoster(
+      input.organizationId,
+      input.limit,
+      input.cursor,
+      input.engagementStatus,
+      input.withoutPrimaryAssignment,
+    ),
     input.limit,
   );
 }

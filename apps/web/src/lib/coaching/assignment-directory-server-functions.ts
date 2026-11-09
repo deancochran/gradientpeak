@@ -7,6 +7,8 @@ const inputSchema = z
     organizationId: z.string().uuid(),
     limit: z.number().int().min(1).max(50),
     cursor: z.string().uuid().nullable(),
+    engagementStatus: z.enum(["active", "paused"]).nullable().default(null),
+    withoutPrimaryAssignment: z.boolean().default(false),
   })
   .strict();
 
@@ -54,6 +56,7 @@ export const loadOrganizationAssignmentDirectory = createServerFn({ method: "POS
               assignment.coachIdentity.displayName ??
               assignment.coachIdentity.username ??
               "Unnamed organization coach",
+            coachMembershipStatus: assignment.coachIdentity.membershipStatus,
           })),
         })),
       );

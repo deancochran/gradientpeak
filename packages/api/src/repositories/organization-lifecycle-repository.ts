@@ -60,6 +60,70 @@ export function createOrganizationLifecycleRepository(db: DrizzleQueryExecutor) 
         .limit(1);
       return row ?? null;
     },
+    /**
+     * A single statement deliberately combines current-admin authorization with the
+     * bounded operational aggregates.  Do not replace this with roster-page lengths:
+     * those are pagination windows, not organization totals.
+     */
+    async getAdministrativeOperationalOverview(organizationId: string, profileId: string) {
+      const [row] = await db
+        .select({
+          activeStaff: sql`(select count(distinct staff.id)
+           from organization_memberships staff
+           join organization_membership_role_grants role_grant
+             on role_grant.organization_id = staff.organization_id
+             and role_grant.membership_id = staff.id
+             and role_grant.granted_at <= transaction_timestamp()
+             and role_grant.revoked_at is null
+           where staff.organization_id = ${organizationId}::uuid
+             and staff.suspended_at is null and staff.ended_at is null)`.mapWith(Number),
+          activeEngagements: sql`(select count(*)
+           from coaching_engagements engagement
+           where engagement.organization_id = ${organizationId}::uuid
+             and engagement.ended_at is null and engagement.paused_at is null)`.mapWith(Number),
+          pausedEngagements: sql`(select count(*)
+           from coaching_engagements engagement
+           where engagement.organization_id = ${organizationId}::uuid
+             and engagement.ended_at is null and engagement.paused_at is not null)`.mapWith(Number),
+          activeEngagementsWithoutPrimary: sql`(select count(*)
+           from coaching_engagements engagement
+           where engagement.organization_id = ${organizationId}::uuid
+             and engagement.ended_at is null
+             and engagement.paused_at is null
+             and not exists (
+               select 1 from coaching_assignments assignment
+               where assignment.organization_id = engagement.organization_id
+                 and assignment.engagement_id = engagement.id
+                 and assignment.assignment_kind = 'primary'
+                 and assignment.ended_at is null
+              ))`.mapWith(Number),
+        })
+        .from(organizationMemberships)
+        .innerJoin(organizations, eq(organizations.id, organizationMemberships.organization_id))
+        .leftJoin(
+          organizationMembershipRoleGrants,
+          and(
+            eq(organizationMembershipRoleGrants.organization_id, organizationId),
+            eq(organizationMembershipRoleGrants.membership_id, organizationMemberships.id),
+            eq(organizationMembershipRoleGrants.role_key, "admin"),
+            effectiveGrant,
+          ),
+        )
+        .where(
+          and(
+            eq(organizationMemberships.organization_id, organizationId),
+            eq(organizationMemberships.profile_id, profileId),
+            activeOrganization,
+            activeMembership,
+            or(
+              eq(organizations.root_owner_membership_id, organizationMemberships.id),
+              sql`${organizationMembershipRoleGrants.id} is not null`,
+            ),
+          ),
+        )
+        .limit(1);
+      return row ?? null;
+    },
     async staffCursorBelongsToOrganization(
       organizationId: string,
       cursor: string,
@@ -133,7 +197,12 @@ export function createOrganizationLifecycleRepository(db: DrizzleQueryExecutor) 
         .orderBy(asc(organizationMemberships.id))
         .limit(limit + 1);
     },
-    async rosterCursorBelongsToOrganization(organizationId: string, cursor: string) {
+    async rosterCursorBelongsToOrganization(
+      organizationId: string,
+      cursor: string,
+      engagementStatus: "active" | "paused" | null,
+      withoutPrimaryAssignment: boolean,
+    ) {
       const [row] = await db
         .select({ id: coachingEngagements.id })
         .from(coachingEngagements)
@@ -144,12 +213,32 @@ export function createOrganizationLifecycleRepository(db: DrizzleQueryExecutor) 
             eq(coachingEngagements.id, cursor),
             activeOrganization,
             isNull(coachingEngagements.ended_at),
+            engagementStatus === "active"
+              ? isNull(coachingEngagements.paused_at)
+              : engagementStatus === "paused"
+                ? sql`${coachingEngagements.paused_at} is not null`
+                : undefined,
+            withoutPrimaryAssignment
+              ? sql`not exists (
+                  select 1 from coaching_assignments
+                  where coaching_assignments.organization_id = ${organizationId}
+                    and coaching_assignments.engagement_id = ${coachingEngagements.id}
+                    and coaching_assignments.assignment_kind = 'primary'
+                    and coaching_assignments.ended_at is null
+                )`
+              : undefined,
           ),
         )
         .limit(1);
       return row !== undefined;
     },
-    listCurrentAthleteRoster(organizationId: string, limit: number, cursor: string | null) {
+    listCurrentAthleteRoster(
+      organizationId: string,
+      limit: number,
+      cursor: string | null,
+      engagementStatus: "active" | "paused" | null,
+      withoutPrimaryAssignment: boolean,
+    ) {
       return db
         .select({
           engagementId: coachingEngagements.id,
@@ -166,6 +255,20 @@ export function createOrganizationLifecycleRepository(db: DrizzleQueryExecutor) 
             eq(coachingEngagements.organization_id, organizationId),
             activeOrganization,
             isNull(coachingEngagements.ended_at),
+            engagementStatus === "active"
+              ? isNull(coachingEngagements.paused_at)
+              : engagementStatus === "paused"
+                ? sql`${coachingEngagements.paused_at} is not null`
+                : undefined,
+            withoutPrimaryAssignment
+              ? sql`not exists (
+                  select 1 from coaching_assignments
+                  where coaching_assignments.organization_id = ${organizationId}
+                    and coaching_assignments.engagement_id = ${coachingEngagements.id}
+                    and coaching_assignments.assignment_kind = 'primary'
+                    and coaching_assignments.ended_at is null
+                )`
+              : undefined,
             ...(cursor ? [gt(coachingEngagements.id, cursor)] : []),
           ),
         )

@@ -4,9 +4,7 @@ const mocks = vi.hoisted(() => ({
   coachingAccess: vi.fn(),
   listMine: vi.fn(),
   create: vi.fn(),
-  managementCapabilities: vi.fn(),
-  listStaff: vi.fn(),
-  listAthletes: vi.fn(),
+  operationalOverview: vi.fn(),
   createApiContext: vi.fn(),
   resolveAuthSessionFromHeaders: vi.fn(),
   headers: new Headers({ cookie: "session=test" }),
@@ -37,10 +35,8 @@ vi.mock("@repo/api/server", () => ({
         coachingAccess: mocks.coachingAccess,
         listMine: mocks.listMine,
         create: mocks.create,
-        managementCapabilities: mocks.managementCapabilities,
         lifecycle: {
-          staff: { list: mocks.listStaff },
-          adminRoster: { list: mocks.listAthletes },
+          operationalOverview: mocks.operationalOverview,
         },
       },
     }),
@@ -70,7 +66,12 @@ describe("loadOrganizationCoachingAccess", () => {
     mocks.createApiContext.mockResolvedValue({ session: { user: { id: "profile-1" } } });
     mocks.coachingAccess.mockResolvedValue({ status: "forbidden" });
     mocks.listMine.mockResolvedValue({ items: [], nextCursor: null, hasMore: false });
-    mocks.managementCapabilities.mockResolvedValue({ status: "forbidden" });
+    mocks.operationalOverview.mockResolvedValue({
+      activeStaff: 0,
+      activeEngagements: 0,
+      pausedEngagements: 0,
+      activeEngagementsWithoutPrimary: 0,
+    });
   });
 
   it("resolves the request session and calls the protected API with a complete DB context", async () => {
@@ -116,20 +117,12 @@ describe("organization management server boundaries", () => {
       organizationId: ORGANIZATION_ID,
       membershipId: "membership-1",
     });
-    mocks.managementCapabilities.mockResolvedValue({
-      status: "granted",
-      membershipId: "membership-1",
-      isRootOwner: false,
-      operations: [
-        {
-          operation: "read_administrative_roster",
-          outcome: "eligible",
-          requiresFullAthleteAuthorization: false,
-        },
-      ],
+    mocks.operationalOverview.mockResolvedValue({
+      activeStaff: 3,
+      activeEngagements: 21,
+      pausedEngagements: 2,
+      activeEngagementsWithoutPrimary: 4,
     });
-    mocks.listStaff.mockResolvedValue({ items: [], nextCursor: null, hasMore: false });
-    mocks.listAthletes.mockResolvedValue({ items: [], nextCursor: null, hasMore: false });
   });
 
   it("creates only a validated organization payload through the request-bound caller", async () => {
@@ -163,36 +156,25 @@ describe("organization management server boundaries", () => {
     ).rejects.toThrow("Timezone must be a valid IANA timezone");
   });
 
-  it("loads staff and roster only after current administrative capability is eligible", async () => {
+  it("loads statement-authorized operational totals without roster-page counting", async () => {
     await expect(
       loadOrganizationManagementOverview({ data: { organizationId: ORGANIZATION_ID } }),
-    ).resolves.toMatchObject({ status: "granted", canReadAdministrativeRoster: true });
-
-    expect(mocks.listStaff).toHaveBeenCalledWith({
-      organizationId: ORGANIZATION_ID,
-      limit: 20,
-      cursor: null,
+    ).resolves.toEqual({
+      status: "granted",
+      overview: {
+        activeStaff: 3,
+        activeEngagements: 21,
+        pausedEngagements: 2,
+        activeEngagementsWithoutPrimary: 4,
+      },
     });
-    expect(mocks.listAthletes).toHaveBeenCalledWith({
-      organizationId: ORGANIZATION_ID,
-      limit: 20,
-      cursor: null,
-    });
+    expect(mocks.operationalOverview).toHaveBeenCalledWith({ organizationId: ORGANIZATION_ID });
   });
 
-  it("does not request administrative people records after membership access is lost", async () => {
-    mocks.managementCapabilities.mockResolvedValue({ status: "forbidden" });
-
-    await expect(
-      loadOrganizationManagementOverview({ data: { organizationId: ORGANIZATION_ID } }),
-    ).resolves.toEqual({ status: "forbidden" });
-
-    expect(mocks.listStaff).not.toHaveBeenCalled();
-    expect(mocks.listAthletes).not.toHaveBeenCalled();
-  });
-
-  it("fails closed to the access-lost state when roster authority is revoked after capability evaluation", async () => {
-    mocks.listStaff.mockRejectedValue(Object.assign(new Error("revoked"), { code: "FORBIDDEN" }));
+  it("fails closed when the aggregate statement finds no current administrator", async () => {
+    mocks.operationalOverview.mockRejectedValue(
+      Object.assign(new Error("revoked"), { code: "FORBIDDEN" }),
+    );
 
     await expect(
       loadOrganizationManagementOverview({ data: { organizationId: ORGANIZATION_ID } }),

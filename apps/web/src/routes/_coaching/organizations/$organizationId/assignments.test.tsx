@@ -33,22 +33,34 @@ describe("coach assignment directory route", () => {
       loaderDeps: (input: { search: { q?: string; cursor?: string } }) => unknown;
       loader: (input: {
         params: { organizationId: string };
-        deps: { search: string | null; cursor: string | null };
+        deps: {
+          search: string | null;
+          cursor: string | null;
+          primary: "unassigned" | null;
+          status: "active" | "paused" | null;
+        };
       }) => Promise<unknown>;
     };
     expect(route.validateSearch({ q: " Alex " })).toEqual({ q: "Alex" });
     expect(() => route.validateSearch({ q: "   " })).toThrow();
-    expect(route.loaderDeps({ search: {} })).toEqual({ search: null, cursor: null });
+    expect(route.loaderDeps({ search: {} })).toEqual({
+      search: null,
+      cursor: null,
+      primary: null,
+      status: null,
+    });
     mocks.load.mockResolvedValueOnce({ status: "forbidden" });
     await expect(
       route.loader({
         params: { organizationId: "11111111-1111-4111-8111-111111111111" },
-        deps: { search: "Alex", cursor: null },
+        deps: { search: "Alex", cursor: null, primary: null, status: null },
       }),
     ).resolves.toEqual({
       organizationId: "11111111-1111-4111-8111-111111111111",
       search: "Alex",
       cursor: null,
+      primary: null,
+      status: null,
       page: { status: "forbidden" },
     });
     expect(mocks.load).toHaveBeenCalledWith({
@@ -56,6 +68,8 @@ describe("coach assignment directory route", () => {
         organizationId: "11111111-1111-4111-8111-111111111111",
         limit: 20,
         cursor: null,
+        engagementStatus: null,
+        withoutPrimaryAssignment: false,
       },
     });
   });

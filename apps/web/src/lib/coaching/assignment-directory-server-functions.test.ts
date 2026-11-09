@@ -85,7 +85,13 @@ describe("assignment directory server function", () => {
         },
       ],
     });
-    expect(mocks.roster).toHaveBeenCalledWith({ organizationId, limit: 20, cursor: null });
+    expect(mocks.roster).toHaveBeenCalledWith({
+      organizationId,
+      limit: 20,
+      cursor: null,
+      engagementStatus: null,
+      withoutPrimaryAssignment: false,
+    });
     expect(mocks.assignments).toHaveBeenCalledWith({ organizationId, engagementId });
   });
 
@@ -117,6 +123,25 @@ describe("assignment directory server function", () => {
       loadOrganizationAssignmentDirectory({ data: { organizationId, limit: 20, cursor: null } }),
     ).resolves.toMatchObject({
       items: [{ assignments: [{ coachName: "Coach Fifty One" }] }],
+    });
+  });
+
+  it("forwards the primary-gap and engagement-status filters to the authorized roster read", async () => {
+    await loadOrganizationAssignmentDirectory({
+      data: {
+        organizationId,
+        limit: 20,
+        cursor: null,
+        engagementStatus: "active",
+        withoutPrimaryAssignment: true,
+      },
+    });
+    expect(mocks.roster).toHaveBeenCalledWith({
+      organizationId,
+      limit: 20,
+      cursor: null,
+      engagementStatus: "active",
+      withoutPrimaryAssignment: true,
     });
   });
 });

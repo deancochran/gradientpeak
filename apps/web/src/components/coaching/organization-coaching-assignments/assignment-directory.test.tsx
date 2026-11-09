@@ -46,11 +46,13 @@ const page = {
           assignmentId: "33333333-3333-4333-8333-333333333333",
           assignmentKind: "primary" as const,
           coachName: "Casey Coach",
+          coachMembershipStatus: "active" as const,
         },
         {
           assignmentId: "44444444-4444-4444-8444-444444444444",
           assignmentKind: "supporting" as const,
           coachName: "Morgan Coach",
+          coachMembershipStatus: "suspended" as const,
         },
       ],
     },
@@ -100,6 +102,7 @@ describe("AssignmentDirectory", () => {
     );
     expect(screen.getByText("Primary: Casey Coach")).toBeTruthy();
     expect(screen.getByText("Supporting: Morgan Coach")).toBeTruthy();
+    expect(screen.getByText("Coach suspended")).toBeTruthy();
     expect(screen.getByText("Unassigned")).toBeTruthy();
     expect(screen.getByText(/Temporary coverage and handovers are not available yet/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Search" }).className).toContain("bg-cyan-400");

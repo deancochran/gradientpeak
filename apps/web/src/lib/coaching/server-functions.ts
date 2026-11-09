@@ -78,39 +78,14 @@ export const loadOrganizationManagementOverview = createServerFn({ method: "POST
   .validator((input: unknown) => organizationOverviewInputSchema.parse(input))
   .handler(async ({ data }) => {
     const caller = await createRequestApiCaller();
-    const capabilities = await caller.organizations.managementCapabilities(data);
-
-    if (capabilities.status === "forbidden") return { status: "forbidden" as const };
-
-    const canReadAdministrativeRoster = capabilities.operations.some(
-      (decision) =>
-        decision.operation === "read_administrative_roster" && decision.outcome === "eligible",
-    );
-
-    if (!canReadAdministrativeRoster) {
-      return {
-        status: "granted" as const,
-        canReadAdministrativeRoster,
-        staff: null,
-        athletes: null,
-      };
-    }
-
     try {
-      const [staff, athletes] = await Promise.all([
-        caller.organizations.lifecycle.staff.list({ ...data, limit: 20, cursor: null }),
-        caller.organizations.lifecycle.adminRoster.list({ ...data, limit: 20, cursor: null }),
-      ]);
-
       return {
         status: "granted" as const,
-        canReadAdministrativeRoster,
-        staff,
-        athletes,
+        overview: await caller.organizations.lifecycle.operationalOverview(data),
       };
     } catch (error) {
-      // Membership can change between the capability decision and either roster read.
-      // Preserve the fail-closed organization boundary instead of rendering a generic error.
+      // The aggregate's statement includes active-admin authorization; a revocation never
+      // leaves a previously authorized roster-derived count visible.
       if (isForbiddenError(error)) return { status: "forbidden" as const };
       throw error;
     }
