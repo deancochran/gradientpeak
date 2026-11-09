@@ -1,4 +1,4 @@
-import type { DurationV2, IntensityTargetV2, PlanStepV2 } from "@repo/core";
+import type { ActivityPlanDuration, ActivityPlanStep, ActivityTarget } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import {
   Form,
@@ -19,10 +19,10 @@ import { AppConfirmModal, AppFormModal } from "@/components/shared/AppFormModal"
 
 interface StepEditSheetProps {
   isVisible: boolean;
-  step: PlanStepV2 | null;
+  step: ActivityPlanStep | null;
   stepIndex: number | null;
   onClose: () => void;
-  onSave: (updatedStep: PlanStepV2) => void;
+  onSave: (updatedStep: ActivityPlanStep) => void;
   onDelete: () => void;
   onDuplicate: () => void;
 }
@@ -40,8 +40,7 @@ export function StepEditSheet({
   const stepEditSchema = z
     .object({
       name: z.string().trim().min(1, "Please enter a step name"),
-      description: z.string(),
-      notes: z.string(),
+      instructions: z.string().max(1000),
       durationType: z.enum(["time", "distance", "repetitions", "untilFinished"]),
       durationValue: z.string(),
       durationUnit: z.enum(["seconds", "minutes", "hours", "meters", "km", "reps"]),
@@ -87,8 +86,7 @@ export function StepEditSheet({
     schema: stepEditSchema,
     defaultValues: {
       name: "",
-      description: "",
-      notes: "",
+      instructions: "",
       durationType: "time",
       durationValue: "",
       durationUnit: "minutes",
@@ -103,9 +101,8 @@ export function StepEditSheet({
   useEffect(() => {
     if (step) {
       const nextValues: StepEditFormValues = {
-        name: step.name || "",
-        description: step.description || "",
-        notes: step.notes || "",
+        name: step.name ?? "",
+        instructions: step.instructions ?? "",
         durationType: step.duration.type,
         durationValue: "",
         durationUnit: "minutes",
@@ -143,16 +140,17 @@ export function StepEditSheet({
 
       if (step.targets && step.targets.length > 0) {
         const target = step.targets[0];
-        nextValues.targetType = target.type as StepEditFormValues["targetType"];
-        nextValues.targetIntensity = String(target.intensity);
+        if (target !== undefined) {
+          nextValues.targetType = target.type as StepEditFormValues["targetType"];
+          nextValues.targetIntensity = target.type === "rest" ? "" : String(target.intensity);
+        }
       }
 
       form.reset(nextValues);
     } else {
       form.reset({
         name: "",
-        description: "",
-        notes: "",
+        instructions: "",
         durationType: "time",
         durationValue: "",
         durationUnit: "minutes",
@@ -173,7 +171,7 @@ export function StepEditSheet({
   }, [durationType, form]);
 
   const handleSave = (values: StepEditFormValues) => {
-    let duration: DurationV2;
+    let duration: ActivityPlanDuration;
 
     if (values.durationType === "untilFinished") {
       duration = { type: "untilFinished" };
@@ -197,25 +195,23 @@ export function StepEditSheet({
       duration = { type: "repetitions", count: Math.round(Number(values.durationValue)) };
     }
 
-    let targets: IntensityTargetV2[] | undefined;
+    let targets: ActivityTarget[] = [];
 
     if (values.targetIntensity.trim()) {
-      const target: IntensityTargetV2 = {
-        type: values.targetType as any,
+      const target: ActivityTarget = {
+        type: values.targetType,
         intensity: Number(values.targetIntensity),
       };
       targets = [target];
     }
 
-    const updatedStep: PlanStepV2 = {
-      name: values.name.trim(),
-      description: values.description.trim() || undefined,
-      notes: values.notes.trim() || undefined,
+    const updatedStep: ActivityPlanStep = {
+      type: "step",
+      id: step?.id ?? crypto.randomUUID(),
+      ...(values.name.trim() ? { name: values.name.trim() } : {}),
+      ...(values.instructions.trim() ? { instructions: values.instructions.trim() } : {}),
       duration,
       targets,
-      segmentName: step?.segmentName,
-      segmentIndex: step?.segmentIndex,
-      originalRepetitionCount: step?.originalRepetitionCount,
     };
 
     onSave(updatedStep);
@@ -225,14 +221,14 @@ export function StepEditSheet({
     setShowDeleteConfirm(true);
   };
 
-  if (!isVisible) {
-    return null;
-  }
-
   const submitForm = useZodFormSubmit<StepEditFormValues>({
     form,
     onSubmit: handleSave,
   });
+
+  if (!isVisible) {
+    return null;
+  }
 
   return (
     <>
@@ -278,10 +274,11 @@ export function StepEditSheet({
 
               <FormTextareaField
                 control={form.control}
-                label="Description"
-                name="description"
-                placeholder="Brief description of this step"
-                numberOfLines={2}
+                label="Instructions"
+                maxLength={1000}
+                name="instructions"
+                numberOfLines={3}
+                placeholder="Add step instructions"
               />
 
               <View className="gap-3">
@@ -367,14 +364,6 @@ export function StepEditSheet({
                   placeholder="e.g., 85"
                 />
               </View>
-
-              <FormTextareaField
-                control={form.control}
-                label="Notes"
-                name="notes"
-                placeholder="Additional notes or instructions"
-                numberOfLines={3}
-              />
             </View>
           </Form>
         </ScrollView>

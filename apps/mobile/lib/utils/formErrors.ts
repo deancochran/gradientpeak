@@ -64,7 +64,8 @@ export function getErrorMessage(error: unknown): string {
 
   // Handle Zod validation errors
   if (error instanceof ZodError) {
-    if (error.issues) return error.issues[0].message;
+    const firstIssue = error.issues.at(0);
+    if (firstIssue !== undefined) return firstIssue.message;
     else if (error.message) return error.message;
     else if (error.name) return error.name;
     else return "An unexpected error occurred";
@@ -72,20 +73,23 @@ export function getErrorMessage(error: unknown): string {
 
   // Handle API/API errors with shape
   if (typeof error === "object" && error !== null) {
-    const err = error as any;
+    const err = error as Record<string, unknown>;
+    const data =
+      err.data && typeof err.data === "object" ? (err.data as Record<string, unknown>) : null;
 
     // API error format
-    if (err.data?.code && ERROR_MESSAGE_MAP[err.data.code]) {
-      return ERROR_MESSAGE_MAP[err.data.code];
+    const mappedMessage = typeof data?.code === "string" ? ERROR_MESSAGE_MAP[data.code] : undefined;
+    if (mappedMessage !== undefined) {
+      return mappedMessage;
     }
 
     // Check for message property
-    if (err.message && typeof err.message === "string") {
+    if (typeof err.message === "string") {
       return getErrorMessage(new Error(err.message));
     }
 
     // Check for error property
-    if (err.error && typeof err.error === "string") {
+    if (typeof err.error === "string") {
       return err.error;
     }
   }

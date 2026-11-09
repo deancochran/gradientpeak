@@ -1,5 +1,8 @@
-export function calculateRampRate(currentCTL: number, previousCTL: number): number {
-  return currentCTL - previousCTL;
+export function calculateRampRate(
+  currentLongTermLoad: number,
+  previousLongTermLoad: number,
+): number {
+  return currentLongTermLoad - previousLongTermLoad;
 }
 
 export function isRampRateSafe(rampRate: number, threshold = 5): boolean {
