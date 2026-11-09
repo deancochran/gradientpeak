@@ -10,6 +10,24 @@ export async function invalidateGroupListQueries(utils: GroupApiUtils) {
   ]);
 }
 
+export async function invalidateOnboardingSocialQueries(utils: GroupApiUtils) {
+  await Promise.allSettled([
+    utils.groups.listDiscoverable.invalidate(),
+    utils.groups.myGroups.invalidate(),
+    utils.groups.myInvitations.invalidate(),
+    utils.groups.forProfile.invalidate(),
+    utils.groups.detail.invalidate(),
+    utils.groups.members.invalidate(),
+    utils.groups.pendingInvitations.invalidate(),
+    utils.groups.pendingJoinRequests.invalidate(),
+    utils.social.searchUsers.invalidate(),
+    utils.social.getFollowers.invalidate(),
+    utils.social.getFollowing.invalidate(),
+    utils.profiles.invalidate(),
+    utils.feed.getFeed.invalidate(),
+  ]);
+}
+
 export async function invalidateGroupDetailQueries(
   utils: GroupApiUtils,
   input?: { groupId?: string | null; slug?: string | null },
@@ -53,11 +71,10 @@ export async function invalidateGroupEventQueries(
       ? utils.groups.events.detail.invalidate({ groupEventId: input.groupEventId })
       : utils.groups.events.detail.invalidate(),
     utils.groups.events.seriesOccurrences.invalidate(),
-    utils.groups.events.myCalendarGroupEvents.invalidate(),
     utils.groups.events.myUpcomingGroupEvents.invalidate(),
-    input?.groupId
-      ? utils.groups.events.currentEventPlanOptions.invalidate({ groupId: input.groupId })
-      : utils.groups.events.currentEventPlanOptions.invalidate(),
+    utils.calendar.invalidate(),
+    utils.trainingPlans.getPlanTabProjection.invalidate(),
+    utils.trainingPlans.getPlanningLedger.invalidate(),
   ]);
 }
 

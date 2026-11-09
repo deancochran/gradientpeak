@@ -1,8 +1,43 @@
 import React, { act } from "react";
-import { createButtonComponent, createHost } from "../../../../test/mock-components";
+import {
+  createButtonComponent,
+  createHost,
+  type HostProps,
+  type PressableHostProps,
+} from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 
 const pushMock = jest.fn();
+const setParamsMock = jest.fn();
+let localSearchParams: { q?: string; scope?: string } = {};
+type ResourceCardProps = {
+  onPress?: () => void;
+  variant?: string;
+};
+const activityPlanCardMock = jest.fn(
+  ({ plan, onPress, variant }: ResourceCardProps & { plan: { id: string; name: string } }) =>
+    React.createElement(
+      "Pressable",
+      { onPress, testID: `activity-plan-${plan.id}`, variant },
+      React.createElement("Text", null, plan.name),
+    ),
+);
+const trainingPlanCardMock = jest.fn(
+  ({ plan, onPress, variant }: ResourceCardProps & { plan: { id: string; name: string } }) =>
+    React.createElement(
+      "Pressable",
+      { onPress, testID: `training-plan-${plan.id}`, variant },
+      React.createElement("Text", null, plan.name),
+    ),
+);
+const routeCardMock = jest.fn(
+  ({ route, onPress, variant }: ResourceCardProps & { route: { id: string; name: string } }) =>
+    React.createElement(
+      "Pressable",
+      { onPress, testID: `route-${route.id}`, variant },
+      React.createElement("Text", null, route.name),
+    ),
+);
 const activityPlansUseInfiniteQueryMock = jest.fn((_input?: unknown, _options?: unknown) => ({
   data: { pages: [{ items: activityPlans, nextCursor: undefined }] },
   isLoading: false,
@@ -57,6 +92,7 @@ const activityPlans = [
   {
     id: "ap-1",
     name: "Threshold Run",
+    activity_category: "run",
     created_at: "2026-04-01T10:00:00.000Z",
   },
 ];
@@ -67,7 +103,7 @@ const trainingPlans = [
     name: "10K Builder",
     description: "Build toward a faster 10K.",
     durationWeeks: { recommended: 8 },
-    sport: ["run"],
+    activity_category: ["run"],
     experienceLevel: ["beginner"],
     sessions_per_week_target: 4,
     created_at: "2026-04-03T10:00:00.000Z",
@@ -115,56 +151,89 @@ jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
   ScrollView: createHost("ScrollView"),
-  TouchableOpacity: ({ children, onPress, ...props }: any) =>
+  TouchableOpacity: ({ children, onPress, ...props }: PressableHostProps) =>
     React.createElement("Pressable", { onPress, ...props }, children),
   View: createHost("View"),
 }));
 
 jest.mock("@gorhom/bottom-sheet", () => ({
   __esModule: true,
-  default: ({ children, ...props }: any) => React.createElement("BottomSheet", props, children),
-  BottomSheetBackdrop: (props: any) => React.createElement("BottomSheetBackdrop", props),
-  BottomSheetScrollView: ({ children, ...props }: any) =>
+  default: ({
+    children,
+    footerComponent,
+    ...props
+  }: HostProps & {
+    footerComponent?: (props: { animatedFooterPosition: { value: number } }) => React.ReactNode;
+  }) =>
+    React.createElement(
+      "BottomSheet",
+      props,
+      children,
+      footerComponent?.({ animatedFooterPosition: { value: 0 } }),
+    ),
+  BottomSheetBackdrop: (props: HostProps) => React.createElement("BottomSheetBackdrop", props),
+  BottomSheetModal: React.forwardRef(
+    (
+      {
+        children,
+        footerComponent,
+        ...props
+      }: HostProps & {
+        footerComponent?: (props: { animatedFooterPosition: { value: number } }) => React.ReactNode;
+      },
+      ref,
+    ) => {
+      React.useImperativeHandle(ref, () => ({ dismiss: jest.fn(), present: jest.fn() }));
+      return React.createElement(
+        "BottomSheetModal",
+        props,
+        children,
+        footerComponent?.({ animatedFooterPosition: { value: 0 } }),
+      );
+    },
+  ),
+  BottomSheetFooter: createHost("BottomSheetFooter"),
+  BottomSheetScrollView: ({ children, ...props }: HostProps) =>
     React.createElement("BottomSheetScrollView", props, children),
-  BottomSheetView: ({ children, ...props }: any) =>
+  BottomSheetView: ({ children, ...props }: HostProps) =>
     React.createElement("BottomSheetView", props, children),
+}));
+
+jest.mock("react-native-safe-area-context", () => ({
+  __esModule: true,
+  useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
 }));
 
 jest.mock("expo-router", () => ({
   __esModule: true,
-  useLocalSearchParams: () => ({}),
-  useRouter: () => ({ push: pushMock }),
+  useLocalSearchParams: () => localSearchParams,
+  useRouter: () => ({ push: pushMock, setParams: setParamsMock }),
 }));
 
-jest.mock("@react-navigation/native", () => ({
+jest.mock("expo-router/react-navigation", () => ({
   __esModule: true,
-  ...jest.requireActual("@react-navigation/native"),
+  ...jest.requireActual("expo-router/react-navigation"),
   useFocusEffect: (callback: () => void) => callback(),
 }));
 
 jest.mock("@/components/shared", () => ({
   __esModule: true,
-  AppHeader: ({ title }: any) => React.createElement("Text", null, `Header:${title}`),
+  AppHeader: ({ title }: { title: string }) => React.createElement("Text", null, `Header:${title}`),
 }));
 
 jest.mock("@/components/shared/ActivityPlanCard", () => ({
   __esModule: true,
-  ActivityPlanCard: ({ activityPlan, onPress }: any) =>
-    React.createElement(
-      "Pressable",
-      { onPress, testID: `activity-plan-${activityPlan.id}` },
-      React.createElement("Text", null, activityPlan.name),
-    ),
+  ActivityPlanCard: activityPlanCardMock,
 }));
 
 jest.mock("@/components/shared/RouteCard", () => ({
   __esModule: true,
-  RouteCard: ({ route, onPress }: any) =>
-    React.createElement(
-      "Pressable",
-      { onPress, testID: `route-${route.id}` },
-      React.createElement("Text", null, route.name),
-    ),
+  RouteCard: routeCardMock,
+}));
+
+jest.mock("@/components/shared/TrainingPlanCard", () => ({
+  __esModule: true,
+  TrainingPlanCard: trainingPlanCardMock,
 }));
 
 jest.mock("@repo/ui/components/avatar", () => ({
@@ -181,7 +250,17 @@ jest.mock("@repo/ui/components/button", () => ({
 
 jest.mock("@repo/ui/components/empty-state-card", () => ({
   __esModule: true,
-  EmptyStateCard: ({ title, description, actionLabel, onAction }: any) =>
+  EmptyStateCard: ({
+    title,
+    description,
+    actionLabel,
+    onAction,
+  }: {
+    title: string;
+    description?: string;
+    actionLabel?: string;
+    onAction?: () => void;
+  }) =>
     React.createElement(
       "View",
       null,
@@ -204,8 +283,25 @@ jest.mock("@repo/ui/components/icon", () => ({
 
 jest.mock("@repo/ui/components/input", () => ({
   __esModule: true,
-  Input: ({ value, onChangeText, placeholder, ...props }: any) =>
-    React.createElement("TextInput", { value, onChangeText, placeholder, ...props }),
+  Input: ({
+    value,
+    onChangeText,
+    placeholder,
+    testId,
+    ...props
+  }: Record<string, unknown> & {
+    value?: string;
+    onChangeText?: (value: string) => void;
+    placeholder?: string;
+    testId?: string;
+  }) =>
+    React.createElement("TextInput", {
+      value,
+      onChangeText,
+      placeholder,
+      testID: testId,
+      ...props,
+    }),
 }));
 
 jest.mock("@repo/ui/components/slider", () => ({
@@ -290,22 +386,25 @@ jest.mock("@/lib/api", () => ({
 }));
 
 const DiscoverScreen = require("../discover").default;
+const CommunityScreen = require("../groups").default;
 
 describe("discover screen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    localSearchParams = {};
   });
 
-  afterEach(() => {
-    act(() => {
+  afterEach(async () => {
+    await act(() => {
       jest.runOnlyPendingTimers();
     });
   });
 
-  it("defaults to activity plans with one selected record type", () => {
-    renderNative(<DiscoverScreen />);
+  it("defaults to activity plans with one selected record type", async () => {
+    await renderNative(<DiscoverScreen />);
 
-    expect(screen.queryByText(/^Header:/)).toBeNull();
+    expect(screen.getByText("Header:Discover")).toBeTruthy();
+    expect(screen.getByText("Find your next adventure")).toBeTruthy();
     expect(screen.getByPlaceholderText("Search activity plans")).toBeTruthy();
     expect(screen.getByTestId("discover-scope-row")).toBeTruthy();
     expect(screen.getByTestId("discover-scope-activityPlans")).toBeTruthy();
@@ -315,10 +414,37 @@ describe("discover screen", () => {
     expect(screen.queryByTestId("discover-feed-item-routes-route-1")).toBeNull();
   });
 
-  it("fetches all scopes in parallel while rendering the selected scope", async () => {
-    renderNative(<DiscoverScreen />);
+  it("keeps Community on its own groups-and-athletes search surface", async () => {
+    await renderNative(<CommunityScreen />);
 
-    fireEvent.press(screen.getByTestId("discover-scope-routes"));
+    expect(screen.getByText("Header:Community")).toBeTruthy();
+    expect(screen.getByText("Find your training circle")).toBeTruthy();
+    expect(screen.getByPlaceholderText("Search groups")).toBeTruthy();
+    expect(screen.getByTestId("discover-scope-groups")).toBeTruthy();
+    expect(screen.getByTestId("discover-scope-users")).toBeTruthy();
+    expect(screen.queryByTestId("discover-scope-activityPlans")).toBeNull();
+  });
+
+  it("uses visually rich cards for activity plans, training plans, and routes", async () => {
+    await renderNative(<DiscoverScreen />);
+
+    expect(screen.getByTestId("activity-plan-ap-1").props.variant).toBeUndefined();
+
+    await fireEvent.press(screen.getByTestId("discover-scope-trainingPlans"));
+    await waitFor(() => {
+      expect(screen.getByTestId("training-plan-tp-1").props.variant).toBeUndefined();
+    });
+
+    await fireEvent.press(screen.getByTestId("discover-scope-routes"));
+    await waitFor(() => {
+      expect(screen.getByTestId("route-route-1").props.variant).toBeUndefined();
+    });
+  });
+
+  it("fetches all scopes in parallel while rendering the selected scope", async () => {
+    await renderNative(<DiscoverScreen />);
+
+    await fireEvent.press(screen.getByTestId("discover-scope-routes"));
 
     await waitFor(() => {
       expect(routesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
@@ -355,20 +481,17 @@ describe("discover screen", () => {
     });
   });
 
-  it("searches across the mixed list with the same debounced query", async () => {
-    renderNative(<DiscoverScreen />);
+  it("searches canonical plans with the same debounced query", async () => {
+    await renderNative(<DiscoverScreen />);
 
-    act(() => {
-      fireEvent.changeText(screen.getByPlaceholderText("Search activity plans"), "river");
+    await act(async () => {
+      await fireEvent.changeText(screen.getByPlaceholderText("Search activity plans"), "river");
       jest.advanceTimersByTime(350);
     });
 
     await waitFor(() => {
       expect(activityPlansUseInfiniteQueryMock).toHaveBeenLastCalledWith(
         {
-          includeSystemTemplates: true,
-          includeOwnOnly: false,
-          includeEstimation: true,
           ownerScope: "all",
           search: "river",
           activityCategories: undefined,
@@ -395,26 +518,51 @@ describe("discover screen", () => {
     });
   });
 
-  it("keeps only activity-plan sort and filters inside the bottom sheet by default", async () => {
-    renderNative(<DiscoverScreen />);
+  it("keeps the shared search selectors, accessibility, sanitization, and clear debounce", async () => {
+    await renderNative(<DiscoverScreen />);
 
-    fireEvent.press(screen.getByTestId("discover-filter-button"));
-    fireEvent.changeText(screen.getByTestId("discover-filter-activityPlans-tss-min"), "50");
-    expect(screen.queryByTestId("discover-filter-routes-category-run")).toBeNull();
-    expect(screen.queryByTestId("discover-filter-trainingPlans-sport-run")).toBeNull();
-    fireEvent.press(screen.getByTestId("discover-filter-sort-field-created-at"));
-    fireEvent.press(screen.getByTestId("discover-filter-sort-direction-asc"));
-    fireEvent.press(screen.getByTestId("discover-filter-activityPlans-category-run"));
-    fireEvent.press(screen.getByTestId("discover-filter-activityPlans-category-bike"));
-    fireEvent.press(screen.getByTestId("discover-filter-apply"));
+    const searchInput = screen.getByTestId("discover-search-input");
+    expect(screen.getByLabelText("Search activity plans")).toBe(searchInput);
+    expect(screen.getByTestId("discover-filter-button")).toBeTruthy();
+
+    await act(async () => {
+      await fireEvent.changeText(searchInput, `  ${"r".repeat(100)}`);
+    });
+    expect(searchInput.props.value).toHaveLength(80);
+    expect(screen.getByTestId("discover-search-clear")).toBeTruthy();
+
+    await fireEvent.press(screen.getByTestId("discover-search-clear"));
+    expect(screen.getByTestId("discover-search-input").props.value).toBe("");
+    expect(activityPlansUseInfiniteQueryMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ search: undefined }),
+      expect.anything(),
+    );
+  });
+
+  it("keeps only activity-plan sort and filters inside the bottom sheet by default", async () => {
+    await renderNative(<DiscoverScreen />);
+
+    await fireEvent.press(screen.getByTestId("discover-filter-button"));
+    await fireEvent.changeText(
+      screen.getByTestId("discover-filter-activityPlans-common-load-min"),
+      "50",
+    );
+    expect(screen.queryByTestId("discover-filter-routes-activity_category-run")).toBeNull();
+    expect(screen.queryByTestId("discover-filter-trainingPlans-activity_category-run")).toBeNull();
+    await fireEvent.press(screen.getByTestId("discover-filter-sort-field-created-at"));
+    await fireEvent.press(screen.getByTestId("discover-filter-sort-direction-asc"));
+    await fireEvent.press(
+      screen.getByTestId("discover-filter-activityPlans-activity_category-run"),
+    );
+    await fireEvent.press(
+      screen.getByTestId("discover-filter-activityPlans-activity_category-bike"),
+    );
+    await fireEvent.press(screen.getByTestId("discover-filter-apply"));
 
     await waitFor(() => {
       expect(screen.getByTestId("discover-filter-button-dot")).toBeTruthy();
       expect(activityPlansUseInfiniteQueryMock).toHaveBeenLastCalledWith(
         {
-          includeSystemTemplates: true,
-          includeOwnOnly: false,
-          includeEstimation: true,
           ownerScope: "all",
           search: undefined,
           activityCategories: ["run", "bike"],
@@ -426,15 +574,15 @@ describe("discover screen", () => {
   });
 
   it("passes route range filters and sort to the routes query", async () => {
-    renderNative(<DiscoverScreen />);
+    await renderNative(<DiscoverScreen />);
 
-    fireEvent.press(screen.getByTestId("discover-scope-routes"));
-    fireEvent.press(screen.getByTestId("discover-filter-button"));
-    fireEvent.press(screen.getByTestId("discover-filter-sort-field-distance"));
-    fireEvent.press(screen.getByTestId("discover-filter-sort-direction-desc"));
-    fireEvent.changeText(screen.getByTestId("discover-filter-routes-distance-min"), "10");
-    fireEvent.changeText(screen.getByTestId("discover-filter-routes-ascent-max"), "500");
-    fireEvent.press(screen.getByTestId("discover-filter-apply"));
+    await fireEvent.press(screen.getByTestId("discover-scope-routes"));
+    await fireEvent.press(screen.getByTestId("discover-filter-button"));
+    await fireEvent.press(screen.getByTestId("discover-filter-sort-field-distance"));
+    await fireEvent.press(screen.getByTestId("discover-filter-sort-direction-desc"));
+    await fireEvent.changeText(screen.getByTestId("discover-filter-routes-distance-min"), "10");
+    await fireEvent.changeText(screen.getByTestId("discover-filter-routes-ascent-max"), "500");
+    await fireEvent.press(screen.getByTestId("discover-filter-apply"));
 
     await waitFor(() => {
       expect(routesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
@@ -453,32 +601,67 @@ describe("discover screen", () => {
     });
   });
 
-  it("blocks invalid filter ranges from being applied", () => {
-    renderNative(<DiscoverScreen />);
+  it("blocks invalid filter ranges from being applied", async () => {
+    await renderNative(<DiscoverScreen />);
 
-    fireEvent.press(screen.getByTestId("discover-filter-button"));
-    fireEvent.changeText(screen.getByTestId("discover-filter-activityPlans-duration-min"), "60");
-    fireEvent.changeText(screen.getByTestId("discover-filter-activityPlans-duration-max"), "30");
+    await fireEvent.press(screen.getByTestId("discover-filter-button"));
+    await fireEvent.changeText(
+      screen.getByTestId("discover-filter-activityPlans-duration-min"),
+      "60",
+    );
+    await fireEvent.changeText(
+      screen.getByTestId("discover-filter-activityPlans-duration-max"),
+      "30",
+    );
 
     expect(screen.getByText("Duration: min cannot be greater than max.")).toBeTruthy();
   });
 
-  it("passes training plan numeric filters and sort to the training plan query", async () => {
-    renderNative(<DiscoverScreen />);
+  it("keeps malformed numeric filter drafts visible and does not change the applied route query", async () => {
+    await renderNative(<DiscoverScreen />);
 
-    fireEvent.press(screen.getByTestId("discover-scope-trainingPlans"));
-    fireEvent.press(screen.getByTestId("discover-filter-button"));
-    fireEvent.press(screen.getByTestId("discover-filter-sort-field-sessions"));
-    fireEvent.press(screen.getByTestId("discover-filter-sort-direction-desc"));
-    fireEvent.changeText(screen.getByTestId("discover-filter-trainingPlans-weeks-min"), "8");
-    fireEvent.changeText(screen.getByTestId("discover-filter-trainingPlans-sessions-max"), "5");
-    fireEvent.press(screen.getByTestId("discover-filter-apply"));
+    await fireEvent.press(screen.getByTestId("discover-scope-routes"));
+    await fireEvent.press(screen.getByTestId("discover-filter-button"));
+    await fireEvent.changeText(screen.getByTestId("discover-filter-routes-distance-min"), "1x");
+
+    expect(screen.getByTestId("discover-filter-routes-distance-min").props.value).toBe("1x");
+    expect(screen.getByText("Enter a valid non-negative number.")).toBeTruthy();
+    expect(screen.getByTestId("discover-filter-apply").props.disabled).toBe(true);
+    await fireEvent.press(screen.getByTestId("discover-filter-apply"));
+    expect(routesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ min_distance_m: undefined }),
+      expect.anything(),
+    );
+
+    await fireEvent.changeText(screen.getByTestId("discover-filter-routes-distance-min"), "10");
+    await fireEvent.press(screen.getByTestId("discover-filter-apply"));
+    await waitFor(() =>
+      expect(routesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ min_distance_m: 10000 }),
+        expect.anything(),
+      ),
+    );
+  });
+
+  it("passes training plan numeric filters and sort to the training plan query", async () => {
+    await renderNative(<DiscoverScreen />);
+
+    await fireEvent.press(screen.getByTestId("discover-scope-trainingPlans"));
+    await fireEvent.press(screen.getByTestId("discover-filter-button"));
+    await fireEvent.press(screen.getByTestId("discover-filter-sort-field-sessions"));
+    await fireEvent.press(screen.getByTestId("discover-filter-sort-direction-desc"));
+    await fireEvent.changeText(screen.getByTestId("discover-filter-trainingPlans-weeks-min"), "8");
+    await fireEvent.changeText(
+      screen.getByTestId("discover-filter-trainingPlans-sessions-max"),
+      "5",
+    );
+    await fireEvent.press(screen.getByTestId("discover-filter-apply"));
 
     await waitFor(() => {
       expect(trainingPlansUseInfiniteQueryMock).toHaveBeenLastCalledWith(
         {
           search: undefined,
-          sport: undefined,
+          activity_category: undefined,
           experience_level: undefined,
           min_weeks: 8,
           max_weeks: undefined,
@@ -492,16 +675,51 @@ describe("discover screen", () => {
     });
   });
 
-  it("shows only profile results when the profiles scope is selected", async () => {
-    renderNative(<DiscoverScreen />);
-
-    fireEvent.press(screen.getByTestId("discover-scope-users"));
+  it("rejects a Community-only scope from the Discover route", async () => {
+    localSearchParams = { scope: "users" };
+    await renderNative(<DiscoverScreen />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("discover-feed-item-users-user-1")).toBeTruthy();
-      expect(screen.queryByTestId("discover-feed-item-routes-route-1")).toBeNull();
-      expect(screen.queryByTestId("discover-feed-item-trainingPlans-tp-1")).toBeNull();
-      expect(screen.queryByTestId("discover-feed-item-activityPlans-ap-1")).toBeNull();
+      expect(screen.getByTestId("discover-feed-item-activityPlans-ap-1")).toBeTruthy();
+      expect(screen.queryByTestId("discover-feed-item-users-user-1")).toBeNull();
+      expect(screen.getByText("Header:Discover")).toBeTruthy();
+      expect(screen.getByText("Find your next adventure")).toBeTruthy();
     });
+  });
+
+  it("rejects a Discover-only scope from the Community route", async () => {
+    localSearchParams = { scope: "routes" };
+    await renderNative(<CommunityScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("discover-feed-item-groups-group-1")).toBeTruthy();
+      expect(screen.queryByTestId("discover-feed-item-routes-route-1")).toBeNull();
+      expect(screen.getByText("Header:Community")).toBeTruthy();
+    });
+  });
+
+  it("commits the debounced public query once and synchronizes scope with that query", async () => {
+    await renderNative(<DiscoverScreen />);
+    const input = screen.getByTestId("discover-search-input");
+
+    await fireEvent.changeText(input, "ridge");
+    expect(setParamsMock).not.toHaveBeenCalled();
+    await act(async () => {
+      jest.advanceTimersByTime(300);
+    });
+    expect(setParamsMock).toHaveBeenCalledWith({ q: "ridge", scope: "activityPlans" });
+
+    await fireEvent.press(screen.getByTestId("discover-scope-routes"));
+    expect(setParamsMock).toHaveBeenLastCalledWith({ q: "ridge", scope: "routes" });
+  });
+
+  it("preserves a typed pending draft when an external route query changes", async () => {
+    const view = await renderNative(<DiscoverScreen />);
+    await fireEvent.changeText(screen.getByTestId("discover-search-input"), "draft");
+
+    localSearchParams = { q: "linked", scope: "routes" };
+    view.rerender(<DiscoverScreen />);
+
+    expect(screen.getByTestId("discover-search-input").props.value).toBe("draft");
   });
 });

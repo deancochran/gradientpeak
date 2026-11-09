@@ -3,9 +3,6 @@ import {
   CONFIGURABLE_GROUP_JOIN_POLICIES,
   GROUP_ACCESS_LEVELS,
   GROUP_DESCRIPTION_MAX_LENGTH,
-  GROUP_EVENT_ACTIVITY_PLAN_LABEL_MAX_LENGTH,
-  GROUP_EVENT_ACTIVITY_PLAN_OPTION_LIMIT_MAX,
-  GROUP_EVENT_DEFAULT_TIMEZONE,
   GROUP_EVENT_DESCRIPTION_MAX_LENGTH,
   GROUP_EVENT_RSVP_STATUSES,
   GROUP_EVENT_SERIES_RSVP_STATUSES,
@@ -32,7 +29,6 @@ const groupIdSchema = z.string().uuid("Invalid group ID");
 const profileIdSchema = z.string().uuid("Invalid profile ID");
 const groupEventIdSchema = z.string().uuid("Invalid group event ID");
 const activityPlanIdSchema = z.string().uuid("Invalid activity plan ID");
-const groupEventActivityPlanIdSchema = z.string().uuid("Invalid group event activity plan ID");
 const routeIdSchema = z.string().uuid("Invalid route ID");
 const dateTimeSchema = z.string().datetime("Invalid datetime");
 const timezoneSchema = z.string().trim().min(1, "Timezone is required");
@@ -60,18 +56,6 @@ const groupEventDescriptionSchema = z
   .max(GROUP_EVENT_DESCRIPTION_MAX_LENGTH, "Group event description is too long")
   .nullable()
   .optional();
-const groupEventActivityPlanOptionSchema = z.object({
-  activityPlanId: activityPlanIdSchema,
-  label: z
-    .string()
-    .trim()
-    .min(1, "Group event activity plan label is required")
-    .max(GROUP_EVENT_ACTIVITY_PLAN_LABEL_MAX_LENGTH, "Group event activity plan label is too long")
-    .nullable()
-    .optional(),
-  sortOrder: z.number().int().min(0).optional(),
-});
-
 const oneOffGroupEventTimeWindowSchema = <Schema extends z.ZodType>(schema: Schema) =>
   schema.refine(
     (value) => {
@@ -156,13 +140,10 @@ export const createOneOffGroupEventInputSchema = oneOffGroupEventTimeWindowSchem
     description: groupEventDescriptionSchema,
     startsAt: dateTimeSchema,
     endsAt: dateTimeSchema.nullable().optional(),
-    timezone: timezoneSchema.nullable().optional(),
+    timezone: timezoneSchema,
     locationName: z.string().trim().min(1).nullable().optional(),
     routeId: routeIdSchema.nullable().optional(),
-    activityPlans: z
-      .array(groupEventActivityPlanOptionSchema)
-      .max(GROUP_EVENT_ACTIVITY_PLAN_OPTION_LIMIT_MAX)
-      .optional(),
+    activityPlanId: activityPlanIdSchema.nullable().optional(),
   }),
 );
 export type CreateOneOffGroupEventInput = z.infer<typeof createOneOffGroupEventInputSchema>;
@@ -175,14 +156,11 @@ export const updateOneOffGroupEventInputSchema = oneOffGroupEventTimeWindowSchem
       description: groupEventDescriptionSchema,
       startsAt: dateTimeSchema.optional(),
       endsAt: dateTimeSchema.nullable().optional(),
-      timezone: timezoneSchema.nullable().optional(),
+      timezone: timezoneSchema,
       locationName: z.string().trim().min(1).nullable().optional(),
       routeId: routeIdSchema.nullable().optional(),
+      activityPlanId: activityPlanIdSchema.nullable().optional(),
       cancelledAt: dateTimeSchema.nullable().optional(),
-      activityPlans: z
-        .array(groupEventActivityPlanOptionSchema)
-        .max(GROUP_EVENT_ACTIVITY_PLAN_OPTION_LIMIT_MAX)
-        .optional(),
     })
     .refine(
       ({ groupEventId: _groupEventId, ...editableFields }) =>
@@ -205,7 +183,6 @@ export type ListOneOffGroupEventsInput = z.infer<typeof listOneOffGroupEventsInp
 export const rsvpOneOffGroupEventInputSchema = z.object({
   groupEventId: groupEventIdSchema,
   status: groupEventRsvpStatusSchema.nullable(),
-  selectedGroupEventActivityPlanId: groupEventActivityPlanIdSchema.nullable().optional(),
 });
 export type RsvpOneOffGroupEventInput = z.infer<typeof rsvpOneOffGroupEventInputSchema>;
 
@@ -221,12 +198,9 @@ export const createRecurringEventSeriesInputSchema = oneOffGroupEventTimeWindowS
     timezone: timezoneSchema,
     locationName: z.string().trim().min(1).nullable().optional(),
     routeId: routeIdSchema.nullable().optional(),
+    activityPlanId: activityPlanIdSchema.nullable().optional(),
     generateOccurrencesStartsAt: dateTimeSchema.optional(),
     generateOccurrencesEndsAt: dateTimeSchema.optional(),
-    activityPlans: z
-      .array(groupEventActivityPlanOptionSchema)
-      .max(GROUP_EVENT_ACTIVITY_PLAN_OPTION_LIMIT_MAX)
-      .optional(),
   }),
 );
 export type CreateRecurringEventSeriesInput = z.infer<typeof createRecurringEventSeriesInputSchema>;
@@ -235,13 +209,14 @@ export const updateEventOccurrenceInputSchema = oneOffGroupEventTimeWindowSchema
   z
     .object({
       groupEventId: groupEventIdSchema,
-      title: groupEventTitleSchema.nullable().optional(),
+      title: groupEventTitleSchema.optional(),
       description: groupEventDescriptionSchema,
       startsAt: dateTimeSchema.optional(),
       endsAt: dateTimeSchema.nullable().optional(),
-      timezone: timezoneSchema.nullable().optional(),
+      timezone: timezoneSchema,
       locationName: z.string().trim().min(1).nullable().optional(),
       routeId: routeIdSchema.nullable().optional(),
+      activityPlanId: activityPlanIdSchema.nullable().optional(),
       cancelledAt: dateTimeSchema.nullable().optional(),
     })
     .refine(
@@ -257,30 +232,3 @@ export const rsvpEventSeriesInputSchema = z.object({
   status: groupEventSeriesRsvpStatusSchema.nullable(),
 });
 export type RsvpEventSeriesInput = z.infer<typeof rsvpEventSeriesInputSchema>;
-
-export const copySeriesActivityPlansToOccurrenceInputSchema = z.object({
-  groupEventSeriesId: groupEventIdSchema,
-  groupEventOccurrenceId: groupEventIdSchema,
-});
-export type CopySeriesActivityPlansToOccurrenceInput = z.infer<
-  typeof copySeriesActivityPlansToOccurrenceInputSchema
->;
-
-export type GroupEventFallbackFields = {
-  title: string | null;
-  description?: string | null;
-  timezone?: string | null;
-  locationName?: string | null;
-  routeId?: string | null;
-};
-
-export const resolveGroupEventFallbackFields = <Occurrence extends GroupEventFallbackFields>(
-  occurrence: Occurrence,
-  series?: GroupEventFallbackFields | null,
-) => ({
-  title: occurrence.title ?? series?.title ?? null,
-  description: occurrence.description ?? series?.description ?? null,
-  timezone: occurrence.timezone ?? series?.timezone ?? GROUP_EVENT_DEFAULT_TIMEZONE,
-  locationName: occurrence.locationName ?? series?.locationName ?? null,
-  routeId: occurrence.routeId ?? series?.routeId ?? null,
-});

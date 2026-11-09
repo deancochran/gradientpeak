@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "id": "numerical-trust",
+  "capsules": [
+    {
+      "id": "api-import-live",
+      "owner": "@repo/api",
+      "tests": [
+        "packages/api/src/application/activity-file-ingestion/aerobic-numerical-trust-parity.test.ts",
+        "packages/api/src/application/activity-file-ingestion/cycling-numerical-trust-parity.test.ts",
+        "packages/api/src/application/activity-file-ingestion/running-numerical-trust-parity.test.ts",
+        "packages/api/src/application/activity-file-ingestion/swimming-heart-rate-numerical-trust-parity.test.ts"
+      ]
+    },
+    {
+      "id": "api-propagation",
+      "owner": "@repo/api",
+      "tests": [
+        "packages/api/src/application/activities/submit-activity.test.ts",
+        "packages/api/src/application/activity-file-ingestion/analyze-parsed-activity-file.test.ts",
+        "packages/api/src/application/activity-file-ingestion/stream-derived-calculations.test.ts",
+        "packages/api/src/routers/__tests__/activities.test.ts"
+      ]
+    },
+    {
+      "id": "core-calculation-oracles",
+      "owner": "@repo/core",
+      "tests": [
+        "packages/core/calculations/__tests__/efficiency.property.test.ts",
+        "packages/core/calculations/__tests__/efficiency.test.ts",
+        "packages/core/calculations/__tests__/normalized-graded-pace.property.test.ts",
+        "packages/core/calculations/__tests__/normalized-graded-pace.test.ts",
+        "packages/core/calculations/__tests__/normalized-power.property.test.ts",
+        "packages/core/calculations/__tests__/normalized-power.test.ts"
+      ]
+    },
+    {
+      "id": "core-heart-rate-swim",
+      "owner": "@repo/core",
+      "tests": [
+        "packages/core/calculations/__tests__/swimming-heart-rate-numerical-trust.property.test.ts",
+        "packages/core/calculations/__tests__/swimming-heart-rate-numerical-trust.test.ts",
+        "packages/core/load/__tests__/heart-rate-common-load.test.ts",
+        "packages/core/zones/__tests__/heart-rate-zone-duration.property.test.ts",
+        "packages/core/zones/__tests__/heart-rate-zone-duration.test.ts"
+      ]
+    },
+    {
+      "id": "core-observation-load",
+      "owner": "@repo/core",
+      "tests": [
+        "packages/core/activity-analysis/__tests__/observation-quantification.test.ts",
+        "packages/core/activity-analysis/__tests__/running-common-load.test.ts"
+      ]
+    },
+    {
+      "id": "core-recording",
+      "owner": "@repo/core",
+      "tests": ["packages/core/recording-metrics/__tests__/accumulator.test.ts"]
+    },
+    {
+      "id": "core-segment-lifecycle",
+      "owner": "@repo/core",
+      "tests": ["packages/core/activity-segments/__tests__/completed-segment-schema.test.ts"]
+    },
+    {
+      "id": "mobile-live",
+      "owner": "mobile",
+      "tests": ["apps/mobile/lib/services/ActivityRecorder/LiveMetricsManager.test.ts"]
+    },
+    {
+      "id": "ui-presentation",
+      "owner": "@repo/ui",
+      "tests": ["packages/ui/src/lib/normalized-power-presentation.web.test.ts"]
+    }
+  ]
+}

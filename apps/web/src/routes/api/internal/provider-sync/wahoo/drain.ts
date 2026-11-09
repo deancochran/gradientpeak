@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { isInternalProviderSyncAuthorized } from "../../../../../lib/internal-provider-sync-auth";
-import { createWahooSyncRuntime } from "../../../../../lib/wahoo-sync-runtime";
+import { providerWorkerRegistry } from "../../../../../lib/provider-worker-registry";
 
-export const Route = createFileRoute("/api/internal/provider-sync/wahoo/drain" as never)({
+export const Route = createFileRoute("/api/internal/provider-sync/wahoo/drain")({
   server: {
     handlers: {
       POST: async ({ request }) => {
@@ -10,21 +10,15 @@ export const Route = createFileRoute("/api/internal/provider-sync/wahoo/drain" a
           return Response.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const runtime = createWahooSyncRuntime();
-        const [syncJobs, webhookJobs, activityHistoryJobs] = await Promise.all([
-          runtime.syncJobs.processDueJobs({ workerId: "api-internal-wahoo-drain" }),
-          runtime.webhookJobs.processDueJobs({ workerId: "api-internal-wahoo-webhook-drain" }),
-          runtime.activityHistoryJobs.processDueJobs({
-            workerId: "api-internal-wahoo-activity-history-drain",
-          }),
-        ]);
-
-        return Response.json({
-          activityHistoryJobs,
-          provider: "wahoo",
-          syncJobs,
-          webhookJobs,
-        });
+        const worker = providerWorkerRegistry.get("wahoo", "wahoo-provider-sync");
+        if (!worker) return Response.json({ error: "Unavailable" }, { status: 503 });
+        const drain = (await worker()) as
+          | { alreadyRunning: true }
+          | { alreadyRunning: false; result: unknown };
+        if (drain.alreadyRunning) {
+          return Response.json({ provider: "wahoo", status: "already_running" }, { status: 202 });
+        }
+        return Response.json(drain.result);
       },
     },
   },

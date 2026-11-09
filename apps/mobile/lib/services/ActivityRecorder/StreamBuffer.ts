@@ -2,7 +2,7 @@
  * StreamBuffer - File-based Stream Storage for Activity Recording
  *
  * Replaces SQLite/DataAccumulator with FileSystem-based storage:
- * - Accumulates sensor readings and location data in memory
+ * - Accumulates numeric sensor readings in memory
  * - Writes chunks to FileSystem every 60 seconds
  * - Reads and aggregates all chunks on recording finish
  * - Cleans up temp files after successful upload
@@ -19,8 +19,10 @@ import type {
   PublicActivityMetric,
   PublicActivityMetricDataType,
 } from "@repo/core";
-import { Directory, File, Paths } from "expo-file-system";
-import type { LocationReading, SensorReading } from "./types";
+import { Directory, Paths } from "expo-file-system";
+import type { RecordingStreamJournalAdapter } from "./recordingEvidenceJournal";
+import { canonicalRecordingEvidenceUris } from "./recordingEvidencePaths";
+import type { SensorReading } from "./types";
 
 // ================================
 // Types
@@ -36,6 +38,20 @@ interface StreamChunk {
   endTime: Date;
 }
 
+export interface DurableStreamReplay {
+  sensorReadings: SensorReading[];
+  fitRecords: Array<{
+    timestamp: number;
+    heartRate?: number;
+    power?: number;
+    cadence?: number;
+    speed?: number;
+    distance?: number;
+    altitude?: number;
+    temperature?: number;
+  }>;
+}
+
 // ================================
 // StreamBuffer Class
 // ================================
@@ -43,39 +59,151 @@ interface StreamChunk {
 export class StreamBuffer {
   private readings: Map<PublicActivityMetric, Array<{ value: number; timestamp: number }>> =
     new Map();
-  private locations: LocationReading[] = [];
-  private allLocations: LocationReading[] = []; // Keep ALL locations for GPS path display
   private chunkIndex = 0;
   private lastFlushTime: Date;
   private sessionId: string;
   private storageDir: Directory;
 
-  constructor() {
+  private journal: RecordingStreamJournalAdapter;
+
+  constructor(
+    storageDirUri?: string,
+    journal: RecordingStreamJournalAdapter = {
+      append: async () => {
+        throw new Error("Recording stream is not bound to an evidence session");
+      },
+      recover: async () => {
+        throw new Error("Recording stream is not bound to an evidence session");
+      },
+    },
+  ) {
     this.lastFlushTime = new Date();
     this.sessionId = `recording_${Date.now()}`;
-    this.storageDir = new Directory(Paths.cache, this.sessionId);
+    this.storageDir = storageDirUri
+      ? new Directory(storageDirUri)
+      : new Directory(Paths.document ?? Paths.cache, this.sessionId);
+    this.journal = journal;
+  }
+
+  /** Opens validated durable chunks and prepares the same directory for append-only continuation. */
+  static async reopenForRecovery(
+    storageDirUris: string | readonly string[],
+    journal: RecordingStreamJournalAdapter,
+  ): Promise<{
+    streamBuffer: StreamBuffer;
+    replay: DurableStreamReplay;
+  }> {
+    const paths = typeof storageDirUris === "string" ? [storageDirUris] : [...storageDirUris];
+    const appendPath = paths.at(-1);
+    if (!appendPath) throw new Error("Recording checkpoint has no stream directory");
+    const streamBuffer = new StreamBuffer(appendPath, journal);
+    const chunks = (await journal.recover()).map((envelope) => {
+      const raw = JSON.parse(envelope.payload) as StreamChunk;
+      if (
+        !raw ||
+        raw.sampleCount !== raw.values?.length ||
+        raw.values.length !== raw.timestamps?.length
+      ) {
+        throw new Error("Corrupt SQLite recording stream chunk");
+      }
+      return {
+        chunkIndex: envelope.order,
+        chunk: { ...raw, startTime: new Date(raw.startTime), endTime: new Date(raw.endTime) },
+      };
+    });
+    const maxChunkIndex = chunks.reduce((max, item) => Math.max(max, item.chunkIndex), -1);
+    streamBuffer.chunkIndex = maxChunkIndex + 1;
+    streamBuffer.lastFlushTime = chunks.reduce(
+      (latest, item) => (item.chunk.endTime > latest ? item.chunk.endTime : latest),
+      new Date(0),
+    );
+    const replay = StreamBuffer.buildReplay(chunks.map((item) => item.chunk));
+    return { streamBuffer, replay };
+  }
+
+  static deleteDurableDirectories(paths: readonly string[], sessionId: string): void {
+    const canonicalPath = canonicalRecordingEvidenceUris(sessionId).streamDirectoryUri;
+    for (const path of new Set(paths)) {
+      if (path !== canonicalPath) {
+        throw new Error("Recording stream cleanup refuses a non-canonical session path");
+      }
+      const directory = new Directory(path);
+      if (directory.exists) directory.delete();
+    }
+  }
+
+  private static buildReplay(chunks: StreamChunk[]): DurableStreamReplay {
+    const sensorReadings: SensorReading[] = [];
+    const fitByTimestamp = new Map<number, DurableStreamReplay["fitRecords"][number]>();
+    for (const chunk of chunks) {
+      if (chunk.metric === "latlng" || chunk.dataType === "latlng") {
+        throw new Error("coordinate-stream-recovery-forbidden");
+      }
+      chunk.timestamps.forEach((timestamp, index) => {
+        const value = chunk.values[index];
+        if (typeof value !== "number" || !Number.isFinite(value)) {
+          throw new Error(`Corrupt numeric stream value for ${chunk.metric}`);
+        }
+        sensorReadings.push({
+          metric: chunk.metric,
+          dataType: chunk.dataType,
+          value,
+          timestamp,
+        } as SensorReading);
+        const fitField = (() => {
+          switch (chunk.metric) {
+            case "heart_rate":
+              return "heartRate";
+            case "power":
+              return "power";
+            case "cadence":
+              return "cadence";
+            case "speed":
+              return "speed";
+            case "distance":
+              return "distance";
+            case "altitude":
+              return "altitude";
+            case "temperature":
+              return "temperature";
+            default:
+              return null;
+          }
+        })();
+        if (fitField) {
+          fitByTimestamp.set(timestamp, {
+            ...(fitByTimestamp.get(timestamp) ?? { timestamp }),
+            [fitField]: value,
+          });
+        }
+      });
+    }
+    return {
+      sensorReadings: sensorReadings.sort((left, right) => left.timestamp - right.timestamp),
+      fitRecords: [...fitByTimestamp.values()].sort(
+        (left, right) => left.timestamp - right.timestamp,
+      ),
+    };
   }
 
   /**
    * Initialize storage directory
    */
   async initialize(): Promise<void> {
-    try {
-      if (!this.storageDir.exists) {
-        this.storageDir.create({ intermediates: true });
-      }
-      console.log("[StreamBuffer] Initialized storage:", this.storageDir.uri);
-    } catch (error) {
-      console.error("[StreamBuffer] Failed to initialize storage:", error);
-      throw error;
-    }
+    // The URI remains a compatibility/checkpoint identifier only. Raw streams are SQLite-only.
   }
 
   /**
    * Add a sensor reading to the buffer
    */
   add(reading: SensorReading): void {
-    if (typeof reading.value !== "number") return; // Only numeric readings
+    if (
+      reading.metric === ("latlng" as SensorReading["metric"]) ||
+      reading.dataType === ("latlng" as SensorReading["dataType"]) ||
+      typeof reading.value !== "number"
+    ) {
+      throw new Error("coordinate-stream-ingestion-forbidden");
+    }
 
     const metric = reading.metric as PublicActivityMetric;
     if (!this.readings.has(metric)) {
@@ -89,34 +217,11 @@ export class StreamBuffer {
   }
 
   /**
-   * Add a location reading to the buffer
-   */
-  addLocation(location: LocationReading): void {
-    const locationData = {
-      latitude: location.latitude,
-      longitude: location.longitude,
-      altitude: location.altitude,
-      accuracy: location.accuracy,
-      timestamp: location.timestamp,
-    };
-    this.locations.push(locationData);
-    this.allLocations.push(locationData); // Also keep in persistent array for GPS path
-
-    // MEMORY LEAK FIX: Cap allLocations at MAX_GPS_PATH_POINTS
-    // This prevents unbounded growth during long recordings
-    const MAX_GPS_PATH_POINTS = 1000;
-    if (this.allLocations.length > MAX_GPS_PATH_POINTS) {
-      // Remove oldest points to maintain rolling window
-      this.allLocations.splice(0, this.allLocations.length - MAX_GPS_PATH_POINTS);
-    }
-  }
-
-  /**
    * Flush accumulated data to FileSystem
    * Called every 60 seconds by LiveMetricsManager
    */
   async flushToFiles(): Promise<void> {
-    if (this.readings.size === 0 && this.locations.length === 0) {
+    if (this.readings.size === 0) {
       return;
     }
 
@@ -124,6 +229,7 @@ export class StreamBuffer {
     const endTime = new Date();
 
     try {
+      const envelopes: Array<{ streamKind: string; timestamp: number; payload: string }> = [];
       // Write sensor readings by metric
       for (const [metric, readings] of this.readings.entries()) {
         if (readings.length === 0) continue;
@@ -138,68 +244,26 @@ export class StreamBuffer {
           endTime,
         };
 
-        await this.writeChunk(metric, chunk);
+        envelopes.push({
+          streamKind: metric,
+          timestamp: endTime.getTime(),
+          payload: JSON.stringify(chunk),
+        });
       }
 
-      // Write location data
-      if (this.locations.length > 0) {
-        const latlngChunk: StreamChunk = {
-          metric: "latlng",
-          dataType: "latlng",
-          values: this.locations.map((loc) => [loc.latitude, loc.longitude]),
-          timestamps: this.locations.map((loc) => loc.timestamp),
-          sampleCount: this.locations.length,
-          startTime: this.lastFlushTime,
-          endTime,
-        };
-
-        await this.writeChunk("latlng", latlngChunk);
-
-        // Write altitude separately if available
-        const altitudes = this.locations.filter((loc) => loc.altitude !== undefined);
-        if (altitudes.length > 0) {
-          const altitudeChunk: StreamChunk = {
-            metric: "altitude",
-            dataType: "float",
-            values: altitudes.map((loc) => loc.altitude!),
-            timestamps: altitudes.map((loc) => loc.timestamp),
-            sampleCount: altitudes.length,
-            startTime: this.lastFlushTime,
-            endTime,
-          };
-
-          await this.writeChunk("altitude", altitudeChunk);
-        }
-      }
+      await this.journal.append(envelopes);
 
       console.log(
-        `[StreamBuffer] Flushed chunk ${this.chunkIndex} (${this.readings.size} metrics, ${this.locations.length} locations) in ${Date.now() - flushStartTime}ms`,
+        `[StreamBuffer] Flushed chunk ${this.chunkIndex} (${this.readings.size} metrics) in ${Date.now() - flushStartTime}ms`,
       );
 
       // Clear memory after successful write
       this.readings.clear();
-      this.locations = [];
       this.lastFlushTime = endTime;
       this.chunkIndex++;
     } catch (error) {
       console.error("[StreamBuffer] Failed to flush data:", error);
       // Don't clear data on error - will retry on next flush
-      throw error;
-    }
-  }
-
-  /**
-   * Write a single chunk to file
-   */
-  private async writeChunk(metric: PublicActivityMetric, chunk: StreamChunk): Promise<void> {
-    const filename = `chunk_${this.chunkIndex}_${metric}.json`;
-    const file = new File(this.storageDir.uri, filename);
-
-    try {
-      file.write(JSON.stringify(chunk));
-      console.log(`[StreamBuffer] Wrote chunk ${filename} (${chunk.sampleCount} samples)`);
-    } catch (error) {
-      console.error(`[StreamBuffer] Failed to write chunk ${filename}:`, error);
       throw error;
     }
   }
@@ -213,37 +277,53 @@ export class StreamBuffer {
     console.log("[StreamBuffer] Starting aggregation...");
 
     try {
-      // List all chunk files
-      const contents = this.storageDir.list();
-      const chunkFiles = contents
-        .filter((item) => item instanceof File && item.uri.includes("chunk_"))
-        .map((file) => (file as File).uri.split("/").pop()!);
-
-      console.log(`[StreamBuffer] Found ${chunkFiles.length} chunk files`);
-
-      // Group files by metric
-      const filesByMetric = new Map<string, string[]>();
-      for (const file of chunkFiles) {
-        const metric = this.extractMetricFromFilename(file);
-        if (!filesByMetric.has(metric)) {
-          filesByMetric.set(metric, []);
+      const chunksByMetric = new Map<string, StreamChunk[]>();
+      for (const envelope of await this.journal.recover()) {
+        const chunk = JSON.parse(envelope.payload) as StreamChunk;
+        if (
+          !chunk ||
+          envelope.streamKind === "latlng" ||
+          chunk.metric === "latlng" ||
+          chunk.dataType === "latlng" ||
+          chunk.metric !== envelope.streamKind ||
+          chunk.values.length !== chunk.timestamps.length
+        ) {
+          throw new Error("Corrupt SQLite recording stream chunk");
         }
-        filesByMetric.get(metric)?.push(file);
+        const metricChunks = chunksByMetric.get(chunk.metric) ?? [];
+        metricChunks.push(chunk);
+        chunksByMetric.set(chunk.metric, metricChunks);
       }
 
       // Aggregate each metric
       const aggregated = new Map<string, AggregatedStream>();
 
-      for (const [metric, files] of filesByMetric.entries()) {
-        // Sort files by chunk index
-        files.sort((a, b) => {
-          const indexA = parseInt(a.split("_")[1], 10);
-          const indexB = parseInt(b.split("_")[1], 10);
-          return indexA - indexB;
+      for (const [metric, chunks] of chunksByMetric.entries()) {
+        const firstChunk = chunks[0];
+        if (!firstChunk) continue;
+        const values: Array<number | number[]> = [];
+        for (const chunk of chunks) values.push(...(chunk.values as Array<number | number[]>));
+        const timestamps = chunks.flatMap((chunk) => chunk.timestamps);
+        const numeric = values as number[];
+        const finite = numeric.filter(
+          (value): value is number => typeof value === "number" && Number.isFinite(value),
+        );
+        if (finite.length !== numeric.length)
+          throw new Error(`Corrupt numeric stream value for ${metric}`);
+        aggregated.set(metric, {
+          metric: metric as PublicActivityMetric,
+          dataType: firstChunk.dataType,
+          values: numeric,
+          timestamps,
+          sampleCount: numeric.length,
+          ...(finite.length === 0
+            ? {}
+            : {
+                minValue: Math.min(...finite),
+                maxValue: Math.max(...finite),
+                avgValue: finite.reduce((sum, value) => sum + value, 0) / finite.length,
+              }),
         });
-
-        const aggregatedStream = await this.aggregateMetricChunks(metric, files);
-        aggregated.set(metric, aggregatedStream);
       }
 
       console.log(
@@ -258,112 +338,10 @@ export class StreamBuffer {
   }
 
   /**
-   * Aggregate all chunks for a single metric
-   */
-  private async aggregateMetricChunks(
-    metric: string,
-    filenames: string[],
-  ): Promise<AggregatedStream> {
-    const chunks: StreamChunk[] = [];
-
-    // Read all chunk files
-    for (const filename of filenames) {
-      try {
-        const file = new File(this.storageDir.uri, filename);
-        const content = file.textSync();
-        const chunk = JSON.parse(content) as StreamChunk;
-        chunks.push(chunk);
-      } catch (error) {
-        console.error(`[StreamBuffer] Failed to read chunk ${filename}:`, error);
-        throw error;
-      }
-    }
-
-    if (chunks.length === 0) {
-      throw new Error(`No chunks found for metric: ${metric}`);
-    }
-
-    const firstChunk = chunks[0];
-
-    // Handle latlng data differently
-    if (firstChunk.dataType === "latlng") {
-      const allLatLngPairs: number[][] = [];
-      const allTimestamps: number[] = [];
-
-      for (const chunk of chunks) {
-        allLatLngPairs.push(...(chunk.values as number[][]));
-        allTimestamps.push(...chunk.timestamps);
-      }
-
-      return {
-        metric: metric as PublicActivityMetric,
-        dataType: firstChunk.dataType,
-        values: allLatLngPairs,
-        timestamps: allTimestamps,
-        sampleCount: allLatLngPairs.length,
-        minValue: undefined,
-        maxValue: undefined,
-        avgValue: undefined,
-      };
-    }
-
-    // Handle regular numeric data
-    const allValues: number[] = [];
-    const allTimestamps: number[] = [];
-
-    for (const chunk of chunks) {
-      allValues.push(...(chunk.values as number[]));
-      allTimestamps.push(...chunk.timestamps);
-    }
-
-    // Calculate statistics
-    let minValue: number | undefined;
-    let maxValue: number | undefined;
-    let avgValue: number | undefined;
-
-    if (allValues.length > 0) {
-      let sum = 0;
-      minValue = allValues[0];
-      maxValue = allValues[0];
-
-      for (const val of allValues) {
-        sum += val;
-        if (val < minValue) minValue = val;
-        if (val > maxValue) maxValue = val;
-      }
-
-      avgValue = sum / allValues.length;
-    }
-
-    return {
-      metric: metric as PublicActivityMetric,
-      dataType: firstChunk.dataType,
-      values: allValues,
-      timestamps: allTimestamps,
-      sampleCount: allValues.length,
-      minValue,
-      maxValue,
-      avgValue,
-    };
-  }
-
-  /**
-   * Extract metric name from chunk filename
-   */
-  private extractMetricFromFilename(filename: string): string {
-    // Format: chunk_{index}_{metric}.json
-    const parts = filename.split("_");
-    const metricWithExt = parts.slice(2).join("_"); // Handle metrics with underscores
-    return metricWithExt.replace(".json", "");
-  }
-
-  /**
    * Determine data type for a metric
    */
   private getDataTypeForMetric(metric: PublicActivityMetric): PublicActivityMetricDataType {
     switch (metric) {
-      case "latlng":
-        return "latlng";
       case "moving":
         return "boolean";
       default:
@@ -378,12 +356,11 @@ export class StreamBuffer {
    * Check if there is any data pending flush
    */
   hasPendingData(): boolean {
-    return this.readings.size > 0 || this.locations.length > 0;
+    return this.readings.size > 0;
   }
 
   getBufferStatus(): {
     readingCount: number;
-    locationCount: number;
     chunkIndex: number;
     lastFlushTime: Date;
     memoryEstimateMB: number;
@@ -395,12 +372,10 @@ export class StreamBuffer {
     }
 
     const readingSize = totalReadings * 16; // Rough estimate: 16 bytes per reading
-    const locationSize = this.locations.length * 40; // Rough estimate: 40 bytes per location
-    const totalBytes = readingSize + locationSize;
+    const totalBytes = readingSize;
 
     return {
       readingCount: totalReadings,
-      locationCount: this.locations.length,
       chunkIndex: this.chunkIndex,
       lastFlushTime: this.lastFlushTime,
       memoryEstimateMB: totalBytes / (1024 * 1024),
@@ -409,20 +384,10 @@ export class StreamBuffer {
   }
 
   /**
-   * Get all recorded locations for GPS path display
-   * This persists throughout the recording session
-   */
-  getAllLocations(): LocationReading[] {
-    return this.allLocations;
-  }
-
-  /**
    * Clear all accumulated data without writing
    */
   clear(): void {
     this.readings.clear();
-    this.locations = [];
-    this.allLocations = [];
   }
 
   /**
