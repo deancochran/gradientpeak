@@ -16071,7 +16071,7 @@
       "name": "provider_sync_jobs_import_run_profile_fkey",
       "table": "provider_sync_jobs",
       "validated": true,
-      "definition": "FOREIGN KEY (import_run_id, profile_id) REFERENCES activity_import_runs(id, profile_id) ON DELETE SET NULL"
+      "definition": "FOREIGN KEY (import_run_id, profile_id) REFERENCES activity_import_runs(id, profile_id) ON DELETE SET NULL (import_run_id)"
     },
     {
       "kind": "f",
