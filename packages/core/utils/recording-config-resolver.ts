@@ -8,12 +8,13 @@
  * 4. Whether the configuration is valid
  */
 
+import type { CompiledActivityStepOccurrence } from "../activity-plan";
+import { compileActivityPlan } from "../activity-plan";
 import {
   isContinuousActivity,
   isStepBasedActivity,
   shouldUseFollowAlong,
 } from "../schemas/activity_payload";
-import type { ActivityPlanStructureV2, IntensityTargetV2 } from "../schemas/activity_plan_v2";
 import type {
   RecordingBackdropMode,
   RecordingCapabilities,
@@ -53,70 +54,88 @@ function hasSourceType(snapshot: RecordingSessionSnapshot, sourceType: MetricSou
   return snapshot.devices.connected.some((device) => device.sourceTypes.includes(sourceType));
 }
 
-export class RecordingConfigResolver {
+export const RecordingConfigResolver = {
   /**
    * Main entry point - converts input to full configuration
    */
-  static resolve(input: RecordingConfigInput): RecordingConfiguration {
-    const capabilities = RecordingConfigResolver.computeCapabilities(input);
-    const validation = RecordingConfigResolver.validate(input, capabilities);
+  resolve(input: RecordingConfigInput): RecordingConfiguration {
+    const gpsFreeInput: RecordingConfigInput = {
+      ...input,
+      gpsRecordingEnabled: false,
+      gpsAvailable: false,
+    };
+    const capabilities = RecordingConfigResolver.computeCapabilities(gpsFreeInput);
+    const validation = RecordingConfigResolver.validate(gpsFreeInput, capabilities);
     const fullCapabilities = {
       ...capabilities,
       ...validation,
     };
 
     return {
-      input,
+      input: gpsFreeInput,
       capabilities: fullCapabilities,
-      session: RecordingConfigResolver.buildSessionContract(input, fullCapabilities),
+      session: RecordingConfigResolver.buildSessionContract(gpsFreeInput, fullCapabilities),
     };
-  }
+  },
+
+  /** Resolves activity-category-specific recording UI and metrics for the active compiled segment. */
+  resolveForOccurrence(
+    input: RecordingConfigInput,
+    occurrence: Pick<CompiledActivityStepOccurrence, "activity_category">,
+  ): RecordingConfiguration {
+    return RecordingConfigResolver.resolve({
+      ...input,
+      activityCategory: occurrence.activity_category,
+    });
+  },
 
   /**
    * Additive entry point for the new start-time session vocabulary.
    */
-  static resolveFromLaunchIntent(
+  resolveFromLaunchIntent(
     intent: RecordingLaunchIntent,
     context: RecordingConfigLaunchContext,
   ): RecordingConfiguration {
     return RecordingConfigResolver.resolve(
       RecordingConfigResolver.buildInputFromLaunchIntent(intent, context),
     );
-  }
+  },
 
   /**
    * Resolves a configuration from an immutable session snapshot.
    */
-  static resolveFromSessionSnapshot(
+  resolveFromSessionSnapshot(
     snapshot: RecordingSessionSnapshot,
     context: RecordingConfigSnapshotContext = {},
   ): RecordingConfiguration {
     return RecordingConfigResolver.resolve(
       RecordingConfigResolver.buildInputFromSessionSnapshot(snapshot, context),
     );
-  }
+  },
 
-  static buildInputFromLaunchIntent(
+  buildInputFromLaunchIntent(
     intent: RecordingLaunchIntent,
     context: RecordingConfigLaunchContext,
   ): RecordingConfigInput {
     return {
       launchSource: context.launchSource ?? "manual",
       activityCategory: intent.activityCategory,
-      gpsRecordingEnabled: intent.gpsMode === "on",
+      gpsRecordingEnabled: false,
       mode: intent.mode === "planned" ? "planned" : "unplanned",
-      eventId: intent.eventId,
-      activityPlanId: intent.activityPlanId,
-      routeId: intent.routeId,
-      routeGeometryAvailable: context.routeGeometryAvailable,
-      plan: context.plan,
+      ...(intent.eventId === undefined ? {} : { eventId: intent.eventId }),
+      ...(intent.activityPlanId === undefined ? {} : { activityPlanId: intent.activityPlanId }),
+      ...(intent.routeId === undefined ? {} : { routeId: intent.routeId }),
+      ...(context.routeGeometryAvailable === undefined
+        ? {}
+        : { routeGeometryAvailable: context.routeGeometryAvailable }),
+      ...(context.plan === undefined ? {} : { plan: context.plan }),
       devices: context.devices,
-      gpsAvailable: context.gpsAvailable,
-      session: context.session,
+      gpsAvailable: false,
+      ...(context.session === undefined ? {} : { session: context.session }),
     };
-  }
+  },
 
-  static buildInputFromSessionSnapshot(
+  buildInputFromSessionSnapshot(
     snapshot: RecordingSessionSnapshot,
     context: RecordingConfigSnapshotContext = {},
   ): RecordingConfigInput {
@@ -129,42 +148,41 @@ export class RecordingConfigResolver {
 
     return {
       launchSource: context.launchSource ?? "manual",
-      activityCategory: snapshot.activity.category,
-      gpsRecordingEnabled: snapshot.activity.gpsMode === "on",
+      activityCategory: snapshot.activity.activity_category,
+      gpsRecordingEnabled: false,
       mode: activityPlanId ? "planned" : "unplanned",
-      eventId: snapshot.activity.eventId,
-      activityPlanId,
-      routeId,
-      routeGeometryAvailable: context.routeGeometryAvailable,
+      ...(snapshot.activity.eventId === undefined ? {} : { eventId: snapshot.activity.eventId }),
+      ...(activityPlanId === undefined ? {} : { activityPlanId }),
+      ...(routeId === undefined ? {} : { routeId }),
+      ...(context.routeGeometryAvailable === undefined
+        ? {}
+        : { routeGeometryAvailable: context.routeGeometryAvailable }),
       plan: context.plan ?? {
         hasStructure: activityPlanId !== null,
-        hasRoute: routeId !== null,
         stepCount: 0,
         requiresManualAdvance: !snapshot.policies.controlPolicy.autoAdvanceSteps,
       },
       devices: {
-        ftmsTrainer: trainer
+        ...(trainer
           ? {
-              deviceId: trainer.deviceId,
-              autoControlEnabled:
-                snapshot.policies.controlPolicy.trainerMode === "auto" &&
-                trainer.supportsAutoControl,
-              controlReady: trainer.supportsManualControl || trainer.supportsAutoControl,
+              ftmsTrainer: {
+                deviceId: trainer.deviceId,
+                autoControlEnabled:
+                  snapshot.policies.controlPolicy.trainerMode === "auto" &&
+                  trainer.supportsAutoControl,
+                controlReady: trainer.supportsManualControl || trainer.supportsAutoControl,
+              },
             }
-          : undefined,
+          : {}),
         hasPowerMeter: hasSourceType(snapshot, "power_meter"),
         hasHeartRateMonitor:
           hasSourceType(snapshot, "chest_strap") || hasSourceType(snapshot, "optical"),
         hasCadenceSensor: hasSourceType(snapshot, "cadence_sensor"),
       },
-      gpsAvailable:
-        context.gpsAvailable ??
-        (snapshot.activity.gpsMode === "on"
-          ? snapshot.capabilities.canTrackLocation || hasSourceType(snapshot, "gps")
-          : false),
+      gpsAvailable: false,
       session: context.session ?? { identityLocked: true },
     };
-  }
+  },
 
   /**
    * Compute what the app can do based on context
@@ -172,12 +190,12 @@ export class RecordingConfigResolver {
    * Philosophy: Show capabilities whenever they exist, unless hiding them prevents user errors.
    * Allow maximum flexibility - users should control their experience.
    */
-  private static computeCapabilities(
+  computeCapabilities(
     input: RecordingConfigInput,
   ): Omit<RecordingCapabilities, "isValid" | "errors" | "warnings"> {
     const hasStructuredPlan = input.plan?.hasStructure ?? false;
     const hasFtmsTrainer = !!input.devices.ftmsTrainer;
-    const canUseTrainer = hasFtmsTrainer && !input.gpsRecordingEnabled;
+    const canUseTrainer = hasFtmsTrainer;
     const trainerControlReady = canUseTrainer && Boolean(input.devices.ftmsTrainer?.controlReady);
     const _hasRoute = RecordingConfigResolver.hasRoute(input);
     const hasRouteGeometry = RecordingConfigResolver.hasRouteGeometry(input);
@@ -194,7 +212,7 @@ export class RecordingConfigResolver {
       : null;
 
     // Data collection capabilities - straightforward hardware checks
-    const canTrackLocation = input.gpsRecordingEnabled && input.gpsAvailable;
+    const canTrackLocation = false;
     const canTrackPower = input.devices.hasPowerMeter || canUseTrainer;
     const canTrackHeartRate = input.devices.hasHeartRateMonitor;
     const canTrackCadence = input.devices.hasCadenceSensor;
@@ -208,10 +226,10 @@ export class RecordingConfigResolver {
     const shouldShowSteps = hasStructuredPlan;
 
     // Route overlay: Show if we're tracking location AND have a route to overlay
-    const shouldShowRouteOverlay = canTrackLocation && hasRouteGeometry;
+    const shouldShowRouteOverlay = false;
 
     // Turn-by-turn: Only when GPS tracking and a route are both available
-    const shouldShowTurnByTurn = canTrackLocation && hasRouteGeometry;
+    const shouldShowTurnByTurn = false;
 
     // Follow-along: Activity-specific (swim lanes, etc)
     const shouldShowFollowAlong = shouldUseFollowAlong(input.activityCategory);
@@ -253,9 +271,9 @@ export class RecordingConfigResolver {
       autoFollowConflictReason,
       primaryMetric,
     };
-  }
+  },
 
-  private static determineAutoFollowPriority(
+  determineAutoFollowPriority(
     input: RecordingConfigInput,
     context: {
       hasStructuredPlan: boolean;
@@ -282,36 +300,30 @@ export class RecordingConfigResolver {
     }
 
     return "none";
-  }
+  },
 
-  private static hasTrainerControllablePlanTargets(
-    structure: ActivityPlanStructureV2 | null | undefined,
-  ): boolean {
+  hasTrainerControllablePlanTargets(structure: unknown): boolean {
     if (!structure) return false;
-
-    return structure.intervals.some((interval) =>
-      interval.steps.some((step) =>
-        step.targets?.some((target) => RecordingConfigResolver.isTrainerControllableTarget(target)),
-      ),
-    );
-  }
-
-  private static isTrainerControllableTarget(target: IntensityTargetV2): boolean {
-    switch (target.type) {
-      case "%FTP":
-      case "watts":
-      case "speed":
-      case "cadence":
-        return true;
-      case "%MaxHR":
-      case "%ThresholdHR":
-      case "bpm":
-      case "RPE":
-        return false;
+    try {
+      return compileActivityPlan(structure).occurrences.some(
+        (occurrence) =>
+          occurrence.role === "activity" &&
+          occurrence.targets.some(
+            (target) =>
+              (target.type === "%FTP" ||
+                target.type === "watts" ||
+                target.type === "speed" ||
+                target.type === "cadence") &&
+              // V3 validation has already checked activity_category/target compatibility.
+              occurrence.activity_category !== "other",
+          ),
+      );
+    } catch {
+      return false;
     }
-  }
+  },
 
-  private static buildSessionContract(
+  buildSessionContract(
     input: RecordingConfigInput,
     capabilities: RecordingCapabilities,
   ): RecordingSessionContract {
@@ -319,14 +331,10 @@ export class RecordingConfigResolver {
     const hasStructuredPlan = input.plan?.hasStructure ?? false;
     const hasRoute = RecordingConfigResolver.hasRoute(input);
     const hasRouteGeometry = RecordingConfigResolver.hasRouteGeometry(input);
-    const hasTrainer = Boolean(input.devices.ftmsTrainer) && !input.gpsRecordingEnabled;
+    const hasTrainer = Boolean(input.devices.ftmsTrainer);
     const trainerControllable = hasTrainer && Boolean(input.devices.ftmsTrainer?.controlReady);
-    const routeMode = RecordingConfigResolver.determineRouteMode(input, capabilities);
-    const backdropMode = RecordingConfigResolver.determineBackdropMode(
-      input,
-      capabilities,
-      routeMode,
-    );
+    const routeMode = RecordingConfigResolver.determineRouteMode(input);
+    const backdropMode = RecordingConfigResolver.determineBackdropMode(routeMode);
     const degraded = RecordingConfigResolver.determineDegradedState(input);
     const insightCards = RecordingConfigResolver.determineInsightCards({
       hasStructuredPlan,
@@ -336,6 +344,7 @@ export class RecordingConfigResolver {
     const quickActions = RecordingConfigResolver.determineQuickActions({
       hasPlan,
       hasRoute,
+      trainerControllable,
     });
     const defaultPrimarySurface = RecordingConfigResolver.determinePrimarySurface({
       hasStructuredPlan,
@@ -349,14 +358,14 @@ export class RecordingConfigResolver {
       hasTrainer,
     });
     const identityLocked = input.session?.identityLocked ?? false;
-    const canUseGpsSurface = input.gpsRecordingEnabled && capabilities.canTrackLocation;
+    const canUseGpsSurface = false;
 
     return {
       authority: {
-        category: hasPlan ? "plan" : "user",
+        activity_category: hasPlan ? "plan" : "user",
         structure: hasPlan ? "plan" : "none",
         spatial: hasRoute ? "route" : "none",
-        locationCapture: "gps",
+        locationCapture: "none",
         trainerExecution: hasTrainer ? "trainer" : "none",
       },
       guidance: {
@@ -372,8 +381,8 @@ export class RecordingConfigResolver {
         hasPower: capabilities.canTrackPower,
         hasHeartRate: capabilities.canTrackHeartRate,
         hasCadence: capabilities.canTrackCadence,
-        gpsIntent: input.gpsRecordingEnabled ? "on" : "off",
-        gpsAvailable: input.gpsAvailable,
+        gpsIntent: "off",
+        gpsAvailable: false,
       },
       degraded,
       ui: {
@@ -392,7 +401,7 @@ export class RecordingConfigResolver {
         canEditActivity: !identityLocked && !hasPlan,
         canEditPlan: true,
         canEditRoute: true,
-        canEditGps: !identityLocked,
+        canEditGps: false,
         locksIdentityAfterStart: true,
       },
       metrics: {
@@ -408,12 +417,12 @@ export class RecordingConfigResolver {
         consequences: RecordingConfigResolver.determineConsequences(input, capabilities, routeMode),
       },
     };
-  }
+  },
 
   /**
    * Determine the primary metric for this recording
    */
-  private static determinePrimaryMetric(
+  determinePrimaryMetric(
     input: RecordingConfigInput,
     computed: { canTrackLocation: boolean; canTrackPower: boolean },
   ): RecordingCapabilities["primaryMetric"] {
@@ -422,12 +431,9 @@ export class RecordingConfigResolver {
     if (computed.canTrackPower) return "power";
     if (computed.canTrackLocation) return "distance";
     return "time";
-  }
+  },
 
-  private static determineRouteMode(
-    input: RecordingConfigInput,
-    capabilities: Pick<RecordingCapabilities, "canTrackLocation">,
-  ) {
+  determineRouteMode(input: RecordingConfigInput) {
     if (!RecordingConfigResolver.hasRoute(input)) {
       return "none" as const;
     }
@@ -436,28 +442,14 @@ export class RecordingConfigResolver {
       return "unavailable" as const;
     }
 
-    if (capabilities.canTrackLocation) {
-      return "live_navigation" as const;
-    }
-
-    if (input.gpsRecordingEnabled && !input.gpsAvailable) {
-      return "preview" as const;
-    }
-
     return "virtual" as const;
-  }
+  },
 
-  private static determineBackdropMode(
-    input: RecordingConfigInput,
-    capabilities: Pick<RecordingCapabilities, "canTrackLocation">,
+  determineBackdropMode(
     routeMode: "none" | "preview" | "virtual" | "live_navigation" | "unavailable",
   ): RecordingBackdropMode {
-    if (routeMode === "live_navigation") {
-      return "live_navigation";
-    }
-
     if (routeMode === "virtual") {
-      return "ambient";
+      return "virtual_route";
     }
 
     if (routeMode === "preview") {
@@ -468,18 +460,10 @@ export class RecordingConfigResolver {
       return "route_unavailable";
     }
 
-    if (input.gpsRecordingEnabled && capabilities.canTrackLocation) {
-      return "gps_map";
-    }
-
-    if (input.gpsRecordingEnabled && !input.gpsAvailable) {
-      return "gps_unavailable";
-    }
-
     return "ambient";
-  }
+  },
 
-  private static determineInsightCards(params: {
+  determineInsightCards(params: {
     hasStructuredPlan: boolean;
     hasRouteGeometry: boolean;
     trainerControllable: boolean;
@@ -487,7 +471,7 @@ export class RecordingConfigResolver {
     const cards: RecordingInsightCard[] = [];
 
     if (params.hasStructuredPlan) {
-      cards.push("workout_interval");
+      cards.push("activity_interval");
     }
 
     if (params.hasRouteGeometry) {
@@ -501,9 +485,9 @@ export class RecordingConfigResolver {
     cards.push("metrics");
 
     return Array.from(new Set(cards));
-  }
+  },
 
-  private static determinePrimarySurface(params: {
+  determinePrimarySurface(params: {
     hasStructuredPlan: boolean;
     hasRouteGeometry: boolean;
     trainerControllable: boolean;
@@ -522,9 +506,9 @@ export class RecordingConfigResolver {
     }
 
     return "metrics";
-  }
+  },
 
-  private static determineAvailableSurfaces(params: {
+  determineAvailableSurfaces(params: {
     hasStructuredPlan: boolean;
     hasRouteGeometry: boolean;
     hasTrainer: boolean;
@@ -544,13 +528,14 @@ export class RecordingConfigResolver {
     }
 
     return surfaces;
-  }
+  },
 
-  private static determineQuickActions(params: {
+  determineQuickActions(params: {
     hasPlan: boolean;
     hasRoute: boolean;
+    trainerControllable: boolean;
   }): RecordingQuickAction[] {
-    const actions: RecordingQuickAction[] = ["gps", "sensors"];
+    const actions: RecordingQuickAction[] = ["sensors"];
 
     if (!params.hasPlan) {
       actions.unshift("activity");
@@ -558,11 +543,14 @@ export class RecordingConfigResolver {
 
     actions.push("plan");
     actions.push("route");
+    if (params.trainerControllable) {
+      actions.push("trainer");
+    }
 
     return actions;
-  }
+  },
 
-  private static determineEmphasizedMetrics(
+  determineEmphasizedMetrics(
     input: RecordingConfigInput,
     capabilities: Pick<
       RecordingCapabilities,
@@ -599,9 +587,9 @@ export class RecordingConfigResolver {
     }
 
     return Array.from(new Set(metrics));
-  }
+  },
 
-  private static determineConsequences(
+  determineConsequences(
     input: RecordingConfigInput,
     capabilities: Pick<RecordingCapabilities, "canTrackLocation" | "shouldAutoFollowTargets">,
     routeMode: "none" | "preview" | "virtual" | "live_navigation" | "unavailable",
@@ -618,16 +606,8 @@ export class RecordingConfigResolver {
 
     if (routeMode === "virtual") {
       consequences.push(
-        "Attached route will be used for virtual guidance only while GPS stays off.",
+        "Attached route will use sensor or manual distance without capturing location.",
       );
-    }
-
-    if (routeMode === "preview") {
-      consequences.push("Attached route is available for preview, but live navigation needs GPS.");
-    }
-
-    if (routeMode === "live_navigation" && capabilities.canTrackLocation) {
-      consequences.push("Attached route can provide live route guidance during recording.");
     }
 
     if (routeMode === "unavailable") {
@@ -654,29 +634,27 @@ export class RecordingConfigResolver {
     }
 
     return consequences;
-  }
+  },
 
-  private static hasPlan(input: RecordingConfigInput) {
+  hasPlan(input: RecordingConfigInput) {
     return (
       input.mode === "planned" ||
       (input.activityPlanId !== null && input.activityPlanId !== undefined)
     );
-  }
+  },
 
-  private static hasRoute(input: RecordingConfigInput) {
-    return Boolean(input.plan?.hasRoute || input.routeId);
-  }
+  hasRoute(input: RecordingConfigInput) {
+    return Boolean(input.routeId);
+  },
 
-  private static hasRouteGeometry(input: RecordingConfigInput) {
+  hasRouteGeometry(input: RecordingConfigInput) {
     const hasRoute = RecordingConfigResolver.hasRoute(input);
     if (!hasRoute) return false;
 
     return input.routeGeometryAvailable ?? true;
-  }
+  },
 
-  private static determineDegradedState(
-    input: RecordingConfigInput,
-  ): RecordingSessionContract["degraded"] {
+  determineDegradedState(input: RecordingConfigInput): RecordingSessionContract["degraded"] {
     const degraded: RecordingSessionContract["degraded"] = {};
 
     if (
@@ -686,45 +664,28 @@ export class RecordingConfigResolver {
       degraded.route = "missing_geometry";
     }
 
-    if (input.gpsRecordingEnabled && !input.gpsAvailable) {
-      degraded.gps = "location_unavailable";
-    }
-
     if (input.devices.ftmsTrainer && !input.devices.ftmsTrainer.controlReady) {
       degraded.trainer = "control_not_ready";
     }
 
     return degraded;
-  }
+  },
 
   /**
    * Validate configuration and return errors/warnings
    */
-  private static validate(
+  validate(
     input: RecordingConfigInput,
     capabilities: Omit<RecordingCapabilities, "isValid" | "errors" | "warnings">,
   ): Pick<RecordingCapabilities, "isValid" | "errors" | "warnings"> {
     const errors: string[] = [];
     const warnings: string[] = [];
 
-    // GPS unavailable is exposed through the session degraded state so route preview,
-    // virtual, and recovery states can still render safely.
-    if (input.gpsRecordingEnabled && !input.gpsAvailable) {
-      warnings.push(
-        "GPS recording is enabled, but GPS is unavailable. Please enable location services.",
-      );
-    }
-
-    // Route navigation requires GPS
-    if (capabilities.shouldShowTurnByTurn && !capabilities.canTrackLocation) {
-      errors.push("Route navigation requires GPS.");
-    }
-
     // Warn if auto-control is enabled but we have no targets to follow
     if (
       input.devices.ftmsTrainer?.autoControlEnabled &&
       !input.plan?.hasStructure &&
-      !input.plan?.hasRoute
+      !input.routeId
     ) {
       warnings.push(
         "Auto ERG requires a structured plan or route with grade data. You can still manually control the trainer.",
@@ -736,7 +697,7 @@ export class RecordingConfigResolver {
     }
 
     // Warn if planned but no structure
-    if (input.mode === "planned" && !input.plan?.hasStructure && !input.plan?.hasRoute) {
+    if (input.mode === "planned" && !input.plan?.hasStructure) {
       warnings.push("Selected plan has no structure. Recording as unplanned.");
     }
 
@@ -756,5 +717,5 @@ export class RecordingConfigResolver {
       errors,
       warnings,
     };
-  }
-}
+  },
+};
