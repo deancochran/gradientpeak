@@ -63,6 +63,7 @@
     "db:disposable-target:safety:test": "tsx scripts/disposable-target-safety.test.ts",
     "db:verify": "pnpm db:verify:static && pnpm test:db && pnpm db:fresh:verify && pnpm db:fresh:verify:determinism && pnpm db:benchmark:planned-day-summary && pnpm db:athlete-state-replay:plan:test",
     "db:athlete-state-replay:plan:test": "tsx scripts/verify-athlete-state-replay-plan.ts --disposable --local",
+    "db:activity-analysis-replay:plan:test": "tsx scripts/verify-activity-analysis-replay-boundary-plan.ts --disposable --local",
     "db:activity-file-ingestions:test": "tsx scripts/verify-activity-file-ingestions.ts --disposable --local",
     "db:benchmark:planned-day-summary": "tsx scripts/planned-day-summary-benchmark.ts --disposable --local",
     "db:coaching:foundation:test": "tsx scripts/verify-coaching-foundation.ts --disposable --local",
