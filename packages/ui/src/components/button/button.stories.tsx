@@ -1,9 +1,9 @@
-import type { Meta, StoryObj } from "@storybook/react";
-import { expect, fn } from "@storybook/test";
+import type { Meta, StoryObj } from "@storybook/react-vite";
 import { ChevronRight } from "lucide-react";
+import { expect, fn } from "storybook/test";
 
 import { buttonFixtures } from "./fixtures";
-import { Button } from "./index.web";
+import { Button, IconButton } from "./index.web";
 import { exerciseButtonStory } from "./interactions";
 import { BUTTON_SIZES, BUTTON_VARIANTS } from "./shared";
 
@@ -69,5 +69,13 @@ export const Sizes: Story = {
         </Button>
       ))}
     </div>
+  ),
+};
+
+export const IconOnly: Story = {
+  render: () => (
+    <IconButton {...buttonFixtures.moreActions} variant="outline">
+      <ChevronRight />
+    </IconButton>
   ),
 };

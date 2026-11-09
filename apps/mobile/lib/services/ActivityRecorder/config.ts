@@ -14,13 +14,16 @@ export const RECORDING_CONFIG = {
   // === Data Window ===
   BUFFER_WINDOW_SECONDS: 60, // Keep 60 seconds of data for calculations
   MAX_READINGS_PER_METRIC: 2000, // Hard cap for unusually high-rate or stalled streams
-  ADVANCED_METRICS_SAMPLE_INTERVAL_MS: 5000, // Keep NP/TSS updates off the 1s critical path
+  ADVANCED_METRICS_SAMPLE_INTERVAL_MS: 5000, // Keep provisional Load updates off the 1s path
   ADVANCED_METRICS_SLOW_THRESHOLD_MS: 100, // Circuit-break advanced metrics if they block JS
   ADVANCED_METRICS_COOLDOWN_MS: 60000, // Retry advanced metrics after the recorder stabilizes
 
   // === GPS Path Display ===
   MAX_GPS_PATH_POINTS: 1000, // Maximum GPS points to keep for map display (prevents memory leak)
 } as const;
+
+/** Body-mass fallback for non-calibration recording estimates such as calories and virtual distance. */
+export const DEFAULT_RECORDING_WEIGHT_KG = 75;
 
 // === Metric Precision (reduce unnecessary re-renders) ===
 export const METRIC_PRECISION = {
@@ -30,8 +33,8 @@ export const METRIC_PRECISION = {
   distance: 0, // Whole meters
   cadence: 0, // Whole RPM
   normalizedPower: 0, // Whole watts
-  intensityFactor: 2, // 2 decimal places (0.85)
-  tss: 0, // Whole points
+  normalizedIntensity: 2, // Ratio precision (0.85)
+  commonLoad: 0, // Whole provisional Load points
   elevation: 1, // 1 decimal place (meters)
   temperature: 1, // 1 decimal place (°C)
   efficiency: 1, // 1 decimal place

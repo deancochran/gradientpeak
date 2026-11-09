@@ -1,361 +1,183 @@
 import React from "react";
 import { createHost } from "../../../../test/mock-components";
-import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
+import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
-const replaceMock = jest.fn();
-const completeOnboardingMock = jest.fn(async () => undefined);
-const completeOnboardingMutationMock = jest.fn(async () => ({ ok: true }));
-let importedOnboardingValuesMock: unknown = null;
-
-const ButtonHost = ({ children, disabled, onPress, ...props }: any) =>
-  React.createElement(
-    "Pressable",
-    {
-      onPress: disabled ? undefined : onPress,
-      testID: props.testID ?? props.testId,
-      disabled,
-      ...props,
-    },
-    children,
-  );
+const handleComplete = jest.fn(async () => undefined);
+const restartProviderSelection = jest.fn(async () => undefined);
+let progress: Record<string, unknown> | undefined;
+let progressError: Error | null = null;
+let lifecycleStatus: "provider_selection" | "processing" | "review" | "completed" =
+  "provider_selection";
+let integrationOverview: Array<{ provider: "wahoo"; connected: boolean }> = [];
 
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
-  Alert: { alert: jest.fn() },
   ScrollView: createHost("ScrollView"),
-  TouchableOpacity: ({ children, onPress, ...props }: any) =>
-    React.createElement("Pressable", { onPress, ...props }, children),
   View: createHost("View"),
 }));
-
 jest.mock("react-native-safe-area-context", () => ({
   __esModule: true,
   SafeAreaView: createHost("SafeAreaView"),
 }));
-
-jest.mock("expo-router", () => ({
-  __esModule: true,
-  router: { replace: replaceMock },
-}));
-
-jest.mock("expo-constants", () => ({
-  __esModule: true,
-  default: {
-    expoConfig: {
-      scheme: "gradientpeak-dev",
-      extra: {
-        redirectUri: "gradientpeak-dev://integrations",
-      },
-    },
-  },
-}));
-
-jest.mock("expo-web-browser", () => ({
-  __esModule: true,
-  openAuthSessionAsync: jest.fn(),
-}));
-
-jest.mock("@/lib/hooks/useAuth", () => ({
-  __esModule: true,
-  useAuth: () => ({
-    completeOnboarding: completeOnboardingMock,
-    isAuthenticated: true,
-    isFullyLoaded: true,
-  }),
-}));
-
-jest.mock("@/lib/auth/auth-headers", () => ({
-  __esModule: true,
-  hasSessionAuthCredentials: () => true,
-}));
-
-jest.mock("@/lib/api", () => ({
-  __esModule: true,
-  api: {
-    profiles: {
-      get: {
-        useQuery: () => ({ data: { id: "profile-1" } }),
-      },
-    },
-    useUtils: () => ({
-      onboarding: {
-        getImportedOnboardingValues: { invalidate: jest.fn(async () => undefined) },
-        getProviderEnrichmentStatus: { invalidate: jest.fn(async () => undefined) },
-      },
-      profiles: { get: { invalidate: jest.fn(async () => undefined) } },
-    }),
-    onboarding: {
-      completeOnboarding: {
-        useMutation: () => ({ mutateAsync: completeOnboardingMutationMock }),
-      },
-      getImportedOnboardingValues: {
-        useQuery: () => ({
-          data: importedOnboardingValuesMock,
-          isLoading: false,
-          refetch: jest.fn(),
-        }),
-      },
-      getProviderEnrichmentStatus: {
-        useQuery: () => ({ data: null, isLoading: false, refetch: jest.fn() }),
-      },
-      startProviderEnrichment: {
-        useMutation: () => ({ mutateAsync: jest.fn(async () => undefined), isPending: false }),
-      },
-      clearProviderRequirement: {
-        useMutation: () => ({ mutateAsync: jest.fn(async () => undefined), isPending: false }),
-      },
-    },
-    integrations: {
-      list: {
-        useQuery: () => ({ data: [], refetch: jest.fn(async () => ({ data: [] })) }),
-      },
-      getConnectionOverview: {
-        useQuery: () => ({ data: [], refetch: jest.fn(async () => ({ data: [] })) }),
-      },
-      getAuthUrl: {
-        useMutation: () => ({
-          mutateAsync: jest.fn(async () => ({ url: "https://example.test" })),
-        }),
-      },
-    },
-  },
-}));
-
-jest.mock("@repo/core", () => ({
-  __esModule: true,
-  estimateConservativeFTPFromWeight: jest.fn((weight?: number | null) => (weight ? 210 : null)),
-  estimateMaxHRFromDOB: jest.fn((dob?: string | null) => (dob ? 185 : null)),
-  formatWeightForDisplay: jest.fn((weight: number) => `${weight} kg`),
-}));
-
 jest.mock("@repo/ui/components/button", () => ({
   __esModule: true,
-  Button: ButtonHost,
+  Button: ({
+    children,
+    onPress,
+    testID,
+  }: {
+    children?: React.ReactNode;
+    onPress?: () => void;
+    testID?: string;
+  }) => React.createElement("Pressable", { onPress, testID }, children),
 }));
-
-jest.mock("@repo/ui/components/card", () => ({
-  __esModule: true,
-  Card: createHost("Card"),
-  CardContent: createHost("CardContent"),
-}));
-
-jest.mock("@repo/ui/components/date-input", () => ({
-  __esModule: true,
-  DateInput: ({ id, value, onChange }: any) =>
-    React.createElement("TextInput", {
-      testID: id,
-      value,
-      onChangeText: (nextValue: string) => onChange(nextValue),
-    }),
-}));
-
-jest.mock("@repo/ui/components/icon", () => ({
-  __esModule: true,
-  Icon: createHost("Icon"),
-}));
-
-jest.mock("@repo/ui/components/pace-seconds-field", () => ({
-  __esModule: true,
-  PaceSecondsField: ({ id, onChangeSeconds }: any) =>
-    React.createElement("TextInput", {
-      testID: id,
-      onChangeText: (nextValue: string) => onChangeSeconds(Number(nextValue)),
-    }),
-}));
-
-jest.mock("@repo/ui/components/progress", () => ({
-  __esModule: true,
-  Progress: createHost("Progress"),
-}));
-
 jest.mock("@repo/ui/components/text", () => ({
   __esModule: true,
   Text: createHost("Text"),
 }));
-
-jest.mock("lucide-react-native", () => ({
+jest.mock("@/components/shared/AppFormModal", () => ({
   __esModule: true,
-  Activity: createHost("Activity"),
-  ArrowRight: createHost("ArrowRight"),
-  Check: createHost("Check"),
-  ChevronRight: createHost("ChevronRight"),
+  AppConfirmModal: createHost("AppConfirmModal"),
+}));
+jest.mock("@/components/onboarding/steps", () => ({
+  __esModule: true,
+  IdentityStep: () => React.createElement("View", { testID: "identity-form" }),
+}));
+jest.mock("@/components/onboarding/ProviderSelectionStep", () => ({
+  ProviderSelectionStep: () =>
+    React.createElement("View", { testID: "provider-selection-controls" }),
+}));
+jest.mock("@/components/onboarding/ProviderProcessingStep", () => ({
+  ProviderProcessingStep: () =>
+    React.createElement("View", { testID: "provider-processing-evidence" }),
+}));
+jest.mock("@/components/onboarding/useProviderConnection", () => ({
+  useProviderConnection: () => ({ connect: jest.fn(), pendingProvider: null }),
+}));
+jest.mock("@/components/onboarding/useOnboardingFlow", () => ({
+  __esModule: true,
+  useOnboardingFlow: () => ({
+    lifecycleStatus,
+    integrationOverview,
+    integrationOverviewError: null,
+    integrationOverviewLoading: false,
+    data: {},
+    fieldSources: {},
+    isBusy: false,
+    progress,
+    progressError,
+    refreshProgress: jest.fn(),
+    refreshIntegrationState: jest.fn(),
+    retryProviderProcessing: jest.fn(),
+    setStatusModal: jest.fn(),
+    restartProviderSelection,
+    statusModal: null,
+    updateData: jest.fn(),
+    usernameAvailability: { isChecking: false, isError: false },
+    handleComplete,
+  }),
 }));
 
 const OnboardingScreen = require("../onboarding").default;
 
-const flushUsernameDebounce = async () => {
-  await new Promise((resolve) => setTimeout(resolve, 450));
-};
-
-describe("onboarding screen", () => {
+describe("simplified onboarding lifecycle", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    importedOnboardingValuesMock = null;
+    lifecycleStatus = "provider_selection";
+    integrationOverview = [];
+    progress = undefined;
+    progressError = null;
   });
 
-  const completeRequiredSteps = async () => {
-    fireEvent.changeText(screen.getByTestId("onboarding-full-name-input"), "Riley Chen");
-    fireEvent.changeText(screen.getByTestId("onboarding-username-input"), "riley_runs");
-    await flushUsernameDebounce();
-    await waitFor(() => {
-      expect(screen.getByTestId("onboarding-next-button").props.disabled).toBe(false);
-    });
-    fireEvent.press(screen.getByText("cycling"));
-    fireEvent.press(screen.getByText("Next"));
-    fireEvent.press(screen.getByText("Skip"));
-    await waitFor(() => {
-      expect(screen.getByText("beginner")).toBeTruthy();
-    });
-    fireEvent.press(screen.getByText("beginner"));
-    fireEvent.press(screen.getByText("male"));
-    fireEvent.changeText(screen.getByTestId("onboarding-dob"), "1990-01-01");
-    fireEvent.changeText(screen.getByPlaceholderText("70.0"), "72");
-    fireEvent(screen.getByPlaceholderText("70.0"), "blur");
-    fireEvent.press(screen.getByText("Next"));
-  };
-
-  it("completes the required onboarding flow and submits the profile", async () => {
-    renderNative(<OnboardingScreen />);
-
-    await completeRequiredSteps();
-    fireEvent.press(screen.getByText("Finish"));
-
-    await waitFor(() => {
-      expect(completeOnboardingMutationMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          experience_level: "beginner",
-          full_name: "Riley Chen",
-          ftp: 210,
-          max_hr: 185,
-          weight_kg: 72,
-          gender: "male",
-        }),
-      );
-      expect(completeOnboardingMock).toHaveBeenCalled();
-      expect(replaceMock).toHaveBeenCalledWith("/");
-    });
+  it("shows identity with an optional provider and finishes without starting provider processing", async () => {
+    await renderNative(<OnboardingScreen />);
+    expect(screen.getByTestId("onboarding-provider-selection")).toBeTruthy();
+    expect(screen.getByTestId("provider-selection-controls")).toBeTruthy();
+    expect(screen.getByTestId("identity-form")).toBeTruthy();
+    expect(screen.getByText("Finish setup")).toBeTruthy();
+    expect(screen.queryByText("Training baseline")).toBeNull();
+    expect(screen.queryByText("Initial goal")).toBeNull();
+    expect(screen.queryByText("Groups and people")).toBeNull();
+    await fireEvent.press(screen.getByTestId("onboarding-finish-button"));
+    expect(handleComplete).toHaveBeenCalledTimes(1);
   });
 
-  it("lets users skip optional onboarding steps", async () => {
-    renderNative(<OnboardingScreen />);
-
-    fireEvent.changeText(screen.getByTestId("onboarding-full-name-input"), "Riley Chen");
-    fireEvent.changeText(screen.getByTestId("onboarding-username-input"), "riley_runs");
-    await flushUsernameDebounce();
-    fireEvent.press(screen.getByText("Next"));
-
-    expect(screen.getByTestId("onboarding-skip-button").props.disabled).toBe(false);
-
-    fireEvent.press(screen.getByTestId("onboarding-skip-button"));
-
-    expect(screen.getByText("Connect Accounts")).toBeTruthy();
-  });
-
-  it("lets users skip the signup onboarding flow after the intro", async () => {
-    renderNative(<OnboardingScreen />);
-
-    expect(screen.getByTestId("onboarding-skip-button").props.disabled).toBe(true);
-
-    fireEvent.changeText(screen.getByTestId("onboarding-full-name-input"), "Riley Chen");
-    fireEvent.changeText(screen.getByTestId("onboarding-username-input"), "riley_runs");
-    await flushUsernameDebounce();
-    fireEvent.press(screen.getByText("Next"));
-
-    expect(screen.getByTestId("onboarding-skip-button").props.disabled).toBe(false);
-
-    for (let i = 0; i < 2; i += 1) {
-      fireEvent.press(screen.getByTestId("onboarding-skip-button"));
-    }
-
-    await waitFor(() => {
-      expect(screen.getByTestId("onboarding-finish-button")).toBeTruthy();
-    });
-
-    fireEvent.press(screen.getByTestId("onboarding-finish-button"));
-
-    await waitFor(() => {
-      expect(completeOnboardingMutationMock).toHaveBeenCalledWith({
-        css_seconds_per_hundred_meters: undefined,
-        dob: undefined,
-        experience_level: "skip",
-        ftp: undefined,
-        full_name: "Riley Chen",
-        gender: undefined,
-        max_hr: undefined,
-        resting_hr: undefined,
-        lthr: undefined,
-        threshold_pace_seconds_per_km: undefined,
-        username: "riley_runs",
-        vo2max: undefined,
-        weight_kg: undefined,
-      });
-      expect(completeOnboardingMock).toHaveBeenCalled();
-      expect(replaceMock).toHaveBeenCalledWith("/");
-    });
-  });
-
-  it("prefills provider-imported onboarding fields before submission", async () => {
-    importedOnboardingValuesMock = {
-      profile: {
-        dob: "1988-04-05",
-        gender: "female",
-        onboarded: false,
-      },
-      values: {
-        dob: "1988-04-05",
-        gender: "female",
-        weight_kg: 64,
-        ftp: 245,
-      },
-      sources: {
-        dob: {
-          provider: "wahoo",
-          label: "Wahoo",
-          sourceRecordedAt: "2026-04-03T11:05:00.000Z",
-        },
-        gender: {
-          provider: "wahoo",
-          label: "Wahoo",
-          sourceRecordedAt: "2026-04-03T11:05:00.000Z",
-        },
-        weight_kg: {
-          provider: "wahoo",
-          label: "Wahoo",
-          sourceRecordedAt: "2026-04-03T11:05:00.000Z",
-        },
-        ftp: {
-          provider: "wahoo",
-          label: "Wahoo",
-          sourceRecordedAt: "2026-04-03T11:05:00.000Z",
-        },
-      },
+  it("shows provider selection after restart even if stale processing progress remains cached", async () => {
+    lifecycleStatus = "provider_selection";
+    progress = {
+      status: "processing",
+      phase: "recovery_required",
+      percent: 50,
+      message: "Cached processing progress",
+      detail: null,
+      provider_summary: [],
+      recovery: null,
     };
+    await renderNative(<OnboardingScreen />);
+    expect(screen.getByTestId("onboarding-provider-selection")).toBeTruthy();
+    expect(screen.queryByTestId("provider-processing-evidence")).toBeNull();
+  });
 
-    renderNative(<OnboardingScreen />);
+  it("renders processing progress without any editable onboarding form", async () => {
+    lifecycleStatus = "processing";
+    progress = {
+      status: "processing",
+      phase: "importing_activities",
+      percent: 50,
+      message: "Importing your activity history.",
+      detail: null,
+      provider_summary: [],
+      recovery: null,
+    };
+    await renderNative(<OnboardingScreen />);
+    expect(screen.getByTestId("onboarding-processing")).toBeTruthy();
+    expect(screen.getByTestId("provider-processing-evidence")).toBeTruthy();
+    expect(screen.queryByTestId("provider-selection-controls")).toBeNull();
+    expect(screen.queryByTestId("identity-form")).toBeNull();
+    expect(screen.queryByTestId("onboarding-finish-button")).toBeNull();
+  });
 
-    fireEvent.changeText(screen.getByTestId("onboarding-full-name-input"), "Riley Chen");
-    fireEvent.changeText(screen.getByTestId("onboarding-username-input"), "riley_runs");
-    await flushUsernameDebounce();
-    fireEvent.press(screen.getByText("cycling"));
-    fireEvent.press(screen.getByText("Next"));
-    fireEvent.press(screen.getByText("Skip"));
-    await waitFor(() => {
-      expect(screen.getByText("beginner")).toBeTruthy();
-    });
-    fireEvent.press(screen.getByText("beginner"));
-    fireEvent.press(screen.getByText("Next"));
-    fireEvent.press(screen.getByText("Finish"));
+  it("retains processing progress while showing a recoverable transient error", async () => {
+    lifecycleStatus = "processing";
+    progress = {
+      status: "processing",
+      phase: "importing_activities",
+      percent: 50,
+      message: "Importing your activity history.",
+      detail: null,
+      provider_summary: [],
+      recovery: null,
+    };
+    progressError = new Error("temporary");
+    await renderNative(<OnboardingScreen />);
+    expect(screen.getByTestId("provider-processing-evidence")).toBeTruthy();
+    expect(screen.getByText("Retry progress")).toBeTruthy();
+  });
 
-    await waitFor(() => {
-      expect(completeOnboardingMutationMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          dob: "1988-04-05T00:00:00.000Z",
-          ftp: 245,
-          gender: "female",
-          weight_kg: 64,
-        }),
-      );
-    });
+  it("shows an initial processing status instead of a blank screen", async () => {
+    lifecycleStatus = "processing";
+    await renderNative(<OnboardingScreen />);
+    expect(screen.getByText("Loading preparation progress")).toBeTruthy();
+  });
+
+  it("renders only identity in review and finalizes with one action", async () => {
+    lifecycleStatus = "review";
+    await renderNative(<OnboardingScreen />);
+    expect(screen.getByTestId("onboarding-identity")).toBeTruthy();
+    expect(screen.getByTestId("identity-form")).toBeTruthy();
+    expect(screen.queryByTestId("baseline-form")).toBeNull();
+    expect(screen.queryByTestId("goal-form")).toBeNull();
+    expect(screen.queryByTestId("social-form")).toBeNull();
+    expect(screen.queryByTestId("provider-selection-controls")).toBeNull();
+    expect(screen.queryByTestId("provider-processing-evidence")).toBeNull();
+    await fireEvent.press(screen.getByTestId("onboarding-finish-button"));
+    expect(handleComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders nothing once AppBootstrapGate owns completed navigation", async () => {
+    lifecycleStatus = "completed";
+    const rendered = await renderNative(<OnboardingScreen />);
+    expect(rendered.toJSON()).toBeNull();
   });
 });

@@ -8,7 +8,7 @@
  * ```tsx
  * // In your submit screen:
  * function SubmitScreen() {
- *   const service = useSharedActivityRecorder();
+ *   const { service } = useActivityRecorderService();
  *   const submission = useActivitySubmission(service);
  *
  *   if (submission.isLoading) return <Spinner />;
@@ -16,10 +16,7 @@
  *
  *   return (
  *     <Form>
- *       <Input
- *         value={submission.activity.name}
- *         onChangeText={(name) => submission.update({ name })}
- *       />
+ *       <NotesInput />
  *       <Button onPress={submission.submit}>Save Activity</Button>
  *     </Form>
  *   );
@@ -27,28 +24,32 @@
  * ```
  */
 
-import { invalidatePostActivityIngestionQueries, queryKeys } from "@repo/api/client";
+import {
+  canRetryDirectIngestion,
+  IDEMPOTENT_INGESTION_MUTATION_RETRY_OPTIONS,
+  ingestionStatusPollingInterval,
+  invalidatePostActivityIngestionQueries,
+} from "@repo/api/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { Alert } from "react-native";
 import { api } from "@/lib/api";
+import { omitUndefined } from "@/lib/omitUndefined";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import {
-  clearPendingFinalizedArtifact,
-  deleteFinalizedArtifactFiles,
-  loadPendingFinalizedArtifact,
-} from "@/lib/services/ActivityRecorder/finalizedArtifactStorage";
 import type { RecordingSessionArtifact } from "@/lib/services/ActivityRecorder/types";
 // import * as FileSystem from "expo-file-system"; // Removed as we use File class now
 
 import { useCallback, useEffect, useReducer } from "react";
 import type { PreparedRecordedActivityDraft } from "@/lib/contracts/activity-submission";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { createFinalizedArtifactQueueHandoff } from "@/lib/services/ActivityRecorder/recordingEvidenceJournal";
 import {
+  type ActivitySubmissionQueueDraft,
   type ActivitySubmissionQueueJob,
   type ActivitySubmissionQueueJobStatus,
+  loadActivitySubmissionQueueJobByArtifactId,
   runActivitySubmissionQueueJob,
-  upsertActivitySubmissionQueueJob,
 } from "@/lib/services/activitySubmissionQueue";
+import { getLocalActivityArtifactMetadata } from "@/lib/services/activitySubmissionQueue/localArtifact";
 import { ActivityFileUploader } from "@/lib/services/fit/ActivityFileUploader";
 
 // ================================
@@ -73,9 +74,11 @@ interface SubmissionState {
   hasStreams: boolean;
   activityId: string | null;
   queueStatus: ActivitySubmissionQueueJobStatus | null;
+  ingestionId: string | null;
 }
 
 type Action =
+  | { type: "EMPTY" }
   | {
       type: "READY";
       artifact: RecordingSessionArtifact;
@@ -84,9 +87,25 @@ type Action =
     }
   | {
       type: "UPDATE";
-      updates: { name?: string; notes?: string; is_private?: boolean };
+      updates: {
+        name?: string;
+        notes?: string | null;
+        content_visibility?: ActivitySubmissionQueueDraft["content_visibility"];
+      };
     }
-  | { type: "QUEUE_STATUS"; status: ActivitySubmissionQueueJobStatus; activityId?: string | null }
+  | {
+      type: "QUEUE_STATUS";
+      status: ActivitySubmissionQueueJobStatus;
+      activityId?: string | null;
+      ingestionId?: string | null;
+    }
+  | {
+      type: "RESTORE_QUEUE";
+      status: ActivitySubmissionQueueJobStatus;
+      activityId?: string | null;
+      ingestionId?: string | null;
+      error?: string | null;
+    }
   | { type: "SUCCESS"; activityId?: string | null }
   | { type: "ERROR"; error: string };
 
@@ -96,6 +115,18 @@ type Action =
 
 function submissionReducer(state: SubmissionState, action: Action): SubmissionState {
   switch (action.type) {
+    case "EMPTY":
+      return {
+        phase: "ready",
+        artifact: null,
+        activity: null,
+        error: null,
+        hasStreams: false,
+        activityId: null,
+        queueStatus: null,
+        ingestionId: null,
+      };
+
     case "READY":
       return {
         phase: "ready",
@@ -105,13 +136,14 @@ function submissionReducer(state: SubmissionState, action: Action): SubmissionSt
         hasStreams: action.hasStreams,
         activityId: null,
         queueStatus: null,
+        ingestionId: null,
       };
 
     case "UPDATE":
       if (!state.activity) return state;
       return {
         ...state,
-        activity: { ...state.activity, ...action.updates },
+        activity: omitUndefined({ ...state.activity, ...action.updates }),
       };
 
     case "QUEUE_STATUS": {
@@ -129,10 +161,26 @@ function submissionReducer(state: SubmissionState, action: Action): SubmissionSt
         ...state,
         phase: phaseByStatus[action.status],
         activityId: action.activityId ?? state.activityId,
+        ingestionId: action.ingestionId ?? state.ingestionId,
         error: action.status === "failed" ? state.error : null,
         queueStatus: action.status,
       };
     }
+
+    case "RESTORE_QUEUE":
+      return {
+        ...state,
+        phase:
+          action.status === "complete"
+            ? "success"
+            : action.status === "failed"
+              ? "error"
+              : state.phase,
+        activityId: action.activityId ?? state.activityId,
+        ingestionId: action.ingestionId ?? state.ingestionId,
+        error: action.status === "failed" ? (action.error ?? "Activity upload failed") : null,
+        queueStatus: action.status,
+      };
 
     case "SUCCESS":
       return { ...state, phase: "success", activityId: action.activityId ?? state.activityId };
@@ -146,10 +194,8 @@ function submissionReducer(state: SubmissionState, action: Action): SubmissionSt
 }
 
 function buildDefaultActivityName(artifact: RecordingSessionArtifact): string {
-  const category = artifact.snapshot.activity.category;
-  const gpsLabel = artifact.snapshot.activity.gpsMode === "on" ? "GPS ON" : "GPS OFF";
-
-  return `${category} (${gpsLabel}) - ${new Date(
+  const activity_category = artifact.snapshot.activity.activity_category;
+  return `${activity_category} - ${new Date(
     artifact.snapshot.identity.startedAt,
   ).toLocaleDateString()}`;
 }
@@ -160,18 +206,18 @@ function buildActivityFromArtifact(args: {
 }): PreparedRecordedActivityDraft {
   const { artifact, profileId } = args;
 
-  return {
+  return omitUndefined({
     profileId,
     startedAt: new Date(artifact.snapshot.identity.startedAt),
     finishedAt: new Date(artifact.completedAt),
     name: buildDefaultActivityName(artifact),
-    activityType: artifact.snapshot.activity.category,
+    activityCategory: artifact.snapshot.activity.activity_category,
     durationSeconds: artifact.finalStats.durationSeconds,
     movingSeconds: artifact.finalStats.movingSeconds,
     distanceMeters: Math.round(artifact.finalStats.distanceMeters),
     calories: artifact.finalStats.calories,
     activityPlanId: artifact.snapshot.activity.activityPlanId,
-  };
+  });
 }
 
 function toQueueDraft(activity: PreparedRecordedActivityDraft) {
@@ -180,13 +226,13 @@ function toQueueDraft(activity: PreparedRecordedActivityDraft) {
     startedAt: activity.startedAt.toISOString(),
     finishedAt: activity.finishedAt.toISOString(),
     name: activity.name,
-    activityType: activity.activityType,
+    activity_category: activity.activityCategory,
     durationSeconds: activity.durationSeconds,
     movingSeconds: activity.movingSeconds,
     distanceMeters: activity.distanceMeters,
     calories: activity.calories ?? null,
     notes: activity.notes ?? null,
-    is_private: activity.is_private,
+    content_visibility: activity.content_visibility,
     activityPlanId: activity.activityPlanId ?? null,
   };
 }
@@ -198,15 +244,23 @@ function buildQueueJob(args: {
   now: string;
 }): ActivitySubmissionQueueJob {
   const artifactId = args.artifact.sessionId;
+  if (!args.artifact.executionManifest) {
+    throw new Error("Finalized recording is missing its ordered execution manifest");
+  }
 
   return {
+    schemaVersion: 3,
     id: artifactId,
     artifactId,
     sessionId: args.artifact.sessionId,
     localActivityFilePath: args.artifact.activityFilePath ?? "",
     localActivityFileSize: args.fileSize,
     streamArtifactPaths: args.artifact.streamArtifactPaths,
-    draft: toQueueDraft(args.activity),
+    executionManifest: args.artifact.executionManifest,
+    draft: {
+      ...toQueueDraft(args.activity),
+      recordingSessionId: args.artifact.sessionId,
+    },
     status: "queued",
     attempts: 0,
     createdAt: args.now,
@@ -230,6 +284,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
     hasStreams: false,
     activityId: null,
     queueStatus: null,
+    ingestionId: null,
   });
 
   // ================================
@@ -240,20 +295,30 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
     try {
       console.log("[useActivitySubmission] Processing finalized artifact");
 
-      const artifact = service?.getFinalizedArtifact() ?? (await loadPendingFinalizedArtifact());
+      const artifact = service?.getFinalizedArtifact();
 
       if (!artifact) {
         if (service?.state === "finishing") {
           return;
         }
 
-        throw new Error("No finalized activity artifact found");
+        dispatch({ type: "EMPTY" });
+        return;
       }
 
-      const profileId = service?.recordingMetadata?.profileId ?? profile?.id;
-
+      const profileId = profile?.id;
       if (!profileId) {
-        throw new Error("No profile found for activity submission");
+        dispatch({ type: "EMPTY" });
+        return;
+      }
+      if (
+        service?.recordingMetadata?.profileId &&
+        service.recordingMetadata.profileId !== profileId
+      ) {
+        throw new Error("Finalized activity belongs to a different profile");
+      }
+      if (artifact.profileId !== profileId) {
+        throw new Error("Finalized activity belongs to a different profile");
       }
 
       const activity = buildActivityFromArtifact({
@@ -263,8 +328,21 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
 
       const hasStreams = artifact.streamArtifactPaths.length > 0;
 
+      const existingJob = await loadActivitySubmissionQueueJobByArtifactId(
+        artifact.sessionId,
+        profileId,
+      );
       console.log("[useActivitySubmission] Activity processed successfully");
       dispatch({ type: "READY", artifact, activity, hasStreams });
+      if (existingJob) {
+        dispatch({
+          type: "RESTORE_QUEUE",
+          status: existingJob.status,
+          activityId: existingJob.activityId ?? null,
+          ingestionId: existingJob.ingestionId ?? null,
+          error: existingJob.lastError ?? null,
+        });
+      }
     } catch (err) {
       console.error("[useActivitySubmission] Processing failed:", err);
       dispatch({
@@ -276,13 +354,16 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
 
   // Listen for recording completion event
   useEffect(() => {
-    processRecording();
+    if (!service) {
+      dispatch({ type: "EMPTY" });
+      return;
+    }
 
-    if (!service) return;
+    void processRecording();
 
     const handleRecordingComplete = () => {
       console.log("[useActivitySubmission] Finalized artifact ready event received");
-      processRecording();
+      void processRecording();
     };
 
     const subscription = service.addListener("artifactReady", handleRecordingComplete);
@@ -295,21 +376,28 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
   // Actions
   // ================================
 
-  const update = useCallback((updates: { name?: string; notes?: string; is_private?: boolean }) => {
-    dispatch({ type: "UPDATE", updates });
-  }, []);
+  const update = useCallback(
+    (updates: {
+      name?: string;
+      notes?: string | null;
+      content_visibility?: ActivitySubmissionQueueDraft["content_visibility"];
+    }) => {
+      dispatch({ type: "UPDATE", updates });
+    },
+    [],
+  );
 
   const createActivityMutation = api.activities.createFromRecordingSummary.useMutation();
-  const getSignedUrlMutation = api.activityFiles.getSignedUploadUrl.useMutation();
-  const markUploadedAndProcessMutation = api.activityFiles.markUploadedAndProcess.useMutation({
-    onSuccess: async (data) => {
-      await invalidatePostActivityIngestionQueries(queryClient);
-
-      if (data?.activity?.id) {
-        queryClient.setQueryData(queryKeys.activities.detail(data.activity.id), data.activity);
-      }
+  const beginRecordingUploadMutation = api.activityFiles.beginMobileRecordingUpload.useMutation(
+    IDEMPOTENT_INGESTION_MUTATION_RETRY_OPTIONS,
+  );
+  const ingestionStatusQuery = api.activityFiles.getIngestionStatus.useQuery(
+    { profileId: profile?.id ?? "", ingestionId: state.ingestionId ?? "" },
+    {
+      enabled: Boolean(profile?.id && state.ingestionId),
+      refetchInterval: (query) => ingestionStatusPollingInterval(query.state.data),
     },
-  });
+  );
 
   // ================================
   // Durable Queue Submission
@@ -320,31 +408,64 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
       try {
         console.log(`[useActivitySubmission] Queueing activity file:`, artifact.activityFilePath);
 
-        // Simple file verification
-        const { File } = await import("expo-file-system");
-        if (!artifact.activityFilePath) {
-          throw new Error("Activity file does not exist");
+        if (artifact.profileId !== activity.profileId || artifact.profileId !== profile?.id) {
+          throw new Error("Activity submission belongs to a different profile");
+        }
+        const existingJob = await loadActivitySubmissionQueueJobByArtifactId(
+          artifact.sessionId,
+          artifact.profileId,
+        );
+
+        if (existingJob?.status === "complete") {
+          if (!existingJob.activityId) {
+            throw new Error("Completed activity submission is missing its activity id");
+          }
+
+          await invalidatePostActivityIngestionQueries(queryClient);
+          dispatch({ type: "SUCCESS", activityId: existingJob.activityId });
+          return existingJob.activityId;
         }
 
-        const file = new File(artifact.activityFilePath);
+        let fileSize = existingJob?.localActivityFileSize ?? null;
+        if (!existingJob?.uploadCompletedAt && !existingJob?.activityId) {
+          // A local file is only required until upload progress has been persisted.
+          const { File } = await import("expo-file-system");
+          const localActivityFilePath =
+            existingJob?.localActivityFilePath || artifact.activityFilePath;
+          if (!localActivityFilePath) {
+            throw new Error("Activity file does not exist");
+          }
 
-        if (!file.exists) {
-          throw new Error("Activity file does not exist");
+          const file = new File(localActivityFilePath);
+
+          if (!file.exists) {
+            throw new Error("Activity file does not exist");
+          }
+
+          fileSize = file.size ?? 0;
+
+          if (fileSize === 0) {
+            throw new Error("Activity file is empty");
+          }
         }
 
-        const fileSize = file.size ?? 0;
-
-        if (fileSize === 0) {
-          throw new Error("Activity file is empty");
-        }
-
-        const queuedJob = buildQueueJob({
+        const candidate = buildQueueJob({
           artifact,
           activity,
           fileSize,
           now: new Date().toISOString(),
         });
-        await upsertActivitySubmissionQueueJob(queuedJob);
+        const outcome = await createFinalizedArtifactQueueHandoff(candidate);
+        if (outcome === "discarded" || outcome === "absent" || outcome === "rejected") {
+          throw new Error("Recording submission is no longer available");
+        }
+        const queuedJob =
+          existingJob ??
+          (await loadActivitySubmissionQueueJobByArtifactId(
+            artifact.sessionId,
+            artifact.profileId,
+          ));
+        if (!queuedJob) throw new Error("Recording submission is no longer available");
         dispatch({ type: "QUEUE_STATUS", status: "queued" });
 
         let resolveActivityCreated!: (activityId: string) => void;
@@ -356,12 +477,8 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
 
         const completion = runActivitySubmissionQueueJob(queuedJob, {
           createFromRecordingSummary: createActivityMutation.mutateAsync,
-          getSignedUploadUrl: (input) =>
-            getSignedUrlMutation.mutateAsync({
-              fileName: input.fileName,
-              fileSize: input.fileSize ?? 0,
-            }),
-          markUploadedAndProcess: markUploadedAndProcessMutation.mutateAsync,
+          getLocalArtifactMetadata: getLocalActivityArtifactMetadata,
+          beginMobileRecordingUpload: beginRecordingUploadMutation.mutateAsync,
           uploadToSignedUrl: (localPath, signedUrl) =>
             uploader.uploadToSignedUrl(localPath, signedUrl),
           onJobUpdated: async (job) => {
@@ -369,6 +486,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
               type: "QUEUE_STATUS",
               status: job.status,
               activityId: job.activityId ?? null,
+              ingestionId: job.ingestionId ?? null,
             });
 
             if (job.activityId && !createdActivityId) {
@@ -385,10 +503,8 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
               return;
             }
 
-            await clearPendingFinalizedArtifact();
-            await deleteFinalizedArtifactFiles(artifact);
             await invalidatePostActivityIngestionQueries(queryClient);
-            dispatch({ type: "SUCCESS", activityId: job.activityId });
+            dispatch(omitUndefined({ type: "SUCCESS" as const, activityId: job.activityId }));
           })
           .catch((error) => {
             dispatch({
@@ -404,10 +520,10 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
             throw new Error(job.lastError || "Activity creation failed");
           }),
         ]);
-        console.log("[useActivitySubmission] Activity created; upload/process continues in queue");
+        console.log("[useActivitySubmission] Activity artifact accepted for server processing");
         return activityId;
       } catch (err) {
-        console.error(`[useActivitySubmission] Upload failed:`, err);
+        console.error(`[useActivitySubmission] Submission failed:`, err);
 
         const errorMessage = err instanceof Error ? err.message : String(err);
 
@@ -445,11 +561,15 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         throw err;
       }
     },
-    [createActivityMutation, getSignedUrlMutation, markUploadedAndProcessMutation, queryClient],
+    [beginRecordingUploadMutation, createActivityMutation, profile?.id, queryClient],
   );
 
   const submit = useCallback(
-    async (updates?: { name?: string; notes?: string; is_private?: boolean }) => {
+    async (updates?: {
+      name?: string;
+      notes?: string | null;
+      content_visibility?: ActivitySubmissionQueueDraft["content_visibility"];
+    }) => {
       if (!state.activity || !state.artifact) {
         throw new Error("No data to submit");
       }
@@ -459,19 +579,16 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
       dispatch({ type: "QUEUE_STATUS", status: "queued" });
 
       try {
-        if (state.artifact.activityFilePath) {
-          await submitOnce(state.artifact, {
+        await submitOnce(
+          state.artifact,
+          omitUndefined({
             ...activityForSubmit,
-            notes: activityForSubmit.notes ?? undefined,
-          });
-          return true;
-        } else {
-          // No activity file found
-          console.error("[useActivitySubmission] No activity file found in recording metadata");
-          throw new Error("No activity file generated. Please try recording again.");
-        }
+            notes: activityForSubmit.notes ?? null,
+          }),
+        );
+        return true;
       } catch (err) {
-        console.error("[useActivitySubmission] Upload failed:", err);
+        console.error("[useActivitySubmission] Submission failed:", err);
 
         // Error state is already set by submitOnce
         // Don't throw - keep the submission page available for manual retry
@@ -498,7 +615,11 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
             : state.phase === "success"
               ? "Activity saved. Upload processing is complete."
               : state.phase === "error"
-                ? state.error || "Activity upload failed. You can retry."
+                ? ingestionStatusQuery.data?.status === "failed_terminal"
+                  ? "Activity processing failed and cannot be retried. Your local recording remains available."
+                  : canRetryDirectIngestion(ingestionStatusQuery.data)
+                    ? "Activity processing failed. You can retry with the saved local recording."
+                    : "Activity upload failed. Checking whether it can be retried."
                 : null;
 
   // ================================
@@ -521,6 +642,9 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
     hasStreams: state.hasStreams,
     activityId: state.activityId,
     queueStatus: state.queueStatus,
+    ingestionId: state.ingestionId,
+    ingestionStatus: ingestionStatusQuery.data ?? null,
+    canRetryIngestion: canRetryDirectIngestion(ingestionStatusQuery.data),
     statusMessage,
 
     // Actions

@@ -1,5 +1,5 @@
 export const tableFixtures = {
-  weeklyWorkouts: {
+  weeklyActivities: {
     caption: "Weekly activities",
     columns: ["Day", "Activity", "Duration"],
     rows: [

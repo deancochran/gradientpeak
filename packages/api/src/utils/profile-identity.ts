@@ -1,6 +1,7 @@
 import { profiles } from "@repo/db";
 import { inArray } from "drizzle-orm";
 import { z } from "zod";
+import { resolveProfileMediaUrl } from "../application/storage/profile-media-url";
 
 export const profileIdentitySchema = z
   .object({
@@ -13,7 +14,13 @@ export const profileIdentitySchema = z
 export type ProfileIdentity = z.infer<typeof profileIdentitySchema>;
 
 export async function loadProfileIdentityMap(
-  db: any,
+  db: {
+    select(...fields: unknown[]): {
+      from(table: typeof profiles): {
+        where(condition: unknown): PromiseLike<unknown>;
+      };
+    };
+  },
   profileIds: Array<string | null | undefined>,
 ) {
   const ids = Array.from(new Set(profileIds.filter((id): id is string => typeof id === "string")));
@@ -32,5 +39,10 @@ export async function loadProfileIdentityMap(
     .where(inArray(profiles.id, ids));
 
   const parsedRows = z.array(profileIdentitySchema).parse(rows);
-  return new Map(parsedRows.map((row) => [row.id, row]));
+  return new Map(
+    parsedRows.map((row) => [
+      row.id,
+      { ...row, avatar_url: resolveProfileMediaUrl(row.avatar_url, row.id) },
+    ]),
+  );
 }
