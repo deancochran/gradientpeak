@@ -1,3 +1,5 @@
+import type { CanonicalActivityCategory } from "../schemas/activity-category";
+
 export const ACTIVITY_CATEGORY_CONFIG = {
   run: {
     name: "Run",
@@ -34,7 +36,10 @@ export const ACTIVITY_CATEGORY_CONFIG = {
     category: "other",
     description: "Other physical activity",
   },
-} as const;
+} as const satisfies Record<
+  CanonicalActivityCategory,
+  { name: string; icon: string; color: string; category: string; description: string }
+>;
 
 export const ACTIVITY_CATEGORIES = {
   cardio: "Cardio",

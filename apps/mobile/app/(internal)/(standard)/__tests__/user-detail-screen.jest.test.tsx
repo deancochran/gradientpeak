@@ -19,6 +19,20 @@ const authState = {
     bio: "Own profile",
   },
 };
+type ProfileFixture = {
+  id: string;
+  username: string;
+  avatar_url: string | null;
+  bio: string | null;
+  gender: string | null;
+  preferred_units: string | null;
+  language: string | null;
+  dob?: string;
+  followers_count?: number;
+  following_count?: number;
+  follow_status?: string;
+  is_public?: boolean;
+};
 const profileQueryState = {
   data: {
     id: "11111111-1111-4111-8111-111111111111",
@@ -28,15 +42,19 @@ const profileQueryState = {
     gender: null,
     preferred_units: "metric",
     language: "en",
-  } as any,
+  } as ProfileFixture,
   isLoading: false,
-  error: null as any,
+  error: null as Error | null,
+};
+
+type StackScreenProps = Record<string, unknown> & {
+  options?: { headerRight?: () => React.ReactNode };
 };
 
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: {
-    Screen: (props: any) =>
+    Screen: (props: StackScreenProps) =>
       React.createElement(
         "StackScreen",
         props,
@@ -49,7 +67,7 @@ jest.mock("expo-router", () => ({
 
 jest.mock("@/components/ErrorBoundary", () => ({
   __esModule: true,
-  ErrorBoundary: ({ children }: any) => children,
+  ErrorBoundary: ({ children }: React.PropsWithChildren) => children,
   ScreenErrorFallback: createHost("ScreenErrorFallback"),
 }));
 
@@ -101,7 +119,9 @@ jest.mock("@/lib/hooks/useAuth", () => ({
 
 jest.mock("@/lib/server-config", () => ({
   __esModule: true,
+  getServerConfig: () => ({ apiUrl: "http://127.0.0.1:3000" }),
   getReachableSupabaseStorageUrl: (url: string) => url,
+  subscribeServerConfig: jest.fn(),
 }));
 
 jest.mock("@/lib/api", () => ({
@@ -112,6 +132,11 @@ jest.mock("@/lib/api", () => ({
     }),
     profiles: {
       getPublicById: { useQuery: () => profileQueryState },
+    },
+    feed: {
+      getProfileActivities: {
+        useQuery: () => ({ data: { items: [] }, isError: false, isLoading: false }),
+      },
     },
     groups: {
       forProfile: {
@@ -142,9 +167,6 @@ jest.mock("@/lib/api", () => ({
       followUser: { useMutation: () => ({ mutate: jest.fn(), isPending: false }) },
       unfollowUser: { useMutation: () => ({ mutate: jest.fn(), isPending: false }) },
     },
-    integrations: {
-      list: { useQuery: () => ({ data: [{ provider: "strava" }] }) },
-    },
     messaging: {
       getOrCreateDM: { useMutation: () => ({ mutate: jest.fn(), isPending: false }) },
     },
@@ -159,19 +181,19 @@ describe("user detail own vs other controls", () => {
     replaceMock.mockReset();
   });
 
-  it("redirects own profile detail requests to profile settings", () => {
+  it("redirects own profile detail requests to profile settings", async () => {
     localSearchParamsMock.userId = authState.user.id;
     authState.profile.username = "Owner";
     profileQueryState.data.username = "Owner";
 
-    renderNative(<UserDetailScreenWithErrorBoundary />);
+    await renderNative(<UserDetailScreenWithErrorBoundary />);
 
-    expect(replaceMock).toHaveBeenCalledWith("/(internal)/(tabs)/profile");
+    expect(replaceMock).toHaveBeenCalledWith("/me");
     expect(screen.getByText("Opening profile settings...")).toBeTruthy();
     expect(screen.queryByTestId("user-detail-options-trigger")).toBeNull();
   });
 
-  it("hides own-only controls on other user profile", () => {
+  it("hides own-only controls on other user profile", async () => {
     localSearchParamsMock.userId = "22222222-2222-4222-8222-222222222222";
     profileQueryState.data = {
       id: "22222222-2222-4222-8222-222222222222",
@@ -183,14 +205,14 @@ describe("user detail own vs other controls", () => {
       language: null,
     };
 
-    renderNative(<UserDetailScreenWithErrorBoundary />);
+    await renderNative(<UserDetailScreenWithErrorBoundary />);
 
     expect(screen.queryByTestId("user-detail-options-trigger")).toBeNull();
     expect(screen.queryByTestId("account-section")).toBeNull();
     expect(screen.getByText("Public Paceline")).toBeTruthy();
   });
 
-  it("hides private profile details and graph navigation until access is accepted", () => {
+  it("hides private profile details and graph navigation until access is accepted", async () => {
     localSearchParamsMock.userId = "33333333-3333-4333-8333-333333333333";
     profileQueryState.data = {
       id: "33333333-3333-4333-8333-333333333333",
@@ -207,7 +229,7 @@ describe("user detail own vs other controls", () => {
       preferred_units: "imperial",
     };
 
-    renderNative(<UserDetailScreenWithErrorBoundary />);
+    await renderNative(<UserDetailScreenWithErrorBoundary />);
 
     expect(screen.getByText("This account is private")).toBeTruthy();
     expect(screen.getByTestId("user-detail-requested-button")).toBeTruthy();
@@ -217,7 +239,7 @@ describe("user detail own vs other controls", () => {
     expect(screen.getByTestId("user-detail-summary-following").props.disabled).toBe(true);
   });
 
-  it("shows private profile details after follow access is accepted", () => {
+  it("shows private profile details after follow access is accepted", async () => {
     localSearchParamsMock.userId = "44444444-4444-4444-8444-444444444444";
     profileQueryState.data = {
       id: "44444444-4444-4444-8444-444444444444",
@@ -234,7 +256,7 @@ describe("user detail own vs other controls", () => {
       preferred_units: "imperial",
     };
 
-    renderNative(<UserDetailScreenWithErrorBoundary />);
+    await renderNative(<UserDetailScreenWithErrorBoundary />);
 
     expect(screen.queryByText("This account is private")).toBeNull();
     expect(screen.getByText("Visible after access")).toBeTruthy();

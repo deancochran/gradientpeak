@@ -3,7 +3,7 @@ import {
   type CreationFeasibilitySafetySummary,
   creationFeasibilitySafetySummarySchema,
   type TrainingPlanCreationConfig,
-} from "../schemas/training_plan_structure";
+} from "../schemas/training-plan-structure";
 import type { ConstraintConflict } from "./resolveConstraintConflicts";
 
 export interface ClassifyCreationFeasibilityInput {

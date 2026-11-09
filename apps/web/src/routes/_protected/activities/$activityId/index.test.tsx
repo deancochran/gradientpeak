@@ -1,0 +1,489 @@
+// @vitest-environment jsdom
+
+import { parseActivityFile } from "@repo/core/activity-files/parser";
+import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AcceptedActivityStreamRecord } from "../../../../lib/activity-playback";
+import acceptedActivityTcx from "../../../../lib/recording/fixtures/raw.tcx?raw";
+
+import { Route } from "./index";
+
+const mocks = vi.hoisted(() => ({
+  activityId: "activity-1",
+  activityError: false,
+  refetchActivity: vi.fn(),
+  streamRequests: vi.fn(),
+  streamsBySegment: {} as Record<string, { records: AcceptedActivityStreamRecord[] }>,
+  streamLoading: false,
+  streamError: false,
+  streamPlaceholder: false,
+  refetchStreams: vi.fn(),
+  detail: undefined as unknown,
+  importedSources: [] as Array<{
+    id: string;
+    provider: string;
+    resolutionStatus: "confirmed" | "review";
+  }>,
+  resolveImportedSource: vi.fn(),
+  ownedActivities: [] as Array<{ id: string; title: string }>,
+  activitiesError: false,
+  refetchActivities: vi.fn(),
+  keepImportedSourceSeparate: vi.fn(),
+  sendCompletedActivity: vi.fn(),
+  completedActivityProviders: [] as Array<{
+    jobId?: string | null;
+    provider: string;
+    reason: string | null;
+    status:
+      | "ready"
+      | "reconnect_required"
+      | "unsupported_evidence"
+      | "not_connected"
+      | "unavailable"
+      | "queued"
+      | "running"
+      | "completed"
+      | "dispatch_uncertain"
+      | "failed";
+  }>,
+}));
+
+vi.mock("@tanstack/react-router", () => ({
+  createFileRoute: () => (options: object) => ({
+    ...options,
+    useNavigate: () => vi.fn(),
+    useParams: () => ({ activityId: mocks.activityId }),
+  }),
+  Link: ({ children }: { children: ReactNode }) => <a href="/integrations">{children}</a>,
+}));
+
+vi.mock("../../../../components/activity/session-rpe-card", () => ({
+  SessionRpeCard: () => null,
+}));
+vi.mock("../../../../components/protected/activity-file-detail-cards", () => ({
+  ActivityStreamChartsCard: () => null,
+  ActivitySwimDetailCards: () => null,
+}));
+vi.mock("../../../../components/protected/activity-route-primitives", () => ({
+  ActivityListCard: () => null,
+  DetailMetricGrid: () => null,
+  DetailPageIntro: ({
+    actions,
+    description,
+    title,
+  }: {
+    actions: ReactNode;
+    description: string;
+    title: string;
+  }) => (
+    <>
+      <h1>{title}</h1>
+      <p>{description}</p>
+      {actions}
+    </>
+  ),
+  EntityMapCard: () => null,
+  LikeToggleButton: () => null,
+}));
+vi.mock("../../../../components/protected/activity-stream-analysis-card", () => ({
+  ActivityStreamAnalysisCard: () => null,
+}));
+vi.mock("../../../../components/protected/entity-comments-card", () => ({
+  EntityCommentsCard: () => null,
+}));
+vi.mock("../../../../hooks/use-viewing-user-preferred-unit-system", () => ({
+  useViewingUserPreferredUnitSystem: () => ({ unitSystem: "metric" }),
+}));
+vi.mock("../../../../lib/api/client", () => ({
+  api: {
+    activities: {
+      getById: {
+        useQuery: () => ({
+          data: {
+            detail: mocks.detail,
+            analysis: { derived: undefined, segmentLoads: [] },
+            importedSources: mocks.importedSources,
+          },
+          isLoading: false,
+          isError: mocks.activityError,
+          refetch: mocks.refetchActivity,
+        }),
+      },
+      getEfforts: { useQuery: () => ({ data: [], isLoading: false, isError: false }) },
+      getCompletedActivityProviderEligibility: {
+        useQuery: () => ({ data: mocks.completedActivityProviders }),
+      },
+      listPaginated: {
+        useQuery: () => ({
+          data: { items: mocks.ownedActivities },
+          isError: mocks.activitiesError,
+          isLoading: false,
+          refetch: mocks.refetchActivities,
+        }),
+      },
+      update: { useMutation: () => ({ isPending: false, mutate: vi.fn() }) },
+      delete: { useMutation: () => ({ isPending: false, mutate: vi.fn() }) },
+      resolveImportedSource: {
+        useMutation: () => ({ isPending: false, mutate: mocks.resolveImportedSource }),
+      },
+      keepImportedSourceSeparate: {
+        useMutation: () => ({ isPending: false, mutate: mocks.keepImportedSourceSeparate }),
+      },
+      sendCompletedActivityToProvider: {
+        useMutation: () => ({ isPending: false, mutate: mocks.sendCompletedActivity }),
+      },
+    },
+    activityFiles: {
+      getStreams: {
+        useQuery: (
+          input: { activityId: string; scope: { type: string; segmentId: string } },
+          options: unknown,
+        ) => {
+          mocks.streamRequests(input, options);
+          return {
+            data: mocks.streamsBySegment[input.scope.segmentId] ?? { records: [] },
+            isLoading: mocks.streamLoading,
+            isError: mocks.streamError,
+            isPlaceholderData: mocks.streamPlaceholder,
+            error: mocks.streamError ? { message: "Stream unavailable" } : null,
+            refetch: mocks.refetchStreams,
+          };
+        },
+      },
+    },
+    profiles: { getPublicById: { useQuery: () => ({ data: undefined }) } },
+    social: { toggleLike: { useMutation: () => ({ isPending: false, mutate: vi.fn() }) } },
+    useUtils: () => ({
+      activities: { getById: { invalidate: vi.fn() }, listPaginated: { invalidate: vi.fn() } },
+    }),
+  },
+}));
+vi.mock("sonner", () => ({ toast: { error: vi.fn(), info: vi.fn(), success: vi.fn() } }));
+
+beforeEach(() => {
+  mocks.activityId = "activity-1";
+  mocks.activityError = false;
+  mocks.refetchActivity.mockReset();
+  mocks.streamRequests.mockReset();
+  mocks.streamsBySegment = {};
+  mocks.streamLoading = false;
+  mocks.streamError = false;
+  mocks.streamPlaceholder = false;
+  mocks.refetchStreams.mockReset();
+  mocks.importedSources = [];
+  mocks.resolveImportedSource.mockReset();
+  mocks.ownedActivities = [];
+  mocks.activitiesError = false;
+  mocks.refetchActivities.mockReset();
+  mocks.keepImportedSourceSeparate.mockReset();
+  mocks.sendCompletedActivity.mockReset();
+  mocks.completedActivityProviders = [];
+  mocks.detail = {
+    summary: {
+      id: "activity-1",
+      owner: { id: "owner-1", username: "runner", avatarUrl: null },
+      time: { startedAt: "2026-08-01T10:00:00.000Z", finishedAt: "2026-08-01T11:00:00.000Z" },
+      activityComposition: { kind: "single", categories: ["run"] },
+      title: "Recorder activity",
+      notes: "Indoor session",
+      visibility: "private",
+      engagement: { likes: 0, viewerHasLiked: false },
+      capabilities: { canEdit: true, canDelete: true },
+      metrics: [],
+    },
+    performance: {
+      distanceMeters: 0,
+      elapsedSeconds: 3600,
+      activeSeconds: 3500,
+      movingSeconds: 3500,
+      timingCoverage: "complete",
+      averagePower: null,
+      averageHeartRate: null,
+      averageSpeedMetersPerSecond: 2,
+    },
+    segments: [
+      {
+        id: "segment-1",
+        ordinal: 0,
+        role: "activity",
+        activityCategory: "run",
+        timingCoverage: "complete",
+        status: "available",
+        summary: {
+          version: 1,
+          timing: { timingCoverage: "complete", activeMs: 3_500_000 },
+          normalizedPowerResult: calculateCyclingNormalizedPower({ samples: [] }),
+          recordingExecution: {
+            version: 1,
+            source: "recording_execution_manifest",
+            coverage: "complete",
+            occurrenceCount: 3,
+            occurrences: [
+              {
+                occurrenceId: "step-1",
+                globalOrdinal: 0,
+                completion: { status: "completed", method: "automatic" },
+              },
+              {
+                occurrenceId: "step-2",
+                globalOrdinal: 1,
+                completion: { status: "completed", method: "manual" },
+              },
+              {
+                occurrenceId: "step-3",
+                globalOrdinal: 2,
+                completion: { status: "skipped", method: "manual" },
+              },
+            ],
+          },
+        },
+      },
+    ],
+    currentArtifact: null,
+    ingestion: { status: "ready", lastErrorMessage: null },
+    routePolyline: null,
+    linkedRoute: null,
+  };
+});
+
+afterEach(cleanup);
+
+describe("ActivityDetailPage plan execution summary", () => {
+  it("shows activity load failure rather than claiming the activity or streams do not exist", () => {
+    mocks.detail = undefined;
+    mocks.activityError = true;
+    const Page = (Route as unknown as { component: React.ComponentType }).component;
+    render(<Page />);
+    expect(screen.getByRole("alert").textContent).toBe("Activity could not be loaded.");
+    expect(screen.queryByText("Activity not found.")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry activity" }));
+    expect(mocks.refetchActivity).toHaveBeenCalledOnce();
+    expect(mocks.streamRequests).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ enabled: false }),
+    );
+  });
+  it("plays accepted parser records from the selected segment and resets when the scope changes", () => {
+    const parsed = parseActivityFile({
+      fileName: "accepted.tcx",
+      data: acceptedActivityTcx.trimEnd(),
+    });
+    const detail = mocks.detail as {
+      currentArtifact: unknown;
+      segments: Array<{ id: string; ordinal: number; activityCategory: string }>;
+      summary: { id: string };
+    };
+    detail.currentArtifact = { id: "accepted-artifact", format: "tcx", availability: "available" };
+    const first = detail.segments[0];
+    if (!first) throw new Error("Expected segment");
+    detail.segments = [first, { ...first, id: "segment-2", ordinal: 1, activityCategory: "bike" }];
+    mocks.streamsBySegment = {
+      "segment-1": { records: parsed.records },
+      "segment-2": {
+        records: [
+          { timestamp: new Date("2026-09-20T11:00:00Z"), power: 220 },
+          { timestamp: new Date("2026-09-20T11:00:10Z"), power: 250 },
+        ],
+      },
+    };
+    const Page = (Route as unknown as { component: React.ComponentType }).component;
+    const view = render(<Page />);
+    expect(mocks.streamRequests).toHaveBeenLastCalledWith(
+      { activityId: "activity-1", scope: { type: "segment", segmentId: "segment-1" } },
+      expect.objectContaining({ enabled: true }),
+    );
+    fireEvent.change(screen.getByRole("slider", { name: "Playback elapsed time" }), {
+      target: { value: "10000" },
+    });
+    expect(screen.getByTestId("playback-metric-heartRate").textContent).toContain("160 bpm");
+    expect(screen.getByTestId("playback-metric-speed").textContent).toContain("6 m/s");
+    expect(screen.getByTestId("playback-position-marker").getAttribute("data-latitude")).toBe(
+      "40.1",
+    );
+    fireEvent.change(screen.getByLabelText("Recorded segment"), { target: { value: "segment-2" } });
+    expect(mocks.streamRequests).toHaveBeenLastCalledWith(
+      { activityId: "activity-1", scope: { type: "segment", segmentId: "segment-2" } },
+      expect.objectContaining({ enabled: true }),
+    );
+    expect(screen.getByTestId("playback-clock").textContent).toContain("0:00.0");
+    expect(screen.getByTestId("playback-metric-power").textContent).toContain("220 W");
+    expect(screen.queryByTestId("playback-metric-heartRate")).toBeNull();
+    expect(screen.getByText("This segment has no recorded GPS positions.")).toBeTruthy();
+    mocks.streamPlaceholder = true;
+    view.rerender(<Page />);
+    expect(screen.getByText("Loading recorded playback…")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Play playback" })).toBeNull();
+    mocks.streamPlaceholder = false;
+    mocks.activityId = "activity-2";
+    detail.summary.id = "activity-2";
+    view.rerender(<Page />);
+    expect(mocks.streamRequests).toHaveBeenLastCalledWith(
+      { activityId: "activity-2", scope: { type: "segment", segmentId: "segment-1" } },
+      expect.objectContaining({ enabled: true }),
+    );
+    expect(screen.getByTestId("playback-clock").textContent).toContain("0:00.0");
+    expect(mocks.resolveImportedSource).not.toHaveBeenCalled();
+    expect(mocks.sendCompletedActivity).not.toHaveBeenCalled();
+  });
+
+  it("exposes stream errors and retry without rendering cached playback values", () => {
+    const detail = mocks.detail as { currentArtifact: unknown };
+    detail.currentArtifact = { id: "artifact", format: "fit", availability: "available" };
+    mocks.streamError = true;
+    mocks.streamsBySegment["segment-1"] = { records: [{ timestamp: new Date(), power: 300 }] };
+    const Page = (Route as unknown as { component: React.ComponentType }).component;
+    render(<Page />);
+    expect(screen.getByText("Playback unavailable: Stream unavailable")).toBeTruthy();
+    expect(screen.queryByTestId("playback-metric-power")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry playback" }));
+    expect(mocks.refetchStreams).toHaveBeenCalledOnce();
+  });
+  it("renders saved completion and basis evidence without inferring adherence or sensors", () => {
+    const ActivityDetailPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<ActivityDetailPage />);
+
+    const card = screen.getByTestId("recording-execution-review");
+    const cardText = card.textContent ?? "";
+    expect(cardText).toContain("Plan execution");
+    expect(cardText).toContain("Completed");
+    expect(cardText).toContain("Skipped");
+    expect(cardText).toContain("Automatic completions");
+    expect(cardText).toContain("Manual completions");
+    expect(screen.getByText("Completed").nextElementSibling?.textContent).toBe("2");
+    expect(screen.getByText("Skipped").nextElementSibling?.textContent).toBe("1");
+    expect(screen.getByText("Automatic completions").nextElementSibling?.textContent).toBe("1");
+    expect(screen.getByText("Manual completions").nextElementSibling?.textContent).toBe("1");
+    expect(cardText).toContain("All 3 recorded plan steps have a saved completion status.");
+    expect(cardText).toContain("not target adherence or sensor performance");
+    expect(cardText).not.toMatch(/target adherence (met|achieved|confirmed)/i);
+    expect(cardText).not.toMatch(/sensor performance (met|achieved|confirmed)/i);
+  });
+});
+
+describe("ActivityDetailPage imported sources", () => {
+  it("requires explicit confirmation, freezes pending selection, and retains a failed move draft", () => {
+    const sourceId = "11111111-1111-4111-8111-111111111111";
+    const targetId = "22222222-2222-4222-8222-222222222222";
+    mocks.importedSources = [{ id: sourceId, provider: "strava", resolutionStatus: "review" }];
+    mocks.ownedActivities = [{ id: targetId, title: "Morning run" }];
+    const ActivityDetailPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<ActivityDetailPage />);
+    const selection = screen.getByLabelText("Move to an activity") as HTMLSelectElement;
+    fireEvent.change(selection, { target: { value: targetId } });
+    expect(mocks.resolveImportedSource).not.toHaveBeenCalled();
+    expect(screen.getByTestId("imported-sources").textContent).toContain("strava");
+    expect(screen.getByTestId("imported-sources").textContent).not.toContain(targetId);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm move" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm move" }));
+    expect(mocks.resolveImportedSource).toHaveBeenCalledTimes(1);
+    expect(mocks.resolveImportedSource).toHaveBeenCalledWith(
+      { action: "move", sourceReferenceId: sourceId, targetActivityId: targetId },
+      expect.any(Object),
+    );
+    expect(selection.disabled).toBe(true);
+    expect(
+      (screen.getByRole("button", { name: "Keep separate" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    const callbacks = mocks.resolveImportedSource.mock.calls[0]?.[1];
+    act(() => {
+      callbacks.onError();
+      callbacks.onSettled();
+    });
+    expect(screen.getByRole("alert").textContent).toContain("could not be confirmed");
+    expect(selection.value).toBe(targetId);
+    expect(selection.disabled).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm move" }));
+    const retryCallbacks = mocks.resolveImportedSource.mock.calls[1]?.[1];
+    act(() => {
+      retryCallbacks.onSuccess();
+      retryCallbacks.onSettled();
+    });
+    expect(selection.value).toBe("");
+    expect(screen.getByRole("status").textContent).toContain("Source moved");
+    expect(
+      (screen.getByRole("button", { name: "Confirm move" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
+  it("announces a candidate query failure and retries without resolving a source", () => {
+    mocks.importedSources = [
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        provider: "strava",
+        resolutionStatus: "review",
+      },
+    ];
+    mocks.activitiesError = true;
+    const ActivityDetailPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<ActivityDetailPage />);
+    expect(screen.getByRole("alert").textContent).toContain("Activities could not be loaded");
+    fireEvent.click(screen.getByRole("button", { name: "Retry activities" }));
+    expect(mocks.refetchActivities).toHaveBeenCalledTimes(1);
+    expect(mocks.resolveImportedSource).not.toHaveBeenCalled();
+  });
+
+  it("shows compact owner controls for a source awaiting review", () => {
+    mocks.importedSources = [
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        provider: "strava",
+        resolutionStatus: "review",
+      },
+    ];
+    const ActivityDetailPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<ActivityDetailPage />);
+
+    expect(screen.getByTestId("imported-sources").textContent).toContain("Imported sources");
+    fireEvent.click(screen.getByText("Same activity"));
+    expect(mocks.resolveImportedSource).toHaveBeenCalledWith({
+      action: "confirm_same",
+      sourceReferenceId: "11111111-1111-4111-8111-111111111111",
+    });
+    fireEvent.click(screen.getByText("Keep separate"));
+    expect(mocks.keepImportedSourceSeparate).toHaveBeenCalledWith({
+      sourceReferenceId: "11111111-1111-4111-8111-111111111111",
+    });
+    expect(screen.getByText("Ignore")).toBeTruthy();
+  });
+});
+
+describe("ActivityDetailPage completed activity provider action", () => {
+  it("shows the owner upload action only when Strava capability and scope are ready", () => {
+    mocks.completedActivityProviders = [{ provider: "strava", reason: null, status: "ready" }];
+    const ActivityDetailPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<ActivityDetailPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Send to Strava" }));
+    expect(mocks.sendCompletedActivity).toHaveBeenCalledWith({
+      activityId: "activity-1",
+      provider: "strava",
+    });
+  });
+
+  it("replaces the upload action with explicit reconnect guidance when activity:write is absent", () => {
+    mocks.completedActivityProviders = [
+      {
+        provider: "strava",
+        reason: "Reconnect Strava to grant activity upload access.",
+        status: "reconnect_required",
+      },
+    ];
+    const ActivityDetailPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<ActivityDetailPage />);
+    expect(screen.queryByRole("button", { name: "Send to Strava" })).toBeNull();
+    expect(screen.getByText("Reconnect Strava")).toBeTruthy();
+  });
+
+  it("surfaces a queued upload without offering another dispatch", () => {
+    mocks.completedActivityProviders = [
+      { jobId: "job", provider: "strava", reason: "Strava upload is queued.", status: "queued" },
+    ];
+    const ActivityDetailPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<ActivityDetailPage />);
+    expect(screen.queryByRole("button", { name: "Send to Strava" })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Strava upload queued" }).hasAttribute("disabled"),
+    ).toBe(true);
+  });
+});
