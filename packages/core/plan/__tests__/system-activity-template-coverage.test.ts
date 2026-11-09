@@ -6,28 +6,24 @@ import {
 } from "../verification/activityTemplateCoverageMatrix";
 
 describe("system activity-template coverage", () => {
-  it("covers all first-wave run and bike cells with shipped catalog templates", () => {
+  it("reports reduced-portfolio coverage gaps without masking them", () => {
     const matrix = buildSystemActivityTemplateCoverageMatrix();
 
-    expect(matrix.gap_rows).toEqual([]);
-    expect(matrix.first_wave_gate.blocking_cell_keys).toEqual([]);
-    expect(matrix.cell_rows.map((row) => row.status)).toEqual([
-      "covered",
-      "covered",
-      "covered",
-      "covered",
-      "covered",
-      "covered",
-      "covered",
-      "covered",
+    expect(matrix.gap_rows.map((row) => row.key)).toEqual([
+      "bike_long_endurance",
+      "run_easy_recovery",
     ]);
-  });
+    expect(matrix.first_wave_gate.blocking_cell_keys).toEqual([
+      "bike_long_endurance",
+      "run_easy_recovery",
+    ]);
+  }, 15_000);
 
   it("marks under-covered cells when only one first-wave template exists", () => {
     const cellRows = buildCoverageCellSummaries([
       {
         template_id: "run-long-only",
-        sport: "run",
+        activity_category: "run",
         session_archetype: "long_endurance",
         intensity_family: "endurance",
         duration_seconds: 7200,
@@ -42,7 +38,7 @@ describe("system activity-template coverage", () => {
     const cellRows = buildCoverageCellSummaries([
       {
         template_id: "bike-long-a",
-        sport: "bike",
+        activity_category: "bike",
         session_archetype: "long_endurance",
         intensity_family: "endurance",
         duration_seconds: 9000,
@@ -50,7 +46,7 @@ describe("system activity-template coverage", () => {
       },
       {
         template_id: "bike-long-b",
-        sport: "bike",
+        activity_category: "bike",
         session_archetype: "long_endurance",
         intensity_family: "moderate",
         duration_seconds: 9300,

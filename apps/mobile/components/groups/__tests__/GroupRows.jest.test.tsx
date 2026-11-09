@@ -1,3 +1,4 @@
+import type { ComponentProps } from "react";
 import { createHost as mockCreateHost } from "../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
 import { GroupJoinRequestRow, GroupMemberRow } from "../GroupRows";
@@ -39,38 +40,43 @@ describe("GroupRows", () => {
     navigateToMock.mockReset();
   });
 
-  it("opens a member profile from the member row", () => {
-    renderNative(
+  it("opens a member profile from the member row", async () => {
+    await renderNative(
       <GroupMemberRow
         member={
           {
+            group_id: "group-1",
+            profile_id: "user-1",
             created_at: "2026-05-01T00:00:00.000Z",
             profile: { id: "user-1", username: "Runner", avatar_url: null },
             role: "member",
-          } as any
+          } satisfies ComponentProps<typeof GroupMemberRow>["member"]
         }
       />,
     );
 
-    fireEvent.press(screen.getByTestId("group-member-profile-link-user-1"));
+    await fireEvent.press(screen.getByTestId("group-member-profile-link-user-1"));
 
     expect(navigateToMock).toHaveBeenCalledWith("/user/user-1");
   });
 
-  it("opens a join requester profile from the requester identity row", () => {
-    renderNative(
+  it("opens a join requester profile from the requester identity row", async () => {
+    await renderNative(
       <GroupJoinRequestRow
         joinRequest={
           {
             created_at: "2026-05-01T00:00:00.000Z",
+            group_id: "group-1",
             id: "request-1",
+            profile_id: "user-2",
+            status: "pending",
             profile: { id: "user-2", username: "Climber", avatar_url: null },
-          } as any
+          } satisfies ComponentProps<typeof GroupJoinRequestRow>["joinRequest"]
         }
       />,
     );
 
-    fireEvent.press(screen.getByTestId("group-join-request-profile-link-user-2"));
+    await fireEvent.press(screen.getByTestId("group-join-request-profile-link-user-2"));
 
     expect(navigateToMock).toHaveBeenCalledWith("/user/user-2");
   });
