@@ -344,46 +344,86 @@ export function createOrganizationLifecycleRepository(db: DrizzleQueryExecutor) 
       limit: number,
       cursor: string | null,
     ) {
-      type ImpactRow = {
-        total: number;
-        items: Array<{
-          engagementId: string;
-          profileId: string;
-          displayName: string | null;
-          username: string | null;
-          assignmentKinds: ("primary" | "supporting")[];
-        }>;
+      const selected = db.$with("selected").as(
+        db
+          .select({
+            engagementId: coachingAssignments.engagement_id,
+            profileId: profiles.id,
+            displayName: profiles.full_name,
+            username: profiles.username,
+            assignmentKinds: sql<("primary" | "supporting")[]>`
+              array_agg(${coachingAssignments.assignment_kind} order by ${coachingAssignments.assignment_kind})
+            `.as("assignment_kinds"),
+          })
+          .from(coachingAssignments)
+          .innerJoin(
+            coachingEngagements,
+            and(
+              eq(coachingEngagements.organization_id, coachingAssignments.organization_id),
+              eq(coachingEngagements.id, coachingAssignments.engagement_id),
+            ),
+          )
+          .innerJoin(profiles, eq(profiles.id, coachingEngagements.athlete_profile_id))
+          .innerJoin(organizations, eq(organizations.id, coachingAssignments.organization_id))
+          .where(
+            and(
+              eq(coachingAssignments.organization_id, organizationId),
+              eq(coachingAssignments.coach_membership_id, membershipId),
+              lte(coachingAssignments.assigned_at, sql`transaction_timestamp()`),
+              lte(coachingEngagements.created_at, sql`transaction_timestamp()`),
+              isNull(coachingAssignments.ended_at),
+              isNull(coachingEngagements.ended_at),
+              isNull(organizations.suspended_at),
+              isNull(organizations.closed_at),
+            ),
+          )
+          .groupBy(
+            coachingAssignments.engagement_id,
+            profiles.id,
+            profiles.full_name,
+            profiles.username,
+          ),
+      );
+      const page = db.$with("page").as(
+        db
+          .select()
+          .from(selected)
+          .where(cursor === null ? undefined : gt(selected.engagementId, cursor))
+          .orderBy(asc(selected.engagementId))
+          .limit(limit + 1),
+      );
+      const total = db
+        .$with("impact_total")
+        .as(db.select({ total: sql<number>`count(*)`.mapWith(Number).as("total") }).from(selected));
+      const rows = await db
+        .with(selected, page, total)
+        .select({
+          total: total.total,
+          engagementId: page.engagementId,
+          profileId: page.profileId,
+          displayName: page.displayName,
+          username: page.username,
+          assignmentKinds: page.assignmentKinds,
+        })
+        .from(total)
+        .leftJoin(page, sql`true`)
+        .orderBy(asc(page.engagementId));
+      return {
+        total: rows[0]?.total ?? 0,
+        items: rows.flatMap((row) =>
+          row.engagementId === null || row.profileId === null || row.assignmentKinds === null
+            ? []
+            : [
+                {
+                  engagementId: row.engagementId,
+                  profileId: row.profileId,
+                  displayName: row.displayName,
+                  username: row.username,
+                  assignmentKinds: row.assignmentKinds,
+                },
+              ],
+        ),
       };
-      const result = await db.execute<ImpactRow>(sql`
-        with selected as (
-          select assignment.engagement_id, athlete.id as profile_id,
-            athlete.full_name as display_name, athlete.username,
-            array_agg(assignment.assignment_kind order by assignment.assignment_kind) as assignment_kinds
-          from coaching_assignments assignment
-          join coaching_engagements engagement
-            on engagement.organization_id = assignment.organization_id and engagement.id = assignment.engagement_id
-          join profiles athlete on athlete.id = engagement.athlete_profile_id
-          join organizations organization on organization.id = assignment.organization_id
-          where assignment.organization_id = ${organizationId}::uuid
-            and assignment.coach_membership_id = ${membershipId}::uuid
-            and assignment.assigned_at <= transaction_timestamp()
-            and engagement.created_at <= transaction_timestamp()
-            and assignment.ended_at is null and engagement.ended_at is null
-            and organization.suspended_at is null and organization.closed_at is null
-          group by assignment.engagement_id, athlete.id, athlete.full_name, athlete.username
-        ), page as (
-          select * from selected
-          where ${cursor}::uuid is null or engagement_id > ${cursor}::uuid
-          order by engagement_id
-          limit ${limit + 1}
-        )
-        select (select count(*) from selected)::int as total,
-          coalesce((select json_agg(json_build_object(
-            'engagementId', engagement_id, 'profileId', profile_id, 'displayName', display_name,
-            'username', username, 'assignmentKinds', assignment_kinds
-          ) order by engagement_id) from page), '[]'::json) as items
-      `);
-      return result.rows[0] ?? { total: 0, items: [] };
     },
     async endMembership(input: {
       actorProfileId: string;
