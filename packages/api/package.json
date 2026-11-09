@@ -5,39 +5,157 @@
   "type": "module",
   "main": "./index.ts",
   "exports": {
-    ".": "./index.ts",
-    "./client": "./src/client.ts",
-    "./context": "./src/context.ts",
-    "./maintenance": "./src/maintenance.ts",
-    "./react": "./src/react.ts",
-    "./server": "./src/server.ts",
-    "./webhooks": "./src/webhooks.ts"
+    ".": {
+      "types": "./index.ts",
+      "default": "./index.ts"
+    },
+    "./client": {
+      "types": "./src/client.ts",
+      "default": "./src/client.ts"
+    },
+    "./capabilities": {
+      "types": "./src/capabilities/catalog.ts",
+      "default": "./src/capabilities/catalog.ts"
+    },
+    "./chatbot": {
+      "types": "./src/chatbot/index.ts",
+      "default": "./src/chatbot/index.ts"
+    },
+    "./chatbot/client": {
+      "types": "./src/chatbot/client.ts",
+      "default": "./src/chatbot/client.ts"
+    },
+    "./contracts/chatbot": {
+      "types": "./src/contracts/chatbot.ts",
+      "default": "./src/contracts/chatbot.ts"
+    },
+    "./chatbot/ai-sdk": {
+      "types": "./src/chatbot/ai-sdk.ts",
+      "default": "./src/chatbot/ai-sdk.ts"
+    },
+    "./chatbot/model-routing": {
+      "types": "./src/application/chatbot/model-routing.ts",
+      "default": "./src/application/chatbot/model-routing.ts"
+    },
+    "./chatbot/jev-decisions": {
+      "types": "./src/application/chatbot/jev-decisions.ts",
+      "default": "./src/application/chatbot/jev-decisions.ts"
+    },
+    "./chatbot/host": {
+      "types": "./src/application/chatbot/host.ts",
+      "default": "./src/application/chatbot/host.ts"
+    },
+    "./chatbot/recovery": {
+      "types": "./src/application/chatbot/recovery.ts",
+      "default": "./src/application/chatbot/recovery.ts"
+    },
+    "./chatbot/rate-limit": {
+      "types": "./src/chatbot/rate-limit.ts",
+      "default": "./src/chatbot/rate-limit.ts"
+    },
+    "./test-support/chatbot-acceptance": {
+      "types": "./src/test-support/chatbot-acceptance.ts",
+      "default": "./src/test-support/chatbot-acceptance.ts"
+    },
+    "./contract-epoch": {
+      "types": "./src/contract-epoch.ts",
+      "default": "./src/contract-epoch.ts"
+    },
+    "./context": {
+      "types": "./src/context.ts",
+      "default": "./src/context.ts"
+    },
+    "./query-client": {
+      "types": "./src/query-client.ts",
+      "default": "./src/query-client.ts"
+    },
+    "./profile-identity-cache": {
+      "types": "./src/profile-identity-cache.ts",
+      "default": "./src/profile-identity-cache.ts"
+    },
+    "./recording-submission": {
+      "types": "./src/contracts/recording-submission.ts",
+      "default": "./src/contracts/recording-submission.ts"
+    },
+    "./react": {
+      "types": "./src/react.ts",
+      "default": "./src/react.ts"
+    },
+    "./server": {
+      "types": "./src/server.ts",
+      "default": "./src/server.ts"
+    },
+    "./strava-webhook": {
+      "types": "./src/lib/provider-sync/strava-webhook-contract.ts",
+      "default": "./src/lib/provider-sync/strava-webhook-contract.ts"
+    },
+    "./telemetry": {
+      "types": "./src/telemetry.ts",
+      "default": "./src/telemetry.ts"
+    },
+    "./telemetry-sanitizer": {
+      "types": "./src/telemetry-sanitizer.mjs",
+      "default": "./src/telemetry-sanitizer.mjs"
+    },
+    "./local-error-log": {
+      "types": "./src/local-error-log.ts",
+      "default": "./src/local-error-log.ts"
+    },
+    "./test-support/client-contract-v1": {
+      "types": "./src/test-support/client-contract-v1.ts",
+      "default": "./src/test-support/client-contract-v1.ts"
+    },
+    "./webhooks": {
+      "types": "./src/webhooks.ts",
+      "default": "./src/webhooks.ts"
+    }
   },
   "scripts": {
+    "dev:errors": "node scripts/dev-errors.mjs",
+    "check-provider-readiness": "tsx scripts/check-provider-readiness.ts",
     "check-types": "tsc --noEmit",
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
     "format": "biome format --write .",
+    "seed-system-routes": "tsx scripts/seed-system-routes.ts",
+    "reanalyze-profile-activity-artifacts": "tsx scripts/reanalyze-profile-activity-artifacts.ts",
+    "reprocess-profile-activity-analysis": "tsx scripts/reprocess-profile-activity-analysis.ts",
     "test": "vitest run",
-    "test:live-db": "vitest run --config vitest.live-db.config.ts"
+    "test:live-db": "vitest run --config vitest.live-db.config.ts",
+    "test:live-db:disposable": "tsx scripts/run-live-db-disposable.ts",
+    "test:live-db:runner:disposable": "tsx scripts/verify-live-db-disposable-runner.ts --disposable --local",
+    "test:activity-ingestion:disposable": "tsx scripts/activity-ingestion.disposable.test.ts --disposable --local",
+    "test:activity-plan-authoring:disposable": "tsx scripts/activity-plan-authoring.disposable.test.ts --disposable --local",
+    "test:planned-sessions:disposable": "tsx scripts/planned-sessions.disposable.test.ts --disposable --local",
+    "test:chatbot-writes:disposable": "tsx scripts/chatbot-writes.disposable.test.ts --disposable --local",
+    "test:chatbot-host:disposable": "tsx scripts/chatbot-host.disposable.test.ts --disposable --local",
+    "test:garmin-training-sync:disposable": "tsx scripts/garmin-training-sync.disposable.test.ts --disposable --local",
+    "test:calibration-history:disposable": "tsx scripts/completed-activity-calibration-history.disposable.test.ts --disposable --local",
+    "test:notifications:disposable": "tsx scripts/notifications.disposable.test.ts --disposable --local"
   },
   "dependencies": {
+    "@ai-sdk/openai": "4.0.106",
     "@repo/auth": "workspace:*",
     "@repo/core": "workspace:*",
     "@repo/db": "workspace:*",
-    "@supabase/supabase-js": "^2.56.0",
-    "@tanstack/react-query": "^5.90.6",
-    "@trpc/client": "^11.16.0",
-    "@trpc/react-query": "^11.16.0",
-    "@trpc/server": "^11.16.0",
-    "@xmldom/xmldom": "^0.8.11",
+    "@sentry/node": "^10.70.0",
+    "@supabase/supabase-js": "^2.112.3",
+    "@tanstack/react-query": "^5.102.0",
+    "@trpc/client": "^11.18.0",
+    "@trpc/react-query": "^11.18.0",
+    "@trpc/server": "^11.18.0",
+    "@typesafe-ai/sdk": "0.7.0",
+    "@xmldom/xmldom": "^0.8.15",
+    "ai": "7.0.157",
     "drizzle-orm": "^0.45.2",
     "superjson": "^2.2.6",
-    "zod": "^4.2.1"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@repo/typescript-config": "workspace:*",
-    "typescript": "^5.5.2",
-    "vitest": "^4.0.18"
+    "@types/node": "24.13.3",
+    "tsx": "^4.23.12",
+    "typescript": "6.0.3",
+    "vitest": "^4.1.12"
   }
 }

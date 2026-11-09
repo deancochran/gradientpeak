@@ -1,25 +1,24 @@
-import type { ActivityPlanRow, ActivityRow, EventRow, PublicEventStatus } from "@repo/db";
+import type { ActivityRow, EventRow, PublicEventStatus } from "@repo/db";
+import type { DrizzleTransactionClient } from "../db";
 
 type EventCompletionBase = Pick<
   EventRow,
   | "id"
-  | "idx"
   | "profile_id"
   | "event_type"
   | "title"
   | "description"
   | "all_day"
   | "timezone"
-  | "activity_plan_id"
-  | "training_plan_id"
+  | "route_id"
   | "recurrence_rule"
   | "recurrence_timezone"
   | "series_id"
-  | "source_provider"
   | "occurrence_key"
   | "notes"
   | "status"
   | "linked_activity_id"
+  | "scheduled_date"
 > & {
   created_at: string;
   updated_at: string;
@@ -28,16 +27,18 @@ type EventCompletionBase = Pick<
   original_starts_at: string | null;
 };
 
-type SerializedEventActivityPlan = Omit<ActivityPlanRow, "created_at" | "updated_at"> & {
-  created_at: string;
-  updated_at: string;
-};
-
 export type EventCompletionEventRecord = EventCompletionBase & {
-  activity_plan: SerializedEventActivityPlan | null;
+  route: {
+    id: string;
+    name: string;
+    description: string | null;
+    total_distance: number;
+    total_ascent: number | null;
+    total_descent: number | null;
+  } | null;
 };
 
-export type EventDeleteCandidateRecord = Pick<EventRow, "activity_plan_id" | "id" | "event_type">;
+export type EventDeleteCandidateRecord = Pick<EventRow, "id" | "event_type">;
 
 export type EventDeleteScope = "single" | "future" | "series";
 
@@ -68,29 +69,26 @@ export interface EventCompletionRepository {
     profileId: string;
   }): Promise<
     Array<{
-      activity_plan_id: string | null;
-      event_type: "planned_activity" | "race";
+      event_type: "race_target" | "custom";
       id: string;
       linked_activity_id: string | null;
       starts_at: string;
       status: PublicEventStatus | null;
-      training_plan_id: string | null;
     }>
   >;
   linkHistoricalCompletionIfEligible(input: {
     activityId: string;
     eventId: string;
     profileId: string;
-  }): Promise<
-    (Pick<EventRow, "id" | "training_plan_id"> & { starts_at: string; updated_at: string }) | null
-  >;
+  }): Promise<(Pick<EventRow, "id"> & { starts_at: string; updated_at: string }) | null>;
   deleteOwnedEventsForScope(input: {
-    anchorEvent: Pick<
-      EventCompletionEventRecord,
-      "id" | "series_id" | "starts_at" | "training_plan_id" | "updated_at"
-    >;
+    anchorEvent: Pick<EventCompletionEventRecord, "id" | "series_id" | "starts_at" | "updated_at">;
     profileId: string;
     scope: EventDeleteScope;
+    beforeDelete?: (input: {
+      candidates: EventDeleteCandidateRecord[];
+      tx: DrizzleTransactionClient;
+    }) => Promise<void>;
   }): Promise<EventDeleteCandidateRecord[]>;
   listOwnedEventsForDeleteScope(input: {
     anchorEvent: Pick<EventCompletionEventRecord, "id" | "series_id" | "starts_at">;

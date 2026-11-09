@@ -1,472 +1,436 @@
+import {
+  buildCenteredPlanAnalysisWindow,
+  type PlanAnalysisWindowPeriod,
+  shiftPlanAnalysisWindow,
+} from "@repo/core";
+import { ianaTimezoneSchema } from "@repo/core/athlete-intelligence";
+import { keepPreviousData } from "@tanstack/react-query";
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
-import {
-  attachSelectedGroupEventActivityPlans,
-  getSelectedGroupEventActivityPlanIds,
-  toGroupEventScheduledActivityPlanEvent,
-} from "@/lib/calendar/groupEventPlans";
+import { getDetectedDeviceTimeZone } from "@/lib/calendar/eventSchedule";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { useProfileGoals } from "@/lib/hooks/useProfileGoals";
-import { useProfileSettings } from "@/lib/hooks/useProfileSettings";
-import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
-import { refreshPlanTabData } from "@/lib/scheduling/refreshScheduleViews";
 import { useAuthStore } from "@/lib/stores/auth-store";
-import { buildDailyTrainingAdjustmentPointsFromTrainingPathData } from "@/lib/training-path/dailyTrainingPathModel";
+import { buildPlanTabProjectionPresentation } from "./planTabProjectionPresentation";
 import {
-  buildTrainingPreferencesLoadTimeline,
-  buildTrainingPreferencesProjectionPreview,
-} from "@/lib/training-plan-form/projectionPreview";
-import { usePlanDashboardViewModel } from "../usePlanDashboardViewModel";
-import {
-  type ActivityOwner,
-  buildTrainingPathEventReviewItems,
-  buildTrainingPathGroupEventReviewItems,
-  toTrainingPathCompletedActivity,
-} from "./trainingPathReviewItems";
-import type {
-  TrainingPathCompletedActivity,
-  TrainingPathScheduledItem,
-  TrainingPathSelectedGoal,
-} from "./trainingPathTypes";
-import { buildScheduledFitnessTrend, getWeekStartDateKey } from "./trainingPathUtils";
-import { useScrollableTrainingPathWindow } from "./useScrollableTrainingPathWindow";
-import { useTrainingPathViewModel } from "./useTrainingPathViewModel";
+  getTrainingPathTodayKey,
+  millisecondsUntilNextTrainingPathDay,
+} from "./trainingPathPlanningTime";
+import { getWeekStartDateKey } from "./trainingPathUtils";
 
-function getDateKey(value: Date) {
-  return value.toISOString().split("T")[0] ?? "";
+const DORMANT_DATE_KEY = "1970-01-01";
+
+function resolveProjectionSelectedDate(input: {
+  pendingBoundarySelection?: {
+    date: string;
+    endDate: string;
+    startDate: string;
+  } | null;
+  selectedDate: string | null;
+  timeline: { startDate: string; endDate: string } | null | undefined;
+  todayKey: string;
+}) {
+  const timeline = input.timeline;
+  if (!timeline) return input.selectedDate ?? input.todayKey;
+  const inRange = (date: string) => date >= timeline.startDate && date <= timeline.endDate;
+  if (
+    input.pendingBoundarySelection &&
+    timeline.startDate === input.pendingBoundarySelection.startDate &&
+    timeline.endDate === input.pendingBoundarySelection.endDate
+  ) {
+    return input.pendingBoundarySelection.date;
+  }
+  if (input.selectedDate && inRange(input.selectedDate)) return input.selectedDate;
+  if (input.todayKey && inRange(input.todayKey)) return input.todayKey;
+  return timeline.startDate;
 }
 
-function getDayStartIso(dateKey: string) {
-  return `${dateKey}T00:00:00.000Z`;
+function useTrainingPathTodayKey(planningTimezone: string | null) {
+  const [todayState, setTodayState] = useState(() => {
+    const now = new Date();
+    return {
+      planningTimezone,
+      todayKey: planningTimezone ? getTrainingPathTodayKey(now, planningTimezone) : null,
+    };
+  });
+  const todayStateRef = useRef(todayState);
+  todayStateRef.current = todayState;
+  const currentState =
+    todayState.planningTimezone === planningTimezone
+      ? todayState
+      : {
+          planningTimezone,
+          todayKey: planningTimezone ? getTrainingPathTodayKey(new Date(), planningTimezone) : null,
+        };
+
+  useEffect(() => {
+    if (!planningTimezone) {
+      const nextState = { planningTimezone, todayKey: null };
+      todayStateRef.current = nextState;
+      setTodayState(nextState);
+      return;
+    }
+    const refreshToday = () => {
+      const nextTodayKey = getTrainingPathTodayKey(new Date(), planningTimezone);
+      const current = todayStateRef.current;
+      if (current.planningTimezone !== planningTimezone || current.todayKey !== nextTodayKey) {
+        const nextState = { planningTimezone, todayKey: nextTodayKey };
+        todayStateRef.current = nextState;
+        setTodayState(nextState);
+      }
+    };
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const scheduleRefresh = () => {
+      const delay = millisecondsUntilNextTrainingPathDay(new Date(), planningTimezone);
+      if (delay == null) return;
+      timeout = setTimeout(() => {
+        refreshToday();
+        scheduleRefresh();
+      }, delay);
+    };
+    refreshToday();
+    scheduleRefresh();
+    return () => {
+      if (timeout) clearTimeout(timeout);
+    };
+  }, [planningTimezone]);
+
+  return currentState.todayKey;
 }
 
-function getDayEndIso(dateKey: string) {
-  return `${dateKey}T23:59:59.999Z`;
-}
-
-function isPresent<T>(value: T | null | undefined): value is T {
-  return value != null;
-}
-
-export function usePlanTrainingPathData() {
-  const { profile, user } = useAuth();
+export function usePlanTrainingPathData(
+  input: string | { anchorDate: string; period: PlanAnalysisWindowPeriod } | null = null,
+) {
+  const initialSelectedDate = typeof input === "string" ? input : (input?.anchorDate ?? null);
+  const { profile, profileLoading, profileError, refreshProfile, user } = useAuth();
+  const utils = api.useUtils();
+  const initializeTimezoneMutation = api.profiles.initializePlanningTimezone.useMutation();
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedWeekStart, setSelectedWeekStart] = useState<string | null>(null);
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [pendingSelectedWeekStart, setPendingSelectedWeekStart] = useState<string | null>(null);
-  const lastProjectionRefreshKeyRef = useRef<string | null>(null);
-  const eventsQueryEnabled = useAuthStore(
+  const [timezoneSetupError, setTimezoneSetupError] = useState<string | null>(null);
+  const [detectedPlanningTimezone] = useState(() => {
+    const detected = ianaTimezoneSchema.safeParse(getDetectedDeviceTimeZone());
+    return detected.success ? detected.data : "UTC";
+  });
+  const activeAccount = useRef({ id: user?.id, active: true });
+  if (activeAccount.current.id !== user?.id) activeAccount.current = { id: user?.id, active: true };
+  const account = activeAccount.current;
+  const [initializedProfile, setInitializedProfile] = useState<{
+    account: typeof account;
+    timezone: string;
+  } | null>(null);
+  const timezoneAttempt = useRef<typeof account | null>(null);
+  const automaticallyAttemptedAccount = useRef<typeof account | null>(null);
+  const [pendingAccount, setPendingAccount] = useState<typeof account | null>(null);
+  useEffect(() => {
+    account.active = true;
+    setTimezoneSetupError(null);
+    return () => {
+      account.active = false;
+    };
+  }, [account]);
+  const [selectedDate, setSelectedDate] = useState<string | null>(initialSelectedDate);
+  const [analysisPeriod, setAnalysisPeriod] = useState<PlanAnalysisWindowPeriod>(
+    typeof input === "object" && input ? input.period : "6w",
+  );
+  const [requestedAnalysisAnchor, setRequestedAnalysisAnchor] = useState<string | null>(
+    typeof input === "object" && input ? input.anchorDate : null,
+  );
+  const pendingBoundarySelectionRef = useRef<{
+    date: string;
+    endDate: string;
+    startDate: string;
+  } | null>(null);
+  const ownedProfile = profile?.id === user?.id ? profile : null;
+  const persistedCandidate = ianaTimezoneSchema.safeParse(
+    ownedProfile?.planning_timezone ??
+      (initializedProfile?.account === account ? initializedProfile.timezone : null),
+  );
+  const persistedTimezone = persistedCandidate.success ? persistedCandidate.data : null;
+  useEffect(() => {
+    if (ownedProfile?.planning_timezone) {
+      // The profile has acknowledged a saved value. A later explicit clear is a
+      // new gap to initialize, not permission to reuse an old acknowledgement.
+      automaticallyAttemptedAccount.current = null;
+      setInitializedProfile((current) => (current?.account === account ? null : current));
+    }
+  }, [account, ownedProfile?.planning_timezone]);
+  const planningTimezone = persistedTimezone ?? detectedPlanningTimezone;
+  const requestTimezone = planningTimezone;
+  const requestTodayKey = useTrainingPathTodayKey(requestTimezone);
+  const planningTimezoneState =
+    profileLoading || !ownedProfile ? "loading" : persistedTimezone ? "ready" : "initializing";
+  // The dashboard can render before profile hydration decides whether a planning
+  // timezone exists. Keep its temporary selection parseable until that decision.
+  const clientTodayKey = planningTimezone
+    ? (requestTodayKey ?? DORMANT_DATE_KEY)
+    : DORMANT_DATE_KEY;
+  const authReady = useAuthStore(
     (state) => state.ready && !!state.session && hasSessionAuthCredentials(),
   );
-
-  const activePlanQuery = api.trainingPlans.getActivePlan.useQuery(undefined, {
-    ...scheduleAwareReadQueryOptions,
-    enabled: eventsQueryEnabled,
-  });
-  const { data: activePlan, refetch: refetchActivePlan } = activePlanQuery;
-  const today = useMemo(() => new Date(), []);
-  const todayKey = useMemo(() => getDateKey(today), [today]);
-  const recentWindowStart = useMemo(() => {
-    const start = new Date(today);
-    start.setDate(start.getDate() - 45);
-    return getDateKey(start);
-  }, [today]);
-  const upcomingWindowEnd = useMemo(() => {
-    const end = new Date(today);
-    end.setDate(end.getDate() + 365);
-    return getDateKey(end);
-  }, [today]);
-
-  const upcomingPlannedEventsQuery = api.events.list.useQuery(
-    {
-      include_adhoc: true,
-      date_from: todayKey,
-      date_to: upcomingWindowEnd,
-      limit: 100,
-    },
-    {
-      ...scheduleAwareReadQueryOptions,
-      enabled: eventsQueryEnabled,
-    },
-  );
-  const recentPlannedEventsQuery = api.events.list.useQuery(
-    {
-      include_adhoc: true,
-      date_from: recentWindowStart,
-      date_to: todayKey,
-      limit: 500,
-    },
-    {
-      ...scheduleAwareReadQueryOptions,
-      enabled: eventsQueryEnabled,
-    },
-  );
-  const groupCalendarEventsQuery = api.groups.events.myUpcomingGroupEvents.useQuery(
-    {
-      includeCancelled: false,
-      startsAfter: `${recentWindowStart}T00:00:00.000Z`,
-      startsBefore: `${upcomingWindowEnd}T23:59:59.999Z`,
-      limit: 100,
-    },
-    {
-      ...scheduleAwareReadQueryOptions,
-      enabled: eventsQueryEnabled,
-    },
-  );
-  const groupCalendarEvents = useMemo(
-    () => groupCalendarEventsQuery.data?.items ?? [],
-    [groupCalendarEventsQuery.data?.items],
-  );
-  const selectedGroupActivityPlanIds = useMemo(
-    () => getSelectedGroupEventActivityPlanIds(groupCalendarEvents),
-    [groupCalendarEvents],
-  );
-  const selectedGroupActivityPlansQuery = api.activityPlans.getManyByIds.useQuery(
-    { ids: selectedGroupActivityPlanIds },
-    {
-      ...scheduleAwareReadQueryOptions,
-      enabled: eventsQueryEnabled && selectedGroupActivityPlanIds.length > 0,
-    },
-  );
-  const groupCalendarEventsWithActivityPlans = useMemo(
+  const queryEnabled = authReady && !!requestTodayKey && !!persistedTimezone && !profileLoading;
+  // The server projection is always bounded to the same centered window that
+  // drives chart presentation. Switching a view never silently changes anchor.
+  const dataAnchor = requestTodayKey ?? DORMANT_DATE_KEY;
+  const analysisAnchor = requestedAnalysisAnchor ?? dataAnchor;
+  const queryWindow = useMemo(
     () =>
-      attachSelectedGroupEventActivityPlans(
-        groupCalendarEvents,
-        selectedGroupActivityPlansQuery.data?.items ?? [],
-      ),
-    [groupCalendarEvents, selectedGroupActivityPlansQuery.data?.items],
-  );
-  const groupScheduledActivityPlanEvents = useMemo(
-    () =>
-      groupCalendarEventsWithActivityPlans
-        .map(toGroupEventScheduledActivityPlanEvent)
-        .filter(isPresent),
-    [groupCalendarEventsWithActivityPlans],
-  );
-  const completedActivitiesQuery = api.activities.list.useQuery(
-    {
-      date_from: getDayStartIso(recentWindowStart),
-      date_to: getDayEndIso(todayKey),
-    },
-    {
-      ...scheduleAwareReadQueryOptions,
-      enabled: eventsQueryEnabled,
-    },
-  );
-
-  const snapshot = useTrainingPlanSnapshot({
-    planId: activePlan?.id,
-    includeStatus: false,
-    includeWeeklySummaries: false,
-    curveWindow: "overview",
-  });
-  const goals = useProfileGoals({ loadAllPages: true });
-  const profileSettings = useProfileSettings();
-  const dashboard = usePlanDashboardViewModel({
-    activePlan,
-    goals,
-    profileSettings: profileSettings.settings,
-    snapshot,
-    upcomingPlannedEvents: upcomingPlannedEventsQuery.data?.items,
-    recentPlannedEvents: recentPlannedEventsQuery.data?.items,
-    today,
-  });
-  const localProjectionPreview = useMemo(
-    () =>
-      buildTrainingPreferencesProjectionPreview({
-        draft: profileSettings.settings,
-        fitnessHistory: dashboard.fitnessHistory,
-        snapshot,
+      buildCenteredPlanAnalysisWindow({
+        anchorDate: queryEnabled ? analysisAnchor : DORMANT_DATE_KEY,
+        period: analysisPeriod,
       }),
-    [dashboard.fitnessHistory, profileSettings.settings, snapshot],
+    [analysisAnchor, analysisPeriod, queryEnabled],
   );
-  const loadTimelinePoints = useMemo(
-    () =>
-      buildTrainingPreferencesLoadTimeline({
-        projectionChart: localProjectionPreview.projectionChart,
-        snapshot,
-        scheduledEvents: [
-          ...(recentPlannedEventsQuery.data?.items ?? []),
-          ...(upcomingPlannedEventsQuery.data?.items ?? []),
-          ...groupScheduledActivityPlanEvents,
-        ],
-        scheduledWindowStart: recentWindowStart,
-        scheduledWindowEnd: upcomingWindowEnd,
-      }),
-    [
-      localProjectionPreview.projectionChart,
-      groupScheduledActivityPlanEvents,
-      recentPlannedEventsQuery.data?.items,
-      recentWindowStart,
-      snapshot,
-      upcomingPlannedEventsQuery.data?.items,
-      upcomingWindowEnd,
-    ],
+  const dataAnchorWeekStart = getWeekStartDateKey(dataAnchor);
+  const queryStartDate = queryEnabled ? queryWindow.startDate : DORMANT_DATE_KEY;
+  const queryEndDate = queryEnabled ? queryWindow.endDate : DORMANT_DATE_KEY;
+  const projectionQuery = api.trainingPlans.getPlanTabProjection.useQuery(
+    { startDate: queryStartDate, endDate: queryEndDate },
+    {
+      ...scheduleAwareReadQueryOptions,
+      enabled: queryEnabled,
+      placeholderData: keepPreviousData,
+      // This projection performs bounded server composition. Avoid multiplying
+      // deterministic server timeouts through the global retry policy.
+      retry: false,
+    },
   );
-  const idealFitnessCurve = useMemo(
+  const projection = queryEnabled ? projectionQuery.data : undefined;
+  const todayKey = projection?.today ?? clientTodayKey;
+  const resolvedSelectedDate = resolveProjectionSelectedDate({
+    pendingBoundarySelection: pendingBoundarySelectionRef.current,
+    selectedDate,
+    timeline: projection?.timeline,
+    todayKey,
+  });
+  const resolvedSelectedWeekStart = getWeekStartDateKey(resolvedSelectedDate);
+  const analysisSelectedDate = resolvedSelectedDate;
+  const authoritativeWeekWindow = useMemo(
     () =>
-      localProjectionPreview.previewIdealCurve.length > 0
-        ? localProjectionPreview.previewIdealCurve
-        : dashboard.idealFitnessCurve,
-    [dashboard.idealFitnessCurve, localProjectionPreview.previewIdealCurve],
+      projection?.timeline
+        ? { start: projection.timeline.startDate, end: projection.timeline.endDate }
+        : { start: dataAnchorWeekStart, end: dataAnchorWeekStart },
+    [dataAnchorWeekStart, projection?.timeline],
   );
-  const scheduledFitnessTrend = useMemo(
+  const presentation = useMemo(
     () =>
-      buildScheduledFitnessTrend({
-        fitnessHistory: dashboard.fitnessHistory,
-        idealFitnessCurve,
-        timeline: loadTimelinePoints,
+      buildPlanTabProjectionPresentation({
+        projection,
+        selectedWeekStart: resolvedSelectedWeekStart,
+        weekWindow: authoritativeWeekWindow,
         todayKey,
       }),
-    [dashboard.fitnessHistory, idealFitnessCurve, loadTimelinePoints, todayKey],
+    [authoritativeWeekWindow, projection, resolvedSelectedWeekStart, todayKey],
   );
-  const trainingPathWindow = useScrollableTrainingPathWindow({
-    goalMarkers: dashboard.goalMarkers,
-    todayKey,
-  });
-  const trainingPath = useTrainingPathViewModel({
-    timeline: loadTimelinePoints,
-    fitnessHistory: dashboard.fitnessHistory,
-    projectedFitness: scheduledFitnessTrend,
-    idealFitnessCurve,
-    goalMarkers: dashboard.goalMarkers,
-    selectedWeekStart,
-    range: "season",
-    weekWindow: trainingPathWindow.resolvedWeekWindow,
-    todayKey,
-  });
-  const dailyTrainingPathPoints = useMemo(
-    () =>
-      buildDailyTrainingAdjustmentPointsFromTrainingPathData({
-        timeline: loadTimelinePoints,
-        fitnessHistory: dashboard.fitnessHistory,
-        idealFitnessCurve,
-        scheduledFitnessTrend,
-        startDate: loadTimelinePoints[0]?.date ?? recentWindowStart,
-        endDate: loadTimelinePoints[loadTimelinePoints.length - 1]?.date ?? upcomingWindowEnd,
-      }),
-    [
-      dashboard.fitnessHistory,
-      idealFitnessCurve,
-      loadTimelinePoints,
-      recentWindowStart,
-      scheduledFitnessTrend,
-      upcomingWindowEnd,
-    ],
-  );
-
-  const selectedWeekRangeStart = trainingPath.selectedWeekSummary?.weekStart ?? null;
-  const selectedWeekRangeEnd = trainingPath.selectedWeekSummary?.weekEnd ?? null;
-  const activityOwner = useMemo<ActivityOwner | null>(
-    () =>
-      user?.id
-        ? {
-            avatar_url: profile?.avatar_url ?? null,
-            id: user.id,
-            username: profile?.username ?? user.email?.split("@")[0] ?? "You",
-          }
-        : null,
-    [profile?.avatar_url, profile?.username, user?.email, user?.id],
-  );
-  const eventReviewItems = useMemo<TrainingPathScheduledItem[]>(() => {
-    return buildTrainingPathEventReviewItems({
-      events: [
-        ...(recentPlannedEventsQuery.data?.items ?? []),
-        ...(upcomingPlannedEventsQuery.data?.items ?? []),
-      ],
-      owner: activityOwner,
-    });
-  }, [activityOwner, recentPlannedEventsQuery.data?.items, upcomingPlannedEventsQuery.data?.items]);
-  const groupEventReviewItems = useMemo<TrainingPathScheduledItem[]>(() => {
-    return buildTrainingPathGroupEventReviewItems({
-      groupEvents: groupCalendarEventsWithActivityPlans,
-    });
-  }, [groupCalendarEventsWithActivityPlans]);
-  const completedReviewActivities = useMemo<TrainingPathCompletedActivity[]>(
-    () =>
-      (completedActivitiesQuery.data ?? [])
-        .map((activity) => toTrainingPathCompletedActivity(activity, activityOwner))
-        .filter(isPresent)
-        .sort((left, right) => left.date.localeCompare(right.date)),
-    [activityOwner, completedActivitiesQuery.data],
-  );
-  const selectedWeekGoals = useMemo<TrainingPathSelectedGoal[]>(() => {
-    if (!selectedWeekRangeStart || !selectedWeekRangeEnd) return [];
-    return dashboard.goalReadiness.flatMap((item) => {
-      const targetDate = item.goal.target_date;
-      if (!targetDate || targetDate < selectedWeekRangeStart || targetDate > selectedWeekRangeEnd) {
-        return [];
-      }
-
-      return [
-        {
-          id: item.goal.id,
-          label: item.goal.title,
-          targetDate,
-          status: item.status,
-          readinessPercent: item.readinessPercent,
-          readinessTarget: item.readinessTarget,
-        },
-      ];
-    });
-  }, [dashboard.goalReadiness, selectedWeekRangeEnd, selectedWeekRangeStart]);
-  const selectedWeekEvents = useMemo<TrainingPathScheduledItem[]>(() => {
-    if (!selectedWeekRangeStart || !selectedWeekRangeEnd) return [];
-    return eventReviewItems.filter(
-      (item) => item.date >= selectedWeekRangeStart && item.date <= selectedWeekRangeEnd,
-    );
-  }, [eventReviewItems, selectedWeekRangeEnd, selectedWeekRangeStart]);
-  const selectedWeekGroupEvents = useMemo<TrainingPathScheduledItem[]>(() => {
-    if (!selectedWeekRangeStart || !selectedWeekRangeEnd) return [];
-    return groupEventReviewItems.filter(
-      (item) => item.date >= selectedWeekRangeStart && item.date <= selectedWeekRangeEnd,
-    );
-  }, [groupEventReviewItems, selectedWeekRangeEnd, selectedWeekRangeStart]);
-  const selectedWeekCompletedActivities = useMemo<TrainingPathCompletedActivity[]>(() => {
-    if (!selectedWeekRangeStart || !selectedWeekRangeEnd) return [];
-    return completedReviewActivities.filter(
-      (activity) =>
-        activity.date >= selectedWeekRangeStart && activity.date <= selectedWeekRangeEnd,
-    );
-  }, [completedReviewActivities, selectedWeekRangeEnd, selectedWeekRangeStart]);
-  const selectedWeekLoading =
-    !!pendingSelectedWeekStart &&
-    pendingSelectedWeekStart !== trainingPath.selectedWeekSummary?.weekStart;
+  const { trainingPath, dailyTrainingPathPoints, goalMarkers, timelineDaysByDate, hasUsableData } =
+    presentation;
   const chartLoading =
-    !eventsQueryEnabled ||
-    activePlanQuery.isLoading ||
-    upcomingPlannedEventsQuery.isLoading ||
-    recentPlannedEventsQuery.isLoading ||
-    profileSettings.isLoading;
-
-  const resetTrainingPathChart = useCallback(() => {
-    trainingPathWindow.resetWindow();
-    startTransition(() => {
-      setSelectedWeekStart(null);
-      setPendingSelectedWeekStart(null);
-    });
-  }, [trainingPathWindow.resetWindow]);
+    planningTimezoneState !== "ready" || !queryEnabled || projectionQuery.isLoading;
+  const chartUnavailable =
+    planningTimezoneState === "ready" && !projectionQuery.isLoading && !projection?.timeline;
+  const queryFailureCount = projectionQuery.isError ? 1 : 0;
+  const timezoneInitializing = pendingAccount === account;
 
   const handleSelectedWeekChange = useCallback((weekStart: string) => {
-    setPendingSelectedWeekStart(weekStart);
-    startTransition(() => {
-      setSelectedWeekStart(weekStart);
-    });
+    startTransition(() => setSelectedDate(weekStart));
   }, []);
-
   const handleSelectedDateChange = useCallback((date: string) => {
+    pendingBoundarySelectionRef.current = null;
     setSelectedDate(date);
-    const weekStart = getWeekStartDateKey(date);
-    setPendingSelectedWeekStart(weekStart);
-    startTransition(() => {
-      setSelectedWeekStart(weekStart);
-    });
   }, []);
-
-  const handleWeekScrollStart = useCallback(() => {
-    setPendingSelectedWeekStart(null);
+  const handleToday = useCallback(() => {
+    pendingBoundarySelectionRef.current = null;
+    setSelectedDate(todayKey);
+  }, [todayKey]);
+  const handleAnalysisRangeChange = useCallback((period: PlanAnalysisWindowPeriod) => {
+    pendingBoundarySelectionRef.current = null;
+    setAnalysisPeriod(period);
   }, []);
+  const handleAnalysisPeriodShift = useCallback(
+    (direction: -1 | 1) => {
+      const shifted = shiftPlanAnalysisWindow({
+        anchorDate: analysisAnchor,
+        direction,
+        period: analysisPeriod,
+      });
+      pendingBoundarySelectionRef.current = {
+        date: direction < 0 ? shifted.endDate : shifted.startDate,
+        endDate: shifted.endDate,
+        startDate: shifted.startDate,
+      };
+      setRequestedAnalysisAnchor(shifted.anchorDate);
+    },
+    [analysisAnchor, analysisPeriod],
+  );
+  const handleAnalysisToday = useCallback(() => {
+    pendingBoundarySelectionRef.current = null;
+    setRequestedAnalysisAnchor(null);
+    setSelectedDate(todayKey);
+  }, [todayKey]);
 
   useEffect(() => {
-    if (!pendingSelectedWeekStart) return;
-    if (trainingPath.selectedWeekSummary?.weekStart !== pendingSelectedWeekStart) return;
-    setPendingSelectedWeekStart(null);
-  }, [pendingSelectedWeekStart, trainingPath.selectedWeekSummary?.weekStart]);
-
-  useEffect(() => {
-    const refreshKey = [
-      activePlan?.id ?? "",
-      String(upcomingPlannedEventsQuery.dataUpdatedAt ?? 0),
-      String(recentPlannedEventsQuery.dataUpdatedAt ?? 0),
-      String(groupCalendarEventsQuery.dataUpdatedAt ?? 0),
-      String(selectedGroupActivityPlansQuery.dataUpdatedAt ?? 0),
-      String(completedActivitiesQuery.dataUpdatedAt ?? 0),
-      String(goals.dataUpdatedAt ?? 0),
-    ].join(":");
-
-    if (!activePlan?.id) {
-      lastProjectionRefreshKeyRef.current = refreshKey;
+    if (!projection?.timeline || selectedDate === null || selectedDate === resolvedSelectedDate) {
       return;
     }
-    if (
-      !upcomingPlannedEventsQuery.dataUpdatedAt &&
-      !recentPlannedEventsQuery.dataUpdatedAt &&
-      !groupCalendarEventsQuery.dataUpdatedAt
-    ) {
-      return;
+    const pending = pendingBoundarySelectionRef.current;
+    if (pending) {
+      if (
+        projection.timeline.startDate !== pending.startDate ||
+        projection.timeline.endDate !== pending.endDate
+      ) {
+        return;
+      }
+      pendingBoundarySelectionRef.current = null;
     }
-    if (lastProjectionRefreshKeyRef.current === null) {
-      lastProjectionRefreshKeyRef.current = refreshKey;
-      return;
-    }
-    if (lastProjectionRefreshKeyRef.current === refreshKey) return;
-
-    lastProjectionRefreshKeyRef.current = refreshKey;
-    void Promise.all([refetchActivePlan(), snapshot.refetchAll()]);
-  }, [
-    activePlan?.id,
-    completedActivitiesQuery.dataUpdatedAt,
-    goals.dataUpdatedAt,
-    groupCalendarEventsQuery.dataUpdatedAt,
-    recentPlannedEventsQuery.dataUpdatedAt,
-    refetchActivePlan,
-    selectedGroupActivityPlansQuery.dataUpdatedAt,
-    snapshot.refetchAll,
-    upcomingPlannedEventsQuery.dataUpdatedAt,
-  ]);
+    setSelectedDate(resolvedSelectedDate);
+  }, [projection?.timeline, resolvedSelectedDate, selectedDate]);
 
   const handleRefresh = useCallback(async () => {
-    resetTrainingPathChart();
     setRefreshing(true);
     try {
-      await Promise.all([
-        refreshPlanTabData({
-          refetchActivePlan,
-          refetchSnapshot: snapshot.refetchAll,
-          refetchGoals: goals.refetch,
-          refetchUpcomingEvents: upcomingPlannedEventsQuery.refetch,
-          refetchRecentEvents: recentPlannedEventsQuery.refetch,
-        }),
-        groupCalendarEventsQuery.refetch(),
-        selectedGroupActivityPlanIds.length > 0
-          ? selectedGroupActivityPlansQuery.refetch()
-          : Promise.resolve(null),
-        completedActivitiesQuery.refetch(),
+      await Promise.allSettled([
+        queryEnabled ? projectionQuery.refetch() : Promise.resolve(null),
+        refreshProfile(),
+        utils.calendar.day.invalidate(),
+        utils.athleteIntelligence.getGoalAssessment.invalidate(),
+        utils.athleteIntelligence.getGoalPortfolio.invalidate(),
+        utils.athleteIntelligence.getGoalProgress.invalidate(),
+        utils.athleteIntelligence.getThresholdOverview.invalidate(),
       ]);
     } finally {
       setRefreshing(false);
     }
   }, [
-    completedActivitiesQuery.refetch,
-    goals.refetch,
-    groupCalendarEventsQuery.refetch,
-    recentPlannedEventsQuery.refetch,
-    refetchActivePlan,
-    resetTrainingPathChart,
-    selectedGroupActivityPlanIds.length,
-    selectedGroupActivityPlansQuery.refetch,
-    snapshot.refetchAll,
-    upcomingPlannedEventsQuery.refetch,
+    projectionQuery.refetch,
+    queryEnabled,
+    refreshProfile,
+    utils.athleteIntelligence.getGoalAssessment,
+    utils.athleteIntelligence.getGoalPortfolio,
+    utils.athleteIntelligence.getGoalProgress,
+    utils.athleteIntelligence.getThresholdOverview,
+    utils.calendar.day,
+  ]);
+
+  const retryTimezoneInitialization = useCallback(async () => {
+    const id = ownedProfile?.id;
+    if (
+      profileLoading ||
+      persistedTimezone ||
+      !authReady ||
+      !account.active ||
+      activeAccount.current !== account ||
+      timezoneAttempt.current === account
+    )
+      return;
+    timezoneAttempt.current = account;
+    automaticallyAttemptedAccount.current = account;
+    setPendingAccount(account);
+    setTimezoneSetupError(null);
+    try {
+      if (!id) {
+        // A failed profile read is retryable; never initialize against stale account data.
+        await refreshProfile();
+        if (account.active && activeAccount.current === account) {
+          automaticallyAttemptedAccount.current = null;
+        }
+        return;
+      }
+      const saved = await initializeTimezoneMutation.mutateAsync({
+        timezone: detectedPlanningTimezone,
+      });
+      if (!account.active || activeAccount.current !== account) return;
+      const savedTimezone = ianaTimezoneSchema.parse(saved.planning_timezone);
+      setInitializedProfile({ account, timezone: savedTimezone });
+      utils.profiles.get.setData(undefined, saved);
+      // The write is acknowledged. A failed cache refresh must not repeat it.
+      await Promise.allSettled([
+        refreshProfile(),
+        utils.profiles.invalidate(),
+        utils.trainingPlans.getPlanTabProjection.invalidate(),
+        utils.trainingPlans.getPlanPeriodReview.invalidate(),
+        utils.athleteIntelligence.getReadModel.invalidate(),
+      ]);
+    } catch {
+      if (account.active && activeAccount.current === account) {
+        setTimezoneSetupError(
+          "Plan setup could not be completed. Check your connection and retry.",
+        );
+      }
+    } finally {
+      if (timezoneAttempt.current === account) timezoneAttempt.current = null;
+      setPendingAccount((current) => (current === account ? null : current));
+    }
+  }, [
+    ownedProfile?.id,
+    authReady,
+    detectedPlanningTimezone,
+    profileLoading,
+    persistedTimezone,
+    account,
+    refreshProfile,
+    initializeTimezoneMutation,
+    utils.athleteIntelligence.getReadModel,
+    utils.profiles,
+    utils.trainingPlans.getPlanPeriodReview,
+    utils.trainingPlans.getPlanTabProjection,
+  ]);
+
+  useEffect(() => {
+    if (
+      authReady &&
+      ownedProfile &&
+      !profileLoading &&
+      !persistedTimezone &&
+      automaticallyAttemptedAccount.current !== account
+    ) {
+      void retryTimezoneInitialization();
+    }
+  }, [
+    account,
+    authReady,
+    ownedProfile,
+    profileLoading,
+    persistedTimezone,
+    retryTimezoneInitialization,
   ]);
 
   return {
     refreshing,
+    accountId: user?.id,
     handleRefresh,
     trainingPath,
-    dailyTrainingPathPoints,
+    projectionAsOf: projection?.asOf ?? null,
+    projectionRevision: projection?.publishedRevision ?? null,
+    timelineEndDate: projection?.timeline?.endDate ?? null,
+    timelineStartDate: projection?.timeline?.startDate ?? null,
+    fitnessVerifiedThrough: projection?.fitnessHistory?.verifiedThrough ?? null,
+    dailyTrainingPathPoints: planningTimezoneState === "ready" ? dailyTrainingPathPoints : [],
+    timelineDaysByDate: planningTimezoneState === "ready" ? timelineDaysByDate : {},
+    goalMarkers: planningTimezoneState === "ready" ? goalMarkers : [],
+    goalMarkersTruncated: projection?.goalMarkersTruncated ?? false,
     chartLoading,
-    selectedDate: selectedDate ?? todayKey,
-    selectedWeekGoals,
-    selectedWeekEvents,
-    selectedWeekGroupEvents,
-    selectedWeekCompletedActivities,
-    selectedWeekLoading,
-    extendTrainingPathWindowEnd: trainingPathWindow.extendWindowEnd,
-    extendTrainingPathWindowStart: trainingPathWindow.extendWindowStart,
+    chartUnavailable,
+    planningTimezoneState,
+    selectedDate: resolvedSelectedDate,
+    selectedWeekStart: resolvedSelectedWeekStart,
+    analysisSelectedDate,
+    analysisAnchor,
+    analysisPeriod,
+    analysisWindow: queryWindow,
+    analysisWindowLoading: projectionQuery.isFetching,
+    handleAnalysisRangeChange,
+    handleAnalysisPeriodShift,
+    handleAnalysisToday,
     handleSelectedWeekChange,
     handleSelectedDateChange,
-    handleWeekScrollStart,
+    handleToday,
+    hasUsableData,
+    queryFailureCount,
+    timezoneInitializing,
+    timezoneSetupError:
+      profileError && !ownedProfile
+        ? "Your profile could not be loaded. Check your connection and retry."
+        : timezoneSetupError,
+    retryTimezoneInitialization,
   };
 }

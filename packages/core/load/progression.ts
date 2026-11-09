@@ -1,148 +1,169 @@
 import {
-  getIntensityAdjustedATLTimeConstant,
+  getIntensityAdjustedRecentLoadTimeConstant,
   type TrainingQualityProfile,
 } from "../calculations/training-quality";
 import {
-  getAgeAdjustedCTLTimeConstant,
-  getPersonalizedATLTimeConstant,
+  getAgeAdjustedLongTermLoadTimeConstant,
+  getPersonalizedRecentLoadTimeConstant,
 } from "../plan/calibration-constants";
 
-export interface TrainingLoadPoint {
+export interface CommonLoadFitnessPoint {
   date: number;
-  tss: number;
-  ctl: number;
-  atl: number;
-  tsb: number;
+  load: number;
+  longTermLoad: number;
+  recentLoad: number;
+  loadBalance: number;
 }
 
-export interface CTLProjectionConfig {
-  startingCTL: number;
-  targetCTL: number;
-  weeklyTSSAvg: number;
+export interface LongTermLoadProjectionConfig {
+  startingLongTermLoad: number;
+  targetLongTermLoad: number;
+  weeklyLoadAverage: number;
   mesocycles: Array<{
     duration_weeks: number;
-    tss_multiplier: number;
+    load_multiplier: number;
   }>;
   recoveryWeekFrequency?: number;
   recoveryWeekReduction?: number;
 }
 
-export function calculateCTL(previousCTL: number, todayTSS: number, userAge?: number): number {
-  const timeConstant = getAgeAdjustedCTLTimeConstant(userAge);
-  const alpha = 2 / (timeConstant + 1);
-  return previousCTL + alpha * (todayTSS - previousCTL);
+/** Convert an exponential time constant in days to its one-day smoothing factor. */
+function alphaForTimeConstant(timeConstant: number): number {
+  return 1 - Math.exp(-1 / timeConstant);
 }
 
-export function calculateATL(
-  previousATL: number,
-  todayTSS: number,
+export function calculateLongTermLoad(
+  previousLongTermLoad: number,
+  todayLoad: number,
+  userAge?: number,
+): number {
+  const timeConstant = getAgeAdjustedLongTermLoadTimeConstant(userAge);
+  const alpha = alphaForTimeConstant(timeConstant);
+  return previousLongTermLoad + alpha * (todayLoad - previousLongTermLoad);
+}
+
+export function calculateRecentLoad(
+  previousRecentLoad: number,
+  todayLoad: number,
   userAge?: number,
   userGender?: "male" | "female" | null,
   trainingQuality?: TrainingQualityProfile,
 ): number {
-  const baseTimeConstant = getPersonalizedATLTimeConstant(userAge, userGender);
-  const timeConstant = getIntensityAdjustedATLTimeConstant(baseTimeConstant, trainingQuality);
-  const alpha = 2 / (timeConstant + 1);
-  return previousATL + alpha * (todayTSS - previousATL);
+  const baseTimeConstant = getPersonalizedRecentLoadTimeConstant(userAge, userGender);
+  const timeConstant = getIntensityAdjustedRecentLoadTimeConstant(
+    baseTimeConstant,
+    trainingQuality,
+  );
+  const alpha = alphaForTimeConstant(timeConstant);
+  return previousRecentLoad + alpha * (todayLoad - previousRecentLoad);
 }
 
-export function calculateTSB(ctl: number, atl: number): number {
-  return ctl - atl;
+export function calculateLoadBalance(longTermLoad: number, recentLoad: number): number {
+  return longTermLoad - recentLoad;
 }
 
-export function calculateTrainingLoadSeries(
-  dailyTSS: number[],
-  initialCTL = 0,
-  initialATL = 0,
+export function calculateCommonLoadFitnessSeries(
+  dailyLoad: number[],
+  initialLongTermLoad = 0,
+  initialRecentLoad = 0,
   userAge?: number,
   userGender?: "male" | "female" | null,
   trainingQuality?: TrainingQualityProfile,
-): TrainingLoadPoint[] {
-  const results: TrainingLoadPoint[] = [];
+): CommonLoadFitnessPoint[] {
+  const results: CommonLoadFitnessPoint[] = [];
 
-  let currentCTL = initialCTL;
-  let currentATL = initialATL;
+  let currentLongTermLoad = initialLongTermLoad;
+  let currentRecentLoad = initialRecentLoad;
 
-  dailyTSS.forEach((tss, index) => {
-    currentCTL = calculateCTL(currentCTL, tss, userAge);
-    currentATL = calculateATL(currentATL, tss, userAge, userGender, trainingQuality);
-    const tsb = calculateTSB(currentCTL, currentATL);
+  dailyLoad.forEach((load, index) => {
+    currentLongTermLoad = calculateLongTermLoad(currentLongTermLoad, load, userAge);
+    currentRecentLoad = calculateRecentLoad(
+      currentRecentLoad,
+      load,
+      userAge,
+      userGender,
+      trainingQuality,
+    );
+    const loadBalance = calculateLoadBalance(currentLongTermLoad, currentRecentLoad);
 
     results.push({
       date: index,
-      tss,
-      ctl: currentCTL,
-      atl: currentATL,
-      tsb,
+      load,
+      longTermLoad: currentLongTermLoad,
+      recentLoad: currentRecentLoad,
+      loadBalance,
     });
   });
 
   return results;
 }
 
-export function projectCTL(currentCTL: number, plannedDailyTSS: number[]): number {
-  let projectedCTL = currentCTL;
-  for (const tss of plannedDailyTSS) {
-    projectedCTL = calculateCTL(projectedCTL, tss);
+export function projectLongTermLoad(
+  currentLongTermLoad: number,
+  plannedDailyLoad: number[],
+): number {
+  let projectedLongTermLoad = currentLongTermLoad;
+  for (const load of plannedDailyLoad) {
+    projectedLongTermLoad = calculateLongTermLoad(projectedLongTermLoad, load);
   }
-  return projectedCTL;
+  return projectedLongTermLoad;
 }
 
-export function calculateTargetDailyTSS(
-  currentCTL: number,
-  targetCTL: number,
+export function calculateTargetDailyLoad(
+  currentLongTermLoad: number,
+  targetLongTermLoad: number,
   daysToTarget: number,
 ): number {
-  const ctlGap = targetCTL - currentCTL;
-  const dailyIncrease = ctlGap / daysToTarget;
-  const alpha = 2 / (getAgeAdjustedCTLTimeConstant(undefined) + 1);
-  return currentCTL + dailyIncrease / alpha;
+  const longTermLoadGap = targetLongTermLoad - currentLongTermLoad;
+  const dailyIncrease = longTermLoadGap / daysToTarget;
+  const alpha = alphaForTimeConstant(getAgeAdjustedLongTermLoadTimeConstant(undefined));
+  return currentLongTermLoad + dailyIncrease / alpha;
 }
 
-export function calculateCTLProjection(
-  config: CTLProjectionConfig,
-): Array<{ week: number; ctl: number; date: string }> {
+export function calculateLongTermLoadProjection(
+  config: LongTermLoadProjectionConfig,
+): Array<{ week: number; longTermLoad: number; date: string }> {
   const {
-    startingCTL,
-    targetCTL,
-    weeklyTSSAvg,
+    startingLongTermLoad,
+    targetLongTermLoad,
+    weeklyLoadAverage,
     mesocycles,
     recoveryWeekFrequency = 3,
     recoveryWeekReduction = 0.5,
   } = config;
 
-  let currentCTL = startingCTL;
-  const points: Array<{ week: number; ctl: number; date: string }> = [];
+  let currentLongTermLoad = startingLongTermLoad;
+  const points: Array<{ week: number; longTermLoad: number; date: string }> = [];
   let weekCounter = 0;
   const startDate = new Date();
 
   points.push({
     week: 0,
-    ctl: startingCTL,
-    date: startDate.toISOString().split("T")[0]!,
+    longTermLoad: startingLongTermLoad,
+    date: startDate.toISOString().slice(0, 10),
   });
 
   for (const mesocycle of mesocycles) {
     for (let week = 0; week < mesocycle.duration_weeks; week += 1) {
       weekCounter += 1;
       const isRecoveryWeek = weekCounter % recoveryWeekFrequency === 0;
-      const adjustedWeeklyTSS = isRecoveryWeek
-        ? weeklyTSSAvg * recoveryWeekReduction
-        : weeklyTSSAvg * mesocycle.tss_multiplier;
-      const dailyTSS = adjustedWeeklyTSS / 7;
+      const adjustedWeeklyLoad = isRecoveryWeek
+        ? weeklyLoadAverage * recoveryWeekReduction
+        : weeklyLoadAverage * mesocycle.load_multiplier;
+      const dailyLoad = adjustedWeeklyLoad / 7;
 
       for (let day = 0; day < 7; day += 1) {
-        currentCTL = calculateCTL(currentCTL, dailyTSS);
+        currentLongTermLoad = calculateLongTermLoad(currentLongTermLoad, dailyLoad);
       }
 
-      currentCTL = Math.min(currentCTL, targetCTL);
+      currentLongTermLoad = Math.min(currentLongTermLoad, targetLongTermLoad);
 
       const weekDate = new Date(startDate);
       weekDate.setDate(startDate.getDate() + weekCounter * 7);
       points.push({
         week: weekCounter,
-        ctl: Math.round(currentCTL * 10) / 10,
-        date: weekDate.toISOString().split("T")[0]!,
+        longTermLoad: Math.round(currentLongTermLoad * 10) / 10,
+        date: weekDate.toISOString().slice(0, 10),
       });
     }
   }
