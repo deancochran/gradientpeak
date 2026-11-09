@@ -1,6 +1,6 @@
-import type { Meta, StoryObj } from "@storybook/react";
-import { expect, fn } from "@storybook/test";
+import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
+import { expect, fn } from "storybook/test";
 
 import { integerStepperFixtures } from "./fixtures";
 import { IntegerStepper } from "./index.web";

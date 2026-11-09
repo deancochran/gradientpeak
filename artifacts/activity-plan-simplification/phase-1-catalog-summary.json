@@ -1,0 +1,125 @@
+{
+  "artifact": "activity-plan-v3-v4-conversion-proof",
+  "scope": "checked-out SYSTEM_TEMPLATES only; no stored rows, selected sessions, user content, or remote data",
+  "source_structure_version": 3,
+  "proposed_structure_version": 4,
+  "template_count": 94,
+  "outcomes": { "converted": 94 },
+  "adaptation_bearing_template_count": 40,
+  "adaptation_control_count": 49,
+  "rest_segment_count": 0,
+  "families": [
+    {
+      "source_file": "endurance-expansion-bike.ts",
+      "templates": 7,
+      "adaptation_bearing": 7,
+      "adaptation_controls": 7,
+      "intervals": 21,
+      "outcome": "converted"
+    },
+    {
+      "source_file": "endurance-expansion-other.ts",
+      "templates": 5,
+      "adaptation_bearing": 5,
+      "adaptation_controls": 5,
+      "intervals": 15,
+      "outcome": "converted"
+    },
+    {
+      "source_file": "endurance-expansion-run.ts",
+      "templates": 5,
+      "adaptation_bearing": 5,
+      "adaptation_controls": 5,
+      "intervals": 15,
+      "outcome": "converted"
+    },
+    {
+      "source_file": "endurance-expansion-strength.ts",
+      "templates": 5,
+      "adaptation_bearing": 5,
+      "adaptation_controls": 5,
+      "intervals": 20,
+      "outcome": "converted"
+    },
+    {
+      "source_file": "endurance-expansion-swim.ts",
+      "templates": 9,
+      "adaptation_bearing": 9,
+      "adaptation_controls": 9,
+      "intervals": 27,
+      "outcome": "converted"
+    },
+    {
+      "source_file": "iconic-endurance.ts",
+      "templates": 5,
+      "adaptation_bearing": 5,
+      "adaptation_controls": 11,
+      "intervals": 23,
+      "outcome": "converted"
+    },
+    {
+      "source_file": "indoor-bike-activity.ts",
+      "templates": 7,
+      "adaptation_bearing": 1,
+      "adaptation_controls": 4,
+      "intervals": 26,
+      "outcome": "converted"
+    },
+    {
+      "source_file": "indoor-strength.ts",
+      "templates": 5,
+      "adaptation_bearing": 0,
+      "adaptation_controls": 0,
+      "intervals": 19,
+      "outcome": "converted"
+    },
+    {
+      "source_file": "indoor-swim.ts",
+      "templates": 6,
+      "adaptation_bearing": 0,
+      "adaptation_controls": 0,
+      "intervals": 25,
+      "outcome": "converted"
+    },
+    {
+      "source_file": "indoor-treadmill.ts",
+      "templates": 5,
+      "adaptation_bearing": 1,
+      "adaptation_controls": 1,
+      "intervals": 14,
+      "outcome": "converted"
+    },
+    {
+      "source_file": "multisport.ts",
+      "templates": 6,
+      "adaptation_bearing": 0,
+      "adaptation_controls": 0,
+      "intervals": 6,
+      "outcome": "converted"
+    },
+    {
+      "source_file": "other-activity.ts",
+      "templates": 8,
+      "adaptation_bearing": 0,
+      "adaptation_controls": 0,
+      "intervals": 31,
+      "outcome": "converted"
+    },
+    {
+      "source_file": "outdoor-bike.ts",
+      "templates": 7,
+      "adaptation_bearing": 1,
+      "adaptation_controls": 1,
+      "intervals": 24,
+      "outcome": "converted"
+    },
+    {
+      "source_file": "outdoor-run.ts",
+      "templates": 14,
+      "adaptation_bearing": 1,
+      "adaptation_controls": 1,
+      "intervals": 41,
+      "outcome": "converted"
+    }
+  ]
+}

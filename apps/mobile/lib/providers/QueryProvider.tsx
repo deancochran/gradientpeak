@@ -1,25 +1,33 @@
+import { invalidateProfileIdentityQueries } from "@repo/api/profile-identity-cache";
 import { createQueryClient } from "@repo/api/react";
 import { focusManager, onlineManager, QueryClientProvider } from "@tanstack/react-query";
 import * as Network from "expo-network";
 import * as React from "react";
-import { Alert, AppState, Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 import { api, createApiClient } from "../api";
 import { useServerConfig } from "../server-config";
 import { useAuthStore } from "../stores/auth-store";
 import { captureE2EQueryError } from "../testing/e2eRuntimeErrors";
 
-// Global error handler for 401/Unauthorized errors
-const handleGlobalError = (error: unknown) => {
+const isUnauthorizedError = (error: unknown) => {
   const errorMessage = error instanceof Error ? error.message : String(error);
-  const isUnauthorized =
+  const errorData =
+    typeof error === "object" && error !== null && "data" in error && error.data
+      ? error.data
+      : null;
+  return (
     errorMessage.includes("UNAUTHORIZED") ||
     errorMessage.includes("Unauthorized") ||
-    (typeof error === "object" &&
-      error !== null &&
-      "data" in error &&
-      (error as any).data?.code === "UNAUTHORIZED");
+    (typeof errorData === "object" &&
+      errorData !== null &&
+      "code" in errorData &&
+      errorData.code === "UNAUTHORIZED")
+  );
+};
 
-  if (isUnauthorized) {
+// Global error handler for 401/Unauthorized errors
+const handleGlobalError = (error: unknown) => {
+  if (isUnauthorizedError(error)) {
     const { session } = useAuthStore.getState();
     if (session) {
       void useAuthStore.getState().clearSession();
@@ -29,9 +37,16 @@ const handleGlobalError = (error: unknown) => {
 
 export const setupNetworkListener = () => {
   const unsubscribe = onlineManager.setEventListener((setOnline) => {
-    void Network.getNetworkStateAsync().then((state) => {
-      setOnline(Boolean(state.isConnected));
-    });
+    void Network.getNetworkStateAsync()
+      .then((state) => {
+        setOnline(Boolean(state.isConnected));
+      })
+      .catch((error) => {
+        console.warn(
+          "[QueryProvider] Failed to read initial network state; waiting for a network update",
+          error,
+        );
+      });
     const subscription = Network.addNetworkStateListener((state) => {
       setOnline(!!state.isConnected);
     });
@@ -52,54 +67,96 @@ export const setupFocusManager = () => {
   return () => subscription?.remove();
 };
 
+type QueryClientCacheOwner = Pick<
+  ReturnType<typeof createQueryClient>,
+  "getMutationCache" | "getQueryCache"
+>;
+
+export function setupCacheErrorHandlers(queryClient: QueryClientCacheOwner) {
+  const queryCache = queryClient.getQueryCache();
+  const mutationCache = queryClient.getMutationCache();
+  const originalQueryOnError = queryCache.config.onError;
+  const originalMutationOnError = mutationCache.config.onError;
+
+  const queryOnError: NonNullable<typeof queryCache.config.onError> = (...args) => {
+    const [error] = args;
+    captureE2EQueryError(error, "query_cache");
+    handleGlobalError(error);
+    originalQueryOnError?.(...args);
+  };
+  const mutationOnError: NonNullable<typeof mutationCache.config.onError> = (...args) => {
+    const [error] = args;
+    captureE2EQueryError(error, "mutation_cache");
+    handleGlobalError(error);
+    originalMutationOnError?.(...args);
+  };
+
+  queryCache.config.onError = queryOnError;
+  mutationCache.config.onError = mutationOnError;
+
+  return () => {
+    if (queryCache.config.onError === queryOnError) {
+      if (originalQueryOnError) {
+        queryCache.config.onError = originalQueryOnError;
+      } else {
+        delete queryCache.config.onError;
+      }
+    }
+    if (mutationCache.config.onError === mutationOnError) {
+      if (originalMutationOnError) {
+        mutationCache.config.onError = originalMutationOnError;
+      } else {
+        delete mutationCache.config.onError;
+      }
+    }
+  };
+}
+
 export function QueryProvider({ children }: { children: React.ReactNode }) {
   const { version } = useServerConfig();
-  const queryClient = React.useMemo(() => createQueryClient(), []);
-  const apiClient = React.useMemo(() => createApiClient(), []);
+  const queryClient = React.useMemo(() => {
+    void version;
+    return createQueryClient();
+  }, [version]);
+  const apiClient = React.useMemo(() => {
+    void version;
+    return createApiClient();
+  }, [version]);
 
   React.useEffect(() => {
     const cleanupNetwork = setupNetworkListener();
     const cleanupFocus = setupFocusManager();
-
-    // Set up global error handlers for queries and mutations
-    const queryCache = queryClient.getQueryCache();
-    const mutationCache = queryClient.getMutationCache();
-
-    // Preserve existing handlers if any, but wrap them
-    const originalQueryOnError = queryCache.config.onError;
-    const originalMutationOnError = mutationCache.config.onError;
-
-    queryCache.config.onError = (...args) => {
-      const [error] = args;
-      captureE2EQueryError(error, "query_cache");
-      handleGlobalError(error);
-      originalQueryOnError?.(...args);
-    };
-
-    mutationCache.config.onError = (...args) => {
-      const [error] = args;
-      captureE2EQueryError(error, "mutation_cache");
-      handleGlobalError(error);
-      if (error instanceof Error) {
-        // Only show alert for non-auth errors, or if we want to be explicit
-        // For auth errors, the redirect is usually enough
-        if (!error.message.includes("UNAUTHORIZED")) {
-          Alert.alert("Error", error.message);
-        }
-      }
-      originalMutationOnError?.(...args);
-    };
+    const cleanupCacheErrorHandlers = setupCacheErrorHandlers(queryClient);
 
     return () => {
       // @ts-expect-error network cleanup type issue
       cleanupNetwork?.();
       cleanupFocus?.();
+      cleanupCacheErrorHandlers();
     };
   }, [queryClient]);
 
   return (
     <api.Provider client={apiClient} queryClient={queryClient}>
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      <QueryClientProvider client={queryClient}>
+        <ProfileIdentityForegroundRefresh>{children}</ProfileIdentityForegroundRefresh>
+      </QueryClientProvider>
     </api.Provider>
   );
+}
+
+function ProfileIdentityForegroundRefresh({ children }: { children: React.ReactNode }) {
+  const utils = api.useUtils();
+
+  React.useEffect(() => {
+    const subscription = AppState.addEventListener("change", (status) => {
+      if (status === "active") {
+        void invalidateProfileIdentityQueries(utils);
+      }
+    });
+
+    return () => subscription.remove();
+  }, [utils]);
+
+  return children;
 }

@@ -1,6 +1,6 @@
 import { ROUTES } from "@/lib/constants/routes";
 
-type CalendarEventType = "planned" | "rest_day" | "race_target" | "custom" | "imported";
+type CalendarEventType = "planned" | "race_target" | "custom";
 
 interface CalendarRoutingEvent {
   id: string;
@@ -11,8 +11,7 @@ export function buildOpenEventRoute(event: CalendarRoutingEvent): string | null 
   if (
     event.event_type === "planned" ||
     event.event_type === "race_target" ||
-    event.event_type === "custom" ||
-    event.event_type === "imported"
+    event.event_type === "custom"
   ) {
     return ROUTES.PLAN.EVENT_DETAIL(event.id);
   }
