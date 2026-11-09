@@ -1,0 +1,314 @@
+{
+  "schemaVersion": 1,
+  "baselineDeclarationCount": 70,
+  "runtimeBaselineIdentityCount": 72,
+  "variationIdentityCount": 144,
+  "identityFormat": "baseline key = relative file::runtime test title; variation value = relative file::the unique identifier inside the test title's [variation:...] prefix",
+  "mappingPolicy": "Every runtime baseline identity maps to exactly two feature-specific variation identities. Baseline tests are not variation identities.",
+  "runtimeExpansions": [
+    {
+      "declaration": "specs/activities.spec.ts::imports a real ${format} file through signed storage and processing",
+      "runtimeIdentities": [
+        "specs/activities.spec.ts::imports a real FIT file through signed storage and processing",
+        "specs/activities.spec.ts::imports a real TCX file through signed storage and processing"
+      ]
+    },
+    {
+      "declaration": "specs/onboarding.spec.ts::completes identity-first profile-only onboarding on ${viewport.name}",
+      "runtimeIdentities": [
+        "specs/onboarding.spec.ts::completes identity-first profile-only onboarding on desktop",
+        "specs/onboarding.spec.ts::completes identity-first profile-only onboarding on narrow"
+      ]
+    }
+  ],
+  "mappings": {
+    "specs/activities.spec.ts::[P0] anonymous readers see public activity disclosure while private activity stays blocked": [
+      "specs/activities-variations.spec.ts::activities.public-share:history",
+      "specs/activities-variations.spec.ts::activities.public-share:followers-boundary"
+    ],
+    "specs/activities.spec.ts::imports real GPX, exposes streams, recovers engagement, enforces sharing, filters history, and deletes": [
+      "specs/activities-variations.spec.ts::narrow",
+      "specs/activities-variations.spec.ts::keyboard"
+    ],
+    "specs/activities.spec.ts::imports a real FIT file through signed storage and processing": [
+      "specs/activities-variations.spec.ts::activities.fit:pool-detail",
+      "specs/activities-variations.spec.ts::activities.fit:filtered-history"
+    ],
+    "specs/activities.spec.ts::imports a real TCX file through signed storage and processing": [
+      "specs/activities-variations.spec.ts::activities.tcx:stream-detail",
+      "specs/activities-variations.spec.ts::activities.tcx:bike-history"
+    ],
+    "specs/activities.spec.ts::keeps the selected file recoverable after a failed parse and retries with valid GPX": [
+      "specs/activities-variations.spec.ts::activities.import-retry:keyboard",
+      "specs/activities-variations.spec.ts::activities.import-retry:second-invalid"
+    ],
+    "specs/activity-plans.spec.ts::athlete can discover and open the activity plan library": [
+      "specs/plans-variations.spec.ts::activity-plans.library:narrow-card",
+      "specs/plans-variations.spec.ts::activity-plans.library:keyboard-history"
+    ],
+    "specs/activity-plans.spec.ts::athlete can duplicate an owned plan into an editable copy": [
+      "specs/plans-variations.spec.ts::activity-plans.duplicate:cancel-edit",
+      "specs/plans-variations.spec.ts::activity-plans.duplicate:source-history"
+    ],
+    "specs/activity-plans.spec.ts::athlete can author, edit, schedule and comment while planned history protects deletion": [
+      "specs/plans-variations.spec.ts::activity-plans.author:save-reopen",
+      "specs/plans-variations.spec.ts::activity-plans.author:schedule-cancel-delete"
+    ],
+    "specs/activity-plans.spec.ts::athlete can correct an invalid structure and retry authoring": [
+      "specs/plans-variations.spec.ts::activity-plans.structure-retry:repeated-correction",
+      "specs/plans-variations.spec.ts::activity-plans.structure-retry:narrow-focus"
+    ],
+    "specs/auth.spec.ts::protected routes preserve a local return path and reject hostile login redirects": [
+      "specs/auth-variations.spec.ts::auth.return-path:keyboard-login",
+      "specs/auth-variations.spec.ts::auth.return-path:validation"
+    ],
+    "specs/auth.spec.ts::sign-up verification rejects expiry and replay while preserving responsive onboarding": [
+      "specs/auth-variations.spec.ts::auth.verification:reopen",
+      "specs/auth-variations.spec.ts::auth.verification:keyboard-onboarding"
+    ],
+    "specs/auth.spec.ts::real password reset changes the credential and revokes a second session": [
+      "specs/auth-variations.spec.ts::auth.password-reset:mismatch-retry",
+      "specs/auth-variations.spec.ts::auth.password-reset:return-path"
+    ],
+    "specs/calendar-events.spec.ts::calendar.events creates durable one-off, all-day, and bounded recurring events": [
+      "specs/calendar-planning-variations.spec.ts::calendar.create:cancel-invalid",
+      "specs/calendar-planning-variations.spec.ts::calendar.create:all-day-reopen"
+    ],
+    "specs/calendar-events.spec.ts::calendar.events applies single, future, and series updates to exact recurring rows": [
+      "specs/calendar-planning-variations.spec.ts::calendar.update:cancel-single",
+      "specs/calendar-planning-variations.spec.ts::calendar.update:future-reopen"
+    ],
+    "specs/calendar-events.spec.ts::calendar.events applies delete scopes exactly and does not disclose athlete events to coaches": [
+      "specs/calendar-planning-variations.spec.ts::calendar.delete:cancel-confirmation",
+      "specs/calendar-planning-variations.spec.ts::calendar.delete:future-boundary"
+    ],
+    "specs/capability-p0-auth-recovery.spec.ts::[P0] ordinary email sign-in survives reload and sign-out ends the session": [
+      "specs/auth-variations.spec.ts::auth.ordinary-sign-in:invalid-then-valid",
+      "specs/auth-variations.spec.ts::auth.ordinary-sign-in:back-forward"
+    ],
+    "specs/capability-p0-auth-recovery.spec.ts::sign out ends the current web session and returns to public access": [
+      "specs/auth-variations.spec.ts::auth.sign-out:back-cache",
+      "specs/auth-variations.spec.ts::auth.sign-out:deep-link"
+    ],
+    "specs/capability-p0-public-share.spec.ts::public activity-plan and training-plan links render anonymous readers": [
+      "specs/capability-p0-public-share.spec.ts::public-share:activity-plan-narrow",
+      "specs/capability-p0-public-share.spec.ts::public-share:training-plan-history"
+    ],
+    "specs/capability-p0-record-lifecycle.spec.ts::[P0] athlete records from a selected plan through a persisted saved activity": [
+      "specs/recording-variations.spec.ts::recording.plan:keyboard-review",
+      "specs/recording-variations.spec.ts::recording.plan:activity-history"
+    ],
+    "specs/capability-p0-record-lifecycle.spec.ts::recording publicly pauses, resumes, and finishes from the current session": [
+      "specs/recording-variations.spec.ts::recording.pause-resume:paused-reload",
+      "specs/recording-variations.spec.ts::recording.pause-resume:repeat-controls"
+    ],
+    "specs/capability-p0-route-gaps.spec.ts::recording route preview carries the selected route into recording setup": [
+      "specs/route-variations.spec.ts::routes.preview:detail-history",
+      "specs/route-variations.spec.ts::routes.preview:narrow-launcher"
+    ],
+    "specs/capability-p0-route-gaps.spec.ts::[P0] attached route survives launcher reload and reaches the saved activity": [
+      "specs/route-variations.spec.ts::routes.recording:keyboard-review",
+      "specs/route-variations.spec.ts::routes.recording:saved-history"
+    ],
+    "specs/capability-p1-goals.spec.ts::goals.delete requires explicit confirmation before changing an inspected goal": [
+      "specs/goals-variations.spec.ts::goals.delete:keyboard-cancel",
+      "specs/goals-variations.spec.ts::goals.delete:confirm-disposable"
+    ],
+    "specs/capability-p1-notifications.spec.ts::[P1] opening a notification reaches its destination and persists read state": [
+      "specs/discovery-notification-variations.spec.ts::notifications.open:keyboard-destination",
+      "specs/discovery-notification-variations.spec.ts::notification-history"
+    ],
+    "specs/capability-p1-notifications.spec.ts::[P2] mark-all-read persists while previously read notifications remain available": [
+      "specs/discovery-notification-variations.spec.ts::notifications.mark-all:cancel-navigation",
+      "specs/discovery-notification-variations.spec.ts::notifications.mark-all:history"
+    ],
+    "specs/capability-p1-routes.spec.ts::[P0] routes.attach-to-calendar-event is visible when the event is reopened": [
+      "specs/route-variations.spec.ts::routes.event-attachment:keyboard",
+      "specs/route-variations.spec.ts::routes.event-attachment:route-back"
+    ],
+    "specs/capability-p3-onboarding.spec.ts::[P1] onboarding follows a discovered person and retains the relationship": [
+      "specs/onboarding-social-variations.spec.ts::onboarding.follow:keyboard",
+      "specs/onboarding-social-variations.spec.ts::onboarding.follow:toggle"
+    ],
+    "specs/capability-p3-onboarding.spec.ts::[P1] onboarding joins an open discovered group and retains membership": [
+      "specs/onboarding-social-variations.spec.ts::onboarding.open-group:narrow",
+      "specs/onboarding-social-variations.spec.ts::onboarding.open-group:keyboard-history"
+    ],
+    "specs/capability-p3-onboarding.spec.ts::[P1] onboarding requests a closed discovered group and retains pending access": [
+      "specs/onboarding-social-variations.spec.ts::onboarding.closed-group:keyboard-request",
+      "specs/onboarding-social-variations.spec.ts::onboarding.closed-group:cancel-request"
+    ],
+    "specs/capability-p3-settings-coaching.spec.ts::settings.select-theme persists a chosen theme across reloads": [
+      "specs/capability-p3-settings-coaching.spec.ts::settings.theme:keyboard",
+      "specs/capability-p3-settings-coaching.spec.ts::settings.theme:history"
+    ],
+    "specs/capability-p3-settings-coaching.spec.ts::[P2] profile and privacy settings persist together and can be restored": [
+      "specs/capability-p3-settings-coaching.spec.ts::settings.profile:unsaved-reload",
+      "specs/capability-p3-settings-coaching.spec.ts::settings.profile:keyboard-save"
+    ],
+    "specs/capability-p3-settings-coaching.spec.ts::coaching.view-dashboard opens an authorized organization dashboard": [
+      "specs/capability-p3-settings-coaching.spec.ts::coaching.dashboard:narrow-history",
+      "specs/capability-p3-settings-coaching.spec.ts::coaching.dashboard:revoked-role"
+    ],
+    "specs/feed-discovery.spec.ts::athlete refreshes and pages the persisted social activity feed": [
+      "specs/feed-discovery-variations.spec.ts::feed.refresh:keyboard",
+      "specs/feed-discovery-variations.spec.ts::feed.pagination:reload"
+    ],
+    "specs/feed-discovery.spec.ts::athlete retries the feed after a refresh failure": [
+      "specs/feed-discovery-variations.spec.ts::feed.retry:cached-content",
+      "specs/feed-discovery-variations.spec.ts::feed.retry:second-failure"
+    ],
+    "specs/feed-discovery.spec.ts::athlete searches every API-backed discovery scope and can page results": [
+      "specs/feed-discovery-variations.spec.ts::discovery.scopes:profile-detail",
+      "specs/discovery-notification-variations.spec.ts::responsive-discovery"
+    ],
+    "specs/feed-discovery.spec.ts::athlete can retry discovery after an explicit client search failure": [
+      "specs/feed-discovery-variations.spec.ts::discovery.retry:query-retention",
+      "specs/feed-discovery-variations.spec.ts::discovery.retry:scope-switch"
+    ],
+    "specs/goals.spec.ts::goals.lifecycle and goals.intelligence persist exact owned goals": [
+      "specs/goals-variations.spec.ts::goals.lifecycle:narrow-filter-detail",
+      "specs/goals-variations.spec.ts::goals.lifecycle:cancel-edit"
+    ],
+    "specs/goals.spec.ts::goal list transport failures remain distinct from an empty result and recover": [
+      "specs/goals-variations.spec.ts::goals.transport:reload-then-retry",
+      "specs/goals-variations.spec.ts::goals.transport:invalid-history"
+    ],
+    "specs/groups-events.spec.ts::owner creates, edits, RSVPs to, cancels an event, and archives its group": [
+      "specs/groups-variations.spec.ts::groups.owner:cancel-archive",
+      "specs/groups-variations.spec.ts::groups.owner:keyboard-rsvp"
+    ],
+    "specs/groups-events.spec.ts::a member discovers, joins, reloads, RSVPs, and cannot manage the owner's group": [
+      "specs/groups-variations.spec.ts::groups.member:narrow-permissions",
+      "specs/groups-variations.spec.ts::groups.member:history"
+    ],
+    "specs/groups-events.spec.ts::[P1] owner approves a closed-group request and persists member role management": [
+      "specs/groups-variations.spec.ts::groups.requests:reject-retry",
+      "specs/groups-variations.spec.ts::groups.requests:approval-history"
+    ],
+    "specs/integrations.spec.ts::[P1] local adapter connects, retries sync, rejects callback replay, and disconnects": [
+      "specs/integration-variations.spec.ts::integrations.connect:cancel-disconnect",
+      "specs/integration-variations.spec.ts::integrations.connect:history"
+    ],
+    "specs/integrations.spec.ts::cached provider status survives a network error and recovers on retry": [
+      "specs/integration-variations.spec.ts::integrations.cached-status:keyboard-retry",
+      "specs/integration-variations.spec.ts::integrations.cached-status:reload-recovery"
+    ],
+    "specs/messaging-notifications.spec.ts::creates a DM and a three-actor group with independent unread state": [
+      "specs/messaging-variations.spec.ts::messaging.conversations:keyboard-dm",
+      "specs/messaging-variations.spec.ts::messaging.conversations:group-history"
+    ],
+    "specs/messaging-notifications.spec.ts::rejects and accepts follow requests from notifications": [
+      "specs/messaging-variations.spec.ts::messaging.follow-requests:reject-reload",
+      "specs/messaging-variations.spec.ts::messaging.follow-requests:accept-profile"
+    ],
+    "specs/onboarding.spec.ts::completes identity-first profile-only onboarding on desktop": [
+      "specs/auth-variations.spec.ts::onboarding.desktop:validation-retry",
+      "specs/auth-variations.spec.ts::onboarding.desktop:reload-draft"
+    ],
+    "specs/onboarding.spec.ts::completes identity-first profile-only onboarding on narrow": [
+      "specs/auth-variations.spec.ts::onboarding.narrow:scroll-focus",
+      "specs/auth-variations.spec.ts::onboarding.narrow:history-guard"
+    ],
+    "specs/planning.spec.ts::planning.training-path and calendar.navigation expose the server-composed scheduled path": [
+      "specs/calendar-planning-variations.spec.ts::planning.training-path:tab-history",
+      "specs/calendar-planning-variations.spec.ts::planning.calendar-navigation:narrow-agenda"
+    ],
+    "specs/planning.spec.ts::agenda.create and events.recurrence persist a bounded series and honor delete scope": [
+      "specs/calendar-planning-variations.spec.ts::planning.recurrence:cancel-series-delete",
+      "specs/calendar-planning-variations.spec.ts::planning.recurrence:single-delete"
+    ],
+    "specs/planning.spec.ts::[P0] selected-day agenda shows planned and completed information for an arbitrary date": [
+      "specs/calendar-planning-variations.spec.ts::planning.day-agenda:deep-link-history",
+      "specs/planning-variations.spec.ts::agenda-detail"
+    ],
+    "specs/profiles-social.spec.ts::profile hub and settings expose owned profile journeys": [
+      "specs/profiles-social-variations.spec.ts::profile.hub:narrow-menu",
+      "specs/profiles-social-variations.spec.ts::profile.hub:history"
+    ],
+    "specs/profiles-social.spec.ts::private profiles protect details while a follow request persists and is restored": [
+      "specs/profiles-social-variations.spec.ts::profiles.private:keyboard-cancel",
+      "specs/profiles-social-variations.spec.ts::profiles.private:message-history"
+    ],
+    "specs/profiles-social.spec.ts::social graph pages expose data, empty, error recovery, and bounded controls": [
+      "specs/profiles-social-variations.spec.ts::social.graph:follower-profile",
+      "specs/profiles-social-variations.spec.ts::social.graph:narrow-retry"
+    ],
+    "specs/recording.spec.ts::athlete recovers after refresh, then reviews and discards an atomic finalized artifact": [
+      "specs/recording-variations.spec.ts::recording.recovery:review-history",
+      "specs/recording-variations.spec.ts::recording.recovery:double-reload"
+    ],
+    "specs/recording.spec.ts::cross-tab takeover fences the old recorder and recovers in the new tab": [
+      "specs/recording-variations.spec.ts::recording.takeover:decline-by-close",
+      "specs/recording-variations.spec.ts::recording.takeover:persisted-fence"
+    ],
+    "specs/recording.spec.ts::offline saves stay idempotent in IndexedDB and retry through the server handoff": [
+      "specs/recording-variations.spec.ts::recording.offline:reload-queue",
+      "specs/recording-variations.spec.ts::recording.offline:feature-navigation"
+    ],
+    "specs/routes.spec.ts::route library redirects an unauthenticated browser through login": [
+      "specs/route-variations.spec.ts::routes.anonymous:return-login",
+      "specs/route-variations.spec.ts::routes.anonymous:invalid-retry"
+    ],
+    "specs/routes.spec.ts::athlete can retry an XML upload and use the persisted route journey": [
+      "specs/route-variations.spec.ts::routes.upload:cancel-delete",
+      "specs/route-variations.spec.ts::routes.upload:back-abandons-edit"
+    ],
+    "specs/screen-functionality.spec.ts::every protected top-level screen renders without a route failure": [
+      "specs/shell-screen-variations.spec.ts::screens.protected:feature-history",
+      "specs/shell-screen-variations.spec.ts::screens.protected:narrow-actions"
+    ],
+    "specs/screen-functionality.spec.ts::primary empty-state and navigation actions remain usable": [
+      "specs/shell-screen-variations.spec.ts::screens.empty-actions:notification-history",
+      "specs/shell-screen-variations.spec.ts::screens.empty-actions:entry-back"
+    ],
+    "specs/screen-functionality.spec.ts::message composer opens from the empty inbox": [
+      "specs/shell-screen-variations.spec.ts::screens.message-composer:keyboard-back",
+      "specs/shell-screen-variations.spec.ts::screens.message-composer:empty-search"
+    ],
+    "specs/screen-functionality.spec.ts::responsive account navigation exposes every extended product area": [
+      "specs/shell-screen-variations.spec.ts::screens.account-menu:keyboard-destination",
+      "specs/shell-screen-variations.spec.ts::screens.account-menu:narrow-scroll"
+    ],
+    "specs/smoke.spec.ts::athlete can open migrated protected routes": [
+      "specs/shell-screen-variations.spec.ts::smoke.protected-routes:nav-links",
+      "specs/shell-screen-variations.spec.ts::smoke.protected-routes:reload-history"
+    ],
+    "specs/smoke.spec.ts::dashboard presents an explicit error and recovers its server content": [
+      "specs/shell-screen-variations.spec.ts::dashboard.recovery:keyboard",
+      "specs/shell-screen-variations.spec.ts::dashboard.recovery:feature-history"
+    ],
+    "specs/smoke.spec.ts::mobile primary navigation opens, navigates, and closes": [
+      "specs/shell-screen-variations.spec.ts::navigation.mobile:escape-focus",
+      "specs/shell-screen-variations.spec.ts::navigation.mobile:scroll-record"
+    ],
+    "specs/smoke.spec.ts::desktop primary navigation exposes named destinations": [
+      "specs/shell-screen-variations.spec.ts::navigation.desktop:keyboard-goals",
+      "specs/shell-screen-variations.spec.ts::navigation.desktop:history-current"
+    ],
+    "specs/smoke.spec.ts::athlete can reach the migrated profile routes from the shell": [
+      "specs/shell-screen-variations.spec.ts::profile.shell:follower-history",
+      "specs/shell-screen-variations.spec.ts::profile.shell:narrow-settings"
+    ],
+    "specs/smoke.spec.ts::organization coaching routes fail closed outside an authorized coach membership": [
+      "specs/shell-screen-variations.spec.ts::coaching.denied:narrow-reload",
+      "specs/shell-screen-variations.spec.ts::coaching.denied:history"
+    ],
+    "specs/training-plans.spec.ts::athlete can browse persisted owned and template training-plan libraries": [
+      "specs/plans-variations.spec.ts::training-plans.library:owned-detail-back",
+      "specs/plans-variations.spec.ts::training-plans.library:narrow-template"
+    ],
+    "specs/training-plans.spec.ts::athlete creates, reloads, edits, and cleans a persisted training plan": [
+      "specs/plans-variations.spec.ts::training-plans.lifecycle:detail-history",
+      "specs/plans-variations.spec.ts::training-plans.lifecycle:cancel-edit"
+    ],
+    "specs/training-plans.spec.ts::athlete preferences hydrate, validate, persist, reload, and restore": [
+      "specs/plans-variations.spec.ts::training-preferences:unsaved-reload",
+      "specs/plans-variations.spec.ts::training-preferences:keyboard-restore"
+    ],
+    "specs/training-plans.spec.ts::[P1] athlete applies a training plan to the calendar and removes the persisted schedule": [
+      "specs/plans-variations.spec.ts::training-plans.schedule:agenda-back",
+      "specs/planning-variations.spec.ts::training-plan-keyboard"
+    ]
+  }
+}

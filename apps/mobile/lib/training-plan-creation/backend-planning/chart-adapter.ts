@@ -1,130 +1,105 @@
-import { addDaysToDateKey, parseDateKey, toDateKey } from "../date-utils";
-import type { BuilderDailyTrainingPathChartViewModel } from "../view-model";
-import type { ActiveTrainingPlanProjection, TrainingPathChartProjectionResult } from "./types";
+import { addDaysDateOnlyUtc, formatDateOnlyUtc, parseDateOnlyUtc } from "@repo/core";
+import type {
+  BackendPreviewProjection,
+  BuilderDailyTrainingPathChartViewModel,
+  TrainingPathChartProjectionResult,
+} from "./types";
 
-export function deriveTrainingPathChartFromActiveProjection({
-  activeProjection,
-  localChart,
-}: {
-  activeProjection: ActiveTrainingPlanProjection;
-  localChart: BuilderDailyTrainingPathChartViewModel;
-}): TrainingPathChartProjectionResult {
-  if (activeProjection.source !== "backend") return { chart: localChart, source: "local" };
-  const backendChart = mapBackendProjectionChartToTrainingPathChart(
-    activeProjection.projectionChart,
-    localChart,
-  );
-  return backendChart
-    ? { chart: backendChart, source: "backend" }
-    : { chart: localChart, source: "local" };
+function getMondayWeekStart(dateKey: string) {
+  const date = parseDateOnlyUtc(dateKey);
+  date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
+  return formatDateOnlyUtc(date);
 }
 
-function mapBackendProjectionChartToTrainingPathChart(
-  projectionChart: unknown,
-  localChart: BuilderDailyTrainingPathChartViewModel,
-): BuilderDailyTrainingPathChartViewModel | null {
-  if (!projectionChart || typeof projectionChart !== "object") return null;
-  const chart = projectionChart as Record<string, any>;
-  const points = Array.isArray(chart.display_points)
-    ? chart.display_points
-    : Array.isArray(chart.points)
-      ? chart.points
-      : [];
-  const validPoints = points.filter(isBackendProjectionPoint);
-  if (validPoints.length === 0) return null;
-
-  const weeks = aggregateBackendPointsToWeeks(validPoints, localChart);
-  if (weeks.length === 0) return null;
-
-  const loadMax = Math.max(
-    1,
-    ...weeks.flatMap((week) => [
-      week.plannedLoad ?? 0,
-      week.targetLoad ?? 0,
-      week.completedLoad ?? 0,
-      week.tentativePlannedLoad ?? 0,
-    ]),
-  );
-  const fitnessValues = weeks
-    .flatMap((week) => [week.fitness, week.scheduledFitness, week.targetFitness, week.fatigue])
-    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
-  const fitnessMax = Math.max(1, ...fitnessValues);
-
+function emptyChart(startDate: string): BuilderDailyTrainingPathChartViewModel {
   return {
-    ...localChart,
-    weeks,
-    domains: { load: [0, Math.ceil(loadMax * 1.15)], fitness: [0, Math.ceil(fitnessMax * 1.15)] },
+    dailyPoints: [],
+    weeks: [],
+    selectedWeekSummary: null,
+    goalMarkers: [],
+    todayKey: startDate,
+    domains: { load: [0, 1], fitness: [0, 1] },
+    emptyState: "noActivityHistory",
   };
 }
 
-type BackendProjectionPoint = {
-  date: string;
-  predicted_load_tss: number;
-  predicted_fitness_ctl: number;
-  predicted_fatigue_atl: number;
-  predicted_form_tsb: number;
-};
-
-function isBackendProjectionPoint(value: unknown): value is BackendProjectionPoint {
-  if (!value || typeof value !== "object") return false;
-  const point = value as Record<string, unknown>;
-  return (
-    typeof point.date === "string" &&
-    typeof point.predicted_load_tss === "number" &&
-    typeof point.predicted_fitness_ctl === "number" &&
-    typeof point.predicted_fatigue_atl === "number" &&
-    typeof point.predicted_form_tsb === "number"
+export function deriveTrainingPathChartFromBackendProjection(input: {
+  backendPreview: BackendPreviewProjection | null;
+  startDate: string;
+}): TrainingPathChartProjectionResult {
+  if (!input.backendPreview) return { chart: emptyChart(input.startDate), source: "none" };
+  const transitions = [...input.backendPreview.projectionChart.transitions].sort((left, right) =>
+    left.toAsOf.localeCompare(right.toAsOf),
   );
-}
+  if (transitions.length === 0) return { chart: emptyChart(input.startDate), source: "none" };
 
-function aggregateBackendPointsToWeeks(
-  points: BackendProjectionPoint[],
-  localChart: BuilderDailyTrainingPathChartViewModel,
-): BuilderDailyTrainingPathChartViewModel["weeks"] {
-  const buckets = new Map<string, BackendProjectionPoint[]>();
-  for (const point of points) {
-    const weekStart = getMondayWeekStart(point.date);
-    const bucket = buckets.get(weekStart) ?? [];
-    bucket.push(point);
-    buckets.set(weekStart, bucket);
+  const dailyPoints = transitions.map((transition) => {
+    const date = transition.sourceId?.startsWith("plan-day:")
+      ? transition.sourceId.slice("plan-day:".length)
+      : transition.toAsOf.slice(0, 10);
+    return {
+      date,
+      plannedLoad: 0,
+      completedLoad: null,
+      targetLoad: 0,
+      actualOrScheduledLoad: 0,
+      loadDelta: null,
+      plannedDelta: null,
+      completedCommonLoadIdentity: null,
+      hasCompletedActivityWithoutLoad: false,
+      hasTargetLoad: false,
+      fitnessCtl: transition.state.longTermLoad,
+      scheduledFitnessCtl: transition.state.longTermLoad,
+      targetFitnessCtl: null,
+      fatigueAtl: transition.state.recentLoad,
+      formTsb: transition.state.loadBalance,
+      readinessScore: null,
+      annotations: [],
+    };
+  });
+  const buckets = new Map<string, typeof dailyPoints>();
+  for (const point of dailyPoints) {
+    const key = getMondayWeekStart(point.date);
+    buckets.set(key, [...(buckets.get(key) ?? []), point]);
   }
-  return [...buckets.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([weekStart, weekPoints], index) => {
-      const sortedPoints = [...weekPoints].sort((left, right) =>
-        left.date.localeCompare(right.date),
-      );
-      const finalPoint = sortedPoints[sortedPoints.length - 1] ?? sortedPoints[0];
-      const localWeek =
-        localChart.weeks.find((week) => week.weekStart === weekStart) ?? localChart.weeks[index];
-      const plannedLoad = sortedPoints.reduce(
-        (total, point) =>
-          total + (Number.isFinite(point.predicted_load_tss) ? point.predicted_load_tss : 0),
-        0,
-      );
-      return {
-        weekStart,
-        weekEnd: addDaysToDateKey(weekStart, 6),
-        label: localWeek?.label ?? `Week ${index + 1}`,
-        completedLoad: localWeek?.completedLoad ?? null,
-        plannedLoad,
-        tentativePlannedLoad: plannedLoad,
-        targetLoad: localWeek?.targetLoad ?? null,
-        fitness: finalPoint.predicted_fitness_ctl,
-        scheduledFitness: finalPoint.predicted_fitness_ctl,
-        targetFitness: localWeek?.targetFitness ?? finalPoint.predicted_fitness_ctl,
-        fatigue: finalPoint.predicted_fatigue_atl,
-        form: finalPoint.predicted_form_tsb,
-        riskZone: null,
-        isCurrent: localWeek?.isCurrent ?? false,
-        isSelected: localWeek?.isSelected ?? index === 0,
-      };
-    });
-}
-
-function getMondayWeekStart(dateKey: string) {
-  const date = parseDateKey(dateKey);
-  const day = date.getUTCDay();
-  date.setUTCDate(date.getUTCDate() - ((day + 6) % 7));
-  return toDateKey(date);
+  const weeks = [...buckets.entries()].map(([weekStart, weekPoints], index) => {
+    const finalPoint = weekPoints.at(-1);
+    const plannedValues = weekPoints.map((point) => point.plannedLoad);
+    return {
+      weekStart,
+      weekEnd: addDaysDateOnlyUtc(weekStart, 6),
+      label: `Week ${index + 1}`,
+      completedLoad: null,
+      plannedLoad: plannedValues.reduce<number>((sum, value) => sum + (value ?? 0), 0),
+      targetLoad: 0,
+      fitness: finalPoint?.fitnessCtl ?? null,
+      scheduledFitness: finalPoint?.scheduledFitnessCtl ?? null,
+      targetFitness: null,
+      fatigue: finalPoint?.fatigueAtl ?? null,
+      form: finalPoint?.formTsb ?? null,
+      riskZone: null,
+      isCurrent: false,
+      isSelected: index === 0,
+    };
+  });
+  const loadMax = Math.max(
+    1,
+    ...weeks.flatMap((week) => [week.plannedLoad ?? 0, week.targetLoad ?? 0]),
+  );
+  const fitnessMax = Math.max(
+    1,
+    ...weeks.flatMap((week) => [week.fitness ?? 0, week.fatigue ?? 0, week.targetFitness ?? 0]),
+  );
+  return {
+    source: "backend",
+    chart: {
+      dailyPoints,
+      weeks,
+      selectedWeekSummary: null,
+      goalMarkers: [],
+      todayKey: input.startDate,
+      domains: { load: [0, Math.ceil(loadMax * 1.15)], fitness: [0, Math.ceil(fitnessMax * 1.15)] },
+      emptyState: null,
+    },
+  };
 }

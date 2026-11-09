@@ -6,11 +6,15 @@ import type {
   RecordingState,
 } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
-import { Activity, Bike, CalendarDays, MapPin, Route, Trash2, Watch } from "lucide-react-native";
+import { Activity, Bike, CalendarDays, Route, Trash2, Watch } from "lucide-react-native";
 import React from "react";
 import { Pressable, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { RecordingControls } from "@/components/recording/footer";
+import { AppBottomSheetContent } from "@/components/shared/AppBottomSheet";
+import { omitUndefined } from "@/lib/omitUndefined";
+import { useTheme } from "@/lib/stores/theme-store";
+import { getResolvedThemeScale, type ResolvedThemeMode } from "@/lib/theme";
 import type { RecordingSheetSetupItem } from "./model/recordingSheetModel";
 import {
   buildRecordingControlSheetModel,
@@ -21,8 +25,6 @@ import {
 
 export interface RecordingControlSheetProps {
   activityCategory: RecordingActivityCategory;
-  gpsRecordingEnabled: boolean;
-  onGpsPress: () => void;
   onOpenActivity: () => void;
   onOpenFtms: () => void;
   onOpenPlan: () => void;
@@ -40,10 +42,22 @@ export interface RecordingControlSheetProps {
   sessionContract: RecordingSessionContract | null;
 }
 
+/** Resolves semantic theme tokens for native-only BottomSheet and Lucide color props. */
+function getNativeVisualTokens(mode: ResolvedThemeMode) {
+  const theme = getResolvedThemeScale(mode);
+
+  return {
+    bottomSheetBackground: theme.popover,
+    icon: {
+      destructive: theme.destructive,
+      foreground: theme.foreground,
+      success: theme.chart2,
+    },
+  };
+}
+
 export function RecordingControlSheet({
   activityCategory,
-  gpsRecordingEnabled,
-  onGpsPress,
   onOpenActivity,
   onOpenFtms,
   onOpenPlan,
@@ -62,9 +76,12 @@ export function RecordingControlSheet({
 }: RecordingControlSheetProps) {
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
+  const { resolvedTheme } = useTheme();
+  const bottomSheetRef = React.useRef<BottomSheet>(null);
+  const [isExpanded, setIsExpanded] = React.useState(false);
+  const nativeVisualTokens = getNativeVisualTokens(resolvedTheme);
   const actionHandlers = React.useMemo(
     () => ({
-      onGpsPress,
       onOpenActivity,
       onOpenFtms,
       onOpenPlan,
@@ -72,15 +89,7 @@ export function RecordingControlSheet({
       onOpenSensors,
       sessionContract,
     }),
-    [
-      onGpsPress,
-      onOpenActivity,
-      onOpenFtms,
-      onOpenPlan,
-      onOpenRoute,
-      onOpenSensors,
-      sessionContract,
-    ],
+    [onOpenActivity, onOpenFtms, onOpenPlan, onOpenRoute, onOpenSensors, sessionContract],
   );
   const model = React.useMemo(
     () =>
@@ -96,13 +105,15 @@ export function RecordingControlSheet({
 
   return (
     <BottomSheet
+      ref={bottomSheetRef}
       index={0}
       snapPoints={model.snapPoints}
       enableDynamicSizing
       enablePanDownToClose={false}
       maxDynamicContentSize={Math.round(height * 0.82)}
-      backgroundStyle={{ backgroundColor: "rgba(10, 10, 10, 0.96)" }}
+      backgroundStyle={{ backgroundColor: nativeVisualTokens.bottomSheetBackground }}
       handleComponent={null}
+      onChange={(index) => setIsExpanded(index > 0)}
     >
       <BottomSheetView
         className="flex-1 overflow-hidden border-t border-border bg-background/95 px-4 shadow-2xl"
@@ -111,14 +122,20 @@ export function RecordingControlSheet({
         }}
         testID="recording-control-sheet"
       >
-        <View
+        <Pressable
+          accessibilityHint={
+            isExpanded ? "Hides session setup options." : "Shows session setup options."
+          }
+          accessibilityLabel="Session options"
           className="items-center justify-start"
+          accessibilityRole="button"
+          accessibilityState={{ expanded: isExpanded }}
+          onPress={() => bottomSheetRef.current?.snapToIndex(isExpanded ? 0 : 1)}
           style={{ height: RECORDING_SHEET_HANDLE_HEIGHT }}
-          accessibilityRole="adjustable"
           testID="recording-control-sheet-handle"
         >
           <View className="mt-1 h-1 w-10 rounded-full bg-muted-foreground/60" />
-        </View>
+        </Pressable>
 
         <View style={{ height: RECORDING_SHEET_CONTROL_TOP_INSET }} />
 
@@ -126,6 +143,7 @@ export function RecordingControlSheet({
           <View className="flex-row gap-3">
             <ActivityControlButton
               disabled={Boolean(sessionContract && !sessionContract.editing.canEditActivity)}
+              iconColor={nativeVisualTokens.icon.foreground}
               label={formatActivityLabel(activityCategory)}
               onPress={onOpenActivity}
             />
@@ -151,30 +169,40 @@ export function RecordingControlSheet({
           />
         )}
 
-        <View
-          className="gap-2"
-          style={{ marginTop: RECORDING_SHEET_EXPANDED_CONTENT_GAP }}
-          testID="recording-setup-action-rail"
+        <AppBottomSheetContent
+          paddingHorizontal={0}
+          paddingTop={RECORDING_SHEET_EXPANDED_CONTENT_GAP}
+          paddingBottom={12}
+          showsVerticalScrollIndicator={false}
         >
-          {model.sections.flatMap((section) =>
-            section.items.map((item) => (
-              <SetupActionRow
-                key={item.id}
-                item={item}
-                statusLabel={getSetupStatusLabel(item.id, {
-                  gpsRecordingEnabled,
-                  sensorCount,
-                  sessionContract,
-                })}
-                onRemove={getSetupRemoveHandler(item.id, {
-                  onRemovePlan,
-                  onRemoveRoute,
-                  sessionContract,
-                })}
-              />
-            )),
-          )}
-        </View>
+          <View className="gap-4" testID="recording-setup-action-rail">
+            {model.sections.map((section) => (
+              <View key={section.id} className="gap-2">
+                <Text className="px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {section.title}
+                </Text>
+                {section.items.map((item) => (
+                  <SetupActionRow
+                    key={item.id}
+                    item={item}
+                    iconColors={nativeVisualTokens.icon}
+                    statusLabel={getSetupStatusLabel(item.id, {
+                      sensorCount,
+                      sessionContract,
+                    })}
+                    {...omitUndefined({
+                      onRemove: getSetupRemoveHandler(item.id, {
+                        onRemovePlan,
+                        onRemoveRoute,
+                        sessionContract,
+                      }),
+                    })}
+                  />
+                ))}
+              </View>
+            ))}
+          </View>
+        </AppBottomSheetContent>
       </BottomSheetView>
     </BottomSheet>
   );
@@ -182,10 +210,12 @@ export function RecordingControlSheet({
 
 function ActivityControlButton({
   disabled,
+  iconColor,
   label,
   onPress,
 }: {
   disabled: boolean;
+  iconColor: string;
   label: string;
   onPress: () => void;
 }) {
@@ -196,12 +226,13 @@ function ActivityControlButton({
       accessibilityRole="button"
       accessibilityState={{ disabled }}
       accessibilityLabel={`Activity: ${label}`}
+      accessibilityHint="Adjust the session activity."
       className={`h-14 w-28 items-center justify-center rounded-lg border border-border bg-card ${
         disabled ? "opacity-50" : "active:opacity-80"
       }`}
       testID="recording-activity-control-button"
     >
-      <Activity size={18} color="#f8fafc" />
+      <Activity size={18} color={iconColor} />
       <Text className="mt-0.5 text-xs font-bold capitalize text-foreground" numberOfLines={1}>
         {label}
       </Text>
@@ -210,10 +241,12 @@ function ActivityControlButton({
 }
 
 function SetupActionRow({
+  iconColors,
   item,
   onRemove,
   statusLabel,
 }: {
+  iconColors: { destructive: string; foreground: string; success: string };
   item: RecordingSheetSetupItem;
   onRemove?: () => void;
   statusLabel: string;
@@ -243,14 +276,23 @@ function SetupActionRow({
         className={`flex-1 flex-row items-center gap-3 px-3 py-2 ${
           item.disabled ? "opacity-50" : "active:opacity-80"
         }`}
-        testID={item.id === "gps" ? "recording-gps-toggle" : `recording-setup-action-${item.id}`}
+        testID={`recording-setup-action-${item.id}`}
       >
         <View
           className={`h-9 w-9 items-center justify-center rounded-full ${
             isActive ? "bg-primary/20" : isWarning ? "bg-destructive/20" : "bg-muted"
           }`}
         >
-          <Icon size={18} color={isActive ? "#22c55e" : isWarning ? "#ef4444" : "#f8fafc"} />
+          <Icon
+            size={18}
+            color={
+              isActive
+                ? iconColors.success
+                : isWarning
+                  ? iconColors.destructive
+                  : iconColors.foreground
+            }
+          />
         </View>
         <View className="min-w-0 flex-1">
           <View className="flex-row items-center justify-between gap-2">
@@ -281,11 +323,12 @@ function SetupActionRow({
         <Pressable
           onPress={onRemove}
           accessibilityRole="button"
+          accessibilityState={{ disabled: false }}
           accessibilityLabel={`Remove ${item.title}`}
-          className="w-11 items-center justify-center border-l border-border active:opacity-80"
+          className="min-h-11 w-11 items-center justify-center border-l border-border active:opacity-80"
           testID={`recording-setup-remove-${item.id}`}
         >
-          <Trash2 size={15} color="#ef4444" />
+          <Trash2 size={15} color={iconColors.destructive} />
         </Pressable>
       ) : null}
     </View>
@@ -294,8 +337,6 @@ function SetupActionRow({
 
 function getSetupIcon(id: RecordingQuickAction) {
   switch (id) {
-    case "gps":
-      return MapPin;
     case "plan":
       return CalendarDays;
     case "route":
@@ -310,14 +351,11 @@ function getSetupIcon(id: RecordingQuickAction) {
 function getSetupStatusLabel(
   id: RecordingQuickAction,
   params: {
-    gpsRecordingEnabled: boolean;
     sensorCount: number;
     sessionContract: RecordingSessionContract | null;
   },
 ) {
   switch (id) {
-    case "gps":
-      return params.gpsRecordingEnabled ? "On" : "Off";
     case "plan":
       return params.sessionContract?.guidance.hasPlan ? "Attached" : "Add";
     case "route":
