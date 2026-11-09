@@ -91,7 +91,7 @@ function OrganizationSelectorPage({ page, cursor }: { page: OrganizationPage; cu
                 <Card className="min-w-0 border-slate-800 bg-slate-900 text-slate-50">
                   <CardHeader>
                     <CardTitle>
-                      <h3>{organization.name}</h3>
+                      <h3 className="[overflow-wrap:anywhere]">{organization.name}</h3>
                     </CardTitle>
                     <CardDescription className="flex flex-wrap gap-2 text-slate-400">
                       {membership.roles.filter(isFixedRole).map((role) => (
@@ -109,7 +109,7 @@ function OrganizationSelectorPage({ page, cursor }: { page: OrganizationPage; cu
                   <CardContent className="min-w-0">
                     <Button
                       asChild
-                      className="h-auto max-w-full min-w-0 whitespace-normal bg-cyan-400 text-left text-slate-950 hover:bg-cyan-300"
+                      className="h-auto max-w-full min-w-0 whitespace-normal bg-cyan-400 text-left text-slate-950 [overflow-wrap:anywhere] hover:bg-cyan-300"
                     >
                       <Link
                         to={defaultWorkspace}

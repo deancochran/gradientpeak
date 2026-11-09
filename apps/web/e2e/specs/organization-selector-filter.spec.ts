@@ -35,10 +35,12 @@ test("filters the current organization page locally and preserves each organizat
 }, testInfo) => {
   const summitName = "Summit filter acceptance";
   const peakName = "Peak filter acceptance";
+  const unbrokenName = "x".repeat(120);
 
   for (const [name, slug] of [
     [summitName, "summit-filter"],
     [peakName, "peak-filter"],
+    [unbrokenName, "unbroken-filter"],
   ] as const) {
     await page.goto("/organizations/new");
     await page.getByLabel("Organization name", { exact: true }).fill(name);
@@ -58,6 +60,9 @@ test("filters the current organization page locally and preserves each organizat
   ).toBeVisible();
   await expect(
     page.getByRole("link", { name: `Open ${peakName} coaching dashboard` }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: `Open ${unbrokenName} coaching dashboard` }),
   ).toBeVisible();
 
   for (const viewport of [

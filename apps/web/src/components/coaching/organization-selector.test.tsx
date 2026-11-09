@@ -151,6 +151,38 @@ describe("OrganizationSelector", () => {
     expect(screen.getByText("Filters organizations shown on this page only.")).toBeTruthy();
   });
 
+  it("preserves a valid unbroken organization name while allowing its heading and action to wrap", () => {
+    const organizationName = "x".repeat(120);
+    render(
+      <OrganizationSelector
+        page={{
+          items: [
+            {
+              organization: { organizationId: "organization-unbroken", name: organizationName },
+              membership: { roles: ["admin"] },
+              isRootOwner: false,
+            },
+          ],
+          nextCursor: null,
+          hasMore: false,
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: organizationName }).className).toContain(
+      "[overflow-wrap:anywhere]",
+    );
+    expect(
+      screen.getByRole("link", { name: `Open ${organizationName} coaching dashboard` }),
+    ).toBeTruthy();
+    expect(mocks.links).toContainEqual(
+      expect.objectContaining({
+        className: expect.stringContaining("[overflow-wrap:anywhere]"),
+        to: "/organizations/$organizationId/dashboard",
+      }),
+    );
+  });
+
   it("shows a page-local no-match state without replacing pagination", () => {
     render(<OrganizationSelector cursor="current-page" page={pageWithOrganizations} />);
 
