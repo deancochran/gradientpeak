@@ -3,18 +3,21 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { getTableConfig } from "drizzle-orm/pg-core";
 import { activitySourceReferenceImportRunOwnershipSql } from "../src/schema/import-run-ownership";
-import { activitySourceReferences } from "../src/schema/tables";
+import { activitySourceReferences, providerSyncJobs } from "../src/schema/tables";
 
 const customConstraintNames = new Set([
   "activity_source_refs_last_import_run_profile_fk",
   "activity_source_refs_material_import_run_profile_fk",
+  "provider_sync_jobs_import_run_profile_fkey",
 ]);
 
-for (const foreignKey of getTableConfig(activitySourceReferences).foreignKeys) {
-  assert.ok(
-    !customConstraintNames.has(foreignKey.getName()),
-    `${foreignKey.getName()} must remain bespoke SQL until Drizzle supports ON DELETE SET NULL column lists`,
-  );
+for (const table of [activitySourceReferences, providerSyncJobs]) {
+  for (const foreignKey of getTableConfig(table).foreignKeys) {
+    assert.ok(
+      !customConstraintNames.has(foreignKey.getName()),
+      `${foreignKey.getName()} must remain bespoke SQL until Drizzle supports ON DELETE SET NULL column lists`,
+    );
+  }
 }
 
 assert.match(
@@ -25,6 +28,7 @@ assert.match(
   activitySourceReferenceImportRunOwnershipSql,
   /on delete set null \(last_material_import_run_id\)/,
 );
+assert.match(activitySourceReferenceImportRunOwnershipSql, /on delete set null \(import_run_id\)/);
 assert.match(activitySourceReferenceImportRunOwnershipSql, /last_material_effective_at = null/);
 
 const baseline = readFileSync(

@@ -13,6 +13,7 @@ import {
 import { dbPackageRoot, runSupabaseCli } from "./_helpers";
 import { requireFreshBaseline } from "./baseline-workflow";
 import { structureHash } from "./canonical-json";
+import { assertFreshProviderJobOwnership } from "./verify-fresh-provider-job-ownership";
 
 const activityCategoryValues = ["run", "bike", "swim", "strength", "other"] as const;
 
@@ -2347,6 +2348,7 @@ async function main() {
     await assertLegacyThresholdObjectsAbsent(target);
     await assertGroupEventRsvpResponses(target);
     await assertPrelaunchSchemaHardening(target);
+    await assertFreshProviderJobOwnership(target);
 
     const env = {
       ...process.env,

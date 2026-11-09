@@ -13,6 +13,10 @@ alter table "public"."activity_source_references"
   add constraint "activity_source_refs_material_import_run_profile_fk" foreign key (last_material_import_run_id, profile_id)
     references public.activity_import_runs(id, profile_id) on delete set null (last_material_import_run_id);
 
+alter table "public"."provider_sync_jobs"
+  add constraint "provider_sync_jobs_import_run_profile_fkey" foreign key (import_run_id, profile_id)
+    references public.activity_import_runs(id, profile_id) on delete set null (import_run_id);
+
 create or replace function public.clear_material_import_run_reference()
 returns trigger
 language plpgsql

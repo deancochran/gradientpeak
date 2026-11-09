@@ -4406,6 +4406,10 @@ alter table "public"."activity_source_references"
   add constraint "activity_source_refs_material_import_run_profile_fk" foreign key (last_material_import_run_id, profile_id)
     references public.activity_import_runs(id, profile_id) on delete set null (last_material_import_run_id);
 
+alter table "public"."provider_sync_jobs"
+  add constraint "provider_sync_jobs_import_run_profile_fkey" foreign key (import_run_id, profile_id)
+    references public.activity_import_runs(id, profile_id) on delete set null (import_run_id);
+
 create or replace function public.clear_material_import_run_reference()
 returns trigger
 language plpgsql
@@ -4469,10 +4473,6 @@ alter table "public"."planned_sessions"
     (source_session_id IS NOT NULL) AND
     (idempotency_key = ((((('training-plan:'::text || (training_plan_id)::text) || ':'::text) || (training_plan_revision)::text) || ':'::text) || (source_session_id)::text)) AND
     (direct_operation_id IS NULL))));
-
-alter table "public"."provider_sync_jobs"
-  add constraint "provider_sync_jobs_import_run_profile_fkey" foreign key (import_run_id, profile_id)
-    references public.activity_import_runs(id, profile_id) on delete set null;
 
 alter table "public"."threshold_evidence"
   add constraint "threshold_evidence_profile_category_activity_unique" unique (profile_id, activity_category, metric, activity_id);

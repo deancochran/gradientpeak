@@ -3792,11 +3792,6 @@ export const providerSyncJobs = pgTable(
     locked_by: text("locked_by"),
   },
   (table) => [
-    foreignKey({
-      columns: [table.import_run_id, table.profile_id],
-      foreignColumns: [activityImportRuns.id, activityImportRuns.profile_id],
-      name: "provider_sync_jobs_import_run_profile_fkey",
-    }).onDelete("set null"),
     uniqueIndex("provider_sync_jobs_queue_sequence_key").on(table.queue_sequence),
     index("idx_provider_sync_jobs_status_run_at_priority").on(
       table.status,
