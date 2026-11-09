@@ -1,103 +1,17 @@
-import React from "react";
-import { fireEvent, renderNative, screen } from "../../../test/render-native";
+import { createHost } from "../../../test/mock-components";
+import { renderNative, screen } from "../../../test/render-native";
 import { TrainingPathChart } from "./TrainingPathChart";
-import type { TrainingPathViewModel } from "./trainingPathTypes";
-
-const interactionOrder: string[] = [];
-const originalRequestAnimationFrame = global.requestAnimationFrame;
 
 jest.mock("react-native", () => ({
-  __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
-  TouchableOpacity: (props: any) => React.createElement("TouchableOpacity", props, props.children),
-  View: (props: any) => React.createElement("View", props, props.children),
+  View: createHost("View"),
 }));
+jest.mock("@repo/ui/components/text", () => ({ Text: createHost("Text") }));
 
-jest.mock("@repo/ui/components/text", () => ({
-  __esModule: true,
-  Text: (props: any) => React.createElement("Text", props, props.children),
-}));
-
-jest.mock("@shopify/react-native-skia", () => ({
-  __esModule: true,
-  Circle: (props: any) => React.createElement("SkiaCircle", props),
-  DashPathEffect: (props: any) => React.createElement("DashPathEffect", props),
-  interpolateColors: (_value: number, _input: number[], output: string[]) => output[0],
-  Line: (props: any) => React.createElement("SkiaLine", props, props.children),
-  Rect: (props: any) => React.createElement("SkiaRect", props),
-  Text: (props: any) => React.createElement("SkiaText", props),
-  useFont: () => ({ getTextWidth: () => 24 }),
-  vec: (x: number, y: number) => ({ x, y }),
-}));
-
-jest.mock("react-native-reanimated", () => {
-  const React = require("react");
-  const ScrollView = React.forwardRef((props: any, ref: any) => {
-    React.useImperativeHandle(ref, () => ({
-      scrollTo: () => interactionOrder.push("scrollTo"),
-    }));
-    return React.createElement("AnimatedScrollView", props, props.children);
-  });
-  return {
-    __esModule: true,
-    default: { ScrollView },
-    runOnJS: (fn: any) => fn,
-    scrollTo: () => interactionOrder.push("scrollTo"),
-    useAnimatedRef: () => React.useRef(null),
-    useAnimatedReaction: jest.fn(),
-    useAnimatedScrollHandler: (handler: any) => handler,
-    useDerivedValue: (factory: any) => ({ value: factory() }),
-    useSharedValue: (value: any) => ({ value }),
-  };
-});
-
-jest.mock("victory-native", () => ({
-  __esModule: true,
-  CartesianChart: ({ chartPressConfig, chartPressState, children, data, yAxis, yKeys }: any) => {
-    const points = Object.fromEntries(
-      yKeys.map((key: string) => [
-        key,
-        data.map((datum: any, index: number) => ({
-          x: index * 38,
-          xValue: index,
-          y: 120 - (datum[key] ?? 0),
-          yValue: datum[key],
-        })),
-      ]),
-    );
-    return React.createElement(
-      "CartesianChart",
-      { chartPressConfig, chartPressState, data, yAxis },
-      children({ points, chartBounds: { left: 0, right: 200, top: 0, bottom: 120 } }),
-    );
-  },
-  Line: (props: any) => React.createElement("Line", props, props.children),
-  useChartPressState: jest.fn(() => ({
-    isActive: false,
-    state: {
-      isActive: { value: false },
-      matchedIndex: { value: -1 },
-      x: { position: { value: 0 }, value: { value: 0 } },
-      y: { targetLoad: { position: { value: 0 }, value: { value: 0 } } },
-      yIndex: { value: 0 },
-    },
-  })),
-}));
-
-jest.mock("@/assets/fonts/SpaceMono-Regular.ttf", () => ({
-  __esModule: true,
-  default: "mock-font",
-}));
-
-jest.mock("@/lib/stores/theme-store", () => ({
-  __esModule: true,
-  useTheme: () => ({ resolvedTheme: "light" }),
-}));
-
-const model: TrainingPathViewModel = {
-  domains: { fitness: [0, 80], load: [0, 200] },
+const model = {
+  domains: { fitness: [0, 80] as [number, number], load: [0, 200] as [number, number] },
   emptyState: null,
-  goalMarkers: [],
+  goalMarkers: [{ id: "goal-1", label: "Race", targetDate: "2026-04-12", weekStart: "2026-04-06" }],
   selectedWeekSummary: null,
   todayKey: "2026-04-06",
   weeks: [
@@ -107,205 +21,90 @@ const model: TrainingPathViewModel = {
       label: "Apr 6",
       completedLoad: 20,
       plannedLoad: 40,
-      tentativePlannedLoad: 0,
-      targetLoad: 80,
+      targetLoad: null,
+      effectiveLoadStatus: "complete" as const,
+      effectiveLoad: 60,
+      effectiveIntensity: 0.8,
+      effectiveCompletedLoad: 20,
+      effectiveRemainingLoad: 40,
       fitness: 40,
       scheduledFitness: 42,
+      recommendedLoadStatus: "complete" as const,
+      recommendedLoad: 70,
       targetFitness: 45,
-      fatigue: 50,
-      form: -8,
-      riskZone: "moderate",
-      isCurrent: true,
-      isSelected: true,
-    },
-    {
-      weekStart: "2026-04-13",
-      weekEnd: "2026-04-19",
-      label: "Apr 13",
-      completedLoad: 0,
-      plannedLoad: 60,
-      tentativePlannedLoad: 20,
-      targetLoad: 90,
-      fitness: null,
-      scheduledFitness: 44,
-      targetFitness: 46,
       fatigue: null,
       form: null,
       riskZone: null,
-      isCurrent: false,
-      isSelected: false,
+      isCurrent: true,
+      isSelected: true,
     },
   ],
 };
 
-describe("TrainingPathChart interactions", () => {
-  beforeEach(() => {
-    interactionOrder.length = 0;
-    global.requestAnimationFrame = jest.fn((callback: FrameRequestCallback) => {
-      callback(0);
-      return 0;
-    });
-  });
+it("renders the fixed factual weekly chart with model-owned Today and goal markers", async () => {
+  await renderNative(<TrainingPathChart model={model} onSelectedWeekChange={jest.fn()} />);
+  expect(screen.getByLabelText("Weekly training path chart")).toBeTruthy();
+  expect(
+    screen.container.queryAll((node) => node.props.testID === "training-path-today-boundary"),
+  ).toHaveLength(1);
+  expect(screen.getByLabelText("Left axis: Load, Common Load")).toBeTruthy();
+});
 
-  afterEach(() => {
-    global.requestAnimationFrame = originalRequestAnimationFrame;
-  });
+it("renders finite weekly load without exposing its internal partial status", async () => {
+  const firstWeek = model.weeks[0];
+  if (!firstWeek) throw new Error("Expected fixture week");
+  await renderNative(
+    <TrainingPathChart
+      model={{
+        ...model,
+        weeks: [
+          {
+            ...firstWeek,
+            completedLoadStatus: "partial" as const,
+            effectiveLoadStatus: "partial" as const,
+            effectiveRemainingLoadStatus: "partial" as const,
+          },
+        ],
+      }}
+      onSelectedWeekChange={jest.fn()}
+    />,
+  );
 
-  it("uses Victory chart press state instead of touch overlays for bar selection", () => {
-    renderNative(
-      <TrainingPathChart
-        model={model}
-        range="season"
-        scrollX
-        onDisplayedWeekChange={() => interactionOrder.push("displayed")}
-        onScrollInteractionStart={() => interactionOrder.push("scrollStart")}
-        onSelectedWeekChange={() => interactionOrder.push("selected")}
-      />,
-    );
+  const chart = screen.getByLabelText("Weekly training path chart");
+  expect(chart.props.accessibilityValue.text).toContain("Common Load 60");
+  expect(chart.props.accessibilityValue.text).toContain("Normalized intensity 0.80");
+  expect(chart.props.accessibilityValue.text).toContain("Completed Common Load 20");
+  expect(chart.props.accessibilityValue.text).toContain("Planned Common Load 40");
+  expect(chart.props.accessibilityValue.text).not.toMatch(
+    /~60|~20|~40|partial|incomplete|subtotal/i,
+  );
+});
 
-    const chart = (screen as any).UNSAFE_getByType("CartesianChart");
-    expect(chart.props.chartPressState).toBeTruthy();
-    expect(chart.props.chartPressConfig?.pan?.simultaneousWithExternalGesture).toBeTruthy();
-    expect(screen.queryByTestId("training-path-week-2026-04-13")).toBeNull();
-  });
+it("renders production-model weekly load fields without effective aliases", async () => {
+  const firstWeek = model.weeks[0];
+  if (!firstWeek) throw new Error("Expected fixture week");
+  await renderNative(
+    <TrainingPathChart
+      model={{
+        ...model,
+        weeks: [
+          {
+            ...firstWeek,
+            completedLoad: 20,
+            completedLoadStatus: "partial" as const,
+            effectiveCompletedLoad: null,
+            effectiveRemainingLoad: null,
+            plannedLoad: 40,
+            plannedLoadStatus: "partial" as const,
+          },
+        ],
+      }}
+      onSelectedWeekChange={jest.fn()}
+    />,
+  );
 
-  it("does not publish React week changes from continuous scroll ticks", () => {
-    const onDisplayedWeekChange = jest.fn();
-    const onSelectedWeekChange = jest.fn();
-
-    renderNative(
-      <TrainingPathChart
-        model={model}
-        range="season"
-        scrollX
-        onDisplayedWeekChange={onDisplayedWeekChange}
-        onSelectedWeekChange={onSelectedWeekChange}
-      />,
-    );
-
-    fireEvent((screen as any).UNSAFE_getByType("AnimatedScrollView"), "scroll", {
-      contentOffset: { x: 38 },
-      contentSize: { width: 300 },
-      layoutMeasurement: { width: 100 },
-    });
-
-    expect(onDisplayedWeekChange).not.toHaveBeenCalled();
-    expect(onSelectedWeekChange).not.toHaveBeenCalled();
-  });
-
-  it("can render as a scroll-only preview without week review snapping", () => {
-    renderNative(
-      <TrainingPathChart
-        model={model}
-        range="season"
-        reviewWeeks={false}
-        scrollX
-        showCompletedLoad={false}
-        showPlannedLoad={false}
-        showScheduledFitness={false}
-      />,
-    );
-
-    const scrollView = (screen as any).UNSAFE_getByType("AnimatedScrollView");
-    const renderedLines = (screen as any).UNSAFE_getAllByType("Line");
-    const renderedRects = (screen as any).UNSAFE_getAllByType("SkiaRect");
-
-    expect(screen.queryByTestId("training-path-week-2026-04-13")).toBeNull();
-    expect(scrollView.props.disableIntervalMomentum).toBe(false);
-    expect(scrollView.props.snapToInterval).toBeUndefined();
-    expect(renderedLines).toHaveLength(2);
-    expect(renderedRects).toHaveLength(2);
-  });
-
-  it("renders tentative load as borderless dotted fill", () => {
-    renderNative(
-      <TrainingPathChart model={model} range="season" onSelectedWeekChange={jest.fn()} />,
-    );
-
-    const dots = (screen as any)
-      .UNSAFE_getAllByType("SkiaCircle")
-      .filter((circle: any) => circle.props.cx !== undefined && circle.props.cy !== undefined);
-    const strokedBars = (screen as any)
-      .UNSAFE_getAllByType("SkiaRect")
-      .filter((rect: any) => rect.props.style === "stroke");
-
-    expect(dots.length).toBeGreaterThan(1);
-    expect(strokedBars).toHaveLength(0);
-  });
-
-  it("renders planned and recommended bars independently when completed load is absent", () => {
-    const sparseModel: TrainingPathViewModel = {
-      ...model,
-      weeks: [
-        {
-          ...model.weeks[0],
-          completedLoad: null,
-          plannedLoad: 40,
-          targetLoad: 80,
-          isSelected: true,
-        },
-      ],
-    };
-
-    renderNative(
-      <TrainingPathChart
-        model={sparseModel}
-        range="season"
-        showCompletedLoad={false}
-        showPlannedLoad
-      />,
-    );
-
-    const renderedRects = (screen as any).UNSAFE_getAllByType("SkiaRect");
-    expect(renderedRects.length).toBeGreaterThanOrEqual(2);
-  });
-
-  it("renders sparse two-week planned bars without completed load anchors", () => {
-    const sparseModel: TrainingPathViewModel = {
-      ...model,
-      weeks: model.weeks.map((week) => ({
-        ...week,
-        completedLoad: null,
-        plannedLoad: week.plannedLoad ?? 0,
-        targetLoad: week.targetLoad ?? 0,
-      })),
-    };
-
-    renderNative(
-      <TrainingPathChart
-        model={sparseModel}
-        range="season"
-        scrollX
-        showCompletedLoad={false}
-        showPlannedLoad
-      />,
-    );
-
-    const renderedRects = (screen as any).UNSAFE_getAllByType("SkiaRect");
-    expect(renderedRects.length).toBeGreaterThanOrEqual(4);
-    const loadBarWidths = renderedRects
-      .map((rect: any) => rect.props.width)
-      .filter((width: unknown): width is number => typeof width === "number" && width > 0);
-    expect(loadBarWidths).toEqual(expect.arrayContaining([28, 28, 28, 28]));
-  });
-
-  it("expands the load domain to fit recommended load bars", () => {
-    const highTargetModel: TrainingPathViewModel = {
-      ...model,
-      domains: { ...model.domains, load: [0, 100] },
-      weeks: [
-        {
-          ...model.weeks[0],
-          completedLoad: 20,
-          plannedLoad: 40,
-          targetLoad: 240,
-        },
-      ],
-    };
-
-    renderNative(<TrainingPathChart model={highTargetModel} range="season" />);
-
-    const chart = (screen as any).UNSAFE_getByType("CartesianChart");
-    expect(chart.props.yAxis[0].domain[1]).toBeGreaterThan(240);
-  });
+  const chart = screen.getByLabelText("Weekly training path chart");
+  expect(chart.props.accessibilityValue.text).toContain("Completed Common Load 20");
+  expect(chart.props.accessibilityValue.text).toContain("Planned Common Load 40");
+  expect(chart.props.accessibilityValue.text).not.toMatch(/partial|subtotal|~/i);
 });

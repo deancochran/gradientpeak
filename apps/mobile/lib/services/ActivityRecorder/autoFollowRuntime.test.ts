@@ -12,7 +12,6 @@ function buildConfiguration(
       mode: "planned",
       plan: {
         hasStructure: true,
-        hasRoute: true,
         stepCount: 2,
         requiresManualAdvance: false,
       },

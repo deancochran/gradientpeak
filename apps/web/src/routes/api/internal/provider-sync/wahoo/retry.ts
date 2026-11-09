@@ -1,4 +1,4 @@
-import { createProviderSyncRepository } from "@repo/api/webhooks";
+import { createWahooSyncRepository, isWahooIntegrationEnabled } from "@repo/api/webhooks";
 import { db } from "@repo/db/client";
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
@@ -14,12 +14,15 @@ const retryBodySchema = z
   })
   .strict();
 
-export const Route = createFileRoute("/api/internal/provider-sync/wahoo/retry" as never)({
+export const Route = createFileRoute("/api/internal/provider-sync/wahoo/retry")({
   server: {
     handlers: {
       POST: async ({ request }) => {
         if (!isInternalProviderSyncAuthorized(request)) {
           return Response.json({ error: "Unauthorized" }, { status: 401 });
+        }
+        if (!isWahooIntegrationEnabled()) {
+          return Response.json({ error: "Not found" }, { status: 404 });
         }
 
         const parsed = retryBodySchema.safeParse(await request.json().catch(() => null));
@@ -27,10 +30,12 @@ export const Route = createFileRoute("/api/internal/provider-sync/wahoo/retry" a
           return Response.json({ error: parsed.error.flatten() }, { status: 400 });
         }
 
-        const repository = createProviderSyncRepository({ db });
-        const jobRetried = parsed.data.jobId ? await repository.retryJob(parsed.data.jobId) : false;
+        const repository = createWahooSyncRepository({ db });
+        const jobRetried = parsed.data.jobId
+          ? await repository.retryJob({ id: parsed.data.jobId, provider: "wahoo" })
+          : false;
         const receiptRetried = parsed.data.receiptId
-          ? await repository.retryWebhookReceipt(parsed.data.receiptId)
+          ? await repository.retryWebhookReceipt({ id: parsed.data.receiptId, provider: "wahoo" })
           : false;
 
         return Response.json({

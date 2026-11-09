@@ -1,110 +1,151 @@
 import type { ActivityAnalysisContext } from "@repo/core";
-import type { ActivityAnalysisStore } from "../../repositories";
+import type { ActivityAnalysisContextSnapshot, ActivityAnalysisStore } from "../../repositories";
 
 type ResolveActivityContextAsOfInput = {
   store: ActivityAnalysisStore;
   profileId: string;
   activityTimestamp: string | Date;
+  activityId?: string;
+  evidenceScope?: "thresholds";
 };
 
+/**
+ * Reads non-model activity context and attaches the canonical as-of target facts.
+ */
 export async function resolveActivityContextAsOf(
   input: ResolveActivityContextAsOfInput,
 ): Promise<ActivityAnalysisContext> {
-  const { store, profileId, activityTimestamp } = input;
-  const asOf = activityTimestamp instanceof Date ? activityTimestamp : new Date(activityTimestamp);
-  const snapshot = await store.getContextSnapshot({ asOf, profileId });
+  const asOf =
+    input.activityTimestamp instanceof Date
+      ? input.activityTimestamp
+      : new Date(input.activityTimestamp);
+  const evidence = input.store.loadContextEvidence
+    ? ((
+        await input.store.loadContextEvidence({
+          requests: [
+            {
+              asOf,
+              effortLookbackAsOf: asOf,
+              profileId: input.profileId,
+              ...(input.activityId === undefined ? {} : { activityIdToExclude: input.activityId }),
+            },
+          ],
+          ...(input.evidenceScope === undefined ? {} : { evidenceScope: input.evidenceScope }),
+        })
+      ).get(input.profileId) ?? emptyContextEvidence)
+    : await input.store.getContextSnapshot({
+        asOf,
+        effortLookbackAsOf: asOf,
+        profileId: input.profileId,
+        ...(input.activityId === undefined ? {} : { activityIdToExclude: input.activityId }),
+        ...(input.evidenceScope === undefined ? {} : { evidenceScope: input.evidenceScope }),
+      });
+  const context = resolveActivityContextFromEvidence({
+    activityTimestamp: asOf,
+    evidence,
+    ...(input.activityId === undefined ? {} : { activityId: input.activityId }),
+  });
+  if (!input.store.getPerformanceTargetsAsOf) return context;
+  return {
+    ...context,
+    performanceTargets: await input.store.getPerformanceTargetsAsOf({
+      asOf,
+      profileId: input.profileId,
+      ...(input.activityId === undefined ? {} : { activityIdToExclude: input.activityId }),
+    }),
+  };
+}
 
+const emptyContextEvidence: ActivityAnalysisContextSnapshot = {
+  profile: { dob: null, gender: null },
+  profileMetrics: [],
+  recentEfforts: [],
+};
+
+export function resolveActivityContextFromEvidence(input: {
+  activityTimestamp: string | Date;
+  activityId?: string;
+  evidence: ActivityAnalysisContextSnapshot;
+}): ActivityAnalysisContext {
+  const asOf =
+    input.activityTimestamp instanceof Date
+      ? input.activityTimestamp
+      : new Date(input.activityTimestamp);
+  const cutoff = asOf.getTime();
+  const metricRows = input.evidence.profileMetrics
+    .filter(
+      (metric) =>
+        new Date(metric.recorded_at).getTime() <= cutoff &&
+        (!input.activityId || metric.reference_activity_id !== input.activityId),
+    )
+    .sort(compareRecordedAtDesc);
+  const latestMetrics = new Map<string, (typeof metricRows)[number]>();
+  for (const metric of metricRows) {
+    if (latestMetrics.has(metric.metric_type)) continue;
+    latestMetrics.set(metric.metric_type, metric);
+  }
   const profileMetrics: ActivityAnalysisContext["profileMetrics"] = {};
-  const typedMetrics = snapshot.profileMetrics;
-  const typedEfforts = snapshot.recentEfforts;
-
-  for (const metric of typedMetrics) {
-    const metricValue = toNumber(metric.value);
-    if (metricValue == null) continue;
-
+  for (const metric of latestMetrics.values()) {
+    const value = toNumber(metric.value);
+    if (value === null) continue;
     if (metric.metric_type === "weight_kg" && profileMetrics.weight_kg == null) {
-      profileMetrics.weight_kg = metricValue;
-      continue;
-    }
-
-    if (metric.metric_type === "resting_hr" && profileMetrics.resting_hr == null) {
-      profileMetrics.resting_hr = metricValue;
-      continue;
-    }
-
-    if (metric.metric_type === "max_hr" && profileMetrics.max_hr == null) {
-      profileMetrics.max_hr = metricValue;
-      continue;
-    }
-
-    if (metric.metric_type === "lthr" && profileMetrics.lthr == null) {
-      profileMetrics.lthr = metricValue;
+      profileMetrics.weight_kg = value;
+    } else if (metric.metric_type === "resting_hr" && profileMetrics.resting_hr == null) {
+      profileMetrics.resting_hr = value;
     }
   }
 
-  const bikePower20mEffort = typedEfforts.find(
-    (effort) =>
-      effort.effort_type === "power" &&
-      effort.activity_category === "bike" &&
-      effort.duration_seconds === 1200,
-  );
-
-  profileMetrics.ftp = bikePower20mEffort ? Math.round(bikePower20mEffort.value * 0.95) : null;
-
-  const runSpeed20mEffort = typedEfforts.find(
-    (effort) =>
-      effort.effort_type === "speed" &&
-      effort.activity_category === "run" &&
-      effort.duration_seconds === 1200,
-  );
-
-  profileMetrics.threshold_speed_mps = runSpeed20mEffort
-    ? normalizeSpeedMetersPerSecond(runSpeed20mEffort.value, runSpeed20mEffort.unit)
-    : null;
-
-  const activityTimestampIso = asOf.toISOString();
+  const recentEfforts = input.evidence.recentEfforts
+    .filter((effort) => {
+      const observedAt = new Date(effort.recorded_at).getTime();
+      return (
+        Number.isFinite(observedAt) &&
+        observedAt <= cutoff &&
+        (!input.activityId || effort.activity_id !== input.activityId)
+      );
+    })
+    .sort(compareRecordedAtDesc);
 
   return {
     profileMetrics,
-    recentEfforts: typedEfforts.map((effort) => ({
-      recorded_at: toIsoString(effort.recorded_at) ?? activityTimestampIso,
-      effort_type: effort.effort_type,
-      duration_seconds: effort.duration_seconds,
-      value: effort.value,
-      unit: effort.unit,
-      activity_category: effort.activity_category,
-    })),
+    recentEfforts: recentEfforts
+      .filter((effort) => effort.effort_type === "power" || effort.effort_type === "speed")
+      .slice(0, 50)
+      .map((effort) => ({
+        recorded_at: toIsoString(effort.recorded_at) ?? asOf.toISOString(),
+        effort_type: effort.effort_type as "power" | "speed",
+        duration_seconds: effort.duration_seconds,
+        value: effort.value,
+        unit: effort.unit,
+        activity_category: effort.activity_category,
+      })),
     profile: {
-      dob: toIsoString(snapshot.profile.dob ?? null),
-      gender: normalizeGender(snapshot.profile.gender ?? null),
+      dob: toIsoString(input.evidence.profile.dob ?? null),
+      gender: normalizeGender(input.evidence.profile.gender),
     },
   };
 }
 
-function normalizeGender(
-  value: ActivityAnalysisContext["profile"]["gender"],
-): ActivityAnalysisContext["profile"]["gender"] {
-  if (value === "male" || value === "female" || value === "other") {
-    return value;
-  }
+function compareRecordedAtDesc(
+  left: { id?: string; recorded_at: Date },
+  right: { id?: string; recorded_at: Date },
+) {
+  return (
+    right.recorded_at.getTime() - left.recorded_at.getTime() ||
+    (right.id ?? "").localeCompare(left.id ?? "")
+  );
+}
 
-  return null;
+function normalizeGender(value: ActivityAnalysisContext["profile"]["gender"]) {
+  return value === "male" || value === "female" || value === "other" ? value : null;
 }
 
 function toIsoString(value: Date | string | null | undefined): string | null {
-  if (value == null) return null;
-  return value instanceof Date ? value.toISOString() : value;
+  return value == null ? null : value instanceof Date ? value.toISOString() : value;
 }
 
 function toNumber(value: string | number | null | undefined): number | null {
   if (value == null) return null;
   const normalized = typeof value === "number" ? value : Number(value);
   return Number.isFinite(normalized) ? normalized : null;
-}
-
-function normalizeSpeedMetersPerSecond(value: number, unit: string): number | null {
-  if (!Number.isFinite(value) || value <= 0) return null;
-  if (unit === "meters_per_second") return value;
-  if (unit === "km_per_hour") return value / 3.6;
-  return value;
 }

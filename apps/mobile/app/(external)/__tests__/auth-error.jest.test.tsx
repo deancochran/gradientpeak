@@ -37,18 +37,18 @@ describe("auth error screen", () => {
     clearRecord(paramsState);
   });
 
-  it("replaces to sign-in when retry is pressed", () => {
-    renderNative(<AuthErrorScreen />);
+  it("replaces to sign-in when retry is pressed", async () => {
+    await renderNative(<AuthErrorScreen />);
 
-    fireEvent.press(screen.getByTestId("try-again-button"));
+    await fireEvent.press(screen.getByTestId("try-again-button"));
 
     expect(replaceMock).toHaveBeenCalledWith("/(external)/sign-in");
   });
 
-  it("replaces to welcome when go back is pressed", () => {
-    renderNative(<AuthErrorScreen />);
+  it("replaces to welcome when go back is pressed", async () => {
+    await renderNative(<AuthErrorScreen />);
 
-    fireEvent.press(screen.getByTestId("go-back-button"));
+    await fireEvent.press(screen.getByTestId("go-back-button"));
 
     expect(replaceMock).toHaveBeenCalledWith("/(external)/");
   });

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   extractStartCoordinates,
   getWorkoutTypeFamilyForRoute,
+  hasValidRouteStartCoordinates,
   prepareGPXForWahoo,
   validateRouteForWahoo,
 } from "./route-converter";
@@ -35,18 +36,20 @@ describe("route-converter", () => {
     expect(extractStartCoordinates("<gpx><trk></trk></gpx>")).toBeNull();
   });
 
-  it("rejects unsupported route activity types while preserving distance warnings", () => {
+  it("rejects unsupported route activity categories while preserving distance warnings", () => {
     expect(
       validateRouteForWahoo({
         filePath: "routes/pool-session.gpx",
         name: "Pool Session",
         activityType: "swim",
+        startLat: 35.2271,
+        startLng: -80.8431,
         totalDistance: 80,
       }),
     ).toEqual({
       valid: false,
       errors: [
-        "Activity type 'swim' does not support routes in Wahoo. Only bike and run support routes.",
+        "Activity category 'swim' does not support routes in Wahoo. Only bike and run support routes.",
       ],
       warnings: ["Route is very short (less than 100 meters)"],
     });
@@ -58,6 +61,8 @@ describe("route-converter", () => {
         filePath: "routes/century.gpx",
         name: "Big Day Out",
         activityType: "bike",
+        startLat: 35.2271,
+        startLng: -80.8431,
         totalDistance: 500001,
       }),
     ).toEqual({
@@ -68,10 +73,37 @@ describe("route-converter", () => {
   });
 
   it.each([
-    { activityType: "bike" as const, expected: 0 },
-    { activityType: "run" as const, expected: 1 },
-    { activityType: "swim" as const, expected: 0 },
-  ])("maps $activityType routes to workout family $expected", ({ activityType, expected }) => {
-    expect(getWorkoutTypeFamilyForRoute(activityType)).toBe(expected);
+    { startLat: 90, startLng: 180, valid: true },
+    { startLat: -90, startLng: -180, valid: true },
+    { startLat: 90.0001, startLng: 0, valid: false },
+    { startLat: 0, startLng: 180.0001, valid: false },
+    { startLat: Number.NaN, startLng: 0, valid: false },
+    { startLng: 0, valid: false },
+  ])("validates route start coordinate bounds for $startLat, $startLng", (coordinates) => {
+    expect(hasValidRouteStartCoordinates(coordinates)).toBe(coordinates.valid);
+  });
+
+  it("rejects a supported route when its start coordinates are out of range", () => {
+    expect(
+      validateRouteForWahoo({
+        filePath: "routes/invalid.gpx",
+        name: "Invalid Route",
+        activityType: "run",
+        startLat: 91,
+        startLng: -80.8431,
+        totalDistance: 1000,
+      }),
+    ).toMatchObject({
+      valid: false,
+      errors: ["Route start coordinates must be within valid latitude and longitude bounds."],
+    });
+  });
+
+  it.each([
+    { category: "bike" as const, expected: 0 },
+    { category: "run" as const, expected: 1 },
+    { category: "swim" as const, expected: 0 },
+  ])("maps $category routes to Wahoo activity family $expected", ({ category, expected }) => {
+    expect(getWorkoutTypeFamilyForRoute(category)).toBe(expected);
   });
 });

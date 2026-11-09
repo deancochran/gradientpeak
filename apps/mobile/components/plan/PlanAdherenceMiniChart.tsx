@@ -1,12 +1,17 @@
 import { Text } from "@repo/ui/components/text";
+import { useMemo } from "react";
 import { Dimensions, View } from "react-native";
-import { LineChart } from "react-native-chart-kit";
+import { CartesianChart, Line } from "victory-native";
 import type { InsightTimelinePoint } from "@/components/charts/PlanVsActualChart";
-import { useTheme } from "@/lib/stores/theme-store";
 
 interface PlanAdherenceMiniChartProps {
   timeline: InsightTimelinePoint[];
 }
+
+type AdherenceChartDatum = Record<string, unknown> & {
+  index: number;
+  adherence: number;
+};
 
 function boundaryTint(boundary?: string) {
   if (boundary === "safe") {
@@ -28,11 +33,17 @@ function boundaryTint(boundary?: string) {
 }
 
 export function PlanAdherenceMiniChart({ timeline }: PlanAdherenceMiniChartProps) {
-  const { resolvedTheme } = useTheme();
-  const isDark = resolvedTheme === "dark";
   const width = Math.max(130, Math.floor((Dimensions.get("window").width - 52) / 2));
 
-  const adherence = timeline.map((point) => Math.max(0, Math.min(100, point.adherence_score ?? 0)));
+  const chartData = useMemo<AdherenceChartDatum[]>(
+    () =>
+      timeline.map((point, index) => ({
+        index,
+        adherence: Math.max(0, Math.min(100, point.adherence_score ?? 0)),
+      })),
+    [timeline],
+  );
+  const adherence = useMemo(() => chartData.map((point) => point.adherence), [chartData]);
   const start = adherence[0] ?? 0;
   const end = adherence[adherence.length - 1] ?? 0;
   const latestBoundary = timeline[timeline.length - 1]?.boundary_state;
@@ -43,30 +54,20 @@ export function PlanAdherenceMiniChart({ timeline }: PlanAdherenceMiniChartProps
       <Text className="text-sm font-semibold mb-1">Adherence</Text>
       <Text className="text-[11px] text-muted-foreground mb-2">Trend</Text>
 
-      {adherence.length > 0 ? (
-        <LineChart
-          data={{ labels: [], datasets: [{ data: adherence }] }}
-          width={width}
-          height={70}
-          withDots={false}
-          withHorizontalLabels={false}
-          withVerticalLabels={false}
-          withInnerLines={false}
-          withOuterLines={false}
-          withVerticalLines={false}
-          withHorizontalLines={false}
-          chartConfig={{
-            backgroundColor: isDark ? "#0a0a0a" : "#ffffff",
-            backgroundGradientFrom: isDark ? "#0a0a0a" : "#ffffff",
-            backgroundGradientTo: isDark ? "#0a0a0a" : "#ffffff",
-            decimalPlaces: 0,
-            color: () => "rgba(249, 115, 22, 1)",
-            labelColor: () => "rgba(0,0,0,0)",
-            propsForBackgroundLines: { strokeWidth: 0 },
-          }}
-          bezier
-          style={{ marginLeft: -20, paddingRight: 8 }}
-        />
+      {chartData.length > 0 ? (
+        <View style={{ height: 70, width }}>
+          <CartesianChart<AdherenceChartDatum, "index", "adherence">
+            data={chartData}
+            xKey="index"
+            yKeys={["adherence"]}
+            domain={{ y: [0, 100] }}
+            padding={{ left: 4, right: 4, top: 6, bottom: 6 }}
+          >
+            {({ points }) => (
+              <Line points={points.adherence} color="rgba(249, 115, 22, 1)" strokeWidth={2} />
+            )}
+          </CartesianChart>
+        </View>
       ) : (
         <View className="h-[70px] items-center justify-center bg-muted/40 rounded">
           <Text className="text-xs text-muted-foreground">No data</Text>
