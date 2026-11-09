@@ -1,0 +1,65 @@
+appId: com.deancochran.gradientpeak.dev
+name: Open a visible scheduled native session and reschedule it with the system date picker
+---
+# Navigation boundary: Calendar date -> training breakdown -> named plan row.
+- tapOn:
+    id: tab-button-plan
+- tapOn:
+    id: plan-view-calendar
+- extendedWaitUntil:
+    visible:
+      id: calendar-screen-ready
+    timeout: 30000
+- tapOn:
+    id: calendar-date-jump-entry
+- runFlow:
+    when:
+      true: ${MAESTRO_ACCEPTANCE_SESSION_MONTH_DELTA == "1"}
+    commands:
+      - tapOn:
+          id: android:id/next
+- tapOn: ${MAESTRO_ACCEPTANCE_SESSION_DAY}
+- tapOn: "OK"
+- tapOn:
+    id: calendar-day-select-${MAESTRO_ACCEPTANCE_SESSION_DATE}
+- extendedWaitUntil:
+    visible:
+      id: planning-ledger-screen
+    timeout: 30000
+- assertVisible: ${MAESTRO_ACCEPTANCE_PLAN_NAME}
+- tapOn: ${MAESTRO_ACCEPTANCE_PLAN_NAME}
+- extendedWaitUntil:
+    visible:
+      id: planned-session-detail-screen
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: planned-session-reschedule
+    direction: DOWN
+- tapOn:
+    id: planned-session-reschedule
+- assertVisible:
+    id: planned-session-reschedule-date-input
+- tapOn:
+    id: planned-session-reschedule-date-input
+- runFlow:
+    when:
+      true: ${MAESTRO_ACCEPTANCE_RESCHEDULE_MONTH_DELTA == "-1"}
+    commands:
+      - tapOn:
+          id: android:id/prev
+- runFlow:
+    when:
+      true: ${MAESTRO_ACCEPTANCE_RESCHEDULE_MONTH_DELTA == "1"}
+    commands:
+      - tapOn:
+          id: android:id/next
+- tapOn: ${MAESTRO_ACCEPTANCE_RESCHEDULE_DAY}
+- tapOn: "OK"
+- tapOn:
+    id: planned-session-reschedule-submit
+- extendedWaitUntil:
+    visible:
+      id: planned-session-reschedule
+    timeout: 30000
+- assertVisible: ${MAESTRO_ACCEPTANCE_RESCHEDULE_DATE}

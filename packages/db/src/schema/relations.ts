@@ -2,24 +2,35 @@ import { relations } from "drizzle-orm";
 
 import {
   activities,
+  activityAnalysisRevisions,
+  activityArtifactLinks,
+  activityArtifacts,
   activityEfforts,
   activityFileIngestions,
-  activityGeometry,
-  activityImports,
-  activityLaps,
+  activityImportRuns,
   activityPlans,
   activityRoutes,
-  activitySummaries,
+  activitySegments,
+  activitySessionRpeEvidence,
+  activitySourceReferences,
+  activityTrainingEffects,
+  athleteConsentPolicyVersions,
+  athleteDataSharingConsents,
+  athleteRecalculationQueue,
+  checkInFollowUps,
+  checkInOccurrences,
+  checkInSchedules,
+  checkInSubmissions,
+  checkInTemplates,
+  checkInTemplateVersions,
+  coachingAssignments,
+  coachingEngagements,
   comments,
   conversationParticipants,
   conversations,
-  eventExternalLinks,
-  eventPayloads,
-  eventRecurrence,
-  eventScheduleLinks,
+  dailyTrainingLoad,
   events,
   follows,
-  groupEventActivityPlans,
   groupEventRsvps,
   groupEventSeriesRsvps,
   groupEvents,
@@ -31,36 +42,56 @@ import {
   integrationResourceLinks,
   integrations,
   likes,
+  manualTrainingDiaryOperations,
   messages,
   notifications,
   oauthStates,
+  organizationAuditEvents,
+  organizationGroupAthletes,
+  organizationGroupCoachAssignments,
+  organizationGroups,
+  organizationInvitations,
+  organizationMembershipRoleGrants,
+  organizationMemberships,
+  organizations,
+  plannedSessions,
+  profileAthleteState,
   profileGoals,
   profileMetrics,
+  profilePerformanceEstimates,
   profiles,
-  profileTrainingSettings,
   providerSyncJobs,
   providerSyncState,
   providerWebhookReceipts,
+  thresholdEvaluationEfforts,
+  thresholdEvaluations,
+  thresholdEvidence,
+  thresholds,
+  trainingPlanApplicationCommandReceipts,
+  trainingPlanApplications,
   trainingPlans,
-  userTrainingPlans,
 } from "./tables";
 
-export const profilesRelations = relations(profiles, ({ many }) => ({
+export const profilesRelations = relations(profiles, ({ one, many }) => ({
   activities: many(activities),
+  activityAnalysisRevisions: many(activityAnalysisRevisions),
+  activityArtifacts: many(activityArtifacts),
+  activitySegments: many(activitySegments),
   activityFileIngestions: many(activityFileIngestions),
-  activityGeometry: many(activityGeometry),
-  activityImports: many(activityImports),
-  activityLaps: many(activityLaps),
+  activityTrainingEffects: many(activityTrainingEffects),
+  dailyTrainingLoad: many(dailyTrainingLoad),
+  athleteRecalculationQueue: one(athleteRecalculationQueue),
+  thresholdEvidence: many(thresholdEvidence),
+  plannedSessions: many(plannedSessions),
+  trainingPlanApplications: many(trainingPlanApplications),
+  trainingPlanApplicationCommandReceipts: many(trainingPlanApplicationCommandReceipts),
+  activitySessionRpeEvidence: many(activitySessionRpeEvidence),
+  manualTrainingDiaryOperations: many(manualTrainingDiaryOperations),
   activityPlans: many(activityPlans),
   activityRoutes: many(activityRoutes),
-  activitySummaries: many(activitySummaries),
   conversationParticipants: many(conversationParticipants),
   conversationsStarted: many(messages, { relationName: "messageSender" }),
   events: many(events),
-  eventExternalLinks: many(eventExternalLinks),
-  eventPayloads: many(eventPayloads),
-  eventRecurrence: many(eventRecurrence),
-  eventScheduleLinks: many(eventScheduleLinks),
   groupEventsCreated: many(groupEvents, { relationName: "groupEventCreator" }),
   groupEventRsvps: many(groupEventRsvps),
   groupEventSeriesRsvps: many(groupEventSeriesRsvps),
@@ -77,14 +108,28 @@ export const profilesRelations = relations(profiles, ({ many }) => ({
   notificationsReceived: many(notifications, { relationName: "notificationRecipient" }),
   notificationsTriggered: many(notifications, { relationName: "notificationActor" }),
   oauthStates: many(oauthStates),
+  organizationsCreated: many(organizations, { relationName: "organizationCreator" }),
+  organizationMemberships: many(organizationMemberships),
+  organizationInvitationsReceived: many(organizationInvitations, {
+    relationName: "organizationInvitationRecipient",
+  }),
+  organizationInvitationsAccepted: many(organizationInvitations, {
+    relationName: "organizationInvitationAccepter",
+  }),
+  coachingEngagements: many(coachingEngagements),
+  checkInSubmissions: many(checkInSubmissions),
   profileGoals: many(profileGoals),
   profileMetrics: many(profileMetrics),
+  athleteState: one(profileAthleteState),
+  performanceEstimates: many(profilePerformanceEstimates),
+  thresholdEvaluations: many(thresholdEvaluations),
+  thresholds: many(thresholds),
+  activityImportRuns: many(activityImportRuns),
+  activitySourceReferences: many(activitySourceReferences),
   providerSyncJobs: many(providerSyncJobs),
   providerWebhookReceipts: many(providerWebhookReceipts),
-  profileTrainingSettings: many(profileTrainingSettings),
   integrationResourceLinks: many(integrationResourceLinks),
   trainingPlans: many(trainingPlans),
-  userTrainingPlans: many(userTrainingPlans),
 }));
 
 export const groupsRelations = relations(groups, ({ one, many }) => ({
@@ -109,6 +154,286 @@ export const groupMembershipsRelations = relations(groupMemberships, ({ one }) =
     references: [profiles.id],
   }),
 }));
+
+export const organizationsRelations = relations(organizations, ({ one, many }) => ({
+  createdByProfile: one(profiles, {
+    relationName: "organizationCreator",
+    fields: [organizations.created_by_profile_id],
+    references: [profiles.id],
+  }),
+  memberships: many(organizationMemberships),
+  coachingEngagements: many(coachingEngagements),
+  coachingAssignments: many(coachingAssignments),
+  invitations: many(organizationInvitations),
+  groups: many(organizationGroups),
+  auditEvents: many(organizationAuditEvents),
+  checkInTemplates: many(checkInTemplates),
+  checkInSchedules: many(checkInSchedules),
+  checkInOccurrences: many(checkInOccurrences),
+  checkInSubmissions: many(checkInSubmissions),
+  checkInFollowUps: many(checkInFollowUps),
+}));
+
+export const organizationMembershipsRelations = relations(
+  organizationMemberships,
+  ({ one, many }) => ({
+    organization: one(organizations, {
+      fields: [organizationMemberships.organization_id],
+      references: [organizations.id],
+    }),
+    profile: one(profiles, {
+      fields: [organizationMemberships.profile_id],
+      references: [profiles.id],
+    }),
+    roleGrants: many(organizationMembershipRoleGrants),
+    coachingAssignments: many(coachingAssignments),
+    invitationsSent: many(organizationInvitations),
+    groupsCreated: many(organizationGroups),
+    groupAthletesAdded: many(organizationGroupAthletes, {
+      relationName: "organizationGroupAthleteActor",
+    }),
+    groupCoachAssignments: many(organizationGroupCoachAssignments, {
+      relationName: "organizationGroupCoach",
+    }),
+    groupCoachAssignmentsMade: many(organizationGroupCoachAssignments, {
+      relationName: "organizationGroupCoachActor",
+    }),
+  }),
+);
+
+export const coachingEngagementsRelations = relations(coachingEngagements, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [coachingEngagements.organization_id],
+    references: [organizations.id],
+  }),
+  athleteProfile: one(profiles, {
+    fields: [coachingEngagements.athlete_profile_id],
+    references: [profiles.id],
+  }),
+  assignments: many(coachingAssignments),
+  groupMemberships: many(organizationGroupAthletes),
+  consents: many(athleteDataSharingConsents),
+  checkInSchedules: many(checkInSchedules),
+  checkInOccurrences: many(checkInOccurrences),
+  checkInSubmissions: many(checkInSubmissions),
+  checkInFollowUps: many(checkInFollowUps),
+}));
+
+export const checkInTemplatesRelations = relations(checkInTemplates, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [checkInTemplates.organization_id],
+    references: [organizations.id],
+  }),
+  createdByMembership: one(organizationMemberships, {
+    fields: [checkInTemplates.created_by_membership_id],
+    references: [organizationMemberships.id],
+  }),
+  versions: many(checkInTemplateVersions),
+}));
+
+export const checkInTemplateVersionsRelations = relations(
+  checkInTemplateVersions,
+  ({ one, many }) => ({
+    template: one(checkInTemplates, {
+      fields: [checkInTemplateVersions.template_id],
+      references: [checkInTemplates.id],
+    }),
+    publishedByMembership: one(organizationMemberships, {
+      fields: [checkInTemplateVersions.published_by_membership_id],
+      references: [organizationMemberships.id],
+    }),
+    schedules: many(checkInSchedules),
+    occurrences: many(checkInOccurrences),
+    submissions: many(checkInSubmissions),
+  }),
+);
+
+export const checkInSchedulesRelations = relations(checkInSchedules, ({ one, many }) => ({
+  engagement: one(coachingEngagements, {
+    fields: [checkInSchedules.engagement_id],
+    references: [coachingEngagements.id],
+  }),
+  templateVersion: one(checkInTemplateVersions, {
+    fields: [checkInSchedules.template_version_id],
+    references: [checkInTemplateVersions.id],
+  }),
+  occurrences: many(checkInOccurrences),
+}));
+
+export const checkInOccurrencesRelations = relations(checkInOccurrences, ({ one, many }) => ({
+  schedule: one(checkInSchedules, {
+    fields: [checkInOccurrences.schedule_id],
+    references: [checkInSchedules.id],
+  }),
+  templateVersion: one(checkInTemplateVersions, {
+    fields: [checkInOccurrences.template_version_id],
+    references: [checkInTemplateVersions.id],
+  }),
+  submissions: many(checkInSubmissions),
+}));
+
+export const checkInSubmissionsRelations = relations(checkInSubmissions, ({ one, many }) => ({
+  occurrence: one(checkInOccurrences, {
+    fields: [checkInSubmissions.occurrence_id],
+    references: [checkInOccurrences.id],
+  }),
+  reviewer: one(organizationMemberships, {
+    fields: [checkInSubmissions.reviewed_by_membership_id],
+    references: [organizationMemberships.id],
+  }),
+  reviewedByProfile: one(profiles, {
+    fields: [checkInSubmissions.reviewed_by_profile_id],
+    references: [profiles.id],
+  }),
+  followUps: many(checkInFollowUps),
+}));
+
+export const checkInFollowUpsRelations = relations(checkInFollowUps, ({ one }) => ({
+  submission: one(checkInSubmissions, {
+    fields: [checkInFollowUps.submission_id],
+    references: [checkInSubmissions.id],
+  }),
+  createdByMembership: one(organizationMemberships, {
+    fields: [checkInFollowUps.created_by_membership_id],
+    references: [organizationMemberships.id],
+  }),
+  assignedToMembership: one(organizationMemberships, {
+    fields: [checkInFollowUps.assigned_to_membership_id],
+    references: [organizationMemberships.id],
+  }),
+}));
+
+export const coachingAssignmentsRelations = relations(coachingAssignments, ({ one }) => ({
+  engagement: one(coachingEngagements, {
+    fields: [coachingAssignments.engagement_id],
+    references: [coachingEngagements.id],
+  }),
+  coachMembership: one(organizationMemberships, {
+    fields: [coachingAssignments.coach_membership_id],
+    references: [organizationMemberships.id],
+  }),
+}));
+
+export const organizationInvitationsRelations = relations(organizationInvitations, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [organizationInvitations.organization_id],
+    references: [organizations.id],
+  }),
+  inviter: one(organizationMemberships, {
+    fields: [organizationInvitations.invited_by_membership_id],
+    references: [organizationMemberships.id],
+  }),
+  invitedProfile: one(profiles, {
+    relationName: "organizationInvitationRecipient",
+    fields: [organizationInvitations.invited_profile_id],
+    references: [profiles.id],
+  }),
+  acceptedByProfile: one(profiles, {
+    relationName: "organizationInvitationAccepter",
+    fields: [organizationInvitations.accepted_by_profile_id],
+    references: [profiles.id],
+  }),
+}));
+
+export const organizationGroupsRelations = relations(organizationGroups, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [organizationGroups.organization_id],
+    references: [organizations.id],
+  }),
+  createdByMembership: one(organizationMemberships, {
+    fields: [organizationGroups.created_by_membership_id],
+    references: [organizationMemberships.id],
+  }),
+  athletes: many(organizationGroupAthletes),
+  coachAssignments: many(organizationGroupCoachAssignments),
+}));
+
+export const organizationGroupAthletesRelations = relations(
+  organizationGroupAthletes,
+  ({ one }) => ({
+    group: one(organizationGroups, {
+      fields: [organizationGroupAthletes.group_id],
+      references: [organizationGroups.id],
+    }),
+    engagement: one(coachingEngagements, {
+      fields: [organizationGroupAthletes.engagement_id],
+      references: [coachingEngagements.id],
+    }),
+    addedByMembership: one(organizationMemberships, {
+      relationName: "organizationGroupAthleteActor",
+      fields: [organizationGroupAthletes.added_by_membership_id],
+      references: [organizationMemberships.id],
+    }),
+  }),
+);
+
+export const organizationGroupCoachAssignmentsRelations = relations(
+  organizationGroupCoachAssignments,
+  ({ one }) => ({
+    group: one(organizationGroups, {
+      fields: [organizationGroupCoachAssignments.group_id],
+      references: [organizationGroups.id],
+    }),
+    coachMembership: one(organizationMemberships, {
+      relationName: "organizationGroupCoach",
+      fields: [organizationGroupCoachAssignments.coach_membership_id],
+      references: [organizationMemberships.id],
+    }),
+    assignedByMembership: one(organizationMemberships, {
+      relationName: "organizationGroupCoachActor",
+      fields: [organizationGroupCoachAssignments.assigned_by_membership_id],
+      references: [organizationMemberships.id],
+    }),
+  }),
+);
+
+export const athleteConsentPolicyVersionsRelations = relations(
+  athleteConsentPolicyVersions,
+  ({ many }) => ({ consents: many(athleteDataSharingConsents) }),
+);
+
+export const athleteDataSharingConsentsRelations = relations(
+  athleteDataSharingConsents,
+  ({ one }) => ({
+    engagement: one(coachingEngagements, {
+      fields: [athleteDataSharingConsents.engagement_id],
+      references: [coachingEngagements.id],
+    }),
+    policyVersion: one(athleteConsentPolicyVersions, {
+      fields: [athleteDataSharingConsents.policy_version_id],
+      references: [athleteConsentPolicyVersions.id],
+    }),
+  }),
+);
+
+export const organizationAuditEventsRelations = relations(organizationAuditEvents, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [organizationAuditEvents.organization_id],
+    references: [organizations.id],
+  }),
+  actorProfile: one(profiles, {
+    fields: [organizationAuditEvents.actor_profile_id],
+    references: [profiles.id],
+  }),
+  actorMembership: one(organizationMemberships, {
+    fields: [organizationAuditEvents.actor_membership_id],
+    references: [organizationMemberships.id],
+  }),
+}));
+
+export const organizationMembershipRoleGrantsRelations = relations(
+  organizationMembershipRoleGrants,
+  ({ one }) => ({
+    organization: one(organizations, {
+      fields: [organizationMembershipRoleGrants.organization_id],
+      references: [organizations.id],
+    }),
+    membership: one(organizationMemberships, {
+      fields: [organizationMembershipRoleGrants.membership_id],
+      references: [organizationMemberships.id],
+    }),
+  }),
+);
 
 export const groupInvitationsRelations = relations(groupInvitations, ({ one }) => ({
   group: one(groups, {
@@ -153,25 +478,14 @@ export const groupEventsRelations = relations(groupEvents, ({ one, many }) => ({
     fields: [groupEvents.route_id],
     references: [activityRoutes.id],
   }),
-  activityPlans: many(groupEventActivityPlans),
+  activityPlan: one(activityPlans, {
+    fields: [groupEvents.activity_plan_id],
+    references: [activityPlans.id],
+  }),
   rsvps: many(groupEventRsvps),
   seriesRsvps: many(groupEventSeriesRsvps),
+  plannedSessions: many(plannedSessions),
 }));
-
-export const groupEventActivityPlansRelations = relations(
-  groupEventActivityPlans,
-  ({ one, many }) => ({
-    groupEvent: one(groupEvents, {
-      fields: [groupEventActivityPlans.group_event_id],
-      references: [groupEvents.id],
-    }),
-    activityPlan: one(activityPlans, {
-      fields: [groupEventActivityPlans.activity_plan_id],
-      references: [activityPlans.id],
-    }),
-    rsvps: many(groupEventRsvps),
-  }),
-);
 
 export const groupEventRsvpsRelations = relations(groupEventRsvps, ({ one }) => ({
   groupEvent: one(groupEvents, {
@@ -181,10 +495,6 @@ export const groupEventRsvpsRelations = relations(groupEventRsvps, ({ one }) => 
   profile: one(profiles, {
     fields: [groupEventRsvps.profile_id],
     references: [profiles.id],
-  }),
-  selectedActivityPlan: one(groupEventActivityPlans, {
-    fields: [groupEventRsvps.selected_group_event_activity_plan_id],
-    references: [groupEventActivityPlans.id],
   }),
 }));
 
@@ -204,9 +514,9 @@ export const activityRoutesRelations = relations(activityRoutes, ({ one, many })
     fields: [activityRoutes.profile_id],
     references: [profiles.id],
   }),
-  activityPlans: many(activityPlans),
-  eventScheduleLinks: many(eventScheduleLinks),
+  events: many(events),
   groupEvents: many(groupEvents),
+  activities: many(activities),
 }));
 
 export const activityPlansRelations = relations(activityPlans, ({ one, many }) => ({
@@ -214,13 +524,9 @@ export const activityPlansRelations = relations(activityPlans, ({ one, many }) =
     fields: [activityPlans.profile_id],
     references: [profiles.id],
   }),
-  route: one(activityRoutes, {
-    fields: [activityPlans.route_id],
-    references: [activityRoutes.id],
-  }),
   activities: many(activities),
-  eventScheduleLinks: many(eventScheduleLinks),
-  groupEventActivityPlans: many(groupEventActivityPlans),
+  groupEvents: many(groupEvents),
+  plannedSessions: many(plannedSessions),
 }));
 
 export const trainingPlansRelations = relations(trainingPlans, ({ one, many }) => ({
@@ -228,20 +534,105 @@ export const trainingPlansRelations = relations(trainingPlans, ({ one, many }) =
     fields: [trainingPlans.profile_id],
     references: [profiles.id],
   }),
-  eventScheduleLinks: many(eventScheduleLinks),
-  userTrainingPlans: many(userTrainingPlans),
+  plannedSessions: many(plannedSessions),
 }));
 
-export const userTrainingPlansRelations = relations(userTrainingPlans, ({ one, many }) => ({
+export const profileAthleteStateRelations = relations(profileAthleteState, ({ one }) => ({
   profile: one(profiles, {
-    fields: [userTrainingPlans.profile_id],
+    fields: [profileAthleteState.profile_id],
     references: [profiles.id],
   }),
-  trainingPlan: one(trainingPlans, {
-    fields: [userTrainingPlans.training_plan_id],
-    references: [trainingPlans.id],
+}));
+
+export const dailyTrainingLoadRelations = relations(dailyTrainingLoad, ({ one }) => ({
+  profile: one(profiles, {
+    fields: [dailyTrainingLoad.profile_id],
+    references: [profiles.id],
   }),
-  eventScheduleLinks: many(eventScheduleLinks),
+}));
+
+export const athleteRecalculationQueueRelations = relations(
+  athleteRecalculationQueue,
+  ({ one }) => ({
+    profile: one(profiles, {
+      fields: [athleteRecalculationQueue.profile_id],
+      references: [profiles.id],
+    }),
+  }),
+);
+
+export const profilePerformanceEstimatesRelations = relations(
+  profilePerformanceEstimates,
+  ({ one }) => ({
+    profile: one(profiles, {
+      fields: [profilePerformanceEstimates.profile_id],
+      references: [profiles.id],
+    }),
+  }),
+);
+
+export const thresholdEvaluationsRelations = relations(thresholdEvaluations, ({ one, many }) => ({
+  profile: one(profiles, {
+    fields: [thresholdEvaluations.profile_id],
+    references: [profiles.id],
+  }),
+  sourceActivity: one(activities, {
+    fields: [thresholdEvaluations.source_activity_id, thresholdEvaluations.profile_id],
+    references: [activities.id, activities.profile_id],
+  }),
+  efforts: many(thresholdEvaluationEfforts),
+  threshold: one(thresholds),
+}));
+
+export const thresholdEvaluationEffortsRelations = relations(
+  thresholdEvaluationEfforts,
+  ({ one }) => ({
+    evaluation: one(thresholdEvaluations, {
+      fields: [
+        thresholdEvaluationEfforts.evaluation_id,
+        thresholdEvaluationEfforts.profile_id,
+        thresholdEvaluationEfforts.activity_category,
+        thresholdEvaluationEfforts.metric,
+      ],
+      references: [
+        thresholdEvaluations.id,
+        thresholdEvaluations.profile_id,
+        thresholdEvaluations.activity_category,
+        thresholdEvaluations.metric,
+      ],
+    }),
+    effort: one(activityEfforts, {
+      fields: [thresholdEvaluationEfforts.effort_id],
+      references: [activityEfforts.id],
+    }),
+    profile: one(profiles, {
+      fields: [thresholdEvaluationEfforts.profile_id],
+      references: [profiles.id],
+    }),
+    activity: one(activities, {
+      fields: [thresholdEvaluationEfforts.activity_id],
+      references: [activities.id],
+    }),
+  }),
+);
+
+export const thresholdsRelations = relations(thresholds, ({ one, many }) => ({
+  profile: one(profiles, {
+    fields: [thresholds.profile_id],
+    references: [profiles.id],
+  }),
+  evaluation: one(thresholdEvaluations, {
+    fields: [thresholds.evaluation_id],
+    references: [thresholdEvaluations.id],
+  }),
+  supersedes: one(thresholds, {
+    relationName: "thresholdSupersession",
+    fields: [thresholds.supersedes_id],
+    references: [thresholds.id],
+  }),
+  supersededBy: many(thresholds, {
+    relationName: "thresholdSupersession",
+  }),
 }));
 
 export const eventsRelations = relations(events, ({ one, many }) => ({
@@ -252,97 +643,21 @@ export const eventsRelations = relations(events, ({ one, many }) => ({
   integrationResourceLinks: many(integrationResourceLinks, {
     relationName: "eventIntegrationResourceLinks",
   }),
-  scheduleLink: one(eventScheduleLinks, {
-    fields: [events.id],
-    references: [eventScheduleLinks.event_id],
-  }),
-  externalLink: one(eventExternalLinks, {
-    fields: [events.id],
-    references: [eventExternalLinks.event_id],
-  }),
-  recurrenceDetails: one(eventRecurrence, {
-    fields: [events.id],
-    references: [eventRecurrence.event_id],
-  }),
-  recurrenceOccurrences: many(eventRecurrence, {
-    relationName: "eventRecurrenceSeriesOccurrences",
-  }),
-  payloads: one(eventPayloads, {
-    fields: [events.id],
-    references: [eventPayloads.event_id],
-  }),
-}));
-
-export const eventScheduleLinksRelations = relations(eventScheduleLinks, ({ one }) => ({
-  event: one(events, {
-    fields: [eventScheduleLinks.event_id],
-    references: [events.id],
-  }),
-  profile: one(profiles, {
-    fields: [eventScheduleLinks.profile_id],
-    references: [profiles.id],
-  }),
-  trainingPlan: one(trainingPlans, {
-    fields: [eventScheduleLinks.training_plan_id],
-    references: [trainingPlans.id],
-  }),
-  activityPlan: one(activityPlans, {
-    fields: [eventScheduleLinks.activity_plan_id],
-    references: [activityPlans.id],
-  }),
   linkedActivity: one(activities, {
-    fields: [eventScheduleLinks.linked_activity_id],
+    fields: [events.linked_activity_id],
     references: [activities.id],
   }),
   route: one(activityRoutes, {
-    fields: [eventScheduleLinks.route_id],
+    fields: [events.route_id],
     references: [activityRoutes.id],
-  }),
-  userTrainingPlan: one(userTrainingPlans, {
-    fields: [eventScheduleLinks.user_training_plan_id],
-    references: [userTrainingPlans.id],
-  }),
-}));
-
-export const eventExternalLinksRelations = relations(eventExternalLinks, ({ one }) => ({
-  event: one(events, {
-    fields: [eventExternalLinks.event_id],
-    references: [events.id],
-  }),
-  profile: one(profiles, {
-    fields: [eventExternalLinks.profile_id],
-    references: [profiles.id],
-  }),
-  integration: one(integrations, {
-    fields: [eventExternalLinks.integration_account_id],
-    references: [integrations.id],
-  }),
-}));
-
-export const eventRecurrenceRelations = relations(eventRecurrence, ({ one }) => ({
-  event: one(events, {
-    fields: [eventRecurrence.event_id],
-    references: [events.id],
-  }),
-  profile: one(profiles, {
-    fields: [eventRecurrence.profile_id],
-    references: [profiles.id],
   }),
   series: one(events, {
     relationName: "eventRecurrenceSeriesOccurrences",
-    fields: [eventRecurrence.series_id],
+    fields: [events.series_id],
     references: [events.id],
   }),
-}));
-
-export const eventPayloadsRelations = relations(eventPayloads, ({ one }) => ({
-  event: one(events, {
-    fields: [eventPayloads.event_id],
-    references: [events.id],
-  }),
-  profile: one(profiles, {
-    fields: [eventPayloads.profile_id],
-    references: [profiles.id],
+  recurrenceOccurrences: many(events, {
+    relationName: "eventRecurrenceSeriesOccurrences",
   }),
 }));
 
@@ -355,65 +670,125 @@ export const activitiesRelations = relations(activities, ({ one, many }) => ({
     fields: [activities.activity_plan_id],
     references: [activityPlans.id],
   }),
+  route: one(activityRoutes, {
+    fields: [activities.route_id],
+    references: [activityRoutes.id],
+  }),
   efforts: many(activityEfforts),
-  summary: one(activitySummaries, {
-    fields: [activities.id],
-    references: [activitySummaries.activity_id],
-  }),
-  import: one(activityImports, {
-    fields: [activities.id],
-    references: [activityImports.activity_id],
-  }),
-  geometry: one(activityGeometry, {
-    fields: [activities.id],
-    references: [activityGeometry.activity_id],
-  }),
-  laps: many(activityLaps),
+  sessionRpeEvidence: many(activitySessionRpeEvidence),
   fileIngestions: many(activityFileIngestions),
+  artifactLinks: many(activityArtifactLinks),
+  sourceReferences: many(activitySourceReferences),
+  segments: many(activitySegments),
+  thresholdEvaluations: many(thresholdEvaluations),
+  thresholdEvaluationEfforts: many(thresholdEvaluationEfforts),
+  analysisRevisions: many(activityAnalysisRevisions),
+  trainingEffects: many(activityTrainingEffects),
+  thresholdEvidence: many(thresholdEvidence),
+  completedPlannedSessions: many(plannedSessions),
+  manualDiaryOperations: many(manualTrainingDiaryOperations),
+  supersedingManualActivities: many(activities, { relationName: "activitySupersession" }),
+  reconciledPlannedSession: one(plannedSessions, {
+    fields: [activities.reconciled_planned_session_id, activities.profile_id],
+    references: [plannedSessions.id, plannedSessions.profile_id],
+    relationName: "manualActivityReconciledSession",
+  }),
+  supersededByActivity: one(activities, {
+    fields: [activities.superseded_by_activity_id, activities.profile_id],
+    references: [activities.id, activities.profile_id],
+    relationName: "activitySupersession",
+  }),
 }));
 
-export const activitySummariesRelations = relations(activitySummaries, ({ one }) => ({
+export const activityAnalysisRevisionsRelations = relations(
+  activityAnalysisRevisions,
+  ({ one }) => ({
+    activity: one(activities, {
+      fields: [activityAnalysisRevisions.activity_id, activityAnalysisRevisions.profile_id],
+      references: [activities.id, activities.profile_id],
+    }),
+    profile: one(profiles, {
+      fields: [activityAnalysisRevisions.profile_id],
+      references: [profiles.id],
+    }),
+    trainingEffect: one(activityTrainingEffects),
+  }),
+);
+
+export const activityTrainingEffectsRelations = relations(activityTrainingEffects, ({ one }) => ({
+  profile: one(profiles, {
+    fields: [activityTrainingEffects.profile_id],
+    references: [profiles.id],
+  }),
   activity: one(activities, {
-    fields: [activitySummaries.activity_id],
+    fields: [activityTrainingEffects.activity_id],
     references: [activities.id],
   }),
+  analysisRevision: one(activityAnalysisRevisions, {
+    fields: [
+      activityTrainingEffects.activity_id,
+      activityTrainingEffects.profile_id,
+      activityTrainingEffects.activity_analysis_revision,
+    ],
+    references: [
+      activityAnalysisRevisions.activity_id,
+      activityAnalysisRevisions.profile_id,
+      activityAnalysisRevisions.revision,
+    ],
+  }),
+}));
+
+export const thresholdEvidenceRelations = relations(thresholdEvidence, ({ one }) => ({
   profile: one(profiles, {
-    fields: [activitySummaries.profile_id],
+    fields: [thresholdEvidence.profile_id],
+    references: [profiles.id],
+  }),
+  activity: one(activities, {
+    fields: [thresholdEvidence.activity_id, thresholdEvidence.profile_id],
+    references: [activities.id, activities.profile_id],
+  }),
+}));
+
+export const activityArtifactsRelations = relations(activityArtifacts, ({ one, many }) => ({
+  profile: one(profiles, {
+    fields: [activityArtifacts.profile_id],
+    references: [profiles.id],
+  }),
+  links: many(activityArtifactLinks),
+  ingestions: many(activityFileIngestions),
+  sourcedSegments: many(activitySegments),
+  sourcedEfforts: many(activityEfforts),
+}));
+
+export const activityArtifactLinksRelations = relations(activityArtifactLinks, ({ one }) => ({
+  activity: one(activities, {
+    fields: [activityArtifactLinks.activity_id],
+    references: [activities.id],
+  }),
+  artifact: one(activityArtifacts, {
+    fields: [activityArtifactLinks.artifact_id],
+    references: [activityArtifacts.id],
+  }),
+  profile: one(profiles, {
+    fields: [activityArtifactLinks.profile_id],
     references: [profiles.id],
   }),
 }));
 
-export const activityImportsRelations = relations(activityImports, ({ one }) => ({
+export const activitySegmentsRelations = relations(activitySegments, ({ one, many }) => ({
   activity: one(activities, {
-    fields: [activityImports.activity_id],
+    fields: [activitySegments.activity_id],
     references: [activities.id],
   }),
   profile: one(profiles, {
-    fields: [activityImports.profile_id],
+    fields: [activitySegments.profile_id],
     references: [profiles.id],
   }),
-}));
-
-export const activityGeometryRelations = relations(activityGeometry, ({ one }) => ({
-  activity: one(activities, {
-    fields: [activityGeometry.activity_id],
-    references: [activities.id],
+  sourceArtifact: one(activityArtifacts, {
+    fields: [activitySegments.source_artifact_id],
+    references: [activityArtifacts.id],
   }),
-  profile: one(profiles, {
-    fields: [activityGeometry.profile_id],
-    references: [profiles.id],
-  }),
-}));
-
-export const activityLapsRelations = relations(activityLaps, ({ one }) => ({
-  activity: one(activities, {
-    fields: [activityLaps.activity_id],
-    references: [activities.id],
-  }),
-  profile: one(profiles, {
-    fields: [activityLaps.profile_id],
-    references: [profiles.id],
-  }),
+  efforts: many(activityEfforts),
 }));
 
 export const activityFileIngestionsRelations = relations(activityFileIngestions, ({ one }) => ({
@@ -425,9 +800,92 @@ export const activityFileIngestionsRelations = relations(activityFileIngestions,
     fields: [activityFileIngestions.profile_id],
     references: [profiles.id],
   }),
+  artifact: one(activityArtifacts, {
+    fields: [activityFileIngestions.artifact_id],
+    references: [activityArtifacts.id],
+  }),
 }));
 
-export const activityEffortsRelations = relations(activityEfforts, ({ one }) => ({
+export const plannedSessionsRelations = relations(plannedSessions, ({ one, many }) => ({
+  profile: one(profiles, {
+    fields: [plannedSessions.profile_id],
+    references: [profiles.id],
+  }),
+  trainingPlan: one(trainingPlans, {
+    fields: [plannedSessions.training_plan_id],
+    references: [trainingPlans.id],
+  }),
+  trainingPlanApplication: one(trainingPlanApplications, {
+    fields: [plannedSessions.training_plan_application_id],
+    references: [trainingPlanApplications.id],
+  }),
+  activityPlan: one(activityPlans, {
+    fields: [plannedSessions.activity_plan_id],
+    references: [activityPlans.id],
+  }),
+  groupEvent: one(groupEvents, {
+    fields: [plannedSessions.group_event_id],
+    references: [groupEvents.id],
+  }),
+  completedActivity: one(activities, {
+    fields: [plannedSessions.completed_activity_id, plannedSessions.profile_id],
+    references: [activities.id, activities.profile_id],
+  }),
+  reconciledManualActivities: many(activities, { relationName: "manualActivityReconciledSession" }),
+}));
+
+export const trainingPlanApplicationsRelations = relations(
+  trainingPlanApplications,
+  ({ one, many }) => ({
+    profile: one(profiles, {
+      fields: [trainingPlanApplications.profile_id],
+      references: [profiles.id],
+    }),
+    trainingPlan: one(trainingPlans, {
+      fields: [trainingPlanApplications.training_plan_id],
+      references: [trainingPlans.id],
+    }),
+    plannedSessions: many(plannedSessions),
+    commandReceipts: many(trainingPlanApplicationCommandReceipts),
+  }),
+);
+
+export const trainingPlanApplicationCommandReceiptsRelations = relations(
+  trainingPlanApplicationCommandReceipts,
+  ({ one }) => ({
+    profile: one(profiles, {
+      fields: [trainingPlanApplicationCommandReceipts.profile_id],
+      references: [profiles.id],
+    }),
+    application: one(trainingPlanApplications, {
+      fields: [trainingPlanApplicationCommandReceipts.application_id],
+      references: [trainingPlanApplications.id],
+    }),
+  }),
+);
+
+export const manualTrainingDiaryOperationsRelations = relations(
+  manualTrainingDiaryOperations,
+  ({ one }) => ({
+    profile: one(profiles, {
+      fields: [manualTrainingDiaryOperations.profile_id],
+      references: [profiles.id],
+    }),
+    activity: one(activities, {
+      fields: [manualTrainingDiaryOperations.activity_id, manualTrainingDiaryOperations.profile_id],
+      references: [activities.id, activities.profile_id],
+    }),
+    plannedSession: one(plannedSessions, {
+      fields: [
+        manualTrainingDiaryOperations.planned_session_id,
+        manualTrainingDiaryOperations.profile_id,
+      ],
+      references: [plannedSessions.id, plannedSessions.profile_id],
+    }),
+  }),
+);
+
+export const activityEffortsRelations = relations(activityEfforts, ({ one, many }) => ({
   profile: one(profiles, {
     fields: [activityEfforts.profile_id],
     references: [profiles.id],
@@ -436,7 +894,35 @@ export const activityEffortsRelations = relations(activityEfforts, ({ one }) => 
     fields: [activityEfforts.activity_id],
     references: [activities.id],
   }),
+  segment: one(activitySegments, {
+    fields: [activityEfforts.segment_id],
+    references: [activitySegments.id],
+  }),
+  sourceArtifact: one(activityArtifacts, {
+    fields: [activityEfforts.source_artifact_id],
+    references: [activityArtifacts.id],
+  }),
+  thresholdEvaluationLinks: many(thresholdEvaluationEfforts),
 }));
+
+export const activitySessionRpeEvidenceRelations = relations(
+  activitySessionRpeEvidence,
+  ({ one }) => ({
+    profile: one(profiles, {
+      fields: [activitySessionRpeEvidence.profile_id],
+      references: [profiles.id],
+    }),
+    activity: one(activities, {
+      fields: [activitySessionRpeEvidence.activity_id],
+      references: [activities.id],
+    }),
+    correctionOf: one(activitySessionRpeEvidence, {
+      fields: [activitySessionRpeEvidence.correction_of_id],
+      references: [activitySessionRpeEvidence.id],
+      relationName: "activitySessionRpeEvidenceCorrections",
+    }),
+  }),
+);
 
 export const integrationsRelations = relations(integrations, ({ one, many }) => ({
   profile: one(profiles, {
@@ -447,8 +933,10 @@ export const integrationsRelations = relations(integrations, ({ one, many }) => 
     fields: [integrations.id],
     references: [integrationCredentials.integration_id],
   }),
-  eventExternalLinks: many(eventExternalLinks),
+  events: many(events),
   resourceLinks: many(integrationResourceLinks),
+  activityImportRuns: many(activityImportRuns),
+  activitySourceReferences: many(activitySourceReferences),
   syncJobs: many(providerSyncJobs),
   syncState: many(providerSyncState),
   webhookReceipts: many(providerWebhookReceipts),
@@ -472,13 +960,6 @@ export const profileMetricsRelations = relations(profileMetrics, ({ one }) => ({
   }),
 }));
 
-export const profileTrainingSettingsRelations = relations(profileTrainingSettings, ({ one }) => ({
-  profile: one(profiles, {
-    fields: [profileTrainingSettings.profile_id],
-    references: [profiles.id],
-  }),
-}));
-
 export const providerSyncStateRelations = relations(providerSyncState, ({ one }) => ({
   integration: one(integrations, {
     fields: [providerSyncState.integration_id],
@@ -494,6 +975,49 @@ export const providerSyncJobsRelations = relations(providerSyncJobs, ({ one }) =
   integration: one(integrations, {
     fields: [providerSyncJobs.integration_id],
     references: [integrations.id],
+  }),
+  importRun: one(activityImportRuns, {
+    fields: [providerSyncJobs.import_run_id, providerSyncJobs.profile_id],
+    references: [activityImportRuns.id, activityImportRuns.profile_id],
+  }),
+}));
+
+export const activityImportRunsRelations = relations(activityImportRuns, ({ one, many }) => ({
+  profile: one(profiles, {
+    fields: [activityImportRuns.profile_id],
+    references: [profiles.id],
+  }),
+  integration: one(integrations, {
+    fields: [activityImportRuns.integration_id, activityImportRuns.profile_id],
+    references: [integrations.id, integrations.profile_id],
+  }),
+  sourceReferences: many(activitySourceReferences),
+  syncJobs: many(providerSyncJobs),
+}));
+
+export const activitySourceReferencesRelations = relations(activitySourceReferences, ({ one }) => ({
+  profile: one(profiles, {
+    fields: [activitySourceReferences.profile_id],
+    references: [profiles.id],
+  }),
+  activity: one(activities, {
+    fields: [activitySourceReferences.activity_id],
+    references: [activities.id],
+  }),
+  integration: one(integrations, {
+    fields: [activitySourceReferences.integration_id, activitySourceReferences.profile_id],
+    references: [integrations.id, integrations.profile_id],
+  }),
+  lastImportRun: one(activityImportRuns, {
+    fields: [activitySourceReferences.last_import_run_id, activitySourceReferences.profile_id],
+    references: [activityImportRuns.id, activityImportRuns.profile_id],
+  }),
+  lastMaterialImportRun: one(activityImportRuns, {
+    fields: [
+      activitySourceReferences.last_material_import_run_id,
+      activitySourceReferences.profile_id,
+    ],
+    references: [activityImportRuns.id, activityImportRuns.profile_id],
   }),
 }));
 
@@ -531,10 +1055,10 @@ export const integrationResourceLinksRelations = relations(integrationResourceLi
     fields: [integrationResourceLinks.integration_id],
     references: [integrations.id],
   }),
-  event: one(events, {
-    relationName: "eventIntegrationResourceLinks",
+  plannedSession: one(plannedSessions, {
+    relationName: "plannedSessionIntegrationResourceLinks",
     fields: [integrationResourceLinks.internal_resource_id],
-    references: [events.id],
+    references: [plannedSessions.id],
   }),
 }));
 
@@ -610,35 +1134,55 @@ export const relationsSchema = {
   profilesRelations,
   groupsRelations,
   groupMembershipsRelations,
+  organizationsRelations,
+  organizationMembershipsRelations,
+  organizationMembershipRoleGrantsRelations,
+  organizationInvitationsRelations,
+  organizationGroupsRelations,
+  organizationGroupAthletesRelations,
+  organizationGroupCoachAssignmentsRelations,
+  coachingEngagementsRelations,
+  coachingAssignmentsRelations,
+  athleteConsentPolicyVersionsRelations,
+  athleteDataSharingConsentsRelations,
+  organizationAuditEventsRelations,
   groupInvitationsRelations,
   groupJoinRequestsRelations,
   groupEventsRelations,
-  groupEventActivityPlansRelations,
   groupEventRsvpsRelations,
   activityRoutesRelations,
   activityPlansRelations,
+  activityImportRunsRelations,
+  activitySourceReferencesRelations,
   trainingPlansRelations,
-  userTrainingPlansRelations,
+  trainingPlanApplicationsRelations,
+  trainingPlanApplicationCommandReceiptsRelations,
+  plannedSessionsRelations,
   eventsRelations,
-  eventScheduleLinksRelations,
-  eventExternalLinksRelations,
-  eventRecurrenceRelations,
-  eventPayloadsRelations,
   activitiesRelations,
-  activitySummariesRelations,
-  activityImportsRelations,
-  activityGeometryRelations,
-  activityLapsRelations,
+  activityAnalysisRevisionsRelations,
+  activityTrainingEffectsRelations,
+  activityArtifactLinksRelations,
+  activityArtifactsRelations,
   activityFileIngestionsRelations,
   activityEffortsRelations,
+  activitySessionRpeEvidenceRelations,
+  activitySegmentsRelations,
+  thresholdEvaluationsRelations,
+  thresholdEvaluationEffortsRelations,
+  thresholdsRelations,
+  thresholdEvidenceRelations,
   integrationsRelations,
   integrationCredentialsRelations,
   providerSyncJobsRelations,
   providerSyncStateRelations,
   providerWebhookReceiptsRelations,
-  profileTrainingSettingsRelations,
   profileGoalsRelations,
   profileMetricsRelations,
+  profileAthleteStateRelations,
+  dailyTrainingLoadRelations,
+  athleteRecalculationQueueRelations,
+  profilePerformanceEstimatesRelations,
   oauthStatesRelations,
   integrationResourceLinksRelations,
   likesRelations,

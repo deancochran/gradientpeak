@@ -18,7 +18,7 @@ export type SystemTrainingPlanGateScope = "first-wave" | "audit-only";
 
 export interface FirstWaveCoverageCellDefinition {
   key: FirstWaveCoverageCellKey;
-  sport: "run" | "bike";
+  activity_category: "run" | "bike";
   label: string;
 }
 
@@ -33,42 +33,42 @@ export const COVERAGE_STATUS_THRESHOLD = {
 export const FIRST_WAVE_COVERAGE_CELLS: readonly FirstWaveCoverageCellDefinition[] = [
   {
     key: "run_easy_recovery",
-    sport: "run",
+    activity_category: "run",
     label: "Run easy or recovery",
   },
   {
     key: "run_tempo_threshold",
-    sport: "run",
+    activity_category: "run",
     label: "Run tempo or threshold",
   },
   {
     key: "run_long",
-    sport: "run",
+    activity_category: "run",
     label: "Run long",
   },
   {
     key: "run_high_intensity_race_pace",
-    sport: "run",
+    activity_category: "run",
     label: "Run high intensity or race pace",
   },
   {
     key: "bike_easy_recovery",
-    sport: "bike",
+    activity_category: "bike",
     label: "Bike recovery or easy endurance",
   },
   {
     key: "bike_threshold_sweet_spot",
-    sport: "bike",
+    activity_category: "bike",
     label: "Bike threshold or sweet spot",
   },
   {
     key: "bike_long_endurance",
-    sport: "bike",
+    activity_category: "bike",
     label: "Bike long endurance",
   },
   {
     key: "bike_high_intensity_climbing",
-    sport: "bike",
+    activity_category: "bike",
     label: "Bike high intensity or climbing",
   },
 ];

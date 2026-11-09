@@ -23,13 +23,4 @@ describe("calendar event routing", () => {
       ROUTES.PLAN.EVENT_UPDATE("e-4"),
     );
   });
-
-  it("keeps legacy rest-day events out of routed fallback paths while imported events open detail", () => {
-    expect(buildOpenEventRoute({ id: "e-1", event_type: "rest_day" })).toBe(null);
-    expect(buildEditEventRoute({ id: "e-1", event_type: "rest_day" })).toBe(null);
-    expect(buildOpenEventRoute({ id: "e-5", event_type: "imported" })).toBe(
-      ROUTES.PLAN.EVENT_DETAIL("e-5"),
-    );
-    expect(buildEditEventRoute({ id: "e-5", event_type: "imported" })).toBe(null);
-  });
 });

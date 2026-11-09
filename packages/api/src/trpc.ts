@@ -1,9 +1,92 @@
 // packages/api/src/trpc.ts
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
-import z, { ZodError } from "zod";
+import { ZodError } from "zod";
 import type { Context } from "./context";
-import { isTrainingPlanCommitErrorCause } from "./lib/errors/trainingPlanCommitErrors";
+import { hasCurrentContractEpoch } from "./contract-epoch";
+import { checkApiRateLimit } from "./lib/rate-limit";
+import { captureApiProcedureMetric } from "./telemetry";
+
+const TELEMETRY_PROCEDURE_GROUPS = new Set([
+  "profiles",
+  "athleteIntelligence",
+  "onboarding",
+  "activities",
+  "activityEfforts",
+  "activityPlans",
+  "events",
+  "goals",
+  "activityFiles",
+  "plannedSessions",
+  "integrations",
+  "messaging",
+  "notifications",
+  "trainingPlans",
+  "routes",
+  "social",
+  "trends",
+  "storage",
+  "home",
+  "feed",
+  "groups",
+  "publicShare",
+  "organizations",
+]);
+const EXPECTED_ERROR_CODES = new Set([
+  "BAD_REQUEST",
+  "UNAUTHORIZED",
+  "PAYMENT_REQUIRED",
+  "FORBIDDEN",
+  "NOT_FOUND",
+  "METHOD_NOT_SUPPORTED",
+  "TIMEOUT",
+  "CONFLICT",
+  "PRECONDITION_FAILED",
+  "PAYLOAD_TOO_LARGE",
+  "UNSUPPORTED_MEDIA_TYPE",
+  "UNPROCESSABLE_CONTENT",
+  "PRECONDITION_REQUIRED",
+  "TOO_MANY_REQUESTS",
+]);
+const CANCELLATION_CODES = new Set(["ABORT_ERR", "ERR_CANCELED", "CLIENT_CLOSED_REQUEST"]);
+
+export function normalizeTelemetryProcedureGroup(path: string | undefined) {
+  const group = path?.split(".", 1)[0];
+  return group && TELEMETRY_PROCEDURE_GROUPS.has(group) ? group : "unknown";
+}
+
+export function normalizeTelemetryProcedureType(type: string | undefined) {
+  return type === "query" || type === "mutation" || type === "subscription" ? type : "unknown";
+}
+
+export function bucketTelemetryDuration(durationMs: number) {
+  if (!Number.isFinite(durationMs) || durationMs < 50) return "<50";
+  if (durationMs < 200) return "<200";
+  if (durationMs < 1_000) return "<1000";
+  if (durationMs < 5_000) return "<5000";
+  return ">=5000";
+}
+
+function getErrorCode(error: unknown) {
+  if (!error || typeof error !== "object") return "UNKNOWN";
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" ? code : "UNKNOWN";
+}
+
+export function normalizeTelemetryOutcome(error: unknown) {
+  const code = getErrorCode(error);
+  if (CANCELLATION_CODES.has(code) || (error instanceof Error && error.name === "AbortError")) {
+    return "cancelled";
+  }
+  return EXPECTED_ERROR_CODES.has(code) ? "expected_error" : "unexpected_error";
+}
+
+export function applicationErrorCodeForCause(cause: unknown) {
+  if (!(cause instanceof Error)) return null;
+  if (cause.name === "OnboardingPendingOAuthError") return "ONBOARDING_PENDING_OAUTH";
+  if (cause.name === "ActivityPlanIntegrityError") return "ACTIVITY_PLAN_INTEGRITY_FAILED";
+  return null;
+}
 
 const t = initTRPC.context<Context>().create({
   sse: {
@@ -15,21 +98,104 @@ const t = initTRPC.context<Context>().create({
   allowOutsideOfServer: false,
   errorFormatter: ({ shape, error }) => ({
     ...shape,
+    ...(error.code === "INTERNAL_SERVER_ERROR"
+      ? { message: "An unexpected server error occurred." }
+      : {}),
     data: {
       ...shape.data,
       zodError:
         error.cause instanceof ZodError
-          ? z.flattenError(error.cause as ZodError<Record<string, unknown>>)
+          ? sanitizeZodError(error.cause as ZodError<Record<string, unknown>>)
           : null,
-      cause: isTrainingPlanCommitErrorCause(error.cause) ? error.cause : null,
+      applicationErrorCode: applicationErrorCodeForCause(error.cause),
     },
   }),
 });
 
-export const createTRPCRouter = t.router;
-export const publicProcedure = t.procedure;
+function safeZodMessage(code: string) {
+  switch (code) {
+    case "invalid_type":
+      return "Enter a value of the expected type.";
+    case "too_small":
+      return "Value is below the minimum allowed.";
+    case "too_big":
+      return "Value exceeds the maximum allowed.";
+    case "invalid_format":
+      return "Value has an invalid format.";
+    case "invalid_value":
+      return "Value is not supported.";
+    default:
+      return "Invalid input.";
+  }
+}
 
-export const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
+function sanitizeZodError(error: ZodError<Record<string, unknown>>) {
+  const formErrors: string[] = [];
+  const fieldErrors: Record<string, string[]> = {};
+  for (const issue of error.issues) {
+    const message = safeZodMessage(issue.code);
+    const path = issue.path.map(String).join(".");
+    if (!path) {
+      formErrors.push(message);
+      continue;
+    }
+    const messages = fieldErrors[path] ?? [];
+    messages.push(message);
+    fieldErrors[path] = messages;
+  }
+  return {
+    formErrors,
+    fieldErrors,
+  };
+}
+
+export const createTRPCRouter = t.router;
+const telemetryProcedure = t.procedure.use(async ({ path, type, next }) => {
+  const startedAt = Date.now();
+  try {
+    const result = await next();
+    const error = result.ok ? undefined : result.error;
+    captureApiProcedureMetric({
+      procedure_group: normalizeTelemetryProcedureGroup(path),
+      procedure_type: normalizeTelemetryProcedureType(type),
+      outcome: result.ok ? "success" : normalizeTelemetryOutcome(error),
+      error_code: error ? getErrorCode(error) : "UNKNOWN",
+      duration_bucket: bucketTelemetryDuration(Date.now() - startedAt),
+    });
+    return result;
+  } catch (error) {
+    captureApiProcedureMetric({
+      procedure_group: normalizeTelemetryProcedureGroup(path),
+      procedure_type: normalizeTelemetryProcedureType(type),
+      outcome: normalizeTelemetryOutcome(error),
+      error_code: getErrorCode(error),
+      duration_bucket: bucketTelemetryDuration(Date.now() - startedAt),
+    });
+    throw error;
+  }
+});
+
+export const publicProcedure = telemetryProcedure.use(async ({ ctx, next }) => {
+  if (ctx.trpcSource === "http" && !hasCurrentContractEpoch(ctx.headers)) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: "Client contract epoch is unsupported",
+    });
+  }
+
+  const rateLimit = await checkApiRateLimit(ctx);
+
+  if (!rateLimit.allowed) {
+    throw new TRPCError({
+      code: "TOO_MANY_REQUESTS",
+      message: `Rate limit exceeded. Retry after ${rateLimit.retryAfterSeconds} seconds.`,
+    });
+  }
+
+  return next();
+});
+
+export const protectedProcedure = publicProcedure.use(async ({ ctx, next }) => {
   if (!ctx.session?.user) {
     throw new TRPCError({ code: "UNAUTHORIZED" });
   }
