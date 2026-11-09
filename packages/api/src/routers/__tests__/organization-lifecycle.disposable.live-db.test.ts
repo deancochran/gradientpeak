@@ -67,7 +67,7 @@ async function staff(
 }
 
 describe("organization lifecycle API against a disposable migrated PostgreSQL database", () => {
-  it("lists only current metadata and delegates terminal transitions to durable commands", async () => {
+  it("lists only current metadata, blocks unprepared staff offboarding, and preserves other terminal commands", async () => {
     await withDisposableDatabase(
       ["--disposable", "--local"],
       "organization_lifecycle",
@@ -374,29 +374,34 @@ describe("organization lifecycle API against a disposable migrated PostgreSQL da
               reason: "administrative_end",
               correlationId: membershipCorrelation,
             }),
-          ).resolves.toEqual({ membershipId: coachMembershipId, status: "ended" });
-          await expect(
-            ownerCaller.lifecycle.endMembership({
-              organizationId,
-              membershipId: coachMembershipId,
-              reason: "administrative_end",
-              correlationId: membershipCorrelation,
-            }),
-          ).resolves.toEqual({ membershipId: coachMembershipId, status: "ended" });
+          ).rejects.toMatchObject({
+            code: "PRECONDITION_FAILED",
+            message: "Organization lifecycle request could not be completed",
+          });
           await expect(
             client.db
-              .select({ endedAt: coachingAssignments.ended_at })
-              .from(coachingAssignments)
-              .where(eq(coachingAssignments.coach_membership_id, coachMembershipId)),
-          ).resolves.toEqual(
-            expect.arrayContaining([expect.objectContaining({ endedAt: expect.any(Date) })]),
-          );
+              .select({ endedAt: organizationMemberships.ended_at })
+              .from(organizationMemberships)
+              .where(eq(organizationMemberships.id, coachMembershipId)),
+          ).resolves.toEqual([{ endedAt: null }]);
+          await expect(
+            client.db
+              .select({ revokedAt: organizationMembershipRoleGrants.revoked_at })
+              .from(organizationMembershipRoleGrants)
+              .where(eq(organizationMembershipRoleGrants.membership_id, coachMembershipId)),
+          ).resolves.toEqual([{ revokedAt: null }]);
+          const coachAssignments = await client.db
+            .select({ endedAt: coachingAssignments.ended_at })
+            .from(coachingAssignments)
+            .where(eq(coachingAssignments.coach_membership_id, coachMembershipId));
+          expect(coachAssignments).not.toHaveLength(0);
+          expect(coachAssignments.every((assignment) => assignment.endedAt === null)).toBe(true);
           await expect(
             client.db
               .select({ id: organizationAuditEvents.id })
               .from(organizationAuditEvents)
               .where(eq(organizationAuditEvents.correlation_id, membershipCorrelation)),
-          ).resolves.toHaveLength(1);
+          ).resolves.toHaveLength(0);
 
           await client.db
             .update(organizationMembershipRoleGrants)

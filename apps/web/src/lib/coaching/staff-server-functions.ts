@@ -12,13 +12,12 @@ const staffPageInputSchema = z
     cursor: z.string().uuid().nullable(),
   })
   .strict();
-
-const endMembershipInputSchema = z
+const staffOffboardingImpactInputSchema = z
   .object({
     organizationId: organizationIdSchema,
     membershipId: z.string().uuid(),
-    reason: z.literal("staff_departure"),
-    correlationId: z.string().uuid(),
+    limit: z.number().int().min(1).max(50),
+    cursor: z.string().uuid().nullable(),
   })
   .strict();
 
@@ -83,18 +82,16 @@ export const loadOrganizationStaff = createServerFn({ method: "POST" })
     }
   });
 
-/** The API validates current authorization and terminal-operation idempotency. */
-export const endOrganizationStaffMembership = createServerFn({ method: "POST" })
-  .validator((input: unknown) => endMembershipInputSchema.parse(input))
+/** A read-only, organization-bound handover preparation request. */
+export const loadOrganizationStaffOffboardingImpact = createServerFn({ method: "POST" })
+  .validator((input: unknown) => staffOffboardingImpactInputSchema.parse(input))
   .handler(async ({ data }) => {
     const caller = await createRequestApiCaller();
     try {
-      return {
-        status: "ended" as const,
-        result: await caller.organizations.lifecycle.endMembership(data),
-      };
+      const impact = await caller.organizations.lifecycle.staff.offboardingImpact(data);
+      return { status: "granted" as const, impact };
     } catch (error) {
-      if (isAccessLostError(error)) return { status: "access_lost" as const };
+      if (isAccessLostError(error)) return { status: "forbidden" as const };
       throw error;
     }
   });

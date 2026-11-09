@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   invalidate: vi.fn(),
@@ -9,9 +9,14 @@ const mocks = vi.hoisted(() => ({
   resume: vi.fn(),
   grant: vi.fn(),
   revoke: vi.fn(),
+  offboardingImpact: vi.fn(),
 }));
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children }: { children: ReactNode }) => <a href="/staff">{children}</a>,
+  Link: ({ children, className }: { children: ReactNode; className?: string }) => (
+    <a href="/staff" className={className}>
+      {children}
+    </a>
+  ),
   useRouter: () => ({ invalidate: mocks.invalidate }),
 }));
 vi.mock("../../../lib/coaching/staff-server-functions", () => ({
@@ -19,6 +24,7 @@ vi.mock("../../../lib/coaching/staff-server-functions", () => ({
   resumeOrganizationStaffMembership: mocks.resume,
   grantOrganizationStaffRole: mocks.grant,
   revokeOrganizationStaffRole: mocks.revoke,
+  loadOrganizationStaffOffboardingImpact: mocks.offboardingImpact,
 }));
 
 import { StaffRoster } from "./staff-roster";
@@ -44,12 +50,149 @@ const page = { items: [member], nextCursor: null, hasMore: false };
 const renderRoster = (props: Partial<React.ComponentProps<typeof StaffRoster>> = {}) =>
   render(<StaffRoster organizationId={organizationId} page={page} status="active" {...props} />);
 
-afterEach(() => {
-  cleanup();
+beforeEach(() => {
   vi.clearAllMocks();
+  mocks.offboardingImpact.mockResolvedValue({
+    status: "granted",
+    impact: {
+      target: {
+        membershipId: member.membershipId,
+        identity: member.identity,
+        offboarding: { eligible: true, reason: null },
+      },
+      assignedAthleteCount: 1,
+      assignedAthletes: [
+        {
+          engagementId: "55555555-5555-4555-8555-555555555555",
+          profileId: "profile-athlete",
+          displayName: "Avery Athlete",
+          username: "avery",
+          assignmentKinds: ["primary"],
+        },
+      ],
+      nextCursor: null,
+      hasMore: false,
+      resourceInventory: { status: "unavailable" },
+    },
+  });
 });
+afterEach(cleanup);
 
 describe("StaffRoster suspension", () => {
+  it("loads a read-only impact preview without offering a terminal membership mutation", async () => {
+    renderRoster();
+    fireEvent.click(screen.getByRole("button", { name: "Review offboarding impact" }));
+    expect(screen.getByRole("status").textContent).toMatch(/loading offboarding impact/i);
+    await waitFor(() =>
+      expect(screen.getByRole("alertdialog").textContent).toContain(
+        "Casey Coach has 1 assigned athlete",
+      ),
+    );
+    expect(screen.getByText(/Avery Athlete — primary/)).toBeTruthy();
+    expect(screen.getByText(/resources are unavailable and have not been assessed/i)).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: /end membership|confirm offboarding/i }),
+    ).toBeNull();
+    expect(mocks.offboardingImpact).toHaveBeenCalledWith({
+      data: { organizationId, membershipId: member.membershipId, limit: 20, cursor: null },
+    });
+  });
+
+  it("keeps roster entry controls readable against the dark staff surface", () => {
+    renderRoster();
+    expect(screen.getByRole("button", { name: "Review offboarding impact" }).className).toContain(
+      "bg-slate-950",
+    );
+    expect(screen.getByRole("button", { name: "Revoke admin" }).className).toContain(
+      "border-slate-600",
+    );
+    expect(screen.getByRole("link", { name: "Suspended" }).className).toContain("bg-slate-950");
+    expect(screen.getByRole("link", { name: "Active" }).className).toContain("bg-cyan-500");
+  });
+
+  it("shows protected offboarding reasoning and suppresses stale impact results after scope changes", async () => {
+    let resolveImpact: ((value: unknown) => void) | undefined;
+    mocks.offboardingImpact.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveImpact = resolve;
+        }),
+    );
+    const view = renderRoster({
+      page: {
+        ...page,
+        items: [
+          {
+            ...member,
+            endMembership: { eligible: false, reason: "root_owner" },
+          },
+        ],
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review offboarding impact" }));
+    view.rerender(
+      <StaffRoster
+        organizationId="44444444-4444-4444-8444-444444444444"
+        page={{ items: [], nextCursor: null, hasMore: false }}
+        status="active"
+      />,
+    );
+    resolveImpact?.({
+      status: "granted",
+      impact: {
+        target: {
+          membershipId: member.membershipId,
+          identity: member.identity,
+          offboarding: { eligible: false, reason: "root_owner" },
+        },
+        assignedAthleteCount: 1,
+        assignedAthletes: [],
+        nextCursor: null,
+        hasMore: false,
+        resourceInventory: { status: "unavailable" },
+      },
+    });
+    await Promise.resolve();
+    expect(screen.queryByText(/root-owner membership cannot/i)).toBeNull();
+  });
+
+  it("offers a generic retry after an impact-preview failure", async () => {
+    mocks.offboardingImpact.mockRejectedValueOnce(new Error("network"));
+    renderRoster();
+    fireEvent.click(screen.getByRole("button", { name: "Review offboarding impact" }));
+    await waitFor(() =>
+      expect(screen.getByText(/could not load the offboarding impact/i)).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(mocks.offboardingImpact).toHaveBeenCalledTimes(2));
+  });
+
+  it("explains a protected root-owner membership without offering an offboarding command", async () => {
+    mocks.offboardingImpact.mockResolvedValueOnce({
+      status: "granted",
+      impact: {
+        target: {
+          membershipId: member.membershipId,
+          identity: member.identity,
+          offboarding: { eligible: false, reason: "root_owner" },
+        },
+        assignedAthleteCount: 0,
+        assignedAthletes: [],
+        nextCursor: null,
+        hasMore: false,
+        resourceInventory: { status: "unavailable" },
+      },
+    });
+    renderRoster();
+    fireEvent.click(screen.getByRole("button", { name: "Review offboarding impact" }));
+    await waitFor(() =>
+      expect(screen.getByText("The root-owner membership cannot be offboarded.")).toBeTruthy(),
+    );
+    expect(
+      screen.queryByRole("button", { name: /end membership|confirm offboarding/i }),
+    ).toBeNull();
+  });
+
   it("submits an explicit reason and refreshes after a successful suspension", async () => {
     mocks.suspend.mockImplementation(
       async ({ data }: { data: { membershipId: string; operationId: string } }) => ({

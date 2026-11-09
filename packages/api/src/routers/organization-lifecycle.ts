@@ -6,6 +6,7 @@ import {
   listAdministrativeAthleteRoster,
   listOrganizationStaff,
   OrganizationLifecycleError,
+  previewStaffOffboardingImpact,
   readAdministrativeOperationalOverview,
   withdrawAthleteConsent,
 } from "../application/organizations/manage-organization-lifecycle";
@@ -75,6 +76,37 @@ const staffSuspensionOutput = z
     status: z.enum(["suspended", "resumed"]),
   })
   .strict();
+const staffOffboardingImpact = z
+  .object({
+    target: z
+      .object({
+        membershipId: z.string().uuid(),
+        identity,
+        offboarding: z
+          .object({
+            eligible: z.boolean(),
+            reason: z.enum(["self", "root_owner", "admin_target"]).nullable(),
+          })
+          .strict(),
+      })
+      .strict(),
+    assignedAthleteCount: z.number().int().nonnegative(),
+    assignedAthletes: z.array(
+      z
+        .object({
+          engagementId: z.string().uuid(),
+          profileId: z.string().uuid(),
+          displayName: z.string().nullable(),
+          username: z.string().nullable(),
+          assignmentKinds: z.array(z.enum(["primary", "supporting"])),
+        })
+        .strict(),
+    ),
+    nextCursor: z.string().uuid().nullable(),
+    hasMore: z.boolean(),
+    resourceInventory: z.object({ status: z.literal("unavailable") }).strict(),
+  })
+  .strict();
 const operationalOverviewOutput = z
   .object({
     activeStaff: z.number().int().nonnegative(),
@@ -105,7 +137,9 @@ function fail(error: unknown): never {
             ? "BAD_REQUEST"
             : error.reason === "conflict"
               ? "CONFLICT"
-              : "FORBIDDEN",
+              : error.reason === "unavailable"
+                ? "PRECONDITION_FAILED"
+                : "FORBIDDEN",
       message: "Organization lifecycle request could not be completed",
       cause: error,
     });
@@ -131,6 +165,23 @@ export const organizationLifecycleRouter = createTRPCRouter({
       ),
     ),
   staff: createTRPCRouter({
+    offboardingImpact: protectedProcedure
+      .input(
+        z
+          .object({ organizationId: z.string().uuid(), membershipId: z.string().uuid() })
+          .merge(pageInput)
+          .strict(),
+      )
+      .output(staffOffboardingImpact)
+      .query(({ ctx, input }) =>
+        run(
+          previewStaffOffboardingImpact({
+            db: getRequiredDb(ctx),
+            actorProfileId: ctx.session.user.id,
+            ...input,
+          }),
+        ),
+      ),
     list: protectedProcedure
       .input(organizationPageInput)
       .output(
