@@ -146,9 +146,9 @@
       "specs/capability-p3-settings-coaching.spec.ts::settings.profile:unsaved-reload",
       "specs/capability-p3-settings-coaching.spec.ts::settings.profile:keyboard-save"
     ],
-    "specs/capability-p3-settings-coaching.spec.ts::coaching.view-dashboard opens an authorized organization dashboard": [
-      "specs/capability-p3-settings-coaching.spec.ts::coaching.dashboard:narrow-history",
-      "specs/capability-p3-settings-coaching.spec.ts::coaching.dashboard:revoked-role"
+    "specs/capability-p3-settings-coaching.spec.ts::coaching.view-assignment-facts opens a coach's scoped assignment facts": [
+      "specs/capability-p3-settings-coaching.spec.ts::coaching.assignment-facts:narrow-history",
+      "specs/capability-p3-settings-coaching.spec.ts::coaching.assignment-facts:revoked-role"
     ],
     "specs/feed-discovery.spec.ts::athlete refreshes and pages the persisted social activity feed": [
       "specs/feed-discovery-variations.spec.ts::feed.refresh:keyboard",

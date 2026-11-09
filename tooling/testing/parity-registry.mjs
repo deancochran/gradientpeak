@@ -98,7 +98,7 @@ const webTests = {
     path: "apps/web/e2e/specs/capability-p3-threshold-overview.spec.ts",
   },
   "coaching.workspace": {
-    identity: "coaching.view-dashboard opens an authorized organization dashboard",
+    identity: "coaching.view-assignment-facts opens a coach's scoped assignment facts",
     path: "apps/web/e2e/specs/capability-p3-settings-coaching.spec.ts",
   },
   "coaching.invitation-response": {
