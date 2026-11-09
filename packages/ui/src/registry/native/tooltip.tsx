@@ -4,6 +4,7 @@ import { Platform, StyleSheet } from "react-native";
 import { FadeInDown, FadeInUp, FadeOut } from "react-native-reanimated";
 import { FullWindowOverlay as RNFullWindowOverlay } from "react-native-screens";
 import { cn } from "../../lib/cn";
+import { omitUndefined } from "../../lib/omit-undefined";
 import { NativeOnlyAnimatedView } from "./native-only-animated-view";
 import { TextClassContext } from "./text";
 
@@ -23,7 +24,7 @@ function TooltipContent({
   portalHost?: string;
 }) {
   return (
-    <TooltipPrimitive.Portal hostName={portalHost}>
+    <TooltipPrimitive.Portal {...omitUndefined({ hostName: portalHost })}>
       <FullWindowOverlay>
         <TooltipPrimitive.Overlay style={Platform.select({ native: StyleSheet.absoluteFill })}>
           <NativeOnlyAnimatedView

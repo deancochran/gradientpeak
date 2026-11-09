@@ -8,9 +8,13 @@ import { Badge } from "@repo/ui/components/badge";
 import { Text } from "@repo/ui/components/text";
 import { cn } from "@repo/ui/lib/cn";
 import { Stack } from "expo-router";
-import { ActivityIndicator, FlatList, Pressable, View } from "react-native";
+import { FlatList, Pressable, View } from "react-native";
+import { HeaderTextAction } from "@/components/shared/HeaderAction";
+import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
+import { omitUndefined } from "@/lib/omitUndefined";
+import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
 import { formatRelativeTime } from "@/lib/utils";
 
 // Type for conversation with message data (returned from getConversations query)
@@ -47,6 +51,9 @@ function ConversationItem({
   const name = getConversationDisplayName(conversation);
   const unreadCount = conversation.unread_count || 0;
   const isUnread = unreadCount > 0;
+  const avatarUri = conversation.peer_profile?.avatar_url
+    ? getReachableSupabaseStorageUrl(conversation.peer_profile.avatar_url)
+    : null;
   const subtitle = conversation.is_group
     ? conversation.group_name
       ? "Group conversation"
@@ -63,9 +70,7 @@ function ConversationItem({
     >
       <View className="flex-row items-center gap-3">
         <Avatar alt={name} className="h-11 w-11">
-          {conversation.peer_profile?.avatar_url ? (
-            <AvatarImage source={{ uri: conversation.peer_profile.avatar_url }} />
-          ) : null}
+          {avatarUri ? <AvatarImage key={avatarUri} source={{ uri: avatarUri }} /> : null}
           <AvatarFallback>
             <Text>{getConversationInitials(conversation)}</Text>
           </AvatarFallback>
@@ -135,19 +140,18 @@ export default function MessagesScreen() {
         options={{
           title: "Messages",
           headerRight: () => (
-            <Pressable
-              onPress={() => navigateTo("/messages/new" as any)}
-              className="mr-2 rounded-full px-2 py-1"
+            <HeaderTextAction
+              accessibilityLabel="New message"
+              label="New Message"
+              onPress={() => navigateTo("/messages/new")}
               testID="messages-new-trigger"
-            >
-              <Text className="text-sm font-medium text-primary">New Message</Text>
-            </Pressable>
+            />
           ),
         }}
       />
       {isLoading ? (
         <View className="flex-1 items-center justify-center" testID="messages-loading-state">
-          <ActivityIndicator size="large" className="text-muted-foreground" />
+          <LoadingState message="Loading messages..." />
         </View>
       ) : (
         <FlatList
@@ -168,20 +172,22 @@ export default function MessagesScreen() {
           }
           renderItem={({ item }) => (
             <ConversationItem
-              conversation={item}
+              conversation={omitUndefined({
+                ...item,
+                last_message: item.last_message ? omitUndefined(item.last_message) : null,
+                peer_profile: item.peer_profile
+                  ? { ...omitUndefined(item.peer_profile), id: item.peer_profile.id }
+                  : null,
+              })}
               onPress={() => navigateTo(`/messages/${item.id}`)}
             />
           )}
           ListEmptyComponent={
-            <View
-              className="flex-1 items-center justify-center py-12"
+            <EmptyState
+              description="Your conversations will appear here once you start messaging."
               testID="messages-empty-state"
-            >
-              <Text className="text-base font-medium text-foreground">No conversations yet</Text>
-              <Text className="mt-2 text-center text-sm text-muted-foreground">
-                Your conversations will appear here once you start messaging.
-              </Text>
-            </View>
+              title="No conversations yet"
+            />
           }
         />
       )}

@@ -1,34 +1,48 @@
+export * from "./activity-plan-draft-metrics";
 export * from "./activity-plan-planning-estimate";
-export * from "./adjustments";
+export * from "./activityPlanProviderReadiness";
+export * from "./analysisWindow";
+export * from "./athlete-state-simulation";
 export * from "./athletePlanningContext";
 export * from "./availabilityUtils";
 export * from "./buildProjectionEngineInput";
-export * from "./canonicalization";
+export * from "./canonicalTrainingPlanProjection";
 export * from "./classifyCreationFeasibility";
 export * from "./compositeCalibration";
 export * from "./computeLoadBootstrapState";
+export * from "./dailyLoadDistribution";
+export * from "./dailyLoadRecommendation";
 export * from "./dailyTrainingAdjustmentSeries";
 export * from "./dateOnlyUtc";
 export * from "./deriveCreationContext";
-export * from "./deriveCreationSuggestions";
 export * from "./derivePlanTimeline";
-export * from "./formValidation";
 export * from "./goalAnchoredProjectionPlan";
 export * from "./goalPriorityWeighting";
+export * from "./goalProjectionInput";
 export * from "./goalReadinessTrajectory";
 export * from "./goalReadinessViewModel";
 export * from "./materializePlanToEvents";
 export * from "./normalizeCreationConfig";
 export * from "./normalizeGoalInput";
 export * from "./periodization";
-export * from "./planningBackendPreview";
-export * from "./planningCanonicalStructure";
-export * from "./planningContext";
+export * from "./periodReview";
+export * from "./planned-day-summary";
+export * from "./planned-estimate";
 export * from "./planningGoals";
-export * from "./planningPreferences";
-export * from "./planningProjection";
 export * from "./planningSchedule";
-export * from "./planningSessions";
+export {
+  applyEstimatedSessionActivityFacts,
+  type EstimatedPlannedTrainingSession,
+  estimatedPlannedTrainingSessionSchema,
+  type PlannedTrainingActivityPlanFacts,
+  type PlannedTrainingEventOverrides,
+  type PlannedTrainingSession,
+  plannedTrainingActivityPlanFactsSchema,
+  plannedTrainingEventOverridesSchema,
+  plannedTrainingSessionSchema,
+  type SessionDemand,
+} from "./planningSessions";
+export * from "./prescriptionResolution";
 export * from "./projection/effective-controls";
 export {
   type BuildDeterministicProjectionInput,
@@ -48,6 +62,7 @@ export * from "./projection/mpc/tiebreak";
 export * from "./projection/no-history";
 export * from "./projection/safety-caps";
 export * from "./projectionCalculations";
+export * from "./projectionPreviewDiagnostics";
 export * from "./projectionTypes";
 export * from "./ramp-learning";
 export * from "./readinessForecast";
@@ -57,18 +72,19 @@ export * from "./scoring/gdi";
 export * from "./scoring/goalScore";
 export * from "./scoring/planScore";
 export * from "./scoring/targetSatisfaction";
+export * from "./thresholdGoalProgress";
+export * from "./training-plan-schedule-visual";
 export * from "./trainingLoadTimeline";
-export * from "./trainingPlanCreationPreview";
-export * from "./trainingPlanCreationValidation";
-export * from "./trainingPlanPreview";
-export * from "./trainingPlanSchedulingPreview";
-export * from "./trainingPlanStructureProposal";
+export * from "./trainingPlanPreferences";
+export * from "./trainingPreferenceCatalog";
+export * from "./trainingPrescription";
 export * from "./trainingSettingsDefaults";
 export * from "./verification/activityTemplateCatalog";
 export * from "./verification/activityTemplateCoverageMatrix";
 export * from "./verification/aggregateWeeklyPlannedLoad";
 export * from "./verification/assertCoachingInvariants";
 export * from "./verification/comparePlanLoadToHeuristic";
-export * from "./verification/materializeSystemPlanLoad";
 export * from "./verification/systemPlanAudit";
 export * from "./verification/trainingPlanTemplateVariety";
+export * from "./week-editing";
+export * from "./weeklyAllocation";

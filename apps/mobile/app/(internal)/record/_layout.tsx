@@ -55,13 +55,6 @@ export default function RecordLayout() {
         }}
       />
       <Stack.Screen
-        name="plan"
-        options={{
-          title: "Select Activity Plan",
-          gestureEnabled: true,
-        }}
-      />
-      <Stack.Screen
         name="submit"
         options={{
           title: "Submit Activity",

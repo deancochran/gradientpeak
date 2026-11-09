@@ -27,8 +27,8 @@ describe("computeEventRecoveryProfile - Race Performance", () => {
         RACE_PRESETS["5K"].distance,
         RACE_PRESETS["5K"].times.moderate,
       ),
-      projected_ctl_at_event: 50,
-      projected_atl_at_event: 48,
+      projected_longTermLoad_at_event: 50,
+      projected_recentLoad_at_event: 48,
     };
 
     const profile = computeEventRecoveryProfile(input);
@@ -48,8 +48,8 @@ describe("computeEventRecoveryProfile - Race Performance", () => {
         RACE_PRESETS.half_marathon.distance,
         RACE_PRESETS.half_marathon.times.moderate,
       ),
-      projected_ctl_at_event: 50,
-      projected_atl_at_event: 48,
+      projected_longTermLoad_at_event: 50,
+      projected_recentLoad_at_event: 48,
     };
 
     const profile = computeEventRecoveryProfile(input);
@@ -69,8 +69,8 @@ describe("computeEventRecoveryProfile - Race Performance", () => {
         RACE_PRESETS.marathon.distance,
         RACE_PRESETS.marathon.times.moderate,
       ),
-      projected_ctl_at_event: 50,
-      projected_atl_at_event: 48,
+      projected_longTermLoad_at_event: 50,
+      projected_recentLoad_at_event: 48,
     };
 
     const profile = computeEventRecoveryProfile(input);
@@ -90,8 +90,8 @@ describe("computeEventRecoveryProfile - Race Performance", () => {
         RACE_PRESETS["50K"].distance,
         RACE_PRESETS["50K"].times.moderate,
       ),
-      projected_ctl_at_event: 50,
-      projected_atl_at_event: 48,
+      projected_longTermLoad_at_event: 50,
+      projected_recentLoad_at_event: 48,
     };
 
     const profile = computeEventRecoveryProfile(input);
@@ -111,8 +111,8 @@ describe("computeEventRecoveryProfile - Race Performance", () => {
         RACE_PRESETS["100_mile"].distance,
         RACE_PRESETS["100_mile"].times.moderate,
       ),
-      projected_ctl_at_event: 50,
-      projected_atl_at_event: 48,
+      projected_longTermLoad_at_event: 50,
+      projected_recentLoad_at_event: 48,
     };
 
     const profile = computeEventRecoveryProfile(input);
@@ -132,8 +132,8 @@ describe("computeEventRecoveryProfile - Race Performance", () => {
         RACE_PRESETS.marathon.distance,
         RACE_PRESETS.marathon.times.moderate,
       ),
-      projected_ctl_at_event: 50,
-      projected_atl_at_event: 48,
+      projected_longTermLoad_at_event: 50,
+      projected_recentLoad_at_event: 48,
     };
 
     const bikeInput: EventRecoveryInput = {
@@ -142,8 +142,8 @@ describe("computeEventRecoveryProfile - Race Performance", () => {
         RACE_PRESETS.marathon.distance,
         RACE_PRESETS.marathon.times.moderate,
       ),
-      projected_ctl_at_event: 50,
-      projected_atl_at_event: 48,
+      projected_longTermLoad_at_event: 50,
+      projected_recentLoad_at_event: 48,
     };
 
     const runProfile = computeEventRecoveryProfile(runInput);
@@ -153,15 +153,15 @@ describe("computeEventRecoveryProfile - Race Performance", () => {
     expect(bikeProfile.fatigue_intensity).toBeLessThan(runProfile.fatigue_intensity);
   });
 
-  it("ATL spike factor should increase with duration", () => {
+  it("RecentLoad spike factor should increase with duration", () => {
     const fiveKInput: EventRecoveryInput = {
       target: createRaceTarget(
         "run",
         RACE_PRESETS["5K"].distance,
         RACE_PRESETS["5K"].times.moderate,
       ),
-      projected_ctl_at_event: 50,
-      projected_atl_at_event: 48,
+      projected_longTermLoad_at_event: 50,
+      projected_recentLoad_at_event: 48,
     };
 
     const marathonInput: EventRecoveryInput = {
@@ -170,16 +170,18 @@ describe("computeEventRecoveryProfile - Race Performance", () => {
         RACE_PRESETS.marathon.distance,
         RACE_PRESETS.marathon.times.moderate,
       ),
-      projected_ctl_at_event: 50,
-      projected_atl_at_event: 48,
+      projected_longTermLoad_at_event: 50,
+      projected_recentLoad_at_event: 48,
     };
 
     const fiveKProfile = computeEventRecoveryProfile(fiveKInput);
     const marathonProfile = computeEventRecoveryProfile(marathonInput);
 
-    // Longer events cause bigger ATL spikes
-    expect(marathonProfile.atl_spike_factor).toBeGreaterThan(fiveKProfile.atl_spike_factor);
-    expect(marathonProfile.atl_spike_factor).toBeLessThanOrEqual(2.5);
+    // Longer events cause bigger RecentLoad spikes
+    expect(marathonProfile.recentLoad_spike_factor).toBeGreaterThan(
+      fiveKProfile.recentLoad_spike_factor,
+    );
+    expect(marathonProfile.recentLoad_spike_factor).toBeLessThanOrEqual(2.5);
   });
 });
 
@@ -187,8 +189,8 @@ describe("computeEventRecoveryProfile - Threshold Tests", () => {
   it("pace threshold test should have moderate recovery (3-5 days)", () => {
     const input: EventRecoveryInput = {
       target: createPaceThresholdTarget("run", 4.0, 1200), // 20-minute test
-      projected_ctl_at_event: 50,
-      projected_atl_at_event: 48,
+      projected_longTermLoad_at_event: 50,
+      projected_recentLoad_at_event: 48,
     };
 
     const profile = computeEventRecoveryProfile(input);
@@ -202,8 +204,8 @@ describe("computeEventRecoveryProfile - Threshold Tests", () => {
   it("HR threshold test should have minimal recovery (3 days)", () => {
     const input: EventRecoveryInput = {
       target: createHrThresholdTarget(165),
-      projected_ctl_at_event: 50,
-      projected_atl_at_event: 48,
+      projected_longTermLoad_at_event: 50,
+      projected_recentLoad_at_event: 48,
     };
 
     const profile = computeEventRecoveryProfile(input);
@@ -218,14 +220,14 @@ describe("computeEventRecoveryProfile - Threshold Tests", () => {
   it("keeps gender recovery effects bounded for threshold work", () => {
     const male = computeEventRecoveryProfile({
       target: createPaceThresholdTarget("run", 4.0, 1200),
-      projected_ctl_at_event: 50,
-      projected_atl_at_event: 48,
+      projected_longTermLoad_at_event: 50,
+      projected_recentLoad_at_event: 48,
       athlete_gender: "male",
     });
     const female = computeEventRecoveryProfile({
       target: createPaceThresholdTarget("run", 4.0, 1200),
-      projected_ctl_at_event: 50,
-      projected_atl_at_event: 48,
+      projected_longTermLoad_at_event: 50,
+      projected_recentLoad_at_event: 48,
       athlete_gender: "female",
     });
 
@@ -248,8 +250,8 @@ describe("computePostEventFatiguePenalty", () => {
             RACE_PRESETS.marathon.times.moderate,
           ),
         ],
-        projected_ctl: 65,
-        projected_atl: 60,
+        projected_longTermLoad: 65,
+        projected_recentLoad: 60,
       },
     };
 
@@ -270,8 +272,8 @@ describe("computePostEventFatiguePenalty", () => {
             RACE_PRESETS.marathon.times.moderate,
           ),
         ],
-        projected_ctl: 65,
-        projected_atl: 60,
+        projected_longTermLoad: 65,
+        projected_recentLoad: 60,
       },
     };
 
@@ -292,8 +294,8 @@ describe("computePostEventFatiguePenalty", () => {
             RACE_PRESETS.marathon.times.moderate,
           ),
         ],
-        projected_ctl: 65,
-        projected_atl: 60,
+        projected_longTermLoad: 65,
+        projected_recentLoad: 60,
       },
     };
 
@@ -315,8 +317,8 @@ describe("computePostEventFatiguePenalty", () => {
             RACE_PRESETS.marathon.times.moderate,
           ),
         ],
-        projected_ctl: 65,
-        projected_atl: 60,
+        projected_longTermLoad: 65,
+        projected_recentLoad: 60,
       },
     };
 
@@ -338,8 +340,8 @@ describe("computePostEventFatiguePenalty", () => {
             RACE_PRESETS.marathon.times.moderate,
           ),
         ],
-        projected_ctl: 65,
-        projected_atl: 60,
+        projected_longTermLoad: 65,
+        projected_recentLoad: 60,
       },
     };
 
@@ -361,8 +363,8 @@ describe("computePostEventFatiguePenalty", () => {
             RACE_PRESETS.marathon.times.moderate,
           ),
         ],
-        projected_ctl: 65,
-        projected_atl: 60,
+        projected_longTermLoad: 65,
+        projected_recentLoad: 60,
       },
     };
 
@@ -377,8 +379,8 @@ describe("computePostEventFatiguePenalty", () => {
       eventGoal: {
         target_date: "2026-03-14",
         targets: [],
-        projected_ctl: 65,
-        projected_atl: 60,
+        projected_longTermLoad: 65,
+        projected_recentLoad: 60,
       },
     };
 
@@ -386,10 +388,10 @@ describe("computePostEventFatiguePenalty", () => {
     expect(penalty).toBe(0);
   });
 
-  it("should increase penalty when ATL > CTL (overload)", () => {
+  it("should increase penalty when RecentLoad > LongTermLoad (overload)", () => {
     const normalInput: PostEventFatigueInput = {
       currentDate: "2026-03-15",
-      currentPoint: createMockProjectionPoint("2026-03-15", 65, 60, 5), // ATL < CTL
+      currentPoint: createMockProjectionPoint("2026-03-15", 65, 60, 5), // RecentLoad < LongTermLoad
       eventGoal: {
         target_date: "2026-03-14",
         targets: [
@@ -399,14 +401,14 @@ describe("computePostEventFatiguePenalty", () => {
             RACE_PRESETS.marathon.times.moderate,
           ),
         ],
-        projected_ctl: 65,
-        projected_atl: 60,
+        projected_longTermLoad: 65,
+        projected_recentLoad: 60,
       },
     };
 
     const overloadInput: PostEventFatigueInput = {
       currentDate: "2026-03-15",
-      currentPoint: createMockProjectionPoint("2026-03-15", 65, 75, -10), // ATL > CTL
+      currentPoint: createMockProjectionPoint("2026-03-15", 65, 75, -10), // RecentLoad > LongTermLoad
       eventGoal: {
         target_date: "2026-03-14",
         targets: [
@@ -416,8 +418,8 @@ describe("computePostEventFatiguePenalty", () => {
             RACE_PRESETS.marathon.times.moderate,
           ),
         ],
-        projected_ctl: 65,
-        projected_atl: 60,
+        projected_longTermLoad: 65,
+        projected_recentLoad: 60,
       },
     };
 
@@ -429,7 +431,7 @@ describe("computePostEventFatiguePenalty", () => {
   });
 
   it("should cap penalty at 60%", () => {
-    // Extreme scenario: very high ATL overload immediately after ultra
+    // Extreme scenario: very high RecentLoad overload immediately after ultra
     const input: PostEventFatigueInput = {
       currentDate: "2026-03-15",
       currentPoint: createMockProjectionPoint("2026-03-15", 50, 100, -50), // Extreme overload
@@ -442,8 +444,8 @@ describe("computePostEventFatiguePenalty", () => {
             RACE_PRESETS["100_mile"].times.moderate,
           ),
         ],
-        projected_ctl: 50,
-        projected_atl: 48,
+        projected_longTermLoad: 50,
+        projected_recentLoad: 48,
       },
     };
 
@@ -464,8 +466,8 @@ describe("computePostEventFatiguePenalty", () => {
             RACE_PRESETS.marathon.times.moderate,
           ),
         ],
-        projected_ctl: 65,
-        projected_atl: 60,
+        projected_longTermLoad: 65,
+        projected_recentLoad: 60,
       },
     };
 
@@ -495,8 +497,8 @@ describe("Event Recovery - Edge Cases", () => {
   it("should handle very short events (< 30 minutes)", () => {
     const input: EventRecoveryInput = {
       target: createRaceTarget("run", 3000, 600), // 3K in 10 minutes
-      projected_ctl_at_event: 50,
-      projected_atl_at_event: 48,
+      projected_longTermLoad_at_event: 50,
+      projected_recentLoad_at_event: 48,
     };
 
     const profile = computeEventRecoveryProfile(input);
@@ -509,8 +511,8 @@ describe("Event Recovery - Edge Cases", () => {
   it("should handle very long events (> 24 hours)", () => {
     const input: EventRecoveryInput = {
       target: createRaceTarget("run", 200000, 100800), // 200K in 28 hours
-      projected_ctl_at_event: 50,
-      projected_atl_at_event: 48,
+      projected_longTermLoad_at_event: 50,
+      projected_recentLoad_at_event: 48,
     };
 
     const profile = computeEventRecoveryProfile(input);
@@ -527,8 +529,8 @@ describe("Event Recovery - Edge Cases", () => {
         RACE_PRESETS.marathon.distance,
         RACE_PRESETS.marathon.times.moderate,
       ),
-      projected_ctl_at_event: 50,
-      projected_atl_at_event: 48,
+      projected_longTermLoad_at_event: 50,
+      projected_recentLoad_at_event: 48,
     };
 
     const profile1 = computeEventRecoveryProfile(input);
