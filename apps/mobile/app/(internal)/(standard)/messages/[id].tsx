@@ -7,11 +7,13 @@ import { Text } from "@repo/ui/components/text";
 import { cn } from "@repo/ui/lib/cn";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { Send } from "lucide-react-native";
-import React, { useState } from "react";
-import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, View } from "react-native";
+import React, { useRef, useState } from "react";
+import { FlatList, KeyboardAvoidingView, Platform, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
 
 function getInitials(name: string) {
   return name
@@ -65,6 +67,8 @@ function MessageBubble({
 export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [inputText, setInputText] = useState("");
+  const [sendError, setSendError] = useState<string | null>(null);
+  const sendInFlightRef = useRef(false);
   const insets = useSafeAreaInsets();
   const utils = api.useUtils();
   const { user } = useAuth();
@@ -75,7 +79,10 @@ export default function ChatScreen() {
   );
   const { data: conversations = [] } = api.messaging.getConversations.useQuery();
   const conversation = conversations.find((entry) => entry.id === id);
-  const conversationTitle = conversation ? getConversationDisplayName(conversation as any) : "Chat";
+  const avatarUri = conversation?.peer_profile?.avatar_url
+    ? getReachableSupabaseStorageUrl(conversation.peer_profile.avatar_url)
+    : null;
+  const conversationTitle = conversation ? getConversationDisplayName(conversation) : "Chat";
   const conversationSubtitle = conversation
     ? conversation.is_group
       ? conversation.group_name
@@ -99,18 +106,30 @@ export default function ChatScreen() {
   }, [id, markAsReadMutation.mutate, messages.length]);
 
   const sendMessageMutation = api.messaging.sendMessage.useMutation({
-    onSuccess: async () => {
-      setInputText("");
+    onSuccess: async (_message, variables) => {
+      if (inputText === variables.content) setInputText("");
       await invalidateConversationQueries(utils, id);
     },
+    onError: (error) =>
+      setSendError(error instanceof Error ? error.message : "Unable to send message"),
   });
 
   const handleSend = () => {
-    if (!inputText.trim()) return;
-    sendMessageMutation.mutate({
-      conversation_id: id,
-      content: inputText,
-    });
+    if (!inputText.trim() || sendInFlightRef.current) return;
+    const content = inputText.trim();
+    sendInFlightRef.current = true;
+    setSendError(null);
+    sendMessageMutation.mutate(
+      {
+        conversation_id: id,
+        content,
+      },
+      {
+        onSettled: () => {
+          sendInFlightRef.current = false;
+        },
+      },
+    );
   };
 
   return (
@@ -120,9 +139,7 @@ export default function ChatScreen() {
           headerTitle: () => (
             <View className="flex-row items-center gap-3">
               <Avatar alt={conversationTitle} className="h-9 w-9">
-                {conversation?.peer_profile?.avatar_url ? (
-                  <AvatarImage source={{ uri: conversation.peer_profile.avatar_url }} />
-                ) : null}
+                {avatarUri ? <AvatarImage key={avatarUri} source={{ uri: avatarUri }} /> : null}
                 <AvatarFallback>
                   <Text className="text-xs font-medium">{getInitials(conversationTitle)}</Text>
                 </AvatarFallback>
@@ -144,16 +161,17 @@ export default function ChatScreen() {
 
       {isLoading ? (
         <View className="flex-1 items-center justify-center" testID="message-thread-loading-state">
-          <ActivityIndicator size="large" className="text-muted-foreground" />
+          <LoadingState message="Loading conversation..." />
         </View>
       ) : messages.length === 0 ? (
         <View
           className="flex-1 items-center justify-center p-8"
           testID="message-thread-empty-state"
         >
-          <Text className="text-muted-foreground text-center">
-            No messages yet.{"\n"}Send a message to start the conversation!
-          </Text>
+          <EmptyState
+            description="Send a message to start the conversation."
+            title="No messages yet"
+          />
         </View>
       ) : (
         <FlatList
@@ -188,6 +206,8 @@ export default function ChatScreen() {
             className="flex-1 rounded-full bg-muted/40"
             testId="message-input"
             placeholder="Type a message..."
+            accessibilityLabel="Message"
+            editable={!sendMessageMutation.isPending}
             value={inputText}
             onChangeText={setInputText}
           />
@@ -201,6 +221,15 @@ export default function ChatScreen() {
             <Send size={20} className="text-primary-foreground" />
           </Button>
         </View>
+        {sendError ? (
+          <Text
+            accessibilityLiveRegion="assertive"
+            accessibilityRole="alert"
+            className="px-3 text-sm text-destructive"
+          >
+            {sendError}. Your message is still in the field.
+          </Text>
+        ) : null}
       </KeyboardAvoidingView>
     </View>
   );

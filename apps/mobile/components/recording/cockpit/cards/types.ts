@@ -1,13 +1,21 @@
 import type { RecordingSessionContract } from "@repo/core";
-import type { useCurrentReadings, usePlan, useSessionStats } from "@/lib/hooks/useActivityRecorder";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
+import type {
+  CurrentReadings,
+  RecordingPlanView,
+  SessionStats,
+} from "@/lib/services/ActivityRecorder/types";
 
 export interface InsightCardProps {
   mode: "compact" | "expanded";
-  readings: ReturnType<typeof useCurrentReadings>;
+  readings: CurrentReadings;
   sensorCount: number;
   sessionContract: RecordingSessionContract | null;
   service: ActivityRecorderService | null;
-  stats: ReturnType<typeof useSessionStats>;
-  plan: ReturnType<typeof usePlan>;
+  stats: SessionStats;
+  plan: RecordingPlanView & {
+    advance: () => void;
+    previous: () => void;
+    skip: () => void;
+  };
 }
