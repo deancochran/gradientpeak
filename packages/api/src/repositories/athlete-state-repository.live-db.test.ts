@@ -24,6 +24,8 @@ import {
   activityImportRuns,
   activitySegments,
   activitySourceReferences,
+  athleteRecalculationQueue,
+  dailyTrainingLoad,
   integrations,
   profileAthleteState,
   profileMetrics,
@@ -1192,18 +1194,42 @@ describe("athlete state persistence", () => {
         canonicalEvidenceMaterialChanged: true,
       });
     });
-    const initialResult = await new AthleteStateWorkerService({ db }).processDueJobs({
-      limit: 1,
-      now: beforeDue,
-    });
     const [initialState] = await db
-      .select({ failureCode: profileAthleteState.last_failure_code })
+      .select({
+        sourceRevision: profileAthleteState.source_revision,
+        publishedRevision: profileAthleteState.published_revision,
+        dirtyFromAt: profileAthleteState.dirty_from_at,
+        leaseToken: profileAthleteState.lease_token,
+        failureCode: profileAthleteState.last_failure_code,
+      })
       .from(profileAthleteState)
       .where(eq(profileAthleteState.profile_id, profileId));
-    expect({ result: initialResult, failureCode: initialState?.failureCode }).toEqual({
-      result: { completed: 1, failed: 0, processed: 1 },
+    const initialDailyLoads = await db
+      .select({
+        commonLoad: dailyTrainingLoad.common_load,
+        sourceRevision: dailyTrainingLoad.source_revision,
+      })
+      .from(dailyTrainingLoad)
+      .where(eq(dailyTrainingLoad.profile_id, profileId));
+    const initialQueue = await db
+      .select()
+      .from(athleteRecalculationQueue)
+      .where(eq(athleteRecalculationQueue.profile_id, profileId));
+    expect(initialState).toEqual({
+      sourceRevision: 1,
+      publishedRevision: 1,
+      dirtyFromAt: null,
+      leaseToken: null,
       failureCode: null,
     });
+    expect(initialDailyLoads).toEqual([
+      expect.objectContaining({ commonLoad: expect.any(Number), sourceRevision: 1 }),
+    ]);
+    expect(initialDailyLoads[0]?.commonLoad).toBeGreaterThan(0);
+    expect(initialQueue).toEqual([]);
+    await expect(
+      new AthleteStateWorkerService({ db }).processDueJobs({ limit: 1, now: beforeDue }),
+    ).resolves.toEqual({ completed: 0, failed: 0, processed: 0 });
 
     await db.transaction(async (tx) => {
       const [segment] = await tx
@@ -1260,13 +1286,53 @@ describe("athlete state persistence", () => {
       source_revision: 2,
       published_revision: 1,
       dirty_from_at: effortRecordedAt,
+      lease_token: null,
+      lease_expires_at: null,
     });
+    const pendingQueue = await db
+      .select()
+      .from(athleteRecalculationQueue)
+      .where(eq(athleteRecalculationQueue.profile_id, profileId));
+    expect(pendingQueue).toEqual([
+      expect.objectContaining({
+        profile_id: profileId,
+        source_revision: 2,
+        earliest_affected_at: effortRecordedAt,
+      }),
+    ]);
+    const pendingDailyLoads = await db
+      .select({
+        commonLoad: dailyTrainingLoad.common_load,
+        sourceRevision: dailyTrainingLoad.source_revision,
+      })
+      .from(dailyTrainingLoad)
+      .where(eq(dailyTrainingLoad.profile_id, profileId));
+    expect(pendingDailyLoads).toEqual(initialDailyLoads);
     await expect(
       new AthleteStateWorkerService({ db }).processDueJobs({
         limit: 1,
         now: new Date(beforeDue.getTime() + 6 * 60 * 60_000),
       }),
-    ).resolves.toEqual({ completed: 1, failed: 0, processed: 1 });
+    ).resolves.toEqual({ completed: 0, failed: 0, processed: 0 });
+    const [earlyState] = await db
+      .select()
+      .from(profileAthleteState)
+      .where(eq(profileAthleteState.profile_id, profileId));
+    expect(earlyState).toEqual(pending);
+    const earlyQueue = await db
+      .select()
+      .from(athleteRecalculationQueue)
+      .where(eq(athleteRecalculationQueue.profile_id, profileId));
+    expect(earlyQueue).toEqual(pendingQueue);
+    const earlyDailyLoads = await db
+      .select({
+        commonLoad: dailyTrainingLoad.common_load,
+        sourceRevision: dailyTrainingLoad.source_revision,
+      })
+      .from(dailyTrainingLoad)
+      .where(eq(dailyTrainingLoad.profile_id, profileId));
+    expect(earlyDailyLoads).toEqual(pendingDailyLoads);
+    expect(earlyDailyLoads[0]?.commonLoad).toBeGreaterThan(0);
     await expect(readPublishedReadModel(profileId, beforeDue)).resolves.toMatchObject({
       publishedRevision: 1,
       status: { freshness: "fresh", rebuildStatus: "fresh" },
@@ -1374,29 +1440,34 @@ describe("athlete state persistence", () => {
       dirty_from_at: activityFinishedAt,
       lease_token: null,
     });
+    const pendingQueue = await db
+      .select()
+      .from(athleteRecalculationQueue)
+      .where(eq(athleteRecalculationQueue.profile_id, profileId));
+    expect(pendingQueue).toEqual([
+      expect.objectContaining({
+        profile_id: profileId,
+        source_revision: 1,
+        earliest_affected_at: activityFinishedAt,
+      }),
+    ]);
     const afterEffortBeforeActivity = new Date(effortRecordedAt.getTime() + 60 * 60_000);
-    const earlyResult = await new AthleteStateWorkerService({ db }).processDueJobs({
-      limit: 1,
-      now: afterEffortBeforeActivity,
-    });
+    await expect(
+      new AthleteStateWorkerService({ db }).processDueJobs({
+        limit: 1,
+        now: afterEffortBeforeActivity,
+      }),
+    ).resolves.toEqual({ completed: 0, failed: 0, processed: 0 });
     const [earlyState] = await db
-      .select({ failureCode: profileAthleteState.last_failure_code })
-      .from(profileAthleteState)
-      .where(eq(profileAthleteState.profile_id, profileId));
-    expect({ result: earlyResult, failureCode: earlyState?.failureCode }).toEqual({
-      result: { completed: 1, failed: 0, processed: 1 },
-      failureCode: null,
-    });
-    const [stillPending] = await db
       .select()
       .from(profileAthleteState)
       .where(eq(profileAthleteState.profile_id, profileId));
-    expect(stillPending).toMatchObject({
-      source_revision: 1,
-      published_revision: 0,
-      dirty_from_at: activityFinishedAt,
-      lease_token: null,
-    });
+    expect(earlyState).toEqual(pending);
+    const earlyQueue = await db
+      .select()
+      .from(athleteRecalculationQueue)
+      .where(eq(athleteRecalculationQueue.profile_id, profileId));
+    expect(earlyQueue).toEqual(pendingQueue);
     await expect(
       db
         .select()
