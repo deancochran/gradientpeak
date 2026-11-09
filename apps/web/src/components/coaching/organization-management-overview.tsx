@@ -211,7 +211,12 @@ function MetricCard({
             variant="ghost"
             className="h-auto px-0 text-cyan-300 hover:bg-transparent hover:text-cyan-100"
           >
-            <Link to={to} params={{ organizationId }} search={search}>
+            <Link
+              to={to}
+              params={{ organizationId }}
+              search={search}
+              aria-label={`View matching records: ${label}`}
+            >
               View matching records
             </Link>
           </Button>

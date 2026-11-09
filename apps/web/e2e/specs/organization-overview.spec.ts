@@ -160,7 +160,9 @@ test("organization totals drill into exact active, paused and primary-gap record
     ["Active athletes", 20, 2],
     ["Unassigned", 20, 1],
   ] as const) {
-    await metricCard(label).getByRole("link", { name: "View matching records" }).click();
+    await metricCard(label)
+      .getByRole("link", { name: `View matching records: ${label}` })
+      .click();
     await expect(rows).toHaveCount(firstPage);
     await expect(page.getByText("Overview athlete 22", { exact: true })).toHaveCount(0);
     await expect(page.getByText("Overview athlete 23", { exact: true })).toHaveCount(0);
@@ -181,7 +183,9 @@ test("organization totals drill into exact active, paused and primary-gap record
     fullPage: true,
   });
   await page.goto(dashboard);
-  await metricCard("Active staff").getByRole("link", { name: "View matching records" }).click();
+  await metricCard("Active staff")
+    .getByRole("link", { name: "View matching records: Active staff" })
+    .click();
   await expect(
     page.getByRole("list", { name: "Active staff roster" }).getByRole("listitem"),
   ).toHaveCount(2);

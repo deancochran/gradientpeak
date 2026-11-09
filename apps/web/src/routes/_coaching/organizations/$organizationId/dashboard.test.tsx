@@ -31,7 +31,19 @@ vi.mock("@tanstack/react-router", () => ({
     useRouteContext: () => ({ actorProfileId: state.actorProfileId }),
   }),
   useRouterState: () => state.pathname,
-  Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
+  Link: ({
+    children,
+    to,
+    "aria-label": label,
+  }: {
+    children: ReactNode;
+    to: string;
+    "aria-label"?: string;
+  }) => (
+    <a href={to} aria-label={label}>
+      {children}
+    </a>
+  ),
 }));
 
 import { Route } from "./dashboard";
@@ -86,7 +98,9 @@ describe("coach dashboard", () => {
     expect(screen.getByRole("link", { name: "Assignments" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Assign coach" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "View unassigned athletes" })).toBeTruthy();
-    expect(screen.getAllByRole("link", { name: "View matching records" })).toHaveLength(3);
+    for (const label of ["Active athletes", "Active staff", "Unassigned"]) {
+      expect(screen.getByRole("link", { name: `View matching records: ${label}` })).toBeTruthy();
+    }
     expect(screen.getByText(/Supporting coaches do not satisfy this assignment gap/)).toBeTruthy();
     expect(
       screen.getByText(/Timed coverage and plan-horizon signals are not available/),
