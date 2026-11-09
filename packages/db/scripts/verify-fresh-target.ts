@@ -1,9 +1,10 @@
 #!/usr/bin/env tsx
 
+import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { activityPlanSemanticHash, activityPlanStructureSchema } from "@repo/core/activity-plan";
-import { Pool } from "pg";
+import { Pool, type PoolClient } from "pg";
 import {
   applySqlFile,
   bootstrapSupabaseSchemas,
@@ -252,9 +253,10 @@ async function expectConstraintViolation(
   },
   statement: string,
   expected: { code: "23503" | "23505" | "23514"; constraint: string },
+  values?: unknown[],
 ) {
   try {
-    await target.query(statement);
+    await target.query(statement, values);
   } catch (error) {
     const code = error && typeof error === "object" && "code" in error ? error.code : null;
     const constraint =
@@ -265,12 +267,230 @@ async function expectConstraintViolation(
   throw new Error(`expected ${expected.constraint} to reject the activity identity fixture`);
 }
 
-async function assertActivitySourceIdentityContract(target: {
-  query: <Row extends Record<string, unknown>>(
-    text: string,
-    values?: unknown[],
-  ) => Promise<{ rows: Row[] }>;
-}) {
+async function waitForPostgresLock(observer: PoolClient, pid: number, label: string) {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    const result = await observer.query<{ waiting: boolean | null }>(
+      "select wait_event_type = 'Lock' as waiting from pg_catalog.pg_stat_activity where pid = $1",
+      [pid],
+    );
+    if (result.rows[0]?.waiting) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`${label} did not wait on a PostgreSQL lock`);
+}
+
+async function assertImportRunDeleteRace(
+  target: {
+    query: <Row extends Record<string, unknown>>(
+      text: string,
+      values?: unknown[],
+    ) => Promise<{ rows: Row[] }>;
+  },
+  connectionString: string,
+) {
+  const insertRaceRunId = "77777777-7777-4777-8777-777777777784";
+  const retargetRaceRunId = "77777777-7777-4777-8777-777777777785";
+  const retargetReferenceId = "77777777-7777-4777-8777-777777777786";
+  const childInsertRaceRunId = "77777777-7777-4777-8777-777777777787";
+  const childRetargetRaceRunId = "77777777-7777-4777-8777-777777777788";
+  const childInsertReferenceId = "77777777-7777-4777-8777-777777777789";
+  const childRetargetReferenceId = "77777777-7777-4777-8777-777777777790";
+  const profileId = "11111111-1111-4111-8111-111111111111";
+  const integrationId = "77777777-7777-4777-8777-777777777771";
+  await target.query(
+    `insert into public.activity_import_runs (id, profile_id, integration_id, integration_generation, kind)
+     values
+       ($1, $2, $3, 4, 'manual_sync'),
+       ($4, $2, $3, 5, 'manual_sync'),
+       ($5, $2, $3, 6, 'manual_sync'),
+       ($6, $2, $3, 7, 'manual_sync')`,
+    [
+      insertRaceRunId,
+      profileId,
+      integrationId,
+      retargetRaceRunId,
+      childInsertRaceRunId,
+      childRetargetRaceRunId,
+    ],
+  );
+  await target.query(
+    `insert into public.activity_source_references (
+      id, profile_id, integration_id, provider, provider_external_id, resolution_status
+    ) values
+      ($1, $2, $3, 'wahoo', 'delete-race-retarget', 'review'),
+      ($4, $2, $3, 'wahoo', 'delete-race-child-retarget', 'review')`,
+    [retargetReferenceId, profileId, integrationId, childRetargetReferenceId],
+  );
+
+  const sessions = new Pool({ connectionString, max: 3 });
+  const deleter = await sessions.connect();
+  const contender = await sessions.connect();
+  const observer = await sessions.connect();
+  try {
+    const races: Array<{ label: string; runId: string; statement: string; values: string[] }> = [
+      {
+        label: "source insert",
+        runId: insertRaceRunId,
+        statement: `insert into public.activity_source_references (
+          profile_id, integration_id, provider, provider_external_id, resolution_status, last_import_run_id
+        ) values ($1, $2, 'wahoo', 'delete-race-insert', 'review', $3)`,
+        values: [profileId, integrationId, insertRaceRunId],
+      },
+      {
+        label: "source retarget",
+        runId: retargetRaceRunId,
+        statement: `update public.activity_source_references
+          set last_import_run_id = $1,
+              last_material_import_run_id = $1,
+              last_material_effective_at = '2026-11-05T00:00:00Z'
+          where id = $2`,
+        values: [retargetRaceRunId, retargetReferenceId],
+      },
+    ];
+    for (const race of races) {
+      await deleter.query(
+        "begin; set local lock_timeout = '5s'; set local statement_timeout = '10s'",
+      );
+      await contender.query(
+        "begin; set local lock_timeout = '5s'; set local statement_timeout = '10s'",
+      );
+      await deleter.query("delete from public.activity_import_runs where id = $1", [race.runId]);
+      const pid = (await contender.query<{ pid: number }>("select pg_backend_pid() as pid")).rows[0]
+        ?.pid;
+      if (!pid) throw new Error(`${race.label} contender has no backend pid`);
+      const pending = contender
+        .query(race.statement, race.values)
+        .then(() => ({ code: null, constraint: null }))
+        .catch((error: unknown) => ({
+          code: error && typeof error === "object" && "code" in error ? error.code : null,
+          constraint:
+            error && typeof error === "object" && "constraint" in error ? error.constraint : null,
+        }));
+      await waitForPostgresLock(observer, pid, `import-run delete ${race.label}`);
+      await deleter.query("commit");
+      const result = await pending;
+      if (result.code !== "23503") {
+        throw new Error(`import-run delete ${race.label} did not reject its racing reference`);
+      }
+      await contender.query("rollback");
+    }
+
+    const childFirstRaces: Array<{
+      label: string;
+      referenceId: string;
+      runId: string;
+      statement: string;
+      values: string[];
+    }> = [
+      {
+        label: "source insert",
+        referenceId: childInsertReferenceId,
+        runId: childInsertRaceRunId,
+        statement: `insert into public.activity_source_references (
+          id, profile_id, integration_id, provider, provider_external_id, resolution_status,
+          last_import_run_id, last_material_import_run_id, last_material_effective_at
+        ) values ($1, $2, $3, 'wahoo', 'delete-race-child-insert', 'review', $4, $4, '2026-11-06T00:00:00Z')`,
+        values: [childInsertReferenceId, profileId, integrationId, childInsertRaceRunId],
+      },
+      {
+        label: "source retarget",
+        referenceId: childRetargetReferenceId,
+        runId: childRetargetRaceRunId,
+        statement: `update public.activity_source_references
+          set last_import_run_id = $1,
+              last_material_import_run_id = $1,
+              last_material_effective_at = '2026-11-07T00:00:00Z'
+          where id = $2`,
+        values: [childRetargetRaceRunId, childRetargetReferenceId],
+      },
+    ];
+    for (const race of childFirstRaces) {
+      await contender.query(
+        "begin; set local lock_timeout = '5s'; set local statement_timeout = '10s'",
+      );
+      await contender.query(race.statement, race.values);
+      await deleter.query(
+        "begin; set local lock_timeout = '5s'; set local statement_timeout = '10s'",
+      );
+      const pid = (await deleter.query<{ pid: number }>("select pg_backend_pid() as pid")).rows[0]
+        ?.pid;
+      if (!pid) throw new Error(`${race.label} deleter has no backend pid`);
+      const pendingDelete = deleter.query("delete from public.activity_import_runs where id = $1", [
+        race.runId,
+      ]);
+      await waitForPostgresLock(observer, pid, `child-first import-run delete ${race.label}`);
+      await contender.query("commit");
+      await pendingDelete;
+      await deleter.query("commit");
+    }
+  } finally {
+    await Promise.allSettled([deleter.query("rollback"), contender.query("rollback")]);
+    deleter.release();
+    contender.release();
+    observer.release();
+    await sessions.end();
+  }
+
+  const retargeted = await target.query<{
+    last_import_run_id: string | null;
+    last_material_import_run_id: string | null;
+    last_material_effective_at: Date | null;
+    profile_id: string;
+  }>(
+    `select profile_id, last_import_run_id, last_material_import_run_id, last_material_effective_at
+     from public.activity_source_references where id = $1`,
+    [retargetReferenceId],
+  );
+  assert.deepEqual(retargeted.rows, [
+    {
+      profile_id: profileId,
+      last_import_run_id: null,
+      last_material_import_run_id: null,
+      last_material_effective_at: null,
+    },
+  ]);
+  const childFirstReferences = await target.query<{
+    id: string;
+    last_import_run_id: string | null;
+    last_material_import_run_id: string | null;
+    last_material_effective_at: Date | null;
+    profile_id: string;
+  }>(
+    `select id, profile_id, last_import_run_id, last_material_import_run_id, last_material_effective_at
+     from public.activity_source_references where id in ($1, $2) order by id`,
+    [childInsertReferenceId, childRetargetReferenceId],
+  );
+  assert.deepEqual(childFirstReferences.rows, [
+    {
+      id: childInsertReferenceId,
+      profile_id: profileId,
+      last_import_run_id: null,
+      last_material_import_run_id: null,
+      last_material_effective_at: null,
+    },
+    {
+      id: childRetargetReferenceId,
+      profile_id: profileId,
+      last_import_run_id: null,
+      last_material_import_run_id: null,
+      last_material_effective_at: null,
+    },
+  ]);
+  console.log(
+    "[db:import-run-delete-race] delete-first rejections and child-first cleanup leave no dangling run",
+  );
+}
+
+async function assertActivitySourceIdentityContract(
+  target: {
+    query: <Row extends Record<string, unknown>>(
+      text: string,
+      values?: unknown[],
+    ) => Promise<{ rows: Row[] }>;
+  },
+  connectionString: string,
+) {
   const legacyColumns = await target.query<{ column_name: string }>(`
     select column_name
     from information_schema.columns
@@ -389,6 +609,99 @@ async function assertActivitySourceIdentityContract(target: {
     )`,
     { code: "23503", constraint: "activity_source_references_integration_profile_fkey" },
   );
+  const deletedSameRunId = "77777777-7777-4777-8777-777777777780";
+  const deletedMaterialRunId = "77777777-7777-4777-8777-777777777781";
+  const sameRunReferenceId = "77777777-7777-4777-8777-777777777782";
+  const differentRunReferenceId = "77777777-7777-4777-8777-777777777783";
+  await target.query(
+    `insert into public.activity_import_runs (id, profile_id, integration_id, integration_generation, kind)
+     values
+       ($1, '11111111-1111-4111-8111-111111111111', '77777777-7777-4777-8777-777777777771', 1, 'manual_sync'),
+       ($2, '11111111-1111-4111-8111-111111111111', '77777777-7777-4777-8777-777777777771', 2, 'manual_sync')`,
+    [deletedSameRunId, deletedMaterialRunId],
+  );
+  await target.query(
+    `insert into public.activity_source_references (
+       id, profile_id, integration_id, provider, provider_external_id, resolution_status,
+       last_import_run_id, last_material_import_run_id, last_material_effective_at
+     ) values
+       ($3, '11111111-1111-4111-8111-111111111111', '77777777-7777-4777-8777-777777777771',
+        'wahoo', 'deleted-run-same', 'review', $1, $1, '2026-11-01T00:00:00Z'),
+       ($4, '11111111-1111-4111-8111-111111111111', '77777777-7777-4777-8777-777777777771',
+        'wahoo', 'deleted-run-different', 'review', $1, $2, '2026-11-02T00:00:00Z')`,
+    [deletedSameRunId, deletedMaterialRunId, sameRunReferenceId, differentRunReferenceId],
+  );
+  await expectConstraintViolation(
+    target,
+    `insert into public.activity_source_references (
+      profile_id, integration_id, provider, provider_external_id, resolution_status, last_import_run_id
+    ) values (
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '77777777-7777-4777-8777-777777777772',
+      'garmin', 'cross-profile-import-run', 'review', $1
+    )`,
+    { code: "23503", constraint: "activity_source_refs_last_import_run_profile_fk" },
+    [deletedSameRunId],
+  );
+  await expectConstraintViolation(
+    target,
+    `insert into public.activity_source_references (
+      profile_id, integration_id, provider, provider_external_id, resolution_status,
+      last_material_import_run_id, last_material_effective_at
+    ) values (
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '77777777-7777-4777-8777-777777777772',
+      'garmin', 'cross-profile-material-import-run', 'review', $1, '2026-11-03T00:00:00Z'
+    )`,
+    { code: "23503", constraint: "activity_source_refs_material_import_run_profile_fk" },
+    [deletedSameRunId],
+  );
+  await target.query("delete from public.activity_import_runs where id = $1", [deletedSameRunId]);
+  const afterFirstDelete = await target.query<{
+    id: string;
+    last_import_run_id: string | null;
+    last_material_import_run_id: string | null;
+    last_material_effective_at: Date | null;
+    profile_id: string;
+  }>(
+    `select id, profile_id, last_import_run_id, last_material_import_run_id, last_material_effective_at
+     from public.activity_source_references where id in ($1, $2) order by id`,
+    [sameRunReferenceId, differentRunReferenceId],
+  );
+  assert.deepEqual(afterFirstDelete.rows, [
+    {
+      id: sameRunReferenceId,
+      profile_id: "11111111-1111-4111-8111-111111111111",
+      last_import_run_id: null,
+      last_material_import_run_id: null,
+      last_material_effective_at: null,
+    },
+    {
+      id: differentRunReferenceId,
+      profile_id: "11111111-1111-4111-8111-111111111111",
+      last_import_run_id: null,
+      last_material_import_run_id: deletedMaterialRunId,
+      last_material_effective_at: new Date("2026-11-02T00:00:00.000Z"),
+    },
+  ]);
+  await target.query("delete from public.activity_import_runs where id = $1", [
+    deletedMaterialRunId,
+  ]);
+  const afterSecondDelete = await target.query<{
+    last_material_import_run_id: string | null;
+    last_material_effective_at: Date | null;
+    profile_id: string;
+  }>(
+    `select profile_id, last_material_import_run_id, last_material_effective_at
+     from public.activity_source_references where id = $1`,
+    [differentRunReferenceId],
+  );
+  assert.deepEqual(afterSecondDelete.rows, [
+    {
+      profile_id: "11111111-1111-4111-8111-111111111111",
+      last_material_import_run_id: null,
+      last_material_effective_at: null,
+    },
+  ]);
+  await assertImportRunDeleteRace(target, connectionString);
   await expectConstraintViolation(
     target,
     `insert into public.integration_resource_links (
@@ -402,7 +715,7 @@ async function assertActivitySourceIdentityContract(target: {
     { code: "23514", constraint: "integration_resource_links_no_activity_check" },
   );
   console.log(
-    "[db:activity-source-identity] sole identity, profile ownership, scoped uniqueness, and link fence passed",
+    "[db:activity-source-identity] sole identity, profile ownership, import-run delete cleanup, scoped uniqueness, and link fence passed",
   );
 }
 
@@ -2023,7 +2336,7 @@ async function main() {
     }
     await assertCanonicalActivityCategories(target);
     await assertActivityAnalysisRevisionContract(target);
-    await assertActivitySourceIdentityContract(target);
+    await assertActivitySourceIdentityContract(target, targetUrl);
     await assertStrictlyPositiveActivityEfforts(target);
     await assertThresholdTruthContract(target, targetUrl);
     await assertProfileGoalConstraints(target);

@@ -11821,6 +11821,12 @@
       "definition": "CREATE TRIGGER activity_efforts_validate_segment_range BEFORE INSERT OR UPDATE ON activity_efforts FOR EACH ROW EXECUTE FUNCTION validate_activity_effort_segment_range()"
     },
     {
+      "name": "activity_import_runs_clear_material_source_references",
+      "table": "activity_import_runs",
+      "schema": "public",
+      "definition": "CREATE TRIGGER activity_import_runs_clear_material_source_references BEFORE DELETE ON activity_import_runs FOR EACH ROW EXECUTE FUNCTION clear_material_import_run_reference()"
+    },
+    {
       "name": "activity_plans_authoring_guard",
       "table": "activity_plans",
       "schema": "public",
@@ -12320,6 +12326,15 @@
       "identity": "block_activity_artifact_direct_delete()",
       "language": "plpgsql",
       "definition": "CREATE OR REPLACE FUNCTION public.block_activity_artifact_direct_delete()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\ndeclare lifecycle_owner name;\nbegin\n  select pg_catalog.pg_get_userbyid(procedure.proowner) into lifecycle_owner\n  from pg_catalog.pg_proc as procedure\n  where procedure.oid=pg_catalog.to_regprocedure('public.block_activity_artifact_direct_delete()');\n  if current_user is distinct from lifecycle_owner\n    or old.availability<>'deleted'\n    or current_setting('gradientpeak.artifact_hard_delete_authorized',true) is distinct from 'on' then\n    raise exception 'activity artifact delete requires completed service lifecycle';\n  end if;\n  return old;\nend $function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": "",
+      "config": ["search_path=pg_catalog, public"],
+      "identity": "clear_material_import_run_reference()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.clear_material_import_run_reference()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nbegin\n  update public.activity_source_references\n  set last_material_import_run_id = null,\n      last_material_effective_at = null\n  where last_material_import_run_id = old.id\n    and profile_id = old.profile_id;\n  return old;\nend;\n$function$\n",
       "volatility": "v",
       "securityDefiner": false
     },
@@ -13907,14 +13922,14 @@
       "name": "activity_source_refs_last_import_run_profile_fk",
       "table": "activity_source_references",
       "validated": true,
-      "definition": "FOREIGN KEY (last_import_run_id, profile_id) REFERENCES activity_import_runs(id, profile_id) ON DELETE SET NULL"
+      "definition": "FOREIGN KEY (last_import_run_id, profile_id) REFERENCES activity_import_runs(id, profile_id) ON DELETE SET NULL (last_import_run_id)"
     },
     {
       "kind": "f",
       "name": "activity_source_refs_material_import_run_profile_fk",
       "table": "activity_source_references",
       "validated": true,
-      "definition": "FOREIGN KEY (last_material_import_run_id, profile_id) REFERENCES activity_import_runs(id, profile_id) ON DELETE SET NULL"
+      "definition": "FOREIGN KEY (last_material_import_run_id, profile_id) REFERENCES activity_import_runs(id, profile_id) ON DELETE SET NULL (last_material_import_run_id)"
     },
     {
       "kind": "p",
