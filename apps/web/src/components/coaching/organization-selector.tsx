@@ -39,7 +39,13 @@ export function OrganizationSelector({
     return cursor ? <EmptyCursorPage /> : <NoOrganizations />;
   }
 
-  return <OrganizationSelectorPage key={cursor ?? "first-page"} cursor={cursor} page={page} />;
+  return (
+    <OrganizationSelectorPage
+      key={cursor ?? "first-page"}
+      page={page}
+      {...(cursor === undefined ? {} : { cursor })}
+    />
+  );
 }
 
 function OrganizationSelectorPage({ page, cursor }: { page: OrganizationPage; cursor?: string }) {
