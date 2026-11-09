@@ -139,7 +139,7 @@ export function OrganizationManagementOverview({
 
           <UnavailableCard
             title="Follow-up priorities"
-            description="Workout-review and check-in priority data are not available in this workspace yet. No follow-up count is shown."
+            description="Activity-review and check-in priority data are not available in this workspace yet. No follow-up count is shown."
           />
         </div>
 

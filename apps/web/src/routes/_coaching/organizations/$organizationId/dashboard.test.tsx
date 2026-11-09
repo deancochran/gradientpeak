@@ -92,7 +92,7 @@ describe("coach dashboard", () => {
       screen.getByText(/Timed coverage and plan-horizon signals are not available/),
     ).toBeTruthy();
     expect(
-      screen.getByText(/Workout-review and check-in priority data are not available/),
+      screen.getByText(/Activity-review and check-in priority data are not available/),
     ).toBeTruthy();
     expect(screen.getByText(/Organization task assignments are not available/)).toBeTruthy();
   });
