@@ -5,11 +5,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { type InvitationPage, OrganizationInvitations } from "./organization-invitations";
 
-const mocks = vi.hoisted(() => ({ invalidate: vi.fn(), create: vi.fn(), revoke: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  invalidate: vi.fn(),
+  create: vi.fn(),
+  revoke: vi.fn(),
+  inspect: vi.fn(),
+}));
 vi.mock("@tanstack/react-router", () => ({ useRouter: () => ({ invalidate: mocks.invalidate }) }));
 vi.mock("../../../lib/coaching/organization-invitations-server-functions", () => ({
   createOrganizationInvitation: mocks.create,
   revokeOrganizationInvitation: mocks.revoke,
+  resolveAcceptedOrganizationInvitationRelationship: mocks.inspect,
 }));
 
 const organizationId = "11111111-1111-4111-8111-111111111111";
@@ -30,6 +36,10 @@ describe("organization invitations", () => {
     vi.clearAllMocks();
     mocks.invalidate.mockResolvedValue(undefined);
     mocks.create.mockResolvedValue(created);
+    mocks.inspect.mockResolvedValue({
+      status: "granted",
+      relationship: { relationshipState: "staff_suspended", navigationTarget: "staff_roster" },
+    });
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
       value: { writeText: vi.fn().mockResolvedValue(undefined) },
@@ -218,6 +228,64 @@ describe("organization invitations", () => {
       })),
     });
     expect(screen.queryByRole("button", { name: "Revoke invitation" })).toBeNull();
+  });
+  it("offers a read-only accepted relationship inspection without exposing recipient identity", async () => {
+    renderPage({
+      items: [
+        {
+          invitationId,
+          organizationId,
+          kind: "staff",
+          requestedRole: "coach",
+          status: "accepted",
+          createdAt: "2029-01-01T00:00:00.000Z",
+          expiresAt: "2030-01-01T00:00:00.000Z",
+        },
+      ],
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Inspect accepted relationship" }));
+    await waitFor(() =>
+      expect(mocks.inspect).toHaveBeenCalledWith({ data: { organizationId, invitationId } }),
+    );
+    expect(screen.getByText(/staff suspended/i)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Manage staff memberships" }).className).toContain(
+      "bg-slate-950",
+    );
+    expect(screen.getByRole("link", { name: "Manage staff memberships" }).className).toContain(
+      "text-cyan-200",
+    );
+    expect(
+      screen.getByRole("button", { name: "Inspect accepted relationship" }).className,
+    ).toContain("bg-slate-950");
+    expect(
+      screen.getByRole("button", { name: "Inspect accepted relationship" }).className,
+    ).toContain("text-cyan-200");
+    expect(document.body.textContent).not.toContain("person@example.test");
+  });
+  it("uses staff-specific copy and offers no roster navigation for an accepted roleless membership", async () => {
+    mocks.inspect.mockResolvedValue({
+      status: "granted",
+      relationship: { relationshipState: "staff_no_effective_role", navigationTarget: "none" },
+    });
+    renderPage({
+      items: [
+        {
+          invitationId,
+          organizationId,
+          kind: "staff",
+          requestedRole: "coach",
+          status: "accepted",
+          createdAt: "2029-01-01T00:00:00.000Z",
+          expiresAt: "2030-01-01T00:00:00.000Z",
+        },
+      ],
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Inspect accepted relationship" }));
+    await waitFor(() =>
+      expect(screen.getByText(/staff membership is not currently available/i)).toBeTruthy(),
+    );
+    expect(screen.queryByRole("link", { name: "Manage staff memberships" })).toBeNull();
+    expect(screen.queryByText(/No athlete relationship-management destination/i)).toBeNull();
   });
   it("hides admin-invitation revocation from a non-root administrator", () => {
     renderPage(

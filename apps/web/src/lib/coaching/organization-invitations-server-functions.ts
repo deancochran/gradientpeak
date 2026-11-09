@@ -56,6 +56,9 @@ const listInvitationInputSchema = z
 const revokeInvitationInputSchema = z
   .object({ organizationId, invitationId: z.string().uuid() })
   .strict();
+const acceptedInvitationRelationshipInputSchema = z
+  .object({ organizationId, invitationId: z.string().uuid() })
+  .strict();
 
 async function createRequestApiCaller() {
   const [{ appRouter, createApiContext }, { resolveAuthSessionFromHeaders }, { db }] =
@@ -127,6 +130,22 @@ export const revokeOrganizationInvitation = createServerFn({ method: "POST" })
       };
     } catch (error) {
       if (isAccessError(error)) return { status: "access_lost" as const };
+      throw error;
+    }
+  });
+
+/** This projection intentionally excludes recipient identity, email, and token material. */
+export const resolveAcceptedOrganizationInvitationRelationship = createServerFn({ method: "POST" })
+  .validator((input: unknown) => acceptedInvitationRelationshipInputSchema.parse(input))
+  .handler(async ({ data }) => {
+    try {
+      const caller = await createRequestApiCaller();
+      return {
+        status: "granted" as const,
+        relationship: await caller.organizations.invitations.resolveAcceptedRelationship(data),
+      };
+    } catch (error) {
+      if (isAccessError(error)) return { status: "forbidden" as const };
       throw error;
     }
   });

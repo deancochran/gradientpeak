@@ -19,6 +19,7 @@ import {
   listOrganizationInvitations,
   OrganizationManagementError,
   previewOrganizationInvitation,
+  resolveAcceptedInvitationRelationship,
   revokeOrganizationInvitation,
 } from "../application/organizations/manage-organizations";
 import {
@@ -154,6 +155,9 @@ const invitationRevokeInputSchema = z
     invitationId: z.string().uuid(),
   })
   .strict();
+const acceptedInvitationRelationshipInputSchema = z
+  .object({ organizationId: z.string().uuid(), invitationId: z.string().uuid() })
+  .strict();
 const staffRoleMutationInputSchema = z
   .object({
     organizationId: z.string().uuid(),
@@ -238,6 +242,21 @@ const invitationListOutputSchema = z
     items: z.array(organizationInvitationSummarySchema),
     nextCursor: z.string().nullable(),
     hasMore: z.boolean(),
+  })
+  .strict();
+const acceptedInvitationRelationshipOutputSchema = z
+  .object({
+    relationshipState: z.enum([
+      "staff_active",
+      "staff_suspended",
+      "staff_ended",
+      "staff_not_provisioned",
+      "staff_no_effective_role",
+      "athlete_active",
+      "athlete_paused",
+      "athlete_no_current_engagement",
+    ]),
+    navigationTarget: z.enum(["staff_roster", "none"]),
   })
   .strict();
 const organizationMembershipContextSchema = z
@@ -469,6 +488,20 @@ export function createOrganizationsRouter(
         .query(async ({ ctx, input }) => {
           try {
             return await listOrganizationInvitations({
+              db: getRequiredDb(ctx),
+              actorProfileId: ctx.session.user.id,
+              ...input,
+            });
+          } catch (error) {
+            return managementError(error);
+          }
+        }),
+      resolveAcceptedRelationship: protectedProcedure
+        .input(acceptedInvitationRelationshipInputSchema)
+        .output(acceptedInvitationRelationshipOutputSchema)
+        .query(async ({ ctx, input }) => {
+          try {
+            return await resolveAcceptedInvitationRelationship({
               db: getRequiredDb(ctx),
               actorProfileId: ctx.session.user.id,
               ...input,

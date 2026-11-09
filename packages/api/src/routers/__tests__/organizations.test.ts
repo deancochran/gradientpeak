@@ -1,6 +1,9 @@
 import type { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
-import { mapOrganizationInvitationSummary } from "../../application/organizations/manage-organizations";
+import {
+  mapAcceptedInvitationRelationship,
+  mapOrganizationInvitationSummary,
+} from "../../application/organizations/manage-organizations";
 import type {
   OrganizationAccessRepository,
   OrganizationMembershipContextRow,
@@ -88,6 +91,74 @@ describe("organizationsRouter", () => {
     expect(mapOrganizationInvitationSummary(row)).not.toHaveProperty("createdAtCursor");
   });
 
+  it("maps accepted lifecycle truth without treating acceptance as active access", () => {
+    expect(
+      mapAcceptedInvitationRelationship({
+        kind: "staff",
+        membershipId: MEMBERSHIP_ID,
+        membershipSuspendedAt: new Date(),
+        membershipEndedAt: null,
+        membershipHasEffectiveStaffRole: true,
+        membershipIsRootOwner: false,
+        engagementId: null,
+        engagementPausedAt: null,
+        engagementEndedAt: null,
+      }),
+    ).toEqual({ relationshipState: "staff_suspended", navigationTarget: "staff_roster" });
+    expect(
+      mapAcceptedInvitationRelationship({
+        kind: "staff",
+        membershipId: MEMBERSHIP_ID,
+        membershipSuspendedAt: new Date(),
+        membershipEndedAt: null,
+        membershipHasEffectiveStaffRole: false,
+        membershipIsRootOwner: false,
+        engagementId: null,
+        engagementPausedAt: null,
+        engagementEndedAt: null,
+      }),
+    ).toEqual({ relationshipState: "staff_suspended", navigationTarget: "none" });
+    expect(
+      mapAcceptedInvitationRelationship({
+        kind: "athlete",
+        membershipId: null,
+        membershipSuspendedAt: null,
+        membershipEndedAt: null,
+        membershipHasEffectiveStaffRole: null,
+        membershipIsRootOwner: null,
+        engagementId: null,
+        engagementPausedAt: null,
+        engagementEndedAt: null,
+      }),
+    ).toEqual({ relationshipState: "athlete_no_current_engagement", navigationTarget: "none" });
+    expect(
+      mapAcceptedInvitationRelationship({
+        kind: "staff",
+        membershipId: MEMBERSHIP_ID,
+        membershipSuspendedAt: null,
+        membershipEndedAt: null,
+        membershipHasEffectiveStaffRole: false,
+        membershipIsRootOwner: false,
+        engagementId: null,
+        engagementPausedAt: null,
+        engagementEndedAt: null,
+      }),
+    ).toEqual({ relationshipState: "staff_no_effective_role", navigationTarget: "none" });
+    expect(
+      mapAcceptedInvitationRelationship({
+        kind: "staff",
+        membershipId: MEMBERSHIP_ID,
+        membershipSuspendedAt: null,
+        membershipEndedAt: null,
+        membershipHasEffectiveStaffRole: false,
+        membershipIsRootOwner: true,
+        engagementId: null,
+        engagementPausedAt: null,
+        engagementEndedAt: null,
+      }),
+    ).toEqual({ relationshipState: "staff_active", navigationTarget: "none" });
+  });
+
   it("denies unauthenticated, malformed, extra, and unsupported-cursor input before persistence", async () => {
     const harness = createHarness();
     const anonymous = createRouterCaller(harness.router, { session: null });
@@ -116,6 +187,19 @@ describe("organizationsRouter", () => {
         slug: "peak-coaching",
         timezone: "Mars/Olympus",
       }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" } satisfies Partial<TRPCError>);
+    await expect(
+      anonymous.invitations.resolveAcceptedRelationship({
+        organizationId: ORGANIZATION_ID,
+        invitationId: MEMBERSHIP_ID,
+      }),
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" } satisfies Partial<TRPCError>);
+    await expect(
+      caller.invitations.resolveAcceptedRelationship({
+        organizationId: ORGANIZATION_ID,
+        invitationId: MEMBERSHIP_ID,
+        email: "leak@example.test",
+      } as never),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" } satisfies Partial<TRPCError>);
     expect(harness.getAccessRepository).not.toHaveBeenCalled();
   });

@@ -23,6 +23,7 @@ import { useForm } from "react-hook-form";
 import { buildOrganizationInvitationLink } from "../../../lib/coaching/invitation-handoff";
 import {
   createOrganizationInvitation,
+  resolveAcceptedOrganizationInvitationRelationship,
   revokeOrganizationInvitation,
 } from "../../../lib/coaching/organization-invitations-server-functions";
 
@@ -167,6 +168,11 @@ function OrganizationInvitationsContents({
   const current = useRef({ actorProfileId, organizationId, operation: 0 });
   const inFlight = useRef(false);
   const [selected, setSelected] = useState<Invitation | null>(null);
+  const [relationship, setRelationship] = useState<{
+    invitationId: string;
+    relationshipState: string;
+    navigationTarget: "staff_roster" | "none";
+  } | null>(null);
   const [invitationLink, setInvitationLink] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -296,6 +302,30 @@ function OrganizationInvitationsContents({
       inFlight.current = false;
     }
   };
+  const inspectAccepted = async (invitation: Invitation) => {
+    if (inFlight.current || locked) return;
+    const operation = ++current.current.operation;
+    inFlight.current = true;
+    setError(null);
+    setRelationship(null);
+    try {
+      const result = await resolveAcceptedOrganizationInvitationRelationship({
+        data: { organizationId, invitationId: invitation.invitationId },
+      });
+      if (!isCurrent(operation)) return;
+      if (result.status === "forbidden") {
+        setLocked(true);
+        setError("Your access has changed. Refresh invitations before taking another action.");
+        return;
+      }
+      setRelationship({ invitationId: invitation.invitationId, ...result.relationship });
+    } catch {
+      if (isCurrent(operation))
+        setError("The accepted relationship could not be inspected. Retry without changing it.");
+    } finally {
+      inFlight.current = false;
+    }
+  };
   const copyInvitationLink = async () => {
     if (!invitationLink) return;
     // Copying is not a new mutation and must not supersede its reconciliation.
@@ -377,6 +407,48 @@ function OrganizationInvitationsContents({
             Refresh invitations
           </Button>
         </div>
+      ) : null}
+      {relationship ? (
+        <Card className="border-slate-800 bg-slate-900 text-slate-50">
+          <CardHeader>
+            <CardTitle>Accepted invitation relationship</CardTitle>
+            <CardDescription className="text-slate-400">
+              This is a read-only lifecycle check. Acceptance does not by itself mean current
+              access.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-slate-300">
+              Current relationship: {relationship.relationshipState.replaceAll("_", " ")}.
+            </p>
+            {relationship.navigationTarget === "staff_roster" ? (
+              <p className="text-sm text-slate-400">
+                The staff roster does not yet support selecting this membership directly.
+              </p>
+            ) : relationship.relationshipState.startsWith("staff_") ? (
+              <p className="text-sm text-slate-400">
+                This staff membership is not currently available in the staff roster.
+              </p>
+            ) : (
+              <p className="text-sm text-slate-400">
+                No athlete relationship-management destination is available yet.
+              </p>
+            )}
+            {relationship.navigationTarget === "staff_roster" ? (
+              <Button
+                asChild
+                variant="outline"
+                className="border-slate-600 bg-slate-950 text-cyan-200 hover:bg-slate-800 hover:text-cyan-100 focus-visible:ring-cyan-300"
+              >
+                <a
+                  href={`/organizations/${organizationId}/staff${relationship.relationshipState === "staff_suspended" ? "?status=suspended" : ""}`}
+                >
+                  Manage staff memberships
+                </a>
+              </Button>
+            ) : null}
+          </CardContent>
+        </Card>
       ) : null}
       <Card className="border-slate-800 bg-slate-900 text-slate-50">
         <CardHeader>
@@ -506,6 +578,17 @@ function OrganizationInvitationsContents({
                         }}
                       >
                         Revoke invitation
+                      </Button>
+                    ) : null}
+                    {status === "accepted" ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="border-slate-600 bg-slate-950 text-cyan-200 hover:bg-slate-800 hover:text-cyan-100 focus-visible:ring-cyan-300"
+                        disabled={locked}
+                        onClick={() => void inspectAccepted(invitation)}
+                      >
+                        Inspect accepted relationship
                       </Button>
                     ) : null}
                   </li>
