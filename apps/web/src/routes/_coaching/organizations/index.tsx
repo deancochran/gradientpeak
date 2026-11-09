@@ -34,14 +34,25 @@ function OrganizationsPage() {
           Select an organization explicitly. Athlete views are not available here, and your Personal
           workspace is always separate.
         </p>
-        <div className="flex flex-wrap gap-3">
-          <Button asChild>
+        <div className="flex min-w-0 flex-wrap gap-3">
+          <Button
+            asChild
+            className="h-auto max-w-full whitespace-normal bg-cyan-400 text-slate-950 hover:bg-cyan-300"
+          >
             <Link to="/organizations/new">Create organization</Link>
           </Button>
-          <Button asChild variant="outline" className="border-slate-700 text-slate-100">
+          <Button
+            asChild
+            variant="outline"
+            className="h-auto max-w-full whitespace-normal border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
+          >
             <Link to="/organization-invitations">My organization invitations</Link>
           </Button>
-          <Button asChild variant="outline" className="border-slate-700 text-slate-100">
+          <Button
+            asChild
+            variant="outline"
+            className="h-auto max-w-full whitespace-normal border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
+          >
             <Link to="/">Personal workspace</Link>
           </Button>
         </div>

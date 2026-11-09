@@ -7,7 +7,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
+import { SearchField } from "@repo/ui/components/search-field";
 import { Link, useRouter } from "@tanstack/react-router";
+import { useState } from "react";
 
 const ROLE_LABELS = {
   admin: "Admin",
@@ -37,6 +39,19 @@ export function OrganizationSelector({
     return cursor ? <EmptyCursorPage /> : <NoOrganizations />;
   }
 
+  return <OrganizationSelectorPage key={cursor ?? "first-page"} cursor={cursor} page={page} />;
+}
+
+function OrganizationSelectorPage({ page, cursor }: { page: OrganizationPage; cursor?: string }) {
+  const [filter, setFilter] = useState("");
+
+  const normalizedFilter = filter.trim().toLocaleLowerCase();
+  const filteredItems = normalizedFilter
+    ? page.items.filter(({ organization }) =>
+        organization.name.toLocaleLowerCase().includes(normalizedFilter),
+      )
+    : page.items;
+
   return (
     <section aria-labelledby="organization-list-heading" className="space-y-4">
       <div>
@@ -47,49 +62,70 @@ export function OrganizationSelector({
           Choose a coaching workspace to continue. Your Personal workspace stays separate.
         </p>
       </div>
-      <ul className="grid gap-4" aria-label="Coaching organizations">
-        {page.items.map(({ organization, membership, isRootOwner }) => {
-          const opensAdministration = isRootOwner || membership.roles.includes("admin");
-          const defaultWorkspace = opensAdministration
-            ? "/organizations/$organizationId/dashboard"
-            : "/organizations/$organizationId/coaching";
+      <SearchField
+        accessibilityLabel="Filter organizations on this page"
+        maxLength={100}
+        name="organizationFilter"
+        onValueChange={setFilter}
+        placeholder="Filter organizations"
+        testId="organization-filter"
+        value={filter}
+      />
+      <p id="organization-filter-description" className="text-sm text-slate-400">
+        Filters organizations shown on this page only.
+      </p>
+      {filteredItems.length === 0 ? (
+        <p role="status" className="text-sm text-slate-400">
+          No organizations on this page match this filter.
+        </p>
+      ) : (
+        <ul className="grid min-w-0 gap-4" aria-label="Coaching organizations">
+          {filteredItems.map(({ organization, membership, isRootOwner }) => {
+            const opensAdministration = isRootOwner || membership.roles.includes("admin");
+            const defaultWorkspace = opensAdministration
+              ? "/organizations/$organizationId/dashboard"
+              : "/organizations/$organizationId/coaching";
 
-          return (
-            <li key={organization.organizationId}>
-              <Card className="border-slate-800 bg-slate-900 text-slate-50">
-                <CardHeader>
-                  <CardTitle>
-                    <h3>{organization.name}</h3>
-                  </CardTitle>
-                  <CardDescription className="flex flex-wrap gap-2 text-slate-400">
-                    {membership.roles.filter(isFixedRole).map((role) => (
-                      <Badge key={role} className="border-slate-700 bg-slate-800 text-slate-200">
-                        {ROLE_LABELS[role]}
-                      </Badge>
-                    ))}
-                    {isRootOwner ? (
-                      <Badge className="border-cyan-700 bg-cyan-950 text-cyan-200">
-                        Root owner
-                      </Badge>
-                    ) : null}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Button asChild variant="outline" className="border-slate-700 text-slate-100">
-                    <Link
-                      to={defaultWorkspace}
-                      params={{ organizationId: organization.organizationId }}
+            return (
+              <li key={organization.organizationId} className="min-w-0">
+                <Card className="min-w-0 border-slate-800 bg-slate-900 text-slate-50">
+                  <CardHeader>
+                    <CardTitle>
+                      <h3>{organization.name}</h3>
+                    </CardTitle>
+                    <CardDescription className="flex flex-wrap gap-2 text-slate-400">
+                      {membership.roles.filter(isFixedRole).map((role) => (
+                        <Badge key={role} className="border-slate-700 bg-slate-800 text-slate-200">
+                          {ROLE_LABELS[role]}
+                        </Badge>
+                      ))}
+                      {isRootOwner ? (
+                        <Badge className="border-cyan-700 bg-cyan-950 text-cyan-200">
+                          Root owner
+                        </Badge>
+                      ) : null}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="min-w-0">
+                    <Button
+                      asChild
+                      className="h-auto max-w-full min-w-0 whitespace-normal bg-cyan-400 text-left text-slate-950 hover:bg-cyan-300"
                     >
-                      Open {organization.name} coaching{" "}
-                      {opensAdministration ? "dashboard" : "workspace"}
-                    </Link>
-                  </Button>
-                </CardContent>
-              </Card>
-            </li>
-          );
-        })}
-      </ul>
+                      <Link
+                        to={defaultWorkspace}
+                        params={{ organizationId: organization.organizationId }}
+                      >
+                        Open {organization.name} coaching{" "}
+                        {opensAdministration ? "dashboard" : "workspace"}
+                      </Link>
+                    </Button>
+                  </CardContent>
+                </Card>
+              </li>
+            );
+          })}
+        </ul>
+      )}
       <Pagination
         nextCursor={page.nextCursor}
         hasMore={page.hasMore}
@@ -182,7 +218,11 @@ function NoOrganizations() {
           <Button asChild>
             <Link to="/organizations/new">Create organization</Link>
           </Button>
-          <Button asChild variant="outline" className="border-slate-700 text-slate-100">
+          <Button
+            asChild
+            variant="outline"
+            className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
+          >
             <Link to="/">Go to Personal workspace</Link>
           </Button>
         </CardContent>
@@ -204,7 +244,11 @@ function EmptyCursorPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Button asChild variant="outline" className="border-slate-700 text-slate-100">
+          <Button
+            asChild
+            variant="outline"
+            className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
+          >
             <Link to="/organizations" search={{ cursor: undefined }}>
               Back to first page
             </Link>
@@ -229,7 +273,11 @@ function Pagination({
   return (
     <nav aria-label="Organization pages" className="flex flex-wrap gap-3">
       {cursor ? (
-        <Button asChild variant="outline" className="border-slate-700 text-slate-100">
+        <Button
+          asChild
+          variant="outline"
+          className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
+        >
           <Link to="/organizations" search={{ cursor: undefined }}>
             First page
           </Link>
