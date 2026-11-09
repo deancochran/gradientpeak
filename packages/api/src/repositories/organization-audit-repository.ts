@@ -10,7 +10,9 @@ import type { DrizzleQueryExecutor } from "../db";
 
 export type OrganizationAuditCursor = { occurredAtCursor: string; eventId: string };
 
-export type OrganizationAuditRepository = ReturnType<typeof createOrganizationAuditRepository>;
+export type OrganizationAuditRepository = {
+  listEvents: ReturnType<typeof createOrganizationAuditRepository>["listEvents"];
+};
 
 export function createOrganizationAuditRepository(
   db: DrizzleQueryExecutor,
