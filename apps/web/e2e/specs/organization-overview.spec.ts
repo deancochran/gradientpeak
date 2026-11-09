@@ -40,6 +40,14 @@ test("overview keeps organization navigation through a disposable-browser read f
   const overviewEndpoint = (await initialOverviewResponse).url();
   await page.getByRole("link", { name: "Staff", exact: true }).click();
   await expect(page).toHaveURL(/\/staff/);
+  const staffURL = page.url();
+  // Start a fresh router on a sibling route. Returning within the original
+  // router intentionally reuses its successful dashboard through SWR, which
+  // does not exercise the initial-load pending boundary. `page.goto` is
+  // hydration-aware in the E2E fixture; unlike `page.reload`, it waits for
+  // the client router before the brand-link interaction below.
+  await page.goto(staffURL);
+  await expect(page.getByRole("heading", { name: "Staff roster", exact: true })).toBeVisible();
 
   let releaseInitialRead: () => void = () => {};
   const initialReadHeld = new Promise<void>((resolve) => {
@@ -51,22 +59,27 @@ test("overview keeps organization navigation through a disposable-browser read f
   });
   let overviewReadAttempts = 0;
   const overviewRequestEndpoints: string[] = [];
+  const interceptedReads: Promise<void>[] = [];
   const failOverviewRead = async (route: Route) => {
     if (route.request().method() !== "POST") return route.continue();
     overviewRequestEndpoints.push(route.request().url());
     overviewReadAttempts += 1;
-    if (overviewReadAttempts === 1) {
-      await initialReadHeld;
-    }
-    if (overviewReadAttempts === 2) {
-      await retryReadHeld;
-    }
-    return route.abort("failed");
+    const attempt = overviewReadAttempts;
+    const handled = (async () => {
+      if (attempt === 1) await initialReadHeld;
+      if (attempt === 2) await retryReadHeld;
+      await route.abort("failed");
+    })();
+    interceptedReads.push(handled);
+    await handled;
   };
   const matchesOverviewEndpoint = (url: URL) => url.toString() === overviewEndpoint;
   await page.route(matchesOverviewEndpoint, failOverviewRead);
   try {
-    await page.getByRole("link", { name: "Dashboard", exact: true }).click();
+    // The brand link is available at both viewports; the sidebar Dashboard
+    // link is absent while mobile coaching navigation is closed.
+    await page.getByRole("link", { name: /^GP GradientPeak Coaching/ }).click();
+    await expect.poll(() => overviewReadAttempts).toBe(1);
     await expect(page).toHaveURL(/\/dashboard$/);
     await expect(page.getByRole("status", { name: "Loading organization overview" })).toContainText(
       "Loading organization overview",
@@ -121,6 +134,8 @@ test("overview keeps organization navigation through a disposable-browser read f
   } finally {
     releaseInitialRead();
     releaseRetryRead();
+    // Settle held handlers before unroute can claim their routes itself.
+    await Promise.all(interceptedReads);
     await page.unroute(matchesOverviewEndpoint, failOverviewRead);
   }
 
