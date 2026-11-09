@@ -33,9 +33,10 @@ type OverviewModel = {
     }>;
   } | null;
   status?: {
+    asOf: string;
     freshness: string;
     importStatus: string;
-    coverage: { lastActivityAt: string | null };
+    coverage: { startAt: string | null; endAt: string | null; lastActivityAt: string | null };
   };
   loadHistory?: {
     publishedRevision: number;
@@ -78,29 +79,35 @@ export function CoachAthleteOverview({
         <p className="text-sm font-medium uppercase tracking-[0.18em] text-cyan-300">
           Read-only overview
         </p>
-        <h1 className="text-3xl font-semibold text-white">Current training state</h1>
+        <h1 className="text-3xl font-semibold text-white">Athlete training assessment</h1>
         <p className="text-sm text-slate-400">
           Metrics are presented only when the athlete has shared this scope through the selected
           organization.
         </p>
       </header>
       {metricsAvailable ? (
-        <Card className="border-slate-800 bg-slate-900 text-slate-50">
+        <Card
+          className="border-slate-800 bg-slate-900 text-slate-50"
+          data-testid="published-training-state"
+        >
           <CardHeader>
-            <CardTitle>Published load state</CardTitle>
+            <CardTitle>Published training state</CardTitle>
             <CardDescription className="text-slate-400">
               {model.publishedState
-                ? `Published ${new Date(model.publishedState.publishedAt).toLocaleString()}`
+                ? `Published ${new Date(model.publishedState.publishedAt).toLocaleString()}. This is a modeled state, not readiness advice.`
                 : "No published load state is available."}
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-3">
             {baseline ? (
-              <dl className="grid gap-4 sm:grid-cols-3">
-                <Metric label="Long-term load" value={baseline.longTermLoad} />
-                <Metric label="Recent load" value={baseline.recentLoad} />
-                <Metric label="Load balance" value={baseline.loadBalance} />
-              </dl>
+              <>
+                <PublishedStateFreshness status={model.status} />
+                <dl className="grid gap-4 sm:grid-cols-3">
+                  <Metric label="Fitness" detail="Long-term load" value={baseline.longTermLoad} />
+                  <Metric label="Fatigue" detail="Recent load" value={baseline.recentLoad} />
+                  <Metric label="Form" detail="Load balance" value={baseline.loadBalance} />
+                </dl>
+              </>
             ) : (
               <p className="text-sm text-slate-400">
                 No published load state is available to this coaching view.
@@ -159,6 +166,17 @@ export function CoachAthleteOverview({
               <Badge className="border-slate-700 bg-slate-800 text-slate-200">
                 Import: {model.status?.importStatus ?? "unknown"}
               </Badge>
+              {model.status?.asOf ? (
+                <span className="w-full text-sm text-slate-400">
+                  Read model as of: {new Date(model.status.asOf).toLocaleString()}
+                </span>
+              ) : null}
+              {model.status?.coverage.startAt || model.status?.coverage.endAt ? (
+                <span className="w-full text-sm text-slate-400">
+                  Coverage: {formatCoverage(model.status.coverage.startAt)} to{" "}
+                  {formatCoverage(model.status.coverage.endAt)}
+                </span>
+              ) : null}
               {model.status?.coverage.lastActivityAt ? (
                 <span className="w-full text-sm text-slate-400">
                   Last activity in projection:{" "}
@@ -207,7 +225,7 @@ function TrainingLoadHistory({ history }: { history: OverviewModel["loadHistory"
   const points = history.result.points.slice(-28);
   const timezone = history.result.identity.planningTimezone;
   return (
-    <section className="space-y-3" aria-label="Recent training load">
+    <section aria-label="Recent training load" className="dark space-y-3">
       <SimpleTrendChart
         axisLabels={{ x: "Planning date", y: "Common Load points" }}
         description={`Completed daily Common Load points for the latest ${points.length} complete planning days (${timezone}). This is derived load, not a performance estimate.`}
@@ -234,15 +252,42 @@ function TrainingLoadHistory({ history }: { history: OverviewModel["loadHistory"
         title="Recent completed daily Common Load"
       />
       <p className="text-xs text-slate-400">
-        Common Load points are derived from completed activity; long-term load, recent load, and
-        load balance below are modeled load state. Dates are planning dates in {timezone}. Complete
-        days only; no future values are shown.
+        Common Load points are derived from completed activity. Dates are planning dates in{" "}
+        {timezone}
+        through {history.result.identity.endDate}. Complete days only; no future values are shown.
       </p>
       {history.result.maturity.status === "establishing_baseline" ? (
         <p className="text-xs text-amber-200">
           Modeled baseline is still being established; treat long-term load with care.
         </p>
       ) : null}
+      <div>
+        <h2 className="text-lg font-semibold text-white">Historical modeled load state</h2>
+        <p className="mt-1 text-xs text-slate-400">
+          This series is shown only when completed activity history is shared. It does not predict
+          future load or availability.
+        </p>
+      </div>
+      <div className="grid gap-3 lg:grid-cols-3">
+        <HistoricalLoadChart
+          label="Fitness"
+          points={points}
+          value={(point) => point.longTermLoad}
+          description="Historical modeled long-term load from the same completed daily Common Load observations."
+        />
+        <HistoricalLoadChart
+          label="Fatigue"
+          points={points}
+          value={(point) => point.recentLoad}
+          description="Historical modeled recent load from the same completed daily Common Load observations."
+        />
+        <HistoricalLoadChart
+          label="Form"
+          points={points}
+          value={(point) => point.loadBalance}
+          description="Historical modeled load balance from the same completed daily Common Load observations; negative values are shown as recorded."
+        />
+      </div>
       <div className="overflow-x-auto rounded border border-slate-800">
         <table className="w-full min-w-[38rem] text-left text-sm">
           <caption className="sr-only">
@@ -274,10 +319,77 @@ function TrainingLoadHistory({ history }: { history: OverviewModel["loadHistory"
     </section>
   );
 }
-function Metric({ label, value }: { label: string; value: number }) {
+
+function HistoricalLoadChart({
+  description,
+  label,
+  points,
+  value,
+}: {
+  description: string;
+  label: string;
+  points: LoadHistoryPoint[];
+  value: (point: LoadHistoryPoint) => number;
+}) {
+  return (
+    <SimpleTrendChart
+      axisLabels={{ x: "Planning date", y: "Load" }}
+      description={description}
+      emptyMessage={`No historical ${label.toLowerCase()} values are available.`}
+      formatX={(point) =>
+        new Date(point).toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric",
+          timeZone: "UTC",
+        })
+      }
+      formatValue={(point) => point.toFixed(1)}
+      points={points.map((point) => ({
+        id: point.date,
+        label: point.date,
+        value: value(point),
+        x: Date.parse(`${point.date}T00:00:00Z`),
+      }))}
+      summaryLabels={{ first: "First", latest: "Latest", trend: "Change" }}
+      title={`Historical ${label}`}
+    />
+  );
+}
+
+function formatCoverage(value: string | null) {
+  return value ? new Date(value).toLocaleString() : "not available";
+}
+
+function PublishedStateFreshness({ status }: { status: OverviewModel["status"] }) {
+  const freshness = status?.freshness ?? "unknown";
+  const importStatus = status?.importStatus ?? "unknown";
+  const warning =
+    freshness === "stale"
+      ? importStatus === "partial"
+        ? "This published state is stale and the import is partial; it may not reflect recent data."
+        : "This published state is stale and may not reflect recent data."
+      : freshness === "unknown"
+        ? "Freshness is unknown; the publication timestamp does not confirm that this state reflects recent data."
+        : importStatus === "partial"
+          ? "The import is partial; this published state may not reflect recent data."
+          : importStatus === "unknown"
+            ? "Import status is unknown; this published state may not reflect recent data."
+            : null;
+  return (
+    <div className="flex flex-wrap items-center gap-2" role="status">
+      <Badge className="border-cyan-800 bg-cyan-950 text-cyan-200">Freshness: {freshness}</Badge>
+      <Badge className="border-slate-700 bg-slate-800 text-slate-200">Import: {importStatus}</Badge>
+      {warning ? <span className="w-full text-sm text-amber-200">{warning}</span> : null}
+    </div>
+  );
+}
+
+function Metric({ detail, label, value }: { detail: string; label: string; value: number }) {
   return (
     <div>
-      <dt className="text-sm text-slate-400">{label}</dt>
+      <dt className="text-sm text-slate-400">
+        {label} <span className="text-xs">({detail})</span>
+      </dt>
       <dd className="mt-1 text-2xl font-semibold">{value.toFixed(1)}</dd>
     </div>
   );

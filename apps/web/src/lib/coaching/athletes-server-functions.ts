@@ -179,9 +179,14 @@ export const loadCoachAthleteOverview = createServerFn({ method: "POST" })
               ...(metrics.status
                 ? {
                     status: {
+                      asOf: metrics.asOf,
                       freshness: metrics.status.freshness,
                       importStatus: metrics.status.importStatus,
-                      coverage: { lastActivityAt: metrics.status.coverage.lastActivityAt },
+                      coverage: {
+                        startAt: metrics.status.coverage.startAt,
+                        endAt: metrics.status.coverage.endAt,
+                        lastActivityAt: metrics.status.coverage.lastActivityAt,
+                      },
                     },
                   }
                 : {}),

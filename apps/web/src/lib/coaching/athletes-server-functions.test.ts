@@ -54,11 +54,7 @@ describe("athlete administration server functions", () => {
     mocks.createApiContext.mockResolvedValue({});
     mocks.list.mockResolvedValue({ items: [], nextCursor: null, hasMore: false });
     mocks.end.mockResolvedValue({ engagementId, status: "ended" });
-    mocks.overview.mockResolvedValue({
-      publishedState: null,
-      status: null,
-      loadHistory: null,
-    });
+    mocks.overview.mockResolvedValue({ publishedState: null, status: null, loadHistory: null });
   });
 
   it("binds roster pagination to the explicit organization and current request session", async () => {
@@ -120,6 +116,46 @@ describe("athlete administration server functions", () => {
     ).resolves.toEqual({
       status: "granted",
       model: { metricsAvailable: true, publishedState: null, loadHistory: null },
+    });
+  });
+
+  it("forwards status freshness, coverage, and as-of metadata without reading activity history", async () => {
+    mocks.overview.mockResolvedValueOnce({
+      asOf: "2026-08-24T12:00:00.000Z",
+      publishedState: null,
+      status: {
+        freshness: "stale",
+        importStatus: "partial",
+        coverage: {
+          startAt: "2026-06-01T00:00:00.000Z",
+          endAt: "2026-08-22T23:59:59.999Z",
+          lastActivityAt: "2026-08-22T12:00:00.000Z",
+        },
+      },
+    });
+    mocks.overview.mockRejectedValueOnce(
+      Object.assign(new Error("history denied"), { code: "FORBIDDEN" }),
+    );
+
+    await expect(
+      loadCoachAthleteOverview({ data: { organizationId, athleteProfileId: engagementId } }),
+    ).resolves.toEqual({
+      status: "granted",
+      model: {
+        metricsAvailable: true,
+        publishedState: null,
+        status: {
+          asOf: "2026-08-24T12:00:00.000Z",
+          freshness: "stale",
+          importStatus: "partial",
+          coverage: {
+            startAt: "2026-06-01T00:00:00.000Z",
+            endAt: "2026-08-22T23:59:59.999Z",
+            lastActivityAt: "2026-08-22T12:00:00.000Z",
+          },
+        },
+        loadHistory: null,
+      },
     });
   });
 
