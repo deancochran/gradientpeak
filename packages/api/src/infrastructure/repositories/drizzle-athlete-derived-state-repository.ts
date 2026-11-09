@@ -18,6 +18,11 @@ import {
   type AthleteRecalculationQueueRow,
   activities,
   activityAnalysisRevisions,
+  activityArtifactLinks,
+  activityArtifacts,
+  activityEfforts,
+  activitySegments,
+  activitySourceReferences,
   activityTrainingEffects,
   athleteRecalculationQueue,
   type DailyTrainingLoadRow,
@@ -81,6 +86,12 @@ function toInstant(value: Date | string, field: string): string {
   const date = value instanceof Date ? value : new Date(value);
   if (!Number.isFinite(date.getTime())) throw new Error(`Invalid database timestamp: ${field}`);
   return date.toISOString();
+}
+
+function leaseMilliseconds(startedAt: string, expiresAt: string): number {
+  const duration = Date.parse(expiresAt) - Date.parse(startedAt);
+  if (!Number.isFinite(duration) || duration <= 0) throw new Error("Invalid lease duration");
+  return duration;
 }
 
 export function mapActivityTrainingEffectRow(
@@ -340,7 +351,14 @@ async function queueTransitionMiss(
   if (item.lifecycle.state !== "processing" || item.lifecycle.claimToken !== claimToken) {
     return { status: "lease_lost" };
   }
-  if (Date.parse(item.lifecycle.leaseExpiresAt) <= Date.now()) return { status: "lease_lost" };
+  const [clock] = await db
+    .select({ now: sql<Date>`clock_timestamp()` })
+    .from(profileAthleteState)
+    .where(eq(profileAthleteState.profile_id, profileId))
+    .limit(1);
+  if (!clock || Date.parse(item.lifecycle.leaseExpiresAt) <= clock.now.getTime()) {
+    return { status: "lease_lost" };
+  }
   return { status: "state_conflict", item };
 }
 
@@ -400,6 +418,21 @@ export function createDrizzleAthleteDerivedStateRepository(
         : { status: "identity_conflict" };
     },
 
+    async readActivityTrainingEffect(input) {
+      const [row] = await db
+        .select()
+        .from(activityTrainingEffects)
+        .where(
+          and(
+            eq(activityTrainingEffects.profile_id, input.profileId),
+            eq(activityTrainingEffects.activity_id, input.activityId),
+            eq(activityTrainingEffects.activity_analysis_revision, input.activityAnalysisRevision),
+          ),
+        )
+        .limit(1);
+      return row ? mapActivityTrainingEffectRow(row) : null;
+    },
+
     async deleteActivityTrainingEffects(input) {
       const rows = await db
         .delete(activityTrainingEffects)
@@ -427,6 +460,46 @@ export function createDrizzleAthleteDerivedStateRepository(
               from ${activityAnalysisRevisions} revision
               where revision.activity_id = ${activityTrainingEffects.activity_id}
                 and revision.profile_id = ${activityTrainingEffects.profile_id}
+            )`,
+            sql`exists (
+              select 1
+              from ${activities} activity
+              inner join ${activityAnalysisRevisions} analysis
+                on analysis.activity_id = activity.id
+                and analysis.profile_id = activity.profile_id
+                and analysis.revision = ${activityTrainingEffects.activity_analysis_revision}
+                and analysis.source_segments_revision = activity.segments_revision
+              inner join ${activitySegments} segment
+                on segment.activity_id = activity.id
+                and segment.profile_id = activity.profile_id
+                and segment.segment_revision = activity.segments_revision
+              where activity.id = ${activityTrainingEffects.activity_id}
+                and activity.profile_id = ${activityTrainingEffects.profile_id}
+                and (
+                  (segment.source_artifact_id is null
+                    and activity.canonical_evidence_tier in ('provider_summary', 'raw_samples')
+                    and exists (
+                      select 1 from ${activitySourceReferences} source_reference
+                      where source_reference.activity_id = activity.id
+                        and source_reference.profile_id = activity.profile_id
+                        and source_reference.resolution_status = 'confirmed'
+                        and source_reference.artifact_sha256 is null
+                    ))
+                  or exists (
+                    select 1 from ${activityArtifactLinks} source_link
+                    inner join ${activityArtifacts} artifact
+                      on artifact.id = source_link.artifact_id
+                      and artifact.profile_id = source_link.profile_id
+                      and artifact.availability = 'accepted'
+                      and artifact.deletion_requested_at is null
+                      and artifact.deleted_at is null
+                    where source_link.activity_id = activity.id
+                      and source_link.profile_id = activity.profile_id
+                      and source_link.artifact_id = segment.source_artifact_id
+                      and source_link.role = 'source'
+                      and source_link.is_current = true
+                  )
+                )
             )`,
             input.after
               ? sql`(${activityTrainingEffects.effective_at}, ${activityTrainingEffects.activity_id}, ${activityTrainingEffects.activity_analysis_revision}) > (${new Date(input.after.effectiveAt)}, ${input.after.activityId}::uuid, ${input.after.activityAnalysisRevision})`
@@ -772,8 +845,8 @@ export function createDrizzleAthleteDerivedStateRepository(
 
     async claimNextRecalculation(input) {
       const claimToken = athleteLeaseTokenSchema.parse(input.claimToken);
-      const claimedAt = new Date(input.claimedAt);
-      const leaseExpiresAt = new Date(input.leaseExpiresAt);
+      const now = new Date(input.now);
+      const duration = leaseMilliseconds(input.claimedAt, input.leaseExpiresAt);
       return inTransaction(db, async (tx) => {
         const [candidate] = await tx
           .select({ profileId: athleteRecalculationQueue.profile_id })
@@ -784,13 +857,172 @@ export function createDrizzleAthleteDerivedStateRepository(
           )
           .where(
             and(
+              lte(athleteRecalculationQueue.earliest_affected_at, now),
+              sql`not exists (
+                select 1
+                from ${activityTrainingEffects} effect
+                inner join ${activities} activity
+                  on activity.id = effect.activity_id
+                  and activity.profile_id = effect.profile_id
+                inner join ${activityAnalysisRevisions} analysis
+                  on analysis.activity_id = activity.id
+                  and analysis.profile_id = activity.profile_id
+                  and analysis.revision = effect.activity_analysis_revision
+                  and analysis.source_segments_revision = activity.segments_revision
+                inner join ${activitySegments} segment
+                  on segment.activity_id = activity.id
+                  and segment.profile_id = activity.profile_id
+                  and segment.segment_revision = activity.segments_revision
+                where effect.profile_id = ${athleteRecalculationQueue.profile_id}
+                  and effect.source_revision <= ${athleteRecalculationQueue.source_revision}
+                  and (effect.effective_at > ${now} or activity.finished_at > ${now})
+                  and effect.activity_analysis_revision = (
+                    select max(revision.revision)
+                    from ${activityAnalysisRevisions} revision
+                    where revision.activity_id = effect.activity_id
+                      and revision.profile_id = effect.profile_id
+                  )
+                  and (
+                    (segment.source_artifact_id is null
+                      and activity.canonical_evidence_tier in ('provider_summary', 'raw_samples')
+                      and exists (
+                        select 1 from ${activitySourceReferences} source_reference
+                        where source_reference.activity_id = activity.id
+                          and source_reference.profile_id = activity.profile_id
+                          and source_reference.resolution_status = 'confirmed'
+                          and source_reference.artifact_sha256 is null
+                      ))
+                    or exists (
+                      select 1 from ${activityArtifactLinks} source_link
+                      inner join ${activityArtifacts} artifact
+                        on artifact.id = source_link.artifact_id
+                        and artifact.profile_id = source_link.profile_id
+                        and artifact.availability = 'accepted'
+                        and artifact.deletion_requested_at is null
+                        and artifact.deleted_at is null
+                      where source_link.activity_id = activity.id
+                        and source_link.profile_id = activity.profile_id
+                        and source_link.artifact_id = segment.source_artifact_id
+                        and source_link.role = 'source'
+                        and source_link.is_current = true
+                    )
+                  )
+              )`,
+              sql`not exists (
+                select 1
+                from ${activityTrainingEffects} effect
+                inner join ${activityAnalysisRevisions} analysis
+                  on analysis.activity_id = effect.activity_id
+                  and analysis.profile_id = effect.profile_id
+                  and analysis.revision = effect.activity_analysis_revision
+                inner join ${activityEfforts} effort
+                  on effort.activity_id = analysis.activity_id
+                  and effort.profile_id = analysis.profile_id
+                  and effort.source_revision = analysis.source_segments_revision
+                inner join ${activities} activity
+                  on activity.id = effort.activity_id
+                  and activity.profile_id = effort.profile_id
+                inner join ${activitySegments} segment
+                  on segment.id = effort.segment_id
+                  and segment.activity_id = effort.activity_id
+                  and segment.profile_id = effort.profile_id
+                  and segment.activity_category = effort.activity_category
+                  and segment.source_artifact_id = effort.source_artifact_id
+                  and segment.segment_revision = effort.source_revision
+                  and segment.segment_revision = activity.segments_revision
+                inner join ${activityArtifactLinks} source_link
+                  on source_link.activity_id = activity.id
+                  and source_link.profile_id = activity.profile_id
+                  and source_link.artifact_id = effort.source_artifact_id
+                  and source_link.role = 'source'
+                  and source_link.is_current = true
+                inner join ${activityArtifacts} artifact
+                  on artifact.id = source_link.artifact_id
+                  and artifact.profile_id = source_link.profile_id
+                  and artifact.availability = 'accepted'
+                  and artifact.deletion_requested_at is null
+                  and artifact.deleted_at is null
+                where effect.profile_id = ${athleteRecalculationQueue.profile_id}
+                  and effect.source_revision <= ${athleteRecalculationQueue.source_revision}
+                  and effort.recorded_at > ${now}
+                  and effect.activity_analysis_revision = (
+                    select max(revision.revision)
+                    from ${activityAnalysisRevisions} revision
+                    where revision.activity_id = effect.activity_id
+                      and revision.profile_id = effect.profile_id
+                  )
+              )`,
+              sql`not exists (
+                select 1
+                from ${activities} activity
+                inner join ${activitySegments} segment
+                  on segment.activity_id = activity.id
+                  and segment.profile_id = activity.profile_id
+                  and segment.segment_revision = activity.segments_revision
+                where activity.profile_id = ${athleteRecalculationQueue.profile_id}
+                  and activity.finished_at > ${now}
+                  and (
+                    (segment.source_artifact_id is null
+                      and activity.canonical_evidence_tier in ('provider_summary', 'raw_samples')
+                      and exists (
+                        select 1 from ${activitySourceReferences} source_reference
+                        where source_reference.activity_id = activity.id
+                          and source_reference.profile_id = activity.profile_id
+                          and source_reference.resolution_status = 'confirmed'
+                          and source_reference.artifact_sha256 is null
+                      ))
+                    or exists (
+                      select 1 from ${activityArtifactLinks} source_link
+                      inner join ${activityArtifacts} artifact
+                        on artifact.id = source_link.artifact_id
+                        and artifact.profile_id = source_link.profile_id
+                        and artifact.availability = 'accepted'
+                        and artifact.deletion_requested_at is null
+                        and artifact.deleted_at is null
+                      where source_link.activity_id = activity.id
+                        and source_link.profile_id = activity.profile_id
+                        and source_link.artifact_id = segment.source_artifact_id
+                        and source_link.role = 'source'
+                        and source_link.is_current = true
+                    )
+                  )
+              )`,
+              sql`not exists (
+                select 1
+                from ${activityEfforts} effort
+                inner join ${activities} activity
+                  on activity.id = effort.activity_id
+                  and activity.profile_id = effort.profile_id
+                inner join ${activitySegments} segment
+                  on segment.id = effort.segment_id
+                  and segment.activity_id = effort.activity_id
+                  and segment.profile_id = effort.profile_id
+                  and segment.activity_category = effort.activity_category
+                  and segment.source_artifact_id = effort.source_artifact_id
+                  and segment.segment_revision = effort.source_revision
+                  and segment.segment_revision = activity.segments_revision
+                inner join ${activityArtifactLinks} source_link
+                  on source_link.activity_id = activity.id
+                  and source_link.profile_id = activity.profile_id
+                  and source_link.artifact_id = effort.source_artifact_id
+                  and source_link.role = 'source'
+                  and source_link.is_current = true
+                inner join ${activityArtifacts} artifact
+                  on artifact.id = source_link.artifact_id
+                  and artifact.profile_id = source_link.profile_id
+                  and artifact.availability = 'accepted'
+                  and artifact.deletion_requested_at is null
+                  and artifact.deleted_at is null
+                where effort.profile_id = ${athleteRecalculationQueue.profile_id}
+                  and effort.recorded_at > ${now}
+              )`,
               or(
                 sql`${profileAthleteState.lease_token} is null`,
-                lte(profileAthleteState.lease_expires_at, claimedAt),
+                lte(profileAthleteState.lease_expires_at, sql`clock_timestamp()`),
               ),
               or(
                 sql`${profileAthleteState.retry_after} is null`,
-                lte(profileAthleteState.retry_after, claimedAt),
+                lte(profileAthleteState.retry_after, sql`clock_timestamp()`),
               ),
             ),
           )
@@ -805,17 +1037,17 @@ export function createDrizzleAthleteDerivedStateRepository(
           .update(profileAthleteState)
           .set({
             lease_token: claimToken,
-            lease_expires_at: leaseExpiresAt,
+            lease_expires_at: sql`clock_timestamp() + (${duration} * interval '1 millisecond')`,
             retry_after: null,
             last_failure_code: null,
-            updated_at: claimedAt,
+            updated_at: sql`clock_timestamp()`,
           })
           .where(
             and(
               eq(profileAthleteState.profile_id, candidate.profileId),
               or(
                 sql`${profileAthleteState.lease_token} is null`,
-                lte(profileAthleteState.lease_expires_at, claimedAt),
+                lte(profileAthleteState.lease_expires_at, sql`clock_timestamp()`),
               ),
             ),
           )
@@ -828,21 +1060,22 @@ export function createDrizzleAthleteDerivedStateRepository(
       const transition = athleteRecalculationQueueTransitionInputSchema.parse(input.transition);
       const claimToken = athleteLeaseTokenSchema.parse(transition.claimToken);
       if (transition.action === "claim") {
+        const duration = leaseMilliseconds(transition.claimedAt, transition.leaseExpiresAt);
         const [claimed] = await db
           .update(profileAthleteState)
           .set({
             lease_token: claimToken,
-            lease_expires_at: new Date(transition.leaseExpiresAt),
+            lease_expires_at: sql`clock_timestamp() + (${duration} * interval '1 millisecond')`,
             retry_after: null,
             last_failure_code: null,
-            updated_at: new Date(transition.claimedAt),
+            updated_at: sql`clock_timestamp()`,
           })
           .where(
             and(
               eq(profileAthleteState.profile_id, input.profileId),
               or(
                 sql`${profileAthleteState.lease_token} is null`,
-                lte(profileAthleteState.lease_expires_at, new Date(transition.claimedAt)),
+                lte(profileAthleteState.lease_expires_at, sql`clock_timestamp()`),
               ),
               sql`exists (select 1 from ${athleteRecalculationQueue} queue where queue.profile_id = ${input.profileId}::uuid)`,
             ),
@@ -853,11 +1086,12 @@ export function createDrizzleAthleteDerivedStateRepository(
       }
 
       if (transition.action === "renew") {
+        const duration = leaseMilliseconds(transition.renewedAt, transition.leaseExpiresAt);
         const [renewed] = await db
           .update(profileAthleteState)
           .set({
-            lease_expires_at: new Date(transition.leaseExpiresAt),
-            updated_at: new Date(transition.renewedAt),
+            lease_expires_at: sql`clock_timestamp() + (${duration} * interval '1 millisecond')`,
+            updated_at: sql`clock_timestamp()`,
           })
           .where(
             and(
@@ -930,7 +1164,7 @@ export function createDrizzleAthleteDerivedStateRepository(
               transition.action === "complete"
                 ? 0
                 : sql`${profileAthleteState.consecutive_failures} + 1`,
-            updated_at: new Date(transition.completedAt),
+            updated_at: sql`clock_timestamp()`,
           })
           .where(eq(profileAthleteState.profile_id, input.profileId));
         return { status: "completed" };

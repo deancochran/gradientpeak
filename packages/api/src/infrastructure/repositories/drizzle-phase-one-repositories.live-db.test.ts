@@ -36,6 +36,7 @@ import { createEventReadRepository } from "./drizzle-event-read-repository";
 import { createDrizzlePlannedSessionRepository } from "./drizzle-planned-session-repository";
 
 function isDisposableLocalDatabase(): boolean {
+  if (isRunnerGeneratedDisposableDatabase()) return true;
   if (process.env.RUN_LIVE_DB_TESTS !== "1" && process.env.RUN_PHASE_ONE_REPOSITORY_LIVE_DB !== "1")
     return false;
   try {
@@ -45,6 +46,24 @@ function isDisposableLocalDatabase(): boolean {
       (url.port === "54322" ||
         (url.port === "55439" && process.env.RUN_PHASE_ONE_REPOSITORY_LIVE_DB === "1")) &&
       url.pathname === "/postgres"
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isRunnerGeneratedDisposableDatabase(): boolean {
+  if (process.env.RUN_PHASE_ONE_REPOSITORY_LIVE_DB !== "1") return false;
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl || databaseUrl !== process.env.POSTGRES_URL) return false;
+  try {
+    const url = new URL(databaseUrl);
+    return (
+      (url.protocol === "postgres:" || url.protocol === "postgresql:") &&
+      ["127.0.0.1", "[::1]"].includes(url.hostname) &&
+      url.port === "54322" &&
+      !/%|\\|\0/.test(url.pathname) &&
+      /^\/gradientpeak_api_live_db_\d+_\d+$/.test(url.pathname)
     );
   } catch {
     return false;
@@ -168,6 +187,7 @@ describeDisposable("Phase 1 Drizzle repositories against a disposable database",
     const claimToken = randomUUID();
     const claim = await repository.claimNextRecalculation({
       claimToken,
+      now: claimedAt.toISOString(),
       claimedAt: claimedAt.toISOString(),
       leaseExpiresAt: new Date(claimedAt.getTime() + 60000).toISOString(),
     });
