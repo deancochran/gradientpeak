@@ -273,6 +273,145 @@ async function seedActivity(input: {
   return activityId;
 }
 
+const ACTIVITY_FIXTURE_INSERT_BATCH_SIZE = 100;
+
+function inBatches<T>(values: readonly T[], batchSize = ACTIVITY_FIXTURE_INSERT_BATCH_SIZE) {
+  return Array.from({ length: Math.ceil(values.length / batchSize) }, (_, batchIndex) =>
+    values.slice(batchIndex * batchSize, (batchIndex + 1) * batchSize),
+  );
+}
+
+/**
+ * Seeds the large onboarding fixture with the same activity graph as
+ * `seedActivity`, but avoids 501 independent transactions and 2,004 round
+ * trips. Batches stay bounded so this remains safe if the fixture grows.
+ */
+async function seedCanonicalActivities(input: {
+  profileId: string;
+  firstFinishedAt: Date;
+  count: number;
+  durationMs: number;
+}) {
+  const fixtures = Array.from({ length: input.count }, (_, index) => {
+    const finishedAt = new Date(input.firstFinishedAt.getTime() + index * 60_000);
+    const digestSeed = randomUUID().replaceAll("-", "");
+    return {
+      activityId: randomUUID(),
+      artifactId: randomUUID(),
+      segmentId: randomUUID(),
+      linkId: randomUUID(),
+      digest: `${digestSeed}${digestSeed}`,
+      finishedAt,
+      startedAt: new Date(finishedAt.getTime() - input.durationMs),
+    };
+  });
+
+  await db.transaction(async (tx) => {
+    for (const batch of inBatches(fixtures)) {
+      await tx.insert(activities).values(
+        batch.map((fixture) => ({
+          id: fixture.activityId,
+          profile_id: input.profileId,
+          name: "Canonical activity",
+          started_at: fixture.startedAt,
+          finished_at: fixture.finishedAt,
+          elapsed_ms: input.durationMs,
+          active_ms: input.durationMs,
+          moving_ms: input.durationMs,
+          timing_coverage: "complete" as const,
+          segments_revision: 1,
+          parser_version: "athlete-state-live-test-v1",
+          decoded_contract_version: "athlete-state-live-test-v1",
+          materializer_version: "athlete-state-live-test-v1",
+          segments_generated_at: fixture.finishedAt,
+          performance_target_snapshot: performanceTargetSnapshot(
+            input.profileId,
+            fixture.finishedAt,
+            true,
+          ),
+          athlete_state_common_load: null,
+          athlete_state_activity_category: null,
+          athlete_state_evidence_confidence: null,
+          athlete_state_capability_distance_meters: null,
+          athlete_state_capability_duration_minutes: null,
+          athlete_state_input_version: null,
+          athlete_state_computed_at: null,
+          created_at: fixture.finishedAt,
+          updated_at: fixture.finishedAt,
+        })),
+      );
+    }
+    for (const batch of inBatches(fixtures)) {
+      await tx.insert(activityArtifacts).values(
+        batch.map((fixture) => ({
+          id: fixture.artifactId,
+          profile_id: input.profileId,
+          digest_algorithm: "sha256" as const,
+          digest: fixture.digest,
+          byte_size: 1_024,
+          bucket: "activity-files",
+          path: `artifacts/sha256/${input.profileId}/${fixture.digest}`,
+          media_type: "application/vnd.ant.fit",
+          format: "fit" as const,
+          availability: "accepted" as const,
+          first_accepted_at: fixture.finishedAt,
+        })),
+      );
+    }
+    for (const batch of inBatches(fixtures)) {
+      await tx.insert(activityArtifactLinks).values(
+        batch.map((fixture) => ({
+          id: fixture.linkId,
+          activity_id: fixture.activityId,
+          artifact_id: fixture.artifactId,
+          profile_id: input.profileId,
+          role: "source" as const,
+          ordinal: 0,
+          is_current: true,
+          linked_at: fixture.finishedAt,
+        })),
+      );
+    }
+    for (const batch of inBatches(fixtures)) {
+      await tx.insert(activitySegments).values(
+        batch.map((fixture) => ({
+          id: fixture.segmentId,
+          activity_id: fixture.activityId,
+          profile_id: input.profileId,
+          ordinal: 0,
+          role: "activity" as const,
+          activity_category: "bike" as const,
+          start_offset_ms: 0,
+          end_offset_ms: input.durationMs,
+          source_artifact_id: fixture.artifactId,
+          source_session_index: 0,
+          summary: {
+            version: 1,
+            timing: {
+              timingCoverage: "complete" as const,
+              activeMs: input.durationMs,
+              movingMs: input.durationMs,
+            },
+            distanceMeters: 1_000,
+            averagePowerWatts: 200,
+            normalizedPowerResult: canonicalNormalizedPower,
+          },
+          summary_version: 1,
+          timing_coverage: "complete" as const,
+          active_ms: input.durationMs,
+          moving_ms: input.durationMs,
+          segment_revision: 1,
+          parser_version: "athlete-state-live-test-v1",
+          materializer_version: "athlete-state-live-test-v1",
+          created_at: fixture.finishedAt,
+        })),
+      );
+    }
+  });
+
+  return fixtures.map(({ activityId }) => activityId);
+}
+
 /**
  * The history reprocessor resolves targets as-of each segment's start, rather
  * than using the completed activity's captured target snapshot. Seed a real,
@@ -2883,17 +3022,12 @@ describe("athlete state persistence", () => {
       profileId,
       observedAt: new Date("2025-12-31T08:00:00.000Z"),
     });
-    const importedActivityIds: string[] = [];
-    for (let index = 0; index < activityCount; index += 1) {
-      importedActivityIds.push(
-        await seedActivity({
-          profileId,
-          finishedAt: new Date(firstFinishedAt.getTime() + index * 60_000),
-          canonicalLoad: true,
-          durationMs: 30 * 60_000,
-        }),
-      );
-    }
+    const importedActivityIds = await seedCanonicalActivities({
+      profileId,
+      firstFinishedAt,
+      count: activityCount,
+      durationMs: 30 * 60_000,
+    });
     const now = new Date("2026-01-03T00:00:00.000Z");
     const imports = createActivityImportRepository(db);
     const run = await imports.create({
