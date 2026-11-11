@@ -334,7 +334,10 @@ export function SettingsPage() {
     if (!(await form.trigger())) return;
     if (confirmationOwner !== activeProfileOwnerRef.current) return;
 
-    const planningTimezone = form.getValues("planning_timezone") ?? null;
+    const planningTimezone =
+      settingsProfileFormSchema.shape.planning_timezone.parse(
+        form.getValues("planning_timezone"),
+      ) ?? null;
     const savedPlanningTimezone = activeProfile?.planning_timezone ?? null;
     if (planningTimezone !== savedPlanningTimezone) {
       setTimezoneConfirmation({
@@ -364,7 +367,10 @@ export function SettingsPage() {
     }
 
     if (confirmation.owner !== activeProfileOwnerRef.current) return;
-    const currentTimezone = form.getValues("planning_timezone") ?? null;
+    const currentTimezone =
+      settingsProfileFormSchema.shape.planning_timezone.parse(
+        form.getValues("planning_timezone"),
+      ) ?? null;
     if (currentTimezone !== confirmation.timezone) {
       setTimezoneConfirmation({ ...confirmation, timezone: currentTimezone });
       return;

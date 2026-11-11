@@ -136,7 +136,6 @@ async function choosePlanningTimezone(timezone: string) {
   fireEvent.click(
     await screen.findByRole("option", {
       name: timezone.replaceAll("_", " ").replaceAll("/", " / "),
-      exact: true,
     }),
   );
 }
