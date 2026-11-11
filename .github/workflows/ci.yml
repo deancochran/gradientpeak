@@ -1,55 +1,181 @@
 name: CI
 
 on:
-  pull_request:
-    branches:
-      - main
-      - dev
   merge_group:
-    types:
-      - checks_requested
+  pull_request:
   push:
     branches:
-      - main
       - dev
-  workflow_dispatch:
+      - main
+
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: read
-
 jobs:
-  validate:
-    name: Validate monorepo
+  classify:
+    name: Select required runtime checks
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    outputs:
+      profile: ${{ steps.profile.outputs.profile }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Select profile from committed changes
+        id: profile
+        env:
+          QA_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+        run: |
+          if [[ -z "$QA_BASE" || "$QA_BASE" =~ ^0+$ ]]; then
+            QA_BASE="$(git rev-list --max-parents=0 HEAD)"
+          fi
+          profile="$(node tooling/qa/cli.mjs --profile-only --changed --base "$QA_BASE")"
+          echo "profile=$profile" >> "$GITHUB_OUTPUT"
+          echo "Required runtime QA profile: $profile"
+
+  static:
+    name: Static checks
+    runs-on: ubuntu-latest
+    env:
+      CI: true
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: actions/checkout@v4
         with:
-          version: 10.33.0
+          fetch-depth: 0
+
+      - name: Enable pnpm from packageManager
+        run: corepack enable && corepack prepare pnpm@10.34.5 --activate
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 24.19.0
           cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Check formatting and lint rules
+      - name: Check generated artifact freshness
+        run: pnpm check:generated
+
+      - name: Format, lint, and architecture baseline
         run: pnpm check:ci
 
-      - name: Check types
+      - name: Type check
         run: pnpm check-types
 
-      - name: Run tests
+      - name: Check dead files and dependencies
+        run: pnpm knip
+
+      - name: Tests
         run: pnpm test
+
+      - name: Production build
+        run: pnpm build
+
+  runtime-db:
+    name: Required database runtime check
+    if: needs.classify.outputs.profile == 'db' || needs.classify.outputs.profile == 'full'
+    needs: classify
+    runs-on: ubuntu-latest
+    # This now owns the full suite formerly run by static (GitHub's 360-minute default).
+    # Preserve that budget until cold CI timings support a smaller bound.
+    timeout-minutes: 360
+    env:
+      CI: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Enable pnpm from packageManager
+        run: corepack enable && corepack prepare pnpm@10.34.5 --activate
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.19.0
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Start required local database
+        run: pnpm --filter @repo/db self-host:up
+      - name: Verify database migrations
+        run: pnpm --filter @repo/db db:verify
+      - name: Run live database suite
+        run: pnpm --filter @repo/api test:live-db
+      - name: Verify disposable database runner cleanup
+        run: pnpm --filter @repo/api test:live-db:runner:disposable
+      - name: Stop local database
+        if: always()
+        run: pnpm --filter @repo/db self-host:down
+
+  runtime-web:
+    name: Required browser smoke
+    if: needs.classify.outputs.profile == 'web' || needs.classify.outputs.profile == 'full'
+    needs: classify
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CI: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Enable pnpm from packageManager
+        run: corepack enable && corepack prepare pnpm@10.34.5 --activate
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.19.0
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm --filter web exec playwright install --with-deps chromium
+      - name: Start local database host for disposable browser target
+        run: pnpm --filter @repo/db self-host:up
+      - name: Run required browser profile
+        run: pnpm qa:run --profile web --integration-only
+      - name: Stop local database host
+        if: always()
+        run: pnpm --filter @repo/db self-host:down
+
+  ci:
+    name: Basic checks
+    if: always()
+    needs:
+      - classify
+      - static
+      - runtime-db
+      - runtime-web
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require static checks and the selected runtime checks
+        env:
+          CLASSIFY_RESULT: ${{ needs.classify.result }}
+          DB_RESULT: ${{ needs.runtime-db.result }}
+          PROFILE: ${{ needs.classify.outputs.profile }}
+          STATIC_RESULT: ${{ needs.static.result }}
+          WEB_RESULT: ${{ needs.runtime-web.result }}
+        run: |
+          if [[ "$CLASSIFY_RESULT" != success || "$STATIC_RESULT" != success ]]; then
+            echo "Required static/classification checks did not pass." >&2
+            exit 1
+          fi
+          case "$PROFILE" in
+            static) ;;
+            db) [[ "$DB_RESULT" == success ]] || { echo "Required database runtime check did not pass." >&2; exit 1; } ;;
+            web) [[ "$WEB_RESULT" == success ]] || { echo "Required browser smoke did not pass." >&2; exit 1; } ;;
+            full)
+              [[ "$DB_RESULT" == success && "$WEB_RESULT" == success ]] || {
+                echo "One or more required database/browser runtime checks did not pass." >&2
+                exit 1
+              }
+              ;;
+            *) echo "Required runtime profile was not produced." >&2; exit 1 ;;
+          esac

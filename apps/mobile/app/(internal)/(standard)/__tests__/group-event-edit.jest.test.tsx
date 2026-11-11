@@ -8,7 +8,19 @@ const replaceMock = jest.fn();
 const updateEventMock = jest.fn();
 const updateEventOccurrenceMock = jest.fn();
 
-let detailEvent: any;
+type DetailEvent = {
+  id: string;
+  group_id: string;
+  series_id: string;
+  is_recurring_occurrence: boolean;
+  activityPlanOptions: unknown[];
+};
+type GroupEventFormHandle = { submit: () => void };
+type GroupEventFormProps = {
+  onSubmit: (input: { title: string; startsAt: string }) => void;
+};
+
+let detailEvent: DetailEvent;
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -24,6 +36,7 @@ jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: { Screen: mockCreateHost("StackScreen") },
   useLocalSearchParams: () => ({ groupEventId: "occurrence-1" }),
+  useNavigation: () => ({ dispatch: jest.fn() }),
   useRouter: () => ({ replace: replaceMock }),
 }));
 
@@ -35,7 +48,10 @@ jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: mockCreat
 
 jest.mock("@/components/groups", () => ({
   __esModule: true,
-  GroupEventForm: React.forwardRef(function MockGroupEventForm(props: any, ref: any) {
+  GroupEventForm: React.forwardRef(function MockGroupEventForm(
+    props: GroupEventFormProps,
+    ref: React.ForwardedRef<GroupEventFormHandle>,
+  ) {
     React.useImperativeHandle(ref, () => ({
       submit: () =>
         props.onSubmit({ title: "Occurrence override", startsAt: "2026-05-28T12:00:00.000Z" }),
@@ -48,7 +64,7 @@ jest.mock("@/components/groups", () => ({
           props.onSubmit({ title: "Occurrence override", startsAt: "2026-05-28T12:00:00.000Z" }),
         testID: "mock-group-event-form-submit",
       },
-      "Submit form",
+      React.createElement("Text", null, "Submit form"),
     );
   }),
   GroupListSkeleton: mockCreateHost("GroupListSkeleton"),
@@ -84,10 +100,10 @@ describe("GroupEventEditRoute", () => {
   });
 
   it("sends recurring occurrence edits through the occurrence override mutation", async () => {
-    renderNative(<GroupEventEditRoute />);
+    await renderNative(<GroupEventEditRoute />);
 
     await act(async () => {
-      fireEvent.press(screen.getByTestId("mock-group-event-form-submit"));
+      await fireEvent.press(screen.getByTestId("mock-group-event-form-submit"));
     });
 
     await waitFor(() => {

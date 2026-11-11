@@ -1,7 +1,7 @@
-import React from "react";
+import React, { type ComponentProps } from "react";
 import { createHost as mockCreateHost } from "../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
-import { CurrentGroupEventPlanCard, GroupEventCard } from "../GroupEventCards";
+import { GroupEventCard } from "../GroupEventCards";
 import { GroupEventDetailScreen } from "../GroupEventDetail";
 
 const activityPlanPressMock = jest.fn();
@@ -9,9 +9,23 @@ const occurrencePressMock = jest.fn();
 const rsvpMock = jest.fn();
 const rsvpSeriesMock = jest.fn();
 
-let activityPlanItems: any[] = [];
+type GroupEventFixture = NonNullable<ComponentProps<typeof GroupEventDetailScreen>["event"]>;
+type ActivityPlanFixture = { id: string; name: string };
+function createViewerSeriesRsvp(
+  status: NonNullable<GroupEventFixture["viewerSeriesRsvp"]>["status"],
+): NonNullable<GroupEventFixture["viewerSeriesRsvp"]> {
+  return {
+    group_event_series_id: "series-1",
+    profile_id: "viewer-1",
+    status,
+    created_at: "2026-05-20T12:00:00.000Z",
+    updated_at: "2026-05-20T12:00:00.000Z",
+  };
+}
 
-function createGroupEvent(overrides: Record<string, unknown> = {}) {
+let activityPlanItems: ActivityPlanFixture[] = [];
+
+function createGroupEvent(overrides: Partial<GroupEventFixture> = {}): GroupEventFixture {
   return {
     id: "group-event-1",
     group_id: "group-1",
@@ -33,7 +47,7 @@ function createGroupEvent(overrides: Record<string, unknown> = {}) {
     is_recurring_series: false,
     is_recurring_occurrence: false,
     acceptedRsvpCount: 0,
-    activityPlanOptions: [],
+    activity_plan_id: null,
     viewerRsvp: null,
     viewerSeriesRsvp: null,
     group: { id: "group-1", name: "Trail Crew", slug: "trail-crew", avatar_url: null },
@@ -67,18 +81,25 @@ jest.mock("@/lib/server-config", () => ({
 
 jest.mock("@/components/shared/ActivityPlanCard", () => ({
   __esModule: true,
-  ActivityPlanCard: ({ activityPlan, onPress }: any) =>
+  ActivityPlanCard: ({ plan, onPress }: { plan: ActivityPlanFixture; onPress?: () => void }) =>
     React.createElement(
       "ActivityPlanCard",
-      { onPress, testID: `activity-plan-card-${activityPlan.id}` },
-      activityPlan.name,
+      { onPress, testID: `activity-plan-card-${plan.id}` },
+      React.createElement("Text", null, plan.name),
     ),
 }));
 
 jest.mock("@/components/shared/AppFormModal", () => ({
   __esModule: true,
-  AppFormModal: ({ children, testID, title }: any) =>
-    React.createElement("View", { testID }, React.createElement("Text", null, title), children),
+  AppFormModal: ({
+    children,
+    testID,
+    title,
+  }: {
+    children?: React.ReactNode;
+    testID?: string;
+    title?: React.ReactNode;
+  }) => React.createElement("View", { testID }, React.createElement("Text", null, title), children),
 }));
 
 jest.mock("lucide-react-native", () => ({
@@ -104,39 +125,39 @@ describe("GroupEventDetailScreen", () => {
     activityPlanItems = [];
   });
 
-  it("shows the owning group with avatar fallback and opens group details", () => {
+  it("shows the owning group with avatar fallback and opens group details", async () => {
     const groupPressMock = jest.fn();
 
-    renderNative(
-      <GroupEventDetailScreen event={createGroupEvent() as any} onGroupPress={groupPressMock} />,
+    await renderNative(
+      <GroupEventDetailScreen event={createGroupEvent()} onGroupPress={groupPressMock} />,
     );
 
     expect(screen.getByText("Trail Crew")).toBeTruthy();
     expect(screen.getByText("@trail-crew")).toBeTruthy();
     expect(screen.getByText("TC")).toBeTruthy();
 
-    fireEvent.press(screen.getByLabelText("Open group Trail Crew"));
+    await fireEvent.press(screen.getByLabelText("Open group Trail Crew"));
 
     expect(groupPressMock).toHaveBeenCalledWith(
       expect.objectContaining({ id: "group-1", name: "Trail Crew" }),
     );
   });
 
-  it("keeps group ownership first and separate from opening the event card", () => {
+  it("keeps group ownership first and separate from opening the event card", async () => {
     const eventPressMock = jest.fn();
     const groupPressMock = jest.fn();
     const stopPropagationMock = jest.fn();
 
-    renderNative(
+    await renderNative(
       <GroupEventCard
-        event={createGroupEvent() as any}
+        event={createGroupEvent()}
         onGroupPress={groupPressMock}
         onPress={eventPressMock}
         variant="compact"
       />,
     );
 
-    fireEvent.press(screen.getByLabelText("Open group Trail Crew"), {
+    await fireEvent.press(screen.getByLabelText("Open group Trail Crew"), {
       stopPropagation: stopPropagationMock,
     });
 
@@ -147,18 +168,16 @@ describe("GroupEventDetailScreen", () => {
     expect(eventPressMock).not.toHaveBeenCalled();
   });
 
-  it("keeps series RSVP behind a lightweight apply action", () => {
-    renderNative(
+  it("keeps series RSVP behind a lightweight apply action", async () => {
+    await renderNative(
       <GroupEventDetailScreen
-        event={
-          createGroupEvent({
-            id: "occurrence-1",
-            series_id: "series-1",
-            occurrence_key: "2026-05-21",
-            is_recurring_occurrence: true,
-            viewerSeriesRsvp: { status: "accepted" },
-          }) as any
-        }
+        event={createGroupEvent({
+          id: "occurrence-1",
+          series_id: "series-1",
+          occurrence_key: "2026-05-21",
+          is_recurring_occurrence: true,
+          viewerSeriesRsvp: createViewerSeriesRsvp("declined"),
+        })}
         onRsvpSeries={rsvpSeriesMock}
       />,
     );
@@ -167,18 +186,18 @@ describe("GroupEventDetailScreen", () => {
     expect(screen.queryByText("Recurring series")).toBeNull();
     expect(screen.queryByText("One-time event")).toBeNull();
     expect(screen.getByText("Repeating event")).toBeTruthy();
-    expect(screen.getByText("Your RSVP is for this date · Series is Going.")).toBeTruthy();
+    expect(screen.getByText("Your RSVP is for this date · Series is Declined.")).toBeTruthy();
     expect(screen.queryByText("Future dates")).toBeNull();
     expect(screen.queryByText("Decline series")).toBeNull();
 
-    fireEvent.press(screen.getByText("Apply to series"));
-    fireEvent.press(screen.getByText("Decline series"));
+    await fireEvent.press(screen.getByText("Apply to series"));
+    await fireEvent.press(screen.getByText("Decline series"));
 
     expect(rsvpSeriesMock).toHaveBeenCalledWith("declined");
   });
 
-  it("keeps the event detail layout minimal", () => {
-    renderNative(<GroupEventDetailScreen event={createGroupEvent() as any} />);
+  it("keeps the event detail layout minimal", async () => {
+    await renderNative(<GroupEventDetailScreen event={createGroupEvent()} />);
 
     expect(screen.getByText("Trail Crew")).toBeTruthy();
     expect(screen.getByText("Saturday long run")).toBeTruthy();
@@ -186,122 +205,149 @@ describe("GroupEventDetailScreen", () => {
     expect(screen.queryByText("Created by creator-1")).toBeNull();
   });
 
-  it("allows clearing or returning an occurrence RSVP to tentative", () => {
-    renderNative(
+  it("labels an absent RSVP as no response rather than the default eligibility", async () => {
+    await renderNative(<GroupEventDetailScreen event={createGroupEvent()} />);
+
+    expect(screen.getByText("No response")).toBeTruthy();
+  });
+
+  it("saves an explicit Going occurrence override for a declined series", async () => {
+    await renderNative(
       <GroupEventDetailScreen
-        event={
-          createGroupEvent({
-            viewerRsvp: {
-              status: "accepted",
-              selected_group_event_activity_plan_id: null,
-            },
-          }) as any
-        }
+        event={createGroupEvent({
+          id: "occurrence-1",
+          series_id: "series-1",
+          occurrence_key: "2026-05-21",
+          is_recurring_occurrence: true,
+          viewerSeriesRsvp: createViewerSeriesRsvp("declined"),
+        })}
         onRsvp={rsvpMock}
       />,
     );
 
-    fireEvent.press(screen.getByText("Tentative"));
-    fireEvent.press(screen.getByText("Clear"));
+    await fireEvent.press(screen.getByText("Restore Going"));
 
-    expect(rsvpMock).toHaveBeenCalledWith("tentative", null);
-    expect(rsvpMock).toHaveBeenCalledWith(null, null);
+    expect(rsvpMock).toHaveBeenCalledWith("going");
   });
 
-  it("does not label current group events as plans without activity plan options", () => {
-    renderNative(<CurrentGroupEventPlanCard event={createGroupEvent() as any} />);
-
-    expect(screen.getByText("Current / next event")).toBeTruthy();
-    expect(screen.queryByText("Current / next plan")).toBeNull();
-  });
-
-  it("shows accepted RSVP counts on the detail header without future dates", () => {
-    renderNative(
+  it("shows accepted RSVP counts and renders future dates from passed occurrences", async () => {
+    await renderNative(
       <GroupEventDetailScreen
-        event={createGroupEvent({ acceptedRsvpCount: 3, is_recurring_series: true }) as any}
+        event={createGroupEvent({ acceptedRsvpCount: 3, is_recurring_series: true })}
         futureOccurrences={[
           createGroupEvent({
             id: "occurrence-2",
             acceptedRsvpCount: 1,
             series_id: "series-1",
             title: "Next Saturday long run",
-          }) as any,
+          }),
         ]}
         onOccurrencePress={occurrencePressMock}
       />,
     );
 
     expect(screen.getByText("3 going")).toBeTruthy();
-    expect(screen.queryByText("1 going")).toBeNull();
+    expect(screen.getByText("Future dates")).toBeTruthy();
+    expect(screen.getByText("1 going")).toBeTruthy();
+
+    await fireEvent.press(screen.getByText("Next Saturday long run"));
+    expect(occurrencePressMock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "occurrence-2" }),
+    );
   });
 
-  it("does not render activity plan details that are not visible to the viewer", () => {
+  it("does not render future-date state for one-off events", async () => {
+    await renderNative(
+      <GroupEventDetailScreen event={createGroupEvent()} futureOccurrences={[]} />,
+    );
+
+    expect(screen.queryByText("Future dates")).toBeNull();
+    expect(screen.queryByText("No future dates.")).toBeNull();
+  });
+
+  it("renders an empty future-date state for recurring events", async () => {
+    await renderNative(
+      <GroupEventDetailScreen
+        event={createGroupEvent({ is_recurring_series: true })}
+        futureOccurrences={[]}
+      />,
+    );
+
+    expect(screen.getByText("No future dates.")).toBeTruthy();
+  });
+
+  it("excludes the viewed occurrence and orders remaining future dates chronologically", async () => {
+    const rendered = await renderNative(
+      <GroupEventDetailScreen
+        event={createGroupEvent({ id: "occurrence-current", is_recurring_occurrence: true })}
+        futureOccurrences={[
+          createGroupEvent({
+            id: "occurrence-later",
+            starts_at: "2026-06-07T13:00:00.000Z",
+            title: "Later occurrence",
+          }),
+          createGroupEvent({ id: "occurrence-current", title: "Current occurrence duplicate" }),
+          createGroupEvent({
+            id: "occurrence-next",
+            starts_at: "2026-05-28T13:00:00.000Z",
+            title: "Next occurrence",
+          }),
+        ]}
+      />,
+    );
+    const tree = JSON.stringify(rendered.toJSON());
+
+    expect(screen.queryByText("Current occurrence duplicate")).toBeNull();
+    expect(tree.indexOf("Next occurrence")).toBeLessThan(tree.indexOf("Later occurrence"));
+  });
+
+  it("renders the singular activity plan when it is visible to the viewer", async () => {
     activityPlanItems = [{ id: "plan-visible", name: "Visible tempo plan" }];
 
-    renderNative(
+    await renderNative(
       <GroupEventDetailScreen
-        event={
-          createGroupEvent({
-            activityPlanOptions: [
-              {
-                id: "option-visible",
-                activity_plan_id: "plan-visible",
-                label: "Tempo",
-                sort_order: 0,
-              },
-              {
-                id: "option-private",
-                activity_plan_id: "plan-private",
-                label: "Private",
-                sort_order: 1,
-              },
-            ],
-          }) as any
-        }
+        event={createGroupEvent({
+          activity_plan_id: "plan-visible",
+        })}
         onActivityPlanPress={activityPlanPressMock}
         onRsvp={rsvpMock}
       />,
     );
 
     expect(screen.getByTestId("activity-plan-card-plan-visible")).toBeTruthy();
-    expect(screen.getByText("1 activity plan is not available to view.")).toBeTruthy();
-    expect(screen.queryByText("plan-private")).toBeNull();
 
-    fireEvent.press(screen.getByTestId("activity-plan-card-plan-visible"));
-    fireEvent.press(screen.getByText("Private"));
+    await fireEvent.press(screen.getByTestId("activity-plan-card-plan-visible"));
 
     expect(activityPlanPressMock).toHaveBeenCalledWith("plan-visible");
-    expect(rsvpMock).toHaveBeenCalledWith("accepted", "option-private");
   });
 
-  it("limits occurrence override copy actions to event managers", () => {
-    const copySeriesPlansMock = jest.fn();
-    const occurrence = createGroupEvent({
-      id: "occurrence-1",
-      series_id: "series-1",
-      occurrence_key: "2026-05-21",
-      is_recurring_occurrence: true,
-    });
+  it("places the linked activity plan before RSVP actions", async () => {
+    activityPlanItems = [{ id: "plan-visible", name: "Visible tempo plan" }];
 
-    const { rerender } = renderNative(
+    const rendered = await renderNative(
       <GroupEventDetailScreen
-        canManage={false}
-        event={occurrence as any}
-        onCopySeriesPlans={copySeriesPlansMock}
+        event={createGroupEvent({ activity_plan_id: "plan-visible" })}
+        onRsvp={rsvpMock}
+      />,
+    );
+    const tree = JSON.stringify(rendered.toJSON());
+
+    expect(tree.indexOf("Visible tempo plan")).toBeLessThan(tree.indexOf("Your RSVP"));
+  });
+
+  it("omits the retired occurrence plan copy action for event managers", async () => {
+    await renderNative(
+      <GroupEventDetailScreen
+        canManage
+        event={createGroupEvent({
+          id: "occurrence-1",
+          series_id: "series-1",
+          occurrence_key: "2026-05-21",
+          is_recurring_occurrence: true,
+        })}
       />,
     );
 
     expect(screen.queryByText("Copy series plans to occurrence")).toBeNull();
-
-    rerender(
-      <GroupEventDetailScreen
-        canManage
-        event={occurrence as any}
-        onCopySeriesPlans={copySeriesPlansMock}
-      />,
-    );
-
-    fireEvent.press(screen.getByText("Copy series plans to occurrence"));
-    expect(copySeriesPlansMock).toHaveBeenCalledTimes(1);
   });
 });

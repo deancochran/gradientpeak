@@ -1,4 +1,4 @@
-import type { CanonicalSport } from "@repo/core";
+import type { CanonicalActivityCategory } from "@repo/core";
 import { Activity, Bike, Dumbbell, Footprints, Waves } from "lucide-react-native";
 
 /**
@@ -41,20 +41,45 @@ export const ACTIVITY_CATEGORY_CONFIGS = {
     bgColor: "bg-gray-50",
     borderColor: "border-gray-200",
   },
-} as const;
+} as const satisfies Record<
+  CanonicalActivityCategory,
+  {
+    name: string;
+    icon: typeof Activity;
+    color: string;
+    bgColor: string;
+    borderColor: string;
+  }
+>;
 
 /**
  * Get activity configuration for category + location
  */
 export function getActivityCategoryConfig(category: string) {
-  return ACTIVITY_CATEGORY_CONFIGS[category as CanonicalSport] || ACTIVITY_CATEGORY_CONFIGS.other;
+  return (
+    ACTIVITY_CATEGORY_CONFIGS[category as CanonicalActivityCategory] ||
+    ACTIVITY_CATEGORY_CONFIGS.other
+  );
+}
+
+export function getUniqueActivityCategoryConfigs(
+  categories: readonly (string | null | undefined)[],
+) {
+  const uniqueCategories = [
+    ...new Set(categories.filter((category): category is string => !!category)),
+  ];
+  const resolvedCategories = uniqueCategories.length > 0 ? uniqueCategories : ["other"];
+  return resolvedCategories.map((category) => ({
+    category,
+    ...getActivityCategoryConfig(category),
+  }));
 }
 
 /**
  * Get display name for category + location combination
  */
 export function getActivityDisplayName(
-  category: CanonicalSport,
+  category: CanonicalActivityCategory,
   gpsRecordingEnabled: boolean,
 ): string {
   const categoryConfig = getActivityCategoryConfig(category);
@@ -72,84 +97,7 @@ export function getActivityDisplayName(
 }
 
 /**
- * Legacy: Activity type configuration for backwards compatibility
- * @deprecated Use ACTIVITY_CATEGORY_CONFIGS with getActivityCategoryConfig instead
- */
-export const ACTIVITY_CONFIGS = {
-  outdoor_run: {
-    name: "Outdoor Run",
-    shortName: "Run",
-    icon: Footprints,
-    color: "text-blue-600",
-    bgColor: "bg-blue-50",
-    borderColor: "border-blue-200",
-  },
-  outdoor_bike: {
-    name: "Outdoor Bike",
-    shortName: "Bike",
-    icon: Bike,
-    color: "text-green-600",
-    bgColor: "bg-green-50",
-    borderColor: "border-green-200",
-  },
-  indoor_run: {
-    name: "Treadmill",
-    shortName: "Treadmill",
-    icon: Footprints,
-    color: "text-purple-600",
-    bgColor: "bg-purple-50",
-    borderColor: "border-purple-200",
-  },
-  indoor_bike: {
-    name: "Bike Trainer",
-    shortName: "Trainer",
-    icon: Bike,
-    color: "text-orange-600",
-    bgColor: "bg-orange-50",
-    borderColor: "border-orange-200",
-  },
-  indoor_strength: {
-    name: "Strength Training",
-    shortName: "Strength",
-    icon: Dumbbell,
-    color: "text-red-600",
-    bgColor: "bg-red-50",
-    borderColor: "border-red-200",
-  },
-  indoor_swim: {
-    name: "Swimming",
-    shortName: "Swim",
-    icon: Waves,
-    color: "text-cyan-600",
-    bgColor: "bg-cyan-50",
-    borderColor: "border-cyan-200",
-  },
-  other: {
-    name: "Other Activity",
-    shortName: "Other",
-    icon: Activity,
-    color: "text-gray-600",
-    bgColor: "bg-gray-50",
-    borderColor: "border-gray-200",
-  },
-} as const;
-
-/**
- * Valid activity type keys
- */
-export type ActivityType = keyof typeof ACTIVITY_CONFIGS;
-
-/**
- * Get activity configuration for a given type (legacy)
- * Returns 'other' config as fallback if type not found
- * @deprecated Use getActivityCategoryConfig instead
- */
-export function getActivityConfig(activityType: string) {
-  return ACTIVITY_CONFIGS[activityType as ActivityType] || ACTIVITY_CONFIGS.other;
-}
-
-/**
- * Activity type options for filters and selectors
+ * Activity category options for filters and selectors
  */
 export const ACTIVITY_FILTER_OPTIONS = [
   { value: "all" as const, label: "All", icon: Activity },
@@ -159,7 +107,7 @@ export const ACTIVITY_FILTER_OPTIONS = [
 ] as const;
 
 /**
- * All activity type options for creation and editing
+ * All activity category options for creation and editing
  */
 export const ACTIVITY_CATEGORY_OPTIONS = [
   { value: "outdoor_run", label: "Outdoor Run", icon: Footprints },
