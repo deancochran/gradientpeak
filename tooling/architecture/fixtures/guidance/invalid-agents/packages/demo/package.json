@@ -1,0 +1,6 @@
+{
+  "name": "@fixture/demo",
+  "scripts": {
+    "test": "node --test"
+  }
+}
