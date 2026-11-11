@@ -18,7 +18,9 @@ vi.mock("@tanstack/react-router", () => ({
     useParams: () => ({ organizationId: "11111111-1111-4111-8111-111111111111" }),
     useRouteContext: () => ({ actorProfileId: "actor-1" }),
   }),
-  Link: ({ children }: { children: React.ReactNode }) => <a href="/organizations">{children}</a>,
+  Link: ({ children, to }: { children: React.ReactNode; to: string }) => (
+    <a href={to}>{children}</a>
+  ),
   useRouter: () => ({ invalidate: state.invalidate }),
   useRouterState: ({
     select,
@@ -61,7 +63,10 @@ describe("organization roles route", () => {
     };
     const Component = (Route as unknown as { component: React.ComponentType }).component;
     render(<Component />);
-    expect(screen.getByText("Coaching access required")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Organization access unavailable" })).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Return to Personal workspace" }).getAttribute("href"),
+    ).toBe("/");
   });
 
   it("offers an actionable route-read retry instead of an inert load error", () => {

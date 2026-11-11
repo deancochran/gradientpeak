@@ -37,7 +37,7 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children }: { children: ReactNode }) => <a href="#test">{children}</a>,
+  Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
   createFileRoute: () => (options: Record<string, unknown>) => {
     state.options = options;
     return {
@@ -143,7 +143,10 @@ describe("organization coaching facts route", () => {
     const Page = state.options.component as ComponentType;
     render(<Page />);
 
-    expect(screen.getByText(/access|permission/i)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Organization access unavailable" })).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Return to Personal workspace" }).getAttribute("href"),
+    ).toBe("/");
     expect(screen.queryByTestId("coaching-assignment-facts")).toBeNull();
     expect(screen.queryByText("Current organization engagements.")).toBeNull();
   });

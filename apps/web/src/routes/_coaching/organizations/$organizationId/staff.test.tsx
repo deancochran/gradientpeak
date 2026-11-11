@@ -17,7 +17,7 @@ vi.mock("@tanstack/react-router", () => ({
     useSearch: () => ({}),
     useParams: () => ({ organizationId: "11111111-1111-4111-8111-111111111111" }),
   }),
-  Link: ({ children }: { children: ReactNode }) => <a href="/staff">{children}</a>,
+  Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
   useRouter: () => ({ invalidate: vi.fn() }),
 }));
 vi.mock("../../../../lib/coaching/staff-server-functions", () => ({
@@ -42,7 +42,10 @@ describe("staff route", () => {
     state.result = { status: "forbidden" };
     const Component = (Route as unknown as { component: React.ComponentType }).component;
     render(<Component />);
-    expect(screen.getByRole("heading", { name: "Coaching access required" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Organization access unavailable" })).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Return to Personal workspace" }).getAttribute("href"),
+    ).toBe("/");
   });
 
   it("returns an invalidated cursor page to the first page without retrying the same cursor", () => {

@@ -19,7 +19,7 @@ vi.mock("@tanstack/react-router", () => ({
     useRouteContext: () => ({ actorProfileId: "profile-1" }),
   }),
   useRouter: () => ({ invalidate: vi.fn() }),
-  Link: ({ children }: { children: ReactNode }) => <a href="/organizations">{children}</a>,
+  Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
 }));
 vi.mock("../../../../lib/coaching/organization-invitations-server-functions", () => ({
   loadOrganizationInvitations: vi.fn(),
@@ -47,6 +47,9 @@ describe("organization invitations route", () => {
     state.result = { status: "forbidden" };
     const Component = (Route as unknown as { component: React.ComponentType }).component;
     render(<Component />);
-    expect(screen.getByRole("heading", { name: "Coaching access required" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Organization access unavailable" })).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Return to Personal workspace" }).getAttribute("href"),
+    ).toBe("/");
   });
 });

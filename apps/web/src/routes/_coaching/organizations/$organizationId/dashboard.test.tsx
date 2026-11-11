@@ -185,7 +185,10 @@ describe("coach dashboard", () => {
     const Component = (Route as unknown as { component: React.ComponentType }).component;
     render(<Component />);
 
-    expect(screen.getByRole("heading", { name: "Coaching access required" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Organization access unavailable" })).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Return to Personal workspace" }).getAttribute("href"),
+    ).toBe("/");
     expect(screen.queryByText("Casey Coach")).toBeNull();
     expect(screen.queryByRole("button", { name: "Retry organization overview" })).toBeNull();
   });
