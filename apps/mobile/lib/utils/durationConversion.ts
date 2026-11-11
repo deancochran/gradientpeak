@@ -1,21 +1,15 @@
 /**
- * V2 Duration Conversion Utilities
+ * Activity-plan duration conversion utilities.
  *
- * This file re-exports duration utilities from @repo/core
- * Use the core package directly for new code: import { formatDurationV2, getDurationSecondsV2 } from "@repo/core"
- *
- * @deprecated Import from @repo/core instead
+ * Non-time completion policies intentionally do not invent elapsed time.
  */
 
-import {
-  calculateTotalDurationV2,
-  formatDurationV2 as formatDurationCore,
-  getDurationSecondsV2 as getDurationSecondsCore,
-} from "@repo/core";
-import type { DurationV2 } from "@repo/core/schemas/activity_plan_v2";
+import type { ActivityPlanDuration } from "@repo/core";
+import { getExactDurationSeconds } from "@repo/core/duration";
+import { formatDurationCompact as formatDurationCore } from "@repo/core/duration/time-format";
 
 // ==============================
-// UI -> V2 Conversion
+// UI -> activity-plan duration
 // ==============================
 
 export interface DurationUIInput {
@@ -25,9 +19,9 @@ export interface DurationUIInput {
 }
 
 /**
- * Convert UI duration input to V2 format
+ * Convert UI duration input to the current activity-plan duration contract.
  */
-export function convertUIToV2Duration(input: DurationUIInput): DurationV2 {
+export function convertUIToActivityPlanDuration(input: DurationUIInput): ActivityPlanDuration {
   switch (input.type) {
     case "time": {
       let seconds = input.value;
@@ -59,7 +53,7 @@ export function convertUIToV2Duration(input: DurationUIInput): DurationV2 {
 }
 
 // ==============================
-// V2 -> UI Conversion
+// Activity-plan duration -> UI
 // ==============================
 
 export interface DurationUIOutput {
@@ -70,10 +64,10 @@ export interface DurationUIOutput {
 }
 
 /**
- * Convert V2 duration to UI representation
+ * Convert an activity-plan duration to UI representation.
  * Automatically selects the most appropriate unit for display
  */
-export function convertV2ToUIFormat(duration: DurationV2): DurationUIOutput {
+export function convertActivityPlanDurationToUI(duration: ActivityPlanDuration): DurationUIOutput {
   switch (duration.type) {
     case "time": {
       const seconds = duration.seconds;
@@ -85,7 +79,7 @@ export function convertV2ToUIFormat(duration: DurationV2): DurationUIOutput {
           type: "time",
           value: hours,
           unit: "hours",
-          displayValue: formatDuration({ type: "time", seconds }),
+          displayValue: formatDurationCore(seconds),
         };
       }
 
@@ -96,7 +90,7 @@ export function convertV2ToUIFormat(duration: DurationV2): DurationUIOutput {
           type: "time",
           value: minutes,
           unit: "minutes",
-          displayValue: formatDuration({ type: "time", seconds }),
+          displayValue: formatDurationCore(seconds),
         };
       }
 
@@ -105,7 +99,7 @@ export function convertV2ToUIFormat(duration: DurationV2): DurationUIOutput {
         type: "time",
         value: seconds,
         unit: "seconds",
-        displayValue: formatDuration({ type: "time", seconds }),
+        displayValue: formatDurationCore(seconds),
       };
     }
 
@@ -149,7 +143,7 @@ export function convertV2ToUIFormat(duration: DurationV2): DurationUIOutput {
       };
 
     default:
-      throw new Error(`Unknown duration type: ${(duration as any).type}`);
+      throw new Error(`Unknown duration type: ${String((duration as { type?: unknown }).type)}`);
   }
 }
 
@@ -161,16 +155,8 @@ export function convertV2ToUIFormat(duration: DurationV2): DurationUIOutput {
  * Get duration in milliseconds for time calculations
  * Returns estimated duration for distance/reps
  */
-export function getDurationMs(duration: DurationV2): number {
-  return getDurationSecondsCore(duration) * 1000;
-}
-
-/**
- * Get duration in seconds (for time-based durations only)
- * @deprecated Use getDurationSecondsV2 from @repo/core instead
- */
-export function getDurationSeconds(duration: DurationV2): number {
-  return getDurationSecondsCore(duration);
+export function getDurationMs(duration: ActivityPlanDuration): number {
+  return (getExactDurationSeconds(duration) ?? 0) * 1000;
 }
 
 // ==============================
@@ -178,17 +164,9 @@ export function getDurationSeconds(duration: DurationV2): number {
 // ==============================
 
 /**
- * Format duration for display
- * @deprecated Use formatDurationV2 from @repo/core instead
- */
-export function formatDuration(duration: DurationV2): string {
-  return formatDurationCore(duration);
-}
-
-/**
  * Format duration in a short form (e.g., "5m", "10km", "20 reps")
  */
-export function formatDurationShort(duration: DurationV2): string {
+export function formatDurationShort(duration: ActivityPlanDuration): string {
   switch (duration.type) {
     case "time": {
       const seconds = duration.seconds;
@@ -220,13 +198,4 @@ export function formatDurationShort(duration: DurationV2): string {
     default:
       return "?";
   }
-}
-
-/**
- * Calculate total duration from multiple steps
- * @deprecated Use calculateTotalDurationV2 from @repo/core instead
- */
-export function calculateTotalDurationMs(durations: DurationV2[]): number {
-  const steps = durations.map((duration) => ({ duration }));
-  return calculateTotalDurationV2(steps) * 1000;
 }

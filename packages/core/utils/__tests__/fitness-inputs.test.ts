@@ -1,11 +1,10 @@
-import { describe, expect, it } from "vitest";
-
 import {
   clampInteger,
   clampNumber,
   convertWeightFromKg,
   convertWeightToKg,
   formatDateOnly,
+  formatLocalDateOnly,
   formatNumberForInput,
   formatSecondsToHms,
   formatSecondsToMmSs,
@@ -22,7 +21,8 @@ import {
   parseMmSsToSeconds,
   parseNumberOrUndefined,
   roundToDecimals,
-} from "../fitness-inputs";
+} from "@repo/core/utils/fitness-inputs";
+import { describe, expect, it } from "vitest";
 
 describe("fitness input utilities", () => {
   it("parses bounded numbers and integers", () => {
@@ -42,13 +42,28 @@ describe("fitness input utilities", () => {
   });
 
   it("parses and formats date-only values", () => {
-    const fallback = new Date("2026-03-21T12:00:00.000Z");
-
     expect(parseDateOnly("2026-03-21")).toBe("2026-03-21");
     expect(parseDateOnly("03/21/2026")).toBeUndefined();
     expect(formatDateOnly(new Date("2026-03-21T00:00:00.000Z"))).toBe("2026-03-21");
-    expect(parseDateOnlyToDate("bad-date", fallback)).toBe(fallback);
-    expect(parseDateOnlyToDate("2026-03-21").toISOString()).toContain("2026-03-21");
+    expect(parseDateOnlyToDate("bad-date")).toBeUndefined();
+    expect(parseDateOnlyToDate("2026-03-21")).toEqual(new Date(2026, 2, 21));
+  });
+
+  // Run in UTC, Asia/Tokyo and America/Los_Angeles to cover both sides of UTC and DST.
+  it.each([
+    "2026-01-01",
+    "2026-03-08",
+    "2026-03-09",
+    "2026-11-01",
+    "2026-11-02",
+    "2028-02-29",
+  ])("round-trips local date %s at midnight and near the end of the day", (value) => {
+    const date = parseDateOnlyToDate(value);
+    if (!date) throw new Error("Expected a valid date");
+    expect(formatLocalDateOnly(date)).toBe(value);
+    date.setHours(23, 30);
+    expect(formatLocalDateOnly(date)).toBe(value);
+    expect(formatDateOnly(date)).toBe(date.toISOString().slice(0, 10));
   });
 
   it("parses and normalizes duration and pace strings", () => {

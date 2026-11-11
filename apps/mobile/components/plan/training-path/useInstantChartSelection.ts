@@ -1,0 +1,300 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { NativeScrollEvent, NativeSyntheticEvent } from "react-native";
+import type { ScrollView } from "react-native-gesture-handler";
+import {
+  getNearestTrainingPathChartIndex,
+  getTrainingPathChartOffset,
+} from "./trainingPathChartWindow";
+
+type SelectableChartPoint = {
+  date: string;
+};
+
+const DRAG_SETTLE_DELAY_MS = 32;
+const MOMENTUM_SETTLE_FALLBACK_DELAY_MS = 500;
+
+type InstantChartSelectionInput<Point extends SelectableChartPoint> = {
+  onInteractionSettled?: (date: string) => void;
+  onInteractionStart?: () => void;
+  onPreviewSelectedDateChange?: (date: string) => void;
+  onSelectedDateChange?: (date: string) => void;
+  points: Point[];
+  isScrollReady?: boolean;
+  selectedDate?: string | null;
+  slotWidth: number;
+  suppressSelectionScroll?: boolean;
+  offsetForIndex?: (index: number) => number;
+  indexForOffset?: (offsetX: number) => number;
+};
+
+export type InstantChartSelectionPhase = "initializing" | "previewing" | "committed";
+
+function boundedIndex(index: number, length: number) {
+  return Math.max(0, Math.min(length - 1, Math.round(index)));
+}
+
+export function useInstantChartSelection<Point extends SelectableChartPoint>({
+  onInteractionSettled,
+  onInteractionStart,
+  onPreviewSelectedDateChange,
+  onSelectedDateChange,
+  points,
+  isScrollReady = true,
+  selectedDate,
+  slotWidth,
+  suppressSelectionScroll = false,
+  offsetForIndex,
+  indexForOffset,
+}: InstantChartSelectionInput<Point>) {
+  const [internalCommittedDate, setInternalCommittedDate] = useState<string | null>(null);
+  const [pendingControlledDate, setPendingControlledDate] = useState<string | null>(null);
+  const [previewDate, setPreviewDate] = useState<string | null>(null);
+  const [phase, setPhase] = useState<InstantChartSelectionPhase>("initializing");
+  const lastPreviewDateRef = useRef<string | null>(null);
+  const lastProgrammaticScrollDateRef = useRef<string | null>(null);
+  const lastCommittedDateRef = useRef<string | null>(null);
+  const mountedRef = useRef(false);
+  const pendingControlledBaseDateRef = useRef<string | null>(null);
+  const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const velocityFallbackIndexRef = useRef<number | null>(null);
+  const interactionSettledRef = useRef(false);
+  const interactionActiveRef = useRef(false);
+  const scrollRef = useRef<ScrollView>(null);
+
+  const isSelectionControlled = selectedDate !== undefined;
+  const controlledDate = selectedDate ?? null;
+  const committedDate = isSelectionControlled
+    ? (pendingControlledDate ?? controlledDate)
+    : internalCommittedDate;
+  const displayDate = phase === "previewing" ? (previewDate ?? committedDate) : committedDate;
+  const selectedPoint = useMemo(
+    () => points.find((point) => point.date === displayDate) ?? points[0] ?? null,
+    [displayDate, points],
+  );
+
+  useEffect(() => {
+    mountedRef.current = true;
+    setPhase("committed");
+    return () => {
+      mountedRef.current = false;
+      if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+      settleTimerRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!pendingControlledDate) return;
+    if (controlledDate === pendingControlledDate) {
+      setPendingControlledDate(null);
+      pendingControlledBaseDateRef.current = null;
+      return;
+    }
+    if (controlledDate !== pendingControlledBaseDateRef.current) {
+      setPendingControlledDate(null);
+      pendingControlledBaseDateRef.current = null;
+    }
+  }, [controlledDate, pendingControlledDate]);
+
+  useEffect(() => {
+    lastCommittedDateRef.current = committedDate ?? null;
+  }, [committedDate]);
+
+  const getNearestIndex = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) =>
+      indexForOffset?.(event.nativeEvent.contentOffset.x) ??
+      getNearestTrainingPathChartIndex(event.nativeEvent.contentOffset.x, slotWidth, points.length),
+    [indexForOffset, points.length, slotWidth],
+  );
+
+  const scrollToIndex = useCallback(
+    (index: number, animated = true) => {
+      const point = points[index];
+      if (!point || !scrollRef.current) return false;
+      lastProgrammaticScrollDateRef.current = point.date;
+      scrollRef.current.scrollTo({
+        animated,
+        x: offsetForIndex?.(index) ?? getTrainingPathChartOffset(index, slotWidth),
+        y: 0,
+      });
+      return true;
+    },
+    [offsetForIndex, points, slotWidth],
+  );
+
+  const scrollToDate = useCallback(
+    (date: string, animated = true) => {
+      const index = points.findIndex((point) => point.date === date);
+      if (index < 0) return;
+      scrollToIndex(index, animated);
+    },
+    [points, scrollToIndex],
+  );
+
+  const previewIndex = useCallback(
+    (index: number) => {
+      const point = points[boundedIndex(index, points.length)];
+      if (!point) return;
+      setPhase("previewing");
+      if (lastPreviewDateRef.current === point.date) return;
+      lastPreviewDateRef.current = point.date;
+      setPreviewDate(point.date);
+      onPreviewSelectedDateChange?.(point.date);
+    },
+    [onPreviewSelectedDateChange, points],
+  );
+
+  const commitDate = useCallback(
+    (date: string) => {
+      lastPreviewDateRef.current = date;
+      setPreviewDate(date);
+      setPhase("committed");
+      if (date === committedDate || date === lastCommittedDateRef.current) return;
+      if (!mountedRef.current) return;
+      lastCommittedDateRef.current = date;
+      if (!isSelectionControlled) {
+        setInternalCommittedDate(date);
+      } else {
+        pendingControlledBaseDateRef.current = controlledDate;
+        setPendingControlledDate(date);
+      }
+      onSelectedDateChange?.(date);
+    },
+    [committedDate, controlledDate, isSelectionControlled, onSelectedDateChange],
+  );
+
+  const commitIndex = useCallback(
+    (index: number) => {
+      const point = points[boundedIndex(index, points.length)];
+      if (point) commitDate(point.date);
+    },
+    [commitDate, points],
+  );
+
+  useEffect(() => {
+    if (!committedDate || !isScrollReady) return;
+    if (phase === "previewing" || interactionActiveRef.current || suppressSelectionScroll) return;
+    lastPreviewDateRef.current = committedDate;
+    setPreviewDate(committedDate);
+    if (lastProgrammaticScrollDateRef.current === committedDate) return;
+    scrollToDate(committedDate, false);
+  }, [committedDate, isScrollReady, phase, scrollToDate, suppressSelectionScroll]);
+
+  const previewNearestFromScrollEvent = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      previewIndex(getNearestIndex(event));
+    },
+    [getNearestIndex, previewIndex],
+  );
+
+  const settleIndex = useCallback(
+    (index: number) => {
+      if (interactionSettledRef.current) return;
+      const point = points[boundedIndex(index, points.length)];
+      if (!point) return;
+      interactionSettledRef.current = true;
+      interactionActiveRef.current = false;
+      // The native scroll gesture already placed this date. Treat it as the
+      // last positioned date so controlled-selection synchronization cannot
+      // issue a second, delayed scroll after drag settlement.
+      lastProgrammaticScrollDateRef.current = point.date;
+      commitIndex(index);
+      onInteractionSettled?.(point.date);
+    },
+    [commitIndex, onInteractionSettled, points],
+  );
+
+  const beginPreview = useCallback(() => {
+    if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+    settleTimerRef.current = null;
+    velocityFallbackIndexRef.current = null;
+    interactionSettledRef.current = false;
+    interactionActiveRef.current = true;
+    onInteractionStart?.();
+    setPhase("previewing");
+  }, [onInteractionStart]);
+
+  const beginMomentum = useCallback(() => {
+    if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+    settleTimerRef.current = null;
+    if (interactionSettledRef.current) return;
+    const fallbackIndex = velocityFallbackIndexRef.current;
+    if (fallbackIndex !== null) {
+      settleTimerRef.current = setTimeout(() => {
+        settleTimerRef.current = null;
+        velocityFallbackIndexRef.current = null;
+        settleIndex(fallbackIndex);
+      }, MOMENTUM_SETTLE_FALLBACK_DELAY_MS);
+    }
+    interactionSettledRef.current = false;
+    interactionActiveRef.current = true;
+    onInteractionStart?.();
+    setPhase("previewing");
+  }, [onInteractionStart, settleIndex]);
+
+  const endDrag = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+      const index = getNearestIndex(event);
+      const velocityX = event.nativeEvent.velocity?.x ?? 0;
+      if (Math.abs(velocityX) > 0.01) {
+        velocityFallbackIndexRef.current = index;
+        settleTimerRef.current = setTimeout(() => {
+          settleTimerRef.current = null;
+          velocityFallbackIndexRef.current = null;
+          settleIndex(index);
+        }, MOMENTUM_SETTLE_FALLBACK_DELAY_MS);
+        return;
+      }
+      velocityFallbackIndexRef.current = null;
+      settleTimerRef.current = setTimeout(() => {
+        settleTimerRef.current = null;
+        settleIndex(index);
+      }, DRAG_SETTLE_DELAY_MS);
+    },
+    [getNearestIndex, settleIndex],
+  );
+
+  const endMomentum = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+      settleTimerRef.current = null;
+      velocityFallbackIndexRef.current = null;
+      settleIndex(getNearestIndex(event));
+    },
+    [getNearestIndex, settleIndex],
+  );
+
+  const selectRelative = useCallback(
+    (increment: number) => {
+      const currentIndex = Math.max(
+        0,
+        points.findIndex((point) => point.date === displayDate),
+      );
+      const nextIndex = boundedIndex(currentIndex + increment, points.length);
+      const point = points[nextIndex];
+      if (!point || nextIndex === currentIndex) return;
+      scrollToIndex(nextIndex);
+      commitDate(point.date);
+    },
+    [commitDate, displayDate, points, scrollToIndex],
+  );
+
+  return {
+    beginMomentum,
+    beginPreview,
+    committedDate,
+    displayDate,
+    endDrag,
+    endMomentum,
+    phase,
+    previewDate,
+    previewNearestFromScrollEvent,
+    previewIndex,
+    scrollRef,
+    scrollToDate,
+    selectRelative,
+    selectDate: commitDate,
+    settleIndex,
+    selectedPoint,
+  };
+}

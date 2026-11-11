@@ -10,7 +10,9 @@ const nonPoolingUrl = databaseUrl.replace(":6543", ":5432");
 
 export default defineConfig({
   schema: "./src/schema.ts",
-  out: "./drizzle",
+  // Drizzle is schema/introspection tooling only. Manual generation must target
+  // the single Supabase migration authority rather than a second deploy tree.
+  out: "./supabase/migrations",
   dialect: "postgresql",
   dbCredentials: { url: nonPoolingUrl },
   casing: "snake_case",

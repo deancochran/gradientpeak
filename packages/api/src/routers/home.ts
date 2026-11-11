@@ -1,47 +1,85 @@
-import { calculateAge, calculateRollingTrainingQuality, getFormStatus } from "@repo/core";
-import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "@repo/core/load";
 import {
-  type EventRow,
-  type ProfileTrainingSettingsRow,
-  type PublicActivityPlansRow,
+  activityObservationQuantificationBundleSchema,
+  activityPlanStructureSchema,
+  calculateRollingTrainingQuality,
+  canonicalActivityCategorySchema,
+  canonicalTrainingPlanStructureSchema,
+  createObservationQuantificationBundle,
+  createPrescriptionQuantificationBundle,
+  createUnavailableActivityPlanPlanningEstimate,
+  getLoadBalanceStatus,
+  getPlannedEstimate,
+  loadCoverageSchema,
+  loadSeriesIdentitySchema,
+} from "@repo/core";
+import {
+  addDaysDateOnlyUtc,
+  getCalendarDateInIanaZone,
+  isValidIanaTimeZone,
+} from "@repo/core/calendar";
+import { commonLoadHistoryResultSchema } from "@repo/core/load";
+import {
+  activityArtifactLinks,
+  activityArtifacts,
+  activitySourceReferences,
+  follows,
   schema,
-  type TrainingPlanRow,
+  trainingPlans,
 } from "@repo/db";
-import { and, asc, eq, gte, isNotNull, lt, lte, sql } from "drizzle-orm";
+import { and, asc, eq, exists, gte, inArray, isNotNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
-import { getRequiredDb } from "../db";
+import { readAthleteReadModel } from "../application/athlete-intelligence/athlete-read-model";
 import {
-  createActivityAnalysisStore,
-  createEventReadRepository,
-} from "../infrastructure/repositories";
-import { buildDynamicStressSeries } from "../lib/activity-analysis";
+  loadPlannedActivitiesWithEstimations,
+  type PlannedActivityWithEstimation,
+} from "../application/home/plannedActivities";
+import { getEffectivePlanLoad } from "../application/training-plan";
+import {
+  getCurrentPlanningWeek,
+  getPlanningDateRange,
+} from "../application/training-plan/current-planning-week";
+import { getRequiredDb } from "../db";
+import { createEventReadRepository } from "../infrastructure/repositories";
 import { featureFlags } from "../lib/features";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
-import { getActivityPlansDerivedMetrics } from "../utils/activity-plan-derived-metrics";
-import { buildWorkloadEnvelopes } from "../utils/workload";
+import { buildWorkloadEnvelopes, resolveActivitySourceIntegrity } from "../utils/workload";
+
+function unavailableScheduledQuantification(
+  item: Pick<PlannedActivityWithEstimation, "id" | "scheduled_date">,
+  asOf: Date,
+) {
+  return createUnavailableActivityPlanPlanningEstimate({
+    asOf: asOf.toISOString(),
+    stage: "scheduled",
+    scheduledEventId: item.id,
+    reason: "source_missing",
+  }).prescriptionQuantification;
+}
+
+function scheduledQuantificationSource(item: PlannedActivityWithEstimation, asOf: Date) {
+  return unavailableScheduledQuantification(item, asOf);
+}
+
+function scheduledQuantification(item: PlannedActivityWithEstimation, asOf: Date) {
+  return scheduledQuantificationSource(item, asOf);
+}
+
+export function getPlanCategoryComposition(structure: unknown) {
+  const parsed = activityPlanStructureSchema.safeParse(structure);
+  return parsed.success ? [parsed.data.activity_category] : [];
+}
+
+export function getScheduleExecutionPresentation(plan: { activity_category: string } | null) {
+  return {
+    activity_category: plan?.activity_category ?? null,
+  };
+}
 
 const upcomingDaysSchema = z.object({
   days: z.number().min(1).max(14).default(7),
 });
 
 const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-
-const activityPlanBoundarySchema = z
-  .object({
-    id: z.string(),
-    name: z.string().nullable().optional(),
-    activity_category: z.string().nullable().optional(),
-    estimated_distance: z.number().nullable().optional(),
-    estimated_duration: z.number().nullable().optional(),
-    estimated_tss: z.number().nullable().optional(),
-  })
-  .passthrough();
-
-const profileTrainingSettingsRowSchema = z
-  .object({
-    settings: z.unknown(),
-  })
-  .strict();
 
 const dashboardTrainingPlanRowSchema = z
   .object({
@@ -52,106 +90,21 @@ const dashboardTrainingPlanRowSchema = z
   })
   .strict();
 
-const nextPlannedEventRowSchema = z
-  .object({
-    training_plan_id: z.string().nullable(),
-    starts_at: z.date(),
-  })
-  .strict();
-
-const profileRowSchema = z
-  .object({
-    dob: z.date().nullable().optional(),
-    gender: z.enum(["male", "female"]).nullable().optional(),
-  })
-  .strict();
-
-const activitySummaryRowSchema = z
-  .object({
-    id: z.string(),
-    type: z.string(),
-    started_at: z.date(),
-    finished_at: z.date().nullable(),
-    duration_seconds: z.number().nullable(),
-    moving_seconds: z.number().nullable(),
-    distance_meters: z.number().nullable(),
-    avg_heart_rate: z.number().nullable(),
-    max_heart_rate: z.number().nullable(),
-    avg_power: z.number().nullable(),
-    max_power: z.number().nullable(),
-    avg_speed_mps: z.number().nullable(),
-    max_speed_mps: z.number().nullable(),
-    normalized_power: z.number().nullable(),
-    normalized_speed_mps: z.number().nullable(),
-    normalized_graded_speed_mps: z.number().nullable(),
-  })
-  .strict();
-
-const plannedActivityRowSchema = z
-  .object({
-    id: z.string(),
-    starts_at: z.date(),
-    notes: z.string().nullable(),
-    activity_plan: activityPlanBoundarySchema.nullable(),
-    scheduled_date: isoDateSchema,
-  })
-  .strict();
-
-const planStructureSchema = z
-  .object({
-    periodization: z
-      .object({
-        currentPhase: z.string().nullable().optional(),
-      })
-      .partial()
-      .optional(),
-    periodization_template: z
-      .object({
-        starting_ctl: z.number().nullable().optional(),
-        target_ctl: z.number().nullable().optional(),
-        ramp_rate: z.number().nullable().optional(),
-        target_date: z.string().nullable().optional(),
-      })
-      .partial()
-      .optional(),
-    goals: z
-      .array(
-        z
-          .object({
-            targets: z
-              .array(
-                z
-                  .object({
-                    target_type: z.string().nullable().optional(),
-                  })
-                  .passthrough(),
-              )
-              .optional(),
-          })
-          .passthrough(),
-      )
-      .optional(),
-    goal: z
-      .object({
-        targetCTL: z.number().nullable().optional(),
-        targetDate: z.string().nullable().optional(),
-        description: z.string().nullable().optional(),
-      })
-      .passthrough()
-      .optional(),
-  })
-  .passthrough();
+const nextPlannedSessionRowSchema = z.object({
+  training_plan_id: z.string().nullable(),
+});
 
 const workloadEnvelopeSchema = z
   .object({
-    value: z.number().nullable().optional(),
-    source: z.string().optional(),
-    status: z.string().optional(),
-    coverageDays: z.number().optional(),
-    requiredDays: z.number().optional(),
+    value: z.number().nullable(),
+    status: z.enum(["insufficient_history", "provisional", "stable"]),
+    coverageDays: z.number().int().nonnegative(),
+    requiredDays: z.number().int().positive(),
+    source: z.enum(["common_load", "none"]),
     reasonCode: z.string().optional(),
-    current: z.number().optional(),
-    previous: z.number().optional(),
+    identity: loadSeriesIdentitySchema.optional(),
+    coverage: loadCoverageSchema.optional(),
+    coverageComplete: z.boolean().optional(),
   })
   .strict();
 
@@ -162,10 +115,11 @@ const scheduleItemSchema = z
     isToday: z.boolean(),
     isCompleted: z.boolean(),
     activityName: z.string(),
-    activityType: z.string(),
-    estimatedDuration: z.number(),
-    estimatedDistance: z.number(),
-    estimatedTSS: z.number(),
+    activity_category: canonicalActivityCategorySchema.nullable(),
+    estimatedDuration: z.number().nonnegative().nullable(),
+    estimatedDistance: z.number().nullable(),
+    load: z.number().nonnegative().nullable(),
+    objectiveIntensity: z.number().nonnegative().nullable(),
   })
   .strict();
 
@@ -175,17 +129,25 @@ const dashboardResponseSchema = z
       .object({
         id: z.string(),
         name: z.string(),
-        phase: z.string().nullable(),
-        targetType: z.string().nullable().optional(),
       })
       .strict()
       .nullable(),
-    currentStatus: z
+    commonLoadHistory: commonLoadHistoryResultSchema,
+    currentLoadStatus: z
       .object({
-        ctl: z.number(),
-        atl: z.number(),
-        tsb: z.number(),
-        form: z.string(),
+        longTermLoad: z.number(),
+        recentLoad: z.number(),
+        loadBalance: z.number(),
+        loadBalanceStatus: z.string(),
+        maturity: z.enum(["establishing_baseline", "provisional", "mature"]),
+        coverageStatus: z.enum(["complete", "partial"]),
+      })
+      .strict()
+      .nullable(),
+    trainingLoadState: z
+      .object({
+        status: z.enum(["available", "unavailable"]),
+        reason: z.enum(["complete_common_load_series", "incomplete_common_load_series"]),
       })
       .strict(),
     workload: z
@@ -202,19 +164,22 @@ const dashboardResponseSchema = z
       .strict(),
     weeklySummary: z
       .object({
+        observationQuantification: activityObservationQuantificationBundleSchema,
         actual: z
           .object({
-            distance: z.number(),
-            duration: z.number(),
-            tss: z.number(),
+            distance: z.number().nullable(),
+            duration: z.number().nullable(),
+            load: z.number().nullable(),
+            loadComplete: z.boolean(),
             count: z.number(),
           })
           .strict(),
         planned: z
           .object({
-            distance: z.number(),
-            duration: z.number(),
-            tss: z.number(),
+            distance: z.number().nullable(),
+            duration: z.number().nonnegative().nullable(),
+            load: z.number().nonnegative().nullable(),
+            loadComplete: z.boolean(),
             count: z.number(),
           })
           .strict(),
@@ -226,39 +191,24 @@ const dashboardResponseSchema = z
       z
         .object({
           date: isoDateSchema,
-          ctl: z.number(),
-          atl: z.number(),
-          tsb: z.number(),
+          longTermLoad: z.number(),
+          recentLoad: z.number(),
+          loadBalance: z.number(),
         })
         .strict(),
     ),
-    projectedFitness: z.array(
+    projectedLoad: z.array(
       z
         .object({
           date: isoDateSchema,
-          ctl: z.number(),
-          atl: z.number(),
-          tsb: z.number(),
-          plannedTss: z.number(),
+          longTermLoad: z.number(),
+          recentLoad: z.number(),
+          loadBalance: z.number(),
+          plannedLoad: z.number(),
+          status: z.enum(["complete", "partial"]),
         })
         .strict(),
     ),
-    idealFitnessCurve: z.array(
-      z
-        .object({
-          date: isoDateSchema,
-          ctl: z.number(),
-        })
-        .strict(),
-    ),
-    goalMetrics: z
-      .object({
-        targetCTL: z.number().nullable(),
-        targetDate: z.string().nullable(),
-        description: z.string().nullable(),
-      })
-      .strict()
-      .nullable(),
     todaysActivity: scheduleItemSchema.nullable(),
     personalizationTelemetry: z
       .object({
@@ -278,107 +228,85 @@ const dashboardResponseSchema = z
   })
   .strict();
 
-type ActivitySummaryRow = Pick<
-  typeof schema.activities.$inferSelect,
-  "id" | "type" | "started_at" | "finished_at"
-> &
-  Pick<
-    typeof schema.activitySummaries.$inferSelect,
-    | "duration_seconds"
-    | "moving_seconds"
-    | "distance_meters"
-    | "avg_heart_rate"
-    | "max_heart_rate"
-    | "avg_power"
-    | "max_power"
-    | "avg_speed_mps"
-    | "max_speed_mps"
-    | "normalized_power"
-    | "normalized_speed_mps"
-    | "normalized_graded_speed_mps"
-  >;
+/**
+ * Projects the common Load state from the server-owned effective plan composition.
+ * Missing or partial planned load cannot be projected as if it were a rest day.
+ */
+export function projectCommonLoad(input: {
+  current: { longTermLoad: number; recentLoad: number };
+  currentDate: string;
+  days: number;
+  sourceComplete?: boolean;
+  items: Array<{ date: string; commonLoad: { status: string; load?: number | null } }>;
+}) {
+  if (input.sourceComplete === false) return null;
+  const plannedByDate = new Map<string, number>();
+  for (const item of input.items) {
+    if (item.commonLoad.status !== "complete" || item.commonLoad.load === null) return null;
+    if (typeof item.commonLoad.load !== "number" || !Number.isFinite(item.commonLoad.load)) {
+      return null;
+    }
+    plannedByDate.set(item.date, (plannedByDate.get(item.date) ?? 0) + item.commonLoad.load);
+  }
 
-type DashboardTrainingPlanRow = Pick<TrainingPlanRow, "id" | "name" | "description" | "structure">;
-
-type ProfileTrainingSettingsSqlRow = Pick<ProfileTrainingSettingsRow, "settings">;
-
-type PlannedActivityRow = Pick<EventRow, "id" | "notes"> & {
-  starts_at: Date;
-  activity_plan: PublicActivityPlansRow | null;
-  scheduled_date: string;
-};
-
-async function getProfileTrainingSettings(db: ReturnType<typeof getRequiredDb>, profileId: string) {
-  const result = await db.execute(sql<ProfileTrainingSettingsSqlRow>`
-    select settings
-    from profile_training_settings
-    where profile_id = ${profileId}
-    limit 1
-  `);
-
-  const row = ((result as unknown as { rows: unknown[] }).rows ?? [])[0];
-  return row ? profileTrainingSettingsRowSchema.parse(row) : null;
+  let longTermLoad = input.current.longTermLoad;
+  let recentLoad = input.current.recentLoad;
+  return Array.from({ length: input.days }, (_, index) => {
+    const date = addDaysDateOnlyUtc(input.currentDate, index + 1);
+    const plannedLoad = plannedByDate.get(date) ?? 0;
+    longTermLoad += (plannedLoad - longTermLoad) / 42;
+    recentLoad += (plannedLoad - recentLoad) / 7;
+    return {
+      date,
+      longTermLoad: Math.round(longTermLoad * 10) / 10,
+      recentLoad: Math.round(recentLoad * 10) / 10,
+      loadBalance: Math.round((longTermLoad - recentLoad) * 10) / 10,
+      plannedLoad: Math.round(plannedLoad * 10) / 10,
+      status: "complete" as const,
+    };
+  });
 }
 
 async function getAccessibleTrainingPlan(
   db: ReturnType<typeof getRequiredDb>,
   input: { planId: string; profileId: string },
-): Promise<DashboardTrainingPlanRow | null> {
-  const result = await db.execute(sql<DashboardTrainingPlanRow>`
-    select id, name, description, structure
-    from training_plans
-    where id = ${input.planId}
-      and (
-        profile_id = ${input.profileId}
-        or is_system_template = true
-        or template_visibility = 'public'
-      )
-    limit 1
-  `);
-
-  const row = ((result as unknown as { rows: unknown[] }).rows ?? [])[0];
-  return row ? dashboardTrainingPlanRowSchema.parse(row) : null;
-}
-
-async function listPlannedActivitiesInRange(
-  db: ReturnType<typeof getRequiredDb>,
-  input: {
-    profileId: string;
-    startsAtGte: Date;
-    startsAtLt: Date;
-  },
-): Promise<PlannedActivityRow[]> {
-  const rows = await db
+): Promise<z.infer<typeof dashboardTrainingPlanRowSchema> | null> {
+  const [row] = await db
     .select({
-      id: schema.events.id,
-      starts_at: schema.events.starts_at,
-      notes: schema.events.notes,
-      activity_plan: schema.activityPlans,
+      id: trainingPlans.id,
+      name: trainingPlans.name,
+      description: trainingPlans.description,
+      structure: trainingPlans.structure,
     })
-    .from(schema.events)
-    .leftJoin(schema.eventScheduleLinks, eq(schema.eventScheduleLinks.event_id, schema.events.id))
-    .leftJoin(
-      schema.activityPlans,
-      eq(schema.eventScheduleLinks.activity_plan_id, schema.activityPlans.id),
-    )
+    .from(trainingPlans)
     .where(
       and(
-        eq(schema.events.profile_id, input.profileId),
-        eq(schema.events.event_type, "planned_activity"),
-        gte(schema.events.starts_at, input.startsAtGte),
-        lt(schema.events.starts_at, input.startsAtLt),
+        eq(trainingPlans.id, input.planId),
+        or(
+          eq(trainingPlans.profile_id, input.profileId),
+          eq(trainingPlans.is_system_template, true),
+          eq(trainingPlans.content_visibility, "public"),
+          and(
+            eq(trainingPlans.content_visibility, "followers"),
+            exists(
+              db
+                .select({ value: sql`1` })
+                .from(follows)
+                .where(
+                  and(
+                    eq(follows.follower_id, input.profileId),
+                    eq(follows.following_id, trainingPlans.profile_id),
+                    eq(follows.status, "accepted"),
+                  ),
+                ),
+            ),
+          ),
+        ),
       ),
     )
-    .orderBy(asc(schema.events.starts_at));
+    .limit(1);
 
-  return rows.map(
-    (row) =>
-      plannedActivityRowSchema.parse({
-        ...row,
-        activity_plan: (row.activity_plan as PublicActivityPlansRow | null) ?? null,
-        scheduled_date: row.starts_at.toISOString().split("T")[0] ?? "",
-      }) as PlannedActivityRow,
-  );
+  return row ? dashboardTrainingPlanRowSchema.parse(row) : null;
 }
 
 export const homeRouter = createTRPCRouter({
@@ -398,51 +326,77 @@ export const homeRouter = createTRPCRouter({
       const db = getRequiredDb(ctx);
       const estimationStore = createEventReadRepository(db);
       const userId = ctx.session.user.id;
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      const [rawProfile] = await db
-        .select({ dob: schema.profiles.dob, gender: schema.profiles.gender })
-        .from(schema.profiles)
-        .where(eq(schema.profiles.id, userId))
-        .limit(1);
-
-      const profile = rawProfile ? profileRowSchema.parse(rawProfile) : null;
-
-      const userAge = calculateAge(profile?.dob?.toISOString() ?? null);
-      const userGender =
-        profile?.gender === "male" || profile?.gender === "female" ? profile.gender : null;
+      const now = new Date();
+      const analyticsStart = new Date(now.getTime() - 90 * 86_400_000);
+      const athleteReadModel = await readAthleteReadModel({
+        db,
+        profileId: userId,
+        now,
+        sections: {
+          status: true,
+          currentBaseline: { includePlanningContext: true },
+          loadHistory: true,
+          activityAnalytics: {
+            startAt: analyticsStart.toISOString(),
+            endAt: now.toISOString(),
+            groupBy: "day",
+            peakMetric: "common_load",
+            peakLimit: 5,
+          },
+        },
+      });
+      const commonLoadHistory =
+        athleteReadModel.loadHistory?.result ??
+        commonLoadHistoryResultSchema.parse({
+          status: "unavailable",
+          policyVersion: "common_load_history_v1",
+          reason: "invalid_input",
+          context: {
+            path: "publishedRevision",
+            message: "Current published athlete state is required for Common Load history",
+          },
+        });
+      const availableCommonLoadHistory =
+        commonLoadHistory.status === "available" ? commonLoadHistory : null;
+      const latestCommonLoadPoint = availableCommonLoadHistory?.points.at(-1) ?? null;
+      const profileTimezone = athleteReadModel.currentBaseline?.planningTimezone.trim();
+      const planningTimezone =
+        profileTimezone && isValidIanaTimeZone(profileTimezone) ? profileTimezone : "UTC";
+      const todayDate = getCalendarDateInIanaZone(now.toISOString(), planningTimezone);
+      // Presentation uses the profile-local midnight, while completed-activity
+      // reads extend through that same local day's end.
+      const todayRange = getPlanningDateRange({
+        startDate: todayDate,
+        endDate: todayDate,
+        timezone: planningTimezone,
+      });
+      const today = todayRange.startInstant;
+      const planningContext = athleteReadModel.currentBaseline?.planningContext ?? null;
+      const userAge = planningContext?.demographics.ageYears.value ?? undefined;
+      const userGender = planningContext?.demographics.gender ?? null;
       const effectiveAge = featureFlags.personalizationAgeConstants ? userAge : undefined;
       const effectiveGender = featureFlags.personalizationGenderAdjustment ? userGender : undefined;
 
       // --- 1. Fetch Active Plan & Settings ---
-      const [rawNextPlannedEvent, profileSettingsData] = await Promise.all([
-        db
-          .select({
-            training_plan_id: schema.eventScheduleLinks.training_plan_id,
-            starts_at: schema.events.starts_at,
-          })
-          .from(schema.events)
-          .innerJoin(
-            schema.eventScheduleLinks,
-            eq(schema.eventScheduleLinks.event_id, schema.events.id),
-          )
-          .where(
-            and(
-              eq(schema.events.profile_id, userId),
-              eq(schema.events.event_type, "planned_activity"),
-              gte(schema.events.starts_at, today),
-              isNotNull(schema.eventScheduleLinks.training_plan_id),
-            ),
-          )
-          .orderBy(asc(schema.events.starts_at))
-          .limit(1)
-          .then((rows) => rows[0] ?? null),
-        getProfileTrainingSettings(db, userId),
-      ]);
+      const rawNextPlannedSession = await db
+        .select({
+          training_plan_id: schema.plannedSessions.training_plan_id,
+        })
+        .from(schema.plannedSessions)
+        .where(
+          and(
+            eq(schema.plannedSessions.profile_id, userId),
+            eq(schema.plannedSessions.status, "scheduled"),
+            gte(schema.plannedSessions.planning_date, todayDate),
+            isNotNull(schema.plannedSessions.training_plan_id),
+          ),
+        )
+        .orderBy(asc(schema.plannedSessions.planning_date), asc(schema.plannedSessions.id))
+        .limit(1)
+        .then((rows) => rows[0] ?? null);
 
-      const nextPlannedEvent = rawNextPlannedEvent
-        ? nextPlannedEventRowSchema.parse(rawNextPlannedEvent)
+      const nextPlannedSession = rawNextPlannedSession
+        ? nextPlannedSessionRowSchema.parse(rawNextPlannedSession)
         : null;
 
       let plan: {
@@ -452,241 +406,85 @@ export const homeRouter = createTRPCRouter({
         structure: unknown;
       } | null = null;
 
-      if (nextPlannedEvent?.training_plan_id) {
+      if (nextPlannedSession?.training_plan_id) {
         plan = await getAccessibleTrainingPlan(db, {
-          planId: nextPlannedEvent.training_plan_id,
+          planId: nextPlannedSession.training_plan_id,
           profileId: userId,
         });
       }
 
-      const planStructure = plan?.structure ? planStructureSchema.parse(plan.structure) : null;
-
-      // Extract phase from structure if available
-      const planPhase = planStructure?.periodization?.currentPhase ?? null;
+      if (plan?.structure) {
+        canonicalTrainingPlanStructureSchema.parse(plan.structure);
+      }
 
       // --- 2. Calculate Dates ---
-      // For trends: Need 42 days of history + 42 days buffer for CTL seeding
+      // The canonical read model owns the historical replay window.
       const trendDays = 42;
-      const seedDays = 42;
-      const historyStart = new Date(today);
-      historyStart.setDate(today.getDate() - (trendDays + seedDays));
+      const chartStartDate = addDaysDateOnlyUtc(todayDate, -trendDays);
 
-      const chartStart = new Date(today);
-      chartStart.setDate(today.getDate() - trendDays);
-
-      // For schedule: Next N days
-      const scheduleEnd = new Date(today);
-      scheduleEnd.setDate(today.getDate() + upcomingDays);
+      // For schedule: Next N days, bounded by profile-local calendar dates.
+      const scheduleEndDate = addDaysDateOnlyUtc(todayDate, upcomingDays);
 
       // For weekly summary: Current Week (Sun-Sat)
-      const startOfWeek = new Date(today);
-      startOfWeek.setDate(today.getDate() - today.getDay());
-      startOfWeek.setHours(0, 0, 0, 0);
+      const currentWeek = getCurrentPlanningWeek(now, planningTimezone);
 
-      const endOfWeek = new Date(startOfWeek);
-      endOfWeek.setDate(startOfWeek.getDate() + 6);
-      endOfWeek.setHours(23, 59, 59, 999);
-
-      // --- 3. Fetch Activities (Actual) ---
-      // Fetching enough history for trends and current week stats
-      const activities = activitySummaryRowSchema.array().parse(
-        await db
-          .select({
-            id: schema.activities.id,
-            type: schema.activities.type,
-            started_at: schema.activities.started_at,
-            finished_at: schema.activities.finished_at,
-            duration_seconds: schema.activitySummaries.duration_seconds,
-            moving_seconds: schema.activitySummaries.moving_seconds,
-            distance_meters: schema.activitySummaries.distance_meters,
-            avg_heart_rate: schema.activitySummaries.avg_heart_rate,
-            max_heart_rate: schema.activitySummaries.max_heart_rate,
-            avg_power: schema.activitySummaries.avg_power,
-            max_power: schema.activitySummaries.max_power,
-            avg_speed_mps: schema.activitySummaries.avg_speed_mps,
-            max_speed_mps: schema.activitySummaries.max_speed_mps,
-            normalized_power: schema.activitySummaries.normalized_power,
-            normalized_speed_mps: schema.activitySummaries.normalized_speed_mps,
-            normalized_graded_speed_mps: schema.activitySummaries.normalized_graded_speed_mps,
-          })
-          .from(schema.activities)
-          .innerJoin(
-            schema.activitySummaries,
-            eq(schema.activitySummaries.activity_id, schema.activities.id),
-          )
-          .where(
-            and(
-              eq(schema.activities.profile_id, userId),
-              gte(schema.activities.started_at, historyStart),
-              lte(schema.activities.started_at, today),
-            ),
-          )
-          .orderBy(asc(schema.activities.started_at)),
-      ) as ActivitySummaryRow[];
-
-      const { byActivityId: derivedActivityMap, byDate: tssByDate } =
-        await buildDynamicStressSeries({
-          store: createActivityAnalysisStore(db),
-          profileId: userId,
-          activities,
-        });
+      const activityAnalytics =
+        athleteReadModel.activityAnalytics?.status === "available"
+          ? athleteReadModel.activityAnalytics.dashboard
+          : null;
+      const activityPoints = activityAnalytics?.performance.dataPoints ?? [];
 
       const rollingTrainingQuality =
-        featureFlags.personalizationTrainingQuality && activities.length > 0
+        featureFlags.personalizationTrainingQuality && activityPoints.length > 0
           ? calculateRollingTrainingQuality(
-              activities.map((activity) => ({
-                started_at: activity.started_at.toISOString(),
-                tss: derivedActivityMap.get(activity.id)?.tss ?? null,
-                intensity_factor: derivedActivityMap.get(activity.id)?.intensity_factor ?? null,
-              })),
+              activityPoints.flatMap((activity) =>
+                (activity.observationQuantification?.members ?? []).map((member) => ({
+                  started_at: activity.date,
+                  common_load: member.commonLoad,
+                })),
+              ),
             )
           : undefined;
 
       // --- 4. Fetch Planned Activities (Future & Current Week) ---
       // We need planned activities for the Schedule (Future) AND for the Weekly Summary (Past days of this week)
       // So we fetch from startOfWeek to scheduleEnd
-      const plannedActivities = await listPlannedActivitiesInRange(db, {
+      const { activitiesWithEstimations } = await loadPlannedActivitiesWithEstimations(db, {
         profileId: userId,
-        startsAtGte: startOfWeek,
-        startsAtLt: scheduleEnd,
+        scheduledDateGte: currentWeek.startDate,
+        scheduledDateLt: scheduleEndDate,
       });
 
-      // --- 5. Process Estimations for Planned Activities ---
-      let activitiesWithEstimations = plannedActivities;
-      if (activitiesWithEstimations.length > 0) {
-        const plans = activitiesWithEstimations
-          .map((pa) => pa.activity_plan)
-          .filter((p): p is NonNullable<typeof p> => !!p);
-
-        if (plans.length > 0) {
-          const plansWithEstimation = await getActivityPlansDerivedMetrics(
-            plans,
-            db,
-            estimationStore,
-            userId,
-          );
-          const plansMap = new Map(plansWithEstimation.map((p) => [p.id, p]));
-
-          activitiesWithEstimations = activitiesWithEstimations.map((pa) => ({
-            ...pa,
-            activity_plan:
-              pa.activity_plan && plansMap.get(pa.activity_plan.id)
-                ? (plansMap.get(pa.activity_plan.id)! as unknown as typeof pa.activity_plan)
-                : pa.activity_plan,
-          }));
-        }
-      }
-
-      // --- 6. Calculate Fitness Trends (CTL/ATL/TSB) ---
-      const fitnessTrends = [];
-      let todayStatus = { ctl: 0, atl: 0, tsb: 0, form: "fresh" };
-
-      // Apply Global CTL Override if enabled
-      const settings = profileSettingsData?.settings as any;
-      const baselineFitness = settings?.baseline_fitness;
-      let effectiveHistoryStart = historyStart;
-      let initialCTL = 0;
-      let initialATL = 0;
-
-      if (baselineFitness?.is_enabled && baselineFitness.override_date) {
-        const overrideDate = new Date(baselineFitness.override_date);
-        if (!Number.isNaN(overrideDate.getTime())) {
-          initialCTL = baselineFitness.override_ctl ?? 0;
-          initialATL = baselineFitness.override_atl ?? 0;
-
-          // If the override date is before our history start, we need to decay it up to history start
-          if (overrideDate < historyStart) {
-            const decayEnd = new Date(historyStart);
-            decayEnd.setDate(historyStart.getDate() - 1);
-            if (decayEnd >= overrideDate) {
-              const decayed = replayTrainingLoadByDate({
-                dailyTss: buildDailyTssByDateSeries({
-                  startDate: overrideDate.toISOString().split("T")[0]!,
-                  endDate: decayEnd.toISOString().split("T")[0]!,
-                  tssByDate: {},
-                }),
-                initialCTL,
-                initialATL,
-                userAge: effectiveAge,
-                userGender: effectiveGender,
-                trainingQuality: rollingTrainingQuality,
-              });
-              const lastDecayPoint = decayed.at(-1);
-              if (lastDecayPoint) {
-                initialCTL = lastDecayPoint.ctl;
-                initialATL = lastDecayPoint.atl;
-              }
-            }
-          } else if (overrideDate > historyStart && overrideDate <= today) {
-            // If the override date is within our window, we start calculating from the override date
-            effectiveHistoryStart = new Date(overrideDate);
-            // Clear any TSS before the override date to avoid double counting
-            for (const [dateStr] of tssByDate.entries()) {
-              if (new Date(dateStr) < overrideDate) {
-                tssByDate.delete(dateStr);
-              }
-            }
-          }
-        }
-      }
-
-      const historicalReplay = replayTrainingLoadByDate({
-        dailyTss: buildDailyTssByDateSeries({
-          startDate: effectiveHistoryStart.toISOString().split("T")[0]!,
-          endDate: today.toISOString().split("T")[0]!,
-          tssByDate,
-        }),
-        initialCTL,
-        initialATL,
-        userAge: effectiveAge,
-        userGender: effectiveGender,
-        trainingQuality: rollingTrainingQuality,
-      });
-
-      for (const point of historicalReplay) {
-        const date = new Date(`${point.date}T00:00:00.000Z`);
-        if (date >= chartStart) {
-          fitnessTrends.push({
-            date: point.date,
-            ctl: Math.round(point.ctl * 10) / 10,
-            atl: Math.round(point.atl * 10) / 10,
-            tsb: Math.round(point.tsb * 10) / 10,
-          });
-        }
-
-        if (point.date === today.toISOString().split("T")[0]) {
-          todayStatus = {
-            ctl: Math.round(point.ctl * 10) / 10,
-            atl: Math.round(point.atl * 10) / 10,
-            tsb: Math.round(point.tsb * 10) / 10,
-            form: getFormStatus(point.tsb),
-          };
-        }
-      }
-
-      const latestHistoricalLoad = historicalReplay.at(-1);
-      const currentCTL = latestHistoricalLoad?.ctl ?? initialCTL;
-      const currentATL = latestHistoricalLoad?.atl ?? initialATL;
+      // --- 6. Primary fitness trends use the canonical daily common Load history. ---
+      const commonHistoryPoints =
+        commonLoadHistory.status === "available" ? commonLoadHistory.points : [];
+      const fitnessTrends = commonHistoryPoints
+        .filter((point) => point.date >= chartStartDate)
+        .map((point) => ({
+          date: point.date,
+          longTermLoad: Math.round(point.longTermLoad * 10) / 10,
+          recentLoad: Math.round(point.recentLoad * 10) / 10,
+          loadBalance: Math.round(point.loadBalance * 10) / 10,
+        }));
 
       // --- 7. Calculate Consistency (Streak) ---
       // Iterate backwards from yesterday
       let streak = 0;
       const uniqueActivityDays = new Set(
-        activities
-          .map((activity) => activity.started_at.toISOString().split("T")[0])
+        activityPoints
+          .map((activity) => getCalendarDateInIanaZone(activity.date, planningTimezone))
           .filter(Boolean),
       );
       // Check today
-      if (uniqueActivityDays.has(today.toISOString().split("T")[0])) {
+      if (uniqueActivityDays.has(todayDate)) {
         streak++;
       }
       // Check previous days
-      const checkDate = new Date(today);
-      checkDate.setDate(checkDate.getDate() - 1);
+      let checkDate = addDaysDateOnlyUtc(todayDate, -1);
       while (true) {
-        if (uniqueActivityDays.has(checkDate.toISOString().split("T")[0])) {
+        if (uniqueActivityDays.has(checkDate)) {
           streak++;
-          checkDate.setDate(checkDate.getDate() - 1);
+          checkDate = addDaysDateOnlyUtc(checkDate, -1);
         } else {
           break;
         }
@@ -694,291 +492,267 @@ export const homeRouter = createTRPCRouter({
 
       // --- 8. Weekly Summary (Planned vs Actual) ---
       // Actuals
-      const weeklyActuals = activities.filter((activity) => {
-        const d = new Date(activity.started_at);
-        return d >= startOfWeek && d <= endOfWeek;
+      const weeklyActuals = activityPoints.filter((activity) => {
+        const activityDate = getCalendarDateInIanaZone(activity.date, planningTimezone);
+        return activityDate >= currentWeek.startDate && activityDate <= currentWeek.endDate;
       });
+      const weeklyActualQuantification = createObservationQuantificationBundle({
+        members: weeklyActuals.flatMap(
+          (activity) => activity.observationQuantification?.members ?? [],
+        ),
+      });
+      const weeklyActualSummary = weeklyActualQuantification.summary;
+      const weeklyActualLoad = weeklyActualSummary.commonLoad;
 
       const weeklyActualStats = {
         distance:
-          weeklyActuals.reduce((sum, activity) => sum + (activity.distance_meters || 0), 0) / 1000,
-        duration: weeklyActuals.reduce(
-          (sum, activity) => sum + (activity.duration_seconds || 0),
-          0,
-        ),
-        tss: Math.round(
-          weeklyActuals.reduce(
-            (sum, activity) => sum + (derivedActivityMap.get(activity.id)?.tss || 0),
-            0,
-          ),
-        ),
+          weeklyActualSummary.distance.value === null
+            ? null
+            : weeklyActualSummary.distance.value / 1000,
+        duration: weeklyActualSummary.duration.active.value,
+        load: weeklyActualLoad.status === "complete" ? Math.round(weeklyActualLoad.load) : null,
+        loadComplete: weeklyActualLoad.status === "complete",
         count: weeklyActuals.length,
       };
 
       // Planned
-      const startOfWeekStr = startOfWeek.toISOString().split("T")[0]!;
-      const endOfWeekStr = endOfWeek.toISOString().split("T")[0]!;
+      const startOfWeekStr = currentWeek.startDate;
+      const endOfWeekStr = currentWeek.endDate;
 
-      const weeklyPlanned = activitiesWithEstimations.filter((pa: any) => {
-        const scheduledDate = pa.scheduled_date?.split("T")[0];
-        if (!scheduledDate) return false;
-
-        return scheduledDate >= startOfWeekStr && scheduledDate <= endOfWeekStr;
+      const weeklyPlanned = activitiesWithEstimations.filter(
+        (plannedActivity) =>
+          plannedActivity.scheduled_date >= startOfWeekStr &&
+          plannedActivity.scheduled_date <= endOfWeekStr,
+      );
+      const weeklyPlannedQuantification = createPrescriptionQuantificationBundle({
+        members: weeklyPlanned.flatMap(
+          (plannedActivity) => scheduledQuantification(plannedActivity, now).members,
+        ),
       });
+      const weeklyPlannedSummary = weeklyPlannedQuantification.summary;
+      const weeklyPlannedLoad = weeklyPlannedSummary.commonLoad;
 
       const weeklyPlannedStats = {
         distance:
-          weeklyPlanned.reduce(
-            (sum, pa) => sum + ((pa.activity_plan as any)?.estimated_distance || 0),
-            0,
-          ) / 1000,
-        duration: weeklyPlanned.reduce(
-          (sum, pa) => sum + ((pa.activity_plan as any)?.estimated_duration || 0),
-          0,
-        ),
-        tss: Math.round(
-          weeklyPlanned.reduce(
-            (sum, pa) => sum + ((pa.activity_plan as any)?.estimated_tss || 0),
-            0,
-          ),
-        ),
+          weeklyPlannedSummary.distance.value === null
+            ? null
+            : weeklyPlannedSummary.distance.value / 1000,
+        duration:
+          weeklyPlannedSummary.duration.elapsed.status === "complete"
+            ? weeklyPlannedSummary.duration.elapsed.value
+            : null,
+        load: weeklyPlannedLoad.status === "complete" ? Math.round(weeklyPlannedLoad.load) : null,
+        loadComplete: weeklyPlannedLoad.status === "complete",
         count: weeklyPlanned.length,
       };
 
       // --- 9. Current Workload Envelopes (ACWR/Monotony) ---
-      const workloadWindowStart = new Date(today);
-      workloadWindowStart.setDate(today.getDate() - 27);
+      const workloadWindowStartDate = addDaysDateOnlyUtc(todayDate, -27);
+      const workloadWindowStart = getPlanningDateRange({
+        startDate: workloadWindowStartDate,
+        endDate: workloadWindowStartDate,
+        timezone: planningTimezone,
+      }).startInstant;
+      const workloadActivityIds = activityPoints.map((activity) => activity.activityId);
+      const workloadSourceRows =
+        workloadActivityIds.length === 0
+          ? []
+          : await db
+              .select({
+                activityId: activityArtifactLinks.activity_id,
+                artifactId: activityArtifactLinks.artifact_id,
+              })
+              .from(activityArtifactLinks)
+              .innerJoin(
+                activityArtifacts,
+                and(
+                  eq(activityArtifacts.id, activityArtifactLinks.artifact_id),
+                  eq(activityArtifacts.profile_id, activityArtifactLinks.profile_id),
+                  eq(activityArtifacts.availability, "accepted"),
+                ),
+              )
+              .where(
+                and(
+                  eq(activityArtifactLinks.profile_id, userId),
+                  inArray(activityArtifactLinks.activity_id, workloadActivityIds),
+                  eq(activityArtifactLinks.role, "source"),
+                  eq(activityArtifactLinks.is_current, true),
+                ),
+              );
+      const workloadProviderRows =
+        workloadActivityIds.length === 0
+          ? []
+          : await db
+              .select({
+                activityId: activitySourceReferences.activity_id,
+                provider: activitySourceReferences.provider,
+                externalId: activitySourceReferences.provider_external_id,
+              })
+              .from(activitySourceReferences)
+              .where(
+                and(
+                  eq(activitySourceReferences.profile_id, userId),
+                  inArray(activitySourceReferences.activity_id, workloadActivityIds),
+                ),
+              );
+      const sourceEvidenceByActivity = new Map<
+        string,
+        {
+          currentArtifactIds: string[];
+          providerReferences: Array<{ provider: string; externalId: string }>;
+        }
+      >();
+      const sourceEvidenceFor = (activityId: string) => {
+        const existing = sourceEvidenceByActivity.get(activityId);
+        if (existing) return existing;
+        const created = { currentArtifactIds: [], providerReferences: [] };
+        sourceEvidenceByActivity.set(activityId, created);
+        return created;
+      };
+      for (const row of workloadSourceRows) {
+        sourceEvidenceFor(row.activityId).currentArtifactIds.push(row.artifactId);
+      }
+      for (const row of workloadProviderRows) {
+        if (!row.activityId) continue;
+        sourceEvidenceFor(row.activityId).providerReferences.push({
+          provider: row.provider,
+          externalId: row.externalId,
+        });
+      }
       const workload = buildWorkloadEnvelopes(
-        activities.map((activity) => ({
-          started_at: activity.started_at.toISOString(),
-          tss: derivedActivityMap.get(activity.id)?.tss ?? null,
-        })),
+        activityPoints.map((activity) => {
+          const evidence =
+            sourceEvidenceByActivity.get(activity.activityId) ??
+            ({ currentArtifactIds: [], providerReferences: [] } as const);
+          return {
+            started_at: activity.date,
+            sourceIntegrity: resolveActivitySourceIntegrity({
+              evidence,
+              observationQuantification: activity.observationQuantification,
+            }),
+            observationQuantification: activity.observationQuantification,
+          };
+        }),
         workloadWindowStart,
         today,
+        { planningTimezone },
       );
 
       // --- 10. Schedule (Future) ---
-      const todayStr = today.toISOString().split("T")[0]!;
+      const todayStr = todayDate;
 
-      // Check which planned activities have been completed by matching with actual activities
-      const completedActivityMap = new Map<string, boolean>();
-      plannedActivities?.forEach((pa) => {
-        if (!pa.scheduled_date) return;
-        const paDate = pa.scheduled_date.split("T")[0];
-        const hasActivity = activities.some(
-          (activity) => activity.started_at.toISOString().split("T")[0] === paDate,
-        );
-        if (hasActivity) {
-          completedActivityMap.set(pa.id, true);
-        }
-      });
-
-      const scheduleEndStr = scheduleEnd.toISOString().split("T")[0]!;
+      const scheduleEndStr = scheduleEndDate;
 
       const schedule = activitiesWithEstimations
-        .filter((pa: any) => {
-          const scheduledDate = pa.scheduled_date?.split("T")[0];
-          if (!scheduledDate) return false;
-
+        .filter((plannedActivity) => {
+          const scheduledDate = plannedActivity.scheduled_date;
           // Include today + future using stable date-only comparisons.
           return scheduledDate >= todayStr && scheduledDate < scheduleEndStr;
         })
-        .map((pa: any) => ({
-          id: pa.id,
-          date: pa.scheduled_date,
-          isToday: pa.scheduled_date?.startsWith(todayStr) || false,
-          isCompleted: completedActivityMap.get(pa.id) || false,
-          activityName: pa.activity_plan?.name || "Activity",
-          activityType: pa.activity_plan?.activity_category || "generic",
-          estimatedDuration: (pa.activity_plan as any)?.estimated_duration || 0,
-          estimatedDistance: (pa.activity_plan as any)?.estimated_distance || 0,
-          estimatedTSS: (pa.activity_plan as any)?.estimated_tss || 0,
-        }));
+        .map((plannedActivity) => {
+          const prescriptionQuantification = scheduledQuantification(plannedActivity, now);
+          const plannedEstimate = getPlannedEstimate(prescriptionQuantification);
+          const completeValue = (quantity: { status: string; value: number | null }) =>
+            quantity.status === "known" || quantity.status === "estimated" ? quantity.value : null;
+          return {
+            id: plannedActivity.id,
+            date: plannedActivity.scheduled_date,
+            isToday: plannedActivity.scheduled_date === todayStr,
+            isCompleted:
+              Boolean(plannedActivity.linked_activity_id) || plannedActivity.status === "completed",
+            activityName: "Planned session",
+            ...getScheduleExecutionPresentation(null),
+            estimatedDuration: completeValue(plannedEstimate.durationSeconds),
+            estimatedDistance: completeValue(plannedEstimate.distanceMeters),
+            load: completeValue(plannedEstimate.load),
+            objectiveIntensity: null,
+          };
+        });
 
       const todaysActivity = schedule.find((s) => s.isToday) || null;
 
       // --- 11. Calculate Projected Fitness (Future CTL based on plan) ---
       const projectionDays = 42; // Project 42 days into future
-      const projectionEnd = new Date(today);
-      projectionEnd.setDate(today.getDate() + projectionDays);
-
-      // Fetch future planned activities for projection
-      const futureActivities = await listPlannedActivitiesInRange(db, {
-        profileId: userId,
-        startsAtGte: today,
-        startsAtLt: projectionEnd,
-      });
-
-      const projectedFitness = [];
-
-      // Process future activities with estimations
-      let futureWithEstimations = futureActivities;
-      if (futureWithEstimations.length > 0) {
-        const futurePlans = futureWithEstimations
-          .map((pa) => pa.activity_plan)
-          .filter((p): p is NonNullable<typeof p> => !!p);
-
-        if (futurePlans.length > 0) {
-          const futurePlansWithEstimation = await getActivityPlansDerivedMetrics(
-            futurePlans,
-            db,
-            estimationStore,
-            userId,
-          );
-          const futurePlansMap = new Map(futurePlansWithEstimation.map((p) => [p.id, p]));
-
-          futureWithEstimations = futureWithEstimations.map((pa) => ({
-            ...pa,
-            activity_plan:
-              pa.activity_plan && futurePlansMap.get(pa.activity_plan.id)
-                ? (futurePlansMap.get(pa.activity_plan.id)! as unknown as typeof pa.activity_plan)
-                : pa.activity_plan,
-          }));
-        }
-      }
-
-      // Create map of future TSS by date
-      const futureTssByDate = new Map<string, number>();
-      futureWithEstimations.forEach((pa) => {
-        if (!pa.scheduled_date) return;
-        const dateStr = pa.scheduled_date.split("T")[0]!; // Non-null assertion after check
-        const tss = (pa.activity_plan as any)?.estimated_tss || 0;
-        futureTssByDate.set(dateStr, (futureTssByDate.get(dateStr) || 0) + tss);
-      });
-
-      const projectionReplay = replayTrainingLoadByDate({
-        dailyTss: buildDailyTssByDateSeries({
-          startDate: new Date(today.getTime() + 24 * 60 * 60 * 1000).toISOString().split("T")[0]!,
-          endDate: projectionEnd.toISOString().split("T")[0]!,
-          tssByDate: futureTssByDate,
-        }),
-        initialCTL: currentCTL,
-        initialATL: currentATL,
-        userAge: effectiveAge,
-        userGender: effectiveGender,
-        trainingQuality: rollingTrainingQuality,
-      });
-
-      for (const point of projectionReplay) {
-        projectedFitness.push({
-          date: point.date,
-          ctl: Math.round(point.ctl * 10) / 10,
-          atl: Math.round(point.atl * 10) / 10,
-          tsb: Math.round(point.tsb * 10) / 10,
-          plannedTss: point.tss,
-        });
-      }
-
-      // --- 12. Calculate Ideal CTL Curve from Training Plan ---
-      // This creates the "where you should be" line based on periodization
-      const idealFitnessCurve = [];
-      let goalMetrics = null;
-
-      if (planStructure) {
-        const structure = planStructure;
-        const periodization = structure.periodization_template;
-
-        if (periodization) {
-          // Extract periodization parameters
-          const startingCTL = periodization.starting_ctl || currentCTL;
-          const targetCTL = periodization.target_ctl;
-          const rampRate = periodization.ramp_rate || 0.05; // Default 5% weekly increase
-          const targetDateStr = periodization.target_date;
-
-          if (targetCTL && targetDateStr) {
-            const targetDate = new Date(targetDateStr);
-
-            // Set goal metrics for display
-            goalMetrics = {
-              targetCTL,
-              targetDate: targetDateStr,
-              description: `Target ${targetCTL} CTL by ${targetDate.toLocaleDateString()}`,
-            };
-
-            // Calculate the ideal curve from chart start to target date
-            // This shows where user should be at each point in time
-            const curveStart = chartStart < new Date() ? chartStart : new Date();
-            const daysToTarget = Math.floor(
-              (targetDate.getTime() - curveStart.getTime()) / (1000 * 60 * 60 * 24),
-            );
-
-            if (daysToTarget > 0) {
-              let idealCTL = startingCTL;
-
-              for (let i = 0; i <= daysToTarget && i <= trendDays + projectionDays; i++) {
-                const date = new Date(curveStart);
-                date.setDate(curveStart.getDate() + i);
-                const dateStr = date.toISOString().split("T")[0]!;
-
-                // Calculate ideal CTL progression using exponential growth
-                // CTL should increase by rampRate per week
-                const weeksPassed = i / 7;
-                idealCTL = startingCTL * (1 + rampRate) ** weeksPassed;
-
-                // Cap at target CTL
-                if (idealCTL > targetCTL) {
-                  idealCTL = targetCTL;
-                }
-
-                // Only add points that are in our display range
-                const dateObj = new Date(dateStr);
-                if (dateObj >= chartStart) {
-                  idealFitnessCurve.push({
-                    date: dateStr,
-                    ctl: Math.round(idealCTL * 10) / 10,
-                  });
-                }
-              }
-            }
-          }
-        }
-
-        // Check for legacy goal structure
-        if (!goalMetrics && structure.goal) {
-          goalMetrics = {
-            targetCTL: structure.goal.targetCTL || null,
-            targetDate: structure.goal.targetDate || null,
-            description: structure.goal.description || null,
-          };
-        }
-      }
-
-      // --- 13. Calculate Plan Adherence ---
-      const adherence =
-        weeklyPlannedStats.tss > 0
-          ? Math.round((weeklyActualStats.tss / weeklyPlannedStats.tss) * 100)
+      const projectionStartDate = athleteReadModel.currentBaseline?.currentPlanningDate ?? null;
+      const projectionEndDate = projectionStartDate
+        ? addDaysDateOnlyUtc(projectionStartDate, projectionDays)
+        : null;
+      const effectiveProjection =
+        projectionStartDate && projectionEndDate
+          ? await getEffectivePlanLoad({
+              db,
+              profileId: userId,
+              repository: estimationStore,
+              request: { startDate: projectionStartDate, endDate: projectionEndDate },
+            })
           : null;
+      // Missing history or an unavailable effective plan intentionally produces no curve.
+      // In particular, missing planned Load is not treated as a rest day.
+      const projectedLoad =
+        latestCommonLoadPoint &&
+        projectionStartDate &&
+        effectiveProjection?.status === "available" &&
+        effectiveProjection.effective.status === "available"
+          ? (projectCommonLoad({
+              current: {
+                longTermLoad: latestCommonLoadPoint.longTermLoad,
+                recentLoad: latestCommonLoadPoint.recentLoad,
+              },
+              currentDate: projectionStartDate,
+              days: projectionDays,
+              sourceComplete: effectiveProjection.effective.firm.status === "complete",
+              items: effectiveProjection.effective.firmItems,
+            }) ?? [])
+          : [];
 
-      let firstTargetType;
-      if (planStructure?.goals?.[0]?.targets?.[0]) {
-        firstTargetType = planStructure.goals[0].targets[0].target_type;
-      }
-
+      // --- 12. Calculate Plan Adherence ---
+      const adherence =
+        weeklyActualStats.loadComplete &&
+        weeklyActualStats.load !== null &&
+        weeklyPlannedStats.load !== null &&
+        weeklyPlannedStats.loadComplete &&
+        weeklyPlannedStats.load > 0
+          ? Math.round((weeklyActualStats.load / weeklyPlannedStats.load) * 100)
+          : null;
       return dashboardResponseSchema.parse({
         activePlan: plan
           ? {
               id: plan.id,
               name: plan.name || "Active Plan",
-              phase: planPhase,
-              targetType: firstTargetType,
             }
           : null,
-        currentStatus: todayStatus,
+        commonLoadHistory,
+        currentLoadStatus:
+          latestCommonLoadPoint && availableCommonLoadHistory
+            ? {
+                longTermLoad: latestCommonLoadPoint.longTermLoad,
+                recentLoad: latestCommonLoadPoint.recentLoad,
+                loadBalance: latestCommonLoadPoint.loadBalance,
+                loadBalanceStatus: getLoadBalanceStatus(latestCommonLoadPoint.loadBalance),
+                maturity: availableCommonLoadHistory.maturity.status,
+                coverageStatus: availableCommonLoadHistory.coverageStatus,
+              }
+            : null,
+        trainingLoadState: {
+          status: availableCommonLoadHistory ? "available" : "unavailable",
+          reason: availableCommonLoadHistory
+            ? "complete_common_load_series"
+            : "incomplete_common_load_series",
+        },
         workload,
         consistency: {
           streak,
           weeklyCount: weeklyActualStats.count,
         },
         weeklySummary: {
+          observationQuantification: weeklyActualQuantification,
           actual: weeklyActualStats,
           planned: weeklyPlannedStats,
           adherence, // Percentage
         },
         schedule, // List of upcoming (including today)
-        trends: fitnessTrends, // Historical actual CTL/ATL/TSB
-        projectedFitness, // Future projected CTL/ATL/TSB based on plan
-        idealFitnessCurve, // Ideal CTL progression from training plan periodization
-        goalMetrics, // User's fitness goal
+        trends: fitnessTrends,
+        projectedLoad,
         todaysActivity, // Convenience field
         personalizationTelemetry: {
           flags: {
