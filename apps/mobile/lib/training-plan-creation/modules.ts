@@ -58,11 +58,15 @@ const hasAthleteContext = (state: TrainingPlanBuilderState) => {
 };
 
 const hasPlanPreferences = (state: TrainingPlanBuilderState) => {
+  const preferences = state.planPreferences;
   return (
-    state.planPreferences.durationWeeks !== null ||
-    state.planPreferences.weeklySessionCount !== null ||
-    state.planPreferences.targetWeeklyHours !== null ||
-    state.planPreferences.restDaysPerWeek !== null
+    preferences.weekly_session_count !== null ||
+    preferences.target_weekly_duration_minutes !== null ||
+    preferences.maximum_session_duration_minutes !== null ||
+    preferences.preferred_weekdays.length > 0 ||
+    preferences.rest_days.length > 0 ||
+    preferences.progression_style !== null ||
+    preferences.recovery_priority !== null
   );
 };
 

@@ -1,0 +1,78 @@
+import { type DrizzleDbClient, schema } from "@repo/db";
+import { and, eq } from "drizzle-orm";
+
+export function createActivityPlanWriteRepository(db: DrizzleDbClient) {
+  return {
+    async deleteOwnedPlanIfUnlinked(input: {
+      planId: string;
+      profileId: string;
+    }): Promise<"deleted" | "linked_events" | "not_found"> {
+      return db.transaction(async (tx) => {
+        const planQuery = tx
+          .select({ id: schema.activityPlans.id })
+          .from(schema.activityPlans)
+          .where(
+            and(
+              eq(schema.activityPlans.id, input.planId),
+              eq(schema.activityPlans.profile_id, input.profileId),
+            ),
+          )
+          .limit(1);
+        const lockablePlanQuery = planQuery as typeof planQuery & {
+          for?: (strength: "update") => typeof planQuery;
+        };
+        const [plan] = await (lockablePlanQuery.for ? lockablePlanQuery.for("update") : planQuery);
+        if (!plan) return "not_found";
+
+        // The plan row lock fences concurrent FK references. Existence reads
+        // handle any number of linked schedules without a UI page limit and
+        // leave every dependency intact on conflict.
+        const [linkedGroupEvent] = await tx
+          .select({ id: schema.groupEvents.id })
+          .from(schema.groupEvents)
+          .where(eq(schema.groupEvents.activity_plan_id, input.planId))
+          .limit(1);
+        if (linkedGroupEvent) return "linked_events";
+
+        const [linkedPlannedSession] = await tx
+          .select({ id: schema.plannedSessions.id })
+          .from(schema.plannedSessions)
+          .where(eq(schema.plannedSessions.activity_plan_id, input.planId))
+          .limit(1);
+        if (linkedPlannedSession) return "linked_events";
+
+        // Comments and likes use polymorphic entity IDs, so PostgreSQL cannot
+        // cascade them from the activity-plan row. Keep their cleanup atomic
+        // with the owned plan deletion.
+        await tx
+          .delete(schema.comments)
+          .where(
+            and(
+              eq(schema.comments.entity_type, "activity_plan"),
+              eq(schema.comments.entity_id, input.planId),
+            ),
+          );
+        await tx
+          .delete(schema.likes)
+          .where(
+            and(
+              eq(schema.likes.entity_type, "activity_plan"),
+              eq(schema.likes.entity_id, input.planId),
+            ),
+          );
+
+        const deleted = await tx
+          .delete(schema.activityPlans)
+          .where(
+            and(
+              eq(schema.activityPlans.id, input.planId),
+              eq(schema.activityPlans.profile_id, input.profileId),
+            ),
+          )
+          .returning({ id: schema.activityPlans.id });
+        if (deleted.length !== 1) throw new Error("Activity plan changed during deletion");
+        return "deleted";
+      });
+    },
+  };
+}
