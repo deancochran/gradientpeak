@@ -37,7 +37,9 @@ export class RollingBuffer<T> {
   getSamples(windowMs: number): BufferSample<T>[] {
     if (this.samples.length === 0) return [];
 
-    const now = this.samples[this.samples.length - 1].timestamp;
+    const latest = this.samples.at(-1);
+    if (latest === undefined) return [];
+    const now = latest.timestamp;
     const cutoff = now - windowMs;
 
     return this.samples.filter((sample) => sample.timestamp >= cutoff);
@@ -47,7 +49,7 @@ export class RollingBuffer<T> {
    * Get the most recent sample
    */
   getLatest(): BufferSample<T> | undefined {
-    return this.samples[this.samples.length - 1];
+    return this.samples.at(-1);
   }
 
   /**

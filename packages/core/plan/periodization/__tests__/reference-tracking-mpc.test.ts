@@ -5,7 +5,7 @@ import { buildPeriodizedObjectiveComponents, evaluateReferenceTrackingWindow } f
 
 const taperReference = referenceTrajectorySchema.parse({
   mode: "target_seeking",
-  sport: "run",
+  activity_category: "run",
   feasibility: {
     status: "feasible",
     limiting_constraints: [],
@@ -15,24 +15,24 @@ const taperReference = referenceTrajectorySchema.parse({
   points: [
     {
       date: "2026-04-14",
-      target_ctl: 55,
-      target_tss: 52,
+      target_longTermLoad: 55,
+      target_load: 52,
       phase: "build",
       goal_ids_in_effect: [],
       rationale_codes: [],
     },
     {
       date: "2026-04-15",
-      target_ctl: 55,
-      target_tss: 40,
+      target_longTermLoad: 55,
+      target_load: 40,
       phase: "taper",
       goal_ids_in_effect: ["11111111-1111-4111-8111-111111111111"],
       rationale_codes: [],
     },
     {
       date: "2026-04-16",
-      target_ctl: 54,
-      target_tss: 28,
+      target_longTermLoad: 54,
+      target_load: 28,
       phase: "taper",
       goal_ids_in_effect: ["11111111-1111-4111-8111-111111111111"],
       rationale_codes: [],
@@ -46,20 +46,20 @@ describe("reference tracking MPC helpers", () => {
       reference_trajectory: taperReference,
       projected_states: taperReference.points.map((point) => ({
         date: point.date,
-        predicted_load_tss: point.target_tss,
-        predicted_fitness_ctl: point.target_ctl,
-        predicted_fatigue_atl: point.target_ctl + 3,
-        predicted_form_tsb: -3,
+        predicted_load: point.target_load,
+        predicted_fitness_longTermLoad: point.target_longTermLoad,
+        predicted_fatigue_recentLoad: point.target_longTermLoad + 3,
+        predicted_form_loadBalance: -3,
       })),
     });
     const aggressive = evaluateReferenceTrackingWindow({
       reference_trajectory: taperReference,
       projected_states: taperReference.points.map((point) => ({
         date: point.date,
-        predicted_load_tss: point.target_tss + 36,
-        predicted_fitness_ctl: point.target_ctl + 3,
-        predicted_fatigue_atl: point.target_ctl + 22,
-        predicted_form_tsb: -18,
+        predicted_load: point.target_load + 36,
+        predicted_fitness_longTermLoad: point.target_longTermLoad + 3,
+        predicted_fatigue_recentLoad: point.target_longTermLoad + 22,
+        predicted_form_loadBalance: -18,
       })),
     });
 
@@ -73,20 +73,20 @@ describe("reference tracking MPC helpers", () => {
       reference_trajectory: taperReference,
       projected_states: taperReference.points.map((point) => ({
         date: point.date,
-        predicted_load_tss: point.target_tss + 2,
-        predicted_fitness_ctl: point.target_ctl,
-        predicted_fatigue_atl: point.target_ctl + 5,
-        predicted_form_tsb: -5,
+        predicted_load: point.target_load + 2,
+        predicted_fitness_longTermLoad: point.target_longTermLoad,
+        predicted_fatigue_recentLoad: point.target_longTermLoad + 5,
+        predicted_form_loadBalance: -5,
       })),
     });
     const overshootTracking = evaluateReferenceTrackingWindow({
       reference_trajectory: taperReference,
       projected_states: taperReference.points.map((point) => ({
         date: point.date,
-        predicted_load_tss: point.target_tss + 40,
-        predicted_fitness_ctl: point.target_ctl + 4,
-        predicted_fatigue_atl: point.target_ctl + 24,
-        predicted_form_tsb: -19,
+        predicted_load: point.target_load + 40,
+        predicted_fitness_longTermLoad: point.target_longTermLoad + 4,
+        predicted_fatigue_recentLoad: point.target_longTermLoad + 24,
+        predicted_form_loadBalance: -19,
       })),
     });
 

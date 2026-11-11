@@ -19,8 +19,6 @@ import {
 export function useStandalonePermissions() {
   const [permissions, setPermissions] = useState<AllPermissionsStatus>({
     bluetooth: null,
-    location: null,
-    locationBackground: null,
   });
   const [allGranted, setAllGranted] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -43,7 +41,7 @@ export function useStandalonePermissions() {
 
   // Initial check
   useEffect(() => {
-    checkPermissions();
+    void checkPermissions();
   }, [checkPermissions]);
 
   // Listen for app state changes (returning from settings)
@@ -52,7 +50,7 @@ export function useStandalonePermissions() {
       if (nextAppState === "active") {
         // Force refresh permissions when app becomes active (user may have changed them in settings)
         console.log("[useStandalonePermissions] App became active, force refreshing permissions");
-        checkPermissions(true);
+        void checkPermissions(true);
       }
     });
 
@@ -82,15 +80,7 @@ export function useStandalonePermissions() {
     try {
       setIsLoading(true);
 
-      // Request in order: bluetooth, location, then background location
       await requestPermission("bluetooth");
-      await requestPermission("location");
-
-      // Only request background location if foreground location is granted
-      const currentStatus = await checkAllPermissions();
-      if (currentStatus.location?.granted) {
-        await requestPermission("location-background");
-      }
 
       // Check final status
       const granted = await areAllPermissionsGranted();
@@ -136,14 +126,10 @@ export function useAllPermissionsGranted() {
 
         if (mounted) {
           setAllGranted(granted);
-          console.log("[useAllPermissionsGranted] Permissions check result:", granted);
         }
-      } catch (error) {
-        console.error("[useAllPermissionsGranted] Error checking permissions:", error);
-
+      } catch {
         // Retry logic for transient errors
         if (mounted && retryCount < 3) {
-          console.log(`[useAllPermissionsGranted] Retrying... (${retryCount + 1}/3)`);
           setTimeout(() => {
             if (mounted) {
               setRetryCount((prev) => prev + 1);
@@ -157,13 +143,13 @@ export function useAllPermissionsGranted() {
       }
     };
 
-    check();
+    void check();
 
     // Re-check when app becomes active (force refresh to bypass cache)
     const subscription = AppState.addEventListener("change", (nextAppState) => {
       if (nextAppState === "active" && mounted) {
-        console.log("[useAllPermissionsGranted] App became active, force refreshing");
-        check(true);
+        console.log("[permissions] Refreshing after app resume");
+        void check(true);
       }
     });
 

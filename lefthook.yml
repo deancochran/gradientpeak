@@ -8,11 +8,5 @@ pre-commit:
 
 pre-push:
   jobs:
-    - name: biome
-      run: pnpm check
-    - name: typecheck
-      run: pnpm check-types
-    - name: test
-      run: pnpm test
-    - name: knip
-      run: pnpm knip
+    - name: required quality and runtime checks
+      run: pnpm quality:push {push_files}

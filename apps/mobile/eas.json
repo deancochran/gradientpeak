@@ -9,7 +9,10 @@
       "developmentClient": true,
       "distribution": "internal",
       "channel": "development",
-      "environment": "development"
+      "environment": "development",
+      "ios": {
+        "autoIncrement": "buildNumber"
+      }
     },
     "preview": {
       "distribution": "internal",

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export * from "./policy";
+
 export const notificationListItemTypeSchema = z.enum([
   "new_message",
   "coaching_invitation",
@@ -15,18 +17,19 @@ export type NotificationListItemType = z.infer<typeof notificationListItemTypeSc
 export const notificationListItemSchema = z
   .object({
     id: z.string(),
-    actor_id: z.string().optional(),
-    created_at: z.string().default(""),
-    is_read: z.boolean().optional(),
-    read_at: z.string().nullable().optional(),
-    type: z.string().optional(),
+    user_id: z.string(),
+    actor_id: z.string().nullable(),
+    entity_id: z.string().nullable(),
+    created_at: z.string(),
+    read_at: z.string().nullable(),
+    type: z.string(),
   })
-  .passthrough();
+  .strict();
 
 export type NotificationListItem = z.infer<typeof notificationListItemSchema>;
 
 export interface NotificationViewModel {
-  actorId?: string;
+  actorId?: string | null;
   createdAt: string;
   id: string;
   isUnread: boolean;
@@ -42,10 +45,6 @@ export function normalizeNotificationListItem(value: unknown): NotificationListI
 }
 
 export function isNotificationUnread(notification: NotificationListItem): boolean {
-  if (typeof notification.is_read === "boolean") {
-    return !notification.is_read;
-  }
-
   return !notification.read_at;
 }
 
