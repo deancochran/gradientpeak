@@ -15,7 +15,15 @@ import {
   type ProfileGoalRecord,
 } from "../application/goals/getProfileGoalById";
 import { profileGoalWriteDataSchema } from "../application/goals/profile-goal-write";
-import { withAuthorizedAthleteReadAcrossOrganizations } from "../application/organizations/authorize-athlete-read";
+import { readCoachAthleteGoals } from "../application/goals/read-coach-athlete-goals";
+import {
+  withAuthorizedAthleteRead,
+  withAuthorizedAthleteReadAcrossOrganizations,
+} from "../application/organizations/authorize-athlete-read";
+import {
+  coachAthleteGoalsRequestSchema,
+  coachAthleteGoalsResponseSchema,
+} from "../contracts/coach-athlete-goals";
 import { type DrizzleQueryExecutor, getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { buildIndexPageInfo, indexCursorSchema, parseIndexCursor } from "../utils/index-cursor";
@@ -227,6 +235,7 @@ async function deleteProfileGoal(input: {
 
 export function createGoalsRouter(
   authorizeRead: ConsentAwareAthleteReadAuthorizer = withAuthorizedAthleteReadAcrossOrganizations,
+  authorizeOrganizationRead: typeof withAuthorizedAthleteRead = withAuthorizedAthleteRead,
 ) {
   return createTRPCRouter({
     list: protectedProcedure.input(goalsListInputSchema).query(async ({ ctx, input }) => {
@@ -289,6 +298,26 @@ export function createGoalsRouter(
         },
       });
     }),
+
+    listForOrganization: protectedProcedure
+      .input(coachAthleteGoalsRequestSchema)
+      .output(coachAthleteGoalsResponseSchema)
+      .query(async ({ ctx, input }) => {
+        const result = await readCoachAthleteGoals(
+          {
+            db: getRequiredDb(ctx),
+            actorProfileId: ctx.session.user.id,
+            organizationId: input.organizationId,
+            athleteProfileId: input.athleteProfileId,
+            limit: input.limit,
+            cursor: input.cursor,
+            now: new Date(),
+          },
+          { authorize: authorizeOrganizationRead },
+        );
+        if (!result) throw new TRPCError({ code: "FORBIDDEN", message: "Not authorized" });
+        return result;
+      }),
 
     getById: protectedProcedure.input(goalIdInputSchema).query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);

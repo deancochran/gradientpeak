@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   calendar: vi.fn(),
+  goals: vi.fn(),
   directory: vi.fn(),
   overview: vi.fn(),
   selected: vi.fn(),
@@ -43,6 +44,9 @@ vi.mock("../../../../../components/coaching/athletes/athlete-workspace-switcher"
 vi.mock("../../../../../components/coaching/athletes/coach-athlete-overview", () => ({
   CoachAthleteOverview: ({ athleteId }: { athleteId: string }) => <p>overview for {athleteId}</p>,
 }));
+vi.mock("../../../../../components/coaching/athletes/coach-athlete-goals", () => ({
+  CoachAthleteGoals: () => <p>goals</p>,
+}));
 vi.mock("../../../../../lib/coaching/athletes-server-functions", () => ({
   loadAssignedCoachAthletes: mocks.directory,
   loadCoachAthleteOverview: mocks.overview,
@@ -52,6 +56,9 @@ vi.mock("../../../../../lib/coaching/athlete-calendar-server-functions", () => (
   currentCalendarWeek: () => ({ startDate: "2026-03-08", endDateExclusive: "2026-03-15" }),
   loadCoachAthleteCalendar: mocks.calendar,
 }));
+vi.mock("../../../../../lib/coaching/athlete-goals-server-functions", () => ({
+  loadCoachAthleteGoals: mocks.goals,
+}));
 
 import { Route } from "./$athleteId";
 
@@ -59,6 +66,7 @@ afterEach(() => {
   cleanup();
   state.actorProfileId = "actor-a";
   mocks.calendar.mockReset();
+  mocks.goals.mockReset();
   mocks.directory.mockReset();
   mocks.overview.mockReset();
   mocks.selected.mockReset();
@@ -126,6 +134,7 @@ describe("coach athlete workspace route", () => {
     mocks.directory.mockResolvedValue({ status: "granted", items: [] });
     mocks.selected.mockResolvedValue({ profileId: state.params.athleteId });
     mocks.calendar.mockRejectedValue(new Error("calendar unavailable"));
+    mocks.goals.mockRejectedValue(new Error("goals unavailable"));
     const route = Route as unknown as {
       loader: (input: {
         context: { actorProfileId: string };
@@ -138,6 +147,8 @@ describe("coach athlete workspace route", () => {
     });
     expect(loaded.overview).toEqual({ status: "granted", title: "overview" });
     expect(loaded.calendar).toEqual({ status: "error" });
+    expect(loaded.goals).toEqual({ status: "error" });
+    expect(typeof loaded.goalsRevision).toBe("string");
     expect(loaded.actorProfileId).toBe("actor-a");
   });
 });

@@ -626,6 +626,35 @@ describe("goalsRouter", () => {
     );
   });
 
+  it("uses the selected organization only for coach goal summaries", async () => {
+    const authorizeOrganizationRead = vi.fn(async () => ({
+      decision: {
+        outcome: "deny" as const,
+        scope: "goals" as const,
+        reason: "missing_consent" as const,
+      },
+    }));
+    const router = createGoalsRouter(undefined, authorizeOrganizationRead as never);
+    const selectedCaller = createRouterCaller(router, {
+      db: {} as never,
+      userId: COACH_ID,
+    });
+
+    await expect(
+      selectedCaller.listForOrganization({
+        organizationId: "33333333-3333-4333-8333-333333333333",
+        athleteProfileId: OWNER_ID,
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(authorizeOrganizationRead).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: "33333333-3333-4333-8333-333333333333",
+        athleteProfileId: OWNER_ID,
+        scope: "goals",
+      }),
+    );
+  });
+
   it.each([
     "missing",
     "revoked",

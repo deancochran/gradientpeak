@@ -2,11 +2,13 @@ import { Button } from "@repo/ui/components/button";
 import { createFileRoute, Link, useRouterState } from "@tanstack/react-router";
 import { AthleteWorkspaceSwitcher } from "../../../../../components/coaching/athletes/athlete-workspace-switcher";
 import { CoachAthleteCalendar } from "../../../../../components/coaching/athletes/coach-athlete-calendar";
+import { CoachAthleteGoals } from "../../../../../components/coaching/athletes/coach-athlete-goals";
 import { CoachAthleteOverview } from "../../../../../components/coaching/athletes/coach-athlete-overview";
 import {
   currentCalendarWeek,
   loadCoachAthleteCalendar,
 } from "../../../../../lib/coaching/athlete-calendar-server-functions";
+import { loadCoachAthleteGoals } from "../../../../../lib/coaching/athlete-goals-server-functions";
 import {
   loadAssignedCoachAthletes,
   loadCoachAthleteOverview,
@@ -14,6 +16,7 @@ import {
 } from "../../../../../lib/coaching/athletes-server-functions";
 
 const forbiddenCalendar = { status: "forbidden" } as const;
+const forbiddenGoals = { status: "forbidden" } as const;
 
 export const Route = createFileRoute(
   "/_coaching/organizations/$organizationId/athletes/$athleteId",
@@ -22,7 +25,7 @@ export const Route = createFileRoute(
   loader: async ({ context, params }) => {
     const data = { organizationId: params.organizationId, athleteProfileId: params.athleteId };
     const range = currentCalendarWeek();
-    const [overview, directory, identity, calendar] = await Promise.all([
+    const [overview, directory, identity, calendar, goals] = await Promise.all([
       loadCoachAthleteOverview({ data }),
       loadAssignedCoachAthletes({
         data: { organizationId: params.organizationId, limit: 20, cursor: null, search: null },
@@ -33,6 +36,11 @@ export const Route = createFileRoute(
       loadCoachAthleteCalendar({ data: { ...data, ...range, cursor: null } }).catch(() => ({
         status: "error" as const,
       })),
+      // Goals are an independent consented projection, not a claim about metrics,
+      // calendar availability, readiness, or achievement.
+      loadCoachAthleteGoals({ data: { ...data, cursor: null } }).catch(() => ({
+        status: "error" as const,
+      })),
     ]);
     return {
       overview,
@@ -40,6 +48,8 @@ export const Route = createFileRoute(
       identity,
       calendar,
       calendarRange: range,
+      goals,
+      goalsRevision: crypto.randomUUID(),
       organizationId: params.organizationId,
       athleteId: params.athleteId,
       actorProfileId: context.actorProfileId,
@@ -63,7 +73,7 @@ export const Route = createFileRoute(
 
 function AthleteWorkspacePage() {
   const result = Route.useLoaderData();
-  const { overview, directory, identity, calendar } = result;
+  const { overview, directory, identity, calendar, goals } = result;
   const { athleteId, organizationId } = Route.useParams();
   const { actorProfileId } = Route.useRouteContext();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
@@ -107,6 +117,14 @@ function AthleteWorkspacePage() {
         key={`${actorProfileId}:${organizationId}:${athleteId}`}
         organizationId={organizationId}
         result={identity ? calendar : forbiddenCalendar}
+      />
+      <CoachAthleteGoals
+        actorProfileId={actorProfileId}
+        athleteId={athleteId}
+        key={`${actorProfileId}:${organizationId}:${athleteId}:${result.goalsRevision}`}
+        loaderRevision={result.goalsRevision}
+        organizationId={organizationId}
+        result={identity ? goals : forbiddenGoals}
       />
     </div>
   );
