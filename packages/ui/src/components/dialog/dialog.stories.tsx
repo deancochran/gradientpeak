@@ -1,5 +1,5 @@
-import type { Meta, StoryObj } from "@storybook/react";
-import { expect } from "@storybook/test";
+import type { Meta, StoryObj } from "@storybook/react-vite";
+import { expect } from "storybook/test";
 
 import { Button } from "../button/index.web";
 import { dialogFixtures } from "./fixtures";
@@ -29,13 +29,13 @@ export const Playground: Story = {
     <Dialog>
       <DialogTrigger asChild>
         <Button type="button" variant="outline">
-          {dialogFixtures.workoutDetails.triggerLabel}
+          {dialogFixtures.activityDetails.triggerLabel}
         </Button>
       </DialogTrigger>
       <DialogContent showCloseButton={false}>
         <DialogHeader>
-          <DialogTitle>{dialogFixtures.workoutDetails.title}</DialogTitle>
-          <DialogDescription>{dialogFixtures.workoutDetails.description}</DialogDescription>
+          <DialogTitle>{dialogFixtures.activityDetails.title}</DialogTitle>
+          <DialogDescription>{dialogFixtures.activityDetails.description}</DialogDescription>
         </DialogHeader>
         <DialogFooter showCloseButton>{null}</DialogFooter>
       </DialogContent>
@@ -44,8 +44,8 @@ export const Playground: Story = {
   play: async ({ canvasElement }) => {
     const { dialog } = await exerciseDialogStory({
       canvasElement,
-      closeLabel: dialogFixtures.workoutDetails.closeLabel,
-      triggerLabel: dialogFixtures.workoutDetails.triggerLabel,
+      closeLabel: dialogFixtures.activityDetails.closeLabel,
+      triggerLabel: dialogFixtures.activityDetails.triggerLabel,
     });
 
     await expect(dialog).not.toBeVisible();

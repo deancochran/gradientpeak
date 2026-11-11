@@ -1,31 +1,35 @@
 import { createAthletePlanningContextFromSnapshot } from "@repo/core";
-import { trainingPlanBuilderStateSchema } from "./schemas";
+import { toDateKey } from "@/lib/calendar/dateMath";
 import type { TrainingPlanBuilderState } from "./types";
 
 export const DEFAULT_TRAINING_PLAN_NAME = "";
 
 function getDefaultAnchorDate() {
-  return new Date().toISOString().slice(0, 10);
+  return toDateKey(new Date());
 }
 
 export function createDefaultTrainingPlanBuilderState(): TrainingPlanBuilderState {
-  return trainingPlanBuilderStateSchema.parse({
+  const anchorDate = getDefaultAnchorDate();
+  return {
     details: {
       name: DEFAULT_TRAINING_PLAN_NAME,
       description: "",
-      templateVisibility: "private",
+      contentVisibility: "private",
     },
-    anchorDate: getDefaultAnchorDate(),
+    anchorDate,
     athleteContext: createAthletePlanningContextFromSnapshot({
       profile: null,
       profileMetrics: [],
       activityEfforts: [],
     }),
     planPreferences: {
-      durationWeeks: null,
-      weeklySessionCount: null,
-      targetWeeklyHours: null,
-      restDaysPerWeek: null,
+      weekly_session_count: null,
+      target_weekly_duration_minutes: null,
+      maximum_session_duration_minutes: null,
+      preferred_weekdays: [],
+      rest_days: [],
+      progression_style: null,
+      recovery_priority: null,
     },
     goalContext: {
       selectedGoals: [],
@@ -34,10 +38,10 @@ export function createDefaultTrainingPlanBuilderState(): TrainingPlanBuilderStat
       sessions: [],
     },
     scheduling: {
-      startDate: getDefaultAnchorDate(),
+      startDate: anchorDate,
       preferredWeekdays: [],
       sessionDateOverrides: {},
     },
     selection: { type: "overview" },
-  });
+  };
 }

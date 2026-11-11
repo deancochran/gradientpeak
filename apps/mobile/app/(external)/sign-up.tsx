@@ -21,7 +21,11 @@ import {
   mapSignUpError,
   setAuthFormError,
 } from "@/lib/auth/form-helpers";
-import { getDisplayNameFromEmail, type SignUpFields, signUpSchema } from "@/lib/auth/form-schemas";
+import {
+  getDisplayNameFromEmail,
+  type SignUpFormValues,
+  signUpFormSchema,
+} from "@/lib/auth/form-schemas";
 import { withAuthRequestTimeout } from "@/lib/auth/request-timeout";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { logMobileAction } from "@/lib/logging/mobile-action-log";
@@ -30,7 +34,19 @@ import { useAuthStore } from "@/lib/stores/auth-store";
 
 export default function SignUpScreen() {
   const router = useRouter();
-  const { loading: authLoading } = useAuth();
+  const { loading: authLoading, user } = useAuth();
+  const owner = React.useRef({ id: user?.id, generation: 0, active: true });
+  if (owner.current.id !== user?.id)
+    owner.current = { id: user?.id, generation: owner.current.generation + 1, active: true };
+  const pending = React.useRef(false);
+  const renderOwner = owner.current;
+  React.useEffect(() => {
+    const current = renderOwner;
+    current.active = true;
+    return () => {
+      current.active = false;
+    };
+  }, [renderOwner]);
   const [isServerConfigExpanded, setIsServerConfigExpanded] = React.useState(false);
   const serverOverrideEnabled = isServerUrlOverrideEnabled();
   const serverConfig = useServerConfig();
@@ -43,7 +59,7 @@ export default function SignUpScreen() {
   }, [serverConfig.overrideUrl, serverConfig.apiUrl]);
 
   const form = useZodForm({
-    schema: signUpSchema,
+    schema: signUpFormSchema,
     defaultValues: {
       email: "",
       password: "",
@@ -51,12 +67,29 @@ export default function SignUpScreen() {
     },
   });
 
-  const onSignUp = async (data: SignUpFields) => {
+  const onSignUp = async (data: SignUpFormValues) => {
+    if (owner.current !== renderOwner || !renderOwner.active) return;
+    const current = owner.current;
+    const draft = form.getValues();
+    let signedUpUserId: string | undefined;
+    const isCurrent = () =>
+      owner.current.active &&
+      ((current.active && owner.current === current) ||
+        (current.id === undefined &&
+          owner.current.generation === current.generation + 1 &&
+          signedUpUserId !== undefined &&
+          owner.current.id === signedUpUserId)) &&
+      form.getValues("email") === draft.email &&
+      form.getValues("password") === draft.password &&
+      form.getValues("repeatPassword") === draft.repeatPassword;
+    pending.current = true;
     try {
       await applyPendingAuthServerOverride({
         expanded: serverOverrideEnabled && isServerConfigExpanded,
         serverUrlInput,
       });
+
+      if (!isCurrent()) return;
 
       logMobileAction("auth.signUp", "attempt", { email: data.email });
 
@@ -67,8 +100,10 @@ export default function SignUpScreen() {
           name: getDisplayNameFromEmail(data.email),
           callbackURL: getEmailVerificationCallbackUrl(),
         }),
-      )) as { error?: { message: string } | null };
+      )) as { error?: { message: string } | null; data?: { user?: { id: string } } };
+      if (!result.error) signedUpUserId = result.data?.user?.id;
       const error = result.error;
+      if (!isCurrent()) return;
 
       if (error) {
         logMobileAction("auth.signUp", "failure", { email: data.email, error: error.message });
@@ -78,6 +113,7 @@ export default function SignUpScreen() {
 
         const session = await refreshMobileAuthSession();
         await useAuthStore.getState().refreshSession();
+        if (!isCurrent()) return;
 
         if (session?.user.emailVerified) {
           router.replace("/");
@@ -90,6 +126,7 @@ export default function SignUpScreen() {
         });
       }
     } catch (err) {
+      if (!isCurrent()) return;
       logMobileAction("auth.signUp", "failure", {
         email: data.email,
         error: err instanceof Error ? err.message : String(err),
@@ -98,10 +135,13 @@ export default function SignUpScreen() {
         name: "root",
         message: getAuthFormUnexpectedErrorMessage(err),
       });
+    } finally {
+      pending.current = false;
     }
   };
 
   const handleSignInPress = () => {
+    if (pending.current) return;
     router.replace("/(external)/sign-in");
   };
 
@@ -109,7 +149,7 @@ export default function SignUpScreen() {
     form,
     onSubmit: onSignUp,
   });
-  const isLoading = authLoading || submitForm.isSubmitting;
+  const isLoading = authLoading || submitForm.isSubmitting || form.formState.isSubmitting;
 
   return (
     <KeyboardAvoidingView
@@ -140,14 +180,17 @@ export default function SignUpScreen() {
                   keyboardType="email-address"
                   label="Email"
                   name="email"
+                  disabled={isLoading}
                   placeholder="m@example.com"
                   testId="email-input"
                 />
 
                 <FormTextField
+                  autoComplete="new-password"
                   control={form.control}
                   label="Password"
                   name="password"
+                  disabled={isLoading}
                   placeholder="Enter your password"
                   secureTextEntry
                   testId="password-input"
@@ -169,9 +212,11 @@ export default function SignUpScreen() {
                 </View>
 
                 <FormTextField
+                  autoComplete="new-password"
                   control={form.control}
                   label="Repeat Password"
                   name="repeatPassword"
+                  disabled={isLoading}
                   placeholder="Confirm your password"
                   secureTextEntry
                   testId="repeat-password-input"
@@ -190,7 +235,13 @@ export default function SignUpScreen() {
             <LoadingButton
               variant="default"
               size="lg"
-              onPress={submitForm.handleSubmit}
+              onPress={() => {
+                if (pending.current) return;
+                pending.current = true;
+                return submitForm.handleSubmit().finally(() => {
+                  pending.current = false;
+                });
+              }}
               disabled={isLoading}
               loading={isLoading}
               loadingLabel="Creating account..."
@@ -214,6 +265,7 @@ export default function SignUpScreen() {
               <Button
                 variant="outline"
                 onPress={handleSignInPress}
+                disabled={isLoading}
                 testID="sign-in-link-button"
                 className="w-full"
               >
