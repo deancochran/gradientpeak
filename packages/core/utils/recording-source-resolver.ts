@@ -16,7 +16,7 @@ const DEFAULT_PRIORITY: Record<
   Exclude<MetricFamily, "speed" | "distance">,
   readonly MetricSourceType[]
 > = {
-  heart_rate: ["chest_strap", "optical", "trainer_passthrough", "manual"],
+  heart_rate: ["chest_strap", "optical", "heart_rate_sensor", "trainer_passthrough", "manual"],
   power: ["power_meter", "trainer_power", "manual"],
   cadence: ["cadence_sensor", "power_meter", "trainer_cadence", "manual"],
   position: ["gps"],
@@ -162,9 +162,9 @@ export function resolveMetricSources(
 ): MetricSourceSelection[] {
   return metricFamilies.map((metricFamily) =>
     resolveMetricSource(metricFamily, candidates, {
-      isIndoor: context.isIndoor,
       preferredSourceId: context.preferredSourceIds?.[metricFamily] ?? null,
-      selectedAt: context.selectedAt,
+      ...(context.isIndoor === undefined ? {} : { isIndoor: context.isIndoor }),
+      ...(context.selectedAt === undefined ? {} : { selectedAt: context.selectedAt }),
     }),
   );
 }

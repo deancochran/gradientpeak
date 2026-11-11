@@ -11,6 +11,7 @@ import {
   useGroupEventActions,
   useGroupEventDetailViewModel,
 } from "@/lib/groups";
+import { omitUndefined } from "@/lib/omitUndefined";
 
 function singleParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -28,53 +29,23 @@ export default function GroupEventDetailRoute() {
   const event = detailVm.event;
   const isWorking =
     actions.cancelMutation.isPending ||
-    actions.copySeriesActivityPlansToOccurrenceMutation.isPending ||
     actions.rsvpMutation.isPending ||
     actions.rsvpEventSeriesMutation.isPending;
 
   const managementActions: DetailOverflowMenuAction[] = [];
   if (event && groupVm.viewer?.canCreateGroupEvent) {
-    managementActions.push({
-      label: event.is_recurring_occurrence ? "Edit this event" : "Edit event",
-      onPress: () =>
-        router.push({ pathname: "/group-event-edit", params: { groupEventId: event.id } }),
-      testID: "group-event-detail-edit",
-    });
-
-    if (event.is_recurring_occurrence && event.series_id) {
+    if (!event.is_recurring_series) {
       managementActions.push({
-        label: "Edit series",
+        label: event.is_recurring_occurrence ? "Edit this event" : "Edit event",
         onPress: () =>
-          router.push({
-            pathname: "/group-event-edit",
-            params: { groupEventId: event.series_id as string },
-          }),
-        testID: "group-event-detail-edit-series",
-      });
-
-      managementActions.push({
-        label: "Copy series plans",
-        onPress: async () => {
-          try {
-            await actions.copySeriesActivityPlansToOccurrence({
-              groupEventOccurrenceId: event.id,
-              groupEventSeriesId: event.series_id as string,
-            });
-            await detailVm.refetch();
-          } catch (error) {
-            Alert.alert(
-              "Unable to copy plans",
-              error instanceof Error ? error.message : "Please try again.",
-            );
-          }
-        },
-        testID: "group-event-detail-copy-series-plans",
+          router.push({ pathname: "/group-event-edit", params: { groupEventId: event.id } }),
+        testID: "group-event-detail-edit",
       });
     }
 
     if (!event.cancelled_at) {
       managementActions.push({
-        label: "Cancel event",
+        label: event.is_recurring_series ? "Cancel series" : "Cancel event",
         onPress: () => {
           const cancelWithScope = async (scope: "single" | "series") => {
             try {
@@ -88,7 +59,19 @@ export default function GroupEventDetailRoute() {
             }
           };
 
-          if (event.is_recurring_occurrence || event.is_recurring_series) {
+          if (event.is_recurring_series) {
+            Alert.alert("Cancel recurring series", "Cancel the entire recurring series?", [
+              { text: "Keep series", style: "cancel" },
+              {
+                text: "Cancel series",
+                style: "destructive",
+                onPress: () => void cancelWithScope("series"),
+              },
+            ]);
+            return;
+          }
+
+          if (event.is_recurring_occurrence) {
             Alert.alert(
               "Cancel recurring event",
               "Choose whether to cancel only this event or the full series.",
@@ -122,16 +105,17 @@ export default function GroupEventDetailRoute() {
 
   return (
     <DetailScaffold
-      headerRight={
-        managementActions.length > 0
-          ? () => (
-              <DetailOverflowMenu
-                actions={managementActions}
-                testID="group-event-detail-overflow"
-              />
-            )
-          : undefined
-      }
+      {...omitUndefined({
+        headerRight:
+          managementActions.length > 0
+            ? () => (
+                <DetailOverflowMenu
+                  actions={managementActions}
+                  testID="group-event-detail-overflow"
+                />
+              )
+            : undefined,
+      })}
       isLoading={detailVm.isLoading}
       loadingLabel="Loading group event..."
       notFound={detailVm.isError || !event}
@@ -143,8 +127,13 @@ export default function GroupEventDetailRoute() {
         <GroupEventDetailScreen
           canManage={false}
           event={event}
+          {...(detailVm.seriesOccurrencesQuery.error?.message === undefined
+            ? {}
+            : { futureOccurrencesError: detailVm.seriesOccurrencesQuery.error.message })}
+          isErrorFutureOccurrences={detailVm.seriesOccurrencesQuery.isError}
           futureOccurrences={detailVm.seriesOccurrences}
           isLoadingFutureOccurrences={detailVm.seriesOccurrencesQuery.isLoading}
+          isRetryingFutureOccurrences={detailVm.seriesOccurrencesQuery.isFetching}
           isWorking={isWorking}
           onActivityPlanPress={(activityPlanId) =>
             router.push({ pathname: "/activity-plan-detail", params: { id: activityPlanId } })
@@ -158,9 +147,10 @@ export default function GroupEventDetailRoute() {
               params: { groupEventId: occurrence.id },
             })
           }
-          onRsvp={async (status, selectedGroupEventActivityPlanId) => {
+          onRetryFutureOccurrences={() => void detailVm.seriesOccurrencesQuery.refetch()}
+          onRsvp={async (status) => {
             try {
-              await actions.rsvp(event.id, status, selectedGroupEventActivityPlanId);
+              await actions.rsvp(event.id, status);
             } catch (error) {
               Alert.alert(
                 "Unable to RSVP",

@@ -1,5 +1,5 @@
-import type { Meta, StoryObj } from "@storybook/react";
-import { expect } from "@storybook/test";
+import type { Meta, StoryObj } from "@storybook/react-vite";
+import { expect } from "storybook/test";
 
 import { accordionFixtures } from "./fixtures";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./index.web";
