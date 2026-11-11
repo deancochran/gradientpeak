@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export * from "./policy";
+
 export const notificationListItemTypeSchema = z.enum([
   "new_message",
   "coaching_invitation",
