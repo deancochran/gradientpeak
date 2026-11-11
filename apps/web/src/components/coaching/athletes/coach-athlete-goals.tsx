@@ -191,7 +191,9 @@ export function CoachAthleteGoals({
                   </p>
                 </div>
                 <Badge className="border-cyan-800 bg-cyan-950 text-cyan-200">
-                  Lifecycle: {goal.status.replaceAll("_", " ")}
+                  {goal.status === "unavailable"
+                    ? "Lifecycle unavailable: athlete planning timezone is not set"
+                    : `Lifecycle: ${goal.status.replaceAll("_", " ")}`}
                 </Badge>
               </li>
             ))}

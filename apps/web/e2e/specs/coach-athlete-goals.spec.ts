@@ -6,6 +6,7 @@ import {
   organizationMembershipRoleGrants,
   organizationMemberships,
   profileGoals,
+  profiles,
 } from "@repo/db/schema";
 import { eq } from "drizzle-orm";
 import { expect, test } from "../fixtures";
@@ -21,7 +22,7 @@ test("assigned coach reads paged goals independently of metrics and loses them a
   actorFactory,
   coachActor,
   e2eIdentity,
-}) => {
+}, testInfo) => {
   test.setTimeout(120000);
   await athletePage.goto("/organizations/new");
   await athletePage.getByLabel("Organization name", { exact: true }).fill("Goals acceptance");
@@ -48,6 +49,10 @@ test("assigned coach reads paged goals independently of metrics and loses them a
 
   await withLocalE2EDatabase(async (database) => {
     await database.typedTransaction(async (transaction) => {
+      await transaction
+        .update(profiles)
+        .set({ planning_timezone: "America/Los_Angeles" })
+        .where(eq(profiles.id, athleteActor.profileId));
       await transaction.insert(organizationMemberships).values({
         id: coachMembershipId,
         organization_id: organizationId,
@@ -162,10 +167,13 @@ test("assigned coach reads paged goals independently of metrics and loses them a
     `/organizations/${organizationId}/athletes/${athleteActor.profileId}`,
   );
   await waitForAppHydration(page);
-  await expect(page.getByRole("heading", { name: "Goals" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Goals", exact: true })).toBeVisible();
   await expect(page.getByText(afterPageGoalName, { exact: true })).toBeVisible();
   await expect(
-    page.getByText(`Target date: ${targetDate} · run · Priority 9`, { exact: true }),
+    page
+      .getByRole("listitem")
+      .filter({ hasText: afterPageGoalName })
+      .getByText(`Target date: ${targetDate} · run · Priority 9`, { exact: true }),
   ).toBeVisible();
   await expect(page.getByText("Lifecycle: in progress", { exact: true }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Load more goals" })).toBeVisible();
@@ -181,6 +189,10 @@ test("assigned coach reads paged goals independently of metrics and loses them a
     await expect(
       page.getByRole("list", { name: "Goals" }).getByRole("listitem").first(),
     ).toBeVisible();
+    await page.screenshot({
+      path: testInfo.outputPath(`coach-athlete-goals-ready-${viewport.width}.png`),
+      fullPage: true,
+    });
   }
 
   await page.getByRole("button", { name: "Switch athlete" }).click();
@@ -203,5 +215,9 @@ test("assigned coach reads paged goals independently of metrics and loses them a
   await expect(page.getByRole("heading", { name: "Goals unavailable" })).toBeVisible();
   await expect(page.getByText(firstGoalName, { exact: true })).toHaveCount(0);
   await expect(page.getByText(targetDate, { exact: false })).toHaveCount(0);
+  await page.screenshot({
+    path: testInfo.outputPath("coach-athlete-goals-denied-mobile.png"),
+    fullPage: true,
+  });
   await page.close();
 });

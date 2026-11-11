@@ -131,3 +131,19 @@ it("does not read goals when selected-organization goals consent is denied", asy
   expect(result).toBeNull();
   expect(list).not.toHaveBeenCalled();
 });
+
+it("preserves goal headers without inventing a lifecycle date when planning timezone is unset", async () => {
+  const result = await readCoachAthleteGoals(input(), {
+    authorize: vi.fn(async (request) => ({
+      decision: { outcome: "allow", scope: "goals" },
+      value: await request.read(TRANSACTION),
+    })) as never,
+    list: async () => [goal()],
+    getPlanningTimezone: async () => null,
+  });
+  expect(result?.items[0]).toMatchObject({
+    name: "Spring 10K",
+    targetDate: "2026-06-10",
+    status: "unavailable",
+  });
+});

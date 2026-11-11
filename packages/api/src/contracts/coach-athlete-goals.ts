@@ -23,7 +23,7 @@ export const coachAthleteGoalSummarySchema = z
     targetDate: dateOnlySchema,
     category: canonicalGoalActivityCategorySchema,
     priority: z.number().int().min(0).max(10),
-    status: z.enum(["draft", "ready", "in_progress", "completed", "needs_update"]),
+    status: z.enum(["draft", "ready", "in_progress", "completed", "needs_update", "unavailable"]),
   })
   .strict();
 

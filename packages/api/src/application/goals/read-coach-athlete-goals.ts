@@ -33,7 +33,7 @@ type ReadCoachAthleteGoalsDependencies = {
   getPlanningTimezone: (input: {
     transaction: DrizzleTransactionClient;
     athleteProfileId: string;
-  }) => Promise<string>;
+  }) => Promise<string | null>;
 };
 
 function parseCursor(cursor: GoalCursor) {
@@ -76,13 +76,14 @@ async function listGoals(input: {
 async function getPlanningTimezone(input: {
   transaction: DrizzleTransactionClient;
   athleteProfileId: string;
-}): Promise<string> {
+}): Promise<string | null> {
   const [profile] = await input.transaction
     .select({ planningTimezone: profiles.planning_timezone })
     .from(profiles)
     .where(eq(profiles.id, input.athleteProfileId))
     .limit(1);
-  return ianaTimezoneSchema.parse(profile?.planningTimezone);
+  const parsed = ianaTimezoneSchema.safeParse(profile?.planningTimezone);
+  return parsed.success ? parsed.data : null;
 }
 
 const defaultDependencies: ReadCoachAthleteGoalsDependencies = {
@@ -126,7 +127,9 @@ export async function readCoachAthleteGoals(
         transaction,
         athleteProfileId: input.athleteProfileId,
       });
-      const todayDate = formatDateOnlyInTimeZone(input.now, planningTimezone);
+      const todayDate = planningTimezone
+        ? formatDateOnlyInTimeZone(input.now, planningTimezone)
+        : null;
       const page = rows.slice(0, input.limit);
       const hasMore = rows.length > input.limit;
       const last = page.at(-1);
@@ -141,10 +144,9 @@ export async function readCoachAthleteGoals(
             targetDate: row.target_date,
             category: row.activity_category as "bike" | "run" | "swim" | "strength" | "other",
             priority: row.priority,
-            status: getProfileGoalLifecycleStatus({
-              goal: goalHeader,
-              todayDate,
-            }).status,
+            status: todayDate
+              ? getProfileGoalLifecycleStatus({ goal: goalHeader, todayDate }).status
+              : ("unavailable" as const),
           };
         }),
         nextCursor: hasMore && last ? `${last.created_at_key}|${last.id}` : null,
