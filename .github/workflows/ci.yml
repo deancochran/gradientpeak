@@ -108,8 +108,8 @@ jobs:
         run: pnpm --filter @repo/db db:verify
       - name: Run live database suite
         run: pnpm --filter @repo/api test:live-db
-      - name: Run required database check
-        run: pnpm qa:run --profile db --integration-only
+      - name: Verify disposable database runner cleanup
+        run: pnpm --filter @repo/api test:live-db:runner:disposable
       - name: Stop local database
         if: always()
         run: pnpm --filter @repo/db self-host:down

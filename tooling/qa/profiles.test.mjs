@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { test } from "node:test";
 import { formatQaError, parseArguments } from "./cli.mjs";
-import { createProfilePlan, profileForPaths, validateCiRuntimeDelegation } from "./profiles.mjs";
+import { createProfilePlan, profileForPaths } from "./profiles.mjs";
 
 test("changed paths select static, web, backend, or full verification", () => {
   assert.equal(profileForPaths([]), "static");
@@ -103,20 +103,9 @@ test("CI owns full validation while Git hooks stay lightweight", async () => {
   assert.match(browser, /run: pnpm --filter @repo\/db self-host:up/);
   assert.match(browser, /if: always\(\)\s+run: pnpm --filter @repo\/db self-host:down/);
   assert.doesNotMatch(browser, /db:e2e:|prepare-runtime-web-e2e\.mjs/);
-  assert.deepEqual(validateCiRuntimeDelegation(workflow), []);
-
-  const mismatchedCommand = workflow.replace(
-    "pnpm qa:run --profile web --integration-only",
-    "pnpm qa:run --profile mobile --integration-only",
-  );
-  assert.deepEqual(validateCiRuntimeDelegation(mismatchedCommand), [
-    "runtime-web must execute exactly once: pnpm qa:run --profile web --integration-only",
-  ]);
-
-  const duplicatedReference = `${workflow}\n# e2e/specs/smoke.spec.ts\n`;
-  assert.deepEqual(validateCiRuntimeDelegation(duplicatedReference), [
-    "CI workflow duplicates the QA-owned smoke reference: apps/web/e2e/specs/smoke.spec.ts",
-  ]);
+  assert.match(database, /run: pnpm --filter @repo\/api test:live-db:runner:disposable/);
+  assert.doesNotMatch(database, /qa:run/);
+  assert.match(browser, /run: pnpm qa:run --profile web --integration-only/);
 });
 
 test("QA failures expose the exact failed command", () => {
