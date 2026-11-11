@@ -404,7 +404,7 @@ describe("exact cleanup registry", () => {
     const registry = new E2ECleanupRegistry();
     const primary = new Error("primary assertion");
     const annotations: Array<{ type: string; description?: string }> = [];
-    const attach = vi.fn(async () => undefined);
+    const attach = vi.fn(async (_name: string, _attachment: { body: Buffer }) => undefined);
     registry.registerExactId({
       kind: "event",
       id: "event-id",
@@ -432,6 +432,108 @@ describe("exact cleanup registry", () => {
       expect.objectContaining({ type: "cleanup-error", description: expect.any(String) }),
     ]);
     expect(attach).toHaveBeenCalledOnce();
+  });
+
+  it("attaches grouped safe cleanup causes while attempting every action", async () => {
+    const registry = new E2ECleanupRegistry();
+    const primary = new Error("primary assertion");
+    const annotations: Array<{ type: string; description?: string }> = [];
+    const attach = vi.fn(async (_name: string, _attachment: { body: Buffer }) => undefined);
+    const nestedCause = new AggregateError(
+      [Object.assign(new Error("token=private-value"), { code: "ECONNRESET" }), null],
+      "private aggregate message",
+    );
+    const first = vi.fn(async () => {
+      throw nestedCause;
+    });
+    const second = vi.fn(async () => {
+      throw Object.assign(new Error("password=private-value"), { code: "ESECOND" });
+    });
+    registry.registerExactId({ kind: "activity", id: "synthetic-activity", cleanup: first });
+    registry.registerExactId({ kind: "event", id: "synthetic-event", cleanup: second });
+
+    await expect(
+      runCleanupFixture(
+        registry,
+        {} as LocalE2EDatabase,
+        {
+          annotations,
+          attach,
+          expectedStatus: "passed",
+          status: "failed",
+        } as never,
+        async () => {
+          throw primary;
+        },
+      ),
+    ).rejects.toBe(primary);
+
+    expect(first).toHaveBeenCalledOnce();
+    expect(second).toHaveBeenCalledOnce();
+    const attachment = attach.mock.calls[0]?.[1] as { body: Buffer } | undefined;
+    const detail = attachment?.body.toString("utf8") ?? "";
+    expect(detail).toContain("AggregateError");
+    expect(detail).toContain("cleanup event synthetic-event");
+    expect(detail).toContain("cleanup activity synthetic-activity");
+    expect(detail).toContain("Error [ESECOND]");
+    expect(detail).toContain("Error [ECONNRESET]");
+    expect(detail).toContain("Thrown: null");
+    expect(detail).not.toContain("private-value");
+  });
+
+  it("bounds circular, deep, and falsy cleanup causes without exposing their values", async () => {
+    const registry = new E2ECleanupRegistry();
+    const primary = new Error("primary assertion");
+    const annotations: Array<{ type: string; description?: string }> = [];
+    const attach = vi.fn(async (_name: string, _attachment: { body: Buffer }) => undefined);
+    const circular = new Error("circular-private-message");
+    (circular as Error & { cause?: unknown }).cause = circular;
+    let deep: Error = new Error("deep-private-0");
+    for (let depth = 1; depth <= 10; depth += 1) {
+      deep = new Error(`deep-private-${depth}`, { cause: deep });
+    }
+    const cleanups = [
+      ["circular", circular],
+      ["deep", deep],
+      ["undefined", undefined],
+      ["false", false],
+      ["zero", 0],
+      ["empty", ""],
+    ] as const;
+    const actions = cleanups.map(([_id, cause]) =>
+      vi.fn(async () => {
+        throw cause;
+      }),
+    );
+    for (const [index, [id]] of cleanups.entries()) {
+      const cleanup = actions[index];
+      if (!cleanup) throw new Error("Missing synthetic cleanup action");
+      registry.registerExactId({ kind: "synthetic", id, cleanup });
+    }
+
+    await expect(
+      runCleanupFixture(
+        registry,
+        {} as LocalE2EDatabase,
+        { annotations, attach, expectedStatus: "passed", status: "failed" } as never,
+        async () => {
+          throw primary;
+        },
+      ),
+    ).rejects.toBe(primary);
+
+    for (const cleanup of actions) expect(cleanup).toHaveBeenCalledOnce();
+    const attachment = attach.mock.calls[0]?.[1] as { body: Buffer } | undefined;
+    const detail = attachment?.body.toString("utf8") ?? "";
+    expect(detail).toContain("[circular cause]");
+    expect(detail).toContain("[cause depth exceeded]");
+    expect(detail).toContain("Thrown: undefined");
+    expect(detail).toContain("Thrown: boolean");
+    expect(detail).toContain("Thrown: number");
+    expect(detail).toContain("Thrown: string");
+    expect(detail).not.toContain("circular-private-message");
+    expect(detail).not.toContain("deep-private-");
+    expect(detail).not.toContain("foundation.test.ts");
   });
 
   it("executes training-plan cleanup through the typed transaction boundary", async () => {

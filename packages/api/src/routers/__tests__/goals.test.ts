@@ -38,6 +38,11 @@ type QueryMap = {
 
 type CallLogEntry =
   | {
+      operation: "select";
+      table: "profile_goals" | "training_plans";
+      selectionKeys: string[];
+    }
+  | {
       operation: "insert";
       table: "profile_goals";
       payload: Record<string, unknown>;
@@ -124,7 +129,8 @@ function createDbMock(queryMap: QueryMap = {}) {
     for: () => SelectBuilder;
   };
 
-  const createSelectBuilder = (isCountSelect = false): SelectBuilder => {
+  const createSelectBuilder = (selection?: Record<string, unknown>): SelectBuilder => {
+    const isCountSelect = Boolean(selection?.total);
     let isProfileAccess = false;
     let builder: SelectBuilder;
     const result = new Promise<unknown[]>((resolve) => {
@@ -135,6 +141,11 @@ function createDbMock(queryMap: QueryMap = {}) {
     builder = Object.assign(result, {
       from: (table: unknown) => {
         _activeTable = getTableName(table);
+        callLog.push({
+          operation: "select",
+          table: _activeTable,
+          selectionKeys: Object.keys(selection ?? {}).sort(),
+        });
         const tableRecord = isRecord(table) ? table : {};
         const metadata = isRecord(tableRecord._) ? tableRecord._ : undefined;
         isProfileAccess = String(
@@ -174,7 +185,7 @@ function createDbMock(queryMap: QueryMap = {}) {
     execute: async () => ({
       rows: queryMap.profileAccess ?? [{ has_access: false }],
     }),
-    select: (selection?: Record<string, unknown>) => createSelectBuilder(Boolean(selection?.total)),
+    select: (selection?: Record<string, unknown>) => createSelectBuilder(selection),
     insert: (table) => ({
       values: (payload: Record<string, unknown>) => {
         const tableName = getTableName(table);
@@ -366,11 +377,9 @@ describe("goalsRouter", () => {
     expect(callLog).not.toContainEqual(expect.objectContaining({ operation: "insert" }));
   });
 
-  it("allows an authorized coach to fetch a goal by id", async () => {
+  it("allows the goal owner to fetch a goal by id", async () => {
     const goal = createGoalRow();
     const { caller } = createCaller({
-      userId: COACH_ID,
-      authorizeRead: consentAuthorizer({ state: "valid", scopes: ["goals"] }),
       queryMap: {
         profileGoalsSelect: [[goal]],
       },
@@ -381,17 +390,22 @@ describe("goalsRouter", () => {
     expect(result).toEqual(goal);
   });
 
-  it("does not disclose an existing goal to an unauthorized actor", async () => {
-    const goal = createGoalRow();
-    const { caller } = createCaller({
+  it.each([
+    { name: "a missing goal", profileGoalsSelect: [] as GoalRow[] },
+    { name: "an assigned coach with valid goals consent", profileGoalsSelect: [[createGoalRow()]] },
+  ])("returns the same NOT_FOUND result for $name", async ({ profileGoalsSelect }) => {
+    const authorizeRead = consentAuthorizer({ state: "valid", scopes: ["goals"] });
+    const { caller, callLog } = createCaller({
       userId: COACH_ID,
-      authorizeRead: consentAuthorizer({ state: "missing", scopes: ["goals"] }),
-      queryMap: {
-        profileGoalsSelect: [[goal]],
-      },
+      authorizeRead,
+      queryMap: { profileGoalsSelect },
     });
 
     await expect(caller.getById({ id: GOAL_ID })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(authorizeRead).not.toHaveBeenCalled();
+    expect(callLog).toEqual([
+      { operation: "select", table: "profile_goals", selectionKeys: ["profile_id"] },
+    ]);
   });
 
   it("creates a goal and returns cache tags", async () => {

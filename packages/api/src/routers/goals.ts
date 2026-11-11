@@ -12,6 +12,7 @@ import { and, asc, count, desc, eq, gte, ilike } from "drizzle-orm";
 import { z } from "zod";
 import {
   getProfileGoalById,
+  getProfileGoalOwnerId,
   type ProfileGoalRecord,
 } from "../application/goals/getProfileGoalById";
 import { profileGoalWriteDataSchema } from "../application/goals/profile-goal-write";
@@ -150,15 +151,6 @@ async function listProfileGoals(input: {
     .offset(input.offset);
 
   return profileGoalRecordSchema.array().parse(rows);
-}
-
-async function getProfileGoalOwnerId(db: DrizzleQueryExecutor, id: string): Promise<string | null> {
-  const [row] = await db
-    .select({ profile_id: profileGoals.profile_id })
-    .from(profileGoals)
-    .where(eq(profileGoals.id, id))
-    .limit(1);
-  return row?.profile_id ?? null;
 }
 
 async function createProfileGoal(input: {
@@ -322,27 +314,17 @@ export function createGoalsRouter(
     getById: protectedProcedure.input(goalIdInputSchema).query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
       const profileId = await getProfileGoalOwnerId(db, input.id);
-      if (!profileId) {
+      if (!profileId || profileId !== ctx.session.user.id) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Goal not found",
         });
       }
-      return readProfileWithAthleteConsent({
-        ctx,
-        profileId,
-        scope: "goals",
-        deniedCode: "NOT_FOUND",
-        deniedMessage: "Goal not found",
-        authorizeRead,
-        read: async (authorizedDb) => {
-          const goal = await getProfileGoalById(authorizedDb, input.id);
-          if (!goal || goal.profile_id !== profileId) {
-            throw new TRPCError({ code: "NOT_FOUND", message: "Goal not found" });
-          }
-          return goal;
-        },
-      });
+      const goal = await getProfileGoalById(db, input.id);
+      if (!goal || goal.profile_id !== profileId) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Goal not found" });
+      }
+      return goal;
     }),
 
     create: protectedProcedure.input(profileGoalWriteSchema).mutation(async ({ ctx, input }) => {
