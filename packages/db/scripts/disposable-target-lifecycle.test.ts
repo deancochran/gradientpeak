@@ -22,7 +22,7 @@ function fakeAdmin(
       return ended;
     },
     async query(text: string, values?: unknown[]) {
-      queries.push({ text, values });
+      queries.push(values === undefined ? { text } : { text, values });
       const failure = failures[queryCount++];
       if (failure) throw failure;
       if (text.includes("count(*)")) return { rows: [{ count: counts.shift() ?? 0 }] };
