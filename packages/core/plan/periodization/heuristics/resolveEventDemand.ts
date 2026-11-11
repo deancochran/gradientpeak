@@ -4,8 +4,8 @@ import {
   eventDemandSchema,
   type NormalizedPlanningGoal,
 } from "../../../schemas/planning";
+import { getActivityCategoryModelConfig } from "../activity-categories";
 import { MAX_BIASED_AGGREGATION_WEIGHT, WEIGHTED_AVERAGE_AGGREGATION_WEIGHT } from "../constants";
-import { getSportModelConfig } from "../sports";
 
 export interface EventDemandResolutionSuccess {
   status: "supported";
@@ -33,7 +33,7 @@ function deriveContribution(target: NormalizedPlanningGoal["targets"][number]) {
       return {
         family: "race_performance" as const,
         durationMinutes,
-        requiredPeakCtl: round(34 + durationMinutes * 0.08 + distanceKm * 1.6),
+        requiredPeakLongTermLoad: round(34 + durationMinutes * 0.08 + distanceKm * 1.6),
         rationale_codes: ["race_performance_demand_mapped"],
       };
     }
@@ -41,21 +41,21 @@ function deriveContribution(target: NormalizedPlanningGoal["targets"][number]) {
       return {
         family: "threshold_pace" as const,
         durationMinutes: target.test_duration_s / 60,
-        requiredPeakCtl: round(28 + target.target_speed_mps * 4.5),
+        requiredPeakLongTermLoad: round(28 + target.target_speed_mps * 4.5),
         rationale_codes: ["pace_threshold_demand_mapped"],
       };
     case "power_threshold":
       return {
         family: "threshold_power" as const,
         durationMinutes: target.test_duration_s / 60,
-        requiredPeakCtl: round(25 + target.target_watts / 8),
+        requiredPeakLongTermLoad: round(25 + target.target_watts / 8),
         rationale_codes: ["power_threshold_demand_mapped"],
       };
     case "hr_threshold":
       return {
         family: "threshold_hr" as const,
         durationMinutes: 60,
-        requiredPeakCtl: round(20 + target.target_lthr_bpm / 5),
+        requiredPeakLongTermLoad: round(20 + target.target_lthr_bpm / 5),
         rationale_codes: ["hr_threshold_demand_mapped", "hr_threshold_low_specificity_confidence"],
       };
   }
@@ -91,11 +91,12 @@ export function resolveEventDemand(goal: NormalizedPlanningGoal): EventDemandRes
   });
   const rawTotalWeight = resolved.reduce((sum, item) => sum + item.weight, 0);
   const totalWeight = rawTotalWeight > 0 ? rawTotalWeight : resolved.length;
-  const maxCtl = Math.max(...resolved.map((item) => item.requiredPeakCtl));
-  const weightedCtl =
+  const maxLongTermLoad = Math.max(...resolved.map((item) => item.requiredPeakLongTermLoad));
+  const weightedLongTermLoad =
     resolved.reduce(
       (sum, item) =>
-        sum + item.requiredPeakCtl * ((rawTotalWeight > 0 ? item.weight : 1) / totalWeight),
+        sum +
+        item.requiredPeakLongTermLoad * ((rawTotalWeight > 0 ? item.weight : 1) / totalWeight),
       0,
     ) || 0;
   const weightedDuration =
@@ -104,24 +105,25 @@ export function resolveEventDemand(goal: NormalizedPlanningGoal): EventDemandRes
         sum + item.durationMinutes * ((rawTotalWeight > 0 ? item.weight : 1) / totalWeight),
       0,
     ) || 0;
-  const requiredPeakCtl = round(
-    maxCtl * MAX_BIASED_AGGREGATION_WEIGHT + weightedCtl * WEIGHTED_AVERAGE_AGGREGATION_WEIGHT,
+  const requiredPeakLongTermLoad = round(
+    maxLongTermLoad * MAX_BIASED_AGGREGATION_WEIGHT +
+      weightedLongTermLoad * WEIGHTED_AVERAGE_AGGREGATION_WEIGHT,
   );
 
   return {
     status: "supported",
     demand: eventDemandSchema.parse({
       goal_id: goal.id,
-      sport: goal.activity_category,
+      activity_category: goal.activity_category,
       demand_family: resolveAggregateFamily(resolved.map((item) => item.family)),
       demand_duration_minutes: round(weightedDuration),
-      required_peak_ctl: requiredPeakCtl,
-      required_weekly_load_floor: round(requiredPeakCtl * 7),
+      required_peak_longTermLoad: requiredPeakLongTermLoad,
+      required_weekly_load_floor: round(requiredPeakLongTermLoad * 7),
       target_contributions: resolved.map((item) => ({
         target_type: item.target_type,
         weight: item.weight,
         weight_share: round((rawTotalWeight > 0 ? item.weight : 1) / totalWeight),
-        required_peak_ctl: item.requiredPeakCtl,
+        required_peak_longTermLoad: item.requiredPeakLongTermLoad,
         rationale_codes: item.rationale_codes,
       })),
       rationale_codes: [
@@ -129,7 +131,7 @@ export function resolveEventDemand(goal: NormalizedPlanningGoal): EventDemandRes
         resolved.length > 1
           ? "multi_target_demand_aggregation_max_weighted"
           : "single_target_demand_applied",
-        `sport_acwr_ceiling_${getSportModelConfig(goal.activity_category).acwr_ceiling}`,
+        `activity_category_acwr_ceiling_${getActivityCategoryModelConfig(goal.activity_category).acwr_ceiling}`,
       ],
     }),
   };

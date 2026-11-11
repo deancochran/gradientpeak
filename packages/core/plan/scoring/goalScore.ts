@@ -1,4 +1,4 @@
-import type { GoalTargetV2 } from "../../schemas/training_plan_structure";
+import type { TrainingPlanGoalTarget } from "../../schemas/training-plan-structure";
 import {
   scoreTargetSatisfaction,
   type TargetProjectionSignals,
@@ -9,7 +9,7 @@ import { normalizeTargetWeight, weightedMean } from "./weightedMean";
 export interface GoalAssessmentInput {
   goal_id: string;
   priority: number;
-  targets: GoalTargetV2[];
+  targets: TrainingPlanGoalTarget[];
   projection: TargetProjectionSignals;
 }
 
@@ -25,7 +25,7 @@ function round3(value: number): number {
   return Math.round(value * 1000) / 1000;
 }
 
-function getTargetSortKey(target: GoalTargetV2): string {
+function getTargetSortKey(target: TrainingPlanGoalTarget): string {
   switch (target.target_type) {
     case "race_performance":
       return [

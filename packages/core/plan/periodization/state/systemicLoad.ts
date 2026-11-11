@@ -1,13 +1,13 @@
-import type { CanonicalSport } from "../../../schemas/sport";
-import { getSportModelConfig } from "../sports";
+import type { CanonicalActivityCategory } from "../../../schemas/activity-category";
+import { getActivityCategoryModelConfig } from "../activity-categories";
 
-export interface DailySportLoadInput {
-  sport: CanonicalSport;
+export interface DailyActivityCategoryLoadInput {
+  activity_category: CanonicalActivityCategory;
   load: number;
 }
 
-export interface HistoricalDailySportLoad {
-  sport_loads: DailySportLoadInput[];
+export interface HistoricalDailyActivityCategoryLoad {
+  activity_category_loads: DailyActivityCategoryLoadInput[];
 }
 
 export interface SystemicLoadMetrics {
@@ -24,20 +24,21 @@ function sumWindow(values: number[], windowSize: number): number {
   return values.slice(-windowSize).reduce((sum, value) => sum + value, 0);
 }
 
-function sumSystemicLoad(loads: DailySportLoadInput[]): number {
+function sumSystemicLoad(loads: DailyActivityCategoryLoadInput[]): number {
   return loads.reduce((sum, load) => {
-    const config = getSportModelConfig(load.sport);
+    const config = getActivityCategoryModelConfig(load.activity_category);
     return sum + load.load * config.impact_factor;
   }, 0);
 }
 
 export function calculateSystemicLoadMetrics(input: {
-  dailySportLoads: DailySportLoadInput[];
-  history?: HistoricalDailySportLoad[];
+  dailyActivityCategoryLoads: DailyActivityCategoryLoadInput[];
+  history?: HistoricalDailyActivityCategoryLoad[];
 }): SystemicLoadMetrics {
-  const systemicSeries = [...(input.history ?? []), { sport_loads: input.dailySportLoads }].map(
-    (day) => sumSystemicLoad(day.sport_loads),
-  );
+  const systemicSeries = [
+    ...(input.history ?? []),
+    { activity_category_loads: input.dailyActivityCategoryLoads },
+  ].map((day) => sumSystemicLoad(day.activity_category_loads));
   const dailySystemicLoad = systemicSeries.at(-1) ?? 0;
 
   return {

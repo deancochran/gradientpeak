@@ -11,10 +11,10 @@
  * Resistance = Torque / DeviceSpecificConstant
  */
 
-import type { FTMSFeatures } from "@repo/core/ftms-types";
+import type { FTMSFeatures } from "@deancochran/ftms";
 import { RollingBuffer } from "./RollingBuffer";
 
-export type FTMSDeviceType = "bike" | "rower" | "elliptical" | "treadmill";
+type PredictiveResistanceDeviceType = "bike" | "rower" | "elliptical" | "treadmill";
 
 /**
  * Device-specific constants for torque-to-resistance mapping
@@ -65,7 +65,7 @@ export class PredictiveResistanceCalculator {
   calculateResistance(
     targetPower: number,
     currentCadence: number,
-    deviceType: FTMSDeviceType,
+    deviceType: PredictiveResistanceDeviceType,
     deviceFeatures?: FTMSFeatures,
   ): number {
     const now = Date.now();
@@ -113,7 +113,9 @@ export class PredictiveResistanceCalculator {
 
     for (let i = 0; i < samples.length; i++) {
       const weight = (i + 1) / samples.length; // Linear weighting: 0.1, 0.2, ..., 1.0
-      weightedSum += samples[i].value * weight;
+      const sample = samples[i];
+      if (sample === undefined) continue;
+      weightedSum += sample.value * weight;
       totalWeight += weight;
     }
 
@@ -130,7 +132,9 @@ export class PredictiveResistanceCalculator {
       return newResistance;
     }
 
-    const lastResistance = this.resistanceHistory[this.resistanceHistory.length - 1].value;
+    const lastHistoryEntry = this.resistanceHistory.at(-1);
+    if (lastHistoryEntry === undefined) return newResistance;
+    const lastResistance = lastHistoryEntry.value;
     const timeSinceLastChange = (timestamp - this.lastUpdateTime) / 1000; // Convert to seconds
 
     // Calculate max allowed change based on time elapsed
@@ -160,12 +164,13 @@ export class PredictiveResistanceCalculator {
    */
   private getFallbackResistance(
     targetPower: number,
-    deviceType: FTMSDeviceType,
+    deviceType: PredictiveResistanceDeviceType,
     deviceFeatures?: FTMSFeatures,
   ): number {
     // Use last known resistance if available
     if (this.resistanceHistory.length > 0) {
-      return this.resistanceHistory[this.resistanceHistory.length - 1].value;
+      const lastHistoryEntry = this.resistanceHistory.at(-1);
+      if (lastHistoryEntry !== undefined) return lastHistoryEntry.value;
     }
 
     // Otherwise calculate as if user were at standard cadence
@@ -182,7 +187,7 @@ export class PredictiveResistanceCalculator {
    * Device-specific torque-to-resistance mapping
    * This is where device differences are handled
    */
-  private torqueToResistance(torque: number, deviceType: FTMSDeviceType): number {
+  private torqueToResistance(torque: number, deviceType: PredictiveResistanceDeviceType): number {
     const constants = DEVICE_CONSTANTS[deviceType];
     return torque / constants.torquePerResistanceLevel;
   }
@@ -224,9 +229,8 @@ export class PredictiveResistanceCalculator {
     const samples = this.cadenceBuffer.getSamples(this.SMOOTHING_WINDOW_MS);
     if (samples.length === 0) return undefined;
 
-    return this.smoothCadence(
-      samples[samples.length - 1].value,
-      samples[samples.length - 1].timestamp,
-    );
+    const latestSample = samples.at(-1);
+    if (latestSample === undefined) return undefined;
+    return this.smoothCadence(latestSample.value, latestSample.timestamp);
   }
 }

@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/ca
 import { Text } from "@repo/ui/components/text";
 import { useState } from "react";
 import { Pressable, View } from "react-native";
+import { omitUndefined } from "@/lib/omitUndefined";
 
 interface Zone {
   zone: number;
@@ -80,7 +81,7 @@ export function ZoneDistributionCard({
               <View className="h-2 bg-muted rounded-full overflow-hidden">
                 {/* Actual time bar */}
                 <View
-                  className={colors[zone.zone - 1]}
+                  {...omitUndefined({ className: colors[zone.zone - 1] })}
                   style={{ width: `${percentage}%`, height: "100%" }}
                 />
 

@@ -1,8 +1,10 @@
+import { omitUndefined } from "@/lib/omitUndefined";
+
 export type RecordingRouteAttachmentSource = "none" | "plan_route" | "explicit_route";
 
 export interface RecordingRouteAttachmentView {
   routeId: string | null;
-  source: RecordingRouteAttachmentSource;
+  source: Exclude<RecordingRouteAttachmentSource, "plan_route">;
   suppressedPlanRouteId: string | null;
 }
 
@@ -26,12 +28,6 @@ export type LoadedRoute = {
   };
 };
 
-type RouteProjection = {
-  distanceAlongRoute: number;
-  distanceFromRoute: number;
-  segmentIndex: number;
-};
-
 type RouteControllerSnapshot = {
   routeOverrideId: string | null | undefined;
   suppressedPlanRouteId: string | null;
@@ -46,12 +42,8 @@ export class RouteController {
   private suppressedPlanRouteId: string | null = null;
   private routeDistanceValue = 0;
   private currentRouteDistanceValue = 0;
-  private isOnRouteValue = false;
-  private distanceFromRouteMetersValue: number | null = null;
   private operationId = 0;
   private gradeSegmentIndex = 0;
-  private projectionSegmentIndex = 0;
-  private projectionUpdateCount = 0;
 
   get hasRoute(): boolean {
     return this.currentRouteValue !== null;
@@ -70,7 +62,7 @@ export class RouteController {
   }
 
   get distanceFromRouteMeters(): number | null {
-    return this.distanceFromRouteMetersValue;
+    return null;
   }
 
   get routeProgress(): number {
@@ -89,12 +81,21 @@ export class RouteController {
 
     while (
       segmentIndex < maxSegmentIndex &&
-      this.currentRouteDistanceValue >= profile[segmentIndex + 1]?.distance
+      (() => {
+        const nextSegment = profile.at(segmentIndex + 1);
+        return nextSegment !== undefined && this.currentRouteDistanceValue >= nextSegment.distance;
+      })()
     ) {
       segmentIndex += 1;
     }
 
-    while (segmentIndex > 0 && this.currentRouteDistanceValue < profile[segmentIndex]?.distance) {
+    while (
+      segmentIndex > 0 &&
+      (() => {
+        const segment = profile.at(segmentIndex);
+        return segment !== undefined && this.currentRouteDistanceValue < segment.distance;
+      })()
+    ) {
       segmentIndex -= 1;
     }
 
@@ -102,6 +103,7 @@ export class RouteController {
 
     const current = profile[segmentIndex];
     const next = profile[Math.min(segmentIndex + 1, profile.length - 1)];
+    if (current === undefined || next === undefined) return 0;
     const elevationChange = next.elevation - current.elevation;
     const distanceChange = next.distance - current.distance;
 
@@ -110,19 +112,19 @@ export class RouteController {
     return (elevationChange / distanceChange) * 100;
   }
 
-  isOnRoute(gpsRecordingEnabled: boolean): boolean {
-    return !gpsRecordingEnabled || this.isOnRouteValue;
+  isOnRoute(): boolean {
+    return true;
   }
 
   hasCurrentRouteGeometry(): boolean {
     return Boolean(this.currentRouteValue?.coordinates?.length);
   }
 
-  getAttachedRouteId(planRouteId: string | null | undefined): string | null {
-    return this.getRouteAttachment(planRouteId).routeId;
+  getAttachedRouteId(): string | null {
+    return this.getRouteAttachment().routeId;
   }
 
-  getRouteAttachment(planRouteId: string | null | undefined): RecordingRouteAttachmentView {
+  getRouteAttachment(): RecordingRouteAttachmentView {
     if (this.routeOverrideId) {
       return {
         routeId: this.routeOverrideId,
@@ -131,31 +133,11 @@ export class RouteController {
       };
     }
 
-    if (planRouteId && this.routeOverrideId === undefined) {
-      return {
-        routeId: planRouteId,
-        source: "plan_route",
-        suppressedPlanRouteId: null,
-      };
-    }
-
-    return {
+    return omitUndefined({
       routeId: null,
       source: "none",
       suppressedPlanRouteId: this.suppressedPlanRouteId,
-    };
-  }
-
-  beginPlanRouteAttachment(): number {
-    this.routeOverrideId = undefined;
-    this.suppressedPlanRouteId = null;
-    return this.beginOperation();
-  }
-
-  clearPlanAttachment(): void {
-    this.routeOverrideId = undefined;
-    this.suppressedPlanRouteId = null;
-    this.beginOperation();
+    });
   }
 
   beginExplicitRouteAttachment(routeId: string): {
@@ -176,10 +158,9 @@ export class RouteController {
     return operationId;
   }
 
-  detachRoute(planRouteId: string | null | undefined): void {
+  detachRoute(): void {
     this.beginOperation();
-    this.suppressedPlanRouteId =
-      this.getRouteAttachment(planRouteId).source === "plan_route" ? (planRouteId ?? null) : null;
+    this.suppressedPlanRouteId = null;
     this.routeOverrideId = null;
   }
 
@@ -204,11 +185,7 @@ export class RouteController {
     this.currentRouteValue = normalizedRoute;
     this.routeDistanceValue = normalizedRoute.distanceIndex?.cumulativeDistances.at(-1) ?? 0;
     this.currentRouteDistanceValue = 0;
-    this.isOnRouteValue = false;
-    this.distanceFromRouteMetersValue = null;
     this.gradeSegmentIndex = 0;
-    this.projectionSegmentIndex = 0;
-    this.projectionUpdateCount = 0;
     return true;
   }
 
@@ -216,41 +193,11 @@ export class RouteController {
     this.currentRouteValue = null;
     this.routeDistanceValue = 0;
     this.currentRouteDistanceValue = 0;
-    this.isOnRouteValue = false;
-    this.distanceFromRouteMetersValue = null;
     this.gradeSegmentIndex = 0;
-    this.projectionSegmentIndex = 0;
-    this.projectionUpdateCount = 0;
-  }
-
-  updateRouteProgress(latitude: number, longitude: number): boolean {
-    if (!this.hasRoute || !this.currentRouteValue?.coordinates) return false;
-
-    const previousDistance = this.currentRouteDistanceValue;
-    const projection = this.projectLocationOntoRoute(latitude, longitude, this.currentRouteValue);
-    if (!projection) return false;
-
-    const onRouteThresholdMeters = 40;
-    this.distanceFromRouteMetersValue = projection.distanceFromRoute;
-    this.isOnRouteValue = projection.distanceFromRoute <= onRouteThresholdMeters;
-
-    if (!this.isOnRouteValue) {
-      return false;
-    }
-
-    const distanceAlongRoute = Math.min(
-      this.routeDistanceValue > 0 ? this.routeDistanceValue : projection.distanceAlongRoute,
-      Math.max(0, projection.distanceAlongRoute),
-    );
-    this.currentRouteDistanceValue = distanceAlongRoute;
-
-    return Math.abs(distanceAlongRoute - previousDistance) > 10;
   }
 
   updateVirtualRouteDistance(distanceAlongRoute: number): boolean {
     const previousDistance = this.currentRouteDistanceValue;
-    this.isOnRouteValue = true;
-    this.distanceFromRouteMetersValue = null;
     this.currentRouteDistanceValue = distanceAlongRoute;
 
     return Math.abs(distanceAlongRoute - previousDistance) > 10;
@@ -282,6 +229,7 @@ export class RouteController {
     for (let i = 1; i < coordinates.length; i++) {
       const prev = coordinates[i - 1];
       const curr = coordinates[i];
+      if (prev === undefined || curr === undefined) continue;
       const segmentDistance = this.calculateDistance(
         prev.latitude,
         prev.longitude,
@@ -297,21 +245,28 @@ export class RouteController {
   }
 
   private normalizeLoadedRoute(route: LoadedRoute): LoadedRoute {
-    const coordinates = route.coordinates.map((coordinate) => ({
-      ...coordinate,
-      elevation: coordinate.elevation ?? coordinate.altitude,
-    }));
+    const coordinates = route.coordinates.map((coordinate) => {
+      const elevation = coordinate.elevation ?? coordinate.altitude;
+      return {
+        ...coordinate,
+        ...(elevation === undefined ? {} : { elevation }),
+      };
+    });
     const distanceIndex = this.buildRouteDistanceIndex(coordinates);
 
-    return {
-      ...route,
+    const elevationProfile =
+      route.elevation_profile && route.elevation_profile.length > 1
+        ? route.elevation_profile
+        : this.buildElevationProfile(coordinates, distanceIndex.cumulativeDistances);
+
+    return omitUndefined({
+      id: route.id,
+      name: route.name,
       coordinates,
       distanceIndex,
-      elevation_profile:
-        route.elevation_profile && route.elevation_profile.length > 1
-          ? route.elevation_profile
-          : this.buildElevationProfile(coordinates, distanceIndex.cumulativeDistances),
-    };
+      elevation_profile: elevationProfile,
+      polyline: route.polyline,
+    });
   }
 
   private buildElevationProfile(
@@ -325,8 +280,9 @@ export class RouteController {
       const coordinate = coordinates[index];
       if (!coordinate) continue;
 
-      if (typeof cumulativeDistances?.[index] === "number") {
-        cumulativeDistance = cumulativeDistances[index]!;
+      const indexedDistance = cumulativeDistances?.[index];
+      if (typeof indexedDistance === "number") {
+        cumulativeDistance = indexedDistance;
       } else if (index > 0) {
         const previous = coordinates[index - 1];
         if (previous) {
@@ -360,144 +316,5 @@ export class RouteController {
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
     return R * c;
-  }
-
-  private projectLocationOntoRoute(
-    latitude: number,
-    longitude: number,
-    route: LoadedRoute,
-  ): RouteProjection | null {
-    const coordinates = route.coordinates;
-    if (coordinates.length === 0) return null;
-    if (coordinates.length === 1) {
-      return {
-        distanceAlongRoute: 0,
-        distanceFromRoute: this.calculateDistance(
-          latitude,
-          longitude,
-          coordinates[0]?.latitude,
-          coordinates[0]?.longitude,
-        ),
-        segmentIndex: 0,
-      };
-    }
-
-    const localSearchRadius = 25;
-    const maxSegmentIndex = coordinates.length - 2;
-    const localStart = Math.max(0, this.projectionSegmentIndex - localSearchRadius);
-    const localEnd = Math.min(maxSegmentIndex, this.projectionSegmentIndex + localSearchRadius);
-    const localProjection = this.projectLocationOntoRouteSegmentRange(
-      latitude,
-      longitude,
-      route,
-      localStart,
-      localEnd,
-    );
-
-    this.projectionUpdateCount += 1;
-    const shouldValidateAgainstFullRoute = this.projectionUpdateCount % 20 === 0;
-
-    if (
-      localProjection &&
-      localProjection.distanceFromRoute <= 40 &&
-      !shouldValidateAgainstFullRoute
-    ) {
-      this.projectionSegmentIndex = localProjection.segmentIndex;
-      return localProjection;
-    }
-
-    const fullProjection = this.projectLocationOntoRouteSegmentRange(
-      latitude,
-      longitude,
-      route,
-      0,
-      maxSegmentIndex,
-    );
-
-    if (fullProjection) {
-      this.projectionSegmentIndex = fullProjection.segmentIndex;
-    }
-
-    return fullProjection;
-  }
-
-  private projectLocationOntoRouteSegmentRange(
-    latitude: number,
-    longitude: number,
-    route: LoadedRoute,
-    startIndex: number,
-    endIndex: number,
-  ): RouteProjection | null {
-    const coordinates = route.coordinates;
-    if (startIndex > endIndex || coordinates.length < 2) return null;
-
-    const anchorLatitude = latitude;
-    const metersPerDegreeLatitude = 111_320;
-    const metersPerDegreeLongitude =
-      Math.cos((anchorLatitude * Math.PI) / 180) * metersPerDegreeLatitude;
-    const toPoint = (coordinate: { latitude: number; longitude: number }) => ({
-      x: (coordinate.longitude - longitude) * metersPerDegreeLongitude,
-      y: (coordinate.latitude - latitude) * metersPerDegreeLatitude,
-    });
-
-    let bestDistanceFromRoute = Infinity;
-    let bestDistanceAlongRoute = 0;
-    let bestSegmentIndex = startIndex;
-    let fallbackCumulativeDistance = 0;
-
-    if (!route.distanceIndex) {
-      for (let index = 0; index < startIndex; index += 1) {
-        const start = coordinates[index]!;
-        const end = coordinates[index + 1]!;
-        fallbackCumulativeDistance += this.calculateDistance(
-          start.latitude,
-          start.longitude,
-          end.latitude,
-          end.longitude,
-        );
-      }
-    }
-
-    for (let index = startIndex; index <= endIndex; index += 1) {
-      const start = coordinates[index]!;
-      const end = coordinates[index + 1]!;
-      const startPoint = toPoint(start);
-      const endPoint = toPoint(end);
-      const segmentX = endPoint.x - startPoint.x;
-      const segmentY = endPoint.y - startPoint.y;
-      const segmentLengthSquared = segmentX * segmentX + segmentY * segmentY;
-      const segmentDistance =
-        route.distanceIndex?.segmentDistances[index] ??
-        this.calculateDistance(start.latitude, start.longitude, end.latitude, end.longitude);
-      const cumulativeDistance =
-        route.distanceIndex?.cumulativeDistances[index] ?? fallbackCumulativeDistance;
-      const projectionRatio =
-        segmentLengthSquared > 0
-          ? Math.min(
-              1,
-              Math.max(
-                0,
-                -(startPoint.x * segmentX + startPoint.y * segmentY) / segmentLengthSquared,
-              ),
-            )
-          : 0;
-      const projectedX = startPoint.x + segmentX * projectionRatio;
-      const projectedY = startPoint.y + segmentY * projectionRatio;
-      const distanceFromRoute = Math.sqrt(projectedX * projectedX + projectedY * projectedY);
-
-      if (distanceFromRoute < bestDistanceFromRoute) {
-        bestDistanceFromRoute = distanceFromRoute;
-        bestDistanceAlongRoute = cumulativeDistance + segmentDistance * projectionRatio;
-        bestSegmentIndex = index;
-      }
-
-      fallbackCumulativeDistance += segmentDistance;
-    }
-
-    return {
-      distanceAlongRoute: bestDistanceAlongRoute,
-      distanceFromRoute: bestDistanceFromRoute,
-      segmentIndex: bestSegmentIndex,
-    };
   }
 }
