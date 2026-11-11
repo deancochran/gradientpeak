@@ -30,25 +30,54 @@ type OrganizationPage = {
 
 export function OrganizationSelector({
   page,
+  invitations = { status: "available", invitations: [], hasMore: false },
   cursor,
 }: {
   page: OrganizationPage;
+  invitations?:
+    | {
+        status: "available";
+        invitations: Array<{ invitationId: string; kind: "athlete" | "staff" }>;
+        hasMore: boolean;
+      }
+    | { status: "unavailable" };
   cursor?: string;
 }) {
   if (page.items.length === 0) {
-    return cursor ? <EmptyCursorPage /> : <NoOrganizations />;
+    if (cursor) return <EmptyCursorPage />;
+    return (
+      <div className="space-y-4">
+        <NoOrganizations />
+        <InvitationStatus invitations={invitations} />
+      </div>
+    );
   }
 
   return (
     <OrganizationSelectorPage
       key={cursor ?? "first-page"}
       page={page}
+      invitations={invitations}
       {...(cursor === undefined ? {} : { cursor })}
     />
   );
 }
 
-function OrganizationSelectorPage({ page, cursor }: { page: OrganizationPage; cursor?: string }) {
+function OrganizationSelectorPage({
+  page,
+  invitations,
+  cursor,
+}: {
+  page: OrganizationPage;
+  invitations:
+    | {
+        status: "available";
+        invitations: Array<{ invitationId: string; kind: "athlete" | "staff" }>;
+        hasMore: boolean;
+      }
+    | { status: "unavailable" };
+  cursor?: string;
+}) {
   const [filter, setFilter] = useState("");
 
   const normalizedFilter = filter.trim().toLocaleLowerCase();
@@ -137,6 +166,7 @@ function OrganizationSelectorPage({ page, cursor }: { page: OrganizationPage; cu
         hasMore={page.hasMore}
         {...(cursor === undefined ? {} : { cursor })}
       />
+      <InvitationStatus invitations={invitations} />
     </section>
   );
 }
@@ -258,6 +288,81 @@ function EmptyCursorPage() {
             <Link to="/organizations" search={{ cursor: undefined }}>
               Back to first page
             </Link>
+          </Button>
+        </CardContent>
+      </Card>
+    </section>
+  );
+}
+
+function InvitationStatus({
+  invitations: invitationStatus,
+}: {
+  invitations:
+    | {
+        status: "available";
+        invitations: Array<{ invitationId: string; kind: "athlete" | "staff" }>;
+        hasMore: boolean;
+      }
+    | { status: "unavailable" };
+}) {
+  const router = useRouter();
+  if (invitationStatus.status === "unavailable") {
+    return (
+      <section aria-labelledby="invitation-status-unavailable-heading">
+        <Card className="border-amber-900/70 bg-slate-900 text-slate-50">
+          <CardHeader>
+            <CardTitle>
+              <h2 id="invitation-status-unavailable-heading">Invitation status unavailable</h2>
+            </CardTitle>
+            <CardDescription className="text-slate-400">
+              Your coaching organizations are still available. We could not check invitations.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-3">
+            <Button onClick={() => void router.invalidate()} variant="outline">
+              Retry invitation status
+            </Button>
+            <Button asChild variant="outline">
+              <Link to="/organization-invitations">Review organization invitations</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </section>
+    );
+  }
+
+  const { invitations, hasMore } = invitationStatus;
+  if (invitations.length === 0 && !hasMore) return null;
+  const staffCount = invitations.filter((invitation) => invitation.kind === "staff").length;
+  const athleteCount = invitations.length - staffCount;
+  const invitationLabel = invitations.length === 1 ? "invitation" : "invitations";
+
+  return (
+    <section aria-labelledby="pending-invitations-heading">
+      <Card className="border-amber-900/70 bg-slate-900 text-slate-50">
+        <CardHeader>
+          <CardTitle>
+            <h2 id="pending-invitations-heading">Membership pending</h2>
+          </CardTitle>
+          <CardDescription className="text-slate-400">
+            {invitations.length > 0
+              ? `This invitation page has ${invitations.length} pending organization ${invitationLabel}`
+              : "Additional organization invitations may be available on later pages"}
+            {staffCount > 0 || athleteCount > 0
+              ? ` (${[staffCount ? `${staffCount} staff` : null, athleteCount ? `${athleteCount} athlete` : null].filter(Boolean).join(", ")})`
+              : ""}
+            . Accept an invitation before accessing that organization’s records.
+            {hasMore ? " Review all invitation pages for the complete status." : ""}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button
+            asChild
+            variant="outline"
+            className="border-amber-700 bg-slate-900 text-amber-100 hover:bg-slate-800 hover:text-amber-50"
+          >
+            <Link to="/organization-invitations">Review pending invitations</Link>
           </Button>
         </CardContent>
       </Card>

@@ -16,6 +16,12 @@ const myOrganizationsInputSchema = z
   })
   .strict();
 
+const pendingOrganizationInvitationsInputSchema = z
+  .object({
+    limit: z.number().int().min(1).max(50),
+  })
+  .strict();
+
 const createOrganizationInputSchema = z
   .object({
     organizationId: z.string().uuid(),
@@ -59,6 +65,25 @@ export const loadMyOrganizations = createServerFn({ method: "POST" })
     const caller = await createRequestApiCaller();
 
     return caller.organizations.listMine(data);
+  });
+
+/**
+ * Pending invitations are deliberately read through the recipient-safe projection.
+ * They are not organization memberships and must never become workspace destinations.
+ */
+export const loadMyPendingOrganizationInvitations = createServerFn({ method: "POST" })
+  .validator((input: unknown) => pendingOrganizationInvitationsInputSchema.parse(input))
+  .handler(async ({ data }) => {
+    const caller = await createRequestApiCaller();
+    const page = await caller.organizations.invitations.listMine({
+      limit: data.limit,
+      cursor: null,
+    });
+
+    return {
+      invitations: page.items.filter((invitation) => invitation.status === "pending"),
+      hasMore: page.hasMore,
+    };
   });
 
 export const createCoachingOrganization = createServerFn({ method: "POST" })

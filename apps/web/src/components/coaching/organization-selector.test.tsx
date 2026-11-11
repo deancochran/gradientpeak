@@ -6,7 +6,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   invalidate: vi.fn(),
-  links: [] as Array<{ className?: string; params?: unknown; search?: unknown; to: string }>,
+  links: [] as Array<{
+    className?: string;
+    onClick?: () => void;
+    params?: unknown;
+    search?: unknown;
+    to: string;
+  }>,
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -16,12 +22,17 @@ vi.mock("@tanstack/react-router", () => ({
   }: {
     children: ReactNode;
     className?: string;
+    onClick?: () => void;
     params?: unknown;
     search?: unknown;
     to: string;
   }) => {
     mocks.links.push(props);
-    return <a href={props.to}>{children}</a>;
+    return (
+      <a href={props.to} onClick={props.onClick}>
+        {children}
+      </a>
+    );
   },
   useRouter: () => ({ invalidate: mocks.invalidate }),
 }));
@@ -137,6 +148,51 @@ describe("OrganizationSelector", () => {
         params: { organizationId: "organization-1" },
       }),
     );
+  });
+
+  it("keeps the current invitation page separate from accepted organization destinations", () => {
+    render(
+      <OrganizationSelector
+        page={{ items: [], nextCursor: null, hasMore: false }}
+        invitations={{
+          status: "available",
+          invitations: [
+            { invitationId: "pending-staff", kind: "staff" },
+            { invitationId: "pending-athlete", kind: "athlete" },
+          ],
+          hasMore: true,
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "No coaching organizations" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Membership pending" })).toBeTruthy();
+    expect(screen.getByText(/1 staff, 1 athlete/)).toBeTruthy();
+    expect(screen.getByText(/Review all invitation pages/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Review pending invitations" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /Open .* coaching/ })).toBeNull();
+    expect(mocks.links).toContainEqual(
+      expect.objectContaining({ to: "/organization-invitations" }),
+    );
+  });
+
+  it("does not intercept organization navigation outside existing draft guards", () => {
+    render(<OrganizationSelector page={pageWithOrganizations} />);
+
+    fireEvent.click(screen.getByRole("link", { name: "Open Summit Coaching coaching dashboard" }));
+
+    expect(mocks.invalidate).not.toHaveBeenCalled();
+  });
+
+  it("shows invitation recovery without hiding accepted memberships", () => {
+    render(
+      <OrganizationSelector page={pageWithOrganizations} invitations={{ status: "unavailable" }} />,
+    );
+
+    expect(screen.getByText("Summit Coaching")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Invitation status unavailable" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry invitation status" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Review organization invitations" })).toBeTruthy();
   });
 
   it("filters the loaded page by a trimmed, case-insensitive organization name", () => {

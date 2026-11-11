@@ -18,7 +18,7 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("../../../components/coaching/coach-access-denied", () => ({
-  CoachAccessDenied: () => <div>Coaching access required</div>,
+  CoachAccessDenied: () => <div>Organization access unavailable</div>,
 }));
 
 vi.mock("../../../components/coaching/coach-shell", () => ({
@@ -55,7 +55,7 @@ describe("organization coaching boundary", () => {
     const Component = (Route as unknown as { component: React.ComponentType }).component;
     render(<Component />);
 
-    expect(screen.getByText("Coaching access required")).toBeTruthy();
+    expect(screen.getByText("Organization access unavailable")).toBeTruthy();
     expect(screen.queryByText(/Coach shell/)).toBeNull();
   });
 

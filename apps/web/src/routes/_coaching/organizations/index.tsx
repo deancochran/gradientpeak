@@ -7,7 +7,10 @@ import {
   OrganizationSelectorFrame,
   OrganizationSelectorPending,
 } from "../../../components/coaching/organization-selector";
-import { loadMyOrganizations } from "../../../lib/coaching/server-functions";
+import {
+  loadMyOrganizations,
+  loadMyPendingOrganizationInvitations,
+} from "../../../lib/coaching/server-functions";
 
 const PAGE_SIZE = 20;
 const organizationSearchSchema = z
@@ -17,14 +20,29 @@ const organizationSearchSchema = z
 export const Route = createFileRoute("/_coaching/organizations/")({
   validateSearch: (search) => organizationSearchSchema.parse(search),
   loaderDeps: ({ search }) => ({ cursor: search.cursor ?? null }),
-  loader: ({ deps }) => loadMyOrganizations({ data: { limit: PAGE_SIZE, cursor: deps.cursor } }),
+  loader: async ({ deps }) => {
+    const page = await loadMyOrganizations({ data: { limit: PAGE_SIZE, cursor: deps.cursor } });
+    try {
+      return {
+        page,
+        invitations: {
+          status: "available" as const,
+          ...(await loadMyPendingOrganizationInvitations({ data: { limit: PAGE_SIZE } })),
+        },
+      };
+    } catch {
+      // Invitation status is secondary to the accepted-membership chooser. Preserve usable
+      // membership destinations and expose an explicit recovery instead of treating failure as empty.
+      return { page, invitations: { status: "unavailable" as const } };
+    }
+  },
   pendingComponent: OrganizationSelectorPending,
   errorComponent: OrganizationSelectorError,
   component: OrganizationsPage,
 });
 
 function OrganizationsPage() {
-  const page = Route.useLoaderData();
+  const { page, invitations } = Route.useLoaderData();
   const { cursor } = Route.useSearch();
 
   return (
@@ -56,7 +74,11 @@ function OrganizationsPage() {
             <Link to="/">Personal workspace</Link>
           </Button>
         </div>
-        <OrganizationSelector page={page} {...(cursor === undefined ? {} : { cursor })} />
+        <OrganizationSelector
+          page={page}
+          invitations={invitations}
+          {...(cursor === undefined ? {} : { cursor })}
+        />
       </div>
     </OrganizationSelectorFrame>
   );
