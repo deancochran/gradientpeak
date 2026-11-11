@@ -12,7 +12,7 @@ import {
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { createFileRoute } from "@tanstack/react-router";
-import { Loader2, Trash2 } from "lucide-react";
+import { Loader2, Pencil, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -25,29 +25,48 @@ import {
 } from "../../../../components/protected/activity-route-primitives";
 import { EntityCommentsCard } from "../../../../components/protected/entity-comments-card";
 import { useAuth } from "../../../../components/providers/auth-provider";
+import { RouteEditForm } from "../../../../components/routes/route-edit-form";
+import { RouteEventAttachment } from "../../../../components/routes/route-event-attachment";
+import { useViewingUserPreferredUnitSystem } from "../../../../hooks/use-viewing-user-preferred-unit-system";
 import {
   formatDate,
   formatDistance,
   formatElevation,
 } from "../../../../lib/activity-route-helpers";
 import { api } from "../../../../lib/api/client";
+import { loadRouteQuery } from "../../../../lib/api/route-loading";
 
 export const Route = createFileRoute("/_protected/routes/$routeId/")({
+  loader: ({ context, params }) => {
+    const input = { id: params.routeId };
+    return loadRouteQuery(
+      () => context.apiUtils.routes.get.getData(input),
+      () => context.apiUtils.routes.get.fetch(input),
+    );
+  },
   component: RouteDetailPage,
 });
 
 function RouteDetailPage() {
   const { user } = useAuth();
+  const { unitSystem } = useViewingUserPreferredUnitSystem();
   const utils = api.useUtils();
   const navigate = Route.useNavigate();
   const { routeId } = Route.useParams();
   const [liked, setLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(0);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
   const routeQuery = api.routes.get.useQuery({ id: routeId });
-  const routeFullQuery = api.routes.loadFull.useQuery({ id: routeId });
   const route = routeQuery.data;
+  const routeFullQuery = api.routes.loadFull.useQuery(
+    { id: routeId },
+    { enabled: route?.storage_state === "ready" },
+  );
   const isOwner = user?.id === route?.profile_id;
+  const deletionPending = route?.storage_state === "deletion_pending";
   const toggleLikeMutation = api.social.toggleLike.useMutation({
+    retry: false,
     onError: () => {
       setLiked(route?.has_liked ?? false);
       setLikesCount(route?.likes_count ?? 0);
@@ -55,12 +74,30 @@ function RouteDetailPage() {
     },
   });
   const deleteMutation = api.routes.delete.useMutation({
-    onSuccess: async () => {
-      await utils.routes.invalidate();
+    retry: false,
+    onSuccess: () => {
+      void utils.routes.invalidate();
       toast.success("Route deleted");
-      void navigate({ to: "/routes" });
+      void navigate({
+        to: "/routes",
+        search: {
+          search: "",
+          ownerScope: "own",
+          sort: "newest",
+          minDistanceKm: "",
+          maxDistanceKm: "",
+          minAscentM: "",
+          maxAscentM: "",
+          page: 1,
+        },
+      });
+    },
+    onError: (error) => {
+      setDeleteError(error.message || "Route deletion failed");
+      void utils.routes.get.invalidate({ id: routeId });
     },
   });
+  const updateMutation = api.routes.update.useMutation();
 
   useEffect(() => {
     setLiked(route?.has_liked ?? false);
@@ -68,7 +105,12 @@ function RouteDetailPage() {
   }, [route?.has_liked, route?.likes_count]);
 
   const coordinates = useMemo(
-    () => routeFullQuery.data?.coordinates ?? [],
+    () =>
+      (routeFullQuery.data?.coordinates ?? []).map((coordinate) => ({
+        latitude: coordinate.latitude,
+        longitude: coordinate.longitude,
+        ...(coordinate.altitude === undefined ? {} : { altitude: coordinate.altitude }),
+      })),
     [routeFullQuery.data?.coordinates],
   );
 
@@ -76,6 +118,24 @@ function RouteDetailPage() {
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (routeQuery.isError) {
+    return (
+      <div className="container mx-auto max-w-3xl py-10">
+        <Card>
+          <CardContent className="space-y-4 py-10 text-center" role="alert">
+            <p className="font-medium text-destructive">Route could not be loaded.</p>
+            <p className="text-sm text-muted-foreground">
+              Check your connection and retry without leaving this page.
+            </p>
+            <Button onClick={() => void routeQuery.refetch()} type="button" variant="outline">
+              Retry route
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -97,76 +157,179 @@ function RouteDetailPage() {
       <DetailPageIntro
         actions={
           <>
-            <LikeToggleButton
-              count={likesCount}
-              liked={liked}
-              onClick={() => {
-                const nextLiked = !liked;
-                setLiked(nextLiked);
-                setLikesCount((current) => (nextLiked ? current + 1 : Math.max(0, current - 1)));
-                toggleLikeMutation.mutate({ entity_id: route.id, entity_type: "route" });
-              }}
-              pending={toggleLikeMutation.isPending}
-            />
+            {!deletionPending ? (
+              <LikeToggleButton
+                count={likesCount}
+                liked={liked}
+                onClick={() => {
+                  const nextLiked = !liked;
+                  setLiked(nextLiked);
+                  setLikesCount((current) => (nextLiked ? current + 1 : Math.max(0, current - 1)));
+                  toggleLikeMutation.mutate({ entity_id: route.id, entity_type: "route" });
+                }}
+                pending={toggleLikeMutation.isPending}
+              />
+            ) : null}
             {isOwner ? (
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button type="button" variant="destructive">
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Delete
+              <>
+                {!deletionPending ? (
+                  <Button
+                    data-testid={`route-detail-edit-${route.id}`}
+                    onClick={() => setIsEditing((current) => !current)}
+                    type="button"
+                    variant="outline"
+                  >
+                    <Pencil className="mr-2 h-4 w-4" />
+                    {isEditing ? "Close editor" : "Edit route"}
                   </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete route?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      This removes the route library entry and its stored GPX file.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={() => deleteMutation.mutate({ id: route.id })}>
-                      Delete route
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+                ) : null}
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      data-testid={`route-detail-delete-${route.id}`}
+                      type="button"
+                      variant="destructive"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      {deletionPending ? "Retry deletion" : "Delete"}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>
+                        {deletionPending ? "Retry route deletion?" : "Delete route?"}
+                      </AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This removes the route library entry and its stored route file.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        data-testid={`route-detail-delete-${route.id}-confirm`}
+                        disabled={deleteMutation.isPending}
+                        onClick={() => {
+                          setDeleteError(null);
+                          deleteMutation.mutate({ id: route.id });
+                        }}
+                      >
+                        {deleteMutation.isPending
+                          ? "Deleting..."
+                          : deletionPending
+                            ? "Retry route deletion"
+                            : "Delete route"}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </>
             ) : null}
           </>
         }
-        badges={[route.is_public ? "Public" : "Private", `Saved ${formatDate(route.created_at)}`]}
+        badges={[
+          route.is_public ? "Public" : "Private",
+          ...(deletionPending ? ["Deletion pending"] : []),
+          `Saved ${formatDate(route.created_at)}`,
+        ]}
         description={route.description || "No route description yet."}
         eyebrow="Route detail"
         title={route.name}
       />
 
+      {isOwner && isEditing && !deletionPending ? (
+        <Card data-testid={`route-edit-panel-${route.id}`}>
+          <CardContent className="space-y-4 pt-6">
+            <div>
+              <h2 className="text-xl font-semibold">Edit route details</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Update the reusable name and notes without changing stored geometry.
+              </p>
+            </div>
+            <RouteEditForm
+              defaultValues={{ description: route.description ?? "", name: route.name }}
+              onCancel={() => setIsEditing(false)}
+              onSubmit={async (values) => {
+                await updateMutation.mutateAsync({ id: route.id, ...values });
+                await utils.routes.invalidate();
+                setIsEditing(false);
+                toast.success("Route updated");
+              }}
+              pending={updateMutation.isPending}
+            />
+          </CardContent>
+        </Card>
+      ) : null}
+
       <DetailMetricGrid
         items={[
-          { label: "Distance", value: formatDistance(route.total_distance) },
-          { label: "Ascent", value: formatElevation(route.total_ascent) },
-          { label: "Descent", value: formatElevation(route.total_descent) },
+          { label: "Distance", value: formatDistance(route.total_distance, unitSystem) },
+          { label: "Ascent", value: formatElevation(route.total_ascent, unitSystem) },
+          { label: "Descent", value: formatElevation(route.total_descent, unitSystem) },
           { label: "Visibility", value: route.is_public ? "Public" : "Private" },
         ]}
       />
 
-      <div className="grid gap-6 xl:grid-cols-[1.4fr_0.8fr]">
-        <EntityMapCard
-          coordinates={coordinates}
-          emptyMessage="This route does not have enough coordinate data for a map preview."
-          subtitle="Reusable browser-native route preview without a separate mapping dependency."
-          title="Map preview"
+      {deleteError ? (
+        <div className="rounded-2xl border border-destructive/40 bg-destructive/5 p-4" role="alert">
+          <p className="font-medium text-destructive">Route could not be deleted</p>
+          <p className="mt-1 text-sm text-muted-foreground">{deleteError}</p>
+        </div>
+      ) : null}
+
+      {deletionPending ? (
+        <div className="rounded-2xl border border-amber-500/40 bg-amber-500/5 p-4" role="status">
+          <p className="font-medium text-foreground">Route deletion is pending</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Stored bytes could not be confirmed deleted. Use Retry deletion to resume safely.
+          </p>
+        </div>
+      ) : null}
+
+      {!deletionPending ? (
+        <>
+          <div className="grid gap-6 xl:grid-cols-[1.4fr_0.8fr]">
+            <EntityMapCard
+              coordinates={coordinates}
+              emptyMessage="This route does not have enough coordinate data for a map preview."
+              subtitle="Reusable browser-native route preview without a separate mapping dependency."
+              title="Map preview"
+            />
+            <OwnerSummary owner={route.owner} />
+          </div>
+
+          {routeFullQuery.isLoading ? (
+            <p className="text-sm text-muted-foreground" role="status">
+              Loading stored route geometry...
+            </p>
+          ) : routeFullQuery.isError ? (
+            <div
+              className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-destructive/40 bg-destructive/5 p-4"
+              role="alert"
+            >
+              <p className="text-sm text-destructive">
+                Stored route geometry could not be loaded. The saved route metadata is still
+                available.
+              </p>
+              <Button onClick={() => void routeFullQuery.refetch()} type="button" variant="outline">
+                Retry geometry
+              </Button>
+            </div>
+          ) : null}
+
+          <ElevationProfileCard coordinates={coordinates} />
+        </>
+      ) : null}
+
+      {isOwner && !deletionPending ? <RouteEventAttachment routeId={route.id} /> : null}
+
+      {!deletionPending ? (
+        <EntityCommentsCard
+          entityId={route.id}
+          entityType="route"
+          helperText="Share notes about terrain, route conditions, or why you saved this route."
+          testId="route-comments"
         />
-        <OwnerSummary owner={route.owner} />
-      </div>
-
-      <ElevationProfileCard coordinates={coordinates} />
-
-      <EntityCommentsCard
-        entityId={route.id}
-        entityType="route"
-        helperText="Share notes about terrain, route conditions, or why you saved this route."
-        testId="route-comments"
-      />
+      ) : null}
     </div>
   );
 }

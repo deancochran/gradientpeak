@@ -1,9 +1,11 @@
 export * from "../../registry/web/form";
+export { FormChoiceField } from "../form-fields/choice-field.web";
 export {
   FormBoundedNumberField,
   FormDateInputField,
   FormDateTimeField,
   FormDurationField,
+  FormFileField,
   FormIntegerStepperField,
   FormNumberField,
   FormPaceField,
@@ -14,5 +16,6 @@ export {
   FormTextareaField,
   FormTextField,
   FormTimeInputField,
+  FormTimezoneField,
   FormWeightInputField,
 } from "../form-fields/index.web";

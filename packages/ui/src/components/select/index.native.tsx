@@ -50,12 +50,28 @@ function SelectTrigger({
   );
 }
 
-function NativeSelectScrollView({ className, ...props }: React.ComponentProps<typeof ScrollView>) {
+function NativeSelectScrollView({
+  className,
+  keyboardShouldPersistTaps = "handled",
+  nestedScrollEnabled = true,
+  style,
+  ...props
+}: React.ComponentProps<typeof ScrollView>) {
   if (Platform.OS === "web") {
     return <>{props.children as React.ReactNode}</>;
   }
 
-  return <ScrollView className={cn("max-h-52", className)} {...props} />;
+  const hasClassMaxHeight = /(^|\s)!?max-h-/.test(className ?? "");
+
+  return (
+    <ScrollView
+      className={cn("max-h-52", className)}
+      keyboardShouldPersistTaps={keyboardShouldPersistTaps}
+      nestedScrollEnabled={nestedScrollEnabled}
+      style={hasClassMaxHeight ? style : [{ maxHeight: 208 }, style]}
+      {...props}
+    />
+  );
 }
 
 export type { Option };
