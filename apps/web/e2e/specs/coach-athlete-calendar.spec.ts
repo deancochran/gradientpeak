@@ -29,8 +29,10 @@ function structureHash(structure: unknown) {
   return `v1:sha256:${createHash("sha256").update(stringifyCanonicalJson(structure)).digest("hex")}`;
 }
 
-async function expectCalendarControlContrast(page: import("@playwright/test").Page, name: string) {
-  const style = await page.getByRole("button", { name }).evaluate((element) => {
+async function expectControlContrast(locator: import("@playwright/test").Locator, name: string) {
+  // Inspect settled animation state without an arbitrary delay.
+  await expect(locator, `${name}: must finish opening`).toHaveCSS("opacity", "1");
+  const style = await locator.evaluate((element) => {
     const canvas = document.createElement("canvas");
     canvas.width = canvas.height = 1;
     const context = canvas.getContext("2d");
@@ -48,8 +50,6 @@ async function expectCalendarControlContrast(page: import("@playwright/test").Pa
         throw new Error(`Transparent or unreadable CSS color: ${color}`);
       return [red, green, blue] as const;
     };
-    const color = getComputedStyle(element).color;
-    const background = getComputedStyle(element).backgroundColor;
     const luminance = (rgb: readonly number[]) =>
       rgb
         .map((channel) => channel / 255)
@@ -57,6 +57,8 @@ async function expectCalendarControlContrast(page: import("@playwright/test").Pa
           channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4,
         )
         .reduce((sum, channel, index) => sum + channel * ([0.2126, 0.7152, 0.0722][index] ?? 0), 0);
+    const color = getComputedStyle(element).color;
+    const background = getComputedStyle(element).backgroundColor;
     const [light = 0, dark = 0] = [luminance(toSrgb(color)), luminance(toSrgb(background))].sort(
       (left, right) => right - left,
     );
@@ -64,12 +66,14 @@ async function expectCalendarControlContrast(page: import("@playwright/test").Pa
       background,
       color,
       contrast: (light + 0.05) / (dark + 0.05),
+      opacity: getComputedStyle(element).opacity,
     };
   });
   expect(
     style.contrast,
     `${name}: color=${style.color}, background=${style.background}`,
   ).toBeGreaterThanOrEqual(4.5);
+  expect(style.opacity, `${name}: background must not be transparent`).toBe("1");
 }
 
 async function expectBrowserColorConversion(page: import("@playwright/test").Page) {
@@ -311,9 +315,20 @@ test("assigned non-admin coach sees only consented date-only planned sessions", 
   await expect(page.getByText(privatePlanName, { exact: true })).toHaveCount(0);
   await expect(page.getByText(new RegExp(`${weekStart} to ${weekEnd}`))).toBeVisible();
   await expect(page.getByRole("button", { name: "Load more planned sessions" })).toBeVisible();
-  await expectCalendarControlContrast(page, "Previous week");
-  await expectCalendarControlContrast(page, "Next week");
-  await expectCalendarControlContrast(page, "Load more planned sessions");
+  await expectControlContrast(
+    page.getByRole("link", { name: "All assigned athletes" }),
+    "All assigned athletes",
+  );
+  await expectControlContrast(page.getByRole("button", { name: "Previous week" }), "Previous week");
+  await expectControlContrast(page.getByRole("button", { name: "Next week" }), "Next week");
+  await expectControlContrast(
+    page.getByRole("button", { name: "Load more planned sessions" }),
+    "Load more planned sessions",
+  );
+  await expectControlContrast(
+    page.getByRole("button", { name: "Switch athlete" }),
+    "Switch athlete",
+  );
   await page.setViewportSize({ width: 1440, height: 1000 });
   await expectNoHorizontalOverflow(page);
   await page.screenshot({
@@ -336,10 +351,32 @@ test("assigned non-admin coach sees only consented date-only planned sessions", 
   await expect(page.getByText(weekStart, { exact: true }).first()).toBeVisible();
 
   await page.getByRole("button", { name: "Switch athlete" }).click();
-  await page
+  const switcherDialog = page.getByRole("dialog");
+  await expectControlContrast(switcherDialog, "Switch athlete dialog");
+  await expect
+    .poll(() => switcherDialog.evaluate((element) => element.scrollWidth <= element.clientWidth))
+    .toBe(true);
+  await expectControlContrast(
+    page.getByLabel("Search assigned athletes"),
+    "Search assigned athletes",
+  );
+  await expectControlContrast(page.getByRole("button", { name: "Search" }), "Search");
+  await expectControlContrast(page.getByRole("button", { name: "First page" }), "First page");
+  // Only two assigned athletes exist in this fixture: there is no second directory page.
+  await expect(page.getByRole("button", { name: "Next page", exact: true })).toHaveCount(0);
+  const switcherOption = page
     .getByRole("list", { name: "Switch athlete" })
-    .locator(`a[href="/organizations/${organizationId}/athletes/${noCalendarAthlete.profileId}"]`)
-    .click();
+    .locator(`a[href="/organizations/${organizationId}/athletes/${noCalendarAthlete.profileId}"]`);
+  await expectControlContrast(switcherOption, "Switch athlete option");
+  await switcherOption.focus();
+  await expect(switcherOption).toBeFocused();
+  await page.screenshot({
+    animations: "disabled",
+    path: testInfo.outputPath("coach-athlete-switcher.png"),
+    fullPage: true,
+    scale: "css",
+  });
+  await switcherOption.click();
   await expect(page.getByRole("heading", { name: "Current training state" })).toBeVisible();
   await expect(page.getByText("Planned sessions unavailable")).toBeVisible();
   await expect(page.getByText(weekStart, { exact: true })).toHaveCount(0);

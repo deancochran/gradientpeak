@@ -85,20 +85,24 @@ function Switcher({
       ) : null}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogTrigger asChild>
-          <Button type="button" variant="outline" className="mt-3">
+          <Button
+            type="button"
+            variant="outline"
+            className="mt-3 border-slate-600 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white focus-visible:ring-cyan-300 disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500"
+          >
             Switch athlete ▾
           </Button>
         </DialogTrigger>
-        <DialogContent className="max-h-[85dvh] overflow-y-auto">
+        <DialogContent className="max-h-[85dvh] grid-cols-1 overflow-y-auto border-slate-700 bg-slate-950 text-slate-100">
           <DialogHeader>
-            <DialogTitle>Switch athlete</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className="text-white">Switch athlete</DialogTitle>
+            <DialogDescription className="text-slate-300">
               Search athletes assigned to you in this organization. Selection does not change their
               sharing permissions.
             </DialogDescription>
           </DialogHeader>
           <form
-            className="flex gap-2"
+            className="flex min-w-0 gap-2"
             onSubmit={(event) => {
               event.preventDefault();
               void search(null, query.trim());
@@ -112,9 +116,13 @@ function Switcher({
               value={query}
               maxLength={120}
               onChange={(event) => setQuery(event.target.value)}
-              className="min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2"
+              className="min-w-0 flex-1 rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-400 focus-visible:border-cyan-300 focus-visible:ring-2 focus-visible:ring-cyan-300"
             />
-            <Button type="submit" disabled={loading}>
+            <Button
+              type="submit"
+              disabled={loading}
+              className="border border-slate-600 bg-slate-800 text-slate-100 hover:bg-slate-700 hover:text-white focus-visible:ring-cyan-300 disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500"
+            >
               {error ? "Retry search" : "Search"}
             </Button>
           </form>
@@ -135,7 +143,7 @@ function Switcher({
                         params={{ organizationId, athleteId: athlete.profileId }}
                         onClick={() => setOpen(false)}
                         aria-current={athlete.profileId === athleteId ? "page" : undefined}
-                        className="block rounded px-3 py-3 hover:bg-muted"
+                        className="block rounded border border-transparent bg-slate-900 px-3 py-3 text-slate-100 hover:border-slate-600 hover:bg-slate-800 hover:text-white focus-visible:border-cyan-300 focus-visible:bg-slate-800 focus-visible:text-white focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 aria-[current=page]:border-cyan-500 aria-[current=page]:bg-slate-800 aria-[current=page]:text-white"
                       >
                         {athlete.displayName ?? athlete.username ?? "Assigned athlete"}
                       </Link>
@@ -144,7 +152,12 @@ function Switcher({
                 </ul>
               )}
               <div className="flex gap-2">
-                <Button type="button" variant="outline" onClick={() => void search(null, applied)}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void search(null, applied)}
+                  className="border-slate-600 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white focus-visible:ring-cyan-300 disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500"
+                >
                   First page
                 </Button>
                 {page.hasMore && page.nextCursor ? (
@@ -153,6 +166,7 @@ function Switcher({
                     variant="outline"
                     disabled={query.trim() !== applied}
                     onClick={() => void search(page.nextCursor, applied)}
+                    className="border-slate-600 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white focus-visible:ring-cyan-300 disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500"
                   >
                     Next page
                   </Button>
