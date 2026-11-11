@@ -1,4 +1,6 @@
-import { validateDisposableAcceptanceLease } from "./disposable-acceptance-lease";
+// This module is imported directly by Node's TypeScript loader from an .mjs
+// E2E launcher, which requires explicit TypeScript extensions for its children.
+import { validateDisposableAcceptanceLease } from "./disposable-acceptance-lease.ts";
 
 const LOCAL_DATABASE_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 
