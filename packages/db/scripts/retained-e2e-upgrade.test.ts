@@ -12,6 +12,7 @@ import {
   expectedAuthIdentityCompatibilityBeforeFingerprint,
 } from "./auth-identity-compatibility-upgrade";
 import { createSchemaFingerprint } from "./check-schema-fingerprint";
+import { applyCoachingUpgrade, prerequisiteBaseline } from "./coaching-foundation-upgrade";
 import {
   applyRetainedE2EUpgrade,
   assertPostUpgradeTableInventory,
@@ -27,7 +28,6 @@ import {
   verifyRehearsalReceipt,
 } from "./retained-e2e-upgrade";
 
-const baseline = resolve(dbPackageRoot, "supabase/migrations/20260730000000_mvp_baseline.sql");
 const removedFunctions = [
   "prevent_organization_group_mutation",
   "guard_organization_group_authority",
@@ -143,15 +143,13 @@ async function main() {
   await withDisposableDatabase(process.argv.slice(2), "retained_upgrade", async (pool, url) => {
     await bootstrapSupabaseSchemas(pool);
     await pool.query("create extension if not exists pgcrypto with schema extensions");
-    await pool.query(readFileSync(baseline, "utf8"));
+    // Start from the immutable auth legacy source, which is the retained
+    // upgrade's reviewed postcondition, rather than the evolving baseline.
+    await pool.query(prerequisiteBaseline());
+    await applyCoachingUpgrade(pool);
     // The retained upgrade's immutable prerequisite predates the auth identity
     // compatibility baseline. Reconstruct that legacy schema only in this guarded
     // disposable proof; do not rewrite its historical fingerprint provenance.
-    await pool.query('drop index public."accounts_providerId_accountId_uidx"');
-    await pool.query("alter table public.accounts alter column issuer set not null");
-    await pool.query(
-      'create unique index "accounts_issuer_accountId_uidx" on public.accounts using btree (issuer, account_id)',
-    );
     const previousDecision = (
       expectedBeforeFingerprint().functions as Array<Record<string, unknown>>
     ).find(
