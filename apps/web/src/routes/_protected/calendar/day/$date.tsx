@@ -1,5 +1,5 @@
-import { Badge } from "@repo/ui/components/badge";
-import { Button } from "@repo/ui/components/button";
+import { isValidDateOnlyUtc } from "@repo/core";
+import { Button, buttonVariants } from "@repo/ui/components/button";
 import {
   Card,
   CardContent,
@@ -7,21 +7,17 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
-import { useMemo } from "react";
 
+import { CalendarProjectionCard } from "../../../../components/calendar/calendar-projection-card";
 import { api } from "../../../../lib/api/client";
+import { loadRouteQuery } from "../../../../lib/api/route-loading";
 import {
-  compareEventsByStart,
   formatDayLabel,
-  formatEventTimeRange,
-  getEventTitle,
   getMonthKey,
-  getTodayDateKey,
-  isValidDateKey,
   isValidMonthKey,
-  type PlanningEvent,
+  shiftDateKey,
 } from "../../../../lib/planning";
 
 export const Route = createFileRoute("/_protected/calendar/day/$date")({
@@ -30,54 +26,80 @@ export const Route = createFileRoute("/_protected/calendar/day/$date")({
       typeof search.month === "string" && isValidMonthKey(search.month)
         ? search.month
         : getMonthKey(new Date()),
-    view: search.view === "agenda" ? "agenda" : "month",
+    view: search.view === "agenda" || search.view === "week" ? search.view : "month",
   }),
+  beforeLoad: ({ params }) => {
+    if (!isValidDateOnlyUtc(params.date)) throw notFound();
+  },
+  loader: ({ context, params }) => {
+    const input = { date: params.date };
+    return loadRouteQuery(
+      () => context.apiUtils.calendar.day.getData(input),
+      () => context.apiUtils.calendar.day.fetch(input),
+    );
+  },
   component: CalendarDayPage,
 });
 
 function CalendarDayPage() {
-  const { date } = Route.useParams();
+  const { date: routeDate } = Route.useParams();
   const { month, view } = Route.useSearch();
-  const normalizedDate = isValidDateKey(date) ? date : getTodayDateKey();
-  const profileQuery = api.profiles.get.useQuery();
-  const eventsQuery = api.events.list.useQuery({
-    date_from: normalizedDate,
-    date_to: normalizedDate,
-    include_adhoc: true,
-    limit: 100,
-  });
-  const goalsQuery = api.goals.list.useQuery(
-    {
-      profile_id: profileQuery.data?.id ?? "00000000-0000-0000-0000-000000000000",
-      limit: 200,
-    },
-    { enabled: Boolean(profileQuery.data?.id) },
-  );
+  const eventsQuery = api.calendar.day.useQuery({ date: routeDate });
+  const previousDate = shiftDateKey(routeDate, -1);
+  const nextDate = shiftDateKey(routeDate, 1);
+  const monthForDate = (date: string) => getMonthKey(new Date(`${date}T12:00:00`));
 
-  const events = useMemo(
-    () => ((eventsQuery.data?.items ?? []) as PlanningEvent[]).slice().sort(compareEventsByStart),
-    [eventsQuery.data?.items],
+  const projectionItems = (eventsQuery.data?.projection.items ?? []).filter(
+    (item) => item.calendarDate === routeDate,
   );
-  const goals = useMemo(
-    () => (goalsQuery.data?.items ?? []).filter((goal) => goal.target_date === normalizedDate),
-    [goalsQuery.data?.items, normalizedDate],
-  );
+  const goals = projectionItems.filter((item) => item.kind === "goal");
+  const agendaItems = projectionItems.filter((item) => item.kind !== "goal");
+  const agendaCount = agendaItems.length;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <Button asChild variant="outline" size="sm">
-          <Link to="/calendar" search={{ flash: undefined, flashType: undefined, month, view }}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to calendar
-          </Link>
-        </Button>
+        <Link
+          to="/calendar"
+          search={{
+            date: routeDate,
+            month,
+            view: view as "agenda" | "month" | "week",
+          }}
+          className={buttonVariants({ variant: "outline", size: "sm" })}
+        >
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Back to calendar
+        </Link>
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">
-            {formatDayLabel(normalizedDate)}
-          </h1>
+          <h1 className="text-3xl font-semibold tracking-tight">{formatDayLabel(routeDate)}</h1>
           <p className="mt-1 text-muted-foreground">Day agenda and goal anchors.</p>
         </div>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Link
+          to="/calendar/day/$date"
+          params={{ date: previousDate }}
+          search={{ month: monthForDate(previousDate), view }}
+          className={buttonVariants({ variant: "outline", size: "sm" })}
+        >
+          Previous day
+        </Link>
+        <Link
+          to="/calendar/day/$date"
+          params={{ date: nextDate }}
+          search={{ month: monthForDate(nextDate), view }}
+          className={buttonVariants({ variant: "outline", size: "sm" })}
+        >
+          Next day
+        </Link>
+        <Link
+          to="/calendar/new"
+          search={{ date: routeDate, month, view }}
+          className={buttonVariants({ variant: "outline", size: "sm" })}
+        >
+          Create event for this day
+        </Link>
       </div>
 
       {goals.length > 0 ? (
@@ -88,50 +110,46 @@ function CalendarDayPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             {goals.map((goal) => (
-              <div key={goal.id} className="rounded-xl border p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="font-medium">{goal.title}</p>
-                    <p className="text-sm text-muted-foreground">Priority {goal.priority}/10</p>
-                  </div>
-                  <Badge>{goal.activity_category}</Badge>
-                </div>
-              </div>
+              <CalendarProjectionCard item={goal} key={goal.id} />
             ))}
           </CardContent>
         </Card>
       ) : null}
 
+      {eventsQuery.isError ? (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/40 p-4"
+        >
+          <p className="text-sm">The day agenda could not be fully loaded.</p>
+          <Button size="sm" variant="outline" onClick={() => void eventsQuery.refetch()}>
+            Retry
+          </Button>
+        </div>
+      ) : null}
+
       <Card>
         <CardHeader>
-          <CardTitle>Agenda</CardTitle>
+          <CardTitle aria-level={2} role="heading">
+            Agenda
+          </CardTitle>
           <CardDescription>
-            {events.length === 0
+            {agendaCount === 0
               ? "Nothing scheduled yet."
-              : `${events.length} scheduled event${events.length === 1 ? "" : "s"}`}
+              : `${agendaCount} calendar item${agendaCount === 1 ? "" : "s"}`}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {eventsQuery.isLoading ? (
             <p className="text-sm text-muted-foreground">Loading day agenda...</p>
-          ) : events.length > 0 ? (
+          ) : eventsQuery.isError && agendaCount === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              The agenda is unavailable until it can be loaded.
+            </p>
+          ) : agendaCount > 0 ? (
             <div className="space-y-3">
-              {events.map((event) => (
-                <Link
-                  key={event.id}
-                  to="/calendar/events/$eventId"
-                  params={{ eventId: event.id }}
-                  search={{ flash: undefined, flashType: undefined, month, view }}
-                  className="block rounded-xl border p-4 transition-colors hover:border-primary hover:bg-accent/40"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-medium">{getEventTitle(event)}</p>
-                      <p className="text-sm text-muted-foreground">{formatEventTimeRange(event)}</p>
-                    </div>
-                    <Badge variant="outline">{event.event_type ?? "event"}</Badge>
-                  </div>
-                </Link>
+              {agendaItems.map((item) => (
+                <CalendarProjectionCard item={item} key={`${item.kind}-${item.id}`} />
               ))}
             </div>
           ) : (

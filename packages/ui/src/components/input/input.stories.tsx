@@ -1,5 +1,5 @@
-import type { Meta, StoryObj } from "@storybook/react";
-import { within } from "@storybook/test";
+import type { Meta, StoryObj } from "@storybook/react-vite";
+import { within } from "storybook/test";
 
 import { inputFixtures } from "./fixtures";
 import { Input } from "./index.web";
