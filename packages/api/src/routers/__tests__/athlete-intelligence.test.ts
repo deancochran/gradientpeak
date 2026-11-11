@@ -661,7 +661,7 @@ describe("athleteIntelligenceRouter.getCoachAthleteBikeZones", () => {
     const organizationId = "33333333-3333-4333-8333-333333333333";
     const readCoachAthleteBikeZones = vi.fn(async () => ({
       asOf: "2026-08-10T12:00:00.000Z",
-      sport: "bike" as const,
+      activityCategory: "bike" as const,
       publication: { status: "available" as const, publishedRevision: 4, computedAt: null },
       power: {
         source: {
@@ -724,7 +724,7 @@ describe("athleteIntelligenceRouter.getCoachAthleteBikeZones", () => {
       athleteProfileId: OWNER_ID,
     });
 
-    expect(result.sport).toBe("bike");
+    expect(result.activityCategory).toBe("bike");
     expect(readCoachAthleteBikeZones).toHaveBeenCalledWith(
       expect.objectContaining({ profileId: OWNER_ID, db: {}, now: expect.any(Date) }),
     );

@@ -63,12 +63,12 @@ function targetFacts(asOf = AS_OF) {
 }
 
 describe("projectCoachAthleteBikeZones", () => {
-  it("accepts no client sport selector, so run and swim zone mismatches cannot be requested", () => {
+  it("accepts no client category selector, so run and swim zone mismatches cannot be requested", () => {
     expect(
       coachAthleteZonesRequestSchema.safeParse({
         organizationId: PROFILE_ID,
         athleteProfileId: PROFILE_ID,
-        sport: "run",
+        activityCategory: "run",
       }).success,
     ).toBe(false);
   });
@@ -88,11 +88,11 @@ describe("projectCoachAthleteBikeZones", () => {
     });
     expect(JSON.stringify(result)).not.toMatch(/source(?:Activity|Evaluation|Effort)Id|profileId/i);
     expect(Object.keys(result).sort()).toEqual([
+      "activityCategory",
       "asOf",
       "heartRate",
       "power",
       "publication",
-      "sport",
     ]);
   });
 

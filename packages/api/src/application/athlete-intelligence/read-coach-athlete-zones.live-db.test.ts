@@ -389,11 +389,11 @@ it("authorizes only current metrics-sharing coaches and returns canonical bike P
         (({ policyVersion: _policyVersion, ...zones }) => zones)(expected.heartRateZones),
     );
     expect(Object.keys(result).sort()).toEqual([
+      "activityCategory",
       "asOf",
       "heartRate",
       "power",
       "publication",
-      "sport",
     ]);
     expect(JSON.stringify(result)).not.toContain(athlete);
     expect(JSON.stringify(result)).not.toContain(organizationId);

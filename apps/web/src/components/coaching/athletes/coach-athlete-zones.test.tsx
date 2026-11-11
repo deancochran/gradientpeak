@@ -6,7 +6,7 @@ import { CoachAthleteZonesCard } from "./coach-athlete-zones";
 const identity = { organizationId: "org-private", athleteProfileId: "athlete-private" };
 const zones = {
   asOf: "2026-08-10T12:00:00.000Z",
-  sport: "bike",
+  activityCategory: "bike",
   publication: { status: "stale", publishedRevision: 3, computedAt: "2026-08-10T11:00:00.000Z" },
   power: {
     source: {

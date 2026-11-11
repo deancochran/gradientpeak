@@ -38,7 +38,7 @@ describe("loadCoachAthleteBikeZones", () => {
     vi.clearAllMocks();
     mocks.session.mockResolvedValue({ user: { id: "request-actor" } });
     mocks.context.mockResolvedValue({});
-    mocks.zones.mockResolvedValue({ sport: "bike" });
+    mocks.zones.mockResolvedValue({ activityCategory: "bike" });
   });
   it("forwards only explicit organization and athlete IDs with the request session", async () => {
     await loadCoachAthleteBikeZones({ data: input });

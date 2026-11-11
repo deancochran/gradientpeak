@@ -13,7 +13,7 @@ const identity = {
 const granted = {
   status: "granted",
   zones: {
-    sport: "bike",
+    activityCategory: "bike",
     asOf: "2026-08-10T12:00:00.000Z",
     publication: { status: "available", publishedRevision: 1, computedAt: null },
     power: {

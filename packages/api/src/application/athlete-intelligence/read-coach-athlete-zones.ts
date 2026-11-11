@@ -38,7 +38,7 @@ export function projectCoachAthleteBikeZones(input: {
 
   return coachAthleteZonesResponseSchema.parse({
     asOf: input.asOf.toISOString(),
-    sport: "bike",
+    activityCategory: "bike",
     publication: {
       status:
         input.snapshot.freshness === "fresh"

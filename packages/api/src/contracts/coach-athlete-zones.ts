@@ -78,7 +78,7 @@ export const coachAthleteZonesRequestSchema = z
 export const coachAthleteZonesResponseSchema = z
   .object({
     asOf: instantSchema,
-    sport: z.literal("bike"),
+    activityCategory: z.literal("bike"),
     publication: z
       .object({
         status: z.enum(["available", "stale", "unavailable"]),
