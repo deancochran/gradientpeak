@@ -14,13 +14,11 @@ import {
   Calendar,
   Circle,
   Home,
-  Map,
+  Map as MapIcon,
   MessageSquare,
   Search,
   Settings,
   Target,
-  TrendingUp,
-  Users,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -36,12 +34,9 @@ type SearchDestination = {
   to:
     | "/"
     | "/activities"
-    | "/activity-efforts"
     | "/calendar"
-    | "/coaching"
     | "/messages"
     | "/plan"
-    | "/profile-metrics"
     | "/record"
     | "/routes"
     | "/settings";
@@ -50,13 +45,10 @@ type SearchDestination = {
 const SEARCH_DESTINATIONS: SearchDestination[] = [
   { icon: Home, label: "Home", to: "/" },
   { icon: Activity, label: "Activities", to: "/activities" },
-  { icon: Activity, label: "Activity Efforts", to: "/activity-efforts" },
-  { icon: TrendingUp, label: "Profile Metrics", to: "/profile-metrics" },
-  { icon: Map, label: "Routes", to: "/routes" },
+  { icon: MapIcon, label: "Routes", to: "/routes" },
   { icon: Circle, label: "Record", to: "/record" },
   { icon: Target, label: "Plan", to: "/plan" },
   { icon: Calendar, label: "Calendar", to: "/calendar" },
-  { icon: Users, label: "Coaching", to: "/coaching" },
   {
     icon: MessageSquare,
     label: "Messages",
@@ -74,7 +66,7 @@ export function SearchLauncher({ className, mode = "icon" }: SearchLauncherProps
   const submitSearch = async () => {
     await navigate({
       to: "/search",
-      search: { q: query.trim() === "" ? undefined : query.trim() },
+      search: query.trim() === "" ? {} : { q: query.trim() },
     });
     setOpen(false);
   };
@@ -91,7 +83,7 @@ export function SearchLauncher({ className, mode = "icon" }: SearchLauncherProps
       >
         <Link
           to="/search"
-          search={{ q: undefined }}
+          search={{}}
           onClick={(event) => {
             event.preventDefault();
             setOpen(true);
@@ -105,7 +97,7 @@ export function SearchLauncher({ className, mode = "icon" }: SearchLauncherProps
       <Button asChild variant="ghost" size="icon" className={className}>
         <Link
           to="/search"
-          search={{ q: undefined }}
+          search={{}}
           aria-label="Open search"
           title="Open search"
           onClick={(event) => {

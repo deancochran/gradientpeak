@@ -23,10 +23,13 @@
  */
 
 import { Encoder, Profile, Utils } from "@garmin/fitsdk";
+import { safeDecodeFitFile } from "@repo/core/activity-files/fit-parser";
 import { Buffer } from "buffer";
 import { Directory, File, Paths } from "expo-file-system";
 import { Platform } from "react-native";
+import { canonicalRecordingEvidenceUris } from "../ActivityRecorder/recordingEvidencePaths";
 import type { ConnectedSensor } from "../ActivityRecorder/sensors";
+import { fitTimerSeconds } from "./fit-time";
 
 // ==================== Types ====================
 
@@ -38,6 +41,7 @@ export interface SwimLengthData {
   averageSpeed: number;
   strokeCount: number;
   totalActivityDistance: number;
+  endedAt?: Date;
 }
 
 export interface SwimLapData {
@@ -49,12 +53,14 @@ export interface SwimLapData {
   totalDistance: number;
   averageSpeed: number;
   dominantStroke: string;
+  endedAt?: Date;
 }
 
 export interface DrillData {
   lengthIndex: number;
   startTime: Date;
   totalActivityDistance: number;
+  endedAt?: Date;
 }
 
 /**
@@ -89,6 +95,7 @@ export interface FitRecord {
 
 export interface FitSessionData {
   startTime: number;
+  endedAt?: number;
   totalTime: number;
   distance: number;
   avgSpeed: number;
@@ -101,8 +108,133 @@ export interface FitSessionData {
   totalAscent?: number;
   totalDescent?: number;
   calories?: number;
-  sport: string;
-  subSport: string;
+  sport: string | number;
+  subSport: string | number;
+  /** FIT cannot represent a rest segment as a FIT sport session. */
+  role?: "activity" | "transition" | "unknown" | "rest";
+  movingTime?: number;
+  poolLength?: number;
+  poolLengthUnit?: "metric" | "statute" | number;
+  totalStrokes?: number;
+  numLengths?: number;
+  numActiveLengths?: number;
+  timerEvents?: FitSessionTimerEvent[];
+  laps?: FitLapData[];
+}
+
+export interface FitSessionTimerEvent {
+  type: "pause" | "resume";
+  timestamp: number;
+}
+
+export interface FitFinalizeOptions {
+  /** Manual means user-controlled FIT sport changes; automatic emits autoMultiSport semantics. */
+  multisportMode?: "manual" | "automatic";
+}
+
+export const MAX_FINALIZED_FIT_BYTES = 25 * 1024 * 1024;
+
+export type FinalizedFitExpectation = {
+  startTime?: number;
+  endedAt?: number;
+  durationMs?: number;
+  distanceMeters?: number;
+};
+
+function decodedTimestamp(value: unknown): number | undefined {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === "string") {
+    const timestamp = Date.parse(value);
+    return Number.isFinite(timestamp) ? timestamp : undefined;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Utils.convertDateTimeToDate(value).getTime();
+  }
+  return undefined;
+}
+
+/**
+ * Validates an unreferenced FIT candidate before it can be recorded as the
+ * session artifact. The SDK decoder is deliberately part of this gate rather
+ * than a best-effort post-upload diagnostic.
+ */
+export async function validateFinalizedFitFile(
+  path: string,
+  expected: FinalizedFitExpectation = {},
+): Promise<{ byteSize: number }> {
+  const file = new File(path);
+  if (!file.exists || file.size <= 0 || file.size > MAX_FINALIZED_FIT_BYTES) {
+    throw new Error("Finalized FIT file has an invalid size.");
+  }
+  const bytes = await file.bytes();
+  if (bytes.byteLength !== file.size)
+    throw new Error("Finalized FIT file size does not match bytes.");
+  const decoded = safeDecodeFitFile(Buffer.from(bytes));
+  if (decoded.errors.length || !decoded.messages)
+    throw new Error("Finalized FIT file does not decode cleanly.");
+  const sessions = decoded.messages.sessionMesgs ?? [];
+  const activities = decoded.messages.activityMesgs ?? [];
+  const records = decoded.messages.recordMesgs ?? [];
+  if (!sessions.length || !activities.length || !records.length) {
+    throw new Error(
+      "Finalized FIT file is missing required session, activity, or record messages.",
+    );
+  }
+
+  let previousTimestamp = -1;
+  let previousDistance = -Number.EPSILON;
+  for (const record of records) {
+    const timestamp = decodedTimestamp(record.timestamp);
+    const distance = record.distance;
+    if (timestamp === undefined || timestamp < previousTimestamp) {
+      throw new Error("Finalized FIT records have invalid timestamp ordering.");
+    }
+    if (
+      distance !== undefined &&
+      (typeof distance !== "number" ||
+        !Number.isFinite(distance) ||
+        distance < 0 ||
+        distance + 0.01 < previousDistance)
+    ) {
+      throw new Error("Finalized FIT records have invalid distance ordering.");
+    }
+    previousTimestamp = timestamp;
+    if (typeof distance === "number") previousDistance = distance;
+  }
+
+  const first = sessions[0] as Record<string, unknown>;
+  const last = sessions.at(-1) as Record<string, unknown>;
+  const start = decodedTimestamp(first.startTime);
+  const end = decodedTimestamp(last.timestamp);
+  if (start === undefined || end === undefined || end <= start) {
+    throw new Error("Finalized FIT session time range is invalid.");
+  }
+  const duration = last.totalElapsedTime;
+  if (typeof duration !== "number" || !Number.isFinite(duration) || duration <= 0) {
+    throw new Error("Finalized FIT session duration is invalid.");
+  }
+  const toleranceMs = 1_500;
+  if (expected.startTime !== undefined && Math.abs(start - expected.startTime) > toleranceMs) {
+    throw new Error("Finalized FIT session start does not match fenced evidence.");
+  }
+  if (expected.endedAt !== undefined && Math.abs(end - expected.endedAt) > toleranceMs) {
+    throw new Error("Finalized FIT session end does not match fenced evidence.");
+  }
+  if (
+    expected.durationMs !== undefined &&
+    Math.abs(end - start - expected.durationMs) > toleranceMs
+  ) {
+    throw new Error("Finalized FIT session duration does not match fenced evidence.");
+  }
+  if (
+    expected.distanceMeters !== undefined &&
+    (typeof last.totalDistance !== "number" ||
+      !Number.isFinite(last.totalDistance) ||
+      Math.abs(last.totalDistance - expected.distanceMeters) > 0.1)
+  ) {
+    throw new Error("Finalized FIT session distance does not match fenced evidence.");
+  }
+  return { byteSize: file.size };
 }
 
 export interface FitLapData {
@@ -114,6 +246,12 @@ export interface FitLapData {
   maxSpeed: number;
   avgPower?: number;
   avgHeartRate?: number;
+  endedAt?: number;
+  totalElapsedTime?: number;
+  firstLengthIndex?: number;
+  numLengths?: number;
+  numActiveLengths?: number;
+  swimStroke?: string;
 }
 
 export interface EncoderConfig {
@@ -123,32 +261,31 @@ export interface EncoderConfig {
   hardwareVersion: number;
 }
 
-const DEFAULT_CONFIG: EncoderConfig = {
-  manufacturer: "GradientPeak",
-  deviceProduct: "MobileApp",
-  softwareVersion: "1.0.0",
-  hardwareVersion: 1,
+type EmittedLength = {
+  messageIndex: number;
+  startTime: number;
+  endTime: number;
+  active: boolean;
 };
 
 export class GarminFitEncoder {
-  private recordingId: string;
   private userId: string;
   private storageUri: string;
   private outputFilePath: string;
   private encoder: Encoder;
-  private config: EncoderConfig;
   private recordCount: number = 0;
   private startTime: number = 0;
   private isInitialized: boolean = false;
   private isFinalized: boolean = false;
+  private finalizedBytes?: Uint8Array;
+  private timerStartedAt: number = 0;
+  private emittedLengths: EmittedLength[] = [];
 
-  constructor(recordingId: string, userId: string, config?: Partial<EncoderConfig>) {
-    this.recordingId = recordingId;
+  constructor(recordingId: string, userId: string, _config?: Partial<EncoderConfig>) {
     this.userId = userId;
-    this.config = { ...DEFAULT_CONFIG, ...config };
-    const baseDir = Paths.cache.uri || Paths.document.uri || "";
-    this.storageUri = `${baseDir}fit_encoding_${recordingId}/`;
-    this.outputFilePath = `${this.storageUri}activity.fit`;
+    const paths = canonicalRecordingEvidenceUris(recordingId);
+    this.storageUri = paths.fitDirectoryUri;
+    this.outputFilePath = paths.activityFileUri;
     this.encoder = new Encoder();
   }
 
@@ -156,19 +293,22 @@ export class GarminFitEncoder {
    * Initialize the encoder and storage directory
    * Creates directory if needed and writes required FIT header messages
    */
-  async initialize(connectedSensors: ConnectedSensor[] = []): Promise<void> {
+  async initialize(
+    connectedSensors: ConnectedSensor[] = [],
+    startedAt: Date = new Date(),
+  ): Promise<void> {
     try {
       const directory = new Directory(this.storageUri);
       if (!directory.exists) {
         directory.create({ intermediates: true });
       }
 
-      await this.initializeEncoder(connectedSensors);
-      this.startTime = Date.now();
+      await this.initializeEncoder(connectedSensors, startedAt);
+      this.startTime = startedAt.getTime();
+      this.timerStartedAt = startedAt.getTime();
       this.isInitialized = true;
-      console.log(`[GarminFitEncoder] Initialized for recording ${this.recordingId}`);
     } catch (error) {
-      console.error(`[GarminFitEncoder] Failed to initialize:`, error);
+      console.error(error instanceof Error && error.name ? error.name.slice(0, 80) : "failed");
       throw error;
     }
   }
@@ -176,11 +316,16 @@ export class GarminFitEncoder {
   /**
    * Initialize the Garmin FIT encoder with required messages
    */
-  private async initializeEncoder(connectedSensors: ConnectedSensor[] = []): Promise<void> {
+  private async initializeEncoder(
+    connectedSensors: ConnectedSensor[] = [],
+    startedAt: Date = new Date(),
+  ): Promise<void> {
     // Reset encoder
     this.encoder = new Encoder();
+    this.emittedLengths = [];
+    this.recordCount = 0;
 
-    const now = new Date();
+    const now = startedAt;
     const fitNow = Utils.convertDateToDateTime(now);
 
     // 1. FILE_ID Message (Required, exactly one)
@@ -260,6 +405,64 @@ export class GarminFitEncoder {
     return Math.abs(hash);
   }
 
+  private assertNumeric(
+    value: number,
+    label: string,
+    options: { min?: number; max?: number; integer?: boolean } = {},
+  ): void {
+    if (
+      !Number.isFinite(value) ||
+      (options.integer === true && !Number.isInteger(value)) ||
+      (options.min !== undefined && value < options.min) ||
+      (options.max !== undefined && value > options.max)
+    ) {
+      throw new Error(`${label} is outside the FIT field range.`);
+    }
+  }
+
+  private validateRecord(record: FitRecord): void {
+    this.assertNumeric(record.timestamp, "FIT record timestamp", { min: 0 });
+    if (record.heartRate !== undefined)
+      this.assertNumeric(record.heartRate, "FIT record heartRate", {
+        min: 0,
+        max: 254,
+        integer: true,
+      });
+    if (record.cadence !== undefined)
+      this.assertNumeric(record.cadence, "FIT record cadence", {
+        min: 0,
+        max: 254,
+        integer: true,
+      });
+    if (record.power !== undefined)
+      this.assertNumeric(record.power, "FIT record power", {
+        min: 0,
+        max: 65_534,
+        integer: true,
+      });
+    if (record.speed !== undefined)
+      this.assertNumeric(record.speed, "FIT record speed", { min: 0, max: 4_294_967.294 });
+    if (record.distance !== undefined)
+      this.assertNumeric(record.distance, "FIT record distance", { min: 0, max: 42_949_672.94 });
+    if (record.latitude !== undefined)
+      this.assertNumeric(record.latitude, "FIT record latitude", { min: -90, max: 90 });
+    if (record.longitude !== undefined)
+      this.assertNumeric(record.longitude, "FIT record longitude", { min: -180, max: 180 });
+    if ((record.latitude === undefined) !== (record.longitude === undefined)) {
+      throw new Error("FIT record coordinates must include both latitude and longitude.");
+    }
+    if (record.altitude !== undefined)
+      this.assertNumeric(record.altitude, "FIT record altitude", { min: -500, max: 12_606.8 });
+    if (record.grade !== undefined)
+      this.assertNumeric(record.grade, "FIT record grade", { min: -327.68, max: 327.67 });
+    if (record.temperature !== undefined)
+      this.assertNumeric(record.temperature, "FIT record temperature", {
+        min: -128,
+        max: 127,
+        integer: true,
+      });
+  }
+
   // ==================== Public Methods ====================
 
   /**
@@ -272,8 +475,9 @@ export class GarminFitEncoder {
     }
 
     try {
+      this.validateRecord(record);
       // Build fields object with only defined values
-      const fields: Record<string, any> = {
+      const fields: Record<string, unknown> = {
         timestamp: Utils.convertDateToDateTime(new Date(record.timestamp)),
       };
 
@@ -332,7 +536,32 @@ export class GarminFitEncoder {
    * Add a swim length and its corresponding record message
    */
   async addSwimLength(lengthData: SwimLengthData): Promise<void> {
-    const lengthEndTime = new Date();
+    const lengthEndTime =
+      lengthData.endedAt ?? new Date(lengthData.startTime.getTime() + lengthData.movingTime * 1000);
+    this.assertNumeric(lengthData.lengthIndex, "FIT length messageIndex", {
+      min: 0,
+      max: 65_534,
+      integer: true,
+    });
+    this.assertNumeric(lengthData.startTime.getTime(), "FIT length startTime", { min: 0 });
+    this.assertNumeric(lengthEndTime.getTime(), "FIT length endTime", {
+      min: lengthData.startTime.getTime() + 1,
+    });
+    this.assertNumeric(lengthData.movingTime, "FIT length movingTime", { min: 0 });
+    this.assertNumeric(lengthData.averageSpeed, "FIT length averageSpeed", {
+      min: 0,
+      max: 65.534,
+    });
+    this.assertNumeric(lengthData.strokeCount, "FIT length strokeCount", {
+      min: 0,
+      max: 65_534,
+      integer: true,
+    });
+    this.assertNumeric(lengthData.totalActivityDistance, "FIT length distance", {
+      min: 0,
+      max: 42_949_672.94,
+    });
+    const swimStroke = this.mapSwimStroke(lengthData.strokeType);
     const fitLengthEndTime = Utils.convertDateToDateTime(lengthEndTime);
 
     // 1. Write the LENGTH message
@@ -346,9 +575,11 @@ export class GarminFitEncoder {
       totalElapsedTime: (lengthEndTime.getTime() - lengthData.startTime.getTime()) / 1000,
       totalTimerTime: lengthData.movingTime,
       lengthType: 1, // active
-      swimStroke: this.mapSwimStroke(lengthData.strokeType),
+      swimStroke,
       avgSpeed: lengthData.averageSpeed,
       totalStrokes: lengthData.strokeCount,
+      event: 28, // length
+      eventType: 1, // stop
     });
 
     // 2. Write the corresponding RECORD message
@@ -356,6 +587,14 @@ export class GarminFitEncoder {
       mesgNum: Profile.MesgNum.RECORD,
       timestamp: fitLengthEndTime,
       distance: lengthData.totalActivityDistance,
+      enhancedSpeed: lengthData.averageSpeed,
+    });
+    this.recordCount++;
+    this.emittedLengths.push({
+      messageIndex: lengthData.lengthIndex,
+      startTime: lengthData.startTime.getTime(),
+      endTime: lengthEndTime.getTime(),
+      active: true,
     });
   }
 
@@ -363,7 +602,30 @@ export class GarminFitEncoder {
    * Add a swim lap (a summary of a set of lengths)
    */
   async addSwimLap(lapData: SwimLapData): Promise<void> {
-    const lapEndTime = new Date();
+    const lapEndTime =
+      lapData.endedAt ?? new Date(lapData.startTime.getTime() + lapData.movingTime * 1000);
+    this.assertNumeric(lapData.lapIndex, "FIT swim lap messageIndex", {
+      min: 0,
+      max: 65_534,
+      integer: true,
+    });
+    this.assertNumeric(lapData.movingTime, "FIT swim lap movingTime", { min: 0 });
+    this.assertNumeric(lapData.firstLengthIndex, "FIT swim lap firstLengthIndex", {
+      min: 0,
+      max: 65_534,
+      integer: true,
+    });
+    this.assertNumeric(lapData.numberOfLengths, "FIT swim lap numberOfLengths", {
+      min: 1,
+      max: 65_534,
+      integer: true,
+    });
+    this.assertNumeric(lapData.totalDistance, "FIT swim lap distance", { min: 0 });
+    this.assertNumeric(lapData.averageSpeed, "FIT swim lap averageSpeed", {
+      min: 0,
+      max: 65.534,
+    });
+    const swimStroke = this.mapSwimStroke(lapData.dominantStroke);
     const fitLapEndTime = Utils.convertDateToDateTime(lapEndTime);
 
     // swimStroke enum: 0=freestyle, 1=backstroke, 2=breaststroke, 3=butterfly, 4=drill, 5=mixed, etc.
@@ -378,7 +640,11 @@ export class GarminFitEncoder {
       numLengths: lapData.numberOfLengths,
       totalDistance: lapData.totalDistance,
       avgSpeed: lapData.averageSpeed,
-      swimStroke: this.mapSwimStroke(lapData.dominantStroke),
+      swimStroke,
+      event: 9, // lap
+      eventType: 1, // stop
+      sport: 5,
+      subSport: 17,
     });
   }
 
@@ -386,7 +652,17 @@ export class GarminFitEncoder {
    * Add a drill length for swim activities
    */
   async addDrillLength(drillData: DrillData): Promise<void> {
-    const drillEndTime = new Date();
+    const drillEndTime = drillData.endedAt ?? new Date();
+    this.assertNumeric(drillData.lengthIndex, "FIT drill messageIndex", {
+      min: 0,
+      max: 65_534,
+      integer: true,
+    });
+    this.assertNumeric(drillData.startTime.getTime(), "FIT drill startTime", { min: 0 });
+    this.assertNumeric(drillEndTime.getTime(), "FIT drill endTime", {
+      min: drillData.startTime.getTime() + 1,
+    });
+    this.assertNumeric(drillData.totalActivityDistance, "FIT drill distance", { min: 0 });
     const fitDrillEndTime = Utils.convertDateToDateTime(drillEndTime);
 
     // lengthType enum: 0 = idle, 1 = active
@@ -399,8 +675,10 @@ export class GarminFitEncoder {
       startTime: Utils.convertDateToDateTime(drillData.startTime),
       totalElapsedTime: (drillEndTime.getTime() - drillData.startTime.getTime()) / 1000,
       totalTimerTime: (drillEndTime.getTime() - drillData.startTime.getTime()) / 1000,
-      lengthType: 0, // idle (drills are non-stroke lengths)
+      lengthType: 1, // active; drill is represented by swimStroke, not idle time
       swimStroke: 4, // drill
+      event: 28,
+      eventType: 1,
     });
 
     this.encoder.writeMesg({
@@ -408,16 +686,23 @@ export class GarminFitEncoder {
       timestamp: fitDrillEndTime,
       distance: drillData.totalActivityDistance,
     });
+    this.recordCount++;
+    this.emittedLengths.push({
+      messageIndex: drillData.lengthIndex,
+      startTime: drillData.startTime.getTime(),
+      endTime: drillEndTime.getTime(),
+      active: true,
+    });
   }
 
   /**
    * Pause the recording timer
    */
-  async pause(): Promise<void> {
+  async pause(timestamp: Date = new Date()): Promise<void> {
     // event enum: 0 = timer, eventType enum: 1 = stop
     this.encoder.writeMesg({
       mesgNum: Profile.MesgNum.EVENT,
-      timestamp: Utils.convertDateToDateTime(new Date()),
+      timestamp: Utils.convertDateToDateTime(timestamp),
       event: 0, // timer
       eventType: 1, // stop
     });
@@ -426,20 +711,24 @@ export class GarminFitEncoder {
   /**
    * Resume the recording timer
    */
-  async resume(): Promise<void> {
+  async resume(timestamp: Date = new Date()): Promise<void> {
     // event enum: 0 = timer, eventType enum: 0 = start
     this.encoder.writeMesg({
       mesgNum: Profile.MesgNum.EVENT,
-      timestamp: Utils.convertDateToDateTime(new Date()),
+      timestamp: Utils.convertDateToDateTime(timestamp),
       event: 0, // timer
       eventType: 0, // start
     });
   }
 
   /**
-   * Map sport string to FIT SDK enum value
+   * Map the source value to a FIT SDK sport enum value
    */
-  private mapSport(sport: string): number {
+  private mapSport(sport: string | number): number {
+    if (typeof sport === "number") {
+      if (Number.isInteger(sport) && sport >= 0 && sport < 255) return sport;
+      throw new Error(`FIT sport value is out of range: ${sport}`);
+    }
     switch (sport) {
       case "cycling":
         return 2;
@@ -448,29 +737,58 @@ export class GarminFitEncoder {
       case "swimming":
         return 5;
       case "training":
-        return 3;
+        return 10;
       case "walking":
         return 11;
+      case "transition":
+        return 3;
+      case "generic":
+        return 0;
       default:
-        return 0; // Generic
+        throw new Error(`Unsupported FIT sport: ${sport}`);
     }
   }
 
   /**
    * Map subSport string to FIT SDK enum value
    */
-  private mapSubSport(subSport: string): number {
+  private mapSubSport(subSport: string | number): number {
+    if (typeof subSport === "number") {
+      if (Number.isInteger(subSport) && subSport >= 0 && subSport < 255) return subSport;
+      throw new Error(`FIT sub-sport value is out of range: ${subSport}`);
+    }
     switch (subSport) {
       case "indoor_cycling":
         return 6;
       case "road":
-        return 2; // Street/Road
+        return 7;
+      case "street":
+        return 2;
+      case "trail":
+        return 3;
+      case "track":
+        return 4;
       case "treadmill":
         return 1;
+      case "indoor_running":
+      case "indoorRunning":
+        return 45;
       case "lap_swimming":
-        return 11;
+      case "lapSwimming":
+        return 17;
+      case "open_water":
+      case "openWater":
+        return 18;
+      case "bike_to_run_transition":
+        return 32;
+      case "run_to_bike_transition":
+        return 33;
+      case "swim_to_bike_transition":
+        return 34;
+      case "generic":
+        return 0;
       default:
-        return 0; // Generic
+        throw new Error(`Unsupported FIT sub-sport: ${subSport}`);
     }
   }
 
@@ -499,22 +817,552 @@ export class GarminFitEncoder {
       case "rimo":
         return 8;
       default:
-        return 0; // Default to freestyle
+        throw new Error(`Unsupported FIT swim stroke: ${stroke}`);
     }
+  }
+
+  private writeTimerEvent(timestamp: number, eventType: 0 | 1 | 4): void {
+    this.encoder.writeMesg({
+      mesgNum: Profile.MesgNum.EVENT,
+      timestamp: Utils.convertDateToDateTime(new Date(timestamp)),
+      event: 0,
+      eventType,
+    });
+  }
+
+  private usesStandardsFirstFinalization(): boolean {
+    return true;
+  }
+
+  private validateModernInputs(
+    sessions: FitSessionData[],
+    multisportMode: "manual" | "automatic",
+  ): void {
+    if (sessions.length === 0) throw new Error("A FIT activity requires at least one session.");
+    if (multisportMode === "automatic" && sessions.length < 2) {
+      throw new Error("Automatic multisport requires at least two sessions.");
+    }
+    const nonnegative = (value: number, label: string) =>
+      this.assertNumeric(value, label, { min: 0 });
+    for (const [index, length] of this.emittedLengths.entries()) {
+      if (length.messageIndex !== index) {
+        throw new Error("Emitted FIT length indexes must be unique and contiguous from zero.");
+      }
+    }
+    const assignedLengthIndexes = new Set<number>();
+    let previousSessionEnd = -1;
+    for (const [sessionIndex, session] of sessions.entries()) {
+      nonnegative(session.startTime, `FIT session ${sessionIndex} startTime`);
+      nonnegative(session.totalTime, `FIT session ${sessionIndex} totalTime`);
+      this.assertNumeric(session.distance, `FIT session ${sessionIndex} distance`, {
+        min: 0,
+        max: 42_949_672.94,
+      });
+      const endedAt = session.endedAt ?? session.startTime + session.totalTime;
+      nonnegative(endedAt, `FIT session ${sessionIndex} endedAt`);
+      const elapsedMs = endedAt - session.startTime;
+      if (elapsedMs <= 0) throw new Error(`FIT session ${sessionIndex} has an invalid time range.`);
+      if (session.totalTime > elapsedMs) {
+        throw new Error(`FIT session ${sessionIndex} active time exceeds elapsed time.`);
+      }
+      if (session.movingTime !== undefined) {
+        nonnegative(session.movingTime, `FIT session ${sessionIndex} movingTime`);
+        if (session.movingTime > session.totalTime) {
+          throw new Error(`FIT session ${sessionIndex} moving time exceeds active time.`);
+        }
+      }
+      if (session.startTime < previousSessionEnd) {
+        throw new Error("FIT sessions must be ordered and non-overlapping.");
+      }
+      previousSessionEnd = endedAt;
+      if (session.role === "rest") {
+        throw new Error(
+          "FIT activity files cannot represent a rest segment as a FIT sport session.",
+        );
+      }
+      const sport = session.role === "transition" ? 3 : this.mapSport(session.sport);
+      const subSport = this.mapSubSport(session.subSport);
+      this.assertNumeric(session.avgSpeed, `FIT session ${sessionIndex} avgSpeed`, {
+        min: 0,
+        max: 65.534,
+      });
+      this.assertNumeric(session.maxSpeed, `FIT session ${sessionIndex} maxSpeed`, {
+        min: 0,
+        max: 65.534,
+      });
+      for (const [field, value, max] of [
+        ["avgPower", session.avgPower, 65_534],
+        ["maxPower", session.maxPower, 65_534],
+        ["avgHeartRate", session.avgHeartRate, 254],
+        ["maxHeartRate", session.maxHeartRate, 254],
+        ["avgCadence", session.avgCadence, 254],
+      ] as const) {
+        if (value !== undefined)
+          this.assertNumeric(value, `FIT session ${sessionIndex} ${field}`, {
+            min: 0,
+            max,
+            integer: true,
+          });
+      }
+      for (const [field, value] of [
+        ["totalAscent", session.totalAscent],
+        ["totalDescent", session.totalDescent],
+        ["calories", session.calories],
+      ] as const) {
+        if (value !== undefined)
+          this.assertNumeric(value, `FIT session ${sessionIndex} ${field}`, {
+            min: 0,
+            max: 65_534,
+            integer: true,
+          });
+      }
+      if (session.poolLength !== undefined)
+        this.assertNumeric(session.poolLength, `FIT session ${sessionIndex} poolLength`, {
+          min: 0.01,
+          max: 655.34,
+        });
+      if (
+        session.poolLengthUnit !== undefined &&
+        !["metric", "statute", 0, 1].includes(session.poolLengthUnit)
+      ) {
+        throw new Error(`FIT session ${sessionIndex} poolLengthUnit is invalid.`);
+      }
+      if (session.totalStrokes !== undefined)
+        this.assertNumeric(session.totalStrokes, `FIT session ${sessionIndex} totalStrokes`, {
+          min: 0,
+          max: 4_294_967_294,
+          integer: true,
+        });
+      for (const [field, value] of [
+        ["numLengths", session.numLengths],
+        ["numActiveLengths", session.numActiveLengths],
+      ] as const) {
+        if (value !== undefined)
+          this.assertNumeric(value, `FIT session ${sessionIndex} ${field}`, {
+            min: 0,
+            max: 65_534,
+            integer: true,
+          });
+      }
+      if (sport === 5 && subSport === 17 && !(session.poolLength && session.poolLength > 0)) {
+        throw new Error("Lap-swimming FIT sessions require a positive poolLength.");
+      }
+
+      let pausedAt: number | undefined;
+      let pausedMs = 0;
+      let previousEventTime = session.startTime;
+      for (const event of session.timerEvents ?? []) {
+        nonnegative(event.timestamp, `FIT session ${sessionIndex} timer timestamp`);
+        if (
+          event.timestamp < session.startTime ||
+          event.timestamp > endedAt ||
+          event.timestamp < previousEventTime ||
+          (event.type === "pause") === (pausedAt !== undefined)
+        ) {
+          throw new Error(`FIT session ${sessionIndex} has invalid timer event ordering.`);
+        }
+        if (event.type === "pause") pausedAt = event.timestamp;
+        else {
+          if (pausedAt !== undefined && event.timestamp <= pausedAt) {
+            throw new Error(`FIT session ${sessionIndex} has an empty pause range.`);
+          }
+          pausedMs += event.timestamp - (pausedAt ?? event.timestamp);
+          pausedAt = undefined;
+        }
+        previousEventTime = event.timestamp;
+      }
+      if (pausedAt !== undefined) {
+        throw new Error(`FIT session ${sessionIndex} ends while its timer is paused.`);
+      }
+      if (
+        session.timerEvents !== undefined &&
+        Math.abs(elapsedMs - session.totalTime - pausedMs) > 1
+      ) {
+        throw new Error(`FIT session ${sessionIndex} pause time does not reconcile.`);
+      }
+
+      let previousLapEnd = session.startTime;
+      for (const [lapIndex, lap] of (session.laps ?? []).entries()) {
+        nonnegative(lap.startTime, `FIT session ${sessionIndex} lap ${lapIndex} startTime`);
+        nonnegative(lap.totalTime, `FIT session ${sessionIndex} lap ${lapIndex} totalTime`);
+        const lapEnd = lap.endedAt ?? lap.startTime + (lap.totalElapsedTime ?? lap.totalTime);
+        const lapElapsedMs = lap.totalElapsedTime ?? lapEnd - lap.startTime;
+        nonnegative(lapEnd, `FIT session ${sessionIndex} lap ${lapIndex} endedAt`);
+        nonnegative(lapElapsedMs, `FIT session ${sessionIndex} lap ${lapIndex} elapsed time`);
+        this.assertNumeric(lap.distance, `FIT session ${sessionIndex} lap ${lapIndex} distance`, {
+          min: 0,
+          max: 42_949_672.94,
+        });
+        this.assertNumeric(lap.avgSpeed, `FIT session ${sessionIndex} lap ${lapIndex} avgSpeed`, {
+          min: 0,
+          max: 65.534,
+        });
+        this.assertNumeric(lap.maxSpeed, `FIT session ${sessionIndex} lap ${lapIndex} maxSpeed`, {
+          min: 0,
+          max: 65.534,
+        });
+        if (lap.avgPower !== undefined)
+          this.assertNumeric(lap.avgPower, `FIT session ${sessionIndex} lap ${lapIndex} avgPower`, {
+            min: 0,
+            max: 65_534,
+            integer: true,
+          });
+        if (lap.avgHeartRate !== undefined)
+          this.assertNumeric(
+            lap.avgHeartRate,
+            `FIT session ${sessionIndex} lap ${lapIndex} avgHeartRate`,
+            { min: 0, max: 254, integer: true },
+          );
+        for (const [field, value] of [
+          ["firstLengthIndex", lap.firstLengthIndex],
+          ["numLengths", lap.numLengths],
+          ["numActiveLengths", lap.numActiveLengths],
+        ] as const) {
+          if (value !== undefined)
+            this.assertNumeric(value, `FIT session ${sessionIndex} lap ${lapIndex} ${field}`, {
+              min: 0,
+              max: 65_534,
+              integer: true,
+            });
+        }
+        if (lap.swimStroke !== undefined) this.mapSwimStroke(lap.swimStroke);
+        if (
+          lap.startTime < session.startTime ||
+          lapEnd > endedAt ||
+          lapEnd <= lap.startTime ||
+          lap.totalTime > lapElapsedMs ||
+          lap.startTime < previousLapEnd
+        ) {
+          throw new Error(`FIT session ${sessionIndex} contains invalid or overlapping laps.`);
+        }
+        previousLapEnd = lapEnd;
+      }
+      const actualLengths = this.emittedLengths.filter(
+        (length) => length.startTime >= session.startTime && length.endTime <= endedAt,
+      );
+      for (const length of actualLengths) assignedLengthIndexes.add(length.messageIndex);
+      const activeLengthCount = actualLengths.filter((length) => length.active).length;
+      if (
+        (session.numLengths ?? 0) !== actualLengths.length ||
+        (session.numActiveLengths ?? 0) !== activeLengthCount
+      ) {
+        throw new Error(`FIT session ${sessionIndex} length counts do not match emitted lengths.`);
+      }
+      if (actualLengths.length > 0) {
+        const firstIndex = actualLengths[0]?.messageIndex;
+        const lastIndex = actualLengths.at(-1)?.messageIndex;
+        if (
+          firstIndex === undefined ||
+          lastIndex === undefined ||
+          lastIndex - firstIndex + 1 !== actualLengths.length
+        ) {
+          throw new Error(`FIT session ${sessionIndex} length indexes are not contiguous.`);
+        }
+        if ((session.laps?.length ?? 0) > 0) {
+          const referenced = new Set<number>();
+          for (const [lapIndex, lap] of session.laps?.entries() ?? []) {
+            if (
+              lap.firstLengthIndex === undefined ||
+              lap.numLengths === undefined ||
+              lap.numActiveLengths === undefined
+            ) {
+              throw new Error(
+                `FIT session ${sessionIndex} lap ${lapIndex} is missing length indexes.`,
+              );
+            }
+            const lapEnd = lap.endedAt ?? lap.startTime + (lap.totalElapsedTime ?? lap.totalTime);
+            const lapLengths = actualLengths.filter(
+              (length) => length.startTime >= lap.startTime && length.endTime <= lapEnd,
+            );
+            const expectedLast = lap.firstLengthIndex + lap.numLengths - 1;
+            if (
+              lapLengths.length !== lap.numLengths ||
+              lapLengths.filter((length) => length.active).length !== lap.numActiveLengths ||
+              lapLengths[0]?.messageIndex !== lap.firstLengthIndex ||
+              lapLengths.at(-1)?.messageIndex !== expectedLast
+            ) {
+              throw new Error(
+                `FIT session ${sessionIndex} lap ${lapIndex} length range is invalid.`,
+              );
+            }
+            for (const length of lapLengths) {
+              if (referenced.has(length.messageIndex)) {
+                throw new Error(
+                  `FIT session ${sessionIndex} length ${length.messageIndex} is duplicated.`,
+                );
+              }
+              referenced.add(length.messageIndex);
+            }
+          }
+          if (referenced.size !== actualLengths.length) {
+            throw new Error(`FIT session ${sessionIndex} laps do not cover every emitted length.`);
+          }
+        }
+      } else if (
+        session.laps?.some(
+          (lap) =>
+            lap.firstLengthIndex !== undefined ||
+            lap.numLengths !== undefined ||
+            lap.numActiveLengths !== undefined,
+        )
+      ) {
+        throw new Error(`FIT session ${sessionIndex} lap references missing emitted lengths.`);
+      }
+    }
+    if (assignedLengthIndexes.size !== this.emittedLengths.length) {
+      throw new Error("An emitted FIT length is outside every session range.");
+    }
+  }
+
+  private async finalizeModern(
+    sessions: FitSessionData[],
+    options: FitFinalizeOptions,
+  ): Promise<void> {
+    const multisportMode = options.multisportMode ?? "manual";
+    this.validateModernInputs(sessions, multisportMode);
+    const ordered = sessions.map((session, index) => {
+      if (session.role === "rest") {
+        throw new Error(
+          "FIT activity files cannot represent a rest segment as a FIT sport session.",
+        );
+      }
+      const endedAt = session.endedAt ?? session.startTime + session.totalTime;
+      const elapsedMs = endedAt - session.startTime;
+      if (!Number.isFinite(session.startTime) || !Number.isFinite(endedAt) || elapsedMs <= 0) {
+        throw new Error(`FIT session ${index} has an invalid time range.`);
+      }
+      if (session.totalTime < 0 || session.totalTime > elapsedMs) {
+        throw new Error(`FIT session ${index} active time exceeds elapsed time.`);
+      }
+      const previous = sessions[index - 1];
+      const previousEnd =
+        previous?.endedAt ?? (previous ? previous.startTime + previous.totalTime : undefined);
+      if (previousEnd !== undefined && session.startTime < previousEnd) {
+        throw new Error("FIT sessions must be ordered and non-overlapping.");
+      }
+      const sport = session.role === "transition" ? 3 : this.mapSport(session.sport);
+      const subSport = this.mapSubSport(session.subSport);
+      if (sport === 5 && subSport === 17 && !(session.poolLength && session.poolLength > 0)) {
+        throw new Error("Lap-swimming FIT sessions require a positive poolLength.");
+      }
+      return { session, endedAt, elapsedMs, sport, subSport };
+    });
+    const firstOrderedSession = ordered[0];
+    if (!firstOrderedSession) throw new Error("A FIT activity requires at least one session.");
+    if (Math.abs(firstOrderedSession.session.startTime - this.timerStartedAt) > 1_000) {
+      throw new Error("The first FIT session must start when the encoder timer starts.");
+    }
+
+    for (const [sessionIndex, entry] of ordered.entries()) {
+      let paused = false;
+      let previousTimestamp = entry.session.startTime;
+      for (const timerEvent of entry.session.timerEvents ?? []) {
+        if (
+          timerEvent.timestamp < entry.session.startTime ||
+          timerEvent.timestamp > entry.endedAt ||
+          timerEvent.timestamp < previousTimestamp ||
+          (timerEvent.type === "pause") === paused
+        ) {
+          throw new Error(`FIT session ${sessionIndex} has invalid timer event ordering.`);
+        }
+        this.writeTimerEvent(timerEvent.timestamp, timerEvent.type === "pause" ? 1 : 0);
+        paused = timerEvent.type === "pause";
+        previousTimestamp = timerEvent.timestamp;
+      }
+      if (paused) throw new Error(`FIT session ${sessionIndex} ends while its timer is paused.`);
+      this.writeTimerEvent(entry.endedAt, sessionIndex === ordered.length - 1 ? 4 : 1);
+      const next = ordered[sessionIndex + 1];
+      if (next) this.writeTimerEvent(next.session.startTime, 0);
+    }
+
+    let nextLapIndex = 0;
+    let nextLengthIndex = 0;
+    const sessionLapRanges: Array<{ firstLapIndex: number; numLaps: number }> = [];
+    for (const [sessionIndex, entry] of ordered.entries()) {
+      const sourceLaps = entry.session.laps?.length
+        ? entry.session.laps
+        : [
+            {
+              lapNumber: 1,
+              startTime: entry.session.startTime,
+              endedAt: entry.endedAt,
+              totalTime: entry.session.totalTime,
+              totalElapsedTime: entry.elapsedMs,
+              distance: entry.session.distance,
+              avgSpeed: entry.session.avgSpeed,
+              maxSpeed: entry.session.maxSpeed,
+            },
+          ];
+      const firstLapIndex = nextLapIndex;
+      for (const lap of sourceLaps) {
+        const lapEnd = lap.endedAt ?? lap.startTime + (lap.totalElapsedTime ?? lap.totalTime);
+        const lapElapsedMs = lap.totalElapsedTime ?? lapEnd - lap.startTime;
+        if (
+          lap.startTime < entry.session.startTime ||
+          lapEnd > entry.endedAt ||
+          lapEnd <= lap.startTime ||
+          lap.totalTime < 0 ||
+          lap.totalTime > lapElapsedMs
+        ) {
+          throw new Error(`FIT session ${sessionIndex} contains an invalid lap range.`);
+        }
+        this.encoder.writeMesg({
+          mesgNum: Profile.MesgNum.LAP,
+          messageIndex: nextLapIndex,
+          timestamp: Utils.convertDateToDateTime(new Date(lapEnd)),
+          startTime: Utils.convertDateToDateTime(new Date(lap.startTime)),
+          totalElapsedTime: lapElapsedMs / 1000,
+          totalTimerTime: fitTimerSeconds(lap.totalTime),
+          totalDistance: Math.round(lap.distance * 100) / 100,
+          avgSpeed: lap.avgSpeed,
+          maxSpeed: lap.maxSpeed,
+          event: 9,
+          eventType: 1,
+          sport: entry.sport,
+          subSport: entry.subSport,
+          ...(lap.avgPower === undefined ? {} : { avgPower: Math.round(lap.avgPower) }),
+          ...(lap.avgHeartRate === undefined ? {} : { avgHeartRate: Math.round(lap.avgHeartRate) }),
+          ...(lap.firstLengthIndex === undefined
+            ? entry.session.numLengths !== undefined
+              ? { firstLengthIndex: nextLengthIndex }
+              : {}
+            : { firstLengthIndex: lap.firstLengthIndex }),
+          ...(lap.numLengths === undefined
+            ? sourceLaps.length === 1 && entry.session.numLengths !== undefined
+              ? { numLengths: entry.session.numLengths }
+              : {}
+            : { numLengths: lap.numLengths }),
+          ...(lap.numActiveLengths === undefined
+            ? sourceLaps.length === 1 && entry.session.numActiveLengths !== undefined
+              ? { numActiveLengths: entry.session.numActiveLengths }
+              : {}
+            : { numActiveLengths: lap.numActiveLengths }),
+          ...(lap.swimStroke === undefined
+            ? {}
+            : { swimStroke: this.mapSwimStroke(lap.swimStroke) }),
+        });
+        nextLapIndex++;
+      }
+      sessionLapRanges.push({ firstLapIndex, numLaps: sourceLaps.length });
+      nextLengthIndex += entry.session.numLengths ?? 0;
+    }
+
+    for (const [index, entry] of ordered.entries()) {
+      const lapRange = sessionLapRanges[index];
+      if (!lapRange) throw new Error(`FIT session ${index} has no lap range.`);
+      const session = entry.session;
+      this.encoder.writeMesg({
+        mesgNum: Profile.MesgNum.SESSION,
+        messageIndex: index,
+        timestamp: Utils.convertDateToDateTime(new Date(entry.endedAt)),
+        startTime: Utils.convertDateToDateTime(new Date(session.startTime)),
+        event: 8,
+        eventType: 1,
+        totalElapsedTime: entry.elapsedMs / 1000,
+        totalTimerTime: fitTimerSeconds(session.totalTime),
+        ...(session.movingTime === undefined
+          ? {}
+          : { totalMovingTime: fitTimerSeconds(session.movingTime) }),
+        totalDistance: Math.round(session.distance * 100) / 100,
+        avgSpeed: session.avgSpeed,
+        maxSpeed: session.maxSpeed,
+        sport: entry.sport,
+        subSport: entry.subSport,
+        firstLapIndex: lapRange.firstLapIndex,
+        numLaps: lapRange.numLaps,
+        trigger: index === ordered.length - 1 ? 0 : multisportMode === "automatic" ? 2 : 1,
+        ...(session.avgPower === undefined ? {} : { avgPower: Math.round(session.avgPower) }),
+        ...(session.maxPower === undefined ? {} : { maxPower: Math.round(session.maxPower) }),
+        ...(session.avgHeartRate === undefined
+          ? {}
+          : { avgHeartRate: Math.round(session.avgHeartRate) }),
+        ...(session.maxHeartRate === undefined
+          ? {}
+          : { maxHeartRate: Math.round(session.maxHeartRate) }),
+        ...(session.avgCadence === undefined ? {} : { avgCadence: Math.round(session.avgCadence) }),
+        ...(session.totalAscent === undefined ? {} : { totalAscent: session.totalAscent }),
+        ...(session.totalDescent === undefined ? {} : { totalDescent: session.totalDescent }),
+        ...(session.calories === undefined ? {} : { totalCalories: Math.round(session.calories) }),
+        ...(session.poolLength === undefined ? {} : { poolLength: session.poolLength }),
+        ...(session.poolLengthUnit === undefined
+          ? {}
+          : {
+              poolLengthUnit:
+                session.poolLengthUnit === "metric"
+                  ? 0
+                  : session.poolLengthUnit === "statute"
+                    ? 1
+                    : session.poolLengthUnit,
+            }),
+        ...(session.totalStrokes === undefined ? {} : { totalStrokes: session.totalStrokes }),
+        ...(session.numLengths === undefined ? {} : { numLengths: session.numLengths }),
+        ...(session.numActiveLengths === undefined
+          ? {}
+          : { numActiveLengths: session.numActiveLengths }),
+      });
+    }
+
+    const first = ordered[0];
+    const last = ordered.at(-1);
+    if (!first || !last) throw new Error("A FIT activity requires at least one session.");
+    const activityTimerSeconds = ordered.reduce(
+      (total, entry) => total + fitTimerSeconds(entry.session.totalTime),
+      0,
+    );
+    const fitEndTime = Utils.convertDateToDateTime(new Date(last.endedAt));
+    const localTimestampOffset = new Date(last.endedAt).getTimezoneOffset() * -60;
+    this.encoder.writeMesg({
+      mesgNum: Profile.MesgNum.ACTIVITY,
+      timestamp: fitEndTime,
+      totalTimerTime: activityTimerSeconds,
+      numSessions: ordered.length,
+      localTimestamp: fitEndTime + localTimestampOffset,
+      type: multisportMode === "automatic" ? 1 : 0,
+      event: 26,
+      eventType: 1,
+    });
+
+    const bytes = this.encoder.close();
+    this.finalizedBytes = bytes;
+    await this.writeFinalizedFile(bytes);
+    this.isFinalized = true;
+    this.startTime = first.session.startTime;
   }
 
   /**
    * Finalize the FIT file with session, activity, and lap data
    */
-  async finalize(sessionData: FitSessionData, laps: FitLapData[] = []): Promise<void> {
+  async finalize(
+    sessionData: FitSessionData | FitSessionData[],
+    laps: FitLapData[] = [],
+    options: FitFinalizeOptions = {},
+  ): Promise<void> {
     if (this.isFinalized) {
       return;
     }
 
     try {
+      if (this.finalizedBytes) {
+        await this.writeFinalizedFile(this.finalizedBytes);
+        this.isFinalized = true;
+        return;
+      }
+
+      if (this.usesStandardsFirstFinalization()) {
+        if (Array.isArray(sessionData)) {
+          await this.finalizeModern(sessionData, options);
+          return;
+        }
+        await this.finalizeModern([{ ...sessionData, laps: sessionData.laps ?? laps }], options);
+        return;
+      }
+      if (Array.isArray(sessionData)) {
+        throw new Error("Encoder is unavailable for multisession finalization.");
+      }
+
       console.log(`[GarminFitEncoder] Finalizing with ${laps.length} laps...`);
 
-      const endTime = new Date();
+      const endTime = new Date(sessionData.endedAt ?? Date.now());
       const fitEndTime = Utils.convertDateToDateTime(endTime);
 
       // 1. EVENT Message (Timer Stop)
@@ -528,7 +1376,6 @@ export class GarminFitEncoder {
           eventType: 4, // stopAll
         });
       } catch (_e) {
-        console.warn("[GarminFitEncoder] Failed to write stopAll event, trying stop...");
         this.encoder.writeMesg({
           mesgNum: Profile.MesgNum.EVENT,
           timestamp: fitEndTime,
@@ -545,12 +1392,12 @@ export class GarminFitEncoder {
         // LAP message - only include standard FIT Profile fields
         // Note: avgSpeed/maxSpeed are NOT standard LAP fields per Garmin FIT SDK
         // Speed data should only be in RECORD messages
-        const lapFields: Record<string, any> = {
+        const lapFields: Record<string, unknown> = {
           messageIndex: 0,
           timestamp: fitEndTime,
           startTime: fitStartTime,
           totalElapsedTime: fitEndTime - fitStartTime,
-          totalTimerTime: fitEndTime - fitStartTime,
+          totalTimerTime: fitTimerSeconds(sessionData.totalTime),
           totalDistance: Math.round(sessionData.distance * 100) / 100, // Round to 2 decimals
         };
 
@@ -568,7 +1415,7 @@ export class GarminFitEncoder {
 
           // LAP message - only include standard FIT Profile fields
           // Note: avgSpeed/maxSpeed are NOT standard LAP fields per Garmin FIT SDK
-          const lapFields: Record<string, any> = {
+          const lapFields: Record<string, unknown> = {
             messageIndex: lap.lapNumber - 1,
             timestamp: lapEndTime,
             startTime: lapStartTime,
@@ -594,12 +1441,12 @@ export class GarminFitEncoder {
       // 3. SESSION Message (REQUIRED - must have messageIndex!)
       const fitStartTime = Utils.convertDateToDateTime(new Date(sessionData.startTime));
 
-      const sessionFields: Record<string, any> = {
+      const sessionFields: Record<string, unknown> = {
         messageIndex: 0, // CRITICAL: Required field for SESSION messages
         timestamp: fitEndTime,
         startTime: fitStartTime,
         totalElapsedTime: fitEndTime - fitStartTime, // Duration in seconds (FIT timestamp difference)
-        totalTimerTime: fitEndTime - fitStartTime, // Duration in seconds (FIT timestamp difference)
+        totalTimerTime: fitTimerSeconds(sessionData.totalTime),
         totalDistance: Math.round(sessionData.distance * 100) / 100, // Round to 2 decimals
         sport: this.mapSport(sessionData.sport),
         subSport: this.mapSubSport(sessionData.subSport),
@@ -659,7 +1506,7 @@ export class GarminFitEncoder {
       // event enum: 26 = activity (Stop at end of activity)
       // eventType enum: 1 = stop
       const localTimestampOffset = endTime.getTimezoneOffset() * -60;
-      const activityTotalTimerTime = fitEndTime - fitStartTime; // Duration in seconds
+      const activityTotalTimerTime = fitTimerSeconds(sessionData.totalTime);
 
       this.encoder.writeMesg({
         mesgNum: Profile.MesgNum.ACTIVITY,
@@ -674,29 +1521,29 @@ export class GarminFitEncoder {
 
       // Close encoder and get final data
       const uint8Array = this.encoder.close();
+      this.finalizedBytes = uint8Array;
       console.log(`[GarminFitEncoder] Encoder closed, buffer size: ${uint8Array.length} bytes`);
 
-      const file = new File(this.outputFilePath);
-      if (!file.exists) {
-        file.create({ intermediates: true, overwrite: true });
-      }
-      // Ensure write completes before proceeding
-      await file.write(uint8Array);
-
-      console.log(`[GarminFitEncoder] Wrote ${file.size ?? 0} bytes to ${this.outputFilePath}`);
-
-      // CRITICAL: iOS needs time to sync file to disk before reads
-      if (Platform.OS === "ios") {
-        console.log("[GarminFitEncoder] Applying iOS sync delay (1000ms)...");
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        console.log("[GarminFitEncoder] iOS sync delay complete");
-      }
+      await this.writeFinalizedFile(uint8Array);
 
       this.isFinalized = true;
       console.log(`[GarminFitEncoder] Finalized, ${this.recordCount} records written`);
     } catch (error) {
-      console.error(`[GarminFitEncoder] Finalize failed:`, error);
+      console.error(error instanceof Error && error.name ? error.name.slice(0, 80) : "failed");
       throw error;
+    }
+  }
+
+  private async writeFinalizedFile(bytes: Uint8Array): Promise<void> {
+    const file = new File(this.outputFilePath);
+    if (!file.exists) {
+      file.create({ intermediates: true, overwrite: true });
+    }
+    await file.write(bytes);
+    console.log(`[GarminFitEncoder] Wrote ${file.size ?? 0} FIT bytes`);
+
+    if (Platform.OS === "ios") {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
   }
 
