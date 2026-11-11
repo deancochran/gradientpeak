@@ -57,3 +57,5 @@ if (managedTarget !== defaultLocalDatabaseUrl) {
 console.log(
   "[db:disposable-target:safety:test] unsafe targets rejected before connection construction",
 );
+
+await import("./disposable-target-lifecycle.test");

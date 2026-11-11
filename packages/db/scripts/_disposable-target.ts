@@ -11,6 +11,135 @@ function withDatabase(baseUrl: string, database: string) {
   return url.toString();
 }
 
+export type DisposablePool = {
+  end: () => Promise<void>;
+};
+
+export type DisposableAdminPool = DisposablePool & {
+  query: (text: string, values?: unknown[]) => Promise<{ rows: Array<{ count?: number }> }>;
+};
+
+type DisposableTeardownOptions = {
+  maxClientCloseChecks?: number;
+  wait?: () => Promise<void>;
+};
+
+const clientBackendsSql = `
+  select count(*)::integer count
+  from pg_stat_activity
+  where datname = $1
+    and backend_type = 'client backend'
+    and pid <> pg_backend_pid()
+`;
+
+const terminateClientBackendsSql = `
+  select pg_terminate_backend(pid)
+  from pg_stat_activity
+  where datname = $1
+    and backend_type = 'client backend'
+    and pid <> pg_backend_pid()
+`;
+
+const waitForClientClose = () => new Promise<void>((resolve) => setTimeout(resolve, 25));
+
+/**
+ * Closes the harness-owned pool before dropping its database.  A pool's `end()`
+ * resolves when its socket closes, while PostgreSQL may briefly retain the
+ * corresponding backend.  Poll that narrow target first; force termination is
+ * only the bounded fallback for a client the callback left behind.
+ */
+export async function teardownDisposableDatabase(
+  target: DisposablePool | undefined,
+  admin: DisposableAdminPool,
+  database: string,
+  options: DisposableTeardownOptions = {},
+) {
+  if (!/^gradientpeak_[a-z_]+_\d+_\d+$/.test(database)) {
+    throw new Error("unsafe disposable database name");
+  }
+  const maxClientCloseChecks = options.maxClientCloseChecks ?? 20;
+  if (
+    !Number.isInteger(maxClientCloseChecks) ||
+    maxClientCloseChecks < 1 ||
+    maxClientCloseChecks > 20
+  ) {
+    throw new Error("maxClientCloseChecks must be an integer from 1 through 20");
+  }
+  const errors: unknown[] = [];
+  const wait = options.wait ?? waitForClientClose;
+
+  if (target) {
+    try {
+      await target.end();
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+
+  let clientsRemaining = true;
+  for (let attempt = 0; attempt < maxClientCloseChecks; attempt += 1) {
+    try {
+      const result = await admin.query(clientBackendsSql, [database]);
+      clientsRemaining = (result.rows[0]?.count ?? 0) > 0;
+      if (!clientsRemaining) break;
+    } catch (error) {
+      errors.push(error);
+      break;
+    }
+    if (attempt + 1 < maxClientCloseChecks) {
+      try {
+        await wait();
+      } catch (error) {
+        errors.push(error);
+        break;
+      }
+    }
+  }
+
+  if (clientsRemaining) {
+    try {
+      // Only client sessions for this generated disposable database are in scope.
+      await admin.query(terminateClientBackendsSql, [database]);
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+
+  try {
+    await admin.query(`drop database if exists "${database}"`);
+  } catch (error) {
+    errors.push(error);
+  }
+  try {
+    await admin.end();
+  } catch (error) {
+    errors.push(error);
+  }
+
+  if (errors.length) {
+    throw new AggregateError(errors, `failed to clean up disposable database ${database}`);
+  }
+}
+
+export type DisposableOutcome<T> =
+  | { completed: true; value: T }
+  | { completed: false; error: unknown };
+
+export function completeDisposableDatabaseRun<T>(
+  run: DisposableOutcome<T>,
+  teardown: DisposableOutcome<void>,
+): T {
+  if (!run.completed && !teardown.completed) {
+    throw new AggregateError(
+      [run.error, teardown.error],
+      "disposable database run and teardown failed",
+    );
+  }
+  if (!run.completed) throw run.error;
+  if (!teardown.completed) throw teardown.error;
+  return run.value;
+}
+
 export async function withDisposableDatabase<T>(
   args: string[],
   label: string,
@@ -26,22 +155,24 @@ export async function withDisposableDatabase<T>(
   requireGuardedDisposableLocalDatabaseUrl(connectionString);
   const admin = new Pool({ connectionString: adminUrl, max: 1 });
   let target: Pool | undefined;
-  try {
-    await admin.query(`create database "${database}"`);
-    target = new Pool({ connectionString, max: 1 });
-    return await run(target, connectionString);
-  } finally {
-    await target?.end().catch(() => undefined);
-    await admin.query(
-      // Supabase maintenance/autovacuum workers may run as a higher-privilege
-      // role. Only terminate this disposable target's client sessions; DROP
-      // DATABASE handles its internal workers without broad process privileges.
-      "select pg_terminate_backend(pid) from pg_stat_activity where datname = $1 and backend_type = 'client backend' and pid <> pg_backend_pid()",
-      [database],
-    );
-    await admin.query(`drop database if exists "${database}"`);
-    await admin.end();
-  }
+  const runOutcome: DisposableOutcome<T> = await (async () => {
+    try {
+      await admin.query(`create database "${database}"`);
+      target = new Pool({ connectionString, max: 1 });
+      return { completed: true, value: await run(target, connectionString) };
+    } catch (error) {
+      return { completed: false, error };
+    }
+  })();
+  const teardownOutcome: DisposableOutcome<void> = await (async () => {
+    try {
+      await teardownDisposableDatabase(target, admin, database);
+      return { completed: true, value: undefined };
+    } catch (error) {
+      return { completed: false, error };
+    }
+  })();
+  return completeDisposableDatabaseRun(runOutcome, teardownOutcome);
 }
 
 export async function bootstrapSupabaseAuthSchema(pool: Pool) {
