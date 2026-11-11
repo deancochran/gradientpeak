@@ -93,6 +93,8 @@ describe("UI ownership guardrails", () => {
       // Organization/assignment-bound route and server-function composition, using shared primitives.
       "coaching/athletes/assigned-athlete-directory.tsx",
       "coaching/athletes/athlete-workspace-switcher.tsx",
+      // Athlete-specific consented-calendar projection and server-function recovery.
+      "coaching/athletes/coach-athlete-calendar.tsx",
       "coaching/athletes/coach-athlete-overview.tsx",
       "coaching/coach-access-denied.tsx",
       "coaching/coach-shell.tsx",
@@ -104,6 +106,8 @@ describe("UI ownership guardrails", () => {
       "coaching/organization-coaching-assignments/assignment-directory.tsx",
       // Administrative assignment orchestration binds actor/organization state and command receipts.
       "coaching/organization-coaching-assignments/organization-coaching-assignments.tsx",
+      // Organization-scoped coaching aggregate and route refresh state.
+      "coaching/organization-coaching-quality/organization-coaching-quality.tsx",
       // Web-only organization creation and API-backed administrative composition.
       "coaching/organization-create-form.tsx",
       "coaching/organization-group-athletes/organization-group-athletes.tsx",
@@ -113,6 +117,10 @@ describe("UI ownership guardrails", () => {
       // Invitation mutations and pagination compose app-owned server functions and route state.
       "coaching/organization-invitations/organization-invitations.tsx",
       "coaching/organization-management-overview.tsx",
+      // Organization administration navigation binds web routes and organization identifiers.
+      "coaching/organization-overview-frame.tsx",
+      // Organization role command preview/retry state is app-specific administration composition.
+      "coaching/organization-roles/organization-roles.tsx",
       "coaching/organization-selector.tsx",
       "coaching/staff/staff-roster.tsx",
       "discover/discovery-explorer.tsx",
