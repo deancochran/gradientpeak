@@ -53,6 +53,10 @@
       "types": "./src/chatbot/rate-limit.ts",
       "default": "./src/chatbot/rate-limit.ts"
     },
+    "./test-support/activity-evidence-acceptance": {
+      "types": "./src/test-support/activity-evidence-acceptance.ts",
+      "default": "./src/test-support/activity-evidence-acceptance.ts"
+    },
     "./test-support/chatbot-acceptance": {
       "types": "./src/test-support/chatbot-acceptance.ts",
       "default": "./src/test-support/chatbot-acceptance.ts"
@@ -131,7 +135,8 @@
     "test:garmin-training-sync:disposable": "tsx scripts/garmin-training-sync.disposable.test.ts --disposable --local",
     "test:calibration-history:disposable": "tsx scripts/completed-activity-calibration-history.disposable.test.ts --disposable --local",
     "test:notifications:disposable": "tsx scripts/notifications.disposable.test.ts --disposable --local",
-    "test:coach-athlete-goals:disposable": "tsx scripts/coach-athlete-goals.disposable.test.ts --disposable --local"
+    "test:coach-athlete-goals:disposable": "tsx scripts/coach-athlete-goals.disposable.test.ts --disposable --local",
+    "test:coach-athlete-zones:disposable": "tsx scripts/coach-athlete-zones.disposable.test.ts --disposable --local"
   },
   "dependencies": {
     "@ai-sdk/openai": "4.0.106",

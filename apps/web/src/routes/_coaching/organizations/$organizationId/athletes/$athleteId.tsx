@@ -4,11 +4,15 @@ import { AthleteWorkspaceSwitcher } from "../../../../../components/coaching/ath
 import { CoachAthleteCalendar } from "../../../../../components/coaching/athletes/coach-athlete-calendar";
 import { CoachAthleteGoals } from "../../../../../components/coaching/athletes/coach-athlete-goals";
 import { CoachAthleteOverview } from "../../../../../components/coaching/athletes/coach-athlete-overview";
+import { CoachAthleteZonesSection } from "../../../../../components/coaching/athletes/coach-athlete-zones-section";
 import {
   currentCalendarWeek,
   loadCoachAthleteCalendar,
 } from "../../../../../lib/coaching/athlete-calendar-server-functions";
+
 import { loadCoachAthleteGoals } from "../../../../../lib/coaching/athlete-goals-server-functions";
+import { loadCoachAthleteBikeZones } from "../../../../../lib/coaching/athlete-zones-server-functions";
+
 import {
   loadAssignedCoachAthletes,
   loadCoachAthleteOverview,
@@ -25,7 +29,7 @@ export const Route = createFileRoute(
   loader: async ({ context, params }) => {
     const data = { organizationId: params.organizationId, athleteProfileId: params.athleteId };
     const range = currentCalendarWeek();
-    const [overview, directory, identity, calendar, goals] = await Promise.all([
+    const [overview, directory, identity, calendar, goals, zones] = await Promise.all([
       loadCoachAthleteOverview({ data }),
       loadAssignedCoachAthletes({
         data: { organizationId: params.organizationId, limit: 20, cursor: null, search: null },
@@ -41,6 +45,13 @@ export const Route = createFileRoute(
       loadCoachAthleteGoals({ data: { ...data, cursor: null } }).catch(() => ({
         status: "error" as const,
       })),
+      loadCoachAthleteBikeZones({ data })
+        .then((result) =>
+          result.status === "granted"
+            ? { kind: "granted" as const, result }
+            : { kind: "denied" as const },
+        )
+        .catch(() => ({ kind: "failed" as const })),
     ]);
     return {
       overview,
@@ -50,6 +61,13 @@ export const Route = createFileRoute(
       calendarRange: range,
       goals,
       goalsRevision: crypto.randomUUID(),
+      zones: {
+        actorId: context.actorProfileId,
+        athleteProfileId: params.athleteId,
+        organizationId: params.organizationId,
+        revision: crypto.randomUUID(),
+        state: zones,
+      },
       organizationId: params.organizationId,
       athleteId: params.athleteId,
       actorProfileId: context.actorProfileId,
@@ -73,7 +91,7 @@ export const Route = createFileRoute(
 
 function AthleteWorkspacePage() {
   const result = Route.useLoaderData();
-  const { overview, directory, identity, calendar, goals } = result;
+  const { overview, directory, identity, calendar, goals, zones } = result;
   const { athleteId, organizationId } = Route.useParams();
   const { actorProfileId } = Route.useRouteContext();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
@@ -125,6 +143,9 @@ function AthleteWorkspacePage() {
         loaderRevision={result.goalsRevision}
         organizationId={organizationId}
         result={identity ? goals : forbiddenGoals}
+      />
+      <CoachAthleteZonesSection
+        snapshot={identity ? zones : { ...zones, state: { kind: "denied" } }}
       />
     </div>
   );
