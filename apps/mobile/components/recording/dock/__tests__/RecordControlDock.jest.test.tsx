@@ -19,9 +19,23 @@ jest.mock("@repo/ui/components/text", () => ({
   Text: createHost("Text"),
 }));
 
+type RecordingControlsMockProps = {
+  onStart?: () => void;
+  onPause?: () => void;
+  onResume?: () => void;
+  onLap?: () => void;
+  onFinish?: () => void;
+};
+
 jest.mock("@/components/recording/footer", () => ({
   __esModule: true,
-  RecordingControls: ({ onStart, onPause, onResume, onLap, onFinish }: any) => (
+  RecordingControls: ({
+    onStart,
+    onPause,
+    onResume,
+    onLap,
+    onFinish,
+  }: RecordingControlsMockProps) => (
     <>
       <Pressable testID="controls-start" onPress={onStart} />
       <Pressable testID="controls-pause" onPress={onPause} />
@@ -39,14 +53,14 @@ const sessionContract = {
     category: "plan",
     structure: "plan",
     spatial: "route",
-    locationCapture: "gps",
+    locationCapture: "none",
     trainerExecution: "trainer",
   },
   guidance: {
     hasPlan: true,
     hasStructuredSteps: true,
     hasRoute: true,
-    routeMode: "live_navigation",
+    routeMode: "virtual",
   },
   devices: {
     hasTrainer: true,
@@ -60,7 +74,7 @@ const sessionContract = {
     canEditActivity: false,
     canEditPlan: true,
     canEditRoute: true,
-    canEditGps: true,
+    canEditGps: false,
     locksIdentityAfterStart: true,
   },
   metrics: {
@@ -70,19 +84,18 @@ const sessionContract = {
   surfaces: {
     defaultPrimarySurface: "route",
     availablePrimarySurfaces: ["route", "activity", "trainer", "metrics"],
-    quickActions: ["activity", "gps", "plan", "route", "trainer", "sensors"],
+    quickActions: ["activity", "plan", "route", "trainer", "sensors"],
   },
   validation: {
     consequences: [],
   },
 };
 
-function renderDock(overrides: Partial<React.ComponentProps<typeof RecordControlDock>> = {}) {
-  return renderNative(
+async function renderDock(overrides: Partial<React.ComponentProps<typeof RecordControlDock>> = {}) {
+  return await renderNative(
     <RecordControlDock
       activeSurface="route"
       onChangeSurface={jest.fn()}
-      onGpsPress={jest.fn()}
       onOpenActivity={jest.fn()}
       onOpenFtms={jest.fn()}
       onOpenPlan={jest.fn()}
@@ -101,64 +114,91 @@ function renderDock(overrides: Partial<React.ComponentProps<typeof RecordControl
 }
 
 describe("RecordControlDock", () => {
-  it("renders contract quick actions and routes presses to the matching handlers", () => {
+  it("renders contract quick actions and routes presses to the matching handlers", async () => {
     const onOpenActivity = jest.fn();
-    const onGpsPress = jest.fn();
     const onOpenPlan = jest.fn();
     const onOpenRoute = jest.fn();
     const onOpenFtms = jest.fn();
     const onOpenSensors = jest.fn();
 
-    renderDock({
+    await renderDock({
       onOpenActivity,
-      onGpsPress,
       onOpenPlan,
       onOpenRoute,
       onOpenFtms,
       onOpenSensors,
     });
 
-    fireEvent.press(screen.getByTestId("button-activity-locked"));
-    fireEvent.press(screen.getByTestId("button-gps-on"));
-    fireEvent.press(screen.getByTestId("button-plan-attached"));
-    fireEvent.press(screen.getByTestId("button-route-attached"));
-    fireEvent.press(screen.getByTestId("button-trainer"));
-    fireEvent.press(screen.getByTestId("button-sensors"));
+    await fireEvent.press(screen.getByTestId("record-dock-quick-action-activity"));
+    await fireEvent.press(screen.getByTestId("record-dock-quick-action-plan"));
+    await fireEvent.press(screen.getByTestId("record-dock-quick-action-route"));
+    await fireEvent.press(screen.getByTestId("record-dock-quick-action-trainer"));
+    await fireEvent.press(screen.getByTestId("record-dock-quick-action-sensors"));
 
     expect(onOpenActivity).toHaveBeenCalledTimes(1);
-    expect(onGpsPress).toHaveBeenCalledTimes(1);
     expect(onOpenPlan).toHaveBeenCalledTimes(1);
     expect(onOpenRoute).toHaveBeenCalledTimes(1);
     expect(onOpenFtms).toHaveBeenCalledTimes(1);
     expect(onOpenSensors).toHaveBeenCalledTimes(1);
   });
 
-  it("switches available primary surfaces from the dock", () => {
+  it("switches available primary surfaces from the dock", async () => {
     const onChangeSurface = jest.fn();
 
-    renderDock({ onChangeSurface });
+    await renderDock({ onChangeSurface });
 
-    fireEvent.press(screen.getByTestId("record-dock-surface-activity"));
-    fireEvent.press(screen.getByTestId("record-dock-surface-metrics"));
+    await fireEvent.press(screen.getByTestId("record-dock-surface-activity"));
+    await fireEvent.press(screen.getByTestId("record-dock-surface-metrics"));
 
     expect(onChangeSurface).toHaveBeenNthCalledWith(1, "activity");
     expect(onChangeSurface).toHaveBeenNthCalledWith(2, "metrics");
   });
 
-  it("forwards primary recording control actions", () => {
+  it("exposes descriptive, touch-friendly accessible dock controls", async () => {
+    await renderDock();
+
+    const activity = screen.getByTestId("record-dock-quick-action-activity");
+    const route = screen.getByTestId("record-dock-surface-route");
+    const metrics = screen.getByTestId("record-dock-surface-metrics");
+
+    expect(activity.props).toMatchObject({
+      accessibilityLabel: "View locked activity settings",
+      accessibilityRole: "button",
+    });
+    expect(screen.queryByTestId("record-dock-quick-action-gps")).toBeNull();
+    expect(activity.props.className).toContain("h-11");
+    expect(activity.props.className).toContain("active:opacity-80");
+    expect(route.props).toMatchObject({
+      accessibilityHint: "Currently selected",
+      accessibilityLabel: "Show route recording surface",
+      accessibilityRole: "button",
+      accessibilityState: { selected: true },
+    });
+    expect(metrics.props).toMatchObject({
+      accessibilityHint: "Switches the recording view",
+      accessibilityLabel: "Show metrics recording surface",
+      accessibilityRole: "button",
+      accessibilityState: { selected: false },
+    });
+    expect(route.props.className).toContain("min-h-11");
+    expect(route.props.className).toContain("min-w-11");
+    expect(route.props.className).toContain("active:opacity-80");
+  });
+
+  it("forwards primary recording control actions", async () => {
     const onStart = jest.fn();
     const onPause = jest.fn();
     const onResume = jest.fn();
     const onLap = jest.fn();
     const onFinish = jest.fn();
 
-    renderDock({ onStart, onPause, onResume, onLap, onFinish });
+    await renderDock({ onStart, onPause, onResume, onLap, onFinish });
 
-    fireEvent.press(screen.getByTestId("controls-start"));
-    fireEvent.press(screen.getByTestId("controls-pause"));
-    fireEvent.press(screen.getByTestId("controls-resume"));
-    fireEvent.press(screen.getByTestId("controls-lap"));
-    fireEvent.press(screen.getByTestId("controls-finish"));
+    await fireEvent.press(screen.getByTestId("controls-start"));
+    await fireEvent.press(screen.getByTestId("controls-pause"));
+    await fireEvent.press(screen.getByTestId("controls-resume"));
+    await fireEvent.press(screen.getByTestId("controls-lap"));
+    await fireEvent.press(screen.getByTestId("controls-finish"));
 
     expect(onStart).toHaveBeenCalledTimes(1);
     expect(onPause).toHaveBeenCalledTimes(1);

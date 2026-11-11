@@ -1,43 +1,29 @@
-import type { CompleteOnboarding } from "@repo/core";
-import type { OnboardingData } from "@/components/onboarding/types";
+import { type CompleteOnboarding, completeOnboardingSchema } from "@repo/core";
+import type { OnboardingData, OnboardingFieldSources } from "@/components/onboarding/types";
 
 type BuildCompleteOnboardingInputResult =
   | { ok: true; input: CompleteOnboarding; profile: { full_name: string; username: string } }
   | { ok: false; error: string };
 
+/** Submit identity and the planning timezone; other optional profile data is configured later. */
 export function buildCompleteOnboardingInput(
   data: OnboardingData,
+  _fieldSources: OnboardingFieldSources = {},
 ): BuildCompleteOnboardingInputResult {
-  const fullName = data.full_name.trim();
-  const username = data.username.trim();
-
-  if (!fullName || !username) {
-    return { ok: false, error: "Full name and username are required." };
+  const result = completeOnboardingSchema.safeParse({
+    full_name: data.full_name,
+    username: data.username,
+    planning_timezone: data.planning_timezone,
+  });
+  if (!result.success) {
+    return {
+      ok: false,
+      error: result.error.issues[0]?.message ?? "Review your name and username.",
+    };
   }
-
-  const dobDate = data.dob ? new Date(data.dob) : undefined;
-
-  if (dobDate && Number.isNaN(dobDate.getTime())) {
-    return { ok: false, error: "Please enter a valid date of birth." };
-  }
-
   return {
     ok: true,
-    input: {
-      css_seconds_per_hundred_meters: data.css ?? undefined,
-      dob: dobDate?.toISOString(),
-      experience_level: data.experience_level ?? "skip",
-      ftp: data.ftp ?? undefined,
-      full_name: fullName,
-      gender: data.gender ?? undefined,
-      lthr: data.lthr ?? undefined,
-      max_hr: data.max_hr ?? undefined,
-      resting_hr: data.resting_hr ?? undefined,
-      threshold_pace_seconds_per_km: data.threshold_pace ?? undefined,
-      username,
-      vo2max: data.vo2max ?? undefined,
-      weight_kg: data.weight_kg ?? undefined,
-    },
-    profile: { full_name: fullName, username },
+    input: result.data,
+    profile: { full_name: result.data.full_name, username: result.data.username },
   };
 }
