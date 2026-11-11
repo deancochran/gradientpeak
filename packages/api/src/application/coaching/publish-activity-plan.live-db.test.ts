@@ -322,6 +322,42 @@ it("enforces athlete publication authority, idempotency, input validation, engag
           copiedActivityPlanId: created.copiedActivityPlanId,
         });
         await expect(
+          withProfileFencedRepeatableReadSnapshot(db, athleteId, (tx) =>
+            publishCoachActivityPlan({
+              tx,
+              actorProfileId: coachId,
+              organizationId: first.organizationId,
+              athleteProfileId: athleteId,
+              coachMembershipId: first.coachMembershipId,
+              activityPlanId: sourceActivityPlanId,
+              activityPlanRevision: 1,
+              planningDate,
+              operationId,
+              now: new Date("2099-01-02T12:00:00.000Z"),
+            }),
+          ),
+        ).resolves.toEqual({
+          status: "existing",
+          session: { id: created.session.id },
+          copiedActivityPlanId: created.copiedActivityPlanId,
+        });
+        await expect(
+          withProfileFencedRepeatableReadSnapshot(db, athleteId, (tx) =>
+            publishCoachActivityPlan({
+              tx,
+              actorProfileId: coachId,
+              organizationId: first.organizationId,
+              athleteProfileId: athleteId,
+              coachMembershipId: first.coachMembershipId,
+              activityPlanId: sourceActivityPlanId,
+              activityPlanRevision: 2,
+              planningDate,
+              operationId: `publication_${"m".repeat(32)}`,
+              now: new Date("2099-01-02T12:00:00.000Z"),
+            }),
+          ),
+        ).rejects.toThrow("only future athlete-local sessions");
+        await expect(
           coachCaller.publish({ ...publish, activityPlanRevision: 2 }),
         ).rejects.toMatchObject({ code: "CONFLICT" });
         expect(

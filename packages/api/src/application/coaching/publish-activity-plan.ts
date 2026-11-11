@@ -52,15 +52,6 @@ export async function publishCoachActivityPlan(input: {
     !isValidDateOnlyUtc(input.planningDate)
   )
     throw new CoachingPublicationDeniedError("A valid athlete-local planning date is required");
-  if (
-    input.planningDate <
-    getCalendarDateInIanaZone(input.now.toISOString(), athlete.planningTimezone)
-  ) {
-    throw new CoachingPublicationDeniedError(
-      "Coaches can publish only future athlete-local sessions",
-    );
-  }
-
   // Lock every authority row before the source or session is read. The athlete
   // profile fence held by the caller serializes competing publications/revokes.
   const [grant] = await input.tx
@@ -156,6 +147,14 @@ export async function publishCoachActivityPlan(input: {
       session: { id: receipt.plannedSessionId },
       copiedActivityPlanId: receipt.copiedActivityPlanId,
     };
+  }
+  if (
+    input.planningDate <
+    getCalendarDateInIanaZone(input.now.toISOString(), athlete.planningTimezone)
+  ) {
+    throw new CoachingPublicationDeniedError(
+      "Coaches can publish only future athlete-local sessions",
+    );
   }
 
   const [source] = await input.tx
