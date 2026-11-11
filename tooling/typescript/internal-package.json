@@ -8,6 +8,7 @@
     "moduleResolution": "bundler",
     "noEmit": true,
     "target": "ESNext",
+    "types": ["node"],
     "verbatimModuleSyntax": true
   }
 }

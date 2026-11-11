@@ -1,11 +1,12 @@
 import { z } from "zod";
-import { canonicalSportSchema } from "./sport";
+import { activityEffortTypeSchema } from "../athlete-inputs/activity-efforts";
+import { canonicalActivityCategorySchema } from "./activity-category";
 
-export const effortTypeSchema = z.enum(["power", "speed"]);
+export const effortTypeSchema = activityEffortTypeSchema;
 
 // Domain/calculation input only. Persisted row ownership lives in @repo/db.
 export const BestEffortSchema = z.object({
-  activity_category: canonicalSportSchema,
+  activity_category: canonicalActivityCategorySchema,
   duration_seconds: z.number().int().positive(),
   effort_type: effortTypeSchema,
   value: z.number(),

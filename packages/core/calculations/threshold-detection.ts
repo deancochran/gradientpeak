@@ -1,46 +1,111 @@
-import { calculateBestEffort } from "./best-efforts";
+import { z } from "zod";
+import {
+  type BestEffortExtractionResult,
+  type BestEffortSample,
+  bestEffortExtractionResultSchema,
+  bestEffortNumericDurationResultSchema,
+  bestEffortSampleSchema,
+  selectExactBestEffortWindow,
+} from "./best-efforts";
+
+export const ACTIVITY_FILE_LTHR_CALCULATION_VERSION = "activity-file-lthr-30m-final-20m-v1";
+export const ACTIVITY_FILE_LTHR_EFFORT_METHOD = "activity_file_lthr_detection";
+export const LTHR_FIELD_TEST_DURATION_SECONDS = 1_800;
+export const LTHR_FINAL_WINDOW_DURATION_SECONDS = 1_200;
+
+export const detectedLactateThresholdHeartRateSchema = z
+  .object({
+    valueBpm: z.number().int().positive(),
+    calculationVersion: z.literal(ACTIVITY_FILE_LTHR_CALCULATION_VERSION),
+    sourceEffortCalculationVersion: z.string().trim().min(1),
+    sourceEffort: bestEffortNumericDurationResultSchema.refine(
+      (effort) => effort.durationSeconds === LTHR_FIELD_TEST_DURATION_SECONDS,
+      { message: "LTHR requires an available or partial 30-minute heart-rate effort" },
+    ),
+    thresholdWindow: bestEffortNumericDurationResultSchema.refine(
+      (effort) => effort.durationSeconds === LTHR_FINAL_WINDOW_DURATION_SECONDS,
+      { message: "LTHR requires the final 20-minute heart-rate window" },
+    ),
+  })
+  .strict();
+
+export type DetectedLactateThresholdHeartRate = z.infer<
+  typeof detectedLactateThresholdHeartRateSchema
+>;
+
+function calculateFinalTimeWeightedWindow(input: {
+  samples: readonly BestEffortSample[];
+  startTimestampSeconds: number;
+  endTimestampSeconds: number;
+  maxGapSeconds: number;
+}): number | null {
+  let previousTimestampSeconds: number | null = null;
+  let coveredSeconds = 0;
+  let weightedSum = 0;
+
+  for (const unknownSample of input.samples) {
+    const sample = bestEffortSampleSchema.parse(unknownSample);
+    if (previousTimestampSeconds !== null) {
+      if (sample.timestampSeconds <= previousTimestampSeconds) continue;
+      const intervalStart = Math.max(previousTimestampSeconds, input.startTimestampSeconds);
+      const intervalEnd = Math.min(sample.timestampSeconds, input.endTimestampSeconds);
+      if (intervalEnd > intervalStart) {
+        if (
+          sample.included === false ||
+          sample.value === null ||
+          sample.timestampSeconds - previousTimestampSeconds > input.maxGapSeconds
+        ) {
+          return null;
+        }
+        const durationSeconds = intervalEnd - intervalStart;
+        coveredSeconds += durationSeconds;
+        weightedSum += sample.value * durationSeconds;
+      }
+    }
+    previousTimestampSeconds = sample.timestampSeconds;
+  }
+
+  return Math.abs(coveredSeconds - LTHR_FINAL_WINDOW_DURATION_SECONDS) <= 0.000_001
+    ? weightedSum / LTHR_FINAL_WINDOW_DURATION_SECONDS
+    : null;
+}
 
 /**
- * Lactate Threshold Heart Rate (LTHR) Detection
- *
- * Detects LTHR based on sustained high-intensity efforts.
- *
- * Algorithm:
- * 1. Find the best 20-minute average heart rate.
- * 2. Estimate LTHR as 95% of the 20-minute max average heart rate.
- * 3. Alternatively, if a 30-minute effort is available, use the average HR of the last 20 minutes.
- *    (For simplicity, we'll stick to the 95% of 20-minute max rule for now).
+ * Canonical 30-minute field-test detector. It selects the exact 30-minute
+ * heart-rate effort, then derives LTHR from that effort's final 20 minutes.
  */
-
-/**
- * Detects LTHR from a heart rate stream.
- *
- * @param hrStream - Array of heart rate values (bpm).
- * @param timestamps - Array of timestamps (seconds).
- * @returns Detected LTHR (bpm) or null if insufficient data.
- */
-export function detectLTHR(hrStream: number[], timestamps: number[]): number | null {
-  if (!hrStream || !timestamps || hrStream.length === 0) {
-    return null;
-  }
-
-  // Check if we have at least 20 minutes of data
-  const totalDuration = timestamps[timestamps.length - 1]! - timestamps[0]!;
-  if (totalDuration < 1200) {
-    // 20 minutes = 1200 seconds
-    return null;
-  }
-
-  // Calculate best 20-minute effort
-  const best20MinEffort = calculateBestEffort(hrStream, timestamps, 1200);
-
-  if (!best20MinEffort) {
-    return null;
-  }
-
-  // Estimate LTHR as 95% of the 20-minute max average HR
-  // This is a standard field test estimation (Joe Friel).
-  const estimatedLTHR = best20MinEffort.value * 0.95;
-
-  return Math.round(estimatedLTHR);
+export function detectLactateThresholdHeartRate(input: {
+  extraction: BestEffortExtractionResult;
+  samples: readonly BestEffortSample[];
+}): DetectedLactateThresholdHeartRate | null {
+  const extraction = bestEffortExtractionResultSchema.parse(input.extraction);
+  if (extraction.metric !== "heart_rate" || extraction.unit !== "bpm") return null;
+  const selected = selectExactBestEffortWindow(extraction, LTHR_FIELD_TEST_DURATION_SECONDS);
+  if (selected.status !== "found" || selected.result.status === "unavailable") return null;
+  const sourceEffort = selected.result;
+  const thresholdStartTimestampSeconds =
+    sourceEffort.endTimestampSeconds - LTHR_FINAL_WINDOW_DURATION_SECONDS;
+  const valueBpm = calculateFinalTimeWeightedWindow({
+    samples: input.samples,
+    startTimestampSeconds: thresholdStartTimestampSeconds,
+    endTimestampSeconds: sourceEffort.endTimestampSeconds,
+    maxGapSeconds: extraction.maxGapSeconds,
+  });
+  if (valueBpm === null) return null;
+  return detectedLactateThresholdHeartRateSchema.parse({
+    valueBpm: Math.round(valueBpm),
+    calculationVersion: ACTIVITY_FILE_LTHR_CALCULATION_VERSION,
+    sourceEffortCalculationVersion: extraction.calculationVersion,
+    sourceEffort,
+    thresholdWindow: {
+      status: sourceEffort.status,
+      ...(sourceEffort.status === "partial" ? { reason: sourceEffort.reason } : {}),
+      durationSeconds: LTHR_FINAL_WINDOW_DURATION_SECONDS,
+      value: valueBpm,
+      startTimestampSeconds: thresholdStartTimestampSeconds,
+      endTimestampSeconds: sourceEffort.endTimestampSeconds,
+      contributingDurationSeconds: LTHR_FINAL_WINDOW_DURATION_SECONDS,
+      windowCoverage: 1,
+    },
+  });
 }

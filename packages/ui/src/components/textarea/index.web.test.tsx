@@ -1,3 +1,4 @@
+import { createRef } from "react";
 import { describe, expect, it } from "vitest";
 
 import { renderWeb, screen } from "../../test/render-web";
@@ -15,5 +16,12 @@ describe("Textarea web", () => {
     expect(textarea).toHaveAttribute("data-testid", textareaFixtures.notes.testId);
     expect(textarea).toHaveAttribute("id", textareaFixtures.notes.id);
     expect(textarea).toHaveValue(textareaFixtures.value);
+  });
+
+  it("forwards a ref to the focusable textarea", () => {
+    const ref = createRef<HTMLTextAreaElement>();
+    renderWeb(<Textarea ref={ref} {...textareaFixtures.notes} />);
+
+    expect(ref.current).toBeInstanceOf(HTMLTextAreaElement);
   });
 });
