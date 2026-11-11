@@ -1,0 +1,23 @@
+appId: com.deancochran.gradientpeak.dev
+name: Cancel the visible rescheduled native session
+---
+# Navigation boundary: rescheduling leaves the athlete on this real detail view.
+- extendedWaitUntil:
+    visible:
+      id: planned-session-detail-screen
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: planned-session-cancel
+    direction: DOWN
+- tapOn:
+    id: planned-session-cancel
+- assertVisible:
+    id: planned-session-confirm-cancel
+- tapOn:
+    id: planned-session-confirm-cancel
+- extendedWaitUntil:
+    visible: "cancelled"
+    timeout: 30000
+- assertNotVisible:
+    id: planned-session-cancel

@@ -1,15 +1,17 @@
 import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useRef } from "react";
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
+import { useRef, useState } from "react";
+import { Alert, View } from "react-native";
 import {
   GroupForm,
   type GroupFormHandle,
   GroupListSkeleton,
   GroupMembersOnlyLockedState,
 } from "@/components/groups";
+import { FormScreen } from "@/components/shared/FormScreen";
 import { useGroupActions, useGroupDetailViewModel } from "@/lib/groups";
+import { useDirtyNavigationGuard } from "@/lib/hooks/useDirtyNavigationGuard";
 
 function singleParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -23,6 +25,11 @@ export default function GroupEditScreen() {
   const groupActions = useGroupActions();
   const formRef = useRef<GroupFormHandle>(null);
   const isSubmitting = groupActions.updateMutation.isPending;
+  const [isDirty, setIsDirty] = useState(false);
+  const { allowNavigationAfterSuccess } = useDirtyNavigationGuard({
+    isDirty,
+    isPending: isSubmitting,
+  });
 
   if (detailVm.isLoading) {
     return <GroupListSkeleton count={2} />;
@@ -50,11 +57,7 @@ export default function GroupEditScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      className="flex-1 bg-background"
-      keyboardVerticalOffset={80}
-    >
+    <FormScreen>
       <Stack.Screen
         options={{
           headerRight: () => (
@@ -72,31 +75,31 @@ export default function GroupEditScreen() {
           ),
         }}
       />
-      <ScrollView contentContainerClassName="gap-5 p-4 pb-8" keyboardShouldPersistTaps="handled">
-        <GroupForm
-          ref={formRef}
-          group={detailVm.group}
-          isSubmitting={isSubmitting}
-          onSubmit={async (values) => {
-            if (!detailVm.group?.id) return;
+      <GroupForm
+        ref={formRef}
+        group={detailVm.group}
+        isSubmitting={isSubmitting}
+        onDirtyChange={setIsDirty}
+        onSubmit={async (values) => {
+          if (!detailVm.group?.id) return;
 
-            try {
-              await groupActions.updateGroup({ ...values, groupId: detailVm.group.id });
-              router.replace({
-                pathname: "/group-detail",
-                params: { groupId: detailVm.group.id },
-              });
-            } catch (error) {
-              Alert.alert(
-                "Unable to update group",
-                error instanceof Error ? error.message : "Please try again.",
-              );
-            }
-          }}
-          showFooterActions={false}
-          submitLabel="Save changes"
-        />
-      </ScrollView>
-    </KeyboardAvoidingView>
+          try {
+            await groupActions.updateGroup({ ...values, groupId: detailVm.group.id });
+            allowNavigationAfterSuccess();
+            router.replace({
+              pathname: "/group-detail",
+              params: { groupId: detailVm.group.id },
+            });
+          } catch (error) {
+            Alert.alert(
+              "Unable to update group",
+              error instanceof Error ? error.message : "Please try again.",
+            );
+          }
+        }}
+        showFooterActions={false}
+        submitLabel="Save changes"
+      />
+    </FormScreen>
   );
 }

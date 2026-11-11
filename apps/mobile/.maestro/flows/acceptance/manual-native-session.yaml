@@ -1,0 +1,44 @@
+appId: com.deancochran.gradientpeak.dev
+name: Open the visible scheduled session from Calendar and report completion without invented metrics
+---
+# Navigation boundary: Calendar date -> training breakdown -> named plan row.
+- tapOn:
+    id: tab-button-plan
+- tapOn:
+    id: plan-view-calendar
+- extendedWaitUntil:
+    visible:
+      id: calendar-screen-ready
+    timeout: 30000
+- tapOn:
+    id: calendar-date-jump-entry
+- tapOn: ${MAESTRO_ACCEPTANCE_SESSION_DAY}
+- tapOn: "OK"
+- extendedWaitUntil:
+    notVisible:
+      id: calendar-date-jump-loading
+    timeout: 30000
+- tapOn:
+    id: calendar-day-select-${MAESTRO_ACCEPTANCE_SESSION_DATE}
+- extendedWaitUntil:
+    visible:
+      id: planning-ledger-screen
+    timeout: 30000
+- assertVisible: ${MAESTRO_ACCEPTANCE_PLAN_NAME}
+- tapOn: ${MAESTRO_ACCEPTANCE_PLAN_NAME}
+- extendedWaitUntil:
+    visible:
+      id: planned-session-detail-screen
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: planned-session-complete-full
+    direction: DOWN
+- tapOn:
+    id: planned-session-complete-full
+- extendedWaitUntil:
+    visible:
+      id: planned-session-linked-activity
+    timeout: 30000
+- assertVisible: "completed"
+- assertVisible: "View completed activity"

@@ -1,12 +1,14 @@
-export interface ZoneRange {
+export interface NumericRange {
   min: number;
   max: number;
 }
 
+export type ZoneRange = NumericRange;
+
 export interface FiveZoneRanges {
-  zone1: ZoneRange;
-  zone2: ZoneRange;
-  zone3: ZoneRange;
-  zone4: ZoneRange;
-  zone5: ZoneRange;
+  zone1: NumericRange;
+  zone2: NumericRange;
+  zone3: NumericRange;
+  zone4: NumericRange;
+  zone5: NumericRange;
 }

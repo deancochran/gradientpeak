@@ -49,55 +49,96 @@ export const POWER_ZONE_NAMES = {
   ZONE_5: { name: "VO2 Max", description: "Hard anaerobic efforts" },
 } as const;
 
+export const INTENSITY_COLOR_THEMES = {
+  spectrum: {
+    RECOVERY: { background: "#38bdf8", foreground: "#082f49" },
+    ENDURANCE: { background: "#22c55e", foreground: "#052e16" },
+    TEMPO: { background: "#eab308", foreground: "#422006" },
+    THRESHOLD: { background: "#f97316", foreground: "#431407" },
+    VO2MAX: { background: "#ef4444", foreground: "#030712" },
+    ANAEROBIC: { background: "#db2777", foreground: "#ffffff" },
+    NEUROMUSCULAR: { background: "#7c3aed", foreground: "#ffffff" },
+  },
+  classic: {
+    RECOVERY: { background: "#10b981", foreground: "#052e16" },
+    ENDURANCE: { background: "#3b82f6", foreground: "#0f172a" },
+    TEMPO: { background: "#8b5cf6", foreground: "#030712" },
+    THRESHOLD: { background: "#f59e0b", foreground: "#422006" },
+    VO2MAX: { background: "#f97316", foreground: "#431407" },
+    ANAEROBIC: { background: "#ef4444", foreground: "#030712" },
+    NEUROMUSCULAR: { background: "#dc2626", foreground: "#ffffff" },
+  },
+} as const;
+
+export type IntensityColorThemeName = keyof typeof INTENSITY_COLOR_THEMES;
+export type IntensityZoneName = keyof (typeof INTENSITY_COLOR_THEMES)["spectrum"];
+
+/** Change this one selection to update intensity colors across every shared consumer. */
+export const ACTIVE_INTENSITY_COLOR_THEME = "spectrum" satisfies IntensityColorThemeName;
+
+export function getIntensityZoneColor(
+  zone: IntensityZoneName,
+  theme: IntensityColorThemeName = ACTIVE_INTENSITY_COLOR_THEME,
+): string {
+  return INTENSITY_COLOR_THEMES[theme][zone].background;
+}
+
+export function getIntensityZoneForegroundColor(
+  zone: IntensityZoneName,
+  theme: IntensityColorThemeName = ACTIVE_INTENSITY_COLOR_THEME,
+): string {
+  return INTENSITY_COLOR_THEMES[theme][zone].foreground;
+}
+
 export const INTENSITY_ZONES = {
   RECOVERY: {
     name: "Recovery",
     min: 0,
     max: 55,
     description: "Active recovery and rest",
-    color: "#10b981",
+    color: getIntensityZoneColor("RECOVERY"),
   },
   ENDURANCE: {
     name: "Endurance",
     min: 55,
     max: 74,
     description: "Aerobic base building",
-    color: "#3b82f6",
+    color: getIntensityZoneColor("ENDURANCE"),
   },
   TEMPO: {
     name: "Tempo",
     min: 75,
     max: 84,
     description: "Aerobic threshold",
-    color: "#8b5cf6",
+    color: getIntensityZoneColor("TEMPO"),
   },
   THRESHOLD: {
     name: "Threshold",
     min: 85,
     max: 94,
     description: "Lactate threshold",
-    color: "#f59e0b",
+    color: getIntensityZoneColor("THRESHOLD"),
   },
   VO2MAX: {
     name: "VO2max",
     min: 95,
     max: 104,
     description: "VO2 max intervals",
-    color: "#f97316",
+    color: getIntensityZoneColor("VO2MAX"),
   },
   ANAEROBIC: {
     name: "Anaerobic",
     min: 105,
     max: 114,
     description: "Anaerobic capacity",
-    color: "#ef4444",
+    color: getIntensityZoneColor("ANAEROBIC"),
   },
   NEUROMUSCULAR: {
     name: "Neuromuscular",
     min: 115,
     max: 400,
     description: "Sprint power",
-    color: "#dc2626",
+    color: getIntensityZoneColor("NEUROMUSCULAR"),
   },
 } as const;
 
