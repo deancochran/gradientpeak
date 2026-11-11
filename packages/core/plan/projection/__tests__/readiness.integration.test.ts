@@ -6,6 +6,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { requireFixtureValue } from "../../../testing/requireFixtureValue";
 import { computeProjectionPointReadinessScores } from "../readiness";
 import {
   createMockGoal,
@@ -15,15 +16,19 @@ import {
   RACE_PRESETS,
 } from "./readiness.test-utils";
 
+function requireScore(scores: number[], index: number): number {
+  return requireFixtureValue(scores[index], `expected readiness score at index ${index}`);
+}
+
 describe("Post-Event Fatigue Integration", () => {
   it("applies fatigue penalty day after marathon", () => {
     // Use longer timeline for realistic smoothing behavior
     const points = createTestScenario({
       startDate: "2026-03-10",
       durationDays: 10,
-      startingCtl: 65,
-      startingAtl: 60,
-      ctlProgression: "flat",
+      startingLongTermLoad: 65,
+      startingRecentLoad: 60,
+      longTermLoadProgression: "flat",
     });
 
     const marathonTarget = createRaceTarget(
@@ -46,7 +51,7 @@ describe("Post-Event Fatigue Integration", () => {
 
     // Day after marathon should show fatigue penalty
     // With smoothing, the penalty might be less dramatic but should be present
-    const penalty = scores[marathonIndex]! - scores[day1AfterIndex]!;
+    const penalty = requireScore(scores, marathonIndex) - requireScore(scores, day1AfterIndex);
     expect(penalty).toBeGreaterThanOrEqual(0); // Should not increase
 
     // Verify scores are in valid range
@@ -66,9 +71,9 @@ describe("Post-Event Fatigue Integration", () => {
     const points = createTestScenario({
       startDate: "2026-03-10",
       durationDays: 12,
-      startingCtl: 65,
-      startingAtl: 60,
-      ctlProgression: "flat",
+      startingLongTermLoad: 65,
+      startingRecentLoad: 60,
+      longTermLoadProgression: "flat",
     });
 
     const marathonTarget = createRaceTarget(
@@ -109,16 +114,16 @@ describe("Post-Event Fatigue Integration", () => {
     expect(scores[day9Index]).toBeGreaterThan(0);
 
     // 5K should be affected by marathon recovery (3 days after)
-    expect(scores[fiveKIndex]).toBeLessThanOrEqual(scores[marathonIndex]!);
+    expect(scores[fiveKIndex]).toBeLessThanOrEqual(requireScore(scores, marathonIndex));
   });
 
   it("no penalty before event", () => {
     const points = createTestScenario({
       startDate: "2026-03-10",
       durationDays: 10,
-      startingCtl: 65,
-      startingAtl: 60,
-      ctlProgression: "flat",
+      startingLongTermLoad: 65,
+      startingRecentLoad: 60,
+      longTermLoadProgression: "flat",
     });
 
     const marathonTarget = createRaceTarget(
@@ -141,7 +146,7 @@ describe("Post-Event Fatigue Integration", () => {
 
     // The key is that post-event fatigue only applies AFTER the event
     // Day after should be lower than or equal to marathon day
-    expect(scores[dayAfterIndex]).toBeLessThanOrEqual(scores[marathonIndex]!);
+    expect(scores[dayAfterIndex]).toBeLessThanOrEqual(requireScore(scores, marathonIndex));
 
     // Verify all scores are valid
     expect(scores[dayBeforeIndex]).toBeGreaterThan(0);
@@ -180,10 +185,10 @@ describe("Post-Event Fatigue Integration", () => {
 
     // Penalty should decay exponentially
     // Note: penalties are relative to marathon day, so they should decrease over time
-    const penalty1 = Math.max(0, scores[0]! - scores[1]!);
-    const penalty3 = Math.max(0, scores[0]! - scores[2]!);
-    const penalty7 = Math.max(0, scores[0]! - scores[3]!);
-    const penalty14 = Math.max(0, scores[0]! - scores[4]!);
+    const penalty1 = Math.max(0, requireScore(scores, 0) - requireScore(scores, 1));
+    const penalty3 = Math.max(0, requireScore(scores, 0) - requireScore(scores, 2));
+    const penalty7 = Math.max(0, requireScore(scores, 0) - requireScore(scores, 3));
+    const penalty14 = Math.max(0, requireScore(scores, 0) - requireScore(scores, 4));
 
     // Verify decay pattern - each later penalty should be less than earlier
     // Allow for some smoothing effects by checking general trend
@@ -191,7 +196,7 @@ describe("Post-Event Fatigue Integration", () => {
     expect(penalty14).toBeLessThan(penalty1); // Day 14 should be less than day 1
 
     // Verify scores are recovering over time
-    expect(scores[4]).toBeGreaterThanOrEqual(scores[1]!);
+    expect(scores[4]).toBeGreaterThanOrEqual(requireScore(scores, 1));
 
     console.log("Fatigue decay over time:", {
       marathon: scores[0],
@@ -267,8 +272,14 @@ describe("Post-Event Fatigue Integration", () => {
 
     // 5K should recover faster than marathon
     // Compare the penalty on day 1 - marathon should have higher penalty
-    const fiveKDay1Penalty = Math.max(0, fiveKScores[0]! - fiveKScores[1]!);
-    const marathonDay1Penalty = Math.max(0, marathonScores[0]! - marathonScores[1]!);
+    const fiveKDay1Penalty = Math.max(
+      0,
+      requireScore(fiveKScores, 0) - requireScore(fiveKScores, 1),
+    );
+    const marathonDay1Penalty = Math.max(
+      0,
+      requireScore(marathonScores, 0) - requireScore(marathonScores, 1),
+    );
 
     // Marathon should have higher penalty (or at least not significantly lower)
     expect(marathonDay1Penalty).toBeGreaterThanOrEqual(fiveKDay1Penalty * 0.8);
@@ -289,25 +300,25 @@ describe("Post-Event Fatigue Integration", () => {
     });
   });
 
-  it("ATL overload increases fatigue penalty", () => {
-    // Normal ATL scenario
+  it("RecentLoad overload increases fatigue penalty", () => {
+    // Normal RecentLoad scenario
     const normalPoints = createTestScenario({
       startDate: "2026-03-10",
       durationDays: 8,
-      startingCtl: 65,
-      startingAtl: 60,
-      ctlProgression: "flat",
+      startingLongTermLoad: 65,
+      startingRecentLoad: 60,
+      longTermLoadProgression: "flat",
     });
 
-    // High ATL overload scenario - manually adjust day after marathon
+    // High RecentLoad overload scenario - manually adjust day after marathon
     const overloadPoints = createTestScenario({
       startDate: "2026-03-10",
       durationDays: 8,
-      startingCtl: 65,
-      startingAtl: 60,
-      ctlProgression: "flat",
+      startingLongTermLoad: 65,
+      startingRecentLoad: 60,
+      longTermLoadProgression: "flat",
     });
-    // Simulate high ATL spike on day after marathon
+    // Simulate high RecentLoad spike on day after marathon
     overloadPoints[5] = createMockProjectionPoint("2026-03-15", 65, 75, -10);
 
     const marathonTarget = createRaceTarget(
@@ -331,10 +342,12 @@ describe("Post-Event Fatigue Integration", () => {
     const marathonIndex = 4;
     const dayAfterIndex = 5;
 
-    // Overload scenario should have lower readiness due to higher ATL
-    expect(overloadScores[dayAfterIndex]).toBeLessThanOrEqual(normalScores[dayAfterIndex]!);
+    // Overload scenario should have lower readiness due to higher RecentLoad
+    expect(overloadScores[dayAfterIndex]).toBeLessThanOrEqual(
+      requireScore(normalScores, dayAfterIndex),
+    );
 
-    console.log("ATL overload effect:", {
+    console.log("RecentLoad overload effect:", {
       normal: {
         marathon: normalScores[marathonIndex],
         day1: normalScores[dayAfterIndex],
@@ -343,7 +356,8 @@ describe("Post-Event Fatigue Integration", () => {
         marathon: overloadScores[marathonIndex],
         day1: overloadScores[dayAfterIndex],
       },
-      difference: normalScores[dayAfterIndex]! - overloadScores[dayAfterIndex]!,
+      difference:
+        requireScore(normalScores, dayAfterIndex) - requireScore(overloadScores, dayAfterIndex),
     });
   });
 });
@@ -376,9 +390,9 @@ describe("Post-Event Fatigue - Edge Cases", () => {
     const points = createTestScenario({
       startDate: "2026-03-10",
       durationDays: 8,
-      startingCtl: 65,
-      startingAtl: 60,
-      ctlProgression: "flat",
+      startingLongTermLoad: 65,
+      startingRecentLoad: 60,
+      longTermLoadProgression: "flat",
     });
 
     const marathonTarget = createRaceTarget(
@@ -410,7 +424,7 @@ describe("Post-Event Fatigue - Edge Cases", () => {
     expect(scores).toHaveLength(8);
     expect(scores[eventIndex]).toBeGreaterThan(0);
     expect(scores[dayAfterIndex]).toBeGreaterThan(0);
-    expect(scores[dayAfterIndex]).toBeLessThanOrEqual(scores[eventIndex]!);
+    expect(scores[dayAfterIndex]).toBeLessThanOrEqual(requireScore(scores, eventIndex));
   });
 
   it("is deterministic for same inputs", () => {

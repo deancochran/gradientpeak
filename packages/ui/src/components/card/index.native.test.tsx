@@ -1,8 +1,10 @@
 import * as React from "react";
 
+type SlotTextProps = React.PropsWithChildren<Record<string, unknown>>;
+
 jest.mock("@rn-primitives/slot", () => {
   return {
-    Text: (props: any) => React.createElement("Slot.Text", props, props.children),
+    Text: (props: SlotTextProps) => React.createElement("Slot.Text", props, props.children),
   };
 });
 
@@ -11,8 +13,8 @@ import { cardFixtures } from "./fixtures";
 import { Card, CardContent, CardHeader, CardTitle } from "./index.native";
 
 describe("Card native", () => {
-  it("maps normalized test props and renders heading content", () => {
-    const { getByLabelText, getByTestId, getByText } = renderNative(
+  it("maps normalized test props and renders heading content", async () => {
+    const { getByLabelText, getByTestId, getByText } = await renderNative(
       <Card {...cardFixtures.profile}>
         <CardHeader>
           <CardTitle>{cardFixtures.profile.title}</CardTitle>
