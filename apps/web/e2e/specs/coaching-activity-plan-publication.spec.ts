@@ -1,9 +1,9 @@
 import {
   activityPlans,
   athletePlanEditGrants,
+  coachingActivityPlanPublications,
   coachingAssignments,
   coachingEngagements,
-  coachingWorkoutPublications,
   organizationMembershipRoleGrants,
   organizationMemberships,
   plannedSessions,
@@ -41,7 +41,7 @@ async function captureSurface(input: {
   }
 }
 
-test("[coaching-publication] athlete grants, coach publishes an owned workout, and revocation denies a later publication", async ({
+test("[coaching-publication] athlete grants, coach publishes an owned activity plan, and revocation denies a later publication", async ({
   athleteActor,
   athletePage,
   coachActor,
@@ -53,8 +53,8 @@ test("[coaching-publication] athlete grants, coach publishes an owned workout, a
   const today = new Date().toISOString().slice(0, 10);
   const planningDate = addUtcDays(today, 7);
   const deniedDate = addUtcDays(today, 8);
-  const workoutName = "Playwright Tempo Builder";
-  const publishedWorkoutName = `${workoutName} (Copy)`;
+  const activityPlanName = "Playwright Tempo Builder";
+  const publishedActivityPlanName = `${activityPlanName} (Copy)`;
 
   await athletePage.goto("/organizations/new");
   await athletePage.getByLabel("Organization name", { exact: true }).fill("Publication acceptance");
@@ -100,32 +100,32 @@ test("[coaching-publication] athlete grants, coach publishes an owned workout, a
   const { activityPlanId } = await seedOwnedActivityPlan(
     e2eDatabase,
     coachActor.profileId,
-    e2eIdentity.suffix("publication-coach-workout", 64),
+    e2eIdentity.suffix("publication-coach-activity-plan", 64),
   );
 
   await athletePage.goto("/settings#coaching");
   await waitForAppHydration(athletePage);
   const grant = athletePage.getByRole("switch", {
-    name: /Allow .* to publish workouts/i,
+    name: /Allow .* to publish activity plans/i,
   });
   await expect(grant).toBeVisible();
   await expect(grant).not.toBeChecked();
   await grant.click();
   await expect(
-    athletePage.getByRole("status").filter({ hasText: /can now publish workouts/i }),
+    athletePage.getByRole("status").filter({ hasText: /can now publish activity plans/i }),
   ).toBeVisible();
   await expect(grant).toBeChecked();
   await captureSurface({ name: "publication-athlete-grant", page: athletePage, testInfo });
 
   await coachPage.goto(`/organizations/${organizationId}/athletes/${athleteActor.profileId}`);
   await waitForAppHydration(coachPage);
-  await expect(coachPage.getByText("Publish a workout", { exact: true })).toBeVisible();
-  const workout = coachPage.getByLabel("Your workout", { exact: true });
-  await workout.selectOption(activityPlanId);
+  await expect(coachPage.getByText("Publish an activity plan", { exact: true })).toBeVisible();
+  const activityPlan = coachPage.getByLabel("Your activity plan", { exact: true });
+  await activityPlan.selectOption(activityPlanId);
   await coachPage.getByLabel("Athlete planning date", { exact: true }).fill(planningDate);
   await coachPage.getByRole("button", { name: "Preview publication", exact: true }).click();
   await expect(
-    coachPage.getByText(`Ready to publish: ${workoutName}`, { exact: true }),
+    coachPage.getByText(`Ready to publish: ${activityPlanName}`, { exact: true }),
   ).toBeVisible();
   await expect(
     coachPage.getByText(`${planningDate} in the athlete’s UTC planning time zone.`, {
@@ -133,25 +133,26 @@ test("[coaching-publication] athlete grants, coach publishes an owned workout, a
     }),
   ).toBeVisible();
   await captureSurface({ name: "publication-coach-preview", page: coachPage, testInfo });
-  await coachPage.getByRole("button", { name: "Publish workout", exact: true }).click();
+  await coachPage.getByRole("button", { name: "Publish activity plan", exact: true }).click();
   await expect(
     coachPage
       .getByRole("status")
-      .filter({ hasText: `Published ${workoutName} for ${planningDate}.` }),
+      .filter({ hasText: `Published ${activityPlanName} for ${planningDate}.` }),
   ).toBeVisible();
 
   const [publication] = await e2eDatabase.db
-    .select({ copiedActivityPlanId: coachingWorkoutPublications.copied_activity_plan_id })
-    .from(coachingWorkoutPublications)
+    .select({ copiedActivityPlanId: coachingActivityPlanPublications.copied_activity_plan_id })
+    .from(coachingActivityPlanPublications)
     .where(
       and(
-        eq(coachingWorkoutPublications.athlete_profile_id, athleteActor.profileId),
-        eq(coachingWorkoutPublications.organization_id, organizationId),
-        eq(coachingWorkoutPublications.source_activity_plan_id, activityPlanId),
-        eq(coachingWorkoutPublications.planning_date, planningDate),
+        eq(coachingActivityPlanPublications.athlete_profile_id, athleteActor.profileId),
+        eq(coachingActivityPlanPublications.organization_id, organizationId),
+        eq(coachingActivityPlanPublications.source_activity_plan_id, activityPlanId),
+        eq(coachingActivityPlanPublications.planning_date, planningDate),
       ),
     );
-  if (!publication) throw new Error("The published workout did not create a publication receipt.");
+  if (!publication)
+    throw new Error("The published activity plan did not create a publication receipt.");
   await expect
     .poll(async () =>
       e2eDatabase.db
@@ -165,7 +166,7 @@ test("[coaching-publication] athlete grants, coach publishes an owned workout, a
           ),
         ),
     )
-    .toEqual([{ name: publishedWorkoutName, planningDate }]);
+    .toEqual([{ name: publishedActivityPlanName, planningDate }]);
 
   await athletePage.goto(
     `/calendar?month=${planningDate.slice(0, 7)}&date=${planningDate}&view=month`,
@@ -173,7 +174,7 @@ test("[coaching-publication] athlete grants, coach publishes an owned workout, a
   await waitForAppHydration(athletePage);
   await expect(athletePage.getByText("Personal planned sessions", { exact: true })).toBeVisible();
   const publishedSession = athletePage
-    .getByText(publishedWorkoutName, { exact: true })
+    .getByText(publishedActivityPlanName, { exact: true })
     .locator("..");
   await expect(publishedSession).toBeVisible();
   await expect(publishedSession).toContainText(`${planningDate} · scheduled`);
@@ -184,7 +185,7 @@ test("[coaching-publication] athlete grants, coach publishes an owned workout, a
   await expect(grant).toBeChecked();
   await grant.click();
   await expect(
-    athletePage.getByRole("status").filter({ hasText: /can no longer publish workouts/i }),
+    athletePage.getByRole("status").filter({ hasText: /can no longer publish activity plans/i }),
   ).toBeVisible();
   await expect(grant).not.toBeChecked();
   await expect
@@ -208,7 +209,7 @@ test("[coaching-publication] athlete grants, coach publishes an owned workout, a
     "Athlete plan-edit permission is unavailable",
   );
   await expect(
-    coachPage.getByRole("button", { name: "Publish workout", exact: true }),
+    coachPage.getByRole("button", { name: "Publish activity plan", exact: true }),
   ).toBeDisabled();
   await coachPage.close();
 });

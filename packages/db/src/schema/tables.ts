@@ -944,8 +944,8 @@ export const athletePlanEditGrants = pgTable(
 );
 
 /** Immutable receipt binding a coach publication operation to its private copy and session. */
-export const coachingWorkoutPublications = pgTable(
-  "coaching_workout_publications",
+export const coachingActivityPlanPublications = pgTable(
+  "coaching_activity_plan_publications",
   {
     id: uuid("id").defaultRandom().primaryKey(),
     athlete_profile_id: uuid("athlete_profile_id")
@@ -969,19 +969,19 @@ export const coachingWorkoutPublications = pgTable(
     foreignKey({
       columns: [table.planned_session_id, table.athlete_profile_id],
       foreignColumns: [plannedSessions.id, plannedSessions.profile_id],
-      name: "coaching_workout_publications_session_athlete_fkey",
+      name: "coaching_activity_plan_publications_session_athlete_fkey",
     }).onDelete("restrict"),
-    unique("coaching_workout_publications_athlete_operation_unique").on(
+    unique("coaching_activity_plan_publications_athlete_operation_unique").on(
       table.athlete_profile_id,
       table.operation_id,
     ),
-    unique("coaching_workout_publications_session_unique").on(table.planned_session_id),
+    unique("coaching_activity_plan_publications_session_unique").on(table.planned_session_id),
     check(
-      "coaching_workout_publications_operation_id_check",
+      "coaching_activity_plan_publications_operation_id_check",
       sql`${table.operation_id} ~ '^[A-Za-z0-9_-]{32,128}$'`,
     ),
     check(
-      "coaching_workout_publications_source_revision_check",
+      "coaching_activity_plan_publications_source_revision_check",
       sql`${table.source_activity_plan_revision} > 0`,
     ),
   ],

@@ -57,7 +57,7 @@ vi.mock("../../../lib/api/client", () => ({
   },
 }));
 
-import { CoachWorkoutPublication } from "./coach-workout-publication";
+import { CoachActivityPlanPublication } from "./coach-activity-plan-publication";
 
 afterEach(() => {
   cleanup();
@@ -66,27 +66,27 @@ afterEach(() => {
   mocks.publish.mockReset();
 });
 
-describe("CoachWorkoutPublication", () => {
-  it("requires a fresh successful preview before publishing the selected owned workout", async () => {
+describe("CoachActivityPlanPublication", () => {
+  it("requires a fresh successful preview before publishing the selected owned activity plan", async () => {
     mocks.preview.mockResolvedValue({
       data: {
         athleteTimezone: "Europe/London",
         versionMatches: true,
-        workout: { name: "Threshold", revision: 3 },
+        activityPlan: { name: "Threshold", revision: 3 },
       },
     });
     mocks.publish.mockResolvedValue({});
     render(
-      <CoachWorkoutPublication
+      <CoachActivityPlanPublication
         athleteId="22222222-2222-4222-8222-222222222222"
         organizationId="11111111-1111-4111-8111-111111111111"
       />,
     );
 
-    expect(screen.getByRole("button", { name: "Publish workout" }).hasAttribute("disabled")).toBe(
-      true,
-    );
-    fireEvent.change(screen.getByLabelText("Your workout"), {
+    expect(
+      screen.getByRole("button", { name: "Publish activity plan" }).hasAttribute("disabled"),
+    ).toBe(true);
+    fireEvent.change(screen.getByLabelText("Your activity plan"), {
       target: { value: "44444444-4444-4444-8444-444444444444" },
     });
     fireEvent.change(screen.getByLabelText("Athlete planning date"), {
@@ -105,7 +105,7 @@ describe("CoachWorkoutPublication", () => {
     expect(mocks.preview).toHaveBeenCalledWith({ throwOnError: true });
     expect(screen.getByText(/Europe\/London planning time zone/)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Publish workout" }));
+    fireEvent.click(screen.getByRole("button", { name: "Publish activity plan" }));
     await waitFor(() => expect(mocks.publish).toHaveBeenCalledTimes(1));
     expect(mocks.publish.mock.calls[0]?.[0]).toMatchObject({
       activityPlanId: "44444444-4444-4444-8444-444444444444",
@@ -123,16 +123,16 @@ describe("CoachWorkoutPublication", () => {
       data: {
         athleteTimezone: "Europe/London",
         versionMatches: true,
-        workout: { name: "Threshold", revision: 3 },
+        activityPlan: { name: "Threshold", revision: 3 },
       },
     });
     render(
-      <CoachWorkoutPublication
+      <CoachActivityPlanPublication
         athleteId="22222222-2222-4222-8222-222222222222"
         organizationId="11111111-1111-4111-8111-111111111111"
       />,
     );
-    fireEvent.change(screen.getByLabelText("Your workout"), {
+    fireEvent.change(screen.getByLabelText("Your activity plan"), {
       target: { value: "44444444-4444-4444-8444-444444444444" },
     });
     fireEvent.change(screen.getByLabelText("Athlete planning date"), {
@@ -144,8 +144,8 @@ describe("CoachWorkoutPublication", () => {
       target: { value: "2026-11-13" },
     });
     await waitFor(() => expect(screen.queryByText(/Ready to publish/)).toBeNull());
-    expect(screen.getByRole("button", { name: "Publish workout" }).hasAttribute("disabled")).toBe(
-      true,
-    );
+    expect(
+      screen.getByRole("button", { name: "Publish activity plan" }).hasAttribute("disabled"),
+    ).toBe(true);
   });
 });

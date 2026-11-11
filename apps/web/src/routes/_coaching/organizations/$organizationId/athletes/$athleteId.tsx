@@ -1,11 +1,11 @@
 import { Button } from "@repo/ui/components/button";
 import { createFileRoute, Link, useRouterState } from "@tanstack/react-router";
 import { AthleteWorkspaceSwitcher } from "../../../../../components/coaching/athletes/athlete-workspace-switcher";
+import { CoachActivityPlanPublication } from "../../../../../components/coaching/athletes/coach-activity-plan-publication";
 import { CoachAthleteCalendar } from "../../../../../components/coaching/athletes/coach-athlete-calendar";
 import { CoachAthleteGoals } from "../../../../../components/coaching/athletes/coach-athlete-goals";
 import { CoachAthleteOverview } from "../../../../../components/coaching/athletes/coach-athlete-overview";
 import { CoachAthleteZonesSection } from "../../../../../components/coaching/athletes/coach-athlete-zones-section";
-import { CoachWorkoutPublication } from "../../../../../components/coaching/athletes/coach-workout-publication";
 import {
   currentCalendarWeek,
   loadCoachAthleteCalendar,
@@ -130,7 +130,7 @@ function AthleteWorkspacePage() {
         result={identity ? overview : { status: "unavailable" }}
       />
       {identity ? (
-        <CoachWorkoutPublication athleteId={athleteId} organizationId={organizationId} />
+        <CoachActivityPlanPublication athleteId={athleteId} organizationId={organizationId} />
       ) : null}
       <CoachAthleteCalendar
         actorProfileId={actorProfileId}

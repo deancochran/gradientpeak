@@ -4,9 +4,9 @@ import { createDbClient, type DrizzleDbClient } from "@repo/db/client";
 import {
   activityPlans,
   athletePlanEditGrants,
+  coachingActivityPlanPublications,
   coachingAssignments,
   coachingEngagements,
-  coachingWorkoutPublications,
   organizationMembershipRoleGrants,
   organizationMemberships,
   plannedSessions,
@@ -25,7 +25,7 @@ import { withProfileFencedRepeatableReadSnapshot } from "../../db";
 import { coachingPublicationRouter } from "../../routers/coaching-publication";
 import { organizationsRouter } from "../../routers/organizations";
 import { activityPlanStructureHash } from "../activity-plans/structure-hash";
-import { publishCoachWorkout } from "./publish-workout";
+import { publishCoachActivityPlan } from "./publish-activity-plan";
 
 const structure = activityPlanStructureSchema.parse({
   version: 5,
@@ -44,6 +44,15 @@ const structureHash = activityPlanStructureHash(structure);
 const semanticHash = activityPlanSemanticHash({
   structure,
   trainingIntent: "general_maintenance",
+});
+const revisedStructure = activityPlanStructureSchema.parse({
+  ...structure,
+  items: [{ ...structure.items[0], name: "Endurance Plus" }],
+});
+const revisedStructureHash = activityPlanStructureHash(revisedStructure);
+const revisedSemanticHash = activityPlanSemanticHash({
+  structure: revisedStructure,
+  trainingIntent: "aerobic_base",
 });
 const planningDate = "2099-01-01";
 const now = new Date("2098-12-01T12:00:00.000Z");
@@ -130,7 +139,7 @@ async function sourcePlan(db: DrizzleDbClient, coachId: string) {
   await db.insert(activityPlans).values({
     id,
     profile_id: coachId,
-    name: "Coach endurance workout",
+    name: "Coach endurance activity plan",
     structure,
     structure_hash: structureHash,
     semantic_hash: semanticHash,
@@ -271,6 +280,41 @@ it("enforces athlete publication authority, idempotency, input validation, engag
 
         const created = await coachCaller.publish(publish);
         expect(created.status).toBe("created");
+        const [copiedBeforeSourceEdit] = await db
+          .select({
+            name: activityPlans.name,
+            revision: activityPlans.revision,
+            structure: activityPlans.structure,
+            trainingIntent: activityPlans.training_intent,
+          })
+          .from(activityPlans)
+          .where(eq(activityPlans.id, created.copiedActivityPlanId));
+        const [sessionBeforeSourceEdit] = await db
+          .select({
+            activityPlanId: plannedSessions.activity_plan_id,
+            activityPlanRevision: plannedSessions.activity_plan_revision,
+            resolutionManifest: plannedSessions.resolution_manifest,
+          })
+          .from(plannedSessions)
+          .where(eq(plannedSessions.id, created.session.id));
+        expect(copiedBeforeSourceEdit).toBeTruthy();
+        expect(sessionBeforeSourceEdit).toBeTruthy();
+        await db
+          .update(activityPlans)
+          .set({
+            name: "Coach revised activity plan",
+            semantic_hash: revisedSemanticHash,
+            structure: revisedStructure,
+            structure_hash: revisedStructureHash,
+            training_intent: "aerobic_base",
+          })
+          .where(eq(activityPlans.id, sourceActivityPlanId));
+        expect(
+          await db
+            .select({ revision: activityPlans.revision })
+            .from(activityPlans)
+            .where(eq(activityPlans.id, sourceActivityPlanId)),
+        ).toEqual([{ revision: 2 }]);
         const repeated = await coachCaller.publish(publish);
         expect(repeated).toEqual({
           status: "existing",
@@ -278,20 +322,44 @@ it("enforces athlete publication authority, idempotency, input validation, engag
           copiedActivityPlanId: created.copiedActivityPlanId,
         });
         await expect(
+          coachCaller.publish({ ...publish, activityPlanRevision: 2 }),
+        ).rejects.toMatchObject({ code: "CONFLICT" });
+        expect(
+          await db
+            .select({
+              name: activityPlans.name,
+              revision: activityPlans.revision,
+              structure: activityPlans.structure,
+              trainingIntent: activityPlans.training_intent,
+            })
+            .from(activityPlans)
+            .where(eq(activityPlans.id, created.copiedActivityPlanId)),
+        ).toEqual([copiedBeforeSourceEdit]);
+        expect(
+          await db
+            .select({
+              activityPlanId: plannedSessions.activity_plan_id,
+              activityPlanRevision: plannedSessions.activity_plan_revision,
+              resolutionManifest: plannedSessions.resolution_manifest,
+            })
+            .from(plannedSessions)
+            .where(eq(plannedSessions.id, created.session.id)),
+        ).toEqual([sessionBeforeSourceEdit]);
+        await expect(
           coachCaller.publish({ ...publish, planningDate: "2099-01-02" }),
         ).rejects.toMatchObject({ code: "CONFLICT" });
 
         await expect(
           db
-            .update(coachingWorkoutPublications)
+            .update(coachingActivityPlanPublications)
             .set({ planned_session_id: randomUUID() })
-            .where(eq(coachingWorkoutPublications.planned_session_id, created.session.id)),
+            .where(eq(coachingActivityPlanPublications.planned_session_id, created.session.id)),
         ).rejects.toThrow();
         await expect(
           db
-            .update(coachingWorkoutPublications)
+            .update(coachingActivityPlanPublications)
             .set({ athlete_profile_id: outsiderId })
-            .where(eq(coachingWorkoutPublications.planned_session_id, created.session.id)),
+            .where(eq(coachingActivityPlanPublications.planned_session_id, created.session.id)),
         ).rejects.toThrow();
         await expect(
           db.delete(plannedSessions).where(eq(plannedSessions.id, created.session.id)),
@@ -304,14 +372,14 @@ it("enforces athlete publication authority, idempotency, input validation, engag
         const rollbackOperationId = `publication_${"f".repeat(32)}`;
         await expect(
           withProfileFencedRepeatableReadSnapshot(db, athleteId, async (tx) => {
-            await publishCoachWorkout({
+            await publishCoachActivityPlan({
               tx,
               actorProfileId: coachId,
               organizationId: first.organizationId,
               athleteProfileId: athleteId,
               coachMembershipId: first.coachMembershipId,
               activityPlanId: sourceActivityPlanId,
-              activityPlanRevision: 1,
+              activityPlanRevision: 2,
               planningDate,
               operationId: rollbackOperationId,
               now,
@@ -327,12 +395,12 @@ it("enforces athlete publication authority, idempotency, input validation, engag
         ).toEqual(beforeRollbackCopies);
         expect(
           await db
-            .select({ id: coachingWorkoutPublications.id })
-            .from(coachingWorkoutPublications)
+            .select({ id: coachingActivityPlanPublications.id })
+            .from(coachingActivityPlanPublications)
             .where(
               and(
-                eq(coachingWorkoutPublications.athlete_profile_id, athleteId),
-                eq(coachingWorkoutPublications.operation_id, rollbackOperationId),
+                eq(coachingActivityPlanPublications.athlete_profile_id, athleteId),
+                eq(coachingActivityPlanPublications.operation_id, rollbackOperationId),
               ),
             ),
         ).toEqual([]);
@@ -343,14 +411,14 @@ it("enforces athlete publication authority, idempotency, input validation, engag
           .where(eq(profiles.id, athleteId));
         await expect(
           withProfileFencedRepeatableReadSnapshot(db, athleteId, (tx) =>
-            publishCoachWorkout({
+            publishCoachActivityPlan({
               tx,
               actorProfileId: coachId,
               organizationId: first.organizationId,
               athleteProfileId: athleteId,
               coachMembershipId: first.coachMembershipId,
               activityPlanId: sourceActivityPlanId,
-              activityPlanRevision: 1,
+              activityPlanRevision: 2,
               planningDate: "2098-12-01",
               operationId: `publication_${"i".repeat(32)}`,
               now,
@@ -359,14 +427,14 @@ it("enforces athlete publication authority, idempotency, input validation, engag
         ).rejects.toThrow("only future athlete-local sessions");
         await expect(
           withProfileFencedRepeatableReadSnapshot(db, athleteId, (tx) =>
-            publishCoachWorkout({
+            publishCoachActivityPlan({
               tx,
               actorProfileId: coachId,
               organizationId: first.organizationId,
               athleteProfileId: athleteId,
               coachMembershipId: first.coachMembershipId,
               activityPlanId: sourceActivityPlanId,
-              activityPlanRevision: 1,
+              activityPlanRevision: 2,
               planningDate: "2098-12-02",
               operationId: `publication_${"j".repeat(32)}`,
               now,
@@ -381,8 +449,8 @@ it("enforces athlete publication authority, idempotency, input validation, engag
             .where(eq(activityPlans.profile_id, athleteId));
           const [receipts] = await db
             .select({ count: sql<number>`count(*)::int` })
-            .from(coachingWorkoutPublications)
-            .where(eq(coachingWorkoutPublications.athlete_profile_id, athleteId));
+            .from(coachingActivityPlanPublications)
+            .where(eq(coachingActivityPlanPublications.athlete_profile_id, athleteId));
           const [sessions] = await db
             .select({ count: sql<number>`count(*)::int` })
             .from(plannedSessions)
@@ -402,14 +470,14 @@ it("enforces athlete publication authority, idempotency, input validation, engag
           async (tx) => {
             publishFenceEntered.resolve();
             await releasePublishFence.promise;
-            return publishCoachWorkout({
+            return publishCoachActivityPlan({
               tx,
               actorProfileId: coachId,
               organizationId: first.organizationId,
               athleteProfileId: athleteId,
               coachMembershipId: first.coachMembershipId,
               activityPlanId: sourceActivityPlanId,
-              activityPlanRevision: 1,
+              activityPlanRevision: 2,
               planningDate,
               operationId: `publication_${"k".repeat(32)}`,
               now,
@@ -461,14 +529,14 @@ it("enforces athlete publication authority, idempotency, input validation, engag
           athleteId,
           async (tx) => {
             publishStartedAfterRevoke = true;
-            return publishCoachWorkout({
+            return publishCoachActivityPlan({
               tx,
               actorProfileId: coachId,
               organizationId: first.organizationId,
               athleteProfileId: athleteId,
               coachMembershipId: first.coachMembershipId,
               activityPlanId: sourceActivityPlanId,
-              activityPlanRevision: 1,
+              activityPlanRevision: 2,
               planningDate,
               operationId: `publication_${"l".repeat(32)}`,
               now,
@@ -508,14 +576,14 @@ it("enforces athlete publication authority, idempotency, input validation, engag
           .where(eq(profiles.id, athleteId));
         await expect(
           db.transaction((tx) =>
-            publishCoachWorkout({
+            publishCoachActivityPlan({
               tx,
               actorProfileId: coachId,
               organizationId: first.organizationId,
               athleteProfileId: athleteId,
               coachMembershipId: first.coachMembershipId,
               activityPlanId: sourceActivityPlanId,
-              activityPlanRevision: 1,
+              activityPlanRevision: 2,
               planningDate,
               operationId: `publication_${"h".repeat(32)}`,
               now,

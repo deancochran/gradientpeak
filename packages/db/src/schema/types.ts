@@ -19,9 +19,9 @@ import type {
   athleteDataSharingConsents,
   athletePlanEditGrants,
   athleteRecalculationQueue,
+  coachingActivityPlanPublications,
   coachingAssignments,
   coachingEngagements,
-  coachingWorkoutPublications,
   comments,
   contentAccessGrants,
   conversationParticipants,
@@ -118,8 +118,12 @@ export type AthleteDataSharingConsentRow = InferSelectModel<typeof athleteDataSh
 export type AthleteDataSharingConsentInsert = InferInsertModel<typeof athleteDataSharingConsents>;
 export type AthletePlanEditGrantRow = InferSelectModel<typeof athletePlanEditGrants>;
 export type AthletePlanEditGrantInsert = InferInsertModel<typeof athletePlanEditGrants>;
-export type CoachingWorkoutPublicationRow = InferSelectModel<typeof coachingWorkoutPublications>;
-export type CoachingWorkoutPublicationInsert = InferInsertModel<typeof coachingWorkoutPublications>;
+export type CoachingActivityPlanPublicationRow = InferSelectModel<
+  typeof coachingActivityPlanPublications
+>;
+export type CoachingActivityPlanPublicationInsert = InferInsertModel<
+  typeof coachingActivityPlanPublications
+>;
 export type OrganizationAuditEventRow = InferSelectModel<typeof organizationAuditEvents>;
 export type OrganizationAuditEventInsert = InferInsertModel<typeof organizationAuditEvents>;
 

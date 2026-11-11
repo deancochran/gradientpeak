@@ -101,7 +101,7 @@ export const apiDomainPolicy = {
   athleteIntelligence: policy("api/athlete-intelligence"),
   calendar: policy("api/calendar"),
   coachingPublication: policy("api/coaching-publication", {
-    resourceAuthorizationPolicy: "coaching.workout-publication.v1",
+    resourceAuthorizationPolicy: "coaching.activity-plan-publication.v1",
   }),
   events: policy("api/events"),
   feed: policy("api/feed"),

@@ -7,9 +7,9 @@ import {
 import {
   activityPlans,
   athletePlanEditGrants,
+  coachingActivityPlanPublications,
   coachingAssignments,
   coachingEngagements,
-  coachingWorkoutPublications,
   organizationMembershipRoleGrants,
   organizationMemberships,
   organizations,
@@ -28,7 +28,7 @@ export class CoachingPublicationConflictError extends Error {}
  * Performs no provider delivery. The athlete-owned private copy is the durable
  * frozen source used by the existing planned-session/prescription flow.
  */
-export async function publishCoachWorkout(input: {
+export async function publishCoachActivityPlan(input: {
   tx: DrizzleTransactionClient;
   actorProfileId: string;
   organizationId: string;
@@ -117,39 +117,24 @@ export async function publishCoachWorkout(input: {
     throw new CoachingPublicationDeniedError("Athlete plan-edit permission is unavailable");
   }
 
-  const [source] = await input.tx
-    .select({ id: activityPlans.id, revision: activityPlans.revision })
-    .from(activityPlans)
-    .where(
-      and(
-        eq(activityPlans.id, input.activityPlanId),
-        eq(activityPlans.profile_id, input.actorProfileId),
-      ),
-    )
-    .for("update")
-    .limit(1);
-  if (!source) throw new CoachingPublicationDeniedError("Workout is not owned by this coach");
-  if (source.revision !== input.activityPlanRevision) {
-    throw new CoachingPublicationConflictError(
-      "Workout changed; preview it again before publishing",
-    );
-  }
-
+  // Authorize the actor before resolving an existing receipt, but resolve that
+  // durable operation before consulting mutable source-plan state. A lost
+  // response must remain safely retryable after a later source edit.
   const [receipt] = await input.tx
     .select({
-      organizationId: coachingWorkoutPublications.organization_id,
-      coachMembershipId: coachingWorkoutPublications.coach_membership_id,
-      sourceActivityPlanId: coachingWorkoutPublications.source_activity_plan_id,
-      sourceActivityPlanRevision: coachingWorkoutPublications.source_activity_plan_revision,
-      planningDate: coachingWorkoutPublications.planning_date,
-      copiedActivityPlanId: coachingWorkoutPublications.copied_activity_plan_id,
-      plannedSessionId: coachingWorkoutPublications.planned_session_id,
+      organizationId: coachingActivityPlanPublications.organization_id,
+      coachMembershipId: coachingActivityPlanPublications.coach_membership_id,
+      sourceActivityPlanId: coachingActivityPlanPublications.source_activity_plan_id,
+      sourceActivityPlanRevision: coachingActivityPlanPublications.source_activity_plan_revision,
+      planningDate: coachingActivityPlanPublications.planning_date,
+      copiedActivityPlanId: coachingActivityPlanPublications.copied_activity_plan_id,
+      plannedSessionId: coachingActivityPlanPublications.planned_session_id,
     })
-    .from(coachingWorkoutPublications)
+    .from(coachingActivityPlanPublications)
     .where(
       and(
-        eq(coachingWorkoutPublications.athlete_profile_id, input.athleteProfileId),
-        eq(coachingWorkoutPublications.operation_id, input.operationId),
+        eq(coachingActivityPlanPublications.athlete_profile_id, input.athleteProfileId),
+        eq(coachingActivityPlanPublications.operation_id, input.operationId),
       ),
     )
     .for("update")
@@ -173,6 +158,24 @@ export async function publishCoachWorkout(input: {
     };
   }
 
+  const [source] = await input.tx
+    .select({ id: activityPlans.id, revision: activityPlans.revision })
+    .from(activityPlans)
+    .where(
+      and(
+        eq(activityPlans.id, input.activityPlanId),
+        eq(activityPlans.profile_id, input.actorProfileId),
+      ),
+    )
+    .for("update")
+    .limit(1);
+  if (!source) throw new CoachingPublicationDeniedError("Activity plan is not owned by this coach");
+  if (source.revision !== input.activityPlanRevision) {
+    throw new CoachingPublicationConflictError(
+      "Activity plan changed; preview it again before publishing",
+    );
+  }
+
   const copied = await duplicateActivityPlan({
     db: input.tx,
     profileId: input.athleteProfileId,
@@ -192,7 +195,7 @@ export async function publishCoachWorkout(input: {
     groupEventId: null,
     capturedAt: input.now,
   });
-  await input.tx.insert(coachingWorkoutPublications).values({
+  await input.tx.insert(coachingActivityPlanPublications).values({
     id: randomUUID(),
     athlete_profile_id: input.athleteProfileId,
     operation_id: input.operationId,

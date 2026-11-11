@@ -21,8 +21,8 @@ import { listAthletePublicationPermissionOptions } from "../application/coaching
 import {
   CoachingPublicationConflictError,
   CoachingPublicationDeniedError,
-  publishCoachWorkout,
-} from "../application/coaching/publish-workout";
+  publishCoachActivityPlan,
+} from "../application/coaching/publish-activity-plan";
 import { getRequiredDb, withProfileFencedRepeatableReadSnapshot } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
@@ -203,7 +203,7 @@ export const coachingPublicationRouter = createTRPCRouter({
     .input(publishInput.omit({ operationId: true }))
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
-      const [workout] = await db
+      const [activityPlan] = await db
         .select({
           id: activityPlans.id,
           name: activityPlans.name,
@@ -217,8 +217,11 @@ export const coachingPublicationRouter = createTRPCRouter({
           ),
         )
         .limit(1);
-      if (!workout)
-        throw new TRPCError({ code: "FORBIDDEN", message: "Workout is not owned by this coach" });
+      if (!activityPlan)
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Activity plan is not owned by this coach",
+        });
       const [athlete] = await db
         .select({ planningTimezone: profiles.planning_timezone })
         .from(profiles)
@@ -300,15 +303,20 @@ export const coachingPublicationRouter = createTRPCRouter({
         athleteProfileId: input.athleteProfileId,
         athleteTimezone: athlete.planningTimezone,
         planningDate: input.planningDate,
-        workout,
-        versionMatches: workout.revision === input.activityPlanRevision,
+        activityPlan,
+        versionMatches: activityPlan.revision === input.activityPlanRevision,
       };
     }),
   publish: protectedProcedure.input(publishInput).mutation(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
     try {
       return await withProfileFencedRepeatableReadSnapshot(db, input.athleteProfileId, (tx) =>
-        publishCoachWorkout({ tx, actorProfileId: ctx.session.user.id, ...input, now: new Date() }),
+        publishCoachActivityPlan({
+          tx,
+          actorProfileId: ctx.session.user.id,
+          ...input,
+          now: new Date(),
+        }),
       );
     } catch (error) {
       return map(error);

@@ -28,7 +28,7 @@ vi.mock("../../lib/api/client", () => ({
   },
 }));
 
-import { AthleteWorkoutPublicationPermissions } from "./athlete-workout-publication-permissions";
+import { AthleteActivityPlanPublicationPermissions } from "./athlete-activity-plan-publication-permissions";
 
 afterEach(() => {
   cleanup();
@@ -38,16 +38,16 @@ afterEach(() => {
   option.currentGrant = null;
 });
 
-describe("AthleteWorkoutPublicationPermissions", () => {
+describe("AthleteActivityPlanPublicationPermissions", () => {
   it("grants the selected assigned coach write permission and refreshes authoritative status", async () => {
     mocks.grant.mockResolvedValue({ grant: { id: "33333333-3333-4333-8333-333333333333" } });
     mocks.invalidate.mockResolvedValue(undefined);
-    render(<AthleteWorkoutPublicationPermissions />);
+    render(<AthleteActivityPlanPublicationPermissions />);
 
     expect(
       screen.getByText(/write permission, separate from any read-only coaching consent/i),
     ).toBeTruthy();
-    fireEvent.click(screen.getByLabelText("Allow Avery Coach to publish workouts"));
+    fireEvent.click(screen.getByLabelText("Allow Avery Coach to publish activity plans"));
 
     await waitFor(() =>
       expect(mocks.grant).toHaveBeenCalledWith({
@@ -56,16 +56,16 @@ describe("AthleteWorkoutPublicationPermissions", () => {
       }),
     );
     await waitFor(() => expect(mocks.invalidate).toHaveBeenCalledOnce());
-    expect(screen.getByRole("status").textContent).toMatch(/can now publish workouts/i);
+    expect(screen.getByRole("status").textContent).toMatch(/can now publish activity plans/i);
   });
 
   it("revokes the current write permission without exposing an identifier field", async () => {
     option.currentGrant = { id: "33333333-3333-4333-8333-333333333333" };
     mocks.revoke.mockResolvedValue({ revoked: true });
     mocks.invalidate.mockResolvedValue(undefined);
-    render(<AthleteWorkoutPublicationPermissions />);
+    render(<AthleteActivityPlanPublicationPermissions />);
 
-    fireEvent.click(screen.getByLabelText("Allow Avery Coach to publish workouts"));
+    fireEvent.click(screen.getByLabelText("Allow Avery Coach to publish activity plans"));
 
     await waitFor(() =>
       expect(mocks.revoke).toHaveBeenCalledWith({ grantId: option.currentGrant?.id }),
@@ -77,13 +77,13 @@ describe("AthleteWorkoutPublicationPermissions", () => {
     option.currentGrant = { id: "33333333-3333-4333-8333-333333333333" };
     mocks.revoke.mockRejectedValue({ data: { code: "NOT_FOUND" } });
     mocks.invalidate.mockResolvedValue(undefined);
-    render(<AthleteWorkoutPublicationPermissions />);
+    render(<AthleteActivityPlanPublicationPermissions />);
 
-    fireEvent.click(screen.getByLabelText("Allow Avery Coach to publish workouts"));
+    fireEvent.click(screen.getByLabelText("Allow Avery Coach to publish activity plans"));
 
     await waitFor(() => expect(mocks.invalidate).toHaveBeenCalledOnce());
     expect(screen.getByRole("status").textContent).toMatch(
-      /no active workout publishing permission/i,
+      /no active activity-plan publishing permission/i,
     );
   });
 });

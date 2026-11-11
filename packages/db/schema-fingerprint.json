@@ -318,6 +318,12 @@
       "forceRls": false
     },
     {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "name": "coaching_activity_plan_publications",
+      "forceRls": false
+    },
+    {
       "acl": "{postgres=arwdDxtm/postgres,service_role=rm/postgres}",
       "rls": true,
       "name": "coaching_assignments",
@@ -327,12 +333,6 @@
       "acl": "{postgres=arwdDxtm/postgres,service_role=rm/postgres}",
       "rls": true,
       "name": "coaching_engagements",
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
-      "rls": true,
-      "name": "coaching_workout_publications",
       "forceRls": false
     },
     {
@@ -4366,6 +4366,116 @@
     {
       "name": "id",
       "type": "uuid",
+      "table": "coaching_activity_plan_publications",
+      "default": "gen_random_uuid()",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "athlete_profile_id",
+      "type": "uuid",
+      "table": "coaching_activity_plan_publications",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "operation_id",
+      "type": "text",
+      "table": "coaching_activity_plan_publications",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "organization_id",
+      "type": "uuid",
+      "table": "coaching_activity_plan_publications",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "coach_membership_id",
+      "type": "uuid",
+      "table": "coaching_activity_plan_publications",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "source_activity_plan_id",
+      "type": "uuid",
+      "table": "coaching_activity_plan_publications",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "source_activity_plan_revision",
+      "type": "integer",
+      "table": "coaching_activity_plan_publications",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "planning_date",
+      "type": "date",
+      "table": "coaching_activity_plan_publications",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "copied_activity_plan_id",
+      "type": "uuid",
+      "table": "coaching_activity_plan_publications",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
+      "name": "planned_session_id",
+      "type": "uuid",
+      "table": "coaching_activity_plan_publications",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 10,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "coaching_activity_plan_publications",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 11,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
       "table": "coaching_assignments",
       "default": "gen_random_uuid()",
       "notNull": true,
@@ -4501,116 +4611,6 @@
       "notNull": true,
       "identity": "",
       "position": 7,
-      "generated": ""
-    },
-    {
-      "name": "id",
-      "type": "uuid",
-      "table": "coaching_workout_publications",
-      "default": "gen_random_uuid()",
-      "notNull": true,
-      "identity": "",
-      "position": 1,
-      "generated": ""
-    },
-    {
-      "name": "athlete_profile_id",
-      "type": "uuid",
-      "table": "coaching_workout_publications",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 2,
-      "generated": ""
-    },
-    {
-      "name": "operation_id",
-      "type": "text",
-      "table": "coaching_workout_publications",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 3,
-      "generated": ""
-    },
-    {
-      "name": "organization_id",
-      "type": "uuid",
-      "table": "coaching_workout_publications",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 4,
-      "generated": ""
-    },
-    {
-      "name": "coach_membership_id",
-      "type": "uuid",
-      "table": "coaching_workout_publications",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 5,
-      "generated": ""
-    },
-    {
-      "name": "source_activity_plan_id",
-      "type": "uuid",
-      "table": "coaching_workout_publications",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 6,
-      "generated": ""
-    },
-    {
-      "name": "source_activity_plan_revision",
-      "type": "integer",
-      "table": "coaching_workout_publications",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 7,
-      "generated": ""
-    },
-    {
-      "name": "planning_date",
-      "type": "date",
-      "table": "coaching_workout_publications",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 8,
-      "generated": ""
-    },
-    {
-      "name": "copied_activity_plan_id",
-      "type": "uuid",
-      "table": "coaching_workout_publications",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 9,
-      "generated": ""
-    },
-    {
-      "name": "planned_session_id",
-      "type": "uuid",
-      "table": "coaching_workout_publications",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 10,
-      "generated": ""
-    },
-    {
-      "name": "created_at",
-      "type": "timestamp with time zone",
-      "table": "coaching_workout_publications",
-      "default": "now()",
-      "notNull": true,
-      "identity": "",
-      "position": 11,
       "generated": ""
     },
     {
@@ -10906,6 +10906,21 @@
       "definition": "CREATE UNIQUE INDEX chatbot_turns_thread_id_request_id_key ON public.chatbot_turns USING btree (thread_id, request_id)"
     },
     {
+      "name": "coaching_activity_plan_publications_athlete_operation_unique",
+      "table": "coaching_activity_plan_publications",
+      "definition": "CREATE UNIQUE INDEX coaching_activity_plan_publications_athlete_operation_unique ON public.coaching_activity_plan_publications USING btree (athlete_profile_id, operation_id)"
+    },
+    {
+      "name": "coaching_activity_plan_publications_pkey",
+      "table": "coaching_activity_plan_publications",
+      "definition": "CREATE UNIQUE INDEX coaching_activity_plan_publications_pkey ON public.coaching_activity_plan_publications USING btree (id)"
+    },
+    {
+      "name": "coaching_activity_plan_publications_session_unique",
+      "table": "coaching_activity_plan_publications",
+      "definition": "CREATE UNIQUE INDEX coaching_activity_plan_publications_session_unique ON public.coaching_activity_plan_publications USING btree (planned_session_id)"
+    },
+    {
       "name": "coaching_assignments_active_coach_membership_idx",
       "table": "coaching_assignments",
       "definition": "CREATE INDEX coaching_assignments_active_coach_membership_idx ON public.coaching_assignments USING btree (organization_id, coach_membership_id) WHERE (ended_at IS NULL)"
@@ -10959,21 +10974,6 @@
       "name": "coaching_engagements_pkey",
       "table": "coaching_engagements",
       "definition": "CREATE UNIQUE INDEX coaching_engagements_pkey ON public.coaching_engagements USING btree (id)"
-    },
-    {
-      "name": "coaching_workout_publications_athlete_operation_unique",
-      "table": "coaching_workout_publications",
-      "definition": "CREATE UNIQUE INDEX coaching_workout_publications_athlete_operation_unique ON public.coaching_workout_publications USING btree (athlete_profile_id, operation_id)"
-    },
-    {
-      "name": "coaching_workout_publications_pkey",
-      "table": "coaching_workout_publications",
-      "definition": "CREATE UNIQUE INDEX coaching_workout_publications_pkey ON public.coaching_workout_publications USING btree (id)"
-    },
-    {
-      "name": "coaching_workout_publications_session_unique",
-      "table": "coaching_workout_publications",
-      "definition": "CREATE UNIQUE INDEX coaching_workout_publications_session_unique ON public.coaching_workout_publications USING btree (planned_session_id)"
     },
     {
       "name": "comments_pkey",
@@ -14586,6 +14586,48 @@
       "definition": "UNIQUE (thread_id, request_id)"
     },
     {
+      "kind": "f",
+      "name": "coaching_activity_plan_publications_athlete_fkey",
+      "table": "coaching_activity_plan_publications",
+      "validated": true,
+      "definition": "FOREIGN KEY (athlete_profile_id) REFERENCES profiles(id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "f",
+      "name": "coaching_activity_plan_publications_copy_fkey",
+      "table": "coaching_activity_plan_publications",
+      "validated": true,
+      "definition": "FOREIGN KEY (copied_activity_plan_id) REFERENCES activity_plans(id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "coaching_activity_plan_publications_operation_id_check",
+      "table": "coaching_activity_plan_publications",
+      "validated": true,
+      "definition": "CHECK (operation_id ~ '^[A-Za-z0-9_-]{32,128}$'::text)"
+    },
+    {
+      "kind": "p",
+      "name": "coaching_activity_plan_publications_pkey",
+      "table": "coaching_activity_plan_publications",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "kind": "f",
+      "name": "coaching_activity_plan_publications_session_athlete_fkey",
+      "table": "coaching_activity_plan_publications",
+      "validated": true,
+      "definition": "FOREIGN KEY (planned_session_id, athlete_profile_id) REFERENCES planned_sessions(id, profile_id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "coaching_activity_plan_publications_source_revision_check",
+      "table": "coaching_activity_plan_publications",
+      "validated": true,
+      "definition": "CHECK (source_activity_plan_revision > 0)"
+    },
+    {
       "kind": "c",
       "name": "coaching_assignments_chronology_check",
       "table": "coaching_assignments",
@@ -14661,48 +14703,6 @@
       "table": "coaching_engagements",
       "validated": true,
       "definition": "PRIMARY KEY (id)"
-    },
-    {
-      "kind": "f",
-      "name": "coaching_workout_publications_athlete_fkey",
-      "table": "coaching_workout_publications",
-      "validated": true,
-      "definition": "FOREIGN KEY (athlete_profile_id) REFERENCES profiles(id) ON DELETE RESTRICT"
-    },
-    {
-      "kind": "f",
-      "name": "coaching_workout_publications_copy_fkey",
-      "table": "coaching_workout_publications",
-      "validated": true,
-      "definition": "FOREIGN KEY (copied_activity_plan_id) REFERENCES activity_plans(id) ON DELETE RESTRICT"
-    },
-    {
-      "kind": "c",
-      "name": "coaching_workout_publications_operation_id_check",
-      "table": "coaching_workout_publications",
-      "validated": true,
-      "definition": "CHECK (operation_id ~ '^[A-Za-z0-9_-]{32,128}$'::text)"
-    },
-    {
-      "kind": "p",
-      "name": "coaching_workout_publications_pkey",
-      "table": "coaching_workout_publications",
-      "validated": true,
-      "definition": "PRIMARY KEY (id)"
-    },
-    {
-      "kind": "f",
-      "name": "coaching_workout_publications_session_athlete_fkey",
-      "table": "coaching_workout_publications",
-      "validated": true,
-      "definition": "FOREIGN KEY (planned_session_id, athlete_profile_id) REFERENCES planned_sessions(id, profile_id) ON DELETE RESTRICT"
-    },
-    {
-      "kind": "c",
-      "name": "coaching_workout_publications_source_revision_check",
-      "table": "coaching_workout_publications",
-      "validated": true,
-      "definition": "CHECK (source_activity_plan_revision > 0)"
     },
     {
       "kind": "c",
@@ -17259,6 +17259,14 @@
       "forceRls": false
     },
     {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "coaching_activity_plan_publications",
+      "managed": true,
+      "forceRls": false
+    },
+    {
       "acl": "{postgres=arwdDxtm/postgres,service_role=rm/postgres}",
       "rls": true,
       "kind": "r",
@@ -17271,14 +17279,6 @@
       "rls": true,
       "kind": "r",
       "name": "coaching_engagements",
-      "managed": true,
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
-      "rls": true,
-      "kind": "r",
-      "name": "coaching_workout_publications",
       "managed": true,
       "forceRls": false
     },

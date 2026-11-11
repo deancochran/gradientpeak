@@ -14,7 +14,7 @@ import { api } from "../../lib/api/client";
 function errorMessage(error: unknown) {
   return error instanceof Error && error.message
     ? error.message
-    : "We could not update workout publishing permission. Refresh to confirm its current status.";
+    : "We could not update activity-plan publishing permission. Refresh to confirm its current status.";
 }
 
 function hasNotFoundCode(error: unknown) {
@@ -24,7 +24,7 @@ function hasNotFoundCode(error: unknown) {
 }
 
 /** Athlete-owned write permission, deliberately separate from coaching read consent. */
-export function AthleteWorkoutPublicationPermissions() {
+export function AthleteActivityPlanPublicationPermissions() {
   const utils = api.useUtils();
   const options = api.coachingPublication.permissionOptions.useQuery();
   const grant = api.coachingPublication.grant.useMutation({ retry: false });
@@ -53,14 +53,16 @@ export function AthleteWorkoutPublicationPermissions() {
           organizationId: input.organizationId,
           coachMembershipId: input.coachMembershipId,
         });
-        setMessage(`${input.coachName} can now publish workouts to your plan.`);
+        setMessage(`${input.coachName} can now publish activity plans to your plan.`);
       } else if (input.currentGrantId) {
         await revoke.mutateAsync({ grantId: input.currentGrantId });
-        setMessage(`${input.coachName} can no longer publish workouts to your plan.`);
+        setMessage(`${input.coachName} can no longer publish activity plans to your plan.`);
       }
     } catch (caught) {
       if (!input.enabled && hasNotFoundCode(caught)) {
-        setMessage(`No active workout publishing permission was found for ${input.coachName}.`);
+        setMessage(
+          `No active activity-plan publishing permission was found for ${input.coachName}.`,
+        );
       } else {
         setError(errorMessage(caught));
       }
@@ -74,17 +76,17 @@ export function AthleteWorkoutPublicationPermissions() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Coach workout publishing</CardTitle>
+        <CardTitle>Coach activity-plan publishing</CardTitle>
         <CardDescription>
-          Let an assigned coach add a copy of one of their workouts to your training plan. This is a
-          write permission, separate from any read-only coaching consent.
+          Let an assigned coach add a copy of one of their activity plans to your training plan.
+          This is a write permission, separate from any read-only coaching consent.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {options.isLoading ? <p role="status">Loading assigned coaches…</p> : null}
         {options.error ? (
           <div className="space-y-2" role="alert">
-            <p>Workout publishing permissions could not be loaded.</p>
+            <p>Activity-plan publishing permissions could not be loaded.</p>
             <Button onClick={() => void refreshStatus()} type="button" variant="outline">
               Retry
             </Button>
@@ -96,7 +98,7 @@ export function AthleteWorkoutPublicationPermissions() {
           </p>
         ) : null}
         {options.data?.options.map((option) => {
-          const id = `coach-workout-publication-${option.coach.membershipId}`;
+          const id = `coach-activity-plan-publication-${option.coach.membershipId}`;
           const enabled = option.currentGrant !== null;
           return (
             <div
@@ -104,7 +106,7 @@ export function AthleteWorkoutPublicationPermissions() {
               key={option.coach.membershipId}
             >
               <div className="space-y-1">
-                <Label htmlFor={id}>Allow {option.coach.name} to publish workouts</Label>
+                <Label htmlFor={id}>Allow {option.coach.name} to publish activity plans</Label>
                 <p className="text-sm text-muted-foreground">{option.organization.name}</p>
               </div>
               <Switch

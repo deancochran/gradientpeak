@@ -45,8 +45,8 @@ vi.mock("../../../../../components/coaching/athletes/athlete-workspace-switcher"
 vi.mock("../../../../../components/coaching/athletes/coach-athlete-overview", () => ({
   CoachAthleteOverview: ({ athleteId }: { athleteId: string }) => <p>overview for {athleteId}</p>,
 }));
-vi.mock("../../../../../components/coaching/athletes/coach-workout-publication", () => ({
-  CoachWorkoutPublication: () => <p>workout publication</p>,
+vi.mock("../../../../../components/coaching/athletes/coach-activity-plan-publication", () => ({
+  CoachActivityPlanPublication: () => <p>activityPlan publication</p>,
 }));
 vi.mock("../../../../../components/coaching/athletes/coach-athlete-goals", () => ({
   CoachAthleteGoals: () => <p>goals</p>,
