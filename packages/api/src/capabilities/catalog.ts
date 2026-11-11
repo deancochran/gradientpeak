@@ -100,6 +100,9 @@ export const apiDomainPolicy = {
   activityPlans: policy("api/activity-plans"),
   athleteIntelligence: policy("api/athlete-intelligence"),
   calendar: policy("api/calendar"),
+  coachingPublication: policy("api/coaching-publication", {
+    resourceAuthorizationPolicy: "coaching.workout-publication.v1",
+  }),
   events: policy("api/events"),
   feed: policy("api/feed"),
   goals: policy("api/goals"),
@@ -153,6 +156,7 @@ export const apiOperationPolicyOverrides = {
   "activityPlans.create": { mutationSafety: "non_idempotent" },
   "activityPlans.duplicate": { mutationSafety: "non_idempotent" },
   "plannedSessions.changePlanOnly": { mutationSafety: "transactional" },
+  "coachingPublication.publish": { mutationSafety: "idempotency_key" },
   "athleteIntelligence.requestRecalculationRepair": { mutationSafety: "idempotency_key" },
   "events.create": { mutationSafety: "non_idempotent" },
   "events.reconcileHistoricalCompletions": { mutationSafety: "idempotency_key" },

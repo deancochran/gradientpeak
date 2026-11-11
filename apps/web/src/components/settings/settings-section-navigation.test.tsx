@@ -11,6 +11,7 @@ describe("SettingsSectionNavigation", () => {
 
     expect(screen.getByRole("navigation", { name: "Settings sections" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Profile" }).getAttribute("href")).toBe("#profile");
+    expect(screen.getByRole("link", { name: "Coaching" }).getAttribute("href")).toBe("#coaching");
     expect(screen.getByRole("link", { name: "Preferences" }).getAttribute("href")).toBe(
       "#preferences",
     );

@@ -3,6 +3,7 @@ import { createTRPCRouter } from "../trpc";
 import { onboardingRouter, profileAccessRouter, profilesRouter } from "./account";
 import { activitiesRouter, activityFilesRouter, routesRouter } from "./activity";
 import { athleteIntelligenceRouter } from "./athlete-intelligence";
+import { coachingPublicationRouter } from "./coaching-publication";
 import { groupsRouter } from "./groups";
 import { homeRouter } from "./insights";
 import { organizationsRouter } from "./organizations";
@@ -21,6 +22,7 @@ import { feedRouter, messagingRouter, notificationsRouter, socialRouter } from "
 export const appRouter = createTRPCRouter({
   profiles: profilesRouter,
   athleteIntelligence: athleteIntelligenceRouter,
+  coachingPublication: coachingPublicationRouter,
 
   onboarding: onboardingRouter,
   profileAccess: profileAccessRouter,

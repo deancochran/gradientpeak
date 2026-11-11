@@ -32,6 +32,8 @@ export type DuplicatedActivityPlan = Pick<
 export async function duplicateActivityPlan(input: {
   db: DrizzleQueryExecutor;
   profileId: string;
+  /** The actor who owns the source when copying it into another profile's private library. */
+  sourceOwnerProfileId?: string;
   sourceActivityPlanId: string;
   newName?: string;
   now?: Date;
@@ -43,7 +45,8 @@ export async function duplicateActivityPlan(input: {
     .where(eq(activityPlans.id, input.sourceActivityPlanId))
     .limit(1);
   if (!original) throw new ActivityPlanDuplicateNotFoundError("Original activity plan not found");
-  if (!canDuplicateFullActivityPlan(original, input.profileId)) {
+  const sourceOwnerProfileId = input.sourceOwnerProfileId ?? input.profileId;
+  if (!canDuplicateFullActivityPlan(original, sourceOwnerProfileId)) {
     throw new ActivityPlanDuplicateAccessError(
       "Only the plan owner can duplicate this activity plan",
     );

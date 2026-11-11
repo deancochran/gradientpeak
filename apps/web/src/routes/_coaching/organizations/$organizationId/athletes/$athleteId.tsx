@@ -5,6 +5,7 @@ import { CoachAthleteCalendar } from "../../../../../components/coaching/athlete
 import { CoachAthleteGoals } from "../../../../../components/coaching/athletes/coach-athlete-goals";
 import { CoachAthleteOverview } from "../../../../../components/coaching/athletes/coach-athlete-overview";
 import { CoachAthleteZonesSection } from "../../../../../components/coaching/athletes/coach-athlete-zones-section";
+import { CoachWorkoutPublication } from "../../../../../components/coaching/athletes/coach-workout-publication";
 import {
   currentCalendarWeek,
   loadCoachAthleteCalendar,
@@ -128,6 +129,9 @@ function AthleteWorkspacePage() {
         athleteId={athleteId}
         result={identity ? overview : { status: "unavailable" }}
       />
+      {identity ? (
+        <CoachWorkoutPublication athleteId={athleteId} organizationId={organizationId} />
+      ) : null}
       <CoachAthleteCalendar
         actorProfileId={actorProfileId}
         athleteId={athleteId}

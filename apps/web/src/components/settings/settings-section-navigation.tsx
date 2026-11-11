@@ -1,5 +1,6 @@
 const sections = [
   ["profile", "Profile"],
+  ["coaching", "Coaching"],
   ["preferences", "Preferences"],
   ["account", "Account"],
   ["security", "Security"],

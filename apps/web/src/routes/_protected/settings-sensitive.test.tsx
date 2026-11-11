@@ -42,6 +42,9 @@ vi.mock("../../components/providers/theme-provider", () => ({
   useTheme: () => ({ theme: "light", setTheme: vi.fn() }),
 }));
 vi.mock("../../components/route-flash-toast", () => ({ RouteFlashToast: () => null }));
+vi.mock("../../components/settings/athlete-workout-publication-permissions", () => ({
+  AthleteWorkoutPublicationPermissions: () => null,
+}));
 vi.mock("../../lib/api/client", () => ({
   api: {
     useUtils: () => ({ profiles: { get: { invalidate: vi.fn() } } }),

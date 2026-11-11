@@ -42,6 +42,7 @@ import { useEffect, useRef, useState } from "react";
 import { type UseFormReturn, useForm } from "react-hook-form";
 import { useAuth } from "../../components/providers/auth-provider";
 import { RouteFlashToast, type RouteFlashType } from "../../components/route-flash-toast";
+import { AthleteWorkoutPublicationPermissions } from "../../components/settings/athlete-workout-publication-permissions";
 import {
   AppearanceCard,
   ProductAnalyticsCard,
@@ -368,6 +369,9 @@ export function SettingsPage() {
           />
         </section>
         <MyGroupsCard />
+        <section id="coaching" aria-label="Coaching permissions" className="scroll-mt-6">
+          <AthleteWorkoutPublicationPermissions />
+        </section>
         <section id="account" aria-labelledby="account-heading" className="scroll-mt-6">
           <AccountInformationCard
             key={`account:${user?.id}`}

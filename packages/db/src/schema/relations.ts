@@ -16,6 +16,7 @@ import {
   activityTrainingEffects,
   athleteConsentPolicyVersions,
   athleteDataSharingConsents,
+  athletePlanEditGrants,
   athleteRecalculationQueue,
   coachingAssignments,
   coachingEngagements,
@@ -111,6 +112,12 @@ export const profilesRelations = relations(profiles, ({ one, many }) => ({
     relationName: "organizationInvitationAccepter",
   }),
   coachingEngagements: many(coachingEngagements),
+  athletePlanEditGrants: many(athletePlanEditGrants, {
+    relationName: "athletePlanEditGrantAthlete",
+  }),
+  planEditGrantsMade: many(athletePlanEditGrants, {
+    relationName: "athletePlanEditGrantGrantor",
+  }),
   profileGoals: many(profileGoals),
   profileMetrics: many(profileMetrics),
   athleteState: one(profileAthleteState),
@@ -157,6 +164,7 @@ export const organizationsRelations = relations(organizations, ({ one, many }) =
   memberships: many(organizationMemberships),
   coachingEngagements: many(coachingEngagements),
   coachingAssignments: many(coachingAssignments),
+  planEditGrants: many(athletePlanEditGrants),
   invitations: many(organizationInvitations),
   groups: many(organizationGroups),
   auditEvents: many(organizationAuditEvents),
@@ -201,6 +209,28 @@ export const coachingEngagementsRelations = relations(coachingEngagements, ({ on
   assignments: many(coachingAssignments),
   groupMemberships: many(organizationGroupAthletes),
   consents: many(athleteDataSharingConsents),
+  planEditGrants: many(athletePlanEditGrants),
+}));
+
+export const athletePlanEditGrantsRelations = relations(athletePlanEditGrants, ({ one }) => ({
+  engagement: one(coachingEngagements, {
+    fields: [athletePlanEditGrants.engagement_id],
+    references: [coachingEngagements.id],
+  }),
+  coachMembership: one(organizationMemberships, {
+    fields: [athletePlanEditGrants.coach_membership_id],
+    references: [organizationMemberships.id],
+  }),
+  athleteProfile: one(profiles, {
+    relationName: "athletePlanEditGrantAthlete",
+    fields: [athletePlanEditGrants.athlete_profile_id],
+    references: [profiles.id],
+  }),
+  grantorProfile: one(profiles, {
+    relationName: "athletePlanEditGrantGrantor",
+    fields: [athletePlanEditGrants.granted_by_profile_id],
+    references: [profiles.id],
+  }),
 }));
 
 export const coachingAssignmentsRelations = relations(coachingAssignments, ({ one }) => ({
@@ -1045,6 +1075,7 @@ export const relationsSchema = {
   coachingAssignmentsRelations,
   athleteConsentPolicyVersionsRelations,
   athleteDataSharingConsentsRelations,
+  athletePlanEditGrantsRelations,
   organizationAuditEventsRelations,
   groupInvitationsRelations,
   groupJoinRequestsRelations,

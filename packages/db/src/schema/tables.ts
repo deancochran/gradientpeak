@@ -880,6 +880,113 @@ export const athleteDataSharingConsents = pgTable(
   ],
 );
 
+/**
+ * Athlete-controlled authority for a specific coach to publish future training
+ * sessions. This is intentionally not a role, assignment, or read-consent.
+ */
+export const athletePlanEditGrants = pgTable(
+  "athlete_plan_edit_grants",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organization_id: uuid("organization_id").notNull(),
+    engagement_id: uuid("engagement_id").notNull(),
+    athlete_profile_id: uuid("athlete_profile_id").notNull(),
+    coach_membership_id: uuid("coach_membership_id").notNull(),
+    granted_by_profile_id: uuid("granted_by_profile_id").notNull(),
+    granted_at: timestamp("granted_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    expires_at: timestamp("expires_at", { withTimezone: true, mode: "date" }),
+    revoked_at: timestamp("revoked_at", { withTimezone: true, mode: "date" }),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.organization_id, table.engagement_id, table.athlete_profile_id],
+      foreignColumns: [
+        coachingEngagements.organization_id,
+        coachingEngagements.id,
+        coachingEngagements.athlete_profile_id,
+      ],
+      name: "athlete_plan_edit_grants_engagement_fkey",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.organization_id, table.coach_membership_id],
+      foreignColumns: [organizationMemberships.organization_id, organizationMemberships.id],
+      name: "athlete_plan_edit_grants_coach_membership_fkey",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.granted_by_profile_id],
+      foreignColumns: [profiles.id],
+      name: "athlete_plan_edit_grants_grantor_fkey",
+    }).onDelete("restrict"),
+    uniqueIndex("athlete_plan_edit_grants_current_unique")
+      .on(table.engagement_id, table.coach_membership_id)
+      .where(sql`${table.revoked_at} is null`),
+    index("athlete_plan_edit_grants_authority_idx").on(
+      table.organization_id,
+      table.engagement_id,
+      table.coach_membership_id,
+      table.granted_at,
+    ),
+    check(
+      "athlete_plan_edit_grants_grantor_check",
+      sql`${table.granted_by_profile_id} = ${table.athlete_profile_id}`,
+    ),
+    check(
+      "athlete_plan_edit_grants_expiry_chronology_check",
+      sql`${table.expires_at} is null or ${table.expires_at} >= ${table.granted_at}`,
+    ),
+    check(
+      "athlete_plan_edit_grants_revocation_chronology_check",
+      sql`${table.revoked_at} is null or ${table.revoked_at} >= ${table.granted_at}`,
+    ),
+  ],
+);
+
+/** Immutable receipt binding a coach publication operation to its private copy and session. */
+export const coachingWorkoutPublications = pgTable(
+  "coaching_workout_publications",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    athlete_profile_id: uuid("athlete_profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "restrict" }),
+    operation_id: text("operation_id").notNull(),
+    organization_id: uuid("organization_id").notNull(),
+    coach_membership_id: uuid("coach_membership_id").notNull(),
+    source_activity_plan_id: uuid("source_activity_plan_id").notNull(),
+    source_activity_plan_revision: integer("source_activity_plan_revision").notNull(),
+    planning_date: date("planning_date").notNull(),
+    copied_activity_plan_id: uuid("copied_activity_plan_id")
+      .notNull()
+      .references(() => activityPlans.id, { onDelete: "restrict" }),
+    planned_session_id: uuid("planned_session_id").notNull(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.planned_session_id, table.athlete_profile_id],
+      foreignColumns: [plannedSessions.id, plannedSessions.profile_id],
+      name: "coaching_workout_publications_session_athlete_fkey",
+    }).onDelete("restrict"),
+    unique("coaching_workout_publications_athlete_operation_unique").on(
+      table.athlete_profile_id,
+      table.operation_id,
+    ),
+    unique("coaching_workout_publications_session_unique").on(table.planned_session_id),
+    check(
+      "coaching_workout_publications_operation_id_check",
+      sql`${table.operation_id} ~ '^[A-Za-z0-9_-]{32,128}$'`,
+    ),
+    check(
+      "coaching_workout_publications_source_revision_check",
+      sql`${table.source_activity_plan_revision} > 0`,
+    ),
+  ],
+);
+
 export const organizationAuditEvents = pgTable(
   "organization_audit_events",
   {

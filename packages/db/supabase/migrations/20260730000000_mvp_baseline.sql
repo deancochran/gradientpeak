@@ -512,6 +512,37 @@ CREATE TABLE "athlete_data_sharing_consents" (
 	CONSTRAINT "athlete_data_sharing_consents_successor_not_self_check" CHECK ("athlete_data_sharing_consents"."superseded_by_consent_id" is null or "athlete_data_sharing_consents"."superseded_by_consent_id" <> "athlete_data_sharing_consents"."id")
 );
 
+CREATE TABLE "athlete_plan_edit_grants" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"organization_id" uuid NOT NULL,
+	"engagement_id" uuid NOT NULL,
+	"athlete_profile_id" uuid NOT NULL,
+	"coach_membership_id" uuid NOT NULL,
+	"granted_by_profile_id" uuid NOT NULL,
+	"granted_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"expires_at" timestamp with time zone,
+	"revoked_at" timestamp with time zone,
+	CONSTRAINT "athlete_plan_edit_grants_grantor_check" CHECK ("athlete_plan_edit_grants"."granted_by_profile_id" = "athlete_plan_edit_grants"."athlete_profile_id"),
+	CONSTRAINT "athlete_plan_edit_grants_expiry_chronology_check" CHECK ("athlete_plan_edit_grants"."expires_at" is null or "athlete_plan_edit_grants"."expires_at" >= "athlete_plan_edit_grants"."granted_at"),
+	CONSTRAINT "athlete_plan_edit_grants_revocation_chronology_check" CHECK ("athlete_plan_edit_grants"."revoked_at" is null or "athlete_plan_edit_grants"."revoked_at" >= "athlete_plan_edit_grants"."granted_at")
+);
+
+CREATE TABLE "coaching_workout_publications" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"athlete_profile_id" uuid NOT NULL,
+	"operation_id" text NOT NULL,
+	"organization_id" uuid NOT NULL,
+	"coach_membership_id" uuid NOT NULL,
+	"source_activity_plan_id" uuid NOT NULL,
+	"source_activity_plan_revision" integer NOT NULL,
+	"planning_date" date NOT NULL,
+	"copied_activity_plan_id" uuid NOT NULL,
+	"planned_session_id" uuid NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "coaching_workout_publications_operation_id_check" CHECK ("coaching_workout_publications"."operation_id" ~ '^[A-Za-z0-9_-]{32,128}$'),
+	CONSTRAINT "coaching_workout_publications_source_revision_check" CHECK ("coaching_workout_publications"."source_activity_plan_revision" > 0)
+);
+
 CREATE TABLE "coaching_assignments" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" uuid NOT NULL,
@@ -1505,6 +1536,12 @@ ALTER TABLE "athlete_consent_policy_versions" ADD CONSTRAINT "athlete_consent_po
 ALTER TABLE "athlete_data_sharing_consents" ADD CONSTRAINT "athlete_data_sharing_consents_engagement_fkey" FOREIGN KEY ("organization_id","engagement_id","athlete_profile_id") REFERENCES "public"."coaching_engagements"("organization_id","id","athlete_profile_id") ON DELETE restrict ON UPDATE no action;
 ALTER TABLE "athlete_data_sharing_consents" ADD CONSTRAINT "athlete_data_sharing_consents_policy_scope_fkey" FOREIGN KEY ("policy_version_id","scope_key") REFERENCES "public"."athlete_consent_policy_versions"("id","scope_key") ON DELETE restrict ON UPDATE no action;
 ALTER TABLE "athlete_data_sharing_consents" ADD CONSTRAINT "athlete_data_sharing_consents_successor_fkey" FOREIGN KEY ("organization_id","engagement_id","athlete_profile_id","scope_key","superseded_by_consent_id") REFERENCES "public"."athlete_data_sharing_consents"("organization_id","engagement_id","athlete_profile_id","scope_key","id") ON DELETE restrict ON UPDATE no action;
+ALTER TABLE "athlete_plan_edit_grants" ADD CONSTRAINT "athlete_plan_edit_grants_engagement_fkey" FOREIGN KEY ("organization_id","engagement_id","athlete_profile_id") REFERENCES "public"."coaching_engagements"("organization_id","id","athlete_profile_id") ON DELETE restrict ON UPDATE no action;
+ALTER TABLE "athlete_plan_edit_grants" ADD CONSTRAINT "athlete_plan_edit_grants_coach_membership_fkey" FOREIGN KEY ("organization_id","coach_membership_id") REFERENCES "public"."organization_memberships"("organization_id","id") ON DELETE restrict ON UPDATE no action;
+ALTER TABLE "athlete_plan_edit_grants" ADD CONSTRAINT "athlete_plan_edit_grants_grantor_fkey" FOREIGN KEY ("granted_by_profile_id") REFERENCES "public"."profiles"("id") ON DELETE restrict ON UPDATE no action;
+ALTER TABLE "coaching_workout_publications" ADD CONSTRAINT "coaching_workout_publications_athlete_fkey" FOREIGN KEY ("athlete_profile_id") REFERENCES "public"."profiles"("id") ON DELETE restrict ON UPDATE no action;
+ALTER TABLE "coaching_workout_publications" ADD CONSTRAINT "coaching_workout_publications_copy_fkey" FOREIGN KEY ("copied_activity_plan_id") REFERENCES "public"."activity_plans"("id") ON DELETE restrict ON UPDATE no action;
+ALTER TABLE "coaching_workout_publications" ADD CONSTRAINT "coaching_workout_publications_session_athlete_fkey" FOREIGN KEY ("planned_session_id","athlete_profile_id") REFERENCES "public"."planned_sessions"("id","profile_id") ON DELETE restrict ON UPDATE no action;
 ALTER TABLE "coaching_assignments" ADD CONSTRAINT "coaching_assignments_engagement_fkey" FOREIGN KEY ("organization_id","engagement_id") REFERENCES "public"."coaching_engagements"("organization_id","id") ON DELETE restrict ON UPDATE no action;
 ALTER TABLE "coaching_assignments" ADD CONSTRAINT "coaching_assignments_membership_fkey" FOREIGN KEY ("organization_id","coach_membership_id") REFERENCES "public"."organization_memberships"("organization_id","id") ON DELETE restrict ON UPDATE no action;
 ALTER TABLE "coaching_engagements" ADD CONSTRAINT "coaching_engagements_athlete_profile_id_profiles_id_fk" FOREIGN KEY ("athlete_profile_id") REFERENCES "public"."profiles"("id") ON DELETE restrict ON UPDATE no action;
@@ -1656,6 +1693,10 @@ CREATE UNIQUE INDEX "athlete_data_sharing_consents_current_unique" ON "athlete_d
 CREATE INDEX "athlete_data_sharing_consents_policy_scope_idx" ON "athlete_data_sharing_consents" USING btree ("policy_version_id","scope_key");
 CREATE INDEX "athlete_data_sharing_consents_successor_idx" ON "athlete_data_sharing_consents" USING btree ("superseded_by_consent_id") WHERE "athlete_data_sharing_consents"."superseded_by_consent_id" is not null;
 CREATE INDEX "athlete_data_sharing_consents_engagement_fkey_idx" ON "athlete_data_sharing_consents" USING btree ("organization_id","engagement_id","athlete_profile_id");
+CREATE UNIQUE INDEX "athlete_plan_edit_grants_current_unique" ON "athlete_plan_edit_grants" USING btree ("engagement_id","coach_membership_id") WHERE "athlete_plan_edit_grants"."revoked_at" is null;
+CREATE INDEX "athlete_plan_edit_grants_authority_idx" ON "athlete_plan_edit_grants" USING btree ("organization_id","engagement_id","coach_membership_id","granted_at");
+CREATE UNIQUE INDEX "coaching_workout_publications_athlete_operation_unique" ON "coaching_workout_publications" USING btree ("athlete_profile_id","operation_id");
+CREATE UNIQUE INDEX "coaching_workout_publications_session_unique" ON "coaching_workout_publications" USING btree ("planned_session_id");
 CREATE INDEX "athlete_data_sharing_consents_successor_fkey_idx" ON "athlete_data_sharing_consents" USING btree ("organization_id","engagement_id","athlete_profile_id","scope_key","superseded_by_consent_id");
 CREATE UNIQUE INDEX "coaching_assignments_active_primary_unique" ON "coaching_assignments" USING btree ("engagement_id") WHERE "coaching_assignments"."assignment_kind" = 'primary' and "coaching_assignments"."ended_at" is null;
 CREATE UNIQUE INDEX "coaching_assignments_active_kind_unique" ON "coaching_assignments" USING btree ("engagement_id","coach_membership_id","assignment_kind") WHERE "coaching_assignments"."ended_at" is null;
@@ -3975,6 +4016,10 @@ ALTER TABLE "public"."api_rate_limit_windows" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."athlete_consent_policy_versions" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."athlete_data_sharing_consents" ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE "public"."athlete_plan_edit_grants" ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE "public"."coaching_workout_publications" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."athlete_recalculation_queue" ENABLE ROW LEVEL SECURITY;
 
