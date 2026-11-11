@@ -147,6 +147,100 @@ describe("InvitationResponse", () => {
     expect(mocks.decline).not.toHaveBeenCalled();
   });
 
+  it("keeps the accepted staff receipt visible and links only to its receipt organization", async () => {
+    const organizationId = "33333333-3333-4333-8333-333333333333";
+    mocks.preview.mockResolvedValueOnce({
+      status: "ready",
+      preview: { organizationName: "Staff peak", kind: "staff", agreement: null },
+    });
+    mocks.accept.mockResolvedValueOnce({
+      status: "accepted",
+      receipt: { invitationId: firstInvitation.invitationId, organizationId, status: "accepted" },
+    });
+    render(<InvitationResponse actorId="staff-recipient" />);
+
+    enterToken(firstToken);
+    fireEvent.click(screen.getByRole("button", { name: "Preview invitation" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Accept invitation" }));
+
+    expect(await screen.findByText(/Invitation accepted\./)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Decline invitation" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Open organization" }).getAttribute("href")).toBe(
+      `/organizations/${organizationId}`,
+    );
+  });
+
+  it("retains staff scope for a reconciled acceptance receipt", async () => {
+    const organizationId = "44444444-4444-4444-8444-444444444444";
+    mocks.preview.mockResolvedValueOnce({
+      status: "ready",
+      preview: { organizationName: "Staff peak", kind: "staff", agreement: null },
+    });
+    mocks.accept.mockRejectedValueOnce(new Error("lost response")).mockResolvedValueOnce({
+      status: "accepted",
+      receipt: { invitationId: firstInvitation.invitationId, organizationId, status: "accepted" },
+    });
+    render(<InvitationResponse actorId="staff-recipient" />);
+
+    enterToken(firstToken);
+    fireEvent.click(screen.getByRole("button", { name: "Preview invitation" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Accept invitation" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Retry accept invitation to reconcile" }),
+    );
+
+    expect(await screen.findByText(/Invitation accepted\./)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Open organization" }).getAttribute("href")).toBe(
+      `/organizations/${organizationId}`,
+    );
+  });
+
+  it("does not offer an organization action for an accepted athlete receipt", async () => {
+    const organizationId = "55555555-5555-4555-8555-555555555555";
+    mocks.accept.mockResolvedValueOnce({
+      status: "accepted",
+      receipt: { invitationId: firstInvitation.invitationId, organizationId, status: "accepted" },
+    });
+    render(<InvitationResponse actorId="athlete-recipient" />);
+
+    await previewInvitation();
+    fireEvent.click(screen.getByRole("button", { name: /^Accept invitation/ }));
+
+    expect(await screen.findByText(/Invitation accepted\./)).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Open organization" })).toBeNull();
+  });
+
+  it("ignores a late staff receipt after the actor changes", async () => {
+    const accepted = deferred<{
+      status: "accepted";
+      receipt: { invitationId: string; organizationId: string; status: "accepted" };
+    }>();
+    mocks.preview.mockResolvedValueOnce({
+      status: "ready",
+      preview: { organizationName: "Staff peak", kind: "staff", agreement: null },
+    });
+    mocks.accept.mockReturnValueOnce(accepted.promise);
+    const { rerender } = render(<InvitationResponse actorId="staff-recipient-a" />);
+
+    enterToken(firstToken);
+    fireEvent.click(screen.getByRole("button", { name: "Preview invitation" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Accept invitation" }));
+    rerender(<InvitationResponse actorId="staff-recipient-b" />);
+    accepted.resolve({
+      status: "accepted",
+      receipt: {
+        invitationId: firstInvitation.invitationId,
+        organizationId: "66666666-6666-4666-8666-666666666666",
+        status: "accepted",
+      },
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByRole("link", { name: "Open organization" })).toBeNull(),
+    );
+    expect(screen.queryByText(/Invitation accepted\./)).toBeNull();
+  });
+
   it.each([
     ["Accept", "accept", "accepted"],
     ["Decline", "decline", "declined"],
