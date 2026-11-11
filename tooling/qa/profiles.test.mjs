@@ -59,7 +59,7 @@ test("CLI accepts only named profile and changed-path options", () => {
   assert.throws(() => parseArguments(["--changed-paths"]), /at least one path/);
 });
 
-test("normal quality, pre-push, and CI use focused owner checks", async () => {
+test("CI owns full validation while Git hooks stay lightweight", async () => {
   const root = path.resolve(import.meta.dirname, "../..");
   const [manifestSource, lefthook, workflow] = await Promise.all([
     readFile(path.join(root, "package.json"), "utf8"),
@@ -68,8 +68,21 @@ test("normal quality, pre-push, and CI use focused owner checks", async () => {
   ]);
   const manifest = JSON.parse(manifestSource);
   assert.match(manifest.scripts.test, /test:parity/);
-  assert.match(lefthook, /pre-push:[\s\S]*pnpm quality:push \{push_files\}/);
+  assert.doesNotMatch(lefthook, /^pre-push:/m);
+  assert.match(lefthook, /\{staged_files\}/);
   assert.match(workflow, /run: pnpm test/);
+  const staticJob = workflow.split("  static:")[1]?.split("  runtime-db:")[0];
+  assert.ok(staticJob);
+  assert.doesNotMatch(staticJob, /self-host:|test:live-db|db:verify/);
+  const database = workflow.split("  runtime-db:")[1]?.split("  runtime-web:")[0];
+  assert.ok(database);
+  assert.match(database, /run: pnpm --filter @repo\/db db:verify/);
+  assert.match(database, /run: pnpm --filter @repo\/api test:live-db\n/);
+  const browser = workflow.split("  runtime-web:")[1]?.split("  ci:")[0];
+  assert.ok(browser);
+  assert.match(browser, /run: pnpm --filter @repo\/db self-host:up/);
+  assert.match(browser, /if: always\(\)\s+run: pnpm --filter @repo\/db self-host:down/);
+  assert.doesNotMatch(browser, /db:e2e:|prepare-runtime-web-e2e\.mjs/);
   assert.deepEqual(validateCiRuntimeDelegation(workflow), []);
 
   const mismatchedCommand = workflow.replace(

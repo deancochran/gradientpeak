@@ -29,7 +29,7 @@ No AI, wearable history, new physiological score, performance prediction, or adv
 
 This document defines UX scope and defers domain authority to the [integrated planning specification](integrated-training-activity-planning-specification.md). Do not introduce parallel workout schemas, executable event recurrence, profile-level planning preferences, or an alternative prescription engine.
 
-Technical companion: [current-code audit and implementation outline](training-plan-builder-implementation-audit.md). It maps F1-F6/T1-T9 to existing contracts, concrete gaps, affected files, and verification. It adds technical detail, not product scope.
+The [form experience contract](form-experience-contract.md) and [form remediation guide](form-ux-remediation.md) own current implementation guidance. Historical audits remain available in Git history.
 
 ## 2. The six core features
 

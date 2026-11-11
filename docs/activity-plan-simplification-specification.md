@@ -350,7 +350,6 @@ Update these current references during implementation, preserving unrelated requ
 
 - `docs/integrated-training-activity-planning-specification.md`: remove active adaptation requirements, replace V3 planning hierarchy, retain frozen prescriptions.
 - `docs/training-plan-ux-parity-specification.md`: fixed candidate policy, no adaptation controls, retain completed multisport summaries.
-- `docs/training-plan-builder-implementation-audit.md`: distinguish new verified behavior from historical adaptive implementation.
 - `docs/form-ux-remediation.md`: uniform rows, always-visible Delete, empty draft and superseded last-step protection.
 - Projection/system-integrity documents: explicitly retain completed multisport contracts.
 
