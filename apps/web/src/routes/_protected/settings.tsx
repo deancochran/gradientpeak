@@ -541,9 +541,9 @@ function ProfileInformationCard({
               <Camera className="h-6 w-6 text-white" />
             </div>
           </div>
-          <div>
-            <h3 className="font-medium">{profileUsername || "No name set"}</h3>
-            <p className="text-sm text-muted-foreground">{userEmail}</p>
+          <div className="min-w-0">
+            <h3 className="break-words font-medium">{profileUsername || "No name set"}</h3>
+            <p className="break-words text-sm text-muted-foreground">{userEmail}</p>
             <p className="mt-1 text-xs text-muted-foreground">
               Use the upload field below to change your picture (max 5MB)
             </p>

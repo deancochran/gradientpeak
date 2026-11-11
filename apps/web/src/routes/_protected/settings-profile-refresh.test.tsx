@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 class ResizeObserverMock {
@@ -148,6 +148,18 @@ describe("SettingsPage profile synchronization", () => {
         .getByRole("region", { name: "Password and sessions" })
         .contains(screen.getByRole("heading", { name: "Password and sessions" })),
     ).toBe(true);
+  });
+
+  it("keeps loaded profile identity visible alongside the profile form", async () => {
+    state.profile = profile("account-a", "Server A", "Original bio");
+    render(<SettingsPage />);
+
+    const profileRegion = screen.getByRole("region", { name: "Profile Information" });
+    expect(await screen.findByText("server_a", { exact: true })).toBeTruthy();
+    expect(within(profileRegion).getByText("a@example.test", { exact: true })).toBeTruthy();
+    await waitFor(() =>
+      expect((screen.getByLabelText("Username") as HTMLInputElement).value).toBe("server_a"),
+    );
   });
 
   it("preserves dirty values, refreshes untouched values, and clears the prior account draft", async () => {
