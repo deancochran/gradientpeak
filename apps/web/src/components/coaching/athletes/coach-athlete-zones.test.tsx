@@ -62,10 +62,15 @@ describe("CoachAthleteZonesCard", () => {
     expect(screen.getByRole("heading", { level: 2, name: "Bike zones" })).toBeTruthy();
     expect(screen.getByRole("heading", { level: 3, name: "Power" })).toBeTruthy();
     expect(screen.getByText(/237.5 W/)).toBeTruthy();
-    expect(screen.getByText(/provisional · stale/)).toBeTruthy();
-    expect(screen.getByText(/publication stale/)).toBeTruthy();
-    expect(screen.getByText("publication revision 3")).toBeTruthy();
-    expect(screen.getByText(/Published-state computed/)).toBeTruthy();
+    expect(
+      screen.getByText(
+        /Threshold state: provisional · freshness: stale · provenance: validated threshold · effective at/,
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("Publication status: stale")).toBeTruthy();
+    expect(screen.getByText("Publication revision: 3")).toBeTruthy();
+    expect(screen.getByText(/Publication computed at/)).toBeTruthy();
+    expect(screen.getByText(/canonical as of/)).toBeTruthy();
     expect(screen.getByText(/Rounded policy reference boundaries/)).toBeTruthy();
     expect(screen.getByText("zone1").parentElement?.textContent).toContain("0 to 130 W");
     expect(screen.getByText(/Threshold unavailable/)).toBeTruthy();
@@ -92,8 +97,8 @@ describe("CoachAthleteZonesCard", () => {
       />,
     );
 
-    expect(screen.getByText("publication revision not available")).toBeTruthy();
-    expect(screen.getByText(/Published-state computed not available/)).toBeTruthy();
+    expect(screen.getByText("Publication revision: not available")).toBeTruthy();
+    expect(screen.getByText(/Publication computed at not available/)).toBeTruthy();
     expect(screen.queryByText(/not published/)).toBeNull();
   });
 

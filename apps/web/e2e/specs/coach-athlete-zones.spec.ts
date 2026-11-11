@@ -1,4 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
+import {
+  analyzeParsedActivityFile,
+  reconcileGeneratedActivityEvidence,
+} from "@repo/api/test-support/activity-evidence-acceptance";
 import { activityPlanSemanticHash, activityPlanStructureSchema } from "@repo/core/activity-plan";
 import { stringifyCanonicalJson } from "@repo/core/athlete-intelligence";
 import {
@@ -16,8 +20,6 @@ import {
   plannedSessions,
 } from "@repo/db/schema";
 import { eq } from "drizzle-orm";
-import { reconcileGeneratedActivityEvidence } from "../../../../packages/api/src/application/activities/reconcile-activity-evidence";
-import { analyzeParsedActivityFile } from "../../../../packages/api/src/application/activity-file-ingestion/analyze-parsed-activity-file";
 import { expect, test } from "../fixtures";
 import { expectNoHorizontalOverflow } from "../pages";
 import { type E2EDrizzleDatabase, withLocalE2EDatabase } from "../support/database";
@@ -373,9 +375,25 @@ test("assigned coach sees canonical bike zones without leaking them after metric
     });
   });
 
-  const page = await coachActor.createPage(
-    `/organizations/${organizationId}/athletes/${athleteActor.profileId}`,
-  );
+  const athletePath = `/organizations/${organizationId}/athletes/${athleteActor.profileId}`;
+  const calendarOnlyAthletePath = `/organizations/${organizationId}/athletes/${calendarOnlyAthlete.profileId}`;
+  const page = await coachActor.createPage();
+  await page.goto(`/organizations/${organizationId}/athletes`);
+  await waitForAppHydration(page);
+  const initialZonesRead = page.waitForResponse(async (response) => {
+    if (
+      response.request().method() !== "POST" ||
+      !response.request().postData()?.includes(athleteActor.profileId)
+    )
+      return false;
+    try {
+      return (await response.text()).includes("237.5");
+    } catch {
+      return false;
+    }
+  });
+  await page.locator(`a[href="${athletePath}"]`).click();
+  const zonesEndpoint = (await initialZonesRead).url();
   await waitForAppHydration(page);
   await expect(page.getByRole("heading", { name: "Current training state" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Planned sessions" })).toBeVisible();
@@ -384,6 +402,14 @@ test("assigned coach sees canonical bike zones without leaking them after metric
   await expect(page.getByRole("heading", { name: "LTHR" })).toBeVisible();
   await expect(page.getByText("237.5 W", { exact: true })).toBeVisible();
   await expect(page.getByText("170 bpm", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Threshold state:/)).toHaveCount(2);
+  await expect(page.getByText(/freshness:/)).toHaveCount(2);
+  await expect(page.getByText(/provenance:/)).toHaveCount(2);
+  await expect(page.getByText(/effective at/)).toHaveCount(2);
+  await expect(page.getByText(/Publication status:/)).toBeVisible();
+  await expect(page.getByText(/Publication revision:/)).toBeVisible();
+  await expect(page.getByText(/Publication computed at/)).toBeVisible();
+  await expect(page.getByText(/canonical as of/)).toBeVisible();
   await expect(
     page.getByText("Rounded policy reference boundaries; not exact classification thresholds."),
   ).toHaveCount(2);
@@ -399,12 +425,106 @@ test("assigned coach sees canonical bike zones without leaking them after metric
     { width: 390, height: 844, name: "mobile" },
   ]) {
     await page.setViewportSize(viewport);
+    await expect(page.getByTestId("coach-athlete-zones")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Power" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "LTHR" })).toBeVisible();
+    await expect(page.getByText("237.5 W", { exact: true })).toBeVisible();
+    await expect(page.getByText("170 bpm", { exact: true })).toBeVisible();
+    await expect(page.getByText("Bike metrics are not available for this athlete.")).toHaveCount(0);
+    await expectOpaqueDarkColorContrast(page, '[data-testid="coach-athlete-zones"]');
+    await expectOpaqueDarkColorContrast(
+      page,
+      '[data-testid="coach-athlete-zones"] section[aria-label="Power"]',
+    );
+    await expectOpaqueDarkColorContrast(
+      page,
+      '[data-testid="coach-athlete-zones"] section[aria-label="LTHR"]',
+    );
     await expectNoHorizontalOverflow(page);
     await page.screenshot({
       path: testInfo.outputPath(`coach-athlete-zones-ready-${viewport.name}.png`),
       fullPage: true,
       scale: "css",
     });
+  }
+
+  let attempts = 0;
+  let releaseFirstFailure = () => {};
+  const firstFailureHeld = new Promise<void>((resolve) => (releaseFirstFailure = resolve));
+  let releaseRetry = () => {};
+  const retryHeld = new Promise<void>((resolve) => (releaseRetry = resolve));
+  const matchesZonesEndpoint = (url: URL) => url.toString() === zonesEndpoint;
+  const controlZonesRead = async (route: import("@playwright/test").Route) => {
+    if (
+      route.request().method() !== "POST" ||
+      !route.request().postData()?.includes(athleteActor.profileId)
+    )
+      return route.continue();
+    attempts += 1;
+    if (attempts === 1) {
+      await firstFailureHeld;
+      return route.abort("failed");
+    }
+    if (attempts === 2) {
+      await retryHeld;
+      return route.continue();
+    }
+    return route.continue();
+  };
+  await page.route(matchesZonesEndpoint, controlZonesRead);
+  try {
+    await page.getByRole("button", { name: "Switch athlete" }).click();
+    await page
+      .getByRole("list", { name: "Switch athlete" })
+      .locator(`a[href="${calendarOnlyAthletePath}"]`)
+      .click();
+    await waitForAppHydration(page);
+    await expect(page.getByText("Bike metrics are not available for this athlete.")).toBeVisible();
+
+    await page.getByRole("button", { name: "Switch athlete" }).click();
+    await page
+      .getByRole("list", { name: "Switch athlete" })
+      .locator(`a[href="${athletePath}"]`)
+      .click();
+    await expect.poll(() => attempts).toBe(1);
+    releaseFirstFailure();
+    await waitForAppHydration(page);
+    await expect(page.getByRole("alert")).toContainText("Bike zones could not be loaded.");
+    await expect(page.getByText("237.5 W", { exact: true })).toHaveCount(0);
+    await expectOpaqueDarkColorContrast(page, '[data-testid="coach-athlete-zones"]');
+    await expectOpaqueDarkColorContrast(page, '[data-testid="coach-athlete-zones"] button');
+    await page.screenshot({
+      path: testInfo.outputPath("coach-athlete-zones-error.png"),
+      fullPage: true,
+      scale: "css",
+    });
+
+    await page.getByRole("button", { name: "Retry bike zones", exact: true }).click();
+    await expect.poll(() => attempts).toBe(2);
+    await expect(page.getByText("Loading bike zones…")).toBeVisible();
+    await expect(page.getByText("237.5 W", { exact: true })).toHaveCount(0);
+    await expectOpaqueDarkColorContrast(page, '[data-testid="coach-athlete-zones"]');
+    await page.screenshot({
+      path: testInfo.outputPath("coach-athlete-zones-loading.png"),
+      fullPage: true,
+      scale: "css",
+    });
+    releaseRetry();
+    await expect(page.getByRole("heading", { name: "Power" })).toBeVisible();
+    await expect(page.getByText("237.5 W", { exact: true })).toBeVisible();
+    await expectOpaqueDarkColorContrast(page, '[data-testid="coach-athlete-zones"]');
+    await expectOpaqueDarkColorContrast(
+      page,
+      '[data-testid="coach-athlete-zones"] section[aria-label="Power"]',
+    );
+    await expectOpaqueDarkColorContrast(
+      page,
+      '[data-testid="coach-athlete-zones"] section[aria-label="LTHR"]',
+    );
+  } finally {
+    releaseFirstFailure();
+    releaseRetry();
+    await page.unroute(matchesZonesEndpoint, controlZonesRead);
   }
 
   await withLocalE2EDatabase(async (database) =>
@@ -423,6 +543,13 @@ test("assigned coach sees canonical bike zones without leaking them after metric
     { width: 390, height: 844, name: "mobile" },
   ]) {
     await page.setViewportSize(viewport);
+    await expect(page.getByTestId("coach-athlete-zones")).toBeVisible();
+    await expect(page.getByText("Bike metrics are not available for this athlete.")).toBeVisible();
+    await expect(page.getByText("237.5 W", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("170 bpm", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Power" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "LTHR" })).toHaveCount(0);
+    await expectOpaqueDarkColorContrast(page, '[data-testid="coach-athlete-zones"]');
     await expectNoHorizontalOverflow(page);
     await page.screenshot({
       path: testInfo.outputPath(`coach-athlete-zones-denied-${viewport.name}.png`),

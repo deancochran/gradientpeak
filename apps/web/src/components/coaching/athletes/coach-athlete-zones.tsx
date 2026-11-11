@@ -75,8 +75,8 @@ function ZoneGroup({
       )}
       {source.availability === "available" ? (
         <p className={`mt-1 text-xs ${mutedText}`}>
-          {label(source.state)} · {label(source.freshness)} · {label(source.provenance)} · effective{" "}
-          {date(source.effectiveAt)}
+          Threshold state: {label(source.state)} · freshness: {label(source.freshness)} ·
+          provenance: {label(source.provenance)} · effective at {date(source.effectiveAt)}
         </p>
       ) : null}
       {value.zones ? (
@@ -176,16 +176,16 @@ export function CoachAthleteZonesCard({
             }
             variant={zones.publication.status === "available" ? "secondary" : "outline"}
           >
-            publication {zones.publication.status}
+            Publication status: {zones.publication.status}
           </Badge>
           <Badge className="border-slate-600 bg-slate-800 text-slate-200" variant="outline">
             {zones.publication.status === "unavailable" ||
             zones.publication.publishedRevision === null
-              ? "publication revision not available"
-              : `publication revision ${zones.publication.publishedRevision}`}
+              ? "Publication revision: not available"
+              : `Publication revision: ${zones.publication.publishedRevision}`}
           </Badge>
           <span className={`text-xs ${mutedText}`}>
-            Published-state computed {date(zones.publication.computedAt)} · canonical as of{" "}
+            Publication computed at {date(zones.publication.computedAt)} · canonical as of{" "}
             {date(zones.asOf)}
           </span>
         </div>
