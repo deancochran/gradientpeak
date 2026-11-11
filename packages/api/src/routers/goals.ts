@@ -12,10 +12,19 @@ import { and, asc, count, desc, eq, gte, ilike } from "drizzle-orm";
 import { z } from "zod";
 import {
   getProfileGoalById,
+  getProfileGoalOwnerId,
   type ProfileGoalRecord,
 } from "../application/goals/getProfileGoalById";
 import { profileGoalWriteDataSchema } from "../application/goals/profile-goal-write";
-import { withAuthorizedAthleteReadAcrossOrganizations } from "../application/organizations/authorize-athlete-read";
+import { readCoachAthleteGoals } from "../application/goals/read-coach-athlete-goals";
+import {
+  withAuthorizedAthleteRead,
+  withAuthorizedAthleteReadAcrossOrganizations,
+} from "../application/organizations/authorize-athlete-read";
+import {
+  coachAthleteGoalsRequestSchema,
+  coachAthleteGoalsResponseSchema,
+} from "../contracts/coach-athlete-goals";
 import { type DrizzleQueryExecutor, getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { buildIndexPageInfo, indexCursorSchema, parseIndexCursor } from "../utils/index-cursor";
@@ -144,15 +153,6 @@ async function listProfileGoals(input: {
   return profileGoalRecordSchema.array().parse(rows);
 }
 
-async function getProfileGoalOwnerId(db: DrizzleQueryExecutor, id: string): Promise<string | null> {
-  const [row] = await db
-    .select({ profile_id: profileGoals.profile_id })
-    .from(profileGoals)
-    .where(eq(profileGoals.id, id))
-    .limit(1);
-  return row?.profile_id ?? null;
-}
-
 async function createProfileGoal(input: {
   db: DrizzleQueryExecutor;
   values: z.infer<typeof profileGoalCreateSchema>;
@@ -227,6 +227,7 @@ async function deleteProfileGoal(input: {
 
 export function createGoalsRouter(
   authorizeRead: ConsentAwareAthleteReadAuthorizer = withAuthorizedAthleteReadAcrossOrganizations,
+  authorizeOrganizationRead: typeof withAuthorizedAthleteRead = withAuthorizedAthleteRead,
 ) {
   return createTRPCRouter({
     list: protectedProcedure.input(goalsListInputSchema).query(async ({ ctx, input }) => {
@@ -290,30 +291,40 @@ export function createGoalsRouter(
       });
     }),
 
+    listForOrganization: protectedProcedure
+      .input(coachAthleteGoalsRequestSchema)
+      .output(coachAthleteGoalsResponseSchema)
+      .query(async ({ ctx, input }) => {
+        const result = await readCoachAthleteGoals(
+          {
+            db: getRequiredDb(ctx),
+            actorProfileId: ctx.session.user.id,
+            organizationId: input.organizationId,
+            athleteProfileId: input.athleteProfileId,
+            limit: input.limit,
+            cursor: input.cursor,
+            now: new Date(),
+          },
+          { authorize: authorizeOrganizationRead },
+        );
+        if (!result) throw new TRPCError({ code: "FORBIDDEN", message: "Not authorized" });
+        return result;
+      }),
+
     getById: protectedProcedure.input(goalIdInputSchema).query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
       const profileId = await getProfileGoalOwnerId(db, input.id);
-      if (!profileId) {
+      if (!profileId || profileId !== ctx.session.user.id) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Goal not found",
         });
       }
-      return readProfileWithAthleteConsent({
-        ctx,
-        profileId,
-        scope: "goals",
-        deniedCode: "NOT_FOUND",
-        deniedMessage: "Goal not found",
-        authorizeRead,
-        read: async (authorizedDb) => {
-          const goal = await getProfileGoalById(authorizedDb, input.id);
-          if (!goal || goal.profile_id !== profileId) {
-            throw new TRPCError({ code: "NOT_FOUND", message: "Goal not found" });
-          }
-          return goal;
-        },
-      });
+      const goal = await getProfileGoalById(db, input.id);
+      if (!goal || goal.profile_id !== profileId) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Goal not found" });
+      }
+      return goal;
     }),
 
     create: protectedProcedure.input(profileGoalWriteSchema).mutation(async ({ ctx, input }) => {

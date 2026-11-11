@@ -205,6 +205,19 @@ describe("PlanGoalForm", () => {
     confirm.mockRestore();
   });
 
+  it("navigates to the supplied full-page cancel destination", () => {
+    render(
+      <PlanGoalForm
+        profileId="11111111-1111-4111-8111-111111111111"
+        redirectTo="#cancelled-goal"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(window.location.hash).toBe("#cancelled-goal");
+  });
+
   it("uses typed canonical transport, keeps a rejected draft, and announces the local error", async () => {
     mocks.action.mockResolvedValueOnce({ status: "error", message: "Goal could not be saved" });
     render(

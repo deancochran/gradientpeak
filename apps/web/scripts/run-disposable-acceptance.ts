@@ -1,6 +1,6 @@
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { closeSync, mkdirSync, openSync } from "node:fs";
+import { chmodSync, closeSync, mkdirSync, openSync } from "node:fs";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
 import {
@@ -10,7 +10,15 @@ import {
   withDisposableDatabase,
   withDisposableSupabaseStorage,
 } from "@repo/db/testing/disposable-database";
-import { runAllCleanup, throwCleanupFailures } from "./disposable-acceptance-cleanup";
+import {
+  createDisposableAcceptanceLease,
+  removeDisposableAcceptanceLease,
+} from "../e2e/support/disposable-acceptance-lease";
+import {
+  runAllCleanup,
+  throwCleanupFailures,
+  throwRunAndLeaseCleanupFailures,
+} from "./disposable-acceptance-cleanup";
 import { acceptanceOptions } from "./disposable-acceptance-options";
 
 // This composes the DB-owned guarded lifecycle; it never migrates/resets an existing database.
@@ -33,8 +41,15 @@ process.on("SIGTERM", interrupt);
 function requireActive() {
   if (interrupted) throw new Error("Acceptance interrupted; cleaning up owned resources");
 }
-const artifacts = resolve("../../.logs", runId);
-mkdirSync(artifacts, { recursive: true, mode: 0o700 });
+const artifactsRoot = resolve("../../.logs");
+mkdirSync(artifactsRoot, { recursive: true });
+const artifacts = resolve(artifactsRoot, runId);
+// A collision fails closed; never relax permissions on a pre-existing run path.
+mkdirSync(artifacts, { mode: 0o700 });
+chmodSync(artifacts, 0o700);
+const playwrightArtifacts = resolve(artifacts, "playwright");
+mkdirSync(playwrightArtifacts, { mode: 0o700 });
+chmodSync(playwrightArtifacts, 0o700);
 const probe = createServer();
 const { args, native: requiresNativeCandidate } = acceptanceOptions(process.argv.slice(2));
 probe.listen(requiresNativeCandidate ? 3100 : 0, "127.0.0.1");
@@ -51,6 +66,15 @@ await withDisposableDatabase(
   async (target, connectionString) => {
     requireActive();
     await bootstrapSupabaseAuthSchema(target);
+    const leaseEnvironment = createDisposableAcceptanceLease({
+      artifacts,
+      connectionString,
+      runId,
+    });
+    let leaseRunFailure: unknown;
+    let leaseCleanupFailure: unknown;
+    let hadLeaseRunFailure = false;
+    let hadLeaseCleanupFailure = false;
     await withDisposableSupabaseStorage(
       target,
       connectionString,
@@ -61,6 +85,9 @@ await withDisposableDatabase(
           ...process.env,
           E2E_RUN_ID: runId,
           E2E_DISPOSABLE_DATABASE: "1",
+          ...leaseEnvironment,
+          E2E_ACCEPTANCE_ARTIFACTS: artifacts,
+          E2E_ACCEPTANCE_OUTPUT_DIR: playwrightArtifacts,
           DATABASE_URL: connectionString,
           POSTGRES_URL: connectionString,
           APP_URL: browserOrigin,
@@ -149,6 +176,7 @@ await withDisposableDatabase(
           let adb: ((command: string[]) => ChildProcess) | undefined;
           let forceStopNativeCandidate: (() => Promise<void>) | undefined;
           let runFailure: unknown;
+          let hadRunFailure = false;
           requireActive();
           try {
             if (requiresNativeCandidate) {
@@ -271,6 +299,7 @@ await withDisposableDatabase(
             requireActive();
             if (code !== 0) throw new Error(`Acceptance tests failed (exit ${code})`);
           } catch (error) {
+            hadRunFailure = true;
             runFailure = error;
             throw error;
           } finally {
@@ -300,7 +329,7 @@ await withDisposableDatabase(
                   throw new AggregateError(failures, "Android reverse cleanup failed");
               },
             ]);
-            throwCleanupFailures(cleanupFailures, runFailure);
+            throwCleanupFailures(cleanupFailures, runFailure, hadRunFailure);
           }
         } finally {
           if (server.pid && server.exitCode === null) process.kill(-server.pid, "SIGTERM");
@@ -309,7 +338,23 @@ await withDisposableDatabase(
         }
       },
       { temporaryDirectory: artifacts, browserOrigin },
-    );
+    ).catch((error) => {
+      hadLeaseRunFailure = true;
+      leaseRunFailure = error;
+    });
+    // Remove authorization material before the DB owner drops this target.
+    try {
+      removeDisposableAcceptanceLease(leaseEnvironment.E2E_DISPOSABLE_LEASE_PATH);
+    } catch (error) {
+      hadLeaseCleanupFailure = true;
+      leaseCleanupFailure = error;
+    }
+    throwRunAndLeaseCleanupFailures({
+      cleanupFailed: hadLeaseCleanupFailure,
+      cleanupFailure: leaseCleanupFailure,
+      runFailed: hadLeaseRunFailure,
+      runFailure: leaseRunFailure,
+    });
   },
 );
 process.off("SIGINT", interrupt);

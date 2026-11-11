@@ -12,6 +12,7 @@ import {
   goalAssessmentResponseSchema,
 } from "../application/athlete-intelligence/goal-assessment";
 import { readPublishedAthleteStateSnapshot } from "../application/athlete-intelligence/published-athlete-state";
+import { readCoachAthleteBikeZones } from "../application/athlete-intelligence/read-coach-athlete-zones";
 import {
   GoalProgressNotFoundError,
   readGoalPortfolio,
@@ -38,6 +39,10 @@ import {
   athleteRecalculationRepairRequestSchema,
 } from "../contracts/athlete-load-range";
 import { ATHLETE_STATE_CACHE_TAGS } from "../contracts/cache-receipts";
+import {
+  coachAthleteZonesRequestSchema,
+  coachAthleteZonesResponseSchema,
+} from "../contracts/coach-athlete-zones";
 import {
   goalAssessmentBatchRequestSchema,
   goalAssessmentBatchResponseSchema,
@@ -106,6 +111,7 @@ type AthleteStateTransportDependencies = {
   readTrainingEffects: typeof readUserVisibleTrainingEffects;
   readThresholdEvidence: typeof readUserVisibleThresholdEvidence;
   requestRepair: typeof requestExplicitAthleteRecalculationRepair;
+  readCoachAthleteBikeZones: typeof readCoachAthleteBikeZones;
 };
 
 function assertOwnedAthleteProfile(actorProfileId: string, profileId: string) {
@@ -147,6 +153,8 @@ export function createAthleteIntelligenceRouter(
     readThresholdEvidence:
       transportDependencies.readThresholdEvidence ?? readUserVisibleThresholdEvidence,
     requestRepair: transportDependencies.requestRepair ?? requestExplicitAthleteRecalculationRepair,
+    readCoachAthleteBikeZones:
+      transportDependencies.readCoachAthleteBikeZones ?? readCoachAthleteBikeZones,
   };
   return createTRPCRouter({
     getGoalAssessmentBatch: protectedProcedure
@@ -282,6 +290,28 @@ export function createAthleteIntelligenceRouter(
               db: authorizedDb,
               profileId: input.athleteProfileId,
               sections: input.sections,
+              now: new Date(),
+            }),
+        });
+        if (!("value" in result)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Not authorized" });
+        }
+        return result.value;
+      }),
+    getCoachAthleteBikeZones: protectedProcedure
+      .input(coachAthleteZonesRequestSchema)
+      .output(coachAthleteZonesResponseSchema)
+      .query(async ({ ctx, input }) => {
+        const result = await authorizeOrganizationRead({
+          db: getRequiredDb(ctx),
+          actorProfileId: ctx.session.user.id,
+          organizationId: input.organizationId,
+          athleteProfileId: input.athleteProfileId,
+          scope: "metrics",
+          read: (authorizedDb) =>
+            stateServices.readCoachAthleteBikeZones({
+              db: authorizedDb,
+              profileId: input.athleteProfileId,
               now: new Date(),
             }),
         });
