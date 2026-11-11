@@ -21,6 +21,22 @@ test("changed paths select static, web, backend, or full verification", () => {
 });
 
 test("runtime profiles point directly to the maintained browser smoke test", () => {
+  const db = createProfilePlan({ profile: "db", includeStatic: false });
+  assert.deepEqual(db.commands, [
+    {
+      command: "pnpm",
+      args: [
+        "--filter",
+        "@repo/api",
+        "test:live-db",
+        "src/routers/__tests__/public-share-visibility.live-db.test.ts",
+      ],
+    },
+    {
+      command: "pnpm",
+      args: ["--filter", "@repo/api", "test:live-db:runner:disposable"],
+    },
+  ]);
   const web = createProfilePlan({ profile: "web", includeStatic: false });
   assert.deepEqual(web.commands, [
     {
@@ -39,6 +55,10 @@ test("runtime profiles point directly to the maintained browser smoke test", () 
     },
   ]);
   const fullCommands = createProfilePlan({ profile: "full", includeStatic: false }).commands;
+  assert.equal(
+    fullCommands.some((entry) => entry.args.includes("test:live-db:runner:disposable")),
+    true,
+  );
   assert.equal(
     fullCommands.some((entry) => entry.args.includes("e2e/specs/smoke.spec.ts")),
     true,
