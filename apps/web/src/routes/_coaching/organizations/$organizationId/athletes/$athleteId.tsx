@@ -108,7 +108,11 @@ function AthleteWorkspacePage() {
     return <p role="status">Loading athlete workspace…</p>;
   return (
     <div className="space-y-6">
-      <Button asChild variant="outline" className="border-slate-700 text-slate-100">
+      <Button
+        asChild
+        variant="outline"
+        className="border-slate-600 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white focus-visible:ring-cyan-300 disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500"
+      >
         <Link
           to="/organizations/$organizationId/athletes"
           params={{ organizationId }}
