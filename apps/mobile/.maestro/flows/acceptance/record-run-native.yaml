@@ -1,0 +1,51 @@
+appId: com.deancochran.gradientpeak.dev
+name: Enter recording from the visible Record tab and record a real timer-backed run
+---
+# Navigation boundary: the visible Record tab is the user entry point.
+- tapOn:
+    id: tab-button-record
+- extendedWaitUntil:
+    visible:
+      id: record-screen-ready
+    timeout: 30000
+- tapOn:
+    id: recording-activity-control-button
+- extendedWaitUntil:
+    visible: "Select Activity"
+    timeout: 15000
+- tapOn:
+    id: record-activity-option-run
+- tapOn:
+    id: record-activity-save-button
+- extendedWaitUntil:
+    visible:
+      id: record-screen-ready
+    timeout: 15000
+- tapOn:
+    id: recording-start-button
+# Observe a live elapsed value before finalization; do not fabricate a FIT.
+- extendedWaitUntil:
+    visible: "0:01"
+    timeout: 30000
+- tapOn:
+    id: recording-pause-button
+- extendedWaitUntil:
+    visible:
+      id: recording-resume-button
+    timeout: 15000
+- tapOn:
+    id: recording-resume-button
+- extendedWaitUntil:
+    visible:
+      id: recording-pause-button
+    timeout: 15000
+- tapOn:
+    id: recording-pause-button
+- tapOn:
+    id: recording-finish-button
+- extendedWaitUntil:
+    visible:
+      id: activity-submit-save-button
+    timeout: 60000
+- assertVisible:
+    id: recording-review-summary

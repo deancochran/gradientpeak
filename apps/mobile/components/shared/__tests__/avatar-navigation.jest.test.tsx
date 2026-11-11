@@ -76,11 +76,11 @@ describe.skip("avatar profile navigation", () => {
     navigateMock.mockReset();
     pushMock.mockReset();
 
-    renderNative(<AppHeader />);
+    await renderNative(<AppHeader />);
 
-    fireEvent.press(screen.getByTestId("app-header-avatar-button"));
+    await fireEvent.press(screen.getByTestId("app-header-avatar-button"));
 
-    expect(navigateMock).toHaveBeenCalledWith("/profile");
+    expect(navigateMock).toHaveBeenCalledWith("/me");
     expect(pushMock).not.toHaveBeenCalled();
   });
 
@@ -88,7 +88,7 @@ describe.skip("avatar profile navigation", () => {
     const { ActivityHeader } = await import("@/components/activity/shared/ActivityHeader");
     pushMock.mockReset();
 
-    renderNative(
+    await renderNative(
       <ActivityHeader
         user={{
           id: "22222222-2222-4222-8222-222222222222",
@@ -103,7 +103,7 @@ describe.skip("avatar profile navigation", () => {
       />,
     );
 
-    fireEvent.press(screen.getByTestId("activity-header-user-button"));
+    await fireEvent.press(screen.getByTestId("activity-header-user-button"));
 
     expect(pushMock).toHaveBeenCalledWith({
       pathname: "/user/[userId]",

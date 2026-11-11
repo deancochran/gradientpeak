@@ -20,19 +20,3 @@ export async function refreshScheduleWithCallbacks(input: {
     ...callbacks.map((callback) => Promise.resolve(callback())),
   ]);
 }
-
-export async function refreshPlanTabData(input: {
-  refetchActivePlan: () => Promise<unknown> | unknown;
-  refetchSnapshot: () => Promise<unknown> | unknown;
-  refetchGoals: () => Promise<unknown> | unknown;
-  refetchUpcomingEvents: () => Promise<unknown> | unknown;
-  refetchRecentEvents: () => Promise<unknown> | unknown;
-}) {
-  await Promise.all([
-    input.refetchActivePlan(),
-    input.refetchSnapshot(),
-    input.refetchGoals(),
-    input.refetchUpcomingEvents(),
-    input.refetchRecentEvents(),
-  ]);
-}

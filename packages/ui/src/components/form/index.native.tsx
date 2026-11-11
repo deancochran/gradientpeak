@@ -1,19 +1,33 @@
 import * as React from "react";
+
+export { FormChoiceField } from "../form-fields/choice-field.native";
+
 import {
   Controller,
   type FieldPath,
   type FieldValues,
   FormProvider,
+  type FormProviderProps,
   useFormContext,
   useFormState,
 } from "react-hook-form";
-import { type TextProps, View, type ViewProps } from "react-native";
-
+import { type AccessibilityProps, type TextProps, View, type ViewProps } from "react-native";
+import { NativeInputPresentationProvider } from "../../hooks/native-input-presentation.native";
 import { cn } from "../../lib/cn";
 import { Text } from "../text/index.native";
 import type { FormFieldContextValue, FormFieldProps, FormItemContextValue } from "./shared";
 
-const Form = FormProvider;
+function Form<
+  TFieldValues extends FieldValues = FieldValues,
+  TContext = unknown,
+  TTransformedValues = TFieldValues,
+>(props: FormProviderProps<TFieldValues, TContext, TTransformedValues>) {
+  return (
+    <FormProvider {...props}>
+      <NativeInputPresentationProvider>{props.children}</NativeInputPresentationProvider>
+    </FormProvider>
+  );
+}
 
 const FormFieldContext = React.createContext<FormFieldContextValue | null>(null);
 
@@ -97,17 +111,24 @@ function FormLabel({ className, ...props }: FormLabelProps) {
 }
 
 type FormControlProps = {
-  children: React.ReactElement;
+  children: React.ReactElement<AccessibilityProps>;
 };
 
 function FormControl({ children }: FormControlProps) {
   const { error, formItemId } = useFormField();
+  const childProps = children.props;
+  const validationHint = error?.message ? `Invalid: ${String(error.message)}` : null;
 
-  const enhancedProps: Record<string, unknown> = {
-    ...(children.props as Record<string, unknown>),
-    accessibilityInvalid: !!error,
-    accessibilityLabel:
-      (children.props as Record<string, unknown>)?.accessibilityLabel || formItemId,
+  const enhancedProps: AccessibilityProps = {
+    ...childProps,
+    accessibilityLabelledBy: childProps.accessibilityLabelledBy ?? formItemId,
+    ...(validationHint
+      ? {
+          accessibilityHint: childProps.accessibilityHint
+            ? `${childProps.accessibilityHint} ${validationHint}`
+            : validationHint,
+        }
+      : {}),
   };
 
   return React.cloneElement(children, enhancedProps);
@@ -135,7 +156,13 @@ type FormMessageProps = Omit<TextProps, "className"> & {
   className?: string;
 };
 
-function FormMessage({ className, children, ...props }: FormMessageProps) {
+function FormMessage({
+  accessibilityLiveRegion,
+  accessibilityRole,
+  className,
+  children,
+  ...props
+}: FormMessageProps) {
   const { error, formMessageId } = useFormField();
   const body = error ? String(error?.message ?? "") : children;
 
@@ -145,6 +172,8 @@ function FormMessage({ className, children, ...props }: FormMessageProps) {
 
   return (
     <Text
+      accessibilityLiveRegion={accessibilityLiveRegion ?? "assertive"}
+      accessibilityRole={accessibilityRole ?? "alert"}
       className={cn("text-sm font-medium text-destructive", className)}
       nativeID={formMessageId}
       {...props}
@@ -159,6 +188,7 @@ export {
   FormDateInputField,
   FormDateTimeField,
   FormDurationField,
+  FormFileField,
   FormIntegerStepperField,
   FormNumberField,
   FormPaceField,
@@ -169,6 +199,7 @@ export {
   FormTextareaField,
   FormTextField,
   FormTimeInputField,
+  FormTimezoneField,
   FormWeightInputField,
 } from "../form-fields/index.native";
 export {

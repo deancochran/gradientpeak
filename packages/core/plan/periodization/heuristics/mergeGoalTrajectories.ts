@@ -1,3 +1,4 @@
+import type { CanonicalActivityCategory } from "../../../schemas/activity-category";
 import type {
   CalculatedParameter,
   EventDemand,
@@ -5,7 +6,6 @@ import type {
   PlanningGoalPriorityClass,
   TrajectoryMode,
 } from "../../../schemas/planning";
-import type { CanonicalSport } from "../../../schemas/sport";
 
 const MICRO_TAPER_DAYS = 4;
 const MICRO_TAPER_FLATTEN_FRACTION = 0.95;
@@ -16,8 +16,8 @@ const SUSTAINED_PEAK_VALLEY_FLOOR_FRACTION = 0.9;
 export interface GoalTrajectoryCandidate {
   goal: NormalizedPlanningGoal;
   demand: EventDemand;
-  sport: CanonicalSport;
-  targetCtl: number;
+  activity_category: CanonicalActivityCategory;
+  targetLongTermLoad: number;
   taperDays: number;
   taperParameter: CalculatedParameter;
 }
@@ -30,17 +30,17 @@ export type MergedGoalTrajectoryStrategy =
 
 export interface MergedGoalTrajectory {
   strategy: MergedGoalTrajectoryStrategy;
-  sport: CanonicalSport;
+  activity_category: CanonicalActivityCategory;
   goalDate: string;
   goalIds: string[];
   priorityClass: PlanningGoalPriorityClass;
-  targetCtl: number;
+  targetLongTermLoad: number;
   taperDays: number;
   taperParameter: CalculatedParameter;
   rationale_codes: string[];
   secondaryGoalDate?: string;
   secondaryGoalIds?: string[];
-  secondaryTargetCtl?: number;
+  secondaryTargetLongTermLoad?: number;
   secondaryTaperDays?: number;
   sustainedPeakFloorFraction?: number;
   localFlattenFraction?: number;
@@ -65,8 +65,8 @@ function compareCandidates(left: GoalTrajectoryCandidate, right: GoalTrajectoryC
     return right.goal.priority - left.goal.priority;
   }
 
-  if (left.targetCtl !== right.targetCtl) {
-    return right.targetCtl - left.targetCtl;
+  if (left.targetLongTermLoad !== right.targetLongTermLoad) {
+    return right.targetLongTermLoad - left.targetLongTermLoad;
   }
 
   return left.goal.id.localeCompare(right.goal.id);
@@ -110,16 +110,19 @@ export function mergeGoalTrajectories(
     .sort(([leftDate], [rightDate]) => leftDate.localeCompare(rightDate))
     .map(([, group]) => {
       const sortedGroup = [...group].sort(compareCandidates);
-      const primary = sortedGroup[0]!;
+      const primary = sortedGroup.at(0);
+      if (!primary) {
+        throw new Error("Goal trajectory group must contain at least one candidate");
+      }
       const goalIds = sortedGroup.map((item) => item.goal.id);
 
       return {
         strategy: sortedGroup.length > 1 ? "same_day_priority" : "independent",
-        sport: primary.sport,
+        activity_category: primary.activity_category,
         goalDate: primary.goal.target_date,
         goalIds,
         priorityClass: primary.goal.priority_class,
-        targetCtl: primary.targetCtl,
+        targetLongTermLoad: primary.targetLongTermLoad,
         taperDays: primary.taperDays,
         taperParameter: primary.taperParameter,
         rationale_codes:
@@ -137,7 +140,10 @@ export function mergeGoalTrajectories(
   const merged: MergedGoalTrajectory[] = [];
 
   for (let index = 0; index < collapsed.length; index += 1) {
-    const current = collapsed[index]!;
+    const current = collapsed[index];
+    if (!current) {
+      continue;
+    }
     const next = collapsed[index + 1];
 
     if (
@@ -150,11 +156,11 @@ export function mergeGoalTrajectories(
         ...current,
         strategy: "sustained_peak",
         goalIds: [...current.goalIds, ...next.goalIds],
-        targetCtl: round(Math.max(current.targetCtl, next.targetCtl)),
+        targetLongTermLoad: round(Math.max(current.targetLongTermLoad, next.targetLongTermLoad)),
         rationale_codes: [...current.rationale_codes, "close_a_goal_sustained_peak_window_applied"],
         secondaryGoalDate: next.goalDate,
         secondaryGoalIds: next.goalIds,
-        secondaryTargetCtl: next.targetCtl,
+        secondaryTargetLongTermLoad: next.targetLongTermLoad,
         secondaryTaperDays: next.taperDays,
         sustainedPeakFloorFraction: SUSTAINED_PEAK_VALLEY_FLOOR_FRACTION,
       });
