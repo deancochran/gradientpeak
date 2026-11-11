@@ -1,3 +1,5 @@
+import { validateDisposableAcceptanceLease } from "./disposable-acceptance-lease";
+
 const LOCAL_DATABASE_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 
 // biome-ignore lint/security/noSecrets: Supabase's documented disposable local database URL.
@@ -7,6 +9,9 @@ export type WebE2EDatabaseEnvironment = {
   DATABASE_URL?: string;
   POSTGRES_URL?: string;
   E2E_DISPOSABLE_DATABASE?: string;
+  E2E_RUN_ID?: string;
+  E2E_DISPOSABLE_LEASE_CAPABILITY?: string;
+  E2E_DISPOSABLE_LEASE_PATH?: string;
 };
 
 const E2E_DATABASE_VARIABLES = new Set(["DATABASE_URL", "POSTGRES_URL"]);
@@ -52,11 +57,10 @@ export function localE2EDatabaseEnvironment(environment: WebE2EDatabaseEnvironme
       ? validateLocalPostgresUrl("POSTGRES_URL", environment.POSTGRES_URL, environment)
       : undefined;
   const fallback = databaseUrl ?? postgresUrl ?? DEFAULT_LOCAL_DATABASE_URL;
-  if (
-    environment.E2E_DISPOSABLE_DATABASE === "1" &&
-    (!databaseUrl || !postgresUrl || databaseUrl !== postgresUrl)
-  ) {
-    throw new Error("Disposable E2E requires matching explicit DATABASE_URL and POSTGRES_URL.");
+  if (environment.E2E_DISPOSABLE_DATABASE === "1") {
+    if (!databaseUrl || !postgresUrl || databaseUrl !== postgresUrl)
+      throw new Error("Disposable E2E requires matching explicit DATABASE_URL and POSTGRES_URL.");
+    validateDisposableAcceptanceLease(environment, databaseUrl);
   }
 
   return {

@@ -27,13 +27,13 @@ const testCoordinates = {
 describe("local E2E database safety", () => {
   it("requires explicit matching guarded acceptance URLs for the disposable lane", () => {
     const url = "postgresql://tester:test@127.0.0.1:54322/gradientpeak_web_acceptance_123_456";
-    expect(
+    expect(() =>
       localE2EDatabaseEnvironment({
         E2E_DISPOSABLE_DATABASE: "1",
         DATABASE_URL: url,
         POSTGRES_URL: url,
       }),
-    ).toEqual({ DATABASE_URL: url, POSTGRES_URL: url });
+    ).toThrow(/live runner-issued acceptance lease/);
     expect(() => localE2EDatabaseEnvironment({ DATABASE_URL: url, POSTGRES_URL: url })).toThrow(
       /dedicated PostgreSQL port/,
     );

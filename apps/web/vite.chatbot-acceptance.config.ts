@@ -1,7 +1,14 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig, mergeConfig } from "vite";
 
+import {
+  disposableAcceptanceLeaseVitePlugin,
+  requireDisposableAcceptanceEnvironment,
+} from "./e2e/support/disposable-acceptance-server";
 import baseConfig from "./vite.config";
+
+// Reject copied targets before Vite starts; each request rechecks owner liveness.
+requireDisposableAcceptanceEnvironment();
 
 /**
  * This config is only selected by the guarded disposable runner. Production's
@@ -11,6 +18,7 @@ import baseConfig from "./vite.config";
 export default defineConfig(async (environment) => {
   const base = typeof baseConfig === "function" ? await baseConfig(environment) : baseConfig;
   return mergeConfig(base, {
+    plugins: [disposableAcceptanceLeaseVitePlugin()],
     // Virtual Start entries discover these after the initial scan. Prebundle
     // them before the first browser journey to avoid invalidating its imports.
     optimizeDeps: {

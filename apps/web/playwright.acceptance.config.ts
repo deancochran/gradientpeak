@@ -1,5 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 import { localE2EDatabaseEnvironment } from "./e2e/support/database-url";
+import { requirePrivatePlaywrightArtifactDirectory } from "./e2e/support/disposable-acceptance-server";
 import { acceptanceOrigin } from "./scripts/disposable-acceptance-options";
 
 if (process.env.E2E_DISPOSABLE_DATABASE !== "1") {
@@ -7,6 +8,12 @@ if (process.env.E2E_DISPOSABLE_DATABASE !== "1") {
 }
 localE2EDatabaseEnvironment(process.env);
 const baseURL = acceptanceOrigin(process.env.E2E_ACCEPTANCE_BASE_URL);
+// Playwright removes and recreates outputDir. The exact private parent remains
+// the privacy boundary, while the child must remain owned and non-symlinked.
+const outputDir = requirePrivatePlaywrightArtifactDirectory(
+  process.env.E2E_ACCEPTANCE_ARTIFACTS,
+  process.env.E2E_ACCEPTANCE_OUTPUT_DIR,
+);
 
 export default defineConfig({
   testDir: "./e2e",
@@ -16,7 +23,7 @@ export default defineConfig({
   timeout: 30_000,
   retries: 0,
   workers: 1,
-  outputDir: `test-results/${process.env.E2E_RUN_ID}`,
+  outputDir,
   use: {
     baseURL,
     trace: "retain-on-failure",
