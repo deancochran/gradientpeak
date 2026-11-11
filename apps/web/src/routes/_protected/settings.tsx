@@ -1,4 +1,13 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@repo/ui/components/alert-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
@@ -110,6 +119,11 @@ export function SettingsPage() {
   const [coverFiles, setCoverFiles] = useState<AvatarFile[]>([]);
   const [submittingProfile, setSubmittingProfile] = useState(false);
   const [profileSaveError, setProfileSaveError] = useState<string | null>(null);
+  const [timezoneConfirmation, setTimezoneConfirmation] = useState<{
+    form: HTMLFormElement;
+    owner: string | null;
+    timezone: string | null;
+  } | null>(null);
   const [mediaErrors, setMediaErrors] = useState<Partial<Record<ProfileMediaField, string>>>({});
   const [mediaOperations, setMediaOperations] = useState<
     Partial<Record<ProfileMediaField, ProfileMediaOperation>>
@@ -161,6 +175,7 @@ export function SettingsPage() {
       setMediaOperations({});
       setSubmittingProfile(false);
       setProfileSaveError(null);
+      setTimezoneConfirmation(null);
       return;
     }
 
@@ -175,6 +190,7 @@ export function SettingsPage() {
       setMediaOperations({});
       setSubmittingProfile(false);
       setProfileSaveError(null);
+      setTimezoneConfirmation(null);
     }
   }, [form, user?.id]);
 
@@ -275,9 +291,7 @@ export function SettingsPage() {
     }
   };
 
-  const handleProfileSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const formElement = event.currentTarget;
+  const submitProfile = async (formElement: HTMLFormElement, closeTimezoneConfirmation = false) => {
     if (profileSubmitPendingRef.current) return;
     const submittingUserId = activeProfileOwnerRef.current;
     const submission = ++profileSubmissionRef.current;
@@ -293,6 +307,7 @@ export function SettingsPage() {
       if (!(await form.trigger())) {
         return;
       }
+      if (!isCurrentSubmission()) return;
       await updateProfile({ data: new FormData(formElement) });
     } catch (error) {
       if (isRedirect(error)) throw error;
@@ -305,8 +320,57 @@ export function SettingsPage() {
       if (isCurrentSubmission()) {
         profileSubmitPendingRef.current = false;
         setSubmittingProfile(false);
+        if (closeTimezoneConfirmation) setTimezoneConfirmation(null);
       }
     }
+  };
+
+  const handleProfileSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    if (profileSubmitPendingRef.current || timezoneConfirmation) return;
+
+    const confirmationOwner = activeProfileOwnerRef.current;
+    if (!(await form.trigger())) return;
+    if (confirmationOwner !== activeProfileOwnerRef.current) return;
+
+    const planningTimezone = form.getValues("planning_timezone") ?? null;
+    const savedPlanningTimezone = activeProfile?.planning_timezone ?? null;
+    if (planningTimezone !== savedPlanningTimezone) {
+      setTimezoneConfirmation({
+        form: formElement,
+        owner: confirmationOwner,
+        timezone: planningTimezone,
+      });
+      return;
+    }
+
+    await submitProfile(formElement);
+  };
+
+  const confirmTimezoneChange = async () => {
+    const confirmation = timezoneConfirmation;
+    if (
+      !confirmation ||
+      profileSubmitPendingRef.current ||
+      confirmation.owner !== activeProfileOwnerRef.current
+    ) {
+      return;
+    }
+
+    if (!(await form.trigger())) {
+      if (confirmation.owner === activeProfileOwnerRef.current) setTimezoneConfirmation(null);
+      return;
+    }
+
+    if (confirmation.owner !== activeProfileOwnerRef.current) return;
+    const currentTimezone = form.getValues("planning_timezone") ?? null;
+    if (currentTimezone !== confirmation.timezone) {
+      setTimezoneConfirmation({ ...confirmation, timezone: currentTimezone });
+      return;
+    }
+
+    await submitProfile(confirmation.form, true);
   };
 
   if (loading) {
@@ -358,6 +422,7 @@ export function SettingsPage() {
             profileSaveError={profileSaveError}
             {...(profile?.username === undefined ? {} : { profileUsername: profile.username })}
             submittingProfile={submittingProfile}
+            timezoneConfirmationPending={timezoneConfirmation !== null}
             {...(user?.email === undefined ? {} : { userEmail: user.email })}
             avatarError={mediaErrors.avatar_url ?? null}
             avatarPending={mediaOperations.avatar_url ?? null}
@@ -381,6 +446,34 @@ export function SettingsPage() {
           <ProductAnalyticsCard />
           <AppearanceCard />
         </section>
+        <AlertDialog
+          open={timezoneConfirmation !== null}
+          onOpenChange={(open) => {
+            if (!open && !submittingProfile) setTimezoneConfirmation(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Review time-zone change</AlertDialogTitle>
+              <AlertDialogDescription>
+                Display times will change to {timezoneConfirmation?.timezone ?? "Not set"}.
+                Date-only planned sessions retain their intended training date.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel type="button" disabled={submittingProfile}>
+                Cancel
+              </AlertDialogCancel>
+              <Button
+                type="button"
+                disabled={submittingProfile || timezoneConfirmation === null}
+                onClick={() => void confirmTimezoneChange()}
+              >
+                Confirm change
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
         <section id="security" aria-labelledby="security-heading" className="scroll-mt-6">
           <SecurityCard
             key={`security:${user?.id}`}
@@ -429,6 +522,7 @@ function ProfileInformationCard({
   form,
   profileUsername,
   submittingProfile,
+  timezoneConfirmationPending,
   userEmail,
   profileSaveError,
   onAvatarFilesChange,
@@ -447,6 +541,7 @@ function ProfileInformationCard({
   form: UseFormReturn<SettingsProfileFormInput, undefined, SettingsProfileFormValues>;
   profileUsername?: string | null;
   submittingProfile: boolean;
+  timezoneConfirmationPending: boolean;
   userEmail?: string | null;
   profileSaveError: string | null;
   onAvatarFilesChange: (files: AvatarFile[]) => void;
@@ -664,7 +759,7 @@ function ProfileInformationCard({
             </div>
             <FormTimezoneField
               control={form.control}
-              description="Used to interpret calendar days and scheduled training."
+              description="Used to display calendar times. Date-only planned sessions keep their intended training date."
               label="Planning Timezone"
               name="planning_timezone"
             />
@@ -705,7 +800,7 @@ function ProfileInformationCard({
             />
             <LoadingButton
               type="submit"
-              disabled={submittingProfile || !form.formState.isDirty}
+              disabled={submittingProfile || timezoneConfirmationPending || !form.formState.isDirty}
               loading={submittingProfile}
               loadingLabel="Updating..."
             >

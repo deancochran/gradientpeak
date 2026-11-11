@@ -98,6 +98,15 @@ async function choosePlanningTimezone(page: Page, timezone: string) {
     .click();
 }
 
+async function confirmTimezoneChange(page: Page) {
+  await page
+    .getByRole("alertdialog", { name: "Review time-zone change" })
+    .getByRole("button", {
+      name: "Confirm change",
+    })
+    .click();
+}
+
 test("settings.select-theme persists a chosen theme across reloads", async ({ athletePage }) => {
   await athletePage.goto("/settings");
 
@@ -174,6 +183,28 @@ test("[P2] profile and privacy settings persist together and can be restored", a
     if ((await openProfile.isChecked()) === original.open) await openProfile.click();
     await visibility.selectOption(original.visibility === "public" ? "private" : "public");
     await profilePage.getByRole("button", { name: "Update Profile" }).click();
+    const timezoneReview = profilePage.getByRole("alertdialog", {
+      name: "Review time-zone change",
+    });
+    await expect(timezoneReview).toContainText(
+      `Display times will change to ${nextPlanningTimezone}. Date-only planned sessions retain their intended training date.`,
+    );
+    await profilePage.setViewportSize({ width: 1440, height: 1000 });
+    await timezoneReview.screenshot({
+      animations: "disabled",
+      path: testInfo.outputPath("settings-timezone-review-desktop.png"),
+      scale: "css",
+    });
+    await profilePage.setViewportSize({ width: 390, height: 844 });
+    await timezoneReview.screenshot({
+      animations: "disabled",
+      path: testInfo.outputPath("settings-timezone-review-mobile.png"),
+      scale: "css",
+    });
+    await timezoneReview.getByRole("button", { name: "Cancel" }).click();
+    await expect(planningTimezone).toHaveText(timezoneLabel(nextPlanningTimezone));
+    await profilePage.getByRole("button", { name: "Update Profile" }).click();
+    await confirmTimezoneChange(profilePage);
     await expect(
       profilePage.getByText("Profile updated successfully", { exact: true }).last(),
     ).toBeVisible();
@@ -200,6 +231,7 @@ test("[P2] profile and privacy settings persist together and can be restored", a
     const restoreProfile = profilePage.getByRole("button", { name: "Update Profile" });
     if (await restoreProfile.isEnabled()) {
       await restoreProfile.click();
+      await confirmTimezoneChange(profilePage);
       await expect(
         profilePage.getByText("Profile updated successfully", { exact: true }).last(),
       ).toBeVisible();

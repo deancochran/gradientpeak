@@ -9,6 +9,10 @@ class ResizeObserverMock {
 }
 
 vi.stubGlobal("ResizeObserver", ResizeObserverMock);
+Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+  configurable: true,
+  value: () => undefined,
+});
 
 const state = vi.hoisted(() => ({
   profile: undefined as Record<string, unknown> | undefined,
@@ -20,11 +24,25 @@ const state = vi.hoisted(() => ({
     field: "avatar_url",
   })),
   save: vi.fn<(args: unknown) => Promise<void>>(async () => {}),
+  validation: vi.fn<() => Promise<void>>(async () => {}),
   uploadMedia: vi.fn<(args: unknown) => Promise<{ field: string; url: string }>>(async () => ({
     field: "avatar_url",
     url: "https://images.example.test/new.jpg",
   })),
 }));
+vi.mock("@hookform/resolvers/zod", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@hookform/resolvers/zod")>();
+  return {
+    ...original,
+    zodResolver: (...args: Parameters<typeof original.zodResolver>) => {
+      const resolve = original.zodResolver(...args);
+      return async (...resolverArgs: Parameters<typeof resolve>) => {
+        await state.validation();
+        return resolve(...resolverArgs);
+      };
+    },
+  };
+});
 let blockerOptions:
   | { enableBeforeUnload?: () => boolean; shouldBlockFn?: () => boolean }
   | undefined;
@@ -110,12 +128,27 @@ function getProfileForm() {
   return form;
 }
 
+async function choosePlanningTimezone(timezone: string) {
+  fireEvent.click(screen.getByRole("button", { name: "Planning Timezone" }));
+  fireEvent.change(await screen.findByRole("combobox", { name: "Search timezones" }), {
+    target: { value: timezone },
+  });
+  fireEvent.click(
+    await screen.findByRole("option", {
+      name: timezone.replaceAll("_", " ").replaceAll("/", " / "),
+      exact: true,
+    }),
+  );
+}
+
 afterEach(() => {
   cleanup();
   state.profile = undefined;
   state.user = { id: "account-a", email: "a@example.test", emailVerified: true };
   state.save.mockReset();
   state.save.mockResolvedValue(undefined);
+  state.validation.mockReset();
+  state.validation.mockResolvedValue(undefined);
   state.uploadMedia.mockReset();
   state.uploadMedia.mockResolvedValue({
     field: "avatar_url",
@@ -227,6 +260,109 @@ describe("SettingsPage profile synchronization", () => {
 
     resolveSave();
     await waitFor(() => expect(blockerOptions?.enableBeforeUnload?.()).toBe(false));
+  });
+
+  it("does not save after final ordinary-submit validation finishes for a different account", async () => {
+    state.profile = profile("account-a", "Server A", "Original bio");
+    const rendered = render(<SettingsPage />);
+    fireEvent.change(await screen.findByLabelText("Full name"), { target: { value: "Draft A" } });
+
+    let finishFinalValidation!: () => void;
+    state.validation.mockResolvedValueOnce(undefined).mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finishFinalValidation = resolve;
+      }),
+    );
+    fireEvent.submit(getProfileForm());
+    await waitFor(() => expect(state.validation).toHaveBeenCalledTimes(2));
+
+    state.user = { id: "account-b", email: "b@example.test", emailVerified: true };
+    state.profile = profile("account-b", "Server B", "Original bio");
+    rendered.rerender(<SettingsPage />);
+    finishFinalValidation();
+
+    await waitFor(() =>
+      expect((screen.getByLabelText("Full name") as HTMLInputElement).value).toBe("Server B"),
+    );
+    expect(state.save).not.toHaveBeenCalled();
+  });
+
+  it("reviews timezone changes, retains the draft on cancel, and saves only after confirmation", async () => {
+    state.profile = {
+      ...profile("account-a", "Server A", "Original bio"),
+      planning_timezone: "UTC",
+    };
+    render(<SettingsPage />);
+    const fullName = await screen.findByLabelText("Full name");
+    fireEvent.change(fullName, { target: { value: "Draft A" } });
+    await choosePlanningTimezone("America/Denver");
+
+    fireEvent.submit(getProfileForm());
+    expect(await screen.findByRole("heading", { name: "Review time-zone change" })).toBeTruthy();
+    expect(screen.getByText(/Display times will change to America\/Denver/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect((fullName as HTMLInputElement).value).toBe("Draft A");
+    expect(screen.getByRole("button", { name: "Planning Timezone" }).textContent).toContain(
+      "America / Denver",
+    );
+    expect(state.save).not.toHaveBeenCalled();
+    expect(blockerOptions?.enableBeforeUnload?.()).toBe(true);
+
+    fireEvent.submit(getProfileForm());
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm change" }));
+    await waitFor(() => expect(state.save).toHaveBeenCalledOnce());
+    const request = state.save.mock.calls[0]?.[0] as { data: FormData };
+    expect(request.data.get("planning_timezone")).toBe("America/Denver");
+  });
+
+  it("does not save after final confirmed-timezone validation finishes for a different account", async () => {
+    state.profile = {
+      ...profile("account-a", "Server A", "Original bio"),
+      planning_timezone: "UTC",
+    };
+    const rendered = render(<SettingsPage />);
+    await choosePlanningTimezone("America/Denver");
+    fireEvent.submit(getProfileForm());
+    await screen.findByRole("heading", { name: "Review time-zone change" });
+
+    let finishFinalValidation!: () => void;
+    state.validation.mockResolvedValueOnce(undefined).mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finishFinalValidation = resolve;
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Confirm change" }));
+    await waitFor(() => expect(state.validation).toHaveBeenCalledTimes(2));
+
+    state.user = { id: "account-b", email: "b@example.test", emailVerified: true };
+    state.profile = profile("account-b", "Server B", "Original bio");
+    rendered.rerender(<SettingsPage />);
+    finishFinalValidation();
+
+    await waitFor(() =>
+      expect((screen.getByLabelText("Full name") as HTMLInputElement).value).toBe("Server B"),
+    );
+    expect(state.save).not.toHaveBeenCalled();
+  });
+
+  it("retains an invalid timezone-change draft without opening a confirmation or saving", async () => {
+    state.profile = {
+      ...profile("account-a", "Server A", "Original bio"),
+      planning_timezone: "UTC",
+    };
+    render(<SettingsPage />);
+    const username = await screen.findByLabelText("Username");
+    fireEvent.change(username, { target: { value: "not a valid username" } });
+    await choosePlanningTimezone("America/Denver");
+
+    fireEvent.submit(getProfileForm());
+
+    await waitFor(() => expect(screen.getByText(/Username must be 3-30 characters/)).toBeTruthy());
+    expect((username as HTMLInputElement).value).toBe("not a valid username");
+    expect(screen.queryByRole("heading", { name: "Review time-zone change" })).toBeNull();
+    expect(state.save).not.toHaveBeenCalled();
+    expect(blockerOptions?.enableBeforeUnload?.()).toBe(true);
   });
 
   it("does not let an old account completion disarm a new account draft", async () => {
