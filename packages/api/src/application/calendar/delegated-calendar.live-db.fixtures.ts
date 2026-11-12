@@ -1,6 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { db } from "@repo/db/client";
-import { profiles, users } from "@repo/db/schema";
+import {
+  athleteConsentPolicyVersions,
+  athleteDataSharingConsents,
+  coachingAssignments,
+  coachingEngagements,
+  organizationMembershipRoleGrants,
+  organizationMemberships,
+  organizations,
+  profiles,
+  users,
+} from "@repo/db/schema";
 import { sql } from "drizzle-orm";
 import { createApiContext } from "../../context";
 import { appRouter } from "../../routers";
@@ -53,33 +63,75 @@ export async function activeCalendarRelationship(
   const ownerId = await person("Calendar root owner");
   await db.transaction(async (tx) => {
     await tx.execute("set constraints all deferred");
-    await tx.execute(sql`insert into organizations (id, created_by_profile_id, root_owner_membership_id, name, slug, timezone)
-      values (${organizationId}::uuid, ${ownerId}::uuid, ${rootOwnerMembershipId}::uuid, 'Calendar coaching', ${`calendar-${organizationId}`}, 'UTC')`);
-    await tx.execute(sql`insert into organization_memberships (id, organization_id, profile_id)
-      values (${rootOwnerMembershipId}::uuid, ${organizationId}::uuid, ${ownerId}::uuid)`);
-    await tx.execute(sql`insert into organization_membership_role_grants (organization_id, membership_id, role_key)
-      values (${organizationId}::uuid, ${rootOwnerMembershipId}::uuid, 'admin')`);
-    await tx.execute(sql`insert into organization_memberships (id, organization_id, profile_id)
-      values (${membershipId}::uuid, ${organizationId}::uuid, ${coachId}::uuid)`);
-    await tx.execute(sql`insert into organization_membership_role_grants (organization_id, membership_id, role_key)
-      values (${organizationId}::uuid, ${membershipId}::uuid, 'coach')`);
-    await tx.execute(sql`insert into coaching_engagements (id, organization_id, athlete_profile_id)
-      values (${engagementId}::uuid, ${organizationId}::uuid, ${athleteId}::uuid)`);
-    await tx.execute(sql`insert into coaching_assignments (organization_id, engagement_id, coach_membership_id, assignment_kind)
-      values (${organizationId}::uuid, ${engagementId}::uuid, ${membershipId}::uuid, 'primary')`);
+    await tx.insert(organizations).values({
+      id: organizationId,
+      created_by_profile_id: ownerId,
+      root_owner_membership_id: rootOwnerMembershipId,
+      name: "Calendar coaching",
+      slug: `calendar-${organizationId}`,
+      timezone: "UTC",
+    });
+    await tx.insert(organizationMemberships).values({
+      id: rootOwnerMembershipId,
+      organization_id: organizationId,
+      profile_id: ownerId,
+    });
+    await tx.insert(organizationMembershipRoleGrants).values({
+      organization_id: organizationId,
+      membership_id: rootOwnerMembershipId,
+      role_key: "admin",
+    });
+    await tx.insert(organizationMemberships).values({
+      id: membershipId,
+      organization_id: organizationId,
+      profile_id: coachId,
+    });
+    await tx.insert(organizationMembershipRoleGrants).values({
+      organization_id: organizationId,
+      membership_id: membershipId,
+      role_key: "coach",
+    });
+    await tx.insert(coachingEngagements).values({
+      id: engagementId,
+      organization_id: organizationId,
+      athlete_profile_id: athleteId,
+    });
+    await tx.insert(coachingAssignments).values({
+      organization_id: organizationId,
+      engagement_id: engagementId,
+      coach_membership_id: membershipId,
+      assignment_kind: "primary",
+    });
     if (options.includeConsent !== false) {
       const scope = options.scope ?? "calendar";
-      await tx.execute(sql`insert into athlete_consent_policy_versions
-        (id, scope_key, effective_from, jurisdiction, terms_text, content_digest)
-        values (${policyVersionId}::uuid, ${scope}, now() - interval '1 second', 'US', 'Calendar terms', ${`sha256:${policyVersionId}`})`);
+      await tx.insert(athleteConsentPolicyVersions).values({
+        id: policyVersionId,
+        scope_key: scope,
+        effective_from: sql`now() - interval '1 second'`,
+        jurisdiction: "US",
+        terms_text: "Calendar terms",
+        content_digest: `sha256:${policyVersionId}`,
+      });
       if (options.expiredConsent) {
-        await tx.execute(sql`insert into athlete_data_sharing_consents
-          (organization_id, engagement_id, athlete_profile_id, scope_key, policy_version_id, granted_by_profile_id, granted_at, expires_at)
-          values (${organizationId}::uuid, ${engagementId}::uuid, ${athleteId}::uuid, ${scope}, ${policyVersionId}::uuid, ${athleteId}::uuid, now() - interval '2 seconds', now() - interval '1 second')`);
+        await tx.insert(athleteDataSharingConsents).values({
+          organization_id: organizationId,
+          engagement_id: engagementId,
+          athlete_profile_id: athleteId,
+          scope_key: scope,
+          policy_version_id: policyVersionId,
+          granted_by_profile_id: athleteId,
+          granted_at: sql`now() - interval '2 seconds'`,
+          expires_at: sql`now() - interval '1 second'`,
+        });
       } else {
-        await tx.execute(sql`insert into athlete_data_sharing_consents
-          (organization_id, engagement_id, athlete_profile_id, scope_key, policy_version_id, granted_by_profile_id)
-          values (${organizationId}::uuid, ${engagementId}::uuid, ${athleteId}::uuid, ${scope}, ${policyVersionId}::uuid, ${athleteId}::uuid)`);
+        await tx.insert(athleteDataSharingConsents).values({
+          organization_id: organizationId,
+          engagement_id: engagementId,
+          athlete_profile_id: athleteId,
+          scope_key: scope,
+          policy_version_id: policyVersionId,
+          granted_by_profile_id: athleteId,
+        });
       }
     }
   });
