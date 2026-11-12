@@ -1,8 +1,0 @@
-appId: com.deancochran.gradientpeak.dev
----
-- runFlow:
-    when:
-      visible:
-        id: "e2e-runtime-error-count"
-    commands:
-      - assertVisible: "E2E_RUNTIME_ERRORS=0"

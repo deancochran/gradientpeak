@@ -1,0 +1,739 @@
+import { z } from "zod";
+
+import {
+  type CalculationResult,
+  calculationResultSchema,
+  estimatedResult,
+  unavailableResult,
+} from "../calculation-result-contracts";
+import { sourceIdSchema } from "../lineage";
+
+export const TRAINING_FEASIBILITY_POLICY_VERSION = "training-feasibility-v1" as const;
+export const MAX_RECURRENCE_OCCURRENCES = 1_000;
+
+const daySchema = z.enum([
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+]);
+const nullableNonnegative = z.number().finite().nonnegative().nullable();
+const capSchema = z
+  .object({
+    maximumWeeklyMinutes: nullableNonnegative,
+    maximumSessionsPerWeek: z.number().int().nonnegative().nullable(),
+    maximumSessionDurationMinutes: nullableNonnegative,
+  })
+  .strict();
+
+export const trainingFeasibilityInputSchema = z
+  .object({
+    sourceId: sourceIdSchema,
+    assessmentAsOf: z.string().datetime({ offset: true }),
+    planningTimezone: z.string().trim().min(1).max(64).nullable().optional(),
+    planningStart: z.string().datetime({ offset: true }).nullable(),
+    goalDate: z.string().date().nullable(),
+    availabilityWindows: z.array(
+      z
+        .object({
+          day: daySchema,
+          startMinuteLocal: z.number().int().min(0).max(1439),
+          endMinuteLocal: z.number().int().min(1).max(1440),
+        })
+        .strict()
+        .refine((window) => window.endMinuteLocal > window.startMinuteLocal),
+    ),
+    hardRestDays: z.array(daySchema),
+    maximumWeeklyMinutes: nullableNonnegative,
+    maximumWeeklySessions: z.number().int().nonnegative().nullable(),
+    maximumDailyMinutes: nullableNonnegative,
+    maximumSessionsPerDay: z.number().int().positive().nullable(),
+    maximumSessionDurationMinutes: nullableNonnegative,
+    allowDoubleDays: z.boolean().nullable(),
+    activityCategoryOverrides: z.array(
+      z.object({ activity_category: z.string().min(1), caps: capSchema }).strict(),
+    ),
+    recoveryPreference: z.enum(["more", "balanced", "less"]).nullable(),
+    requiredWeeklyMinutes: nullableNonnegative,
+    requiredWeeklySessions: z.number().int().nonnegative().nullable(),
+    // Required-session coverage is activity-category-specific when a session target is stated.
+    targetGoalActivityCategory: z.string().trim().min(1).max(64).nullable(),
+    scheduleComplete: z.boolean(),
+    plannedSchedule: z.array(
+      z
+        .object({
+          sourceId: sourceIdSchema,
+          startAt: z.string().datetime({ offset: true }),
+          endAt: z.string().datetime({ offset: true }),
+          lifecycle: z.enum(["planned", "confirmed", "completed", "cancelled"]),
+          eventType: z.enum(["training", "race", "rest", "other"]),
+          activity_category: z.string().min(1).nullable(),
+          timezone: z.string().trim().min(1).max(64).nullable().optional(),
+          recurrence: z
+            .object({
+              frequency: z.enum(["daily", "weekly", "monthly"]),
+              interval: z.number().int().min(1).max(52),
+              until: z.string().datetime({ offset: true }).nullable(),
+              timezone: z.string().trim().min(1).max(64).nullable().optional(),
+            })
+            .strict()
+            .nullable(),
+        })
+        .strict()
+        .refine((event) => Date.parse(event.endAt) >= Date.parse(event.startAt))
+        .refine(
+          (event) =>
+            event.recurrence === null ||
+            event.recurrence.until === null ||
+            Date.parse(event.recurrence.until) >= Date.parse(event.startAt),
+        ),
+    ),
+  })
+  .strict();
+
+const constraintResultsSchema = z
+  .object({
+    hardRestConflicts: calculationResultSchema,
+    dailyDurationExcesses: calculationResultSchema,
+    dailySessionCapExcesses: calculationResultSchema,
+    doubleDayConflicts: calculationResultSchema,
+    sessionDurationExcesses: calculationResultSchema,
+    weeklyDurationExcesses: calculationResultSchema,
+    weeklySessionCapExcesses: calculationResultSchema,
+    activityCategoryOverrideExcesses: calculationResultSchema,
+    recoveryPreferenceConflicts: calculationResultSchema,
+  })
+  .strict();
+
+export const trainingFeasibilityResultsSchema = z
+  .object({
+    policyVersion: z.literal(TRAINING_FEASIBILITY_POLICY_VERSION),
+    timeCoverage: calculationResultSchema,
+    requiredSessionCoverage: calculationResultSchema,
+    compatibleScheduledMinutes: calculationResultSchema,
+    scheduleCoverage: calculationResultSchema,
+    constraints: constraintResultsSchema,
+  })
+  .strict();
+
+export type TrainingFeasibilityInput = z.infer<typeof trainingFeasibilityInputSchema>;
+export type TrainingFeasibilityResults = z.infer<typeof trainingFeasibilityResultsSchema>;
+type SourceId = z.infer<typeof sourceIdSchema>;
+
+const dayNames = [
+  "sunday",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+] as const;
+
+function unavailable(reason: string, sourceId: SourceId, unsupported = false): CalculationResult {
+  return unavailableResult({
+    state: unsupported ? "unsupported" : "insufficient_evidence",
+    missingDataState: unsupported ? "unsupported_input" : "required_data_missing",
+    uncertainty: 1,
+    reasonCodes: [reason],
+    contributingSourceIds: [sourceId],
+  });
+}
+
+function partial(reason: string, sourceId: SourceId): CalculationResult {
+  return unavailableResult({
+    state: "insufficient_evidence",
+    missingDataState: "partial",
+    uncertainty: 1,
+    reasonCodes: [reason],
+    contributingSourceIds: [sourceId],
+  });
+}
+
+function result(
+  estimate: number,
+  unit: string,
+  reason: string,
+  sourceIds: [SourceId, ...SourceId[]],
+): CalculationResult {
+  return estimatedResult({
+    estimate: Math.max(0, estimate),
+    unit,
+    // Calendar feasibility cannot know whether stated availability remains usable.
+    uncertainty: 0.15,
+    reasonCodes: [reason],
+    contributingSourceIds: sourceIds,
+  });
+}
+
+function formatter(timeZone: string): Intl.DateTimeFormat | null {
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    });
+  } catch {
+    return null;
+  }
+}
+
+function localParts(date: Date, format: Intl.DateTimeFormat) {
+  const parts = Object.fromEntries(
+    format
+      .formatToParts(date)
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, Number(part.value)]),
+  );
+  return {
+    year: parts.year ?? 0,
+    month: parts.month ?? 0,
+    day: parts.day ?? 0,
+    hour: parts.hour ?? 0,
+    second: parts.second ?? 0,
+    minute: (parts.hour ?? 0) * 60 + (parts.minute ?? 0),
+  };
+}
+
+type LocalDateTime = {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+  millisecond: number;
+};
+
+function wallClockParts(date: Date, format: Intl.DateTimeFormat): LocalDateTime {
+  const parts = localParts(date, format);
+  return {
+    ...parts,
+    minute: parts.minute % 60,
+    millisecond: date.getUTCMilliseconds(),
+  };
+}
+
+/** Converts a valid local wall-clock value to its instant without relying on the host timezone. */
+function wallClockToDate(value: LocalDateTime, format: Intl.DateTimeFormat): Date {
+  const wanted = Date.UTC(
+    value.year,
+    value.month - 1,
+    value.day,
+    value.hour,
+    value.minute,
+    value.second,
+    value.millisecond,
+  );
+  let instant = wanted;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const actual = wallClockParts(new Date(instant), format);
+    const represented = Date.UTC(
+      actual.year,
+      actual.month - 1,
+      actual.day,
+      actual.hour,
+      actual.minute,
+      actual.second,
+      actual.millisecond,
+    );
+    const correction = wanted - represented;
+    if (correction === 0) break;
+    instant += correction;
+  }
+  return new Date(instant);
+}
+
+function recurrenceDate(
+  original: LocalDateTime,
+  frequency: "daily" | "weekly" | "monthly",
+  interval: number,
+  index: number,
+): LocalDateTime | null {
+  const date = new Date(
+    Date.UTC(original.year, original.month - 1, original.day, original.hour, original.minute),
+  );
+  if (frequency === "daily") date.setUTCDate(date.getUTCDate() + interval * index);
+  if (frequency === "weekly") date.setUTCDate(date.getUTCDate() + 7 * interval * index);
+  if (frequency === "monthly") {
+    date.setUTCDate(1);
+    date.setUTCMonth(date.getUTCMonth() + interval * index);
+    const targetMonth = date.getUTCMonth();
+    date.setUTCDate(original.day);
+    if (date.getUTCMonth() !== targetMonth) return null;
+  }
+  return {
+    year: date.getUTCFullYear(),
+    month: date.getUTCMonth() + 1,
+    day: date.getUTCDate(),
+    hour: original.hour,
+    minute: original.minute,
+    second: original.second,
+    millisecond: original.millisecond,
+  };
+}
+
+type PlannedEvent = TrainingFeasibilityInput["plannedSchedule"][number];
+type ExpandedEvent = Omit<PlannedEvent, "startAt" | "endAt"> & {
+  startAt: string;
+  endAt: string;
+};
+
+function expandSchedule(
+  input: TrainingFeasibilityInput,
+  planningFormat: Intl.DateTimeFormat,
+  goal: string,
+) {
+  const occurrences: ExpandedEvent[] = [];
+  let truncated = false;
+  for (const event of input.plannedSchedule) {
+    const recurrence = event.recurrence;
+    // Recurring events retain the calendar's recurrence zone, which can differ from the
+    // athlete's planning zone.
+    const recurrenceFormat = recurrence
+      ? formatter(recurrence.timezone ?? event.timezone ?? input.planningTimezone ?? "")
+      : planningFormat;
+    if (!recurrenceFormat) {
+      truncated = true;
+      continue;
+    }
+    const originalStart = wallClockParts(new Date(event.startAt), recurrenceFormat);
+    const originalEnd = wallClockParts(new Date(event.endAt), recurrenceFormat);
+    let occurrenceCount = 0;
+    for (let index = 0; ; index += 1) {
+      const startWall = recurrence
+        ? recurrenceDate(originalStart, recurrence.frequency, recurrence.interval, index)
+        : originalStart;
+      const endWall = recurrence
+        ? recurrenceDate(originalEnd, recurrence.frequency, recurrence.interval, index)
+        : originalEnd;
+      // Monthly recurrences skip calendar months that do not contain the original day.
+      if (!startWall || !endWall) continue;
+      const occurrenceStart = wallClockToDate(startWall, recurrenceFormat);
+      if (recurrence?.until && occurrenceStart.getTime() > Date.parse(recurrence.until)) {
+        break;
+      }
+      if (localDateKey(occurrenceStart, planningFormat) > goal) {
+        break;
+      }
+      // Reaching the cap is complete unless this eligible occurrence proves an overflow exists.
+      if (occurrenceCount === MAX_RECURRENCE_OCCURRENCES) {
+        truncated = true;
+        break;
+      }
+      const occurrenceEnd = wallClockToDate(endWall, recurrenceFormat);
+      occurrences.push({
+        ...event,
+        startAt: occurrenceStart.toISOString(),
+        endAt: occurrenceEnd.toISOString(),
+      });
+      occurrenceCount += 1;
+      if (!recurrence) break;
+    }
+  }
+  return { occurrences, truncated };
+}
+
+function localDateKey(date: Date, format: Intl.DateTimeFormat): string {
+  const parts = localParts(date, format);
+  return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
+}
+
+function nextDateKey(key: string): string {
+  const date = new Date(`${key}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
+}
+
+function dayName(key: string): (typeof dayNames)[number] {
+  return dayNames[new Date(`${key}T12:00:00Z`).getUTCDay()] ?? "sunday";
+}
+
+function mergedWindowMinutes(
+  windows: TrainingFeasibilityInput["availabilityWindows"],
+  day: (typeof dayNames)[number],
+  lowerBound: number,
+): number {
+  const sorted = windows
+    .filter((window) => window.day === day)
+    .map(
+      (window) => [Math.max(lowerBound, window.startMinuteLocal), window.endMinuteLocal] as const,
+    )
+    .filter(([start, end]) => end > start)
+    .sort((a, b) => a[0] - b[0]);
+  let total = 0;
+  let start = -1;
+  let end = -1;
+  for (const window of sorted) {
+    if (window[0] > end) {
+      if (end > start) total += end - start;
+      [start, end] = window;
+    } else {
+      end = Math.max(end, window[1]);
+    }
+  }
+  return total + (end > start ? end - start : 0);
+}
+
+function isWithinAvailability(
+  date: Date,
+  format: Intl.DateTimeFormat,
+  windows: TrainingFeasibilityInput["availabilityWindows"],
+): boolean {
+  const key = localDateKey(date, format);
+  const minute = localParts(date, format).minute;
+  return windows.some(
+    (window) =>
+      window.day === dayName(key) &&
+      minute >= window.startMinuteLocal &&
+      minute < window.endMinuteLocal,
+  );
+}
+
+type EventSegment = {
+  event: ExpandedEvent;
+  dateKey: string;
+  weekKey: string;
+  durationMinutes: number;
+};
+
+function weekKey(dateKey: string): string {
+  const date = new Date(`${dateKey}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
+  return date.toISOString().slice(0, 10);
+}
+
+function localMidnight(key: string, format: Intl.DateTimeFormat): Date {
+  const [year, month, day] = key.split("-").map(Number);
+  return wallClockToDate(
+    {
+      year: year ?? 0,
+      month: month ?? 0,
+      day: day ?? 0,
+      hour: 0,
+      minute: 0,
+      second: 0,
+      millisecond: 0,
+    },
+    format,
+  );
+}
+
+function splitAtPlanningMidnights(
+  event: ExpandedEvent,
+  start: Date,
+  goalDate: string,
+  format: Intl.DateTimeFormat,
+): EventSegment[] {
+  const goalEnd = localMidnight(nextDateKey(goalDate), format).getTime();
+  const end = Math.min(Date.parse(event.endAt), goalEnd);
+  let cursor = Math.max(Date.parse(event.startAt), start.getTime());
+  const segments: EventSegment[] = [];
+  while (cursor < end) {
+    const dateKey = localDateKey(new Date(cursor), format);
+    const boundary = localMidnight(nextDateKey(dateKey), format).getTime();
+    const segmentEnd = Math.min(end, boundary);
+    // A valid IANA zone always advances at the following local midnight.
+    if (segmentEnd <= cursor) break;
+    segments.push({
+      event,
+      dateKey,
+      weekKey: weekKey(dateKey),
+      durationMinutes: (segmentEnd - cursor) / 60_000,
+    });
+    cursor = segmentEnd;
+  }
+  return segments;
+}
+
+/** Evaluates stated calendar and resource capacity; it makes no physiological inference. */
+export function calculateTrainingFeasibility(
+  raw: TrainingFeasibilityInput,
+): TrainingFeasibilityResults {
+  const input = trainingFeasibilityInputSchema.parse(raw);
+  const source = input.sourceId;
+  const planningTimezone = input.planningTimezone;
+  const timezoneFormat = planningTimezone ? formatter(planningTimezone) : null;
+  const start = input.planningStart ? new Date(input.planningStart) : null;
+  const startKey = start && timezoneFormat ? localDateKey(start, timezoneFormat) : null;
+  const validHorizon =
+    start !== null && startKey !== null && input.goalDate !== null && input.goalDate >= startKey;
+  const timezoneUnavailable = !timezoneFormat;
+
+  const expansion =
+    validHorizon && timezoneFormat && input.goalDate
+      ? expandSchedule(input, timezoneFormat, input.goalDate)
+      : { occurrences: [], truncated: false };
+  const scheduleComplete = input.scheduleComplete && !expansion.truncated;
+  const activeEvents = validHorizon
+    ? expansion.occurrences.filter(
+        (event) =>
+          (event.lifecycle === "planned" || event.lifecycle === "confirmed") &&
+          event.eventType === "training" &&
+          new Date(event.endAt) > (start as Date) &&
+          localDateKey(new Date(event.startAt), timezoneFormat as Intl.DateTimeFormat) <=
+            (input.goalDate as string),
+      )
+    : [];
+  const sources = [source, ...activeEvents.map((event) => event.sourceId)] as [
+    SourceId,
+    ...SourceId[],
+  ];
+
+  let availableMinutes = 0;
+  let horizonDays = 0;
+  if (validHorizon && start && startKey && input.goalDate && timezoneFormat) {
+    for (let key = startKey; key <= input.goalDate; key = nextDateKey(key)) {
+      horizonDays += 1;
+      const name = dayName(key);
+      if (input.hardRestDays.includes(name)) continue;
+      const lowerBound = key === startKey ? localParts(start, timezoneFormat).minute : 0;
+      availableMinutes += mergedWindowMinutes(input.availabilityWindows, name, lowerBound);
+    }
+  }
+
+  const eventSegments =
+    validHorizon && start && input.goalDate && timezoneFormat
+      ? activeEvents.flatMap((event) =>
+          splitAtPlanningMidnights(event, start, input.goalDate as string, timezoneFormat),
+        )
+      : [];
+  const clippedDuration = (event: (typeof activeEvents)[number]) =>
+    eventSegments
+      .filter((segment) => segment.event === event)
+      .reduce((total, segment) => total + segment.durationMinutes, 0);
+  const compatibleScheduledMinutes = activeEvents.reduce((total, event) => {
+    let cursor = Math.max(Date.parse(event.startAt), (start as Date).getTime());
+    const end = cursor + clippedDuration(event) * 60_000;
+    let compatibleMilliseconds = 0;
+    while (cursor < end) {
+      const nextMinuteBoundary = Math.floor(cursor / 60_000) * 60_000 + 60_000;
+      const segmentEnd = Math.min(end, nextMinuteBoundary);
+      if (
+        isWithinAvailability(
+          new Date(cursor),
+          timezoneFormat as Intl.DateTimeFormat,
+          input.availabilityWindows,
+        )
+      ) {
+        compatibleMilliseconds += segmentEnd - cursor;
+      }
+      cursor = segmentEnd;
+    }
+    return total + compatibleMilliseconds / 60_000;
+  }, 0);
+  const demandedMinutes =
+    validHorizon && input.requiredWeeklyMinutes !== null
+      ? input.requiredWeeklyMinutes * (horizonDays / 7)
+      : null;
+  const demandedSessions =
+    validHorizon && input.requiredWeeklySessions !== null
+      ? input.requiredWeeklySessions * (horizonDays / 7)
+      : null;
+  const targetActivityCategoryEvents = input.targetGoalActivityCategory
+    ? activeEvents.filter((event) => event.activity_category === input.targetGoalActivityCategory)
+    : [];
+  const coverage = (
+    numerator: number,
+    demand: number | null,
+    missingReason: string,
+    reason: string,
+  ) => {
+    if (timezoneUnavailable) return unavailable("timezone_missing_or_unsupported", source, true);
+    if (!validHorizon) return unavailable("goal_or_planning_horizon_missing", source);
+    if (demand === null) return unavailable(missingReason, source);
+    return result(demand === 0 ? 1 : Math.min(1, numerator / demand), "ratio", reason, sources);
+  };
+  const scheduleCoverage = (
+    numerator: number,
+    demand: number | null,
+    missingReason: string,
+    reason: string,
+  ) =>
+    scheduleComplete
+      ? coverage(numerator, demand, missingReason, reason)
+      : partial(
+          expansion.truncated ? "recurrence_expansion_truncated" : "schedule_read_truncated",
+          source,
+        );
+
+  const byDay = new Map<string, EventSegment[]>();
+  const byWeek = new Map<string, EventSegment[]>();
+  for (const segment of eventSegments) {
+    byDay.set(segment.dateKey, [...(byDay.get(segment.dateKey) ?? []), segment]);
+    byWeek.set(segment.weekKey, [...(byWeek.get(segment.weekKey) ?? []), segment]);
+  }
+  const countDays = (predicate: (segments: EventSegment[]) => boolean) =>
+    [...byDay.values()].filter(predicate).length;
+  const distinctSourceEventCount = (segments: EventSegment[]) =>
+    new Set(segments.map((segment) => segment.event.sourceId)).size;
+  const capResult = (cap: number | boolean | null, value: number, reason: string) =>
+    !scheduleComplete
+      ? partial(
+          expansion.truncated ? "recurrence_expansion_truncated" : "schedule_read_truncated",
+          source,
+        )
+      : timezoneUnavailable
+        ? unavailable("timezone_missing_or_unsupported", source, true)
+        : cap === null
+          ? unavailable(`${reason}_cap_missing`, source)
+          : result(value, "count", reason, sources);
+  const constraintResult = (value: number, reason: string) =>
+    !scheduleComplete
+      ? partial(
+          expansion.truncated ? "recurrence_expansion_truncated" : "schedule_read_truncated",
+          source,
+        )
+      : timezoneUnavailable
+        ? unavailable("timezone_missing_or_unsupported", source, true)
+        : result(value, "count", reason, sources);
+  const hardRestConflicts = eventSegments.filter((segment) =>
+    input.hardRestDays.includes(dayName(segment.dateKey)),
+  ).length;
+  const dailyDurationExcesses = countDays(
+    (events) =>
+      input.maximumDailyMinutes !== null &&
+      events.reduce((sum, segment) => sum + segment.durationMinutes, 0) > input.maximumDailyMinutes,
+  );
+  const dailySessionCapExcesses = countDays(
+    (events) => input.maximumSessionsPerDay !== null && events.length > input.maximumSessionsPerDay,
+  );
+  const doubleDayConflicts = countDays(
+    (events) => input.allowDoubleDays === false && events.length > 1,
+  );
+  const sessionDurationExcesses = activeEvents.filter(
+    (event) =>
+      input.maximumSessionDurationMinutes !== null &&
+      clippedDuration(event) > input.maximumSessionDurationMinutes,
+  ).length;
+  const weeklyDurationExcesses = [...byWeek.values()].filter(
+    (events) =>
+      input.maximumWeeklyMinutes !== null &&
+      events.reduce((sum, segment) => sum + segment.durationMinutes, 0) >
+        input.maximumWeeklyMinutes,
+  ).length;
+  const weeklySessionCapExcesses = [...byWeek.values()].filter(
+    (events) =>
+      input.maximumWeeklySessions !== null &&
+      distinctSourceEventCount(events) > input.maximumWeeklySessions,
+  ).length;
+  let activityCategoryOverrideExcesses = 0;
+  for (const override of input.activityCategoryOverrides) {
+    const activityCategoryEvents = activeEvents.filter(
+      (event) => event.activity_category === override.activity_category,
+    );
+    activityCategoryOverrideExcesses += activityCategoryEvents.filter(
+      (event) =>
+        override.caps.maximumSessionDurationMinutes !== null &&
+        clippedDuration(event) > override.caps.maximumSessionDurationMinutes,
+    ).length;
+    for (const events of byWeek.values()) {
+      const activityCategoryWeek = events.filter(
+        (segment) => segment.event.activity_category === override.activity_category,
+      );
+      if (
+        override.caps.maximumWeeklyMinutes !== null &&
+        activityCategoryWeek.reduce((sum, segment) => sum + segment.durationMinutes, 0) >
+          override.caps.maximumWeeklyMinutes
+      )
+        activityCategoryOverrideExcesses += 1;
+      if (
+        override.caps.maximumSessionsPerWeek !== null &&
+        distinctSourceEventCount(activityCategoryWeek) > override.caps.maximumSessionsPerWeek
+      )
+        activityCategoryOverrideExcesses += 1;
+    }
+  }
+  const recoveryPreferenceConflicts =
+    input.recoveryPreference === null
+      ? null
+      : input.recoveryPreference === "balanced" || input.recoveryPreference === "more"
+        ? countDays((events) => events.length > 1)
+        : 0;
+
+  return trainingFeasibilityResultsSchema.parse({
+    policyVersion: TRAINING_FEASIBILITY_POLICY_VERSION,
+    timeCoverage: coverage(
+      availableMinutes,
+      demandedMinutes,
+      "required_training_minutes_missing",
+      "availability_time_coverage",
+    ),
+    requiredSessionCoverage:
+      demandedSessions !== null && !input.targetGoalActivityCategory
+        ? unavailable("target_goal_activity_category_required_for_session_coverage", source, true)
+        : scheduleCoverage(
+            targetActivityCategoryEvents.length,
+            demandedSessions,
+            "required_weekly_sessions_missing",
+            "required_session_coverage",
+          ),
+    compatibleScheduledMinutes: timezoneUnavailable
+      ? unavailable("timezone_missing_or_unsupported", source, true)
+      : !validHorizon
+        ? unavailable("goal_or_planning_horizon_missing", source)
+        : !scheduleComplete
+          ? partial(
+              expansion.truncated ? "recurrence_expansion_truncated" : "schedule_read_truncated",
+              source,
+            )
+          : result(
+              compatibleScheduledMinutes,
+              "minutes",
+              "availability_compatible_scheduled_minutes",
+              sources,
+            ),
+    scheduleCoverage: scheduleCoverage(
+      compatibleScheduledMinutes,
+      demandedMinutes,
+      "required_training_minutes_missing",
+      "planned_schedule_coverage",
+    ),
+    constraints: {
+      hardRestConflicts: constraintResult(hardRestConflicts, "hard_rest_conflicts"),
+      dailyDurationExcesses: capResult(
+        input.maximumDailyMinutes,
+        dailyDurationExcesses,
+        "daily_duration",
+      ),
+      dailySessionCapExcesses: capResult(
+        input.maximumSessionsPerDay,
+        dailySessionCapExcesses,
+        "daily_session",
+      ),
+      doubleDayConflicts: capResult(input.allowDoubleDays, doubleDayConflicts, "double_day"),
+      sessionDurationExcesses: capResult(
+        input.maximumSessionDurationMinutes,
+        sessionDurationExcesses,
+        "session_duration",
+      ),
+      weeklyDurationExcesses: capResult(
+        input.maximumWeeklyMinutes,
+        weeklyDurationExcesses,
+        "weekly_duration",
+      ),
+      weeklySessionCapExcesses: capResult(
+        input.maximumWeeklySessions,
+        weeklySessionCapExcesses,
+        "weekly_session",
+      ),
+      activityCategoryOverrideExcesses: constraintResult(
+        activityCategoryOverrideExcesses,
+        "activity_category_override_excesses",
+      ),
+      recoveryPreferenceConflicts: timezoneUnavailable
+        ? unavailable("timezone_missing_or_unsupported", source, true)
+        : recoveryPreferenceConflicts === null
+          ? unavailable("recovery_preference_missing", source)
+          : constraintResult(recoveryPreferenceConflicts, "recovery_preference_conflicts"),
+    },
+  });
+}

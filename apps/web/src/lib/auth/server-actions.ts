@@ -1,17 +1,13 @@
+import { passwordRecoveryAcknowledgement } from "@repo/auth/forms";
 import { getGradientPeakAuth } from "@repo/auth/server";
 import { redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeaders } from "@tanstack/react-start/server";
 import { z } from "zod";
-
 import { getSafeAppRedirectTarget, toAbsoluteAppUrl } from "../app-url";
 import { buildFlashHref } from "../flash";
-import {
-  getForgotPasswordFormError,
-  getLoginFormError,
-  getSignUpFormError,
-  getUpdatePasswordFormError,
-} from "./form-errors";
+import { signInWithEmailAndForwardSession } from "./email-sign-in";
+import { getLoginFormError, getSignUpFormError, getUpdatePasswordFormError } from "./form-errors";
 import {
   forgotPasswordFormSchema,
   loginFormSchema,
@@ -23,7 +19,7 @@ const loginServerActionSchema = loginFormSchema.extend({
   redirect: z.string().optional(),
 });
 
-const signUpServerActionSchema = signUpFormSchema;
+const signUpServerActionSchema = signUpFormSchema.extend({ redirect: z.string().optional() });
 const forgotPasswordServerActionSchema = forgotPasswordFormSchema;
 const updatePasswordServerActionSchema = updatePasswordFormSchema.extend({
   token: z.string().min(1, "Missing or invalid reset token"),
@@ -31,6 +27,7 @@ const updatePasswordServerActionSchema = updatePasswordFormSchema.extend({
 const verifyEmailServerActionSchema = z.object({
   email: z.email("Enter a valid email address"),
   source: z.string().optional(),
+  redirect: z.string().optional(),
 });
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -96,10 +93,13 @@ function normalizeVerifyEmailServerActionInput(data: unknown) {
   };
 }
 
-function getEmailVerificationCallbackUrl() {
-  return toAbsoluteAppUrl(
+function getEmailVerificationCallbackUrl(redirectTo?: string) {
+  const callback = new URL(
     "/auth/confirm?target=web&intent=email-verification&fallback=/auth/verification-success",
+    toAbsoluteAppUrl("/"),
   );
+  if (redirectTo) callback.searchParams.set("next", getSafeAppRedirectTarget(redirectTo, "/"));
+  return callback.toString();
 }
 
 function buildLoginRedirectHref(
@@ -137,9 +137,11 @@ function buildVerifyEmailRedirectHref(
   source?: string,
   flashMessage?: string,
   flashType: "success" | "error" | "info" = "info",
+  redirectTo?: string,
 ) {
   const url = new URL("/auth/verify", "http://gradientpeak.local");
   url.searchParams.set("email", email);
+  if (redirectTo) url.searchParams.set("redirect", getSafeAppRedirectTarget(redirectTo, "/"));
 
   if (source) {
     url.searchParams.set("source", source);
@@ -150,16 +152,14 @@ function buildVerifyEmailRedirectHref(
 }
 
 export const signInWithEmailAction = createServerFn({ method: "POST" })
-  .inputValidator((data) => normalizeLoginServerActionInput(data))
+  .validator((data) => normalizeLoginServerActionInput(data))
   .handler(async ({ data }) => {
     const auth = getGradientPeakAuth();
 
     try {
-      await auth.api.signInEmail({
-        body: {
-          email: data.email,
-          password: data.password,
-        },
+      await signInWithEmailAndForwardSession(auth.api, {
+        email: data.email,
+        password: data.password,
       });
     } catch (error) {
       const formError = getLoginFormError(error);
@@ -181,7 +181,7 @@ export const signInWithEmailAction = createServerFn({ method: "POST" })
   });
 
 export const signUpWithEmailAction = createServerFn({ method: "POST" })
-  .inputValidator((data) => normalizeSignUpServerActionInput(data))
+  .validator((data) => normalizeSignUpServerActionInput(data))
   .handler(async ({ data }) => {
     const auth = getGradientPeakAuth();
 
@@ -191,7 +191,7 @@ export const signUpWithEmailAction = createServerFn({ method: "POST" })
           email: data.email,
           password: data.password,
           name: data.email.split("@")[0] || data.email,
-          callbackURL: getEmailVerificationCallbackUrl(),
+          callbackURL: getEmailVerificationCallbackUrl(data.redirect),
         },
       });
     } catch (error) {
@@ -208,13 +208,13 @@ export const signUpWithEmailAction = createServerFn({ method: "POST" })
     }
 
     throw redirect({
-      href: `/auth/sign-up-success?email=${encodeURIComponent(data.email)}`,
+      href: `${buildVerifyEmailRedirectHref(data.email, "sign-up")}${data.redirect ? `&redirect=${encodeURIComponent(getSafeAppRedirectTarget(data.redirect, "/"))}` : ""}`,
       statusCode: 303,
     });
   });
 
 export const requestPasswordResetAction = createServerFn({ method: "POST" })
-  .inputValidator((data) => normalizeForgotPasswordServerActionInput(data))
+  .validator((data) => normalizeForgotPasswordServerActionInput(data))
   .handler(async ({ data }) => {
     const auth = getGradientPeakAuth();
 
@@ -225,27 +225,22 @@ export const requestPasswordResetAction = createServerFn({ method: "POST" })
           redirectTo: toAbsoluteAppUrl("/auth/update-password"),
         },
       });
-    } catch (error) {
-      const formError = getForgotPasswordFormError(error);
-
-      if (data._native) {
-        throw redirect({
-          href: buildFlashHref("/auth/forgot-password", formError.message, "error"),
-          statusCode: 303,
-        });
-      }
-
-      throw new Error(formError.message);
+    } catch {
+      // Do not distinguish an absent account from a delivered reset request.
+      throw redirect({
+        href: buildFlashHref("/auth/forgot-password", passwordRecoveryAcknowledgement, "success"),
+        statusCode: 303,
+      });
     }
 
     throw redirect({
-      href: "/auth/forgot-password?flash=Password%20reset%20instructions%20sent&flashType=success",
+      href: buildFlashHref("/auth/forgot-password", passwordRecoveryAcknowledgement, "success"),
       statusCode: 303,
     });
   });
 
 export const resetPasswordAction = createServerFn({ method: "POST" })
-  .inputValidator((data) => normalizeUpdatePasswordServerActionInput(data))
+  .validator((data) => normalizeUpdatePasswordServerActionInput(data))
   .handler(async ({ data }) => {
     const auth = getGradientPeakAuth();
 
@@ -276,7 +271,10 @@ export const resetPasswordAction = createServerFn({ method: "POST" })
   });
 
 export const sendVerificationEmailAction = createServerFn({ method: "POST" })
-  .inputValidator((data) => normalizeVerifyEmailServerActionInput(data))
+  .validator((data) => ({
+    ...normalizeVerifyEmailServerActionInput(data),
+    enhanced: data instanceof FormData && data.get("__async") === "true",
+  }))
   .handler(async ({ data }) => {
     const auth = getGradientPeakAuth();
 
@@ -284,28 +282,21 @@ export const sendVerificationEmailAction = createServerFn({ method: "POST" })
       await auth.api.sendVerificationEmail({
         body: {
           email: data.email,
-          callbackURL: getEmailVerificationCallbackUrl(),
+          callbackURL: getEmailVerificationCallbackUrl(data.redirect),
         },
       });
-    } catch (_error) {
-      const message = "Unable to resend verification email";
-
-      if (data._native) {
-        throw redirect({
-          href: buildVerifyEmailRedirectHref(data.email, data.source, message, "error"),
-          statusCode: 303,
-        });
-      }
-
-      throw new Error(message);
+    } catch {
+      // Acknowledging every request uniformly avoids exposing account or delivery state.
     }
 
+    if (data.enhanced) return { ok: true as const };
     throw redirect({
       href: buildVerifyEmailRedirectHref(
         data.email,
         data.source,
         "Verification email sent. Check your inbox and spam folder.",
         "success",
+        data.redirect,
       ),
       statusCode: 303,
     });

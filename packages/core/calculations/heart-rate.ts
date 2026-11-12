@@ -2,7 +2,6 @@ export {
   calculateHRReserve,
   calculateHRZones,
   calculateTargetHR,
-  estimateLTHRFromMaxHR as estimateLTHR,
   estimateMaxHRFromAge,
 } from "../zones/hr";
 

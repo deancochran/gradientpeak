@@ -1,4 +1,14 @@
-import type { AggregatedStream } from "../calculations";
+import type { AggregatedStream } from "../activity-analysis/stream-contract";
+
+export const FTP_ZONE_UPPER_PERCENTAGES = [
+  55,
+  76,
+  91,
+  106,
+  121,
+  151,
+  Number.POSITIVE_INFINITY,
+] as const;
 
 export function getPowerZoneIndexFromFtpPercent(ftpPercent: number): number {
   if (ftpPercent < 55) return 0;
@@ -8,6 +18,13 @@ export function getPowerZoneIndexFromFtpPercent(ftpPercent: number): number {
   if (ftpPercent < 121) return 4;
   if (ftpPercent < 151) return 5;
   return 6;
+}
+
+export function getPowerZoneUpperBoundsFromFtp(ftpWatts: number): number[] {
+  if (!Number.isFinite(ftpWatts) || ftpWatts <= 0) return [];
+  return FTP_ZONE_UPPER_PERCENTAGES.map((percentage) =>
+    Number.isFinite(percentage) ? (ftpWatts * percentage) / 100 : Number.POSITIVE_INFINITY,
+  );
 }
 
 export function estimatePowerZoneDistribution(duration: number, avgIF: number): number[] {
@@ -67,12 +84,17 @@ export function calculatePowerZoneDistribution(
   };
 
   for (let index = 0; index < powers.length; index += 1) {
-    const pct = (powers[index]! / ftp) * 100;
+    const power = powers[index];
+    const currentTimestamp = timestamps[index];
+    if (power === undefined || currentTimestamp === undefined) continue;
+    const pct = (power / ftp) * 100;
+    const nextTimestamp = timestamps[index + 1];
+    const previousTimestamp = timestamps[index - 1];
     const timeInZone =
-      index < timestamps.length - 1
-        ? timestamps[index + 1]! - timestamps[index]!
-        : index > 0
-          ? timestamps[index]! - timestamps[index - 1]!
+      nextTimestamp !== undefined
+        ? nextTimestamp - currentTimestamp
+        : previousTimestamp !== undefined
+          ? currentTimestamp - previousTimestamp
           : 1;
     const zoneIndex = getPowerZoneIndexFromFtpPercent(pct);
     zones[`zone${zoneIndex + 1}` as keyof typeof zones] += timeInZone;
