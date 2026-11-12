@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   planInputs: [] as unknown[],
   recordPlanSearch: undefined as unknown,
   activityPlanId: "invalid-plan",
+  navigate: vi.fn(),
+  search: { edit: undefined } as Record<string, unknown>,
 }));
 vi.mock("@tanstack/react-router", () => ({
   Link: ({
@@ -36,9 +38,9 @@ vi.mock("@tanstack/react-router", () => ({
   },
   createFileRoute: () => (options: object) => ({
     ...options,
-    useNavigate: () => vi.fn(),
+    useNavigate: () => mocks.navigate,
     useParams: () => ({ activityPlanId: mocks.activityPlanId }),
-    useSearch: () => ({ edit: undefined }),
+    useSearch: () => mocks.search,
   }),
 }));
 vi.mock("../../../components/activity-plan/activity-plan-comments", () => ({
@@ -144,6 +146,8 @@ beforeEach(() => {
   mocks.planInputs = [];
   mocks.recordPlanSearch = undefined;
   mocks.activityPlanId = "invalid-plan";
+  mocks.navigate.mockReset();
+  mocks.search = { edit: undefined };
   mocks.plan = {
     content_visibility: "private",
     created_at: "2026-07-01T00:00:00.000Z",
@@ -536,5 +540,44 @@ describe("ActivityPlanDetailPage print", () => {
     };
     view.rerender(<ActivityPlanDetailPage />);
     expect(screen.queryByRole("link", { name: "Record this plan" })).toBeNull();
+  });
+  it("keeps athlete preparation context when editing from the library", () => {
+    mocks.search = {
+      athleteId: "22222222-2222-4222-8222-222222222222",
+      organizationId: "11111111-1111-4111-8111-111111111111",
+      planningDate: "2026-11-12",
+      returnTo: "athlete-workspace",
+    };
+    mocks.plan = {
+      detail: {
+        id: "invalid-plan",
+        name: "Prepared plan",
+        description: null,
+        activityCategory: "run",
+        visibility: "private",
+        createdAt: "2026-07-01T00:00:00.000Z",
+        owner: null,
+        capabilities: { canDuplicate: false, canEdit: true, canSchedule: false },
+        engagement: { likes: 0, viewerHasLiked: false },
+        metrics: [],
+        structure: null,
+      },
+      edit: null,
+    };
+    const ActivityPlanDetailPage = (Route as unknown as { component: React.ComponentType })
+      .component;
+    render(<ActivityPlanDetailPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+
+    expect(mocks.navigate).toHaveBeenCalledWith({
+      search: {
+        athleteId: "22222222-2222-4222-8222-222222222222",
+        edit: true,
+        organizationId: "11111111-1111-4111-8111-111111111111",
+        planningDate: "2026-11-12",
+        returnTo: "athlete-workspace",
+      },
+    });
   });
 });

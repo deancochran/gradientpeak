@@ -60,7 +60,8 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
   const planningDate = today;
   const deniedDate = addUtcDays(today, 1);
   const activityPlanName = "Playwright Tempo Builder";
-  const publishedActivityPlanName = `${activityPlanName} (Copy)`;
+  const editedActivityPlanName = "Playwright Tempo Builder — coach revised";
+  const publishedActivityPlanName = `${editedActivityPlanName} (Copy)`;
 
   await athletePage.goto("/organizations/new");
   await athletePage.getByLabel("Organization name", { exact: true }).fill("Publication acceptance");
@@ -126,12 +127,39 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
   await coachPage.goto(`/organizations/${organizationId}/athletes/${athleteActor.profileId}`);
   await waitForAppHydration(coachPage);
   await expect(coachPage.getByText("Publish an activity plan", { exact: true })).toBeVisible();
-  const activityPlan = coachPage.getByLabel("Your activity plan", { exact: true });
-  await activityPlan.selectOption(activityPlanId);
   await coachPage.getByLabel("Athlete planning date", { exact: true }).fill(planningDate);
+  await coachPage.getByRole("link", { name: "Prepare activity plan", exact: true }).click();
+  await expect(coachPage.getByText("Preparing for an athlete", { exact: true })).toBeVisible();
+  await coachPage.getByRole("button", { name: "Create activity plan", exact: true }).click();
+  await expect(coachPage.getByLabel("Plan name", { exact: true })).toBeVisible();
+  await coachPage.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(coachPage.getByText("Preparing for an athlete", { exact: true })).toBeVisible();
+  await coachPage.getByRole("searchbox", { name: "Search activity plans" }).fill(activityPlanName);
+  await coachPage
+    .getByRole("button", { name: `Open activity plan ${activityPlanName}`, exact: true })
+    .click();
+  await coachPage.getByRole("link", { name: "Back to activity plans", exact: true }).click();
+  await expect(coachPage.getByText("Preparing for an athlete", { exact: true })).toBeVisible();
+  await coachPage.getByRole("searchbox", { name: "Search activity plans" }).fill(activityPlanName);
+  await coachPage
+    .getByRole("button", { name: `Open activity plan ${activityPlanName}`, exact: true })
+    .click();
+  await coachPage.getByRole("button", { name: "Edit", exact: true }).click();
+  const planName = coachPage.getByLabel("Plan name", { exact: true });
+  await planName.fill("");
+  await expect(planName).toHaveValue("");
+  await expect(coachPage.getByRole("button", { name: "Save changes", exact: true })).toBeDisabled();
+  await planName.fill(editedActivityPlanName);
+  await coachPage.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(coachPage.getByText("Publish an activity plan", { exact: true })).toBeVisible();
+  const activityPlan = coachPage.getByLabel("Your activity plan", { exact: true });
+  await expect(activityPlan).toHaveValue(activityPlanId);
+  await expect(coachPage.getByLabel("Athlete planning date", { exact: true })).toHaveValue(
+    planningDate,
+  );
   await coachPage.getByRole("button", { name: "Preview publication", exact: true }).click();
   await expect(
-    coachPage.getByText(`Ready to publish: ${activityPlanName}`, { exact: true }),
+    coachPage.getByText(`Ready to publish: ${editedActivityPlanName}`, { exact: true }),
   ).toBeVisible();
   await expect(
     coachPage.getByText(`${planningDate} in the athlete’s UTC planning time zone.`, {
@@ -143,7 +171,7 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
   await expect(
     coachPage
       .getByRole("status")
-      .filter({ hasText: `Published ${activityPlanName} for ${planningDate}.` }),
+      .filter({ hasText: `Published ${editedActivityPlanName} for ${planningDate}.` }),
   ).toBeVisible();
 
   const [publication] = await e2eDatabase.db

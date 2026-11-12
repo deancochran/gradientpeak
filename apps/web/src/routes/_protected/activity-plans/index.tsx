@@ -17,6 +17,10 @@ import { ActivityPlanComposer } from "../../../components/activity-plan/activity
 import { DetailPageIntro } from "../../../components/protected/activity-route-primitives";
 import { api } from "../../../lib/api/client";
 import { loadRouteQuery } from "../../../lib/api/route-loading";
+import {
+  activityPlanPreparationSearch,
+  parseActivityPlanPreparationContext,
+} from "../../../lib/coaching/activity-plan-preparation-context";
 
 const categoryOptions = [
   { label: "All", value: "all" },
@@ -30,14 +34,18 @@ const categoryOptions = [
 type ActivityPlanCategory = Exclude<(typeof categoryOptions)[number]["value"], "all">;
 
 export const Route = createFileRoute("/_protected/activity-plans/")({
-  validateSearch: (search: Record<string, unknown>) => ({
-    activity_category: categoryOptions.some(
-      (option) => option.value !== "all" && option.value === search.activity_category,
-    )
-      ? (search.activity_category as (typeof categoryOptions)[number]["value"])
-      : undefined,
-    q: typeof search.q === "string" && search.q ? search.q.slice(0, 100) : undefined,
-  }),
+  validateSearch: (search: Record<string, unknown>) => {
+    const preparation = parseActivityPlanPreparationContext(search);
+    return {
+      ...(preparation ?? {}),
+      activity_category: categoryOptions.some(
+        (option) => option.value !== "all" && option.value === search.activity_category,
+      )
+        ? (search.activity_category as (typeof categoryOptions)[number]["value"])
+        : undefined,
+      q: typeof search.q === "string" && search.q ? search.q.slice(0, 100) : undefined,
+    };
+  },
   loaderDeps: ({ search }) => ({
     activity_category: search.activity_category === "all" ? undefined : search.activity_category,
     q: search.q,
@@ -71,6 +79,7 @@ function getActivityPlansInput(search: {
 function ActivityPlansPage() {
   const navigate = Route.useNavigate();
   const routeSearch = Route.useSearch();
+  const preparation = parseActivityPlanPreparationContext(routeSearch);
   const activity_category = routeSearch.activity_category ?? "all";
   const search = routeSearch.q ?? "";
   const utils = api.useUtils();
@@ -125,6 +134,17 @@ function ActivityPlansPage() {
           onSaved={async () => {
             if (creationOwner.current !== owner || !createdPlanId.current) return;
             const activityPlanId = createdPlanId.current;
+            if (preparation) {
+              await navigate({
+                to: "/organizations/$organizationId/athletes/$athleteId",
+                params: {
+                  athleteId: preparation.athleteId,
+                  organizationId: preparation.organizationId,
+                },
+                search: activityPlanPreparationSearch(preparation, activityPlanId),
+              } as never);
+              return;
+            }
             await navigate({
               to: "/activity-plans/$activityPlanId",
               params: { activityPlanId },
@@ -157,6 +177,17 @@ function ActivityPlansPage() {
         eyebrow="Training library"
         title="Activity plans"
       />
+      {preparation ? (
+        <Card className="border-cyan-700/50 bg-cyan-950/20">
+          <CardHeader>
+            <CardTitle>Preparing for an athlete</CardTitle>
+            <CardDescription>
+              This is your coach-owned draft. Saving returns you to {preparation.planningDate} so
+              you can preview publication before publishing a separate athlete copy.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>
@@ -253,6 +284,9 @@ function ActivityPlansPage() {
                     void navigate({
                       to: "/activity-plans/$activityPlanId",
                       params: { activityPlanId: plan.id },
+                      ...(preparation
+                        ? { search: activityPlanPreparationSearch(preparation) }
+                        : {}),
                     } as never)
                   }
                   plan={plan}

@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   goals: vi.fn(),
   directory: vi.fn(),
   overview: vi.fn(),
+  publicationProps: undefined as undefined | { preparation?: unknown },
   selected: vi.fn(),
   zones: vi.fn(),
 }));
@@ -22,6 +23,7 @@ const state = vi.hoisted(() => ({
     athleteId: "22222222-2222-4222-8222-222222222222",
     organizationId: "11111111-1111-4111-8111-111111111111",
   },
+  search: {} as Record<string, unknown>,
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -32,6 +34,7 @@ vi.mock("@tanstack/react-router", () => ({
     ...options,
     useLoaderData: () => state.loaderData,
     useParams: () => state.params,
+    useSearch: () => state.search,
     useRouteContext: () => ({ actorProfileId: state.actorProfileId }),
   }),
 }));
@@ -47,7 +50,10 @@ vi.mock("../../../../../components/coaching/athletes/coach-athlete-overview", ()
   CoachAthleteOverview: ({ athleteId }: { athleteId: string }) => <p>overview for {athleteId}</p>,
 }));
 vi.mock("../../../../../components/coaching/athletes/coach-activity-plan-publication", () => ({
-  CoachActivityPlanPublication: () => <p>activityPlan publication</p>,
+  CoachActivityPlanPublication: ({ preparation }: { preparation?: unknown }) => {
+    mocks.publicationProps = { preparation };
+    return <p>activityPlan publication</p>;
+  },
 }));
 vi.mock("../../../../../components/coaching/athletes/coach-athlete-goals", () => ({
   CoachAthleteGoals: () => <p>goals</p>,
@@ -130,6 +136,7 @@ afterEach(() => {
     athleteId: "22222222-2222-4222-8222-222222222222",
     organizationId: "11111111-1111-4111-8111-111111111111",
   };
+  state.search = {};
   state.pathname =
     "/organizations/11111111-1111-4111-8111-111111111111/athletes/22222222-2222-4222-8222-222222222222";
   mocks.calendar.mockReset();
@@ -137,6 +144,7 @@ afterEach(() => {
   mocks.goals.mockReset();
   mocks.directory.mockReset();
   mocks.overview.mockReset();
+  mocks.publicationProps = undefined;
   mocks.selected.mockReset();
   mocks.zones.mockReset();
 });
@@ -196,6 +204,37 @@ describe("coach athlete workspace route", () => {
     const route = Route as unknown as { component: () => React.ReactNode };
     render(route.component());
     expect(screen.getByRole("status").textContent).toContain("Loading athlete workspace");
+  });
+
+  it("does not prefill publication from a stale athlete preparation URL", () => {
+    state.search = {
+      activityPlanId: "44444444-4444-4444-8444-444444444444",
+      athleteId: "33333333-3333-4333-8333-333333333333",
+      organizationId: state.params.organizationId,
+      planningDate: "2026-11-12",
+      returnTo: "athlete-workspace",
+    };
+    state.loaderData = {
+      actorProfileId: "actor-a",
+      athleteId: state.params.athleteId,
+      organizationId: state.params.organizationId,
+      overview: { status: "granted" },
+      directory: { status: "granted", items: [] },
+      identity: { profileId: state.params.athleteId },
+      calendar: { status: "granted", events: [], nextCursor: null },
+      calendarRange: { startDate: "2026-03-08", endDateExclusive: "2026-03-15" },
+      zones: {
+        actorId: "actor-a",
+        athleteProfileId: state.params.athleteId,
+        organizationId: state.params.organizationId,
+        revision: "fresh-revision",
+        state: { kind: "denied" },
+      },
+    };
+    const route = Route as unknown as { component: () => React.ReactNode };
+    render(route.component());
+
+    expect(mocks.publicationProps?.preparation).toBeNull();
   });
 
   it("does not render realistic prior granted zones after the actor changes", () => {

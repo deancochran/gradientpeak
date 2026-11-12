@@ -8,14 +8,16 @@ import { CoachAthleteGoals } from "../../../../../components/coaching/athletes/c
 import { CoachAthleteOverview } from "../../../../../components/coaching/athletes/coach-athlete-overview";
 import { CoachAthleteZonesSection } from "../../../../../components/coaching/athletes/coach-athlete-zones-section";
 import {
+  parseActivityPlanPreparationSearch,
+  preparationMatchesWorkspace,
+} from "../../../../../lib/coaching/activity-plan-preparation-context";
+import {
   currentCalendarWeek,
   loadCoachAthleteCalendar,
 } from "../../../../../lib/coaching/athlete-calendar-server-functions";
 import { loadCoachAthleteCompletedActivities } from "../../../../../lib/coaching/athlete-completions-server-functions";
-
 import { loadCoachAthleteGoals } from "../../../../../lib/coaching/athlete-goals-server-functions";
 import { loadCoachAthleteBikeZones } from "../../../../../lib/coaching/athlete-zones-server-functions";
-
 import {
   loadAssignedCoachAthletes,
   loadCoachAthleteOverview,
@@ -29,6 +31,10 @@ export const Route = createFileRoute(
   "/_coaching/organizations/$organizationId/athletes/$athleteId",
 )({
   pendingMs: 0,
+  validateSearch: (search: Record<string, unknown>) => {
+    const preparation = parseActivityPlanPreparationSearch(search);
+    return preparation ?? {};
+  },
   loader: async ({ context, params }) => {
     const data = { organizationId: params.organizationId, athleteProfileId: params.athleteId };
     const range = currentCalendarWeek();
@@ -101,6 +107,9 @@ function AthleteWorkspacePage() {
   const result = Route.useLoaderData();
   const { overview, directory, identity, calendar, completedActivities, goals, zones } = result;
   const { athleteId, organizationId } = Route.useParams();
+  const preparationSearch = parseActivityPlanPreparationSearch(
+    Route.useSearch() as Record<string, unknown>,
+  );
   const { actorProfileId } = Route.useRouteContext();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const workspacePath = `/organizations/${organizationId}/athletes/${athleteId}`;
@@ -114,6 +123,9 @@ function AthleteWorkspacePage() {
     result.actorProfileId !== actorProfileId
   )
     return <p role="status">Loading athlete workspace…</p>;
+  const preparation = preparationMatchesWorkspace(preparationSearch, organizationId, athleteId)
+    ? preparationSearch
+    : null;
   return (
     <div className="space-y-6">
       <Button asChild variant="outline" className="border-slate-700 text-slate-100">
@@ -137,7 +149,12 @@ function AthleteWorkspacePage() {
         result={identity ? overview : { status: "unavailable" }}
       />
       {identity ? (
-        <CoachActivityPlanPublication athleteId={athleteId} organizationId={organizationId} />
+        <CoachActivityPlanPublication
+          athleteId={athleteId}
+          key={`${organizationId}:${athleteId}:${preparation?.activityPlanId ?? ""}:${preparation?.planningDate ?? ""}`}
+          organizationId={organizationId}
+          preparation={preparation}
+        />
       ) : null}
       <CoachAthleteCalendar
         actorProfileId={actorProfileId}

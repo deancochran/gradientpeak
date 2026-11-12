@@ -7,8 +7,14 @@ import {
   CardTitle,
 } from "@repo/ui/components/card";
 import { Label } from "@repo/ui/components/label";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../../../lib/api/client";
+import {
+  type ActivityPlanPreparationSearch,
+  activityPlanPreparationSearch,
+  parseActivityPlanPreparationContext,
+} from "../../../lib/coaching/activity-plan-preparation-context";
 
 type PublicationInput = {
   activityPlanId: string;
@@ -45,9 +51,11 @@ function errorMessage(error: unknown) {
 export function CoachActivityPlanPublication({
   athleteId,
   organizationId,
+  preparation = null,
 }: {
   athleteId: string;
   organizationId: string;
+  preparation?: ActivityPlanPreparationSearch | null;
 }) {
   const organizations = api.organizations.listMine.useQuery({ cursor: null, limit: 50 });
   const activityPlans = api.activityPlans.list.useQuery({ limit: 50, ownerScope: "own" });
@@ -58,8 +66,8 @@ export function CoachActivityPlanPublication({
       item.membership.roles.includes("coach"),
   )?.membership.membershipId;
   const plans = activityPlans.data?.items ?? [];
-  const [activityPlanId, setActivityPlanId] = useState("");
-  const [planningDate, setPlanningDate] = useState("");
+  const [activityPlanId, setActivityPlanId] = useState(preparation?.activityPlanId ?? "");
+  const [planningDate, setPlanningDate] = useState(preparation?.planningDate ?? "");
   const [previewed, setPreviewed] = useState<{
     key: string;
     data: {
@@ -72,10 +80,22 @@ export function CoachActivityPlanPublication({
   const [success, setSuccess] = useState<string | null>(null);
   const operationId = useRef(crypto.randomUUID());
 
-  const selectedPlan = useMemo(
-    () => plans.find((plan) => plan.id === activityPlanId) ?? null,
-    [activityPlanId, plans],
+  // The library list is intentionally paginated. Resolve the selected id independently so a
+  // prepared plan beyond its first page can still be published, while canEdit keeps this flow
+  // restricted to the coach's own plan.
+  const selectedPlanQuery = api.activityPlans.getById.useQuery(
+    { id: activityPlanId || "00000000-0000-4000-8000-000000000000", personalize: false },
+    { enabled: Boolean(activityPlanId), retry: false },
   );
+  const selectedPlanDetail = selectedPlanQuery.data?.detail;
+  const selectedPlan =
+    selectedPlanDetail?.id === activityPlanId && selectedPlanDetail.capabilities.canEdit
+      ? {
+          activityPlanRevision: selectedPlanDetail.activityPlanRevision,
+          id: selectedPlanDetail.id,
+          name: selectedPlanDetail.name,
+        }
+      : null;
   const input =
     selectedPlan && coachMembership && planningDate
       ? {
@@ -111,6 +131,16 @@ export function CoachActivityPlanPublication({
     operationId.current = crypto.randomUUID();
   }, [key]);
 
+  // The workspace can remain mounted when a coach changes dates. Always derive outbound
+  // preparation from the current form state rather than reusing the arrival URL's old date.
+  const preparationContext = parseActivityPlanPreparationContext({
+    athleteId,
+    organizationId,
+    planningDate,
+    returnTo: "athlete-workspace",
+  });
+  const selectedPlanIsInLibrary = plans.some((plan) => plan.id === selectedPlan?.id);
+
   async function requestPreview() {
     if (!input) return;
     setError(null);
@@ -140,6 +170,18 @@ export function CoachActivityPlanPublication({
     }
   }
 
+  async function refreshSelectedPlan() {
+    if (!activityPlanId) return;
+    setError(null);
+    setPreviewed(null);
+    setSuccess(null);
+    try {
+      await selectedPlanQuery.refetch({ throwOnError: true });
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
+  }
+
   return (
     <Card className="border-cyan-900 bg-slate-950 text-slate-50">
       <CardHeader>
@@ -151,6 +193,32 @@ export function CoachActivityPlanPublication({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <Button asChild disabled={!preparationContext} type="button" variant="outline">
+          <Link
+            to="/activity-plans"
+            search={
+              preparationContext
+                ? (activityPlanPreparationSearch(
+                    preparationContext,
+                    activityPlanId || undefined,
+                  ) as never)
+                : { activity_category: undefined, q: undefined }
+            }
+          >
+            Prepare activity plan
+          </Link>
+        </Button>
+        {!preparationContext ? (
+          <p className="text-sm text-slate-400">
+            Choose a real athlete planning date before preparing an activity plan.
+          </p>
+        ) : null}
+        {preparation ? (
+          <p className="text-sm text-cyan-100">
+            Preparing a coach-owned draft for {planningDate}. A fresh publication preview is still
+            required before it becomes visible to the athlete.
+          </p>
+        ) : null}
         {organizations.isLoading || activityPlans.isLoading ? (
           <p role="status" className="text-sm text-slate-400">
             Loading your activity-plan library…
@@ -178,6 +246,11 @@ export function CoachActivityPlanPublication({
               value={activityPlanId}
             >
               <option value="">Choose an activity plan</option>
+              {selectedPlan && !selectedPlanIsInLibrary ? (
+                <option value={selectedPlan.id}>
+                  {selectedPlan.name} · version {selectedPlan.activityPlanRevision}
+                </option>
+              ) : null}
               {plans.map((plan) => (
                 <option key={plan.id} value={plan.id}>
                   {plan.name} · version {plan.activityPlanRevision}
@@ -202,6 +275,36 @@ export function CoachActivityPlanPublication({
             />
           </div>
         </div>
+        {activityPlanId && selectedPlanQuery.isLoading ? (
+          <p role="status" className="text-sm text-slate-400">
+            Loading selected activity plan…
+          </p>
+        ) : null}
+        {activityPlanId && selectedPlanQuery.isError ? (
+          <div className="space-y-2">
+            <p role="alert" className="text-sm text-red-300">
+              The selected activity plan could not be loaded. Your selection has not been changed.
+            </p>
+            <Button
+              onClick={() => void refreshSelectedPlan()}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              Retry selected activity plan
+            </Button>
+          </div>
+        ) : null}
+        {activityPlanId &&
+        !selectedPlanQuery.isLoading &&
+        !selectedPlanQuery.isError &&
+        !selectedPlan ? (
+          <p role="alert" className="text-sm text-amber-200">
+            {selectedPlanDetail
+              ? "The selected activity plan is not editable in your owned library."
+              : "The selected activity plan is no longer available."}
+          </p>
+        ) : null}
         {error ? (
           <p role="alert" className="text-sm text-red-300">
             {error}
@@ -220,10 +323,23 @@ export function CoachActivityPlanPublication({
               zone.
             </p>
             {!previewed.data.versionMatches ? (
-              <p role="alert" className="mt-2 text-amber-200">
-                This activity plan changed since it was selected. Choose it again and preview the
-                current version before publishing.
-              </p>
+              <div className="mt-2 space-y-2">
+                <p role="alert" className="text-amber-200">
+                  This activity plan changed since it was selected. Refresh the current revision,
+                  then preview it again before publishing.
+                </p>
+                <Button
+                  disabled={selectedPlanQuery.isFetching}
+                  onClick={() => void refreshSelectedPlan()}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  {selectedPlanQuery.isFetching
+                    ? "Refreshing activity plan…"
+                    : "Refresh activity plan"}
+                </Button>
+              </div>
             ) : null}
           </div>
         ) : null}

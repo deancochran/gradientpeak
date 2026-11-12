@@ -40,6 +40,10 @@ import { formatDate } from "../../../lib/activity-route-helpers";
 import { api } from "../../../lib/api/client";
 import { loadRouteQuery } from "../../../lib/api/route-loading";
 import { prefetchSecondary } from "../../../lib/api/secondary-prefetch";
+import {
+  activityPlanPreparationSearch,
+  parseActivityPlanPreparationContext,
+} from "../../../lib/coaching/activity-plan-preparation-context";
 import { getTodayDateKey, shiftDateKey } from "../../../lib/planning";
 
 export const Route = createFileRoute("/_protected/activity-plans/$activityPlanId")({
@@ -52,6 +56,7 @@ export const Route = createFileRoute("/_protected/activity-plans/$activityPlanId
     );
   },
   validateSearch: (search: Record<string, unknown>) => ({
+    ...(parseActivityPlanPreparationContext(search) ?? {}),
     edit: search.edit === true || search.edit === "true" ? true : undefined,
   }),
   component: ActivityPlanDetailPage,
@@ -65,6 +70,9 @@ function ActivityPlanDetailPage() {
   activePlanId.current = activityPlanId;
   const editOwner = useRef(0);
   const { edit: editMode } = Route.useSearch();
+  const preparation = parseActivityPlanPreparationContext(
+    Route.useSearch() as Record<string, unknown>,
+  );
   const editing = editMode === true;
   const planQuery = api.activityPlans.getById.useQuery(
     { id: activityPlanId, personalize: false },
@@ -272,12 +280,26 @@ function ActivityPlanDetailPage() {
           edit={edit}
           onCancel={() => {
             editOwner.current += 1;
-            void navigate({ search: { edit: undefined }, replace: true });
+            void navigate({
+              search: preparation
+                ? { ...activityPlanPreparationSearch(preparation), edit: undefined }
+                : { edit: undefined },
+              replace: true,
+            });
           }}
           onUpdate={(values) => updatePlan.mutateAsync(values)}
           onSaved={() => {
             if (editOwner.current !== owner || activePlanId.current !== activityPlanId) return;
             toast.success("Activity plan updated");
+            if (preparation)
+              return navigate({
+                to: "/organizations/$organizationId/athletes/$athleteId",
+                params: {
+                  athleteId: preparation.athleteId,
+                  organizationId: preparation.organizationId,
+                },
+                search: activityPlanPreparationSearch(preparation, activityPlanId),
+              } as never);
             return navigate({ search: { edit: undefined }, replace: true });
           }}
         />
@@ -289,7 +311,18 @@ function ActivityPlanDetailPage() {
   return (
     <div className="container mx-auto max-w-5xl space-y-6 py-4 print:max-w-none print:py-0">
       <Button asChild className="print:hidden" size="sm" variant="ghost">
-        <Link to="/activity-plans" search={{ activity_category: undefined, q: undefined }}>
+        <Link
+          to="/activity-plans"
+          search={
+            preparation
+              ? {
+                  ...activityPlanPreparationSearch(preparation),
+                  activity_category: undefined,
+                  q: undefined,
+                }
+              : { activity_category: undefined, q: undefined }
+          }
+        >
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to activity plans
         </Link>
@@ -339,11 +372,31 @@ function ActivityPlanDetailPage() {
             ) : null}
             {isOwner ? (
               <Button
-                onClick={() => void navigate({ search: { edit: true } })}
+                onClick={() =>
+                  void navigate({
+                    search: preparation
+                      ? { ...activityPlanPreparationSearch(preparation), edit: true }
+                      : { edit: true },
+                  })
+                }
                 type="button"
                 variant="outline"
               >
                 <Pencil className="mr-2 h-4 w-4" /> Edit
+              </Button>
+            ) : null}
+            {preparation ? (
+              <Button asChild variant="outline">
+                <Link
+                  to="/organizations/$organizationId/athletes/$athleteId"
+                  params={{
+                    athleteId: preparation.athleteId,
+                    organizationId: preparation.organizationId,
+                  }}
+                  search={activityPlanPreparationSearch(preparation, detail.id)}
+                >
+                  Prepare for athlete
+                </Link>
               </Button>
             ) : null}
             {isOwner ? (
