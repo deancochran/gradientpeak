@@ -30,6 +30,10 @@ import {
   DelegatedCalendarAccessDeniedError,
   readDelegatedCalendar,
 } from "../application/calendar/read-delegated-calendar";
+import {
+  DelegatedCompletedActivitiesAccessDeniedError,
+  readDelegatedCompletedActivities,
+} from "../application/calendar/read-delegated-completed-activities";
 import { createEventUseCase, deleteEventUseCase, updateEventUseCase } from "../application/events";
 import { readSelectedGroupEventsForCalendar } from "../application/groups/groupEventViews";
 import { readPlanningRange } from "../application/training-plan/planningLedgerService";
@@ -38,6 +42,10 @@ import {
   delegatedCalendarRangeRequestSchema,
   delegatedCalendarRangeResponseSchema,
 } from "../contracts/delegated-calendar";
+import {
+  delegatedCompletedActivitiesRequestSchema,
+  delegatedCompletedActivitiesResponseSchema,
+} from "../contracts/delegated-completions";
 import { planningRangeRequestSchema, planningRangeSchema } from "../contracts/planning-range";
 import { type DrizzleTransactionClient, getRequiredDb } from "../db";
 import { InvalidStoredActivityPlanError } from "../dto/activity-plan";
@@ -1199,6 +1207,26 @@ export const eventsRouter = createTRPCRouter({
 
 /** Date-keyed personal schedule projections. Event identity and mutations remain on eventsRouter. */
 export const calendarRouter = createTRPCRouter({
+  coachAthleteCompletedActivities: protectedProcedure
+    .input(delegatedCompletedActivitiesRequestSchema)
+    .output(delegatedCompletedActivitiesResponseSchema)
+    .query(async ({ ctx, input }) => {
+      try {
+        return await readDelegatedCompletedActivities({
+          actorProfileId: ctx.session.user.id,
+          db: getRequiredDb(ctx),
+          request: input,
+        });
+      } catch (error) {
+        if (error instanceof DelegatedCompletedActivitiesAccessDeniedError) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Completed activity access is unavailable",
+          });
+        }
+        throw error;
+      }
+    }),
   coachAthleteRange: protectedProcedure
     .input(delegatedCalendarRangeRequestSchema)
     .output(delegatedCalendarRangeResponseSchema)

@@ -202,6 +202,25 @@ export function PlanDashboard() {
                       </div>
                       <Badge variant="outline">{getScheduledWorkTypeLabel(event)}</Badge>
                     </div>
+                    {event.kind === "planned_activity" && event.plannedSession ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button asChild size="sm">
+                          <Link
+                            to="/calendar/events/$eventId"
+                            params={{ eventId: event.plannedSession.id }}
+                            search={{
+                              flash: undefined,
+                              flashType: undefined,
+                              month: getMonthKey(new Date(`${event.calendarDate}T12:00:00`)),
+                              resourceType: "planned_session",
+                              view: "agenda",
+                            }}
+                          >
+                            Open & follow session
+                          </Link>
+                        </Button>
+                      </div>
+                    ) : null}
                   </div>
                 ))}
               </div>

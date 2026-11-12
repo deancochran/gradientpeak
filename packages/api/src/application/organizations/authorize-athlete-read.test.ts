@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   withAuthorizedAthleteRead,
   withAuthorizedAthleteReadAcrossOrganizations,
+  withAuthorizedAthleteReadScopes,
   withResolvedAuthorizedAthleteReadAcrossOrganizations,
 } from "./authorize-athlete-read";
 
@@ -76,6 +77,28 @@ describe("authorized athlete read transaction", () => {
     });
     expect(read).not.toHaveBeenCalled();
     expect(events).toEqual(["begin", "authorize", "commit"]);
+  });
+
+  it("requires both activity and calendar consent before a completed-session projection reads", async () => {
+    const events: string[] = [];
+    const fixture = createDb("allow", events);
+    fixture.transaction.execute
+      .mockResolvedValueOnce({ rows: [{ decision: "allow" }] })
+      .mockResolvedValueOnce({ rows: [{ decision: "consent_ended" }] });
+    const read = vi.fn(async () => "must-not-run");
+
+    await expect(
+      withAuthorizedAthleteReadScopes({
+        ...input,
+        db: fixture.db,
+        scopes: ["activities", "calendar"],
+        read,
+      }),
+    ).resolves.toEqual({
+      decision: { outcome: "deny", scope: "calendar", reason: "consent_ended" },
+    });
+    expect(read).not.toHaveBeenCalled();
+    expect(fixture.transaction.execute).toHaveBeenCalledTimes(2);
   });
 
   it("keeps any-organization consent resolution and the protected read in one transaction", async () => {

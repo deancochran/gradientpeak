@@ -51,6 +51,41 @@ export async function withAuthorizedAthleteRead<Value>(input: {
 }
 
 /**
+ * A projection that combines private domains must prove every required consent
+ * scope against the same assignment snapshot.  A publication grant is not a
+ * substitute for either of these reads.
+ */
+export async function withAuthorizedAthleteReadScopes<Value>(input: {
+  db: DrizzleDbClient;
+  actorProfileId: string;
+  organizationId: string;
+  athleteProfileId: string;
+  scopes: readonly AthleteReadScope[];
+  read: (transaction: DrizzleTransactionClient) => Promise<Value>;
+}): Promise<AuthorizedAthleteReadResult<Value>> {
+  return withRepeatableReadSnapshot(
+    input.db,
+    async (transaction) => {
+      const repository = createAthleteReadAccessRepository(transaction);
+      for (const scope of input.scopes) {
+        const decision = await repository.evaluate({
+          actorProfileId: input.actorProfileId,
+          organizationId: input.organizationId,
+          athleteProfileId: input.athleteProfileId,
+          scope,
+        });
+        if (decision.outcome === "deny") return { decision };
+      }
+      return {
+        decision: { outcome: "allow", scope: input.scopes[0] ?? "activities" },
+        value: await input.read(transaction),
+      };
+    },
+    { accessMode: "read write" },
+  );
+}
+
+/**
  * Resolves any shared organization but authorizes through the same complete,
  * scope-specific consent decision before reading athlete-owned data. Candidate
  * resolution and the protected read remain in the decision function's locking

@@ -1,5 +1,8 @@
 import {
+  activities,
   activityPlans,
+  athleteConsentPolicyVersions,
+  athleteDataSharingConsents,
   athletePlanEditGrants,
   coachingActivityPlanPublications,
   coachingAssignments,
@@ -42,6 +45,7 @@ async function captureSurface(input: {
 }
 
 test("[coaching-publication] athlete grants, coach publishes an owned activity plan, and revocation denies a later publication", async ({
+  actorFactory,
   athleteActor,
   athletePage,
   coachActor,
@@ -51,8 +55,10 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
 }, testInfo) => {
   test.setTimeout(120_000);
   const today = new Date().toISOString().slice(0, 10);
-  const planningDate = addUtcDays(today, 7);
-  const deniedDate = addUtcDays(today, 8);
+  // A same-day plan makes the journey exercise the real completion affordance;
+  // it must not claim a future planned session was performed.
+  const planningDate = today;
+  const deniedDate = addUtcDays(today, 1);
   const activityPlanName = "Playwright Tempo Builder";
   const publishedActivityPlanName = `${activityPlanName} (Copy)`;
 
@@ -173,12 +179,176 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
   );
   await waitForAppHydration(athletePage);
   await expect(athletePage.getByText("Personal planned sessions", { exact: true })).toBeVisible();
-  const publishedSession = athletePage
-    .getByText(publishedActivityPlanName, { exact: true })
-    .locator("..");
-  await expect(publishedSession).toBeVisible();
-  await expect(publishedSession).toContainText(`${planningDate} · scheduled`);
-  await captureSurface({ name: "publication-athlete-calendar", page: athletePage, testInfo });
+  await athletePage.goto("/plan");
+  await waitForAppHydration(athletePage);
+  const followSession = athletePage.getByRole("link", {
+    name: "Open & follow session",
+    exact: true,
+  });
+  await expect(followSession).toBeVisible();
+  await followSession.click();
+  await expect(athletePage).toHaveURL(/\/calendar\/events\/[0-9a-f-]{36}/i);
+  await expect(
+    athletePage.getByRole("heading", { name: publishedActivityPlanName, exact: true }),
+  ).toBeVisible();
+  await expect(athletePage.getByText("Completion", { exact: true })).toBeVisible();
+  await athletePage.getByRole("button", { name: "Actual details (optional)", exact: true }).click();
+  await athletePage.getByLabel("Actual duration (minutes, optional)").fill("45");
+  await athletePage.getByLabel("Actual distance (meters, optional)").fill("12300");
+  await athletePage.getByLabel("RPE (1-10, optional)").fill("6");
+  const completionNote = "Held steady through the final interval.";
+  await athletePage.getByLabel("Notes (optional)").fill(completionNote);
+  await athletePage.getByRole("button", { name: "Complete activity", exact: true }).click();
+  const completedActivityLink = athletePage.getByRole("link", {
+    name: "View linked completed activity",
+    exact: true,
+  });
+  await expect(completedActivityLink).toBeVisible();
+  const completedActivityId = (await completedActivityLink.getAttribute("href"))?.split("/").at(-1);
+  if (!completedActivityId)
+    throw new Error("Manual completion did not expose its linked activity.");
+  await captureSurface({
+    name: "publication-athlete-completed-session",
+    page: athletePage,
+    testInfo,
+  });
+
+  // The activity-plan id and session id are distinct. Read the session by its
+  // durable publication relation rather than relying only on the page URL.
+  const [linkedSession] = await e2eDatabase.db
+    .select({ activityId: plannedSessions.completed_activity_id, id: plannedSessions.id })
+    .from(plannedSessions)
+    .where(
+      and(
+        eq(plannedSessions.profile_id, athleteActor.profileId),
+        eq(plannedSessions.activity_plan_id, publication.copiedActivityPlanId),
+        eq(plannedSessions.planning_date, planningDate),
+      ),
+    );
+  if (!linkedSession) throw new Error("Published session was not retained after completion.");
+  expect(linkedSession.activityId).toBe(completedActivityId);
+  await expect
+    .poll(async () =>
+      e2eDatabase.db
+        .select({
+          distance: activities.distance_meters,
+          elapsed: activities.elapsed_ms,
+          notes: activities.notes,
+          provenance: activities.entry_provenance,
+        })
+        .from(activities)
+        .where(eq(activities.id, completedActivityId)),
+    )
+    .toEqual([
+      {
+        distance: 12300,
+        elapsed: 2_700_000,
+        notes: completionNote,
+        provenance: "manual",
+      },
+    ]);
+
+  const activitiesPolicyId = e2eIdentity.uuid("publication-activities-policy");
+  const calendarPolicyId = e2eIdentity.uuid("publication-calendar-policy");
+  const activitiesConsentId = e2eIdentity.uuid("publication-activities-consent");
+  const calendarConsentId = e2eIdentity.uuid("publication-calendar-consent");
+  await e2eDatabase.typedTransaction(async (transaction) => {
+    await transaction.insert(athleteConsentPolicyVersions).values([
+      {
+        id: activitiesPolicyId,
+        scope_key: "activities",
+        effective_from: new Date(Date.now() - 1_000),
+        jurisdiction: "e2e",
+        terms_text: "Disposable completed activities consent",
+        content_digest: `sha256:${activitiesPolicyId}`,
+      },
+      {
+        id: calendarPolicyId,
+        scope_key: "calendar",
+        effective_from: new Date(Date.now() - 1_000),
+        jurisdiction: "e2e",
+        terms_text: "Disposable completed session calendar consent",
+        content_digest: `sha256:${calendarPolicyId}`,
+      },
+    ]);
+    await transaction.insert(athleteDataSharingConsents).values([
+      {
+        id: activitiesConsentId,
+        organization_id: organizationId,
+        engagement_id: engagementId,
+        athlete_profile_id: athleteActor.profileId,
+        scope_key: "activities",
+        policy_version_id: activitiesPolicyId,
+        granted_by_profile_id: athleteActor.profileId,
+      },
+      {
+        id: calendarConsentId,
+        organization_id: organizationId,
+        engagement_id: engagementId,
+        athlete_profile_id: athleteActor.profileId,
+        scope_key: "calendar",
+        policy_version_id: calendarPolicyId,
+        granted_by_profile_id: athleteActor.profileId,
+      },
+    ]);
+  });
+
+  await coachPage.goto(`/organizations/${organizationId}/athletes/${athleteActor.profileId}`);
+  await waitForAppHydration(coachPage);
+  await expect(coachPage.getByText("Completed activities", { exact: true })).toBeVisible();
+  const completedActivities = coachPage.getByRole("list", { name: "Completed activities" });
+  await expect(completedActivities).toContainText("Completed session");
+  await expect(completedActivities).toContainText(`Planned ${planningDate}`);
+  await expect(completedActivities).not.toContainText(publishedActivityPlanName);
+  await expect(completedActivities).not.toContainText(completionNote);
+  await expect(
+    coachPage.getByText("Opening this list does not mark anything reviewed.", { exact: false }),
+  ).toBeVisible();
+  await captureSurface({
+    name: "publication-coach-completed-activities",
+    page: coachPage,
+    testInfo,
+  });
+
+  // Reading is observational: it must neither duplicate nor rewrite the link.
+  await coachPage.reload();
+  await waitForAppHydration(coachPage);
+  await expect(completedActivities).toContainText("Completed session");
+  await expect(completedActivities).not.toContainText(completionNote);
+  expect(
+    await e2eDatabase.db
+      .select({ activityId: plannedSessions.completed_activity_id })
+      .from(plannedSessions)
+      .where(eq(plannedSessions.id, linkedSession.id)),
+  ).toEqual([{ activityId: completedActivityId }]);
+  expect(
+    await e2eDatabase.db
+      .select({ id: activities.id })
+      .from(activities)
+      .where(eq(activities.id, completedActivityId)),
+  ).toHaveLength(1);
+
+  // Consent facts are append/revoke-only: revoke calendar while activities is
+  // still valid, then revoke activities too. Each independently denies access.
+  for (const consentId of [calendarConsentId, activitiesConsentId]) {
+    await e2eDatabase.db
+      .update(athleteDataSharingConsents)
+      .set({ ended_at: new Date() })
+      .where(eq(athleteDataSharingConsents.id, consentId));
+    await coachPage.reload();
+    await waitForAppHydration(coachPage);
+    await expect(
+      coachPage.getByText("Completed activities unavailable", { exact: true }),
+    ).toBeVisible();
+  }
+  const foreignCoach = await actorFactory.create("coach", { label: "foreign-publication-coach" });
+  const foreignCoachPage = await foreignCoach.createPage(
+    `/organizations/${organizationId}/athletes/${athleteActor.profileId}`,
+  );
+  await expect(
+    foreignCoachPage.getByRole("heading", { name: "Coaching access required", exact: true }),
+  ).toBeVisible();
+  await foreignCoachPage.close();
 
   await athletePage.goto("/settings#coaching");
   await waitForAppHydration(athletePage);
@@ -204,12 +374,8 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
     .toEqual([]);
 
   await coachPage.getByLabel("Athlete planning date", { exact: true }).fill(deniedDate);
-  await coachPage.getByRole("button", { name: "Preview publication", exact: true }).click();
-  await expect(coachPage.getByRole("alert")).toContainText(
-    "Athlete plan-edit permission is unavailable",
-  );
   await expect(
-    coachPage.getByRole("button", { name: "Publish activity plan", exact: true }),
+    coachPage.getByRole("button", { name: "Preview publication", exact: true }),
   ).toBeDisabled();
   await coachPage.close();
 });

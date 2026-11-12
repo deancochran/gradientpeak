@@ -143,13 +143,10 @@ async function main() {
   await withDisposableDatabase(process.argv.slice(2), "retained_upgrade", async (pool, url) => {
     await bootstrapSupabaseSchemas(pool);
     await pool.query("create extension if not exists pgcrypto with schema extensions");
-    // Start from the immutable auth legacy source, which is the retained
-    // upgrade's reviewed postcondition, rather than the evolving baseline.
+    // Reconstruct the pinned coaching postcondition before reverting the retained
+    // upgrade's bounded objects; unrelated fresh-baseline additions must stay out.
     await pool.query(prerequisiteBaseline());
     await applyCoachingUpgrade(pool);
-    // The retained upgrade's immutable prerequisite predates the auth identity
-    // compatibility baseline. Reconstruct that legacy schema only in this guarded
-    // disposable proof; do not rewrite its historical fingerprint provenance.
     const previousDecision = (
       expectedBeforeFingerprint().functions as Array<Record<string, unknown>>
     ).find(

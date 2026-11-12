@@ -255,8 +255,6 @@ async function main() {
     async (pool, url) => {
       await bootstrapSupabaseSchemas(pool);
       await pool.query("create extension if not exists pgcrypto with schema extensions");
-      // Rebuild the immutable auth-upgrade source instead of adapting the
-      // evolving fresh-install baseline.
       await pool.query(prerequisiteBaseline());
       await applyCoachingUpgrade(pool);
       await createLegacyAccount(pool);

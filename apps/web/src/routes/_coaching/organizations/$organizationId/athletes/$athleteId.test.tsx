@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   calendar: vi.fn(),
+  completedActivities: vi.fn(),
   goals: vi.fn(),
   directory: vi.fn(),
   overview: vi.fn(),
@@ -56,6 +57,11 @@ vi.mock("../../../../../components/coaching/athletes/coach-athlete-calendar", ()
     <p data-testid="calendar">calendar {result.status}</p>
   ),
 }));
+vi.mock("../../../../../components/coaching/athletes/coach-athlete-completed-activities", () => ({
+  CoachAthleteCompletedActivities: ({ result }: { result: { status: string } }) => (
+    <p data-testid="completed-activities">completed activities {result.status}</p>
+  ),
+}));
 vi.mock("../../../../../components/coaching/athletes/coach-athlete-zones-section", () => ({
   CoachAthleteZonesSection: ({
     snapshot,
@@ -98,6 +104,9 @@ vi.mock("../../../../../lib/coaching/athlete-calendar-server-functions", () => (
   currentCalendarWeek: () => ({ startDate: "2026-03-08", endDateExclusive: "2026-03-15" }),
   loadCoachAthleteCalendar: mocks.calendar,
 }));
+vi.mock("../../../../../lib/coaching/athlete-completions-server-functions", () => ({
+  loadCoachAthleteCompletedActivities: mocks.completedActivities,
+}));
 vi.mock("../../../../../lib/coaching/athlete-goals-server-functions", () => ({
   loadCoachAthleteGoals: mocks.goals,
 }));
@@ -108,6 +117,7 @@ vi.mock("../../../../../lib/coaching/athlete-zones-server-functions", () => ({
 import { Route } from "./$athleteId";
 
 beforeEach(() => {
+  mocks.completedActivities.mockResolvedValue({ status: "forbidden" });
   mocks.goals.mockResolvedValue({ status: "forbidden" });
   mocks.zones.mockResolvedValue({ status: "forbidden" });
 });
@@ -123,6 +133,7 @@ afterEach(() => {
   state.pathname =
     "/organizations/11111111-1111-4111-8111-111111111111/athletes/22222222-2222-4222-8222-222222222222";
   mocks.calendar.mockReset();
+  mocks.completedActivities.mockReset();
   mocks.goals.mockReset();
   mocks.directory.mockReset();
   mocks.overview.mockReset();
