@@ -193,7 +193,13 @@ export function CoachActivityPlanPublication({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <Button asChild disabled={!preparationContext} type="button" variant="outline">
+        <Button
+          asChild
+          className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
+          disabled={!preparationContext}
+          type="button"
+          variant="outline"
+        >
           <Link
             to="/activity-plans"
             search={
@@ -286,6 +292,7 @@ export function CoachActivityPlanPublication({
               The selected activity plan could not be loaded. Your selection has not been changed.
             </p>
             <Button
+              className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
               onClick={() => void refreshSelectedPlan()}
               size="sm"
               type="button"
@@ -329,6 +336,7 @@ export function CoachActivityPlanPublication({
                   then preview it again before publishing.
                 </p>
                 <Button
+                  className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
                   disabled={selectedPlanQuery.isFetching}
                   onClick={() => void refreshSelectedPlan()}
                   size="sm"
@@ -345,6 +353,7 @@ export function CoachActivityPlanPublication({
         ) : null}
         <div className="flex flex-wrap gap-2">
           <Button
+            className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
             disabled={!input || preview.isFetching || publish.isPending}
             onClick={() => void requestPreview()}
             type="button"
