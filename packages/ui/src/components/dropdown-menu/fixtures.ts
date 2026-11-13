@@ -1,5 +1,5 @@
 export const dropdownMenuFixtures = {
-  workoutActions: {
+  activityActions: {
     deleteLabel: "Delete activity",
     duplicateLabel: "Duplicate activity",
     triggerLabel: "Open activity actions",

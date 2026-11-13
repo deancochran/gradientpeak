@@ -1,13 +1,30 @@
+import { waitFor } from "@testing-library/react-native";
 import React from "react";
 import { createHost } from "../../test/mock-components";
 import { renderNative, screen } from "../../test/render-native";
 
 const replaceMock = jest.fn();
+const cleanupStreamRecordingsMock = jest.fn(async () => undefined);
+const cleanupFitRecordingsMock = jest.fn(async () => undefined);
+type AuthStoreState = {
+  clearSession: () => Promise<void>;
+  initialize: () => Promise<void>;
+  ready: boolean;
+  profile: { id: string };
+};
+type QueueFileReference = {
+  localActivityFilePath?: string | null;
+  streamArtifactPaths?: string[];
+  status: string;
+};
+const loadActivitySubmissionQueueJobsMock = jest.fn(async (): Promise<QueueFileReference[]> => []);
+const initializeContractEpochMock = jest.fn(async () => "current");
+const initializeAuthMock = jest.fn(async () => undefined);
 
 const authState = {
   authState: "authenticated-verified",
   userStatus: "verified",
-  onboardingStatus: true,
+  onboardingStatus: "completed",
   isAuthenticated: true,
   isFullyLoaded: true,
   user: { id: "user-1", email: "athlete@example.com" },
@@ -33,14 +50,24 @@ jest.mock("react-native", () => ({
   View: createHost("View"),
 }));
 
-jest.mock("@react-navigation/native", () => ({
+jest.mock("expo-router/react-navigation", () => ({
   __esModule: true,
-  ThemeProvider: ({ children }: any) => children,
+  ThemeProvider: ({ children }: React.PropsWithChildren) => children,
 }));
 
 jest.mock("react-native-gesture-handler", () => ({
   __esModule: true,
   GestureHandlerRootView: createHost("GestureHandlerRootView"),
+}));
+
+jest.mock("@gorhom/bottom-sheet", () => ({
+  __esModule: true,
+  BottomSheetModalProvider: ({ children }: React.PropsWithChildren) =>
+    React.createElement(
+      "BottomSheetModalProvider",
+      { testID: "bottom-sheet-modal-provider" },
+      children,
+    ),
 }));
 
 jest.mock("react-native-css/components/react-native-safe-area-context", () => ({
@@ -61,17 +88,19 @@ jest.mock("expo-status-bar", () => ({
 
 jest.mock("expo-router", () => ({
   __esModule: true,
-  Redirect: ({ href }: any) =>
+  Redirect: ({ href }: { href: unknown }) =>
     React.createElement("Text", { testID: "redirect-target" }, JSON.stringify(href)),
   Slot: () => React.createElement("Text", null, "Internal app content"),
   router: { replace: replaceMock },
+  usePathname: () => "/",
   useSegments: () => segmentsValue,
 }));
 
 jest.mock("nativewind", () => ({
   __esModule: true,
-  vars: (value: any) => value,
-  VariableContextProvider: ({ children }: any) => children,
+  styled: <T,>(component: T) => component,
+  vars: <T extends Record<string, string | number>>(value: T) => value,
+  VariableContextProvider: ({ children }: React.PropsWithChildren) => children,
 }));
 
 jest.mock("@repo/ui/components/button", () => ({
@@ -82,6 +111,11 @@ jest.mock("@repo/ui/components/button", () => ({
 jest.mock("@repo/ui/components/text", () => ({
   __esModule: true,
   Text: createHost("Text"),
+}));
+
+jest.mock("@repo/ui/components/loading", () => ({
+  __esModule: true,
+  Spinner: createHost("Spinner"),
 }));
 
 jest.mock(
@@ -98,6 +132,11 @@ jest.mock("@/lib/theme", () => ({
   getNavigationTheme: () => ({ colors: {} }),
 }));
 
+jest.mock("@/components/social/EntityCommentsSheetProvider", () => ({
+  __esModule: true,
+  EntityCommentsSheetProvider: ({ children }: React.PropsWithChildren) => children,
+}));
+
 jest.mock("@/lib/hooks/useAuth", () => ({
   __esModule: true,
   useAuth: () => authState,
@@ -105,37 +144,77 @@ jest.mock("@/lib/hooks/useAuth", () => ({
 
 jest.mock("@/lib/providers/QueryProvider", () => ({
   __esModule: true,
-  QueryProvider: ({ children }: any) => children,
+  QueryProvider: ({ children }: React.PropsWithChildren) => children,
+}));
+
+jest.mock("@/lib/contract-epoch/contractEpoch", () => ({
+  __esModule: true,
+  initializeContractEpoch: initializeContractEpochMock,
 }));
 
 jest.mock("@/lib/server-config", () => ({
   __esModule: true,
+  getServerConfig: () => ({ apiUrl: "http://localhost:3000" }),
+  getE2ERuntimeSentinel: () => "lane=e2e api=127.0.0.1:3001 supabase=127.0.0.1:55321",
   initializeServerConfig: jest.fn(async () => undefined),
+  subscribeServerConfig: () => () => undefined,
   useServerConfig: () => ({ initialized: true }),
 }));
 
 jest.mock("@/lib/services/ActivityRecorder/StreamBuffer", () => ({
   __esModule: true,
-  StreamBuffer: { cleanupOrphanedRecordings: jest.fn(async () => undefined) },
+  StreamBuffer: { cleanupOrphanedRecordings: cleanupStreamRecordingsMock },
+}));
+
+jest.mock("@/lib/services/activitySubmissionQueue", () => ({
+  __esModule: true,
+  loadActivitySubmissionQueueJobs: loadActivitySubmissionQueueJobsMock,
+  incompleteQueueJobReferencesLocalFiles: (job: QueueFileReference) =>
+    job.status !== "complete" &&
+    Boolean(job.localActivityFilePath || job.streamArtifactPaths?.length),
+}));
+
+jest.mock("@/lib/services/ActivityRecorder/checkpointStorage", () => ({
+  __esModule: true,
+  loadAndClaimRecordingCheckpoint: jest.fn(async () => ({ status: "none" })),
+}));
+
+jest.mock("@/lib/hooks/useStartupActivitySubmissionRecovery", () => ({
+  __esModule: true,
+  useStartupActivitySubmissionRecovery: jest.fn(),
+}));
+
+jest.mock("@/lib/services/mobileRecordingStartup", () => ({
+  __esModule: true,
+  prepareMobileRecordingStartup: jest.fn(async () => {
+    const queueJobs = await loadActivitySubmissionQueueJobsMock();
+    return {
+      checkpoint: { status: "none" },
+      hasQuarantinedEvidence: false,
+      queueJobs,
+    };
+  }),
 }));
 
 jest.mock("@/lib/services/fit/GarminFitEncoder", () => ({
   __esModule: true,
-  GarminFitEncoder: { cleanupOrphanedRecordings: jest.fn(async () => undefined) },
+  GarminFitEncoder: { cleanupOrphanedRecordings: cleanupFitRecordingsMock },
 }));
 
 jest.mock("@/lib/services/sentry", () => ({
   __esModule: true,
   initSentry: jest.fn(),
+  Sentry: { wrap: (component: unknown) => component },
 }));
 
 jest.mock("@/lib/stores/auth-store", () => ({
   __esModule: true,
-  useAuthStore: (selector: any) =>
+  useAuthStore: <T,>(selector: (state: AuthStoreState) => T) =>
     selector({
       clearSession: jest.fn(async () => undefined),
-      initialize: jest.fn(async () => undefined),
+      initialize: initializeAuthMock,
       ready: true,
+      profile: { id: "profile-1" },
     }),
 }));
 
@@ -149,63 +228,158 @@ const RootLayout = require("../_layout").default;
 describe("root layout auth guard", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    loadActivitySubmissionQueueJobsMock.mockResolvedValue([]);
     Object.assign(authState, {
       authState: "authenticated-verified",
       userStatus: "verified",
-      onboardingStatus: true,
+      onboardingStatus: "completed",
       isAuthenticated: true,
       isFullyLoaded: true,
       user: { id: "user-1", email: "athlete@example.com" },
       profileLoading: false,
       profileError: null,
     });
+    themeState.isLoaded = true;
     segmentsValue = ["(internal)", "(tabs)"];
+    initializeContractEpochMock.mockResolvedValue("current");
   });
 
-  it("redirects unauthenticated users to sign in", () => {
+  it("redirects unauthenticated users to sign in", async () => {
     authState.authState = "anonymous";
     authState.isAuthenticated = false;
     segmentsValue = ["(internal)", "(tabs)"];
 
-    renderNative(<RootLayout />);
+    await renderNative(<RootLayout />);
 
-    expect(screen.getByTestId("redirect-target").props.children).toContain("sign-in");
+    await waitFor(() =>
+      expect(screen.getByTestId("redirect-target").props.children).toContain("sign-in"),
+    );
   });
 
-  it("redirects unverified users to verify with their email", () => {
+  it("redirects unverified users to verify with their email", async () => {
     authState.authState = "authenticated-unverified";
     authState.userStatus = "pending";
     segmentsValue = ["(internal)", "(tabs)"];
 
-    renderNative(<RootLayout />);
+    await renderNative(<RootLayout />);
 
-    expect(screen.getByTestId("redirect-target").props.children).toContain("verify");
+    await waitFor(() =>
+      expect(screen.getByTestId("redirect-target").props.children).toContain("verify"),
+    );
     expect(screen.getByTestId("redirect-target").props.children).toContain("athlete@example.com");
   });
 
-  it("redirects signed-in users away from sign-up and into verify until confirmed", () => {
+  it("redirects signed-in users away from sign-up and into verify until confirmed", async () => {
     authState.authState = "authenticated-unverified";
-    authState.userStatus = "unverified" as any;
+    authState.userStatus = "unverified";
     segmentsValue = ["(external)", "sign-up"];
 
-    renderNative(<RootLayout />);
+    await renderNative(<RootLayout />);
 
-    expect(screen.getByTestId("redirect-target").props.children).toContain("verify");
+    await waitFor(() =>
+      expect(screen.getByTestId("redirect-target").props.children).toContain("verify"),
+    );
     expect(screen.getByTestId("redirect-target").props.children).toContain("athlete@example.com");
   });
 
-  it("redirects verified users without onboarding to onboarding", () => {
-    authState.onboardingStatus = false;
+  it("redirects verified users without onboarding to onboarding", async () => {
+    authState.onboardingStatus = "processing";
     segmentsValue = ["(internal)", "(tabs)"];
 
-    renderNative(<RootLayout />);
+    await renderNative(<RootLayout />);
 
-    expect(screen.getByTestId("redirect-target").props.children).toContain("onboarding");
+    await waitFor(() =>
+      expect(screen.getByTestId("redirect-target").props.children).toContain("onboarding"),
+    );
   });
 
-  it("renders the internal app slot for fully eligible users", () => {
-    renderNative(<RootLayout />);
+  it("renders the internal app slot for fully eligible users", async () => {
+    await renderNative(<RootLayout />);
 
-    expect(screen.getByText("Internal app content")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("Internal app content")).toBeTruthy());
+    expect(screen.getByTestId("bottom-sheet-modal-provider")).toBeTruthy();
+  });
+
+  it("exposes the nonvisual E2E runtime sentinel before app-specific navigation", async () => {
+    await renderNative(<RootLayout />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("e2e-runtime-sentinel").props.accessibilityLabel).toBe(
+        "lane=e2e api=127.0.0.1:3001 supabase=127.0.0.1:55321",
+      ),
+    );
+  });
+
+  it("blocks rendering and auth initialization until the contract epoch is ready", async () => {
+    let resolveEpoch!: (value: "current") => void;
+    initializeContractEpochMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveEpoch = resolve;
+        }),
+    );
+
+    await renderNative(<RootLayout />);
+
+    expect(screen.getByTestId("contract-epoch-loading")).toBeTruthy();
+    expect(screen.queryByText("Internal app content")).toBeNull();
+    expect(initializeAuthMock).not.toHaveBeenCalled();
+    resolveEpoch("current");
+    await waitFor(() => expect(screen.getByText("Internal app content")).toBeTruthy());
+  });
+
+  it("shows a blocking retry UI when the contract reset fails", async () => {
+    initializeContractEpochMock.mockRejectedValueOnce(new Error("disk busy"));
+
+    await renderNative(<RootLayout />);
+
+    await waitFor(() => expect(screen.getByTestId("contract-epoch-retry")).toBeTruthy());
+    expect(screen.queryByText("Internal app content")).toBeNull();
+  });
+
+  it("exposes an accessible shared loading state while the theme initializes", async () => {
+    themeState.isLoaded = false;
+
+    await renderNative(<RootLayout />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("app-theme-loading").props).toMatchObject({
+        accessibilityLiveRegion: "polite",
+        accessibilityState: { busy: true },
+        label: "Loading app theme",
+        size: "large",
+      }),
+    );
+  });
+
+  it("preserves finalized files when an incomplete queue job references them", async () => {
+    loadActivitySubmissionQueueJobsMock.mockResolvedValue([
+      {
+        status: "failed",
+        localActivityFilePath: "file:///retry.fit",
+        streamArtifactPaths: [],
+      },
+    ]);
+
+    await renderNative(<RootLayout />);
+
+    await waitFor(() => expect(loadActivitySubmissionQueueJobsMock).toHaveBeenCalledTimes(1));
+    expect(cleanupStreamRecordingsMock).not.toHaveBeenCalled();
+    expect(cleanupFitRecordingsMock).not.toHaveBeenCalled();
+  });
+
+  it("allows orphan cleanup when only completed queue jobs reference local files", async () => {
+    loadActivitySubmissionQueueJobsMock.mockResolvedValue([
+      {
+        status: "complete",
+        localActivityFilePath: "file:///completed.fit",
+        streamArtifactPaths: ["file:///completed-streams"],
+      },
+    ]);
+
+    await renderNative(<RootLayout />);
+
+    await waitFor(() => expect(cleanupStreamRecordingsMock).toHaveBeenCalledTimes(1));
+    expect(cleanupFitRecordingsMock).toHaveBeenCalledTimes(1);
   });
 });

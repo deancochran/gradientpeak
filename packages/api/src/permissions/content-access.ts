@@ -1,5 +1,6 @@
-import { type DrizzleDbClient, schema } from "@repo/db";
+import { schema } from "@repo/db";
 import { and, eq, gt, inArray, isNull, or } from "drizzle-orm";
+import type { DrizzleQueryExecutor } from "../db";
 import { permissionDeniedForbidden, permissionDeniedNotFound } from "./content-access-errors";
 import type {
   AccessLevel,
@@ -14,6 +15,7 @@ type ResourceRow = {
   id: string;
   ownerProfileId: string | null;
   isPublic: boolean;
+  visibility?: "private" | "followers" | "public" | null;
   isSystem: boolean;
   routeId?: string | null;
 };
@@ -21,17 +23,17 @@ type ResourceRow = {
 export type ContentAccessRow = {
   ownerProfileId?: string | null;
   isPublic?: boolean | null;
+  visibility?: "private" | "followers" | "public" | null;
   isSystem?: boolean | null;
 };
 
-type ReadableRowInput<T> = {
-  row: T;
-  resource: PermissionResource;
-  access: ContentAccessRow;
-};
-
 export function canContentRowSatisfyRead(row: ContentAccessRow, actorProfileId: string) {
-  return row.ownerProfileId === actorProfileId || row.isPublic === true || row.isSystem === true;
+  return (
+    row.ownerProfileId === actorProfileId ||
+    row.visibility === "public" ||
+    row.isPublic === true ||
+    row.isSystem === true
+  );
 }
 
 function contentRowReadReason(row: ContentAccessRow, actorProfileId: string) {
@@ -43,7 +45,7 @@ function contentRowReadReason(row: ContentAccessRow, actorProfileId: string) {
     return "system" as const;
   }
 
-  if (row.isPublic === true) {
+  if (row.visibility === "public" || row.isPublic === true) {
     return "public" as const;
   }
 
@@ -84,7 +86,32 @@ function readGrantLevels(action: PermissionAction): AccessLevel[] {
   return [];
 }
 
-function canRowSatisfyAction(row: ResourceRow, actorProfileId: string, action: PermissionAction) {
+async function hasAcceptedFollower(
+  db: DrizzleQueryExecutor,
+  followerId: string,
+  followingId: string,
+) {
+  const [follow] = await db
+    .select({ followerId: schema.follows.follower_id })
+    .from(schema.follows)
+    .where(
+      and(
+        eq(schema.follows.follower_id, followerId),
+        eq(schema.follows.following_id, followingId),
+        eq(schema.follows.status, "accepted"),
+      ),
+    )
+    .limit(1);
+
+  return Boolean(follow);
+}
+
+async function canRowSatisfyAction(
+  db: DrizzleQueryExecutor,
+  row: ResourceRow,
+  actorProfileId: string,
+  action: PermissionAction,
+) {
   if (row.ownerProfileId === actorProfileId) {
     return { allowed: true, reason: "owner" as const };
   }
@@ -97,23 +124,30 @@ function canRowSatisfyAction(row: ResourceRow, actorProfileId: string, action: P
     return { allowed: true, reason: "system" as const };
   }
 
-  if (row.isPublic) {
+  if (row.visibility === "public" || row.isPublic) {
     return { allowed: true, reason: "public" as const };
+  }
+
+  if (
+    row.visibility === "followers" &&
+    row.ownerProfileId &&
+    (await hasAcceptedFollower(db, actorProfileId, row.ownerProfileId))
+  ) {
+    return { allowed: true, reason: "grant" as const };
   }
 
   return { allowed: false, reason: "denied" as const };
 }
 
-export function createContentAccessPermissions(db: DrizzleDbClient) {
+export function createContentAccessPermissions(db: DrizzleQueryExecutor) {
   async function findResource(resource: PermissionResource): Promise<ResourceRow | null> {
     if (resource.type === "activity_plan") {
       const [row] = await db
         .select({
           id: schema.activityPlans.id,
           ownerProfileId: schema.activityPlans.profile_id,
-          templateVisibility: schema.activityPlans.template_visibility,
+          contentVisibility: schema.activityPlans.content_visibility,
           isSystem: schema.activityPlans.is_system_template,
-          routeId: schema.activityPlans.route_id,
         })
         .from(schema.activityPlans)
         .where(eq(schema.activityPlans.id, resource.id))
@@ -123,9 +157,9 @@ export function createContentAccessPermissions(db: DrizzleDbClient) {
         ? {
             id: row.id,
             ownerProfileId: row.ownerProfileId,
-            isPublic: row.templateVisibility === "public",
+            isPublic: row.contentVisibility === "public",
+            visibility: row.contentVisibility,
             isSystem: row.isSystem,
-            routeId: row.routeId,
           }
         : null;
     }
@@ -137,12 +171,13 @@ export function createContentAccessPermissions(db: DrizzleDbClient) {
           ownerProfileId: schema.activityRoutes.profile_id,
           isPublic: schema.activityRoutes.is_public,
           isSystem: schema.activityRoutes.is_system_template,
+          storageState: schema.activityRoutes.storage_state,
         })
         .from(schema.activityRoutes)
         .where(eq(schema.activityRoutes.id, resource.id))
         .limit(1);
 
-      return row
+      return row?.storageState === "ready"
         ? {
             id: row.id,
             ownerProfileId: row.ownerProfileId,
@@ -157,7 +192,7 @@ export function createContentAccessPermissions(db: DrizzleDbClient) {
         .select({
           id: schema.trainingPlans.id,
           ownerProfileId: schema.trainingPlans.profile_id,
-          templateVisibility: schema.trainingPlans.template_visibility,
+          contentVisibility: schema.trainingPlans.content_visibility,
           isSystem: schema.trainingPlans.is_system_template,
         })
         .from(schema.trainingPlans)
@@ -168,7 +203,8 @@ export function createContentAccessPermissions(db: DrizzleDbClient) {
         ? {
             id: row.id,
             ownerProfileId: row.ownerProfileId,
-            isPublic: row.templateVisibility === "public",
+            isPublic: row.contentVisibility === "public",
+            visibility: row.contentVisibility,
             isSystem: row.isSystem,
           }
         : null;
@@ -242,7 +278,7 @@ export function createContentAccessPermissions(db: DrizzleDbClient) {
       return { allowed: false, reason: "denied" };
     }
 
-    const rowDecision = canRowSatisfyAction(row, input.actorProfileId, input.action);
+    const rowDecision = await canRowSatisfyAction(db, row, input.actorProfileId, input.action);
     if (rowDecision.allowed) {
       return { allowed: true, accessLevel: input.action, reason: rowDecision.reason };
     }
@@ -295,7 +331,7 @@ export function createContentAccessPermissions(db: DrizzleDbClient) {
       actorProfileId: input.actorProfileId,
       action: "read",
       resource: input.resource,
-      message: input.message,
+      ...(input.message === undefined ? {} : { message: input.message }),
     });
   }
 
@@ -310,29 +346,6 @@ export function createContentAccessPermissions(db: DrizzleDbClient) {
     }
 
     return can({ actorProfileId: input.actorProfileId, action: "read", resource: input.resource });
-  }
-
-  async function filterReadableRows<T>(input: {
-    actorProfileId: string;
-    rows: T[];
-    getRowInput: (row: T) => ReadableRowInput<T>;
-  }) {
-    const readableRows: T[] = [];
-
-    for (const row of input.rows) {
-      const rowInput = input.getRowInput(row);
-      const decision = await canReadForRow({
-        actorProfileId: input.actorProfileId,
-        resource: rowInput.resource,
-        row: rowInput.access,
-      });
-
-      if (decision.allowed) {
-        readableRows.push(row);
-      }
-    }
-
-    return readableRows;
   }
 
   async function grant(input: GrantInput & { accessLevel: AccessLevel }) {
@@ -443,18 +456,27 @@ export function createContentAccessPermissions(db: DrizzleDbClient) {
     canRead: (actorProfileId: string, resource: PermissionResource) =>
       can({ actorProfileId, action: "read", resource }),
     requireRead: (actorProfileId: string, resource: PermissionResource, message?: string) =>
-      require({ actorProfileId, action: "read", resource, message }),
+      require({
+        actorProfileId,
+        action: "read",
+        resource,
+        ...(message === undefined ? {} : { message }),
+      }),
     canReadForRow,
     requireReadForRow,
-    filterReadableRows,
     requireManage: (actorProfileId: string, resource: PermissionResource, message?: string) =>
-      require({ actorProfileId, action: "manage", resource, message }),
+      require({
+        actorProfileId,
+        action: "manage",
+        resource,
+        ...(message === undefined ? {} : { message }),
+      }),
     requireRouteGeometry: (actorProfileId: string, routeId: string, message?: string) =>
       require({
         actorProfileId,
         action: "read_geometry",
         resource: { type: "activity_route", id: routeId },
-        message,
+        ...(message === undefined ? {} : { message }),
       }),
     grant,
     grantRead,
