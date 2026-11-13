@@ -19,6 +19,12 @@ const state = vi.hoisted(() => ({
     isLoading: false,
     refetch: vi.fn(),
   },
+  selectedDay: {
+    data: { projection: { items: [] } },
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  },
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -28,6 +34,7 @@ vi.mock("../../lib/planning", () => ({
   formatShortDayLabel: (date: string) => date,
   getMonthKey: () => "2026-04",
   getTodayDateKey: () => "2026-04-01",
+  isValidDateKey: (date: string) => /^\d{4}-\d{2}-\d{2}$/.test(date),
   shiftDateKey: (date: string) => date,
 }));
 vi.mock("../../lib/api/client", () => ({
@@ -40,6 +47,7 @@ vi.mock("../../lib/api/client", () => ({
       list: { useQuery: () => ({ data: { items: [] }, isError: false, isLoading: false }) },
     },
     calendar: {
+      day: { useQuery: () => state.selectedDay },
       range: {
         useQuery: () => ({
           data: { items: [] },
@@ -74,6 +82,56 @@ afterEach(() => {
     refetch: vi.fn(),
   };
   state.projection = { data: {}, isError: false, isLoading: false, refetch: vi.fn() };
+  state.selectedDay = {
+    data: { projection: { items: [] } },
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  };
+});
+
+it("uses the projection's authoritative day for selected-day status and the goal lower bound", () => {
+  state.projection = {
+    data: {
+      today: "2026-04-02",
+      timeline: {
+        days: [
+          {
+            date: "2026-04-02",
+            load: {
+              completedLoad: 12.5,
+              completedLoadStatus: "partial",
+              plannedLoad: 0,
+              plannedLoadStatus: "known_zero",
+              scheduledLoad: 0,
+              scheduledLoadStatus: "known_zero",
+              remainingLoad: 0,
+              remainingLoadStatus: "known_zero",
+              recommendedLoad: null,
+              recommendedLoadStatus: "unavailable",
+              deltaLoad: null,
+            },
+            scheduledItems: [],
+            completedItems: [],
+            annotations: [],
+          },
+        ],
+      },
+      fitness: { actual: [], scheduled: [], recommended: [] },
+    },
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as never;
+
+  render(<PlanDashboard selectedDate="2026-04-02" />);
+
+  expect(screen.getByText("Today", { exact: true })).toBeTruthy();
+  expect(screen.getByText("Observed Load: ~12.5")).toBeTruthy();
+  expect(screen.getByText("Planned Load: 0 (zero)")).toBeTruthy();
+  expect(state.goalInput).toHaveBeenCalledWith(
+    expect.objectContaining({ target_date_on_or_after: "2026-04-02" }),
+  );
 });
 
 it("does not turn a failed profile dependency into absent planning data", () => {

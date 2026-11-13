@@ -2,14 +2,20 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Target } from "lucide-react";
 import { PlanDashboard } from "../../components/planning/plan-dashboard";
 import { RouteFlashToast, type RouteFlashType } from "../../components/route-flash-toast";
+import { isValidDateKey } from "../../lib/planning";
 
 export {
   getScheduledWorkTypeLabel,
   getUpcomingScheduledWorkItems,
 } from "../../components/planning/plan-dashboard";
 
+function isPlanDateSearch(value: unknown): value is string {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && isValidDateKey(value);
+}
+
 export const Route = createFileRoute("/_protected/plan")({
   validateSearch: (search: Record<string, unknown>) => ({
+    ...(isPlanDateSearch(search.date) ? { date: search.date } : {}),
     flash: typeof search.flash === "string" ? search.flash : undefined,
     flashType:
       search.flashType === "success" || search.flashType === "error" || search.flashType === "info"
@@ -21,7 +27,7 @@ export const Route = createFileRoute("/_protected/plan")({
 
 function PlanPage() {
   const navigate = Route.useNavigate();
-  const { flash, flashType } = Route.useSearch();
+  const { date, flash, flashType } = Route.useSearch();
   return (
     <div className="space-y-6">
       <RouteFlashToast
@@ -30,7 +36,7 @@ function PlanPage() {
         clear={() =>
           void navigate({
             to: "/plan",
-            search: { flash: undefined, flashType: undefined },
+            search: { date, flash: undefined, flashType: undefined },
             replace: true,
           })
         }
@@ -42,7 +48,15 @@ function PlanPage() {
         </h1>
       </div>
 
-      <PlanDashboard />
+      <PlanDashboard
+        selectedDate={date}
+        onSelectedDateChange={(nextDate) =>
+          void navigate({
+            to: "/plan",
+            search: { date: nextDate, flash: undefined, flashType: undefined },
+          })
+        }
+      />
     </div>
   );
 }

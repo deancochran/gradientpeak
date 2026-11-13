@@ -18,8 +18,10 @@ import {
   formatShortDayLabel,
   getMonthKey,
   getTodayDateKey,
+  isValidDateKey,
   shiftDateKey,
 } from "../../lib/planning";
+import { CalendarProjectionCard } from "../calendar/calendar-projection-card";
 import { TrainingLoadPath } from "./training-load-path";
 
 export function getUpcomingScheduledWorkItems(
@@ -38,26 +40,55 @@ export function getScheduledWorkTypeLabel(item: CalendarProjectionItem): string 
   );
 }
 
-export function PlanDashboard() {
+function LoadValue({
+  label,
+  status,
+  value,
+}: {
+  label: string;
+  status: "complete" | "known_zero" | "partial" | "unavailable";
+  value: number | null;
+}) {
+  if (status === "unavailable" || value === null) {
+    return <p className="text-sm text-muted-foreground">{label}: unavailable</p>;
+  }
+  return (
+    <p className="text-sm text-muted-foreground">
+      {label}: {status === "partial" ? "~" : ""}
+      {Math.round(value * 10) / 10}
+      {status === "known_zero" ? " (zero)" : ""}
+    </p>
+  );
+}
+
+export function PlanDashboard({
+  onSelectedDateChange,
+  selectedDate: selectedDateFromRoute,
+}: {
+  onSelectedDateChange?: (date: string) => void;
+  selectedDate?: string;
+} = {}) {
   const profileQuery = api.profiles.get.useQuery();
   const planningTimezone = profileQuery.data?.planning_timezone ?? null;
-  const today = planningTimezone
+  const bootstrapToday = planningTimezone
     ? formatDateOnlyInTimeZone(new Date(), planningTimezone)
     : getTodayDateKey();
+  // Keep the request's selected date stable while the initial projection is loading.
+  // Its authoritative today then drives all temporal labels and goal boundaries.
+  const selectedDate =
+    selectedDateFromRoute && isValidDateKey(selectedDateFromRoute)
+      ? selectedDateFromRoute
+      : bootstrapToday;
   const planTabQuery = api.trainingPlans.getPlanTabProjection.useQuery(
     {
-      startDate: today,
-      endDate: shiftDateKey(today, 89),
+      startDate: shiftDateKey(selectedDate, -42),
+      endDate: shiftDateKey(selectedDate, 47),
     },
     { enabled: Boolean(profileQuery.data) },
   );
   const trainingPlansQuery = api.trainingPlans.list.useQuery({ ownerScope: "own", limit: 6 });
-  const upcomingEventsQuery = api.calendar.range.useQuery({
-    startDate: today,
-    endDateExclusive: shiftDateKey(today, 366),
-    includeAdhoc: false,
-    limit: 12,
-  });
+  const selectedDayQuery = api.calendar.day.useQuery({ date: selectedDate });
+  const today = planTabQuery.data?.today ?? bootstrapToday;
   const goalsQuery = api.goals.list.useQuery(
     {
       profile_id: profileQuery.data?.id ?? "00000000-0000-0000-0000-000000000000",
@@ -70,11 +101,18 @@ export function PlanDashboard() {
       enabled: Boolean(profileQuery.data?.id),
     },
   );
-  const upcomingEvents = useMemo(
-    () => getUpcomingScheduledWorkItems(upcomingEventsQuery.data?.items ?? []),
-    [upcomingEventsQuery.data?.items],
-  );
   const nextGoal = goalsQuery.data?.items[0] ?? null;
+  const selectedTimelineDay = useMemo(
+    () => planTabQuery.data?.timeline?.days.find((day) => day.date === selectedDate),
+    [planTabQuery.data?.timeline?.days, selectedDate],
+  );
+  const selectedDayItems = useMemo(
+    () =>
+      (selectedDayQuery.data?.projection.items ?? []).filter(
+        (item) => item.calendarDate === selectedDate && item.kind !== "goal",
+      ),
+    [selectedDate, selectedDayQuery.data?.projection.items],
+  );
   const profileUnavailable = profileQuery.isError || (profileQuery.isSuccess && !profileQuery.data);
   const profileLoading = profileQuery.isLoading;
   const trainingPathLoading = profileLoading || planTabQuery.isLoading;
@@ -83,7 +121,7 @@ export function PlanDashboard() {
 
   return (
     <>
-      {upcomingEventsQuery.isError || goalsQuery.isError ? (
+      {selectedDayQuery.isError || goalsQuery.isError ? (
         <div
           role="alert"
           className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/40 p-4"
@@ -94,7 +132,7 @@ export function PlanDashboard() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => void Promise.all([upcomingEventsQuery.refetch(), goalsQuery.refetch()])}
+            onClick={() => void Promise.all([selectedDayQuery.refetch(), goalsQuery.refetch()])}
           >
             Retry
           </Button>
@@ -112,7 +150,94 @@ export function PlanDashboard() {
         isLoading={trainingPathLoading}
         onRetry={() => void (profileUnavailable ? profileQuery.refetch() : planTabQuery.refetch())}
         projection={planTabQuery.data}
+        selectedDate={selectedDate}
+        onSelectedDateChange={onSelectedDateChange}
       />
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <CalendarDays className="h-4 w-4 text-muted-foreground" />
+            {selectedDate === today ? "Today" : formatShortDayLabel(selectedDate)}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {selectedTimelineDay ? (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {selectedDate <= today ? (
+                <LoadValue
+                  label="Observed Load"
+                  status={selectedTimelineDay.load.completedLoadStatus}
+                  value={selectedTimelineDay.load.completedLoad}
+                />
+              ) : null}
+              {selectedDate >= today ? (
+                <LoadValue
+                  label="Planned Load"
+                  status={selectedTimelineDay.load.plannedLoadStatus}
+                  value={selectedTimelineDay.load.plannedLoad}
+                />
+              ) : null}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Load is unavailable for this day.</p>
+          )}
+          {selectedDate === today ? (
+            selectedTimelineDay?.scheduledItems.find((item) => item.status !== "cancelled") ? (
+              <div className="flex flex-wrap items-center gap-2 rounded-xl border p-3">
+                <p className="text-sm">Next action: follow your scheduled session.</p>
+                <Button asChild size="sm">
+                  <Link
+                    to="/calendar/events/$eventId"
+                    params={{
+                      eventId:
+                        selectedTimelineDay.scheduledItems.find(
+                          (item) => item.status !== "cancelled",
+                        )?.id ?? "",
+                    }}
+                    search={{
+                      flash: undefined,
+                      flashType: undefined,
+                      month: getMonthKey(new Date(`${selectedDate}T12:00:00`)),
+                      resourceType: "planned_session",
+                      view: "agenda",
+                    }}
+                  >
+                    Open & follow session
+                  </Link>
+                </Button>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Next action: add or plan today’s work.
+              </p>
+            )
+          ) : null}
+          {selectedDayQuery.isLoading ? (
+            <p className="text-sm text-muted-foreground">Loading this day’s work...</p>
+          ) : selectedDayQuery.isError && !selectedDayQuery.data ? (
+            <p className="text-sm text-muted-foreground">This day’s work is unavailable.</p>
+          ) : selectedDayItems.length ? (
+            <div className="space-y-3">
+              {selectedDayItems.map((item) => (
+                <CalendarProjectionCard item={item} key={item.id} />
+              ))}
+            </div>
+          ) : (
+            <Button asChild size="sm" variant="outline">
+              <Link
+                to="/calendar/new"
+                search={{
+                  date: selectedDate,
+                  month: getMonthKey(new Date(`${selectedDate}T12:00:00`)),
+                  view: "month",
+                }}
+              >
+                Add to this day
+              </Link>
+            </Button>
+          )}
+        </CardContent>
+      </Card>
       <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
         <Card>
           <CardHeader>
@@ -175,60 +300,6 @@ export function PlanDashboard() {
         </Card>
       </div>
       <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CalendarDays className="h-4 w-4 text-muted-foreground" />
-              Upcoming scheduled work
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {upcomingEventsQuery.isLoading ? (
-              <p className="text-sm text-muted-foreground">Loading scheduled work...</p>
-            ) : upcomingEventsQuery.isError && !upcomingEventsQuery.data ? (
-              <p className="text-sm text-muted-foreground">Scheduled work is unavailable.</p>
-            ) : upcomingEvents.length > 0 ? (
-              <div className="space-y-3">
-                {upcomingEvents.slice(0, 8).map((event) => (
-                  <div key={event.id} className="rounded-xl border p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-medium">
-                          {event.title || event.plan?.name || "Untitled event"}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          {formatShortDayLabel(event.calendarDate)}
-                        </p>
-                      </div>
-                      <Badge variant="outline">{getScheduledWorkTypeLabel(event)}</Badge>
-                    </div>
-                    {event.kind === "planned_activity" && event.plannedSession ? (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Button asChild size="sm">
-                          <Link
-                            to="/calendar/events/$eventId"
-                            params={{ eventId: event.plannedSession.id }}
-                            search={{
-                              flash: undefined,
-                              flashType: undefined,
-                              month: getMonthKey(new Date(`${event.calendarDate}T12:00:00`)),
-                              resourceType: "planned_session",
-                              view: "agenda",
-                            }}
-                          >
-                            Open & follow session
-                          </Link>
-                        </Button>
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">No upcoming scheduled events yet.</p>
-            )}
-          </CardContent>
-        </Card>
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
@@ -311,8 +382,10 @@ export function PlanDashboard() {
           ) : trainingPlansQuery.data?.items?.length ? (
             <div className="flex flex-wrap gap-2">
               {trainingPlansQuery.data.items.map((plan) => (
-                <Badge key={plan.id} variant="outline">
-                  {plan.name}
+                <Badge asChild key={plan.id} variant="outline">
+                  <Link params={{ planId: plan.id }} to="/training-plans/$planId">
+                    {plan.name}
+                  </Link>
                 </Badge>
               ))}
             </div>
