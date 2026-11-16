@@ -10,10 +10,21 @@ let mockRecordingLifecycle: "idle" | "setup" | "active" = "idle";
 
 const ButtonHost = createButtonComponent();
 
+type PressableMockProps = React.PropsWithChildren<
+  { onPress?: () => void } & Record<string, unknown>
+>;
+type TabScreenProps = {
+  name: string;
+  options?: {
+    tabBarButton?: (props: { testID: string }) => React.ReactNode;
+    title?: string;
+  };
+};
+
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
-  TouchableOpacity: ({ children, onPress, ...props }: any) =>
+  TouchableOpacity: ({ children, onPress, ...props }: PressableMockProps) =>
     React.createElement("Pressable", { onPress, ...props }, children),
   View: createHost("View"),
 }));
@@ -21,11 +32,11 @@ jest.mock("react-native", () => ({
 jest.mock("expo-router", () => {
   const React = require("react");
 
-  function Tabs({ children }: any) {
+  function Tabs({ children }: React.PropsWithChildren) {
     return React.createElement(React.Fragment, null, children);
   }
 
-  Tabs.Screen = ({ name, options }: any) => {
+  Tabs.Screen = ({ name, options }: TabScreenProps) => {
     const tabButton = options?.tabBarButton
       ? options.tabBarButton({ testID: `tab-button-${name}` })
       : React.createElement("View", { testID: `tab-screen-${name}` });
@@ -67,7 +78,10 @@ jest.mock("lucide-react-native", () => ({
   CalendarDays: createHost("CalendarDays"),
   Circle: createHost("Circle"),
   Home: createHost("Home"),
+  Route: createHost("Route"),
+  Search: createHost("Search"),
   Target: createHost("Target"),
+  Users: createHost("Users"),
 }));
 
 jest.mock("@/lib/hooks/useAuth", () => ({
@@ -90,17 +104,19 @@ jest.mock("@/lib/navigation/useAppNavigate", () => ({
 
 jest.mock("@/lib/hooks/useActivityRecorder", () => ({
   __esModule: true,
-  useRecordingLifecycle: () => mockRecordingLifecycle,
+  useSessionView: () => ({ lifecycle: mockRecordingLifecycle }),
 }));
 
 jest.mock("@/lib/providers/ActivityRecorderProvider", () => ({
   __esModule: true,
-  useSharedActivityRecorder: () => ({}),
+  useActivityRecorderService: () => ({ service: {} }),
 }));
 
 jest.mock("@/lib/server-config", () => ({
   __esModule: true,
+  getServerConfig: () => ({ apiUrl: "http://localhost:3000" }),
   getReachableSupabaseStorageUrl: (path: string) => path,
+  subscribeServerConfig: () => jest.fn(),
 }));
 
 jest.mock("@/lib/performance", () => ({
@@ -113,7 +129,7 @@ jest.mock("@/lib/stores/activitySelectionStore", () => ({
   activitySelectionStore: { setSelection: setSelectionMock },
   defaultRecordLaunchPayload: () => ({
     launchSource: "record_tab",
-    category: "run",
+    activity_category: "run",
     gpsRecordingEnabled: true,
   }),
 }));
@@ -144,21 +160,23 @@ describe("tabs layout", () => {
     mockRecordingLifecycle = "idle";
   });
 
-  it("configures all primary tabs", () => {
-    renderNative(<TabsLayout />);
+  it("configures all primary tabs", async () => {
+    await renderNative(<TabsLayout />);
 
     expect(screen.getByText("Home")).toBeTruthy();
     expect(screen.getByText("Plan")).toBeTruthy();
     expect(screen.getByText("Record")).toBeTruthy();
-    expect(screen.getByText("Calendar")).toBeTruthy();
-    expect(screen.getByText("Profile")).toBeTruthy();
-    expect(screen.queryByText("Groups")).toBeNull();
+    expect(screen.getByText("Discover")).toBeTruthy();
+    expect(screen.getByText("Community")).toBeTruthy();
+    expect(screen.queryByText("Calendar")).toBeNull();
+    expect(screen.queryByText("Profile")).toBeNull();
+    expect(screen.queryByTestId("tab-config-trends")).toBeNull();
   });
 
-  it("routes the record tab through the navigation guard", () => {
-    renderNative(<TabsLayout />);
+  it("routes the record tab through the navigation guard", async () => {
+    await renderNative(<TabsLayout />);
 
-    fireEvent.press(screen.getByTestId("tab-button-record"));
+    await fireEvent.press(screen.getByTestId("tab-button-record"));
 
     expect(guardNavigationMock).toHaveBeenCalledTimes(1);
     expect(setSelectionMock).toHaveBeenCalledTimes(1);
@@ -166,21 +184,21 @@ describe("tabs layout", () => {
     expect(pushMock).not.toHaveBeenCalled();
   });
 
-  it("does not reset recording setup from the record tab", () => {
+  it("does not reset recording setup from the record tab", async () => {
     mockRecordingLifecycle = "setup";
-    renderNative(<TabsLayout />);
+    await renderNative(<TabsLayout />);
 
-    fireEvent.press(screen.getByTestId("tab-button-record"));
+    await fireEvent.press(screen.getByTestId("tab-button-record"));
 
     expect(setSelectionMock).not.toHaveBeenCalled();
     expect(navigateToMock).toHaveBeenCalledWith("/record");
   });
 
-  it("does not reset active recording from the record tab", () => {
+  it("does not reset active recording from the record tab", async () => {
     mockRecordingLifecycle = "active";
-    renderNative(<TabsLayout />);
+    await renderNative(<TabsLayout />);
 
-    fireEvent.press(screen.getByTestId("tab-button-record"));
+    await fireEvent.press(screen.getByTestId("tab-button-record"));
 
     expect(setSelectionMock).not.toHaveBeenCalled();
     expect(navigateToMock).toHaveBeenCalledWith("/record");

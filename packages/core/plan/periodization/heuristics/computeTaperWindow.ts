@@ -1,7 +1,7 @@
 import type { CalculatedParameter, EventDemand } from "../../../schemas/planning";
 import type { AthletePreferenceProfile } from "../../../schemas/settings/profile_settings";
+import { getActivityCategoryModelConfig } from "../activity-categories";
 import { TAPER_BASELINE_LOOKUP } from "../constants";
-import { getSportModelConfig } from "../sports";
 import { applyTaperStyleModifier } from "./applyPreferenceModifiers";
 
 export interface TaperWindowResolution {
@@ -18,16 +18,18 @@ export function computeTaperWindow(
     TAPER_BASELINE_LOOKUP.find(
       (entry) => demand.demand_duration_minutes <= entry.maxDurationMinutes,
     )?.baselineDays ?? 28;
-  const sportBounds = getSportModelConfig(demand.sport).taper_days;
+  const activityCategoryBounds = getActivityCategoryModelConfig(
+    demand.activity_category,
+  ).taper_days;
   const scaled = applyTaperStyleModifier(
     baseline,
     preferenceProfile.goal_strategy_preferences.taper_style_preference,
-    sportBounds.min,
-    sportBounds.max,
+    activityCategoryBounds.min,
+    activityCategoryBounds.max,
   );
   const roundedDays = Math.min(
-    sportBounds.max,
-    Math.max(sportBounds.min, Math.round(scaled.effective)),
+    activityCategoryBounds.max,
+    Math.max(activityCategoryBounds.min, Math.round(scaled.effective)),
   );
 
   return {
@@ -39,7 +41,7 @@ export function computeTaperWindow(
       rationale_codes: [
         ...scaled.rationale_codes,
         "taper_baseline_from_event_duration",
-        `sport_taper_bounds_${sportBounds.min}_${sportBounds.max}`,
+        `activity_category_taper_bounds_${activityCategoryBounds.min}_${activityCategoryBounds.max}`,
       ],
     },
     rationale_codes: ["taper_window_resolved"],

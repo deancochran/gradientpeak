@@ -1,12 +1,12 @@
 import type { ActivityDerivedZones, ActivityZoneEntry } from "../activity-analysis/contracts";
-import { getTrainingIntensityZone } from "../load/tss";
+import type { CommonLoadResult } from "../load/common-relative-load";
+import { getTrainingIntensityZone } from "../zones/intensity";
 
 export interface TrainingQualityActivityInput {
   started_at?: string;
   occurred_at?: string;
   start_time?: string;
-  tss?: number | null;
-  intensity_factor?: number | null;
+  common_load?: CommonLoadResult | null;
   zones?: Partial<ActivityDerivedZones> | null;
   power_zone_1_seconds?: number | null;
   power_zone_2_seconds?: number | null;
@@ -28,7 +28,7 @@ export interface TrainingQualityProfile {
   moderate_intensity_ratio: number;
   high_intensity_ratio: number;
   load_factor: number;
-  atl_extension_days: 0 | 1 | 2;
+  recent_load_extension_days: 0 | 1 | 2;
 }
 
 function clamp01(value: number): number {
@@ -73,8 +73,9 @@ function buildProfileFromRatios(input: {
   const moderate = clamp01(input.moderate);
   const high = clamp01(input.high);
 
-  const atl_extension_days: 0 | 1 | 2 = high >= 0.2 ? 2 : high >= 0.1 ? 1 : 0;
-  const load_factor = atl_extension_days === 2 ? 1.5 : atl_extension_days === 1 ? 1.25 : 1.0;
+  const recent_load_extension_days: 0 | 1 | 2 = high >= 0.2 ? 2 : high >= 0.1 ? 1 : 0;
+  const load_factor =
+    recent_load_extension_days === 2 ? 1.5 : recent_load_extension_days === 1 ? 1.25 : 1.0;
 
   return {
     source: input.source,
@@ -82,7 +83,7 @@ function buildProfileFromRatios(input: {
     moderate_intensity_ratio: Number(moderate.toFixed(3)),
     high_intensity_ratio: Number(high.toFixed(3)),
     load_factor,
-    atl_extension_days,
+    recent_load_extension_days,
   };
 }
 
@@ -105,6 +106,14 @@ function buildProfileFromIntensityFactor(intensityFactor: number): TrainingQuali
     default:
       return NEUTRAL_TRAINING_QUALITY_PROFILE;
   }
+}
+
+function knownCommonLoadIntensity(activity: TrainingQualityActivityInput): number | null {
+  const load = activity.common_load;
+  if ((load?.status !== "available" && load?.status !== "partial") || load.intensity === null) {
+    return null;
+  }
+  return Number.isFinite(load.intensity) && load.intensity > 0 ? load.intensity : null;
 }
 
 const NEUTRAL_TRAINING_QUALITY_PROFILE: TrainingQualityProfile = buildProfileFromRatios({
@@ -161,13 +170,8 @@ export function analyzeActivityIntensity(
     return buildProfileFromRatios({ source: "hr", low, moderate, high });
   }
 
-  if (
-    typeof activity.intensity_factor === "number" &&
-    Number.isFinite(activity.intensity_factor) &&
-    activity.intensity_factor > 0
-  ) {
-    return buildProfileFromIntensityFactor(activity.intensity_factor);
-  }
+  const intensity = knownCommonLoadIntensity(activity);
+  if (intensity !== null) return buildProfileFromIntensityFactor(intensity);
 
   return NEUTRAL_TRAINING_QUALITY_PROFILE;
 }
@@ -193,7 +197,12 @@ export function calculateRollingTrainingQuality(
     }
 
     const profile = analyzeActivityIntensity(activity);
-    const weight = Math.max(1, safeSeconds(activity.tss));
+    const weight = Math.max(
+      1,
+      activity.common_load?.status === "available" || activity.common_load?.status === "partial"
+        ? safeSeconds(activity.common_load.load)
+        : 0,
+    );
 
     weightedLow += profile.low_intensity_ratio * weight;
     weightedModerate += profile.moderate_intensity_ratio * weight;
@@ -217,10 +226,10 @@ export function calculateRollingTrainingQuality(
   return buildProfileFromRatios({ source, low, moderate, high });
 }
 
-export function getIntensityAdjustedATLTimeConstant(
+export function getIntensityAdjustedRecentLoadTimeConstant(
   baseTimeConstant: number,
   trainingQuality?: TrainingQualityProfile,
 ): number {
-  const extension = trainingQuality?.atl_extension_days ?? 0;
+  const extension = trainingQuality?.recent_load_extension_days ?? 0;
   return Math.max(1, Math.round(baseTimeConstant + extension));
 }
