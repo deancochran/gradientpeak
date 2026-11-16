@@ -6,6 +6,8 @@ import { Spinner } from "../loading/index.web";
 import type { SearchFieldWebProps } from "./shared";
 
 function SearchField({
+  "aria-controls": ariaControls,
+  "aria-describedby": ariaDescribedBy,
   accessibilityLabel,
   className,
   clearTestId,
@@ -29,6 +31,8 @@ function SearchField({
         size={18}
       />
       <Input
+        aria-controls={ariaControls}
+        aria-describedby={ariaDescribedBy}
         accessibilityLabel={accessibilityLabel}
         className={cn(
           "pr-10 pl-10 [&::-webkit-search-cancel-button]:appearance-none",
