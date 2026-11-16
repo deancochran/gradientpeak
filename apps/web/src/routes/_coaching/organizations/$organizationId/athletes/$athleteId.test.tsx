@@ -28,6 +28,7 @@ const state = vi.hoisted(() => ({
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: React.ReactNode }) => <a href="/athletes">{children}</a>,
+  useRouter: () => ({ invalidate: vi.fn() }),
   useRouterState: ({ select }: { select: (state: { location: { pathname: string } }) => string }) =>
     select({ location: { pathname: state.pathname } }),
   createFileRoute: () => (options: object) => ({
