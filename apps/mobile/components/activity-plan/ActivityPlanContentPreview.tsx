@@ -1,127 +1,80 @@
-import { decodePolyline, formatDurationSec, type IntervalStepV2 } from "@repo/core";
 import type {
-  ActivityPlanStructureV2,
-  IntensityTargetV2,
-} from "@repo/core/schemas/activity_plan_v2";
+  ActivityPlanDraftRepeat,
+  ActivityPlanDraftStep,
+  ActivityPlanDuration,
+  ActivityPlanPresentationModel,
+  ActivityPlanStep,
+  ActivityPlanStructure,
+  ActivityPlanTarget,
+  AthletePerformanceTargetFacts,
+  CanonicalActivityCategory,
+} from "@repo/core";
+import {
+  activityPlanTargetSchema,
+  consolidateActivityPlanText,
+  deriveActivityPlanPresentation,
+  deriveEffectiveActivityPlanStepLabel,
+  getActivityPlanSessionFlowTargetPresentations,
+  kilometersPerHourToPaceSeconds,
+  orderActivityPlanTargetsForPresentation,
+  resolveActivityPlanSessionFlow,
+  resolveActivityPlanTargetPresentation,
+} from "@repo/core";
+import { formatPace } from "@repo/core/calculations";
+import { formatDistance } from "@repo/core/units";
+import { formatDurationSec } from "@repo/core/utils/dates";
+import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
 import { useMemo } from "react";
 import { Pressable, View } from "react-native";
-import { ElevationProfileChart } from "@/components/activity/charts/ElevationProfileChart";
-import { TimelineChart } from "@/components/activity-plan/workout/TimelineChart";
-import { StaticRouteMapPreview } from "@/components/shared/StaticRouteMapPreview";
-import {
-  getActivityPlanRoute,
-  getAuthoritativeActivityPlanMetrics,
-} from "@/lib/activityPlanMetrics";
-import type { DecompressedStream } from "@/lib/utils/streamDecompression";
+import { TimelineChart } from "@/components/activity-plan/activity/TimelineChart";
 
 type ActivityPlanPreviewLike = {
-  estimated_duration_minutes?: number | null;
-  authoritative_metrics?: {
-    estimated_duration?: number | null;
-    estimated_tss?: number | null;
-    intensity_factor?: number | null;
-    estimated_distance?: number | null;
-  } | null;
-  route?: {
-    distance?: number | null;
-    ascent?: number | null;
-    descent?: number | null;
-  } | null;
-  route_id?: string | null;
   structure?: unknown;
-};
-
-type RouteLike = {
-  name?: string | null;
-  polyline?: string | null;
-  total_ascent?: number | null;
-  total_descent?: number | null;
-  total_distance?: number | null;
-};
-
-type FullRouteLike = {
-  coordinates?: Array<{ latitude: number; longitude: number; altitude?: number }>;
 };
 
 type ActivityPlanContentPreviewProps = {
   compact?: boolean;
-  durationLabel?: string | null;
-  intensityFactor?: number | null;
-  onRoutePress?: (() => void) | null;
   plan: ActivityPlanPreviewLike | null | undefined;
-  route?: RouteLike | null;
-  routeFull?: FullRouteLike | null;
-  showRoutePreview?: boolean;
+  presentation?: ActivityPlanPresentationModel | null;
+  personalizeTargets?: boolean;
+  personalizationAvailable?: boolean;
+  personalizationFactsLoading?: boolean;
+  performanceTargets?: AthletePerformanceTargetFacts | null;
+  onPersonalizeTargetsChange?: (enabled: boolean) => void;
+  showPersonalizationControl?: boolean;
   size?: "small" | "medium" | "large";
   testIDPrefix?: string;
-  tss?: number | null;
 };
 
-function readMetric(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (typeof value === "string" && value.trim().length > 0) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-
-  return null;
+function resolvedTargets(targets: readonly unknown[]): ActivityPlanTarget[] {
+  return targets.flatMap((target) => {
+    const parsed = activityPlanTargetSchema.safeParse(target);
+    return parsed.success ? [parsed.data] : [];
+  });
 }
 
-function getIntervals(structure: unknown): Array<{ repetitions: number; steps: IntervalStepV2[] }> {
-  if (!structure || typeof structure !== "object") return [];
-  const maybeIntervals = (structure as { intervals?: unknown }).intervals;
-  return Array.isArray(maybeIntervals)
-    ? (maybeIntervals as Array<{ repetitions: number; steps: IntervalStepV2[] }>)
-    : [];
-}
-
-function getTimelineStructure(structure: unknown): ActivityPlanStructureV2 | null {
-  if (!structure || typeof structure !== "object") {
-    return null;
-  }
-
-  const maybeIntervals = (structure as { intervals?: unknown }).intervals;
-  return Array.isArray(maybeIntervals) ? (structure as ActivityPlanStructureV2) : null;
-}
-
-function getStructure(structure: unknown): ActivityPlanStructureV2 | null {
-  if (!structure || typeof structure !== "object") {
-    return null;
-  }
-
-  const maybeIntervals = (structure as { intervals?: unknown }).intervals;
-  return Array.isArray(maybeIntervals) ? (structure as ActivityPlanStructureV2) : null;
-}
-
-function flattenSteps(structure: unknown): IntervalStepV2[] {
-  const intervals = getIntervals(structure);
-  if (intervals.length === 0) return [];
-
-  const steps: IntervalStepV2[] = [];
-  for (const interval of intervals) {
-    for (let iteration = 0; iteration < interval.repetitions; iteration += 1) {
-      for (const step of interval.steps) {
-        steps.push(step);
+function flattenSteps(structure: ActivityPlanStructure | null): ActivityPlanStep[] {
+  if (!structure) return [];
+  const steps: ActivityPlanStep[] = [];
+  for (const item of structure.items) {
+    if (item.type === "step") steps.push(item);
+    else
+      for (let iteration = 0; iteration < item.count; iteration += 1) {
+        steps.push(...item.steps);
       }
-    }
   }
-
   return steps;
 }
 
-function formatStepDuration(duration: any): string | null {
-  if (!duration || typeof duration !== "object") return null;
-
+function formatStepDuration(duration: ActivityPlanDuration | null | undefined): string | null {
+  if (!duration) return null;
   if (duration.type === "time" && typeof duration.seconds === "number") {
     return formatDurationSec(duration.seconds);
   }
 
   if (duration.type === "distance" && typeof duration.meters === "number") {
-    return `${(duration.meters / 1000).toFixed(2)} km`;
+    return formatDistance(duration.meters);
   }
 
   if (duration.type === "repetitions" && typeof duration.count === "number") {
@@ -135,297 +88,407 @@ function formatStepDuration(duration: any): string | null {
   return null;
 }
 
-function formatTarget(target: IntensityTargetV2): string {
-  return `${target.intensity}${target.type}`;
-}
-
-function RouteMetricCell({ label, value }: { label: string; value: string }) {
+/** Compact canonical V5 step readout used by both the authoring outline and previews. */
+export function ActivityPlanStepPreview({
+  step,
+  activityCategory,
+  personalizeTargets = false,
+  performanceTargets,
+  asOf = new Date().toISOString(),
+}: {
+  step: Pick<
+    ActivityPlanStep | ActivityPlanDraftStep,
+    "instructions" | "name" | "duration" | "targets"
+  >;
+  activityCategory: CanonicalActivityCategory;
+  personalizeTargets?: boolean;
+  performanceTargets?: AthletePerformanceTargetFacts | null;
+  asOf?: string;
+}) {
+  const label = step.name ?? "Step";
+  const duration = formatStepDuration(step.duration);
+  const targetLabels = orderActivityPlanTargetsForPresentation(
+    resolvedTargets(step.targets ?? []),
+  ).map((target) =>
+    formatPresentedTarget({
+      target,
+      activityCategory,
+      fallback: formatTarget({
+        target,
+        activityCategory,
+        personalizeTargets,
+        ...(performanceTargets !== undefined ? { performanceTargets } : {}),
+        asOf,
+      }),
+    }),
+  );
+  const detailSummary = [
+    duration,
+    targetLabels.length > 0 ? `at ${targetLabels.join(" · ")}` : null,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(" ");
   return (
-    <View className="flex-1 items-center gap-0.5">
-      <Text className="text-[10px] text-muted-foreground">{label}</Text>
-      <Text className="text-[11px] font-semibold text-foreground" numberOfLines={1}>
-        {value}
-      </Text>
+    <View className="gap-1">
+      <Text className="font-medium text-foreground">{label}</Text>
+      {detailSummary ? (
+        <Text className="text-sm text-muted-foreground">{detailSummary}</Text>
+      ) : (
+        <Text className="text-sm text-destructive">Duration required</Text>
+      )}
+      {step.instructions ? (
+        <Text className="text-sm text-muted-foreground">{step.instructions}</Text>
+      ) : null}
     </View>
   );
 }
 
-function calculateCoordinateDistance(
-  left: { latitude: number; longitude: number },
-  right: { latitude: number; longitude: number },
-): number {
-  const earthRadiusMeters = 6371e3;
-  const lat1 = (left.latitude * Math.PI) / 180;
-  const lat2 = (right.latitude * Math.PI) / 180;
-  const deltaLat = ((right.latitude - left.latitude) * Math.PI) / 180;
-  const deltaLng = ((right.longitude - left.longitude) * Math.PI) / 180;
-
-  const a =
-    Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLng / 2) * Math.sin(deltaLng / 2);
-
-  return earthRadiusMeters * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+function formatTarget(input: {
+  target: ActivityPlanTarget;
+  activityCategory: CanonicalActivityCategory;
+  personalizeTargets: boolean;
+  performanceTargets?: AthletePerformanceTargetFacts | null;
+  asOf: string;
+}): string {
+  return resolveActivityPlanTargetPresentation({
+    target: input.target,
+    activityCategory: input.activityCategory,
+    ...(input.personalizeTargets ? { performanceTargets: input.performanceTargets } : {}),
+    asOf: input.asOf,
+  }).label;
 }
 
-function buildRouteStreams(
-  coordinates: Array<{ latitude: number; longitude: number; altitude?: number }> | undefined,
-): { distanceStream: DecompressedStream; elevationStream: DecompressedStream } | null {
-  if (!coordinates || coordinates.length < 2) {
-    return null;
-  }
+/** Running prescriptions use the editor's whole-second pace notation. */
+function formatPresentedTarget(input: {
+  target: ActivityPlanTarget;
+  activityCategory: CanonicalActivityCategory;
+  fallback: string;
+}): string {
+  if (input.activityCategory !== "run" || input.target.type !== "speed") return input.fallback;
+  return `${formatPace(kilometersPerHourToPaceSeconds(input.target.intensity))}/km`;
+}
 
-  const elevatedCoordinates = coordinates.filter((point) => typeof point.altitude === "number");
-  if (elevatedCoordinates.length < 2) {
-    return null;
-  }
+function normalizeLabel(value: string | null | undefined): string {
+  return (
+    value
+      ?.trim()
+      .normalize("NFKC")
+      .toLocaleLowerCase()
+      .replace(/[^\p{L}\p{M}\p{N}]+/gu, " ")
+      .trim() ?? ""
+  );
+}
 
-  const distanceValues: number[] = [];
-  const elevationValues: number[] = [];
-  const timestamps: number[] = [];
-  let cumulativeDistance = 0;
+type ActivityPlanRepeatStepsProps = {
+  activityCategory: CanonicalActivityCategory;
+  asOf?: string;
+  repeat: ActivityPlanDraftRepeat;
+  performanceTargets?: AthletePerformanceTargetFacts | null;
+  personalizeTargets?: boolean;
+  onStepPress?: (stepId: string) => void;
+  onDurationPress?: (stepId: string) => void;
+  onTargetPress?: (stepId: string, targetIndex: number) => void;
+  /** A parent interval heading already provides the sole-step identity. */
+  suppressStepLabel?: string;
+};
 
-  elevatedCoordinates.forEach((point, index) => {
-    if (index > 0) {
-      cumulativeDistance += calculateCoordinateDistance(elevatedCoordinates[index - 1]!, point);
-    }
+/**
+ * The single app-owned seam for readable authored steps. Detail and authoring
+ * both use it so targets, units, and optional instructions stay in parity.
+ */
+export function ActivityPlanRepeatSteps({
+  activityCategory,
+  asOf = new Date().toISOString(),
+  repeat,
+  performanceTargets,
+  personalizeTargets = false,
+  onStepPress,
+  onDurationPress,
+  onTargetPress,
+  suppressStepLabel,
+}: ActivityPlanRepeatStepsProps) {
+  const sessionFlowResolution = useMemo(
+    () =>
+      resolveActivityPlanSessionFlow({
+        structure: {
+          version: 5,
+          activity_category: activityCategory,
+          items: [repeat],
+        },
+        ...(personalizeTargets && performanceTargets ? { performanceTargets } : {}),
+        personalize: personalizeTargets,
+      }),
+    [activityCategory, repeat, performanceTargets, personalizeTargets],
+  );
 
-    distanceValues.push(cumulativeDistance);
-    elevationValues.push(point.altitude as number);
-    timestamps.push(index);
-  });
+  return (
+    <View className="gap-2">
+      {repeat.steps.map((step, stepIndex) => {
+        const effectiveStepLabel = deriveEffectiveActivityPlanStepLabel({
+          activityCategory,
+          step: {
+            name: step.name,
+            targets: resolvedTargets(step.targets ?? []),
+          },
+        });
+        const stepLabel =
+          normalizeLabel(effectiveStepLabel) === normalizeLabel(suppressStepLabel)
+            ? null
+            : effectiveStepLabel;
+        const targetLabels = getActivityPlanSessionFlowTargetPresentations(
+          sessionFlowResolution,
+          step.id,
+        );
+        // Display order is semantic, while the draft editor is addressed by its
+        // authored array index. Preserve that identity before sorting so a tap
+        // always repairs the exact target the athlete selected.
+        const resolvedTargetEntries = (step.targets ?? []).flatMap((rawTarget, rawIndex) => {
+          const parsed = activityPlanTargetSchema.safeParse(rawTarget);
+          return parsed.success ? [{ rawIndex, rawTarget, target: parsed.data }] : [];
+        });
+        const resolvedTargetEntryByReference = new Map(
+          resolvedTargetEntries.map((entry) => [entry.target, entry]),
+        );
+        const targets = orderActivityPlanTargetsForPresentation(
+          resolvedTargetEntries.map((entry) => entry.target),
+        )
+          .map((target, presentationIndex) => {
+            const entry = resolvedTargetEntryByReference.get(target);
+            if (!entry) return null;
+            return {
+              label: formatPresentedTarget({
+                target,
+                activityCategory,
+                fallback:
+                  targetLabels[presentationIndex]?.label ??
+                  formatTarget({
+                    target,
+                    activityCategory,
+                    personalizeTargets,
+                    ...(performanceTargets !== undefined ? { performanceTargets } : {}),
+                    asOf,
+                  }),
+              }),
+              rawIndex: entry.rawIndex,
+              rawTarget: entry.rawTarget,
+            };
+          })
+          .filter(
+            (
+              target,
+            ): target is { label: string; rawIndex: number; rawTarget: ActivityPlanTarget } =>
+              target !== null,
+          );
+        const duration = formatStepDuration(step.duration);
+        const detailSummary = [
+          duration,
+          targets.length > 0 ? `at ${targets.map((target) => target.label).join(" · ")}` : null,
+        ]
+          .filter((value): value is string => Boolean(value))
+          .join(" ");
+        const instructions = consolidateActivityPlanText(
+          step.instructions,
+          undefined,
+          "Instructions",
+        );
 
-  return {
-    distanceStream: {
-      type: "distance",
-      dataType: "float",
-      values: distanceValues,
-      timestamps,
-      sampleCount: distanceValues.length,
-    },
-    elevationStream: {
-      type: "elevation",
-      dataType: "float",
-      values: elevationValues,
-      timestamps,
-      sampleCount: elevationValues.length,
-    },
-  };
+        return (
+          <View
+            key={step.id || `${repeat.id}-${stepIndex}`}
+            className={stepIndex > 0 ? "mt-3 gap-1.5" : "gap-1.5"}
+          >
+            {stepLabel ? (
+              <Pressable
+                accessibilityRole={onStepPress ? "button" : undefined}
+                accessibilityLabel={onStepPress ? `Edit step ${stepLabel}` : undefined}
+                onPress={onStepPress ? () => onStepPress(step.id) : undefined}
+              >
+                <Text className="text-base font-semibold leading-5 text-foreground">
+                  {stepLabel}
+                </Text>
+              </Pressable>
+            ) : null}
+            {detailSummary ? (
+              onDurationPress || onTargetPress ? (
+                <View className="flex-row flex-wrap gap-1">
+                  {duration ? (
+                    <Pressable
+                      accessibilityRole={onDurationPress ? "button" : undefined}
+                      accessibilityLabel={
+                        onDurationPress ? `Edit duration for ${stepLabel ?? "step"}` : undefined
+                      }
+                      onPress={onDurationPress ? () => onDurationPress(step.id) : undefined}
+                    >
+                      <Text className="text-sm leading-5 text-foreground">{duration}</Text>
+                    </Pressable>
+                  ) : null}
+                  {targets.map((target, targetIndex) => (
+                    <Pressable
+                      key={`${step.id}-${target.rawIndex}`}
+                      accessibilityRole={onTargetPress ? "button" : undefined}
+                      accessibilityLabel={
+                        onTargetPress
+                          ? `Edit ${target.label} for ${stepLabel ?? "step"}`
+                          : undefined
+                      }
+                      onPress={
+                        onTargetPress
+                          ? () => {
+                              const authoredTarget = step.targets?.[target.rawIndex];
+                              // A presentation sort must never turn into a stale or
+                              // positional editor address. The raw target reference and
+                              // its type must still identify this exact authored slot.
+                              if (
+                                authoredTarget !== target.rawTarget ||
+                                authoredTarget.type !== target.rawTarget.type
+                              )
+                                return;
+                              onTargetPress(step.id, target.rawIndex);
+                            }
+                          : undefined
+                      }
+                    >
+                      <Text className="text-sm leading-5 text-foreground">
+                        {targetIndex === 0 ? "at" : "·"}
+                        {target.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : (
+                <Text className="text-sm leading-5 text-foreground">{detailSummary}</Text>
+              )
+            ) : null}
+            {instructions ? (
+              <Text className="text-sm leading-5 text-muted-foreground">{instructions}</Text>
+            ) : null}
+          </View>
+        );
+      })}
+    </View>
+  );
 }
 
 export function ActivityPlanContentPreview({
   compact = false,
-  durationLabel,
-  intensityFactor,
-  onRoutePress,
   plan,
-  route,
-  routeFull,
-  showRoutePreview = true,
+  personalizeTargets = false,
+  personalizationAvailable = true,
+  personalizationFactsLoading = false,
+  performanceTargets,
+  onPersonalizeTargetsChange,
+  presentation,
+  showPersonalizationControl = false,
   size,
   testIDPrefix,
-  tss,
 }: ActivityPlanContentPreviewProps) {
   const resolvedSize = size ?? (compact ? "small" : "large");
-  const authoritativeMetrics = getAuthoritativeActivityPlanMetrics(plan);
-  const planRoute = getActivityPlanRoute(plan);
-  const estimatedDurationSeconds = readMetric(authoritativeMetrics.estimated_duration);
-  const estimatedDurationMinutes = readMetric(plan?.estimated_duration_minutes);
-  const estimatedTss = readMetric(authoritativeMetrics.estimated_tss);
-  const routeDistanceMeters = readMetric(route?.total_distance ?? planRoute.distance);
-  const routeAscentMeters = readMetric(route?.total_ascent ?? planRoute.ascent);
-  const routeDescentMeters = readMetric(route?.total_descent ?? planRoute.descent);
-  const structure = useMemo(() => getStructure(plan?.structure), [plan?.structure]);
-  const timelineStructure = useMemo(() => getTimelineStructure(plan?.structure), [plan?.structure]);
-  const steps = useMemo(() => flattenSteps(plan?.structure), [plan?.structure]);
-  const routeCoordinates = useMemo(
+  const sessionFlowResolution = useMemo(
     () =>
-      showRoutePreview && resolvedSize !== "small" && route?.polyline
-        ? decodePolyline(route.polyline)
-        : null,
-    [resolvedSize, route?.polyline, showRoutePreview],
+      resolveActivityPlanSessionFlow({
+        structure: plan?.structure,
+        ...(personalizeTargets && performanceTargets ? { performanceTargets } : {}),
+        personalize: personalizeTargets,
+      }),
+    [performanceTargets, personalizeTargets, plan?.structure],
   );
-  const routeStreams = useMemo(
-    () => buildRouteStreams(routeFull?.coordinates),
-    [routeFull?.coordinates],
+  const timelinePresentation = useMemo(
+    () =>
+      sessionFlowResolution.authoredStructure
+        ? deriveActivityPlanPresentation(sessionFlowResolution.authoredStructure)
+        : (presentation ?? deriveActivityPlanPresentation(plan?.structure)),
+    [plan?.structure, presentation, sessionFlowResolution.authoredStructure],
   );
-  const hasTimeline = getIntervals(plan?.structure).length > 0;
+  const structure = sessionFlowResolution.structure ?? presentation?.structure ?? null;
+  const steps = useMemo(() => flattenSteps(structure), [structure]);
+  const hasTimeline = Boolean(timelinePresentation?.occurrences.length);
   const maxVisibleSteps = resolvedSize === "small" ? 2 : resolvedSize === "medium" ? 3 : 4;
   const visibleSteps = steps.slice(0, maxVisibleSteps);
-  const hasMetrics =
-    estimatedDurationSeconds !== null ||
-    estimatedDurationMinutes !== null ||
-    !!durationLabel ||
-    estimatedTss !== null ||
-    typeof tss === "number" ||
-    typeof intensityFactor === "number" ||
-    steps.length > 0 ||
-    !!plan?.route_id ||
-    routeDistanceMeters !== null ||
-    !!route?.name;
+  const hasSessionFlow = visibleSteps.length > 0 && resolvedSize === "large";
+  const asOf = performanceTargets?.asOf ?? new Date().toISOString();
+  const factsPending = personalizationFactsLoading && !sessionFlowResolution.eligibility.eligible;
+  const personalizationDisabled =
+    factsPending || !personalizationAvailable || !sessionFlowResolution.eligibility.eligible;
 
-  if (
-    !plan ||
-    (!hasMetrics &&
-      !hasTimeline &&
-      visibleSteps.length === 0 &&
-      !(showRoutePreview && routeCoordinates))
-  ) {
+  if (!plan || (!hasTimeline && !hasSessionFlow)) {
     return null;
   }
 
   return (
     <View className={resolvedSize === "small" ? "gap-3" : "gap-4"} testID={testIDPrefix}>
       {hasTimeline ? (
-        <View className="rounded-2xl bg-muted/30 px-3 py-3">
-          <View
-            className="overflow-hidden rounded-xl"
-            testID={testIDPrefix ? `${testIDPrefix}-timeline` : undefined}
-          >
-            {timelineStructure ? (
-              <TimelineChart
-                structure={timelineStructure}
-                height={resolvedSize === "small" ? 72 : resolvedSize === "medium" ? 92 : 104}
-                compact={resolvedSize !== "large"}
-              />
-            ) : null}
-          </View>
+        <View
+          className="overflow-hidden rounded-xl"
+          testID={testIDPrefix ? `${testIDPrefix}-timeline` : undefined}
+        >
+          {structure ? (
+            <TimelineChart
+              presentation={timelinePresentation}
+              height={resolvedSize === "small" ? 72 : resolvedSize === "medium" ? 92 : 104}
+              compact={resolvedSize !== "large"}
+            />
+          ) : null}
         </View>
-      ) : routeStreams && resolvedSize !== "large" ? (
-        <ElevationProfileChart
-          elevationStream={routeStreams.elevationStream}
-          distanceStream={routeStreams.distanceStream}
-          title={resolvedSize === "small" ? undefined : "Elevation Profile"}
-          height={resolvedSize === "small" ? 88 : 150}
-          showStats={resolvedSize !== "small"}
-        />
       ) : null}
 
-      {showRoutePreview &&
-      route &&
-      routeCoordinates &&
-      routeCoordinates.length > 0 &&
-      resolvedSize !== "small" ? (
-        <Pressable
-          onPress={onRoutePress ?? undefined}
-          disabled={!onRoutePress}
-          className="overflow-hidden rounded-2xl border border-border bg-card"
-          testID={testIDPrefix ? `${testIDPrefix}-route-card` : undefined}
-        >
-          <View className="px-3 py-3 border-b border-border bg-card">
-            {route.name ? (
-              <Text className="text-sm font-semibold text-foreground mb-2">{route.name}</Text>
-            ) : null}
-            <View className="rounded-lg bg-muted/30 px-2.5 py-2">
-              <View className="flex-row justify-between gap-2">
-                {typeof routeDistanceMeters === "number" ? (
-                  <RouteMetricCell
-                    label="Distance"
-                    value={`${(routeDistanceMeters / 1000).toFixed(1)} km`}
-                  />
-                ) : null}
-                <RouteMetricCell
-                  label="Climb"
-                  value={
-                    typeof routeAscentMeters === "number" && routeAscentMeters > 0
-                      ? `${routeAscentMeters}m`
-                      : "--"
-                  }
-                />
-                <RouteMetricCell
-                  label="Descent"
-                  value={
-                    typeof routeDescentMeters === "number" && routeDescentMeters > 0
-                      ? `${routeDescentMeters}m`
-                      : "--"
-                  }
+      {hasSessionFlow ? (
+        <View className="rounded-2xl bg-muted/30 px-3 py-3">
+          <View className="flex-row items-start justify-between gap-3">
+            <View className="min-w-0 flex-1">
+              <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Session Flow
+              </Text>
+            </View>
+            {showPersonalizationControl && onPersonalizeTargetsChange ? (
+              <View className="flex-row items-center gap-2">
+                <Text className="text-xs font-medium text-foreground">Calculated targets</Text>
+                <Switch
+                  accessibilityLabel="Calculated targets"
+                  checked={personalizeTargets && !personalizationDisabled}
+                  disabled={personalizationDisabled}
+                  onCheckedChange={onPersonalizeTargetsChange}
+                  testID="activity-plan-personalize-targets"
                 />
               </View>
-            </View>
+            ) : null}
           </View>
-          <View className="h-36">
-            <StaticRouteMapPreview coordinates={routeCoordinates} strokeColor="#3b82f6" />
-          </View>
-        </Pressable>
-      ) : null}
-
-      {routeStreams && resolvedSize === "large" ? (
-        <ElevationProfileChart
-          elevationStream={routeStreams.elevationStream}
-          distanceStream={routeStreams.distanceStream}
-          title="Elevation Profile"
-          height={150}
-          showStats={true}
-        />
-      ) : null}
-
-      {visibleSteps.length > 0 && resolvedSize === "large" ? (
-        <View className="rounded-2xl bg-muted/30 px-3 py-3">
-          <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Session Flow
-          </Text>
-          <View className="mt-3 gap-2">
-            {structure?.intervals.slice(0, structure.intervals.length).map((interval, index) => (
-              <View
-                key={interval.id || `${interval.name}-${index}`}
-                className="rounded-xl border border-border/60 bg-background px-3 py-3"
-              >
-                <View className="flex-row items-start justify-between gap-3">
-                  <View className="flex-1 gap-1">
-                    <Text className="text-sm font-medium text-foreground">
-                      {interval.name || `Block ${index + 1}`}
-                    </Text>
-                    {interval.notes ? (
-                      <Text className="text-xs leading-4 text-muted-foreground">
-                        {interval.notes}
-                      </Text>
-                    ) : null}
-                  </View>
-                  {interval.repetitions > 1 ? (
-                    <Text className="text-xs text-muted-foreground">
-                      Repeat {interval.repetitions}x
+          <View className="mt-2">
+            {structure?.items.map((item, index) => {
+              const isRepeat = item.type === "repeat";
+              return (
+                <View
+                  key={item.id}
+                  className={index === 0 ? "py-2" : "border-t border-border/60 py-3"}
+                >
+                  {isRepeat ? (
+                    <Text className="text-sm font-semibold text-muted-foreground">
+                      Repeat × {item.count}
                     </Text>
                   ) : null}
+                  <View
+                    className={`${isRepeat ? "mt-2 border-l-2 border-primary/30 pl-3" : ""} gap-2`}
+                  >
+                    {isRepeat ? (
+                      <ActivityPlanRepeatSteps
+                        activityCategory={structure.activity_category}
+                        asOf={asOf}
+                        repeat={item}
+                        {...(performanceTargets !== undefined ? { performanceTargets } : {})}
+                        personalizeTargets={personalizeTargets}
+                      />
+                    ) : (
+                      <ActivityPlanStepPreview
+                        activityCategory={structure.activity_category}
+                        step={item}
+                        asOf={asOf}
+                        {...(performanceTargets !== undefined ? { performanceTargets } : {})}
+                        personalizeTargets={personalizeTargets}
+                      />
+                    )}
+                  </View>
                 </View>
-                <View className="mt-3 gap-2.5">
-                  {interval.steps.map((step, stepIndex) => {
-                    const stepDurationLabel = formatStepDuration(step.duration);
-                    const targetSummary = step.targets?.length
-                      ? step.targets.map((target) => formatTarget(target)).join(" · ")
-                      : null;
-
-                    return (
-                      <View key={step.id || `${interval.id}-${stepIndex}`} className="gap-1.5">
-                        <View className="flex-row items-start justify-between gap-3">
-                          <Text className="flex-1 text-sm font-medium text-foreground">
-                            {step.name || `Step ${stepIndex + 1}`}
-                          </Text>
-                          {stepDurationLabel ? (
-                            <Text className="text-xs text-muted-foreground">
-                              {stepDurationLabel}
-                            </Text>
-                          ) : null}
-                        </View>
-                        {targetSummary ? (
-                          <Text className="text-xs font-medium text-foreground/80">
-                            {targetSummary}
-                          </Text>
-                        ) : null}
-                        {step.description ? (
-                          <Text className="text-xs leading-4 text-muted-foreground">
-                            {step.description}
-                          </Text>
-                        ) : null}
-                        {step.notes ? (
-                          <Text className="text-xs leading-4 text-muted-foreground">
-                            {step.notes}
-                          </Text>
-                        ) : null}
-                      </View>
-                    );
-                  })}
-                </View>
-              </View>
-            ))}
+              );
+            })}
           </View>
         </View>
       ) : null}

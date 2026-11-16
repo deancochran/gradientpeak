@@ -1,0 +1,68 @@
+appId: com.deancochran.gradientpeak.dev
+name: Native athlete opens their plan library and creates an executable easy activity plan
+---
+# Navigation boundary: enter the composer through visible app controls. Every
+# durable plan field is entered through the native composer UI.
+- tapOn:
+    id: tab-button-plan
+- extendedWaitUntil:
+    visible:
+      id: app-header-avatar-button
+    timeout: 30000
+- tapOn:
+    id: app-header-avatar-button
+- extendedWaitUntil:
+    visible:
+      id: profile-tab-activity-plans-button
+    timeout: 30000
+- tapOn:
+    id: profile-tab-activity-plans-button
+- extendedWaitUntil:
+    visible:
+      id: activity-plans-list-create-trigger
+    timeout: 30000
+- tapOn:
+    id: activity-plans-list-create-trigger
+- extendedWaitUntil:
+    visible: "Edit plan name"
+    timeout: 30000
+- tapOn: "Edit plan name"
+- tapOn: "Plan name"
+- inputText: ${MAESTRO_ACCEPTANCE_PLAN_NAME}
+- hideKeyboard
+- tapOn:
+    text: "KEEP EDITING"
+    optional: true
+- extendedWaitUntil:
+    notVisible: "usePostHog was called without a PostHog client"
+    timeout: 15000
+# Select the plan's run category through the composer rather than injecting it
+# in a route parameter.
+- tapOn: "Other"
+# Category options have semantic IDs even when rendered by the portal.
+- tapOn:
+    id: activity-category-option-run
+- tapOn:
+    id: activity-plan-add-step
+- extendedWaitUntil:
+    visible:
+      id: step-editor-modal
+    timeout: 15000
+- tapOn: "Duration type"
+- tapOn: "Time"
+- tapOn: "Duration value"
+- extendedWaitUntil:
+    visible: "Minutes"
+    timeout: 10000
+- tapOn: "Duration value minutes"
+- tapOn: "1"
+- tapOn: "Done Duration value"
+- tapOn:
+    id: step-editor-save-button
+- extendedWaitUntil:
+    visible: "Save"
+    timeout: 10000
+- tapOn: "Save"
+- extendedWaitUntil:
+    visible: ${MAESTRO_ACCEPTANCE_PLAN_NAME}
+    timeout: 30000

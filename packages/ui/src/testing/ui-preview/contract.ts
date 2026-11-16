@@ -27,7 +27,7 @@ export const uiPreviewContract = {
     },
     selectionControls: {
       description:
-        "Shared toggles and selectors for consent, channel, activity type, and sport choice.",
+        "Shared toggles and selectors for consent, channel, session focus, and activity category choice.",
       testId: "ui-preview-scenario-selection-controls",
       title: "Selection controls",
     },
@@ -47,7 +47,32 @@ export const uiPreviewFormFields = {
   bioTestId: "ui-preview-form-bio",
   isPublicTestId: "ui-preview-form-is-public",
   submitButtonTestId: "ui-preview-form-submit",
-  sportTestId: "ui-preview-form-sport",
+  activityCategoryTestId: "ui-preview-form-activity-category",
   usernameErrorTestId: "ui-preview-form-username-error",
   usernameTestId: "ui-preview-form-username",
 } as const;
+
+/** Canonical runtime selectors included in the generated preview manifest. */
+export const uiPreviewScenarioSelectors = {
+  accountControls: ["profile-card", "auth-email", "settings-save"],
+  feedbackStates: [],
+  formFields: [
+    uiPreviewFormFields.usernameTestId,
+    uiPreviewFormFields.bioTestId,
+    uiPreviewFormFields.isPublicTestId,
+    uiPreviewFormFields.activityCategoryTestId,
+    uiPreviewFormFields.submitButtonTestId,
+  ],
+  planTabs: [
+    "settings-tabs",
+    "settings-tabs-trigger-overview",
+    "settings-tabs-trigger-sessions",
+    "settings-tabs-content-overview",
+  ],
+  selectionControls: [
+    "accept-terms-checkbox",
+    "email-notifications-switch",
+    "session-focus-select",
+    "preferred-activity-category-radio-group",
+  ],
+} as const satisfies Record<keyof typeof uiPreviewContract.scenarios, readonly string[]>;

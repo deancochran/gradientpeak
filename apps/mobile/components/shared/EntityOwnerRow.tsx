@@ -2,7 +2,10 @@ import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar"
 import { Text } from "@repo/ui/components/text";
 import type { ReactNode } from "react";
 import { Pressable, View } from "react-native";
+import { ROUTES } from "@/lib/constants/routes";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
+import { omitUndefined } from "@/lib/omitUndefined";
+import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
 import { useAuthStore } from "@/lib/stores/auth-store";
 
 export type EntityOwner = {
@@ -36,9 +39,13 @@ export function EntityOwnerRow({
 }: EntityOwnerRowProps) {
   const user = useAuthStore((state) => state.user);
   const navigateTo = useAppNavigate();
-  const displayName = displayNameOverride?.trim() || owner?.username?.trim() || "Unknown User";
-  const canOpenProfile = typeof owner?.id === "string" && owner.id.length > 0;
+  const displayName =
+    displayNameOverride?.trim() || owner?.username?.trim() || "GradientPeak athlete";
+  const ownerId = typeof owner?.id === "string" && owner.id.length > 0 ? owner.id : null;
+  const canOpenProfile = ownerId !== null;
   const canPress = Boolean(onPress) || canOpenProfile;
+  const avatarUri = owner?.avatar_url ? getReachableSupabaseStorageUrl(owner.avatar_url) : null;
+  const className = `flex-row items-center ${compact ? "gap-1.5" : "gap-3"}`;
 
   const handlePress = () => {
     if (onPress) {
@@ -50,27 +57,22 @@ export function EntityOwnerRow({
       return;
     }
 
-    if (owner.id === user?.id) {
-      navigateTo("/profile");
+    if (ownerId === user?.id) {
+      navigateTo(ROUTES.ME);
       return;
     }
 
     navigateTo({
       pathname: "/user/[userId]",
-      params: { userId: owner.id },
-    } as any);
+      params: { userId: ownerId },
+    });
   };
 
-  return (
-    <Pressable
-      onPress={handlePress}
-      disabled={!canPress}
-      className={`flex-row items-center ${compact ? "gap-1.5" : "gap-3"}`}
-      testID={testID}
-    >
+  const content = (
+    <>
       <Avatar alt={displayName} className={compact ? "h-6 w-6" : minimal ? "h-7 w-7" : "h-10 w-10"}>
-        {owner?.avatar_url ? <AvatarImage source={{ uri: owner.avatar_url }} /> : null}
-        <AvatarFallback className={fallbackClassName}>
+        {avatarUri ? <AvatarImage key={avatarUri} source={{ uri: avatarUri }} /> : null}
+        <AvatarFallback {...omitUndefined({ className: fallbackClassName })}>
           <Text
             className={
               compact || minimal
@@ -101,6 +103,26 @@ export function EntityOwnerRow({
           subtitle
         )}
       </View>
+    </>
+  );
+
+  if (!canPress) {
+    return (
+      <View className={className} testID={testID}>
+        {content}
+      </View>
+    );
+  }
+
+  return (
+    <Pressable
+      accessibilityLabel={`Open profile for ${displayName}`}
+      accessibilityRole="button"
+      className={`min-h-11 min-w-11 ${className}`}
+      onPress={handlePress}
+      testID={testID}
+    >
+      {content}
     </Pressable>
   );
 }
