@@ -164,7 +164,7 @@ describe("CoachAthleteOverview", () => {
       "This published state is stale and the import is partial",
     );
     expect(publishedCard.textContent).toContain("Published");
-    expect(screen.queryByRole("heading", { name: "Current training state" })).toBeNull();
+    expect(screen.getByRole("heading", { level: 2, name: "Current training state" })).toBeTruthy();
     expect(screen.getByText(/Read model as of:/)).toBeTruthy();
     expect(screen.getByText(/Coverage:/)).toBeTruthy();
   });
@@ -191,7 +191,7 @@ describe("CoachAthleteOverview", () => {
     expect(publishedCard.textContent).toContain("Freshness: unknown");
     expect(publishedCard.textContent).toContain("Freshness is unknown");
     expect(publishedCard.textContent).not.toContain("stale");
-    expect(screen.queryByRole("heading", { name: "Current training state" })).toBeNull();
+    expect(screen.getByRole("heading", { level: 2, name: "Current training state" })).toBeTruthy();
   });
 
   it("removes private history when the selected identity is unavailable", () => {
