@@ -5,10 +5,12 @@ import { Textarea } from "@repo/ui/components/textarea";
 import { Send } from "lucide-react-native";
 import { View } from "react-native";
 import { EntityOwnerRow } from "@/components/shared/EntityOwnerRow";
+import { omitUndefined } from "@/lib/omitUndefined";
 
 interface EntityCommentsSectionProps {
   addCommentPending: boolean;
   commentCount: number;
+  commentsError: string | null;
   comments: Array<{
     id: string;
     content: string;
@@ -17,6 +19,7 @@ interface EntityCommentsSectionProps {
   }>;
   helperText?: string;
   hasMoreComments?: boolean;
+  isLoadingComments: boolean;
   isLoadingMoreComments?: boolean;
   newComment: string;
   onAddComment: () => void;
@@ -28,9 +31,11 @@ interface EntityCommentsSectionProps {
 export function EntityCommentsSection({
   addCommentPending,
   commentCount,
+  commentsError,
   comments,
   helperText,
   hasMoreComments = false,
+  isLoadingComments,
   isLoadingMoreComments = false,
   newComment,
   onAddComment,
@@ -60,7 +65,15 @@ export function EntityCommentsSection({
           <Icon as={Send} size={18} className="text-primary-foreground" />
         </Button>
       </View>
-      {comments.length > 0 ? (
+      {isLoadingComments ? (
+        <Text className="text-sm text-muted-foreground" testID={`${testIDPrefix}-comments-loading`}>
+          Loading comments...
+        </Text>
+      ) : commentsError ? (
+        <Text className="text-sm text-destructive" testID={`${testIDPrefix}-comments-error`}>
+          Could not load comments. Please try again.
+        </Text>
+      ) : comments.length > 0 ? (
         <View className="gap-3 border-t border-border pt-4">
           {comments.map((comment) => (
             <View
@@ -69,7 +82,7 @@ export function EntityCommentsSection({
             >
               <View className="mb-2">
                 <EntityOwnerRow
-                  owner={comment.profile}
+                  {...omitUndefined({ owner: comment.profile })}
                   subtitle={new Date(comment.created_at).toLocaleDateString()}
                   testID={`${testIDPrefix}-comment-owner-${comment.id}`}
                 />

@@ -18,6 +18,7 @@ Use this file when working in `packages/api/src/routers`.
 - Make it obvious from the router file which procedure is the contract boundary and which code is delegated deeper.
 - Use `query` for reads and `mutation` for writes, and keep return shapes stable and serializable for TanStack Query caching behavior.
 - Add output validation selectively when trimming shapes or validating data that came from less-trusted upstream sources.
+- Return explicit public DTOs rather than raw persistence rows, and map application failures to client-safe tRPC errors here.
 
 ## Avoid
 

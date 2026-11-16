@@ -1,238 +1,173 @@
 import type {
-  ActivityPlanStructureV2,
-  IntervalStepV2,
-  IntervalV2,
-} from "@repo/core/schemas/activity_plan_v2";
+  ActivityPlanDraftItem,
+  ActivityPlanDraftStep,
+  ActivityPlanDraftStructure,
+  CanonicalActivityCategory,
+} from "@repo/core";
+import {
+  duplicateActivityPlanItem,
+  insertActivityPlanItem,
+  moveActivityPlanItem,
+  removeActivityPlanItem,
+  ungroupActivityPlanRepeat,
+} from "@repo/core";
 import { randomUUID } from "expo-crypto";
 import { create } from "zustand";
 
-interface ActivityPlanCreationState {
-  // Form data
-  name: string;
-  description: string;
-  activityCategory: "run" | "bike" | "swim" | "strength" | "other";
-  structure: ActivityPlanStructureV2;
-  routeId: string | null;
-  notes: string;
+export type { ActivityPlanDraftStructure } from "@repo/core";
+export type ActivityPlanOperationResult = { success: true } | { success: false; error: string };
 
-  // Actions
-  setName: (name: string) => void;
-  setDescription: (description: string) => void;
-  setActivityCategory: (category: "run" | "bike" | "swim" | "strength" | "other") => void;
-  setStructure: (structure: ActivityPlanStructureV2) => void;
-  setRouteId: (routeId: string | null) => void;
-  setNotes: (notes: string) => void;
-
-  // V2 Interval management
-  addInterval: (interval: IntervalV2) => void;
-  updateInterval: (intervalId: string, interval: IntervalV2) => void;
-  removeInterval: (intervalId: string) => void;
-  reorderIntervals: (intervals: IntervalV2[]) => void;
-  copyInterval: (intervalId: string) => void;
-
-  // Step management within intervals
-  addStepToInterval: (intervalId: string, step: IntervalStepV2) => void;
-  updateStepInInterval: (intervalId: string, stepId: string, step: IntervalStepV2) => void;
-  removeStepFromInterval: (intervalId: string, stepId: string) => void;
-  reorderStepsInInterval: (intervalId: string, steps: IntervalStepV2[]) => void;
-  copyStepInInterval: (intervalId: string, stepId: string) => void;
-
-  // Reset
-  reset: () => void;
-}
-
-export function createMinimalActivityPlanStructure(
-  activityName: string = "Main Activity",
-): ActivityPlanStructureV2 {
+function result(operation: { ok: boolean; reason?: string }): ActivityPlanOperationResult {
+  if (operation.ok) return { success: true };
+  const messages = {
+    not_found: "That item is no longer available.",
+    invalid_destination: "That item cannot be moved to this location.",
+    limit_exceeded: "This change exceeds the activity-plan limits.",
+    duplicate_id: "This change would create duplicate item IDs.",
+  } as const;
   return {
-    version: 2,
-    intervals: [
-      {
-        id: randomUUID(),
-        name: activityName,
-        repetitions: 1,
-        steps: [
-          {
-            id: randomUUID(),
-            name: activityName,
-            duration: { type: "untilFinished" },
-            targets: [],
-          },
-        ],
-      },
-    ],
+    success: false,
+    error: messages[operation.reason as keyof typeof messages] ?? "Structure change failed.",
   };
 }
 
-/**
- * Generate a default timestamped activity name
- */
-function generateDefaultActivityName(): string {
-  const now = new Date();
-  const date = now.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-  const time = now.toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
-  return `Activity Plan - ${date} ${time}`;
+interface ActivityPlanCreationState {
+  name: string;
+  description: string;
+  activityCategory: CanonicalActivityCategory | null;
+  structure: ActivityPlanDraftStructure;
+  setName: (name: string) => void;
+  setDescription: (description: string) => void;
+  setActivityCategory: (activityCategory: CanonicalActivityCategory | null) => void;
+  setStructure: (structure: ActivityPlanDraftStructure) => void;
+  insertItem: (
+    item: ActivityPlanDraftItem,
+    location?: { repeatId?: string; index: number },
+  ) => ActivityPlanOperationResult;
+  removeItem: (id: string) => ActivityPlanOperationResult;
+  duplicateItem: (id: string) => ActivityPlanOperationResult;
+  moveItem: (id: string, to: { repeatId?: string; index: number }) => ActivityPlanOperationResult;
+  ungroupRepeat: (id: string) => ActivityPlanOperationResult;
+  updateStep: (step: ActivityPlanDraftStep) => ActivityPlanOperationResult;
+  updateRepeatCount: (id: string, count: number) => ActivityPlanOperationResult;
+  reset: () => void;
 }
 
-const initialState = {
-  name: generateDefaultActivityName(),
+export function createBlankActivityPlanDraft(): ActivityPlanDraftStructure {
+  return { version: 5, activity_category: null, items: [] };
+}
+
+const createInitialState = () => ({
+  name: "",
   description: "",
-  activityCategory: "run" as const,
-  structure: { version: 2 as const, intervals: [] },
-  routeId: null,
-  notes: "",
-};
+  activityCategory: null,
+  structure: createBlankActivityPlanDraft(),
+});
 
 export const useActivityPlanCreationStore = create<ActivityPlanCreationState>((set) => ({
-  // Initial state
-  ...initialState,
-
-  // Actions
+  ...createInitialState(),
   setName: (name) => set({ name }),
   setDescription: (description) => set({ description }),
-  setActivityCategory: (activityCategory) => set({ activityCategory }),
-  setStructure: (structure) => set({ structure }),
-  setRouteId: (routeId) => set({ routeId }),
-  setNotes: (notes) => set({ notes }),
-
-  // V2 Interval management
-  addInterval: (interval) =>
+  setActivityCategory: (activityCategory) =>
     set((state) => ({
-      structure: {
-        version: 2,
-        intervals: [...state.structure.intervals, interval],
-      },
+      activityCategory,
+      structure: { ...state.structure, activity_category: activityCategory },
     })),
-
-  updateInterval: (intervalId, interval) =>
-    set((state) => ({
-      structure: {
-        version: 2,
-        intervals: state.structure.intervals.map((i) => (i.id === intervalId ? interval : i)),
-      },
-    })),
-
-  removeInterval: (intervalId) =>
-    set((state) => ({
-      structure: {
-        version: 2,
-        intervals: state.structure.intervals.filter((i) => i.id !== intervalId),
-      },
-    })),
-
-  reorderIntervals: (intervals) => set({ structure: { version: 2, intervals } }),
-
-  copyInterval: (intervalId) =>
+  setStructure: (structure) => set({ structure, activityCategory: structure.activity_category }),
+  insertItem: (item, location) => {
+    let outcome: ActivityPlanOperationResult = { success: true };
     set((state) => {
-      const interval = state.structure.intervals.find((i) => i.id === intervalId);
-      if (!interval) return state;
-
-      // Create a deep copy with new IDs
-      const copiedInterval: IntervalV2 = {
-        ...interval,
-        id: randomUUID(),
-        name: `${interval.name} (Copy)`,
-        steps: interval.steps.map((step) => ({
-          ...step,
-          id: randomUUID(),
-        })),
-      };
-
-      return {
-        structure: {
-          version: 2,
-          intervals: [...state.structure.intervals, copiedInterval],
-        },
-      };
-    }),
-
-  // Step management within intervals
-  addStepToInterval: (intervalId, step) =>
-    set((state) => ({
-      structure: {
-        version: 2,
-        intervals: state.structure.intervals.map((interval) =>
-          interval.id === intervalId ? { ...interval, steps: [...interval.steps, step] } : interval,
-        ),
-      },
-    })),
-
-  updateStepInInterval: (intervalId, stepId, step) =>
-    set((state) => ({
-      structure: {
-        version: 2,
-        intervals: state.structure.intervals.map((interval) =>
-          interval.id === intervalId
-            ? {
-                ...interval,
-                steps: interval.steps.map((s) => (s.id === stepId ? step : s)),
-              }
-            : interval,
-        ),
-      },
-    })),
-
-  removeStepFromInterval: (intervalId, stepId) =>
-    set((state) => ({
-      structure: {
-        version: 2,
-        intervals: state.structure.intervals.map((interval) =>
-          interval.id === intervalId
-            ? {
-                ...interval,
-                steps: interval.steps.filter((s) => s.id !== stepId),
-              }
-            : interval,
-        ),
-      },
-    })),
-
-  reorderStepsInInterval: (intervalId, steps) =>
-    set((state) => ({
-      structure: {
-        version: 2,
-        intervals: state.structure.intervals.map((interval) =>
-          interval.id === intervalId ? { ...interval, steps } : interval,
-        ),
-      },
-    })),
-
-  copyStepInInterval: (intervalId, stepId) =>
+      const operation = insertActivityPlanItem(
+        state.structure.items,
+        location ?? { index: state.structure.items.length },
+        item,
+      );
+      outcome = result(operation);
+      return operation.ok ? { structure: { ...state.structure, items: operation.items } } : state;
+    });
+    return outcome;
+  },
+  removeItem: (id) => {
+    let outcome: ActivityPlanOperationResult = { success: true };
     set((state) => {
-      const interval = state.structure.intervals.find((i) => i.id === intervalId);
-      if (!interval) return state;
-
-      const step = interval.steps.find((s) => s.id === stepId);
-      if (!step) return state;
-
-      // Create a copy with new ID
-      const copiedStep: IntervalStepV2 = {
-        ...step,
-        id: randomUUID(),
-        name: `${step.name} (Copy)`,
-      };
-
-      return {
-        structure: {
-          version: 2,
-          intervals: state.structure.intervals.map((i) =>
-            i.id === intervalId ? { ...i, steps: [...i.steps, copiedStep] } : i,
-          ),
-        },
-      };
-    }),
-
-  reset: () =>
-    set({
-      ...initialState,
-      name: generateDefaultActivityName(), // Generate fresh timestamp on reset
-    }),
+      const operation = removeActivityPlanItem(state.structure.items, id);
+      outcome = result(operation);
+      return operation.ok ? { structure: { ...state.structure, items: operation.items } } : state;
+    });
+    return outcome;
+  },
+  duplicateItem: (id) => {
+    let outcome: ActivityPlanOperationResult = { success: true };
+    set((state) => {
+      const operation = duplicateActivityPlanItem(state.structure.items, id, randomUUID);
+      outcome = result(operation);
+      return operation.ok ? { structure: { ...state.structure, items: operation.items } } : state;
+    });
+    return outcome;
+  },
+  moveItem: (id, to) => {
+    let outcome: ActivityPlanOperationResult = { success: true };
+    set((state) => {
+      const operation = moveActivityPlanItem(state.structure.items, id, to);
+      outcome = result(operation);
+      return operation.ok ? { structure: { ...state.structure, items: operation.items } } : state;
+    });
+    return outcome;
+  },
+  ungroupRepeat: (id) => {
+    let outcome: ActivityPlanOperationResult = { success: true };
+    set((state) => {
+      const operation = ungroupActivityPlanRepeat(state.structure.items, id, randomUUID);
+      outcome = result(operation);
+      return operation.ok ? { structure: { ...state.structure, items: operation.items } } : state;
+    });
+    return outcome;
+  },
+  updateStep: (step) => {
+    let found = false;
+    set((state) => ({
+      structure: {
+        ...state.structure,
+        items: state.structure.items.map((item) => {
+          if (item.type === "step") {
+            if (item.id !== step.id) return item;
+            found = true;
+            return step;
+          }
+          const steps = item.steps.map((child) => {
+            if (child.id !== step.id) return child;
+            found = true;
+            return step;
+          });
+          return steps === item.steps ? item : { ...item, steps };
+        }),
+      },
+    }));
+    return found
+      ? { success: true }
+      : { success: false, error: "That step is no longer available." };
+  },
+  updateRepeatCount: (id, count) => {
+    if (!Number.isInteger(count) || count < 2 || count > 50)
+      return { success: false, error: "Repeat count must be between 2 and 50." };
+    let outcome: ActivityPlanOperationResult = {
+      success: false,
+      error: "That repeat is no longer available.",
+    };
+    set((state) => {
+      const rootIndex = state.structure.items.findIndex(
+        (item) => item.type === "repeat" && item.id === id,
+      );
+      if (rootIndex < 0) return state;
+      const candidate = state.structure.items.map((item) =>
+        item.type === "repeat" && item.id === id ? { ...item, count } : item,
+      );
+      // A same-position Core move validates the complete candidate without changing IDs or topology.
+      const operation = moveActivityPlanItem(candidate, id, { index: rootIndex });
+      outcome = result(operation);
+      return operation.ok ? { structure: { ...state.structure, items: operation.items } } : state;
+    });
+    return outcome;
+  },
+  reset: () => set(createInitialState()),
 }));

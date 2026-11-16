@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from "@storybook/react";
+import type { Meta, StoryObj } from "@storybook/react-native";
 import * as React from "react";
 import { View } from "react-native";
 
@@ -20,7 +20,7 @@ type Story = StoryObj<typeof meta>;
 
 export const Playground: Story = {
   render: (args) => {
-    const [value, setValue] = React.useState<string>(paceInputFixtures.threshold.value);
+    const [value, setValue] = React.useState<string>(args.value);
 
     return (
       <View className="bg-background p-6">
@@ -29,3 +29,13 @@ export const Playground: Story = {
     );
   },
 };
+export const Canonical195Seconds: Story = {
+  ...Playground,
+  args: { value: "3:15", unitLabel: "/km" },
+};
+export const OptionalUnset: Story = { ...Playground, args: { value: "", required: false } };
+export const HoursMinutesSeconds: Story = {
+  ...Playground,
+  args: { layout: "hms", value: "90:30" },
+};
+export const LongPaceWindow: Story = { ...Playground, args: { layout: "ms", value: "360000:30" } };
