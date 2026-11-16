@@ -11,6 +11,7 @@ import type {
   MyGroupInvitation,
 } from "@/lib/groups";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
+import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
 import { GroupMembershipRoleBadge } from "./GroupBadges";
 
 type ProfileLike = {
@@ -40,10 +41,11 @@ type GroupJoinRequestRowProps = {
 
 function ProfileAvatar({ profile }: { profile: ProfileLike }) {
   const displayName = profile.username?.trim() || "Athlete";
+  const avatarUri = profile.avatar_url ? getReachableSupabaseStorageUrl(profile.avatar_url) : null;
 
   return (
     <Avatar alt={displayName} className="h-10 w-10">
-      {profile.avatar_url ? <AvatarImage source={{ uri: profile.avatar_url }} /> : null}
+      {avatarUri ? <AvatarImage key={avatarUri} source={{ uri: avatarUri }} /> : null}
       <AvatarFallback>
         <Text className="text-sm font-semibold text-muted-foreground">
           {displayName.charAt(0).toUpperCase() || "A"}
@@ -70,7 +72,7 @@ export function GroupMemberRow({ member, onPress, rightAccessory }: GroupMemberR
       return;
     }
 
-    navigateTo(`/user/${member.profile.id}` as any);
+    navigateTo(`/user/${member.profile.id}`);
   };
 
   return (
@@ -110,7 +112,7 @@ export function GroupInvitationRow({
     ("group" in invitation ? invitation.group.name : "Pending invitation");
   const subtitle = formatCreatedAt(invitation.created_at);
   const openInvitedProfile = invitedProfile
-    ? () => navigateTo(`/user/${invitedProfile.id}` as any)
+    ? () => navigateTo(`/user/${invitedProfile.id}`)
     : undefined;
 
   return (
@@ -158,7 +160,7 @@ export function GroupJoinRequestRow({
       <Pressable
         accessibilityRole="button"
         className="min-w-0 flex-1 flex-row items-center gap-3"
-        onPress={() => navigateTo(`/user/${joinRequest.profile.id}` as any)}
+        onPress={() => navigateTo(`/user/${joinRequest.profile.id}`)}
         testID={`group-join-request-profile-link-${joinRequest.profile.id}`}
       >
         <ProfileAvatar profile={joinRequest.profile} />

@@ -1,0 +1,111 @@
+import { createHash } from "node:crypto";
+import type { Page, TestInfo } from "@playwright/test";
+import { ActivitiesPage } from "../pages/activities";
+import { createE2EExecutionIdentity } from "../support/identity";
+
+const FIT_CRC_TABLE = [
+  0x0000, 0xcc01, 0xd801, 0x1400, 0xf001, 0x3c00, 0x2800, 0xe401, 0xa001, 0x6c00, 0x7800, 0xb401,
+  0x5000, 0x9c01, 0x8801, 0x4400,
+] as const;
+
+// Generated deterministically with @garmin/fitsdk 21.188.0 from the repository's
+// official-SDK swim fixture (2026-01-01T10:00:00Z, 25 m pool, one active length).
+const SWIM_FIT_BASE64 =
+  // biome-ignore lint/security/noSecrets: deterministic binary FIT fixture, not a credential
+  "DgLEUoQBAAAuRklUhCRAAAAAAAUAAQIBAoQCAoQEBIYDBIwABP8AAQCg+bhDewAAAEEAABUAA/0EhgABAgEBAgGg+bhDAABCAAAUAAP9BIYFBIYDAQICoPm4QwAAAAB4Ar35uEPECQAAgkMAAGUAC/4ChP0EhgIEhgMEhgQEhgUChAYChAwBAgcBAgABAgEBAgMAAL75uEOg+bhDMHUAADB1AAAUAEEDAQAcAUQAABMADv4ChP0EhgIEhgcEhggEhgkEhgABAgEBAhkBAicBAiMChCAChCgChCYBAgQAAL75uEOg+bhDMHUAADB1AADECQAACQEFEQAAAQABAABFAAASABL+AoT9BIYCBIYHBIYIBIY7BIYJBIYFAQIGAQIZAoQaAoQAAQIBAQIcAQIsAoQuAQIhAoQvAoQFAAC++bhDoPm4QzB1AAAwdQAAMHUAAMQJAAAFEQAAAQAIAQDECQABAAEAAb75uEMABEYAACIABv0EhgAEhgEChAIBAgMBAgQBAga++bhDMHUAAAEAABoBhPU=";
+
+export const activityFiles = {
+  fit: {
+    name: "deterministic-pool-swim.fit",
+    mimeType: "application/octet-stream",
+    buffer: Buffer.from(SWIM_FIT_BASE64, "base64"),
+  },
+  gpx: {
+    name: "deterministic-run.gpx",
+    mimeType: "application/gpx+xml",
+    buffer:
+      Buffer.from(`<?xml version="1.0"?><gpx xmlns="http://www.topografix.com/GPX/1/1" xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1"><trk><name>Deterministic Run</name><type>running</type><trkseg>
+      <trkpt lat="40.1000" lon="-74.1000"><ele>10</ele><time>2026-01-01T10:00:00Z</time><extensions><gpxtpx:hr>145</gpxtpx:hr><power>210</power></extensions></trkpt>
+      <trkpt lat="40.1010" lon="-74.1010"><ele>14</ele><time>2026-01-01T10:05:00Z</time><extensions><gpxtpx:hr>152</gpxtpx:hr><power>225</power></extensions></trkpt>
+      <trkpt lat="40.1020" lon="-74.1020"><ele>12</ele><time>2026-01-01T10:10:00Z</time><extensions><gpxtpx:hr>158</gpxtpx:hr><power>240</power></extensions></trkpt>
+    </trkseg></trk></gpx>`),
+  },
+  tcx: {
+    name: "deterministic-ride.tcx",
+    mimeType: "application/vnd.garmin.tcx+xml",
+    buffer:
+      Buffer.from(`<TrainingCenterDatabase><Activities><Activity Sport="Biking"><Id>Deterministic Ride</Id><Lap><Calories>500</Calories><Track>
+      <Trackpoint><Time>2026-01-02T10:00:00Z</Time><Position><LatitudeDegrees>40.1</LatitudeDegrees><LongitudeDegrees>-74.1</LongitudeDegrees></Position><DistanceMeters>0</DistanceMeters><HeartRateBpm><Value>140</Value></HeartRateBpm><Cadence>80</Cadence><Extensions><TPX><Watts>210</Watts></TPX></Extensions></Trackpoint>
+      <Trackpoint><Time>2026-01-02T10:15:00Z</Time><Position><LatitudeDegrees>40.15</LatitudeDegrees><LongitudeDegrees>-74.15</LongitudeDegrees></Position><DistanceMeters>6000</DistanceMeters><HeartRateBpm><Value>150</Value></HeartRateBpm><Cadence>85</Cadence><Extensions><TPX><Watts>230</Watts></TPX></Extensions></Trackpoint>
+      <Trackpoint><Time>2026-01-02T10:30:00Z</Time><Position><LatitudeDegrees>40.2</LatitudeDegrees><LongitudeDegrees>-74.2</LongitudeDegrees></Position><DistanceMeters>12000</DistanceMeters><HeartRateBpm><Value>160</Value></HeartRateBpm><Cadence>90</Cadence><Extensions><TPX><Watts>250</Watts></TPX></Extensions></Trackpoint>
+    </Track></Lap></Activity></Activities></TrainingCenterDatabase>`),
+  },
+} as const;
+
+type ActivityFileFixture = (typeof activityFiles)[keyof typeof activityFiles];
+
+function calculateFitCrc(buffer: Buffer) {
+  let crc = 0;
+  for (const byte of buffer.subarray(0, -2)) {
+    let tableValue = FIT_CRC_TABLE[crc & 0x0f] ?? 0;
+    crc = (crc >> 4) & 0x0fff;
+    crc ^= tableValue ^ (FIT_CRC_TABLE[byte & 0x0f] ?? 0);
+    tableValue = FIT_CRC_TABLE[crc & 0x0f] ?? 0;
+    crc = (crc >> 4) & 0x0fff;
+    crc ^= tableValue ^ (FIT_CRC_TABLE[(byte >> 4) & 0x0f] ?? 0);
+  }
+  return crc;
+}
+
+/** Gives every live-DB journey distinct valid bytes while preserving deterministic activity data. */
+export function activityFileForIdentity(fixture: ActivityFileFixture, identity: string) {
+  const digest = createHash("sha256").update(identity).digest();
+  if (fixture.name.endsWith(".fit")) {
+    const buffer = Buffer.from(fixture.buffer);
+    const serialOffset = buffer.indexOf(Buffer.from([123, 0, 0, 0]), 14);
+    if (serialOffset < 0) throw new Error("FIT fixture serial number was not found");
+    buffer.writeUInt32LE(digest.readUInt32LE(0) || 1, serialOffset);
+    buffer.writeUInt16LE(calculateFitCrc(buffer), buffer.length - 2);
+    return { ...fixture, buffer };
+  }
+
+  return {
+    ...fixture,
+    buffer: Buffer.concat([
+      fixture.buffer,
+      Buffer.from(`\n<!-- e2e-identity:${digest.toString("hex").slice(0, 16)} -->`),
+    ]),
+  };
+}
+
+export async function importActivity(page: Page, fixture: ActivityFileFixture, name: string) {
+  return new ActivitiesPage(page).importFile(activityFileForIdentity(fixture, name));
+}
+
+export function activityFixtureIdentity(testInfo: TestInfo, label: string) {
+  return createE2EExecutionIdentity(testInfo).name(`Parity ${label}`);
+}
+
+export async function deleteImportedActivity(page: Page, activityId: string) {
+  if (!activityId || page.isClosed()) return;
+  const activities = new ActivitiesPage(page);
+  await activities.openDetail(activityId);
+  const deleteButton = page.getByRole("button", { name: "Delete", exact: true });
+  const outcome = await Promise.race([
+    deleteButton.waitFor({ state: "visible", timeout: 10_000 }).then(() => "delete" as const),
+    page
+      .getByText("Activity not found.", { exact: true })
+      .waitFor({ state: "visible", timeout: 10_000 })
+      .then(() => "missing" as const),
+  ]);
+  if (outcome === "missing") return;
+  await activities.deleteFromDetail();
+  const deletionOutcome = await Promise.race([
+    page.waitForURL(/\/activities\/?$/, { timeout: 15_000 }).then(() => "deleted" as const),
+    page
+      .getByText("Activity could not be deleted. Nothing was removed.", { exact: true })
+      .waitFor({ state: "visible", timeout: 15_000 })
+      .then(() => "failed" as const),
+  ]);
+  if (deletionOutcome === "failed") throw new Error("Activity cleanup deletion failed");
+}
