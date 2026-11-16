@@ -1,10 +1,28 @@
 // @vitest-environment jsdom
 
-import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { TrainingLoadPath } from "./training-load-path";
 
 describe("TrainingLoadPath", () => {
+  it("keeps the selected day as an accessible, URL-ownable control", () => {
+    const onSelectedDateChange = vi.fn();
+    render(
+      <TrainingLoadPath
+        onSelectedDateChange={onSelectedDateChange}
+        projection={undefined}
+        selectedDate="2026-07-25"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous day" }));
+    expect(onSelectedDateChange).toHaveBeenLastCalledWith("2026-07-24");
+    fireEvent.change(screen.getByLabelText("Selected day"), { target: { value: "2026-07-27" } });
+    expect(onSelectedDateChange).toHaveBeenLastCalledWith("2026-07-27");
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    expect(onSelectedDateChange).toHaveBeenLastCalledWith("2026-07-26");
+  });
+
   it("renders scheduled firm work from the single Plan-tab projection DTO", () => {
     render(
       <TrainingLoadPath
