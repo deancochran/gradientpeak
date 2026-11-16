@@ -35,6 +35,8 @@ async function captureSurface(input: {
     { width: 390, height: 844 },
   ]) {
     await input.page.setViewportSize(viewport);
+    await input.page.evaluate(() => window.scrollTo({ top: 0 }));
+    await expect.poll(() => input.page.evaluate(() => window.scrollY)).toBe(0);
     const path = input.testInfo.outputPath(`${input.name}-${viewport.width}.png`);
     await input.page.screenshot({ path, fullPage: true, scale: "css" });
     await input.testInfo.attach(`${input.name}-${viewport.width}`, {

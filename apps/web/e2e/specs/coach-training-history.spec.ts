@@ -24,7 +24,7 @@ import { waitForAppHydration } from "../support/hydration";
 
 test.beforeEach(() => expect(process.env.E2E_DISPOSABLE_DATABASE).toBe("1"));
 
-test("non-admin coach switches assigned athletes without receiving unshared metrics", async ({
+test("non-admin coach sees consent-scoped historical load assessment without receiving unshared metrics", async ({
   athletePage,
   athleteActor,
   actorFactory,
@@ -329,8 +329,16 @@ test("non-admin coach switches assigned athletes without receiving unshared metr
   });
   await page.reload();
   await waitForAppHydration(page);
+  await page.setViewportSize({ width: 1440, height: 1000 });
   await expect(page.getByText("322 watts", { exact: true })).toBeVisible();
   await expect(page.getByText("Recent completed daily Common Load", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Historical modeled load state" })).toBeVisible();
+  await expect(page.getByRole("img", { name: /Historical Fitness/ })).toBeVisible();
+  await expect(page.getByRole("img", { name: /Historical Fatigue/ })).toBeVisible();
+  await expect(page.getByRole("img", { name: /Historical Form.*-\d/ })).toBeVisible();
+  await expect(page.getByText("-8.0", { exact: true })).toBeVisible();
+  await expect(page.getByText(/It does not predict future load or availability/)).toBeVisible();
+  await expect(page.getByRole("table")).toBeVisible();
   await expect(
     page.getByRole("cell", {
       name: ((60 / 60) * (210 / 250) ** 2 * 100).toFixed(1),
@@ -339,7 +347,20 @@ test("non-admin coach switches assigned athletes without receiving unshared metr
   ).toBeVisible();
   await page.screenshot({
     fullPage: true,
-    path: testInfo.outputPath("coach-athlete-history-populated.png"),
+    path: testInfo.outputPath("coach-athlete-assessment-desktop.png"),
+    scale: "css",
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("img", { name: /Historical Fitness/ })).toBeVisible();
+  expect(
+    await page
+      .getByRole("table")
+      .locator("..")
+      .evaluate((element) => element.scrollWidth > element.clientWidth),
+  ).toBe(true);
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath("coach-athlete-assessment-mobile.png"),
     scale: "css",
   });
   await withLocalE2EDatabase(async (database) =>
@@ -354,6 +375,8 @@ test("non-admin coach switches assigned athletes without receiving unshared metr
   await expect(page.getByText("Recent completed daily Common Load", { exact: true })).toHaveCount(
     0,
   );
+  await expect(page.getByRole("heading", { name: "Historical modeled load state" })).toHaveCount(0);
+  await expect(page.getByRole("table")).toHaveCount(0);
   await page.screenshot({
     fullPage: true,
     path: testInfo.outputPath("coach-athlete-history-activities-consent-withdrawn.png"),
