@@ -29,7 +29,11 @@ const mocks = vi.hoisted(() => ({
     isLoading: false,
     refetch: vi.fn(),
   } as {
-    data: { detail: { activityCategory: string } } | undefined;
+    data:
+      | {
+          detail: { activityCategory: string; name?: string; structure?: unknown };
+        }
+      | undefined;
     isError: boolean;
     isLoading: boolean;
     refetch: ReturnType<typeof vi.fn>;
@@ -221,6 +225,70 @@ describe("EventDetailPage", () => {
     expect(firstInput.observation.elapsedMs).toBe(1_800_000);
     expect(firstInput.observation).not.toHaveProperty("distanceMeters");
     expect(firstInput.observation).not.toHaveProperty("rpe");
+  });
+
+  it("renders the authored session steps from the current plan without claiming they are frozen", () => {
+    mocks.search = { month: "2026-07", resourceType: "planned_session", view: "month" };
+    mocks.plannedSession = {
+      id: "00000000-0000-4000-8000-000000000001",
+      profileId: "00000000-0000-4000-8000-000000000002",
+      sessionRevision: 1,
+      planningDate: "2000-01-01",
+      lifecycle: { status: "scheduled" },
+      activityPlanId: "00000000-0000-4000-8000-000000000003",
+    };
+    mocks.activityPlanQuery = {
+      data: {
+        detail: {
+          activityCategory: "run",
+          name: "Tempo Builder",
+          structure: {
+            version: 5,
+            activity_category: "run",
+            items: [
+              {
+                type: "step",
+                id: "00000000-0000-4000-8000-000000000010",
+                name: "Warmup",
+                duration: { type: "time", seconds: 600 },
+                targets: [],
+                instructions: "Easy running.",
+              },
+              {
+                type: "repeat",
+                id: "00000000-0000-4000-8000-000000000011",
+                count: 3,
+                steps: [
+                  {
+                    type: "step",
+                    id: "00000000-0000-4000-8000-000000000012",
+                    name: "Main set",
+                    duration: { type: "distance", meters: 1000 },
+                    targets: [],
+                    instructions: "Hold tempo.",
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+      isError: false,
+      isLoading: false,
+      refetch: vi.fn(),
+    };
+    const EventDetailPage = (Route as unknown as { component: React.ComponentType }).component;
+
+    render(<EventDetailPage />);
+
+    expect(screen.getByText("Session Flow")).toBeTruthy();
+    expect(screen.getByText("Warmup")).toBeTruthy();
+    expect(screen.getByText("Main set")).toBeTruthy();
+    expect(screen.getByText("Repeat 3 times")).toBeTruthy();
+    expect(screen.getByText("Easy running.")).toBeTruthy();
+    expect(screen.getByText(/Current activity plan instructions/)).toBeTruthy();
+    expect(screen.queryByText(/Frozen prescription/i)).toBeNull();
+    expect(screen.getByRole("link", { name: "Open activity plan" })).toBeTruthy();
   });
 
   it("keeps a planned session in a dependent-plan loading or retryable error state", () => {

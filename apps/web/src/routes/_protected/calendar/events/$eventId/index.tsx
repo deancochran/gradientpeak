@@ -26,7 +26,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { ArrowLeft, Pencil, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { z } from "zod";
-
+import { ActivityPlanSessionFlow } from "../../../../../components/activity-plan/activity-plan-session-flow";
 import { RouteFlashToast, type RouteFlashType } from "../../../../../components/route-flash-toast";
 import { api } from "../../../../../lib/api/client";
 import { loadRouteQuery } from "../../../../../lib/api/route-loading";
@@ -423,7 +423,7 @@ function EventDetailPage() {
     return (
       <div className="space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 items-center gap-3">
+          <div className="flex min-w-0 flex-col items-start gap-3 sm:flex-row sm:items-center">
             <Button asChild variant="outline" size="sm">
               <Link
                 to="/calendar/day/$date"
@@ -461,54 +461,72 @@ function EventDetailPage() {
         </div>
 
         <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
-          <Card>
-            <CardHeader>
-              <CardTitle>Planned activity</CardTitle>
-              <CardDescription>
-                Frozen prescription details for this scheduled session.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex flex-wrap gap-2">
-                <Badge variant="outline">{activityCategory}</Badge>
-                <Badge variant="secondary">{plannedSession.lifecycle.status}</Badge>
-              </div>
-              <DetailRow label="Planning date" value={plannedSession.planningDate} />
-              <DetailRow label="Session id" value={plannedSession.id} />
-              <DetailRow
-                label="Planned duration"
-                value={formatComparisonDuration(
-                  plannedSession.comparison?.planned.durationSeconds ?? null,
-                )}
-              />
-              {plannedSession.comparison?.actual.state === "observed" ||
-              plannedSession.comparison?.actual.state === "unknown" ? (
-                <>
-                  <DetailRow
-                    label="Actual duration"
-                    value={formatComparisonDuration(
-                      plannedSession.comparison.actual.durationSeconds,
-                    )}
-                  />
-                  <DetailRow
-                    label="Actual distance"
-                    value={formatComparisonDistance(
-                      plannedSession.comparison.actual.distanceMeters,
-                    )}
-                  />
-                </>
-              ) : plannedSession.comparison?.actual.state === "not_performed" ? (
-                <DetailRow label="Actual" value="Not performed" />
-              ) : null}
-              {completedActivityId ? (
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Session details</CardTitle>
+                <CardDescription>
+                  Current activity plan instructions. No personalized adjustments are shown.
+                  {plannedSession.prescription
+                    ? " Scheduling provenance is retained, but it is not the active instruction."
+                    : ""}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="outline">{activityCategory}</Badge>
+                  <Badge variant="secondary">{plannedSession.lifecycle.status}</Badge>
+                </div>
+                <DetailRow label="Planning date" value={plannedSession.planningDate} />
                 <DetailRow
-                  label="Completed activity"
-                  value="Linked activity available"
-                  href={`/activities/${completedActivityId}`}
+                  label="Planned duration"
+                  value={formatComparisonDuration(
+                    plannedSession.comparison?.planned.durationSeconds ?? null,
+                  )}
                 />
-              ) : null}
-            </CardContent>
-          </Card>
+                {plannedSession.comparison?.actual.state === "observed" ||
+                plannedSession.comparison?.actual.state === "unknown" ? (
+                  <>
+                    <DetailRow
+                      label="Actual duration"
+                      value={formatComparisonDuration(
+                        plannedSession.comparison.actual.durationSeconds,
+                      )}
+                    />
+                    <DetailRow
+                      label="Actual distance"
+                      value={formatComparisonDistance(
+                        plannedSession.comparison.actual.distanceMeters,
+                      )}
+                    />
+                  </>
+                ) : plannedSession.comparison?.actual.state === "not_performed" ? (
+                  <DetailRow label="Actual" value="Not performed" />
+                ) : null}
+                {completedActivityId ? (
+                  <DetailRow
+                    label="Completed activity"
+                    value="Linked activity available"
+                    href={`/activities/${completedActivityId}`}
+                  />
+                ) : null}
+                <Button asChild type="button" variant="outline">
+                  <Link
+                    to="/activity-plans/$activityPlanId"
+                    params={{ activityPlanId: plannedSession.activityPlanId }}
+                    search={{ edit: undefined }}
+                  >
+                    Open activity plan
+                  </Link>
+                </Button>
+                <details className="text-sm text-muted-foreground">
+                  <summary className="cursor-pointer">Technical details</summary>
+                  <p className="mt-2 break-all">Session ID: {plannedSession.id}</p>
+                </details>
+              </CardContent>
+            </Card>
+            <ActivityPlanSessionFlow structure={activityPlanQuery.data?.detail?.structure} />
+          </div>
 
           <Card>
             <CardHeader>
