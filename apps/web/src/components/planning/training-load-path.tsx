@@ -3,7 +3,7 @@ import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardDescription, CardHeader } from "@repo/ui/components/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@repo/ui/components/tabs";
-import { formatShortDayLabel } from "../../lib/planning";
+import { formatShortDayLabel, shiftDateKey } from "../../lib/planning";
 import { TrainingLoadChart } from "./training-load-chart";
 
 type PlanTabProjection = inferRouterOutputs<AppRouter>["trainingPlans"]["getPlanTabProjection"];
@@ -98,6 +98,8 @@ export function TrainingLoadPath({
   projection,
   errorMessage = "Training path could not be refreshed. No client-side estimate is shown.",
   retryLabel = "Retry training path",
+  selectedDate,
+  onSelectedDateChange,
 }: {
   errorMessage?: string;
   isError?: boolean;
@@ -105,6 +107,8 @@ export function TrainingLoadPath({
   onRetry?: () => void;
   projection: PlanTabProjection | undefined;
   retryLabel?: string;
+  selectedDate?: string;
+  onSelectedDateChange?: (date: string) => void;
 }) {
   const timeline = projection?.timeline;
   const completedItems =
@@ -153,6 +157,40 @@ export function TrainingLoadPath({
       <CardHeader>
         <h2 className="leading-none font-semibold">Training path</h2>
         <CardDescription>Server-composed Common Load {rangeLabel}.</CardDescription>
+        {selectedDate && onSelectedDateChange ? (
+          <div className="flex flex-wrap items-end gap-2 pt-2">
+            <Button
+              aria-label="Previous day"
+              onClick={() => onSelectedDateChange(shiftDateKey(selectedDate, -1))}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              Previous day
+            </Button>
+            <label className="grid gap-1 text-sm font-medium" htmlFor="plan-selected-date">
+              Selected day
+              <input
+                className="h-9 rounded-md border bg-background px-2 text-sm"
+                id="plan-selected-date"
+                onChange={(event) => {
+                  if (event.currentTarget.value) onSelectedDateChange(event.currentTarget.value);
+                }}
+                type="date"
+                value={selectedDate}
+              />
+            </label>
+            <Button
+              aria-label="Next day"
+              onClick={() => onSelectedDateChange(shiftDateKey(selectedDate, 1))}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              Next day
+            </Button>
+          </div>
+        ) : null}
       </CardHeader>
       <CardContent>
         {isLoading ? (
