@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   completedActivities: vi.fn(),
   goals: vi.fn(),
   directory: vi.fn(),
+  invalidate: vi.fn(),
   overview: vi.fn(),
   publicationProps: undefined as undefined | { preparation?: unknown },
   selected: vi.fn(),
@@ -28,6 +29,7 @@ const state = vi.hoisted(() => ({
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: React.ReactNode }) => <a href="/athletes">{children}</a>,
+  useRouter: () => ({ invalidate: mocks.invalidate }),
   useRouterState: ({ select }: { select: (state: { location: { pathname: string } }) => string }) =>
     select({ location: { pathname: state.pathname } }),
   createFileRoute: () => (options: object) => ({
@@ -142,6 +144,7 @@ afterEach(() => {
   mocks.calendar.mockReset();
   mocks.completedActivities.mockReset();
   mocks.goals.mockReset();
+  mocks.invalidate.mockReset();
   mocks.directory.mockReset();
   mocks.overview.mockReset();
   mocks.publicationProps = undefined;

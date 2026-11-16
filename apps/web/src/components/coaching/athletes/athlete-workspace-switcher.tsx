@@ -73,19 +73,25 @@ function Switcher({
     }
   }
   return (
-    <section className="rounded-lg border border-cyan-900 bg-slate-900 p-4">
-      <p className="text-xs font-medium uppercase tracking-[0.18em] text-cyan-300">
-        Selected athlete
-      </p>
-      <h1 className="mt-1 text-2xl font-semibold text-white">
-        {selectedAthlete?.displayName ?? selectedAthlete?.username ?? "Athlete unavailable"}
-      </h1>
-      {selectedAthlete?.username ? (
-        <p className="text-sm text-slate-400">@{selectedAthlete.username}</p>
-      ) : null}
+    <section className="rounded-xl border border-cyan-900/90 bg-slate-900/95 px-5 py-4 shadow-[0_0_0_1px_rgba(34,211,238,0.04)] sm:flex sm:items-end sm:justify-between sm:gap-6">
+      <div className="min-w-0">
+        <p className="text-xs font-medium uppercase tracking-[0.18em] text-cyan-300">
+          Selected athlete
+        </p>
+        <h1 className="mt-1 truncate text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+          {selectedAthlete?.displayName ?? selectedAthlete?.username ?? "Athlete unavailable"}
+        </h1>
+        {selectedAthlete?.username ? (
+          <p className="text-sm text-slate-400">@{selectedAthlete.username}</p>
+        ) : null}
+      </div>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogTrigger asChild>
-          <Button type="button" variant="outline" className="mt-3">
+          <Button
+            className="mt-4 border-slate-600 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white sm:mt-0"
+            type="button"
+            variant="outline"
+          >
             Switch athlete ▾
           </Button>
         </DialogTrigger>

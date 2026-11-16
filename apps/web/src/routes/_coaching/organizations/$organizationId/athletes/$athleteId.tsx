@@ -129,7 +129,11 @@ function AthleteWorkspacePage() {
     : null;
   return (
     <div className="space-y-6">
-      <Button asChild variant="outline" className="border-slate-700 text-slate-100">
+      <Button
+        asChild
+        className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
+        variant="outline"
+      >
         <Link
           to="/organizations/$organizationId/athletes"
           params={{ organizationId }}
@@ -145,47 +149,68 @@ function AthleteWorkspacePage() {
         initialPage={directory}
         selectedAthlete={identity}
       />
-      <CoachAthleteOverview
-        athleteId={athleteId}
-        result={identity ? overview : { status: "unavailable" }}
-      />
-      {identity ? (
-        <CoachActivityPlanPublication
+      <div className="grid items-start gap-6 xl:grid-cols-2">
+        {identity ? (
+          <CoachActivityPlanPublication
+            athleteId={athleteId}
+            key={`${organizationId}:${athleteId}:${preparation?.activityPlanId ?? ""}:${preparation?.planningDate ?? ""}`}
+            organizationId={organizationId}
+            preparation={preparation}
+          />
+        ) : null}
+        <div>
+          <CoachAthleteCompletedActivities
+            actorProfileId={actorProfileId}
+            athleteProfileId={athleteId}
+            key={`${actorProfileId}:${organizationId}:${athleteId}`}
+            organizationId={organizationId}
+            onRetry={() => router.invalidate({ sync: true })}
+            result={
+              identity ? (completedActivities ?? { status: "forbidden" }) : { status: "forbidden" }
+            }
+          />
+        </div>
+        <CoachAthleteCalendar
+          actorProfileId={actorProfileId}
           athleteId={athleteId}
-          key={`${organizationId}:${athleteId}:${preparation?.activityPlanId ?? ""}:${preparation?.planningDate ?? ""}`}
+          initialRange={result.calendarRange}
+          key={`${actorProfileId}:${organizationId}:${athleteId}`}
           organizationId={organizationId}
-          preparation={preparation}
+          result={identity ? calendar : forbiddenCalendar}
         />
-      ) : null}
-      <CoachAthleteCalendar
-        actorProfileId={actorProfileId}
-        athleteId={athleteId}
-        initialRange={result.calendarRange}
-        key={`${actorProfileId}:${organizationId}:${athleteId}`}
-        organizationId={organizationId}
-        result={identity ? calendar : forbiddenCalendar}
-      />
-      <CoachAthleteCompletedActivities
-        actorProfileId={actorProfileId}
-        athleteProfileId={athleteId}
-        key={`${actorProfileId}:${organizationId}:${athleteId}`}
-        organizationId={organizationId}
-        onRetry={() => router.invalidate({ sync: true })}
-        result={
-          identity ? (completedActivities ?? { status: "forbidden" }) : { status: "forbidden" }
-        }
-      />
-      <CoachAthleteGoals
-        actorProfileId={actorProfileId}
-        athleteId={athleteId}
-        key={`${actorProfileId}:${organizationId}:${athleteId}:${result.goalsRevision}`}
-        loaderRevision={result.goalsRevision}
-        organizationId={organizationId}
-        result={identity ? goals : forbiddenGoals}
-      />
-      <CoachAthleteZonesSection
-        snapshot={identity ? zones : { ...zones, state: { kind: "denied" } }}
-      />
+      </div>
+      <details className="group rounded-xl border border-slate-800 bg-slate-950/50" open>
+        <summary className="cursor-pointer list-none px-5 py-4 font-medium text-slate-100 marker:hidden">
+          <span className="flex items-center justify-between gap-4">
+            Training context and shared data
+            <span className="text-sm font-normal text-cyan-300 group-open:hidden">
+              Show details
+            </span>
+            <span className="hidden text-sm font-normal text-cyan-300 group-open:inline">
+              Hide details
+            </span>
+          </span>
+        </summary>
+        <div className="space-y-6 border-t border-slate-800 p-5">
+          <CoachAthleteOverview
+            athleteId={athleteId}
+            result={identity ? overview : { status: "unavailable" }}
+          />
+          <div className="grid items-start gap-6 xl:grid-cols-2">
+            <CoachAthleteGoals
+              actorProfileId={actorProfileId}
+              athleteId={athleteId}
+              key={`${actorProfileId}:${organizationId}:${athleteId}:${result.goalsRevision}`}
+              loaderRevision={result.goalsRevision}
+              organizationId={organizationId}
+              result={identity ? goals : forbiddenGoals}
+            />
+            <CoachAthleteZonesSection
+              snapshot={identity ? zones : { ...zones, state: { kind: "denied" } }}
+            />
+          </div>
+        </div>
+      </details>
     </div>
   );
 }

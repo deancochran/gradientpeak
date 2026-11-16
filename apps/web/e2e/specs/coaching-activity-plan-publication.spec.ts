@@ -210,7 +210,7 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
   await athletePage.goto("/plan");
   await waitForAppHydration(athletePage);
   const followSession = athletePage.getByRole("link", {
-    name: "Open & follow session",
+    name: /^Open (?:& follow )?session$/,
     exact: true,
   });
   await expect(followSession).toBeVisible();
@@ -404,7 +404,15 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
     .getByRole("listitem")
     .filter({ hasText: `Planned ${planningDate}` });
   await originalCompletion.getByRole("button", { name: "Mark reviewed", exact: true }).click();
+  await expect(
+    coachPage.getByRole("status").filter({ hasText: "Marked reviewed. The queue is up to date." }),
+  ).toBeVisible();
   await expect(completedActivities.getByRole("listitem")).toHaveCount(1);
+  await captureSurface({
+    name: "publication-coach-reviewed-queue",
+    page: coachPage,
+    testInfo,
+  });
   await coachPage.reload();
   await waitForAppHydration(coachPage);
   await expect(completedActivities.getByRole("listitem")).toHaveCount(1);
