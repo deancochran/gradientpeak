@@ -36,7 +36,7 @@ function PlanPage() {
         clear={() =>
           void navigate({
             to: "/plan",
-            search: { date, flash: undefined, flashType: undefined },
+            search: { ...(date ? { date } : {}), flash: undefined, flashType: undefined },
             replace: true,
           })
         }
@@ -49,7 +49,7 @@ function PlanPage() {
       </div>
 
       <PlanDashboard
-        selectedDate={date}
+        {...(date ? { selectedDate: date } : {})}
         onSelectedDateChange={(nextDate) =>
           void navigate({
             to: "/plan",

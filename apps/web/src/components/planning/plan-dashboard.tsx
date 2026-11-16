@@ -151,7 +151,7 @@ export function PlanDashboard({
         onRetry={() => void (profileUnavailable ? profileQuery.refetch() : planTabQuery.refetch())}
         projection={planTabQuery.data}
         selectedDate={selectedDate}
-        onSelectedDateChange={onSelectedDateChange}
+        {...(onSelectedDateChange ? { onSelectedDateChange } : {})}
       />
       <Card>
         <CardHeader>
