@@ -15,6 +15,7 @@ describe("CoachAthleteCompletedActivities", () => {
   const acknowledge = vi.mocked(acknowledgeCoachAthleteCompletedActivity);
   afterEach(() => {
     cleanup();
+    window.sessionStorage.clear();
     acknowledge.mockReset();
   });
   it("distinguishes a loading failure from denied consent and offers retry", () => {
@@ -93,13 +94,56 @@ describe("CoachAthleteCompletedActivities", () => {
       />,
     );
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Mark reviewed" })[0]!);
+    const [firstReview] = screen.getAllByRole("button", { name: "Mark reviewed" });
+    if (!firstReview) throw new Error("Expected the first completion review control.");
+    fireEvent.click(firstReview);
     await waitFor(() => expect(retry).toHaveBeenCalledOnce());
     expect(acknowledge).toHaveBeenCalledWith({
       data: expect.objectContaining({ evidenceVersion: "v1" }),
     });
     // The old queue stays visible until the route reload supplies an authoritative result.
     expect(screen.getAllByText("Completed session")).toHaveLength(2);
+    expect(screen.getByRole("status").textContent).toContain("Marked reviewed");
+  });
+
+  it("does not call a stale acknowledgement reviewed and refreshes the authoritative queue", async () => {
+    const retry = vi.fn().mockResolvedValue(undefined);
+    acknowledge.mockResolvedValue({ outcome: "stale" });
+    render(
+      <CoachAthleteCompletedActivities
+        {...props}
+        onRetry={retry}
+        result={{
+          status: "granted",
+          items: [
+            {
+              activityCategory: "run",
+              activityId: props.athleteProfileId,
+              distanceMeters: null,
+              evidenceVersion: "v1",
+              elapsedMs: null,
+              planningDate: "2026-11-10",
+              sessionId: "22222222-2222-4222-8222-222222222222",
+            },
+          ],
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Mark reviewed" }));
+
+    await waitFor(() => expect(retry).toHaveBeenCalledOnce());
+    expect(screen.getByRole("status").textContent).toContain("changed since it was loaded");
+    expect(screen.getByText("Completed session")).toBeTruthy();
+  });
+
+  it("describes an empty queue without claiming all activity history is reviewed", () => {
+    render(
+      <CoachAthleteCompletedActivities {...props} result={{ status: "granted", items: [] }} />,
+    );
+
+    expect(screen.getByText("No completions waiting for review.")).toBeTruthy();
+    expect(screen.queryByText(/all activities reviewed/i)).toBeNull();
   });
 
   it("retains the queue for a retry when acknowledgement delivery is unknown", async () => {

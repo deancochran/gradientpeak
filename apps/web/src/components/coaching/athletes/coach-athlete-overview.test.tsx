@@ -108,7 +108,21 @@ describe("CoachAthleteOverview", () => {
   it("removes private history when the selected identity is unavailable", () => {
     render(<CoachAthleteOverview athleteId="athlete-b" result={{ status: "unavailable" }} />);
 
-    expect(screen.getByRole("heading", { name: "Athlete workspace unavailable" })).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Athlete workspace unavailable" }),
+    ).toBeTruthy();
     expect(screen.queryByText("0.0")).toBeNull();
+  });
+
+  it("keeps shared training context below the athlete page identity heading", () => {
+    render(
+      <CoachAthleteOverview
+        athleteId="athlete-a"
+        result={{ status: "granted", model: { loadHistory: null } }}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { level: 2, name: "Current training state" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
   });
 });

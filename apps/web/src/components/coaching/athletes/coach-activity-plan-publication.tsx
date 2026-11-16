@@ -183,10 +183,12 @@ export function CoachActivityPlanPublication({
   }
 
   return (
-    <Card className="border-cyan-900 bg-slate-950 text-slate-50">
-      <CardHeader>
-        <p className="text-xs font-medium uppercase tracking-[0.18em] text-cyan-300">Plan</p>
-        <CardTitle>Publish an activity plan</CardTitle>
+    <Card className="border-cyan-800/90 bg-slate-950 text-slate-50 shadow-[0_0_0_1px_rgba(34,211,238,0.04)]">
+      <CardHeader className="space-y-2">
+        <p className="text-xs font-medium uppercase tracking-[0.18em] text-cyan-300">
+          Primary action
+        </p>
+        <CardTitle className="text-xl tracking-tight">Publish an activity plan</CardTitle>
         <CardDescription className="text-slate-400">
           Choose one of your activity plans and the athlete’s local planning date. Publishing
           creates a planned session; it does not promise delivery to a connected provider.
@@ -195,7 +197,7 @@ export function CoachActivityPlanPublication({
       <CardContent className="space-y-4">
         <Button
           asChild
-          className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
+          className="border-slate-600 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
           disabled={!preparationContext}
           type="button"
           variant="outline"
@@ -245,7 +247,7 @@ export function CoachActivityPlanPublication({
           <div className="space-y-2">
             <Label htmlFor="coach-activity-plan">Your activity plan</Label>
             <select
-              className="min-h-10 w-full rounded-md border border-slate-700 bg-slate-900 px-3 text-sm"
+              className="min-h-10 w-full rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-slate-50"
               disabled={!coachMembership || publish.isPending}
               id="coach-activity-plan"
               onChange={(event) => setActivityPlanId(event.target.value)}
@@ -272,7 +274,7 @@ export function CoachActivityPlanPublication({
           <div className="space-y-2">
             <Label htmlFor="coach-planning-date">Athlete planning date</Label>
             <input
-              className="min-h-10 w-full rounded-md border border-slate-700 bg-slate-900 px-3 text-sm"
+              className="min-h-10 w-full rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-slate-50 [color-scheme:dark]"
               disabled={!coachMembership || publish.isPending}
               id="coach-planning-date"
               onChange={(event) => setPlanningDate(event.target.value)}
@@ -353,7 +355,7 @@ export function CoachActivityPlanPublication({
         ) : null}
         <div className="flex flex-wrap gap-2">
           <Button
-            className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
+            className="border-slate-600 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
             disabled={!input || preview.isFetching || publish.isPending}
             onClick={() => void requestPreview()}
             type="button"
@@ -362,6 +364,7 @@ export function CoachActivityPlanPublication({
             {preview.isFetching ? "Checking publication…" : "Preview publication"}
           </Button>
           <Button
+            className="bg-cyan-400 font-semibold text-slate-950 hover:bg-cyan-300 focus-visible:ring-cyan-200 disabled:bg-slate-800 disabled:text-slate-500"
             disabled={
               !input ||
               !previewed ||

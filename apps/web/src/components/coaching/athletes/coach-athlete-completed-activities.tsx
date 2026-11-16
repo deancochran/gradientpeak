@@ -48,13 +48,36 @@ export function CoachAthleteCompletedActivities({
 }) {
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [accessRevoked, setAccessRevoked] = useState(false);
-  const contextKey = `${actorProfileId}:${organizationId}:${athleteProfileId}`;
+  const noticeKey = `coach-completion-review:${actorProfileId}:${organizationId}:${athleteProfileId}`;
   useEffect(() => {
-    setPending(null);
-    setError(null);
-    setAccessRevoked(false);
-  }, [contextKey]);
+    const stored = window.sessionStorage.getItem(noticeKey);
+    if (!stored) return;
+    window.sessionStorage.removeItem(noticeKey);
+    try {
+      const { message, recordedAt } = JSON.parse(stored) as {
+        message?: unknown;
+        recordedAt?: unknown;
+      };
+      if (
+        typeof message === "string" &&
+        typeof recordedAt === "number" &&
+        Date.now() - recordedAt < 15_000
+      )
+        setNotice(message);
+    } catch {
+      // A stale or malformed browser-local announcement must never affect the queue.
+    }
+  }, [noticeKey]);
+  if (!actorProfileId)
+    return (
+      <Card className="border-slate-800 bg-slate-900 text-slate-50">
+        <CardHeader>
+          <CardTitle>Completed activities unavailable</CardTitle>
+        </CardHeader>
+      </Card>
+    );
   if (result.status === "error")
     return (
       <Card className="border-slate-800 bg-slate-900 text-slate-50">
@@ -84,6 +107,7 @@ export function CoachAthleteCompletedActivities({
   async function acknowledge(item: Extract<Result, { status: "granted" }>["items"][number]) {
     setPending(item.sessionId);
     setError(null);
+    setNotice(null);
     try {
       const outcome = await acknowledgeCoachAthleteCompletedActivity({
         data: {
@@ -98,9 +122,19 @@ export function CoachAthleteCompletedActivities({
         await onRetry();
         return;
       }
+      const message =
+        outcome.outcome === "stale"
+          ? "This completion changed since it was loaded. The refreshed queue shows its current review status."
+          : outcome.outcome === "already_acknowledged"
+            ? "This completion was already marked reviewed. The queue is up to date."
+            : "Marked reviewed. The queue is up to date.";
+      // Preserve a one-time success announcement across the authoritative route
+      // reload. It never controls which rows are shown or hides a pending row.
+      window.sessionStorage.setItem(noticeKey, JSON.stringify({ message, recordedAt: Date.now() }));
       // Do not optimistically hide by session ID: another engagement or newer
       // evidence can still be pending. Reload the authoritative queue instead.
       await onRetry();
+      setNotice(message);
     } catch {
       setError("Review acknowledgement could not be confirmed. Retry safely.");
     } finally {
@@ -110,7 +144,9 @@ export function CoachAthleteCompletedActivities({
   return (
     <Card className="border-slate-800 bg-slate-900 text-slate-50">
       <CardHeader>
-        <p className="text-xs font-medium uppercase tracking-[0.18em] text-cyan-300">Read-only</p>
+        <p className="text-xs font-medium uppercase tracking-[0.18em] text-cyan-300">
+          Review queue
+        </p>
         <CardTitle>Completed activities</CardTitle>
         <CardDescription className="text-slate-400">
           Linked completions awaiting your review. Opening this list does not mark anything
@@ -121,6 +157,11 @@ export function CoachAthleteCompletedActivities({
         {error ? (
           <p role="alert" className="mb-3 text-sm text-destructive">
             {error}
+          </p>
+        ) : null}
+        {notice ? (
+          <p aria-live="polite" className="mb-3 text-sm text-cyan-100" role="status">
+            {notice}
           </p>
         ) : null}
         {items.length ? (
@@ -142,7 +183,7 @@ export function CoachAthleteCompletedActivities({
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-slate-400">No linked completed activities are available.</p>
+          <p className="text-sm text-slate-400">No completions waiting for review.</p>
         )}
       </CardContent>
     </Card>
