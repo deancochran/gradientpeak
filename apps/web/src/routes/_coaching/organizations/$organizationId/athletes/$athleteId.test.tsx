@@ -144,8 +144,8 @@ afterEach(() => {
   mocks.calendar.mockReset();
   mocks.completedActivities.mockReset();
   mocks.goals.mockReset();
-  mocks.invalidate.mockReset();
   mocks.directory.mockReset();
+  mocks.invalidate.mockReset();
   mocks.overview.mockReset();
   mocks.publicationProps = undefined;
   mocks.selected.mockReset();
