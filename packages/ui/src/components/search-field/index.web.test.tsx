@@ -86,6 +86,23 @@ describe("SearchField web", () => {
     expect(screen.getByTestId("plan-search-clear")).toBeInTheDocument();
   });
 
+  it("forwards result and status relationships to its search input", () => {
+    render(
+      <SearchField
+        aria-controls="plan-results"
+        aria-describedby="plan-search-status"
+        accessibilityLabel="Search plans"
+        onValueChange={vi.fn()}
+        placeholder="Search plans"
+        value="tempo"
+      />,
+    );
+
+    const input = screen.getByRole("searchbox", { name: "Search plans" });
+    expect(input).toHaveAttribute("aria-controls", "plan-results");
+    expect(input).toHaveAttribute("aria-describedby", "plan-search-status");
+  });
+
   it("announces loading and disables editing and clearing", () => {
     const onValueChange = vi.fn();
     render(

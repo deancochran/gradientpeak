@@ -16,7 +16,7 @@ import { Separator } from "@repo/ui/components/separator";
 import { cn } from "@repo/ui/lib/cn";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Loader2, Plus, Search, Send, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -159,12 +159,17 @@ function MessagesPage() {
     { enabled: Boolean(selectedId), refetchInterval: 5000 },
   );
   const trimmedComposeQuery = composeQuery?.trim() ?? "";
-  const { data: searchedUsers, isLoading: searchUsersLoading } = api.social.searchUsers.useQuery(
+  const {
+    data: searchedUsers,
+    isError: searchUsersError,
+    isFetching: searchUsersFetching,
+    refetch: refetchSearchUsers,
+  } = api.social.searchUsers.useQuery(
     {
       query: trimmedComposeQuery || undefined,
       limit: 20,
     },
-    { enabled: compose },
+    { enabled: compose, retry: false },
   );
   const markAsReadMutation = api.messaging.markAsRead.useMutation({
     onSettled: async () => invalidateMessagingInboxQueries(utils),
@@ -176,7 +181,10 @@ function MessagesPage() {
   const [groupName, setGroupName] = useState(composeGroup ?? "");
   const [composeSearchValue, setComposeSearchValue] = useState(composeQuery ?? "");
   const [composeError, setComposeError] = useState<string | null>(null);
+  const [recipientAnnouncement, setRecipientAnnouncement] = useState("");
   const [sendError, setSendError] = useState<string | null>(null);
+  const recipientResultsId = useId();
+  const recipientSearchStatusId = useId();
   const lastMarkedConversationRef = useRef<string | null>(null);
   const sendInFlightRef = useRef(false);
   const form = useForm<MessageComposerValues>({
@@ -251,9 +259,7 @@ function MessagesPage() {
     }
   });
 
-  const visibleUsers = (searchedUsers?.users ?? []).filter(
-    (candidate) => !selectedRecipients.some((recipient) => recipient.id === candidate.id),
-  );
+  const searchCandidates = searchedUsers?.users ?? [];
   const isCreatingConversation =
     getOrCreateDMMutation.isPending || createConversationMutation.isPending;
 
@@ -283,8 +289,15 @@ function MessagesPage() {
       : [...selectedRecipients, recipient];
 
     setSelectedRecipients(nextRecipients);
+    setRecipientAnnouncement(
+      isSelected
+        ? `Removed @${recipient.username ?? "user"} from recipients.`
+        : `Added @${recipient.username ?? "user"} to recipients.`,
+    );
     updateComposeSearch({ composeRecipients: nextRecipients });
   };
+
+  const clearRecipientAnnouncement = () => setRecipientAnnouncement("");
 
   const openConversation = async (id: string, successMessage: string) => {
     await Promise.all([
@@ -558,7 +571,12 @@ function MessagesPage() {
               </div>
               <ScrollArea className="flex-1">
                 <div className="space-y-6 p-4">
-                  <form method="get" action="/messages" className="flex gap-2">
+                  <form
+                    action="/messages"
+                    className="flex gap-2"
+                    method="get"
+                    onSubmit={clearRecipientAnnouncement}
+                  >
                     <input type="hidden" name="compose" value="true" />
                     <input type="hidden" name="composeGroup" value={groupName} />
                     <input
@@ -568,12 +586,17 @@ function MessagesPage() {
                     />
                     <div className="flex-1">
                       <SearchField
+                        aria-controls={recipientResultsId}
+                        aria-describedby={recipientSearchStatusId}
                         accessibilityLabel="Search message recipients"
                         clearTestId="messages-compose-search-clear"
-                        loading={searchUsersLoading}
-                        loadingLabel="Searching people"
+                        loading={searchUsersFetching}
+                        loadingLabel="Searching profiles"
                         name="composeQuery"
-                        onValueChange={setComposeSearchValue}
+                        onValueChange={(value) => {
+                          clearRecipientAnnouncement();
+                          setComposeSearchValue(value);
+                        }}
                         placeholder="Search by username"
                         testId="messages-compose-search-input"
                         value={composeSearchValue}
@@ -585,8 +608,8 @@ function MessagesPage() {
                     </Button>
                   </form>
 
-                  <div className="space-y-3">
-                    <div className="text-sm font-medium">Recipients</div>
+                  <fieldset className="space-y-3">
+                    <legend className="text-sm font-medium">Recipients</legend>
                     {selectedRecipients.length > 0 ? (
                       <div className="flex flex-wrap gap-2">
                         {selectedRecipients.map((recipient) => (
@@ -607,7 +630,7 @@ function MessagesPage() {
                         Select one person for a DM, or multiple people for a group conversation.
                       </div>
                     )}
-                  </div>
+                  </fieldset>
 
                   {selectedRecipients.length > 1 ? (
                     <div className="space-y-2">
@@ -633,23 +656,59 @@ function MessagesPage() {
                         ? `Results for "${trimmedComposeQuery}"`
                         : "Suggested profiles"}
                     </div>
-                    <div className="rounded-lg border">
-                      {searchUsersLoading ? (
+                    <div
+                      aria-busy={searchUsersFetching}
+                      className="sr-only"
+                      id={recipientSearchStatusId}
+                      aria-live={searchUsersFetching ? undefined : "polite"}
+                      role={searchUsersFetching ? undefined : "status"}
+                    >
+                      {searchUsersFetching
+                        ? ""
+                        : recipientAnnouncement ||
+                          (searchUsersError
+                            ? "Profile search failed"
+                            : searchCandidates.length > 0
+                              ? `${searchCandidates.length} profile results available`
+                              : "No profiles found")}
+                    </div>
+                    <div className="rounded-lg border" id={recipientResultsId}>
+                      {searchUsersFetching ? (
                         <div className="flex items-center justify-center gap-2 p-6 text-sm text-muted-foreground">
                           <Loader2 className="h-4 w-4 animate-spin" />
                           Searching profiles...
                         </div>
-                      ) : visibleUsers.length > 0 ? (
-                        visibleUsers.map((candidate, index) => {
+                      ) : searchUsersError ? (
+                        <div className="space-y-3 p-6 text-sm text-muted-foreground" role="alert">
+                          <p>
+                            Profiles could not be loaded. Your recipients and group name are still
+                            here.
+                          </p>
+                          <Button
+                            onClick={() => void refetchSearchUsers()}
+                            size="sm"
+                            type="button"
+                            variant="outline"
+                          >
+                            Retry search
+                          </Button>
+                        </div>
+                      ) : searchCandidates.length > 0 ? (
+                        searchCandidates.map((candidate, index) => {
+                          const isSelected = selectedRecipients.some(
+                            (recipient) => recipient.id === candidate.id,
+                          );
                           return (
                             <button
+                              aria-pressed={isSelected}
                               key={candidate.id}
                               type="button"
                               disabled={isCreatingConversation}
                               onClick={() => toggleRecipient(candidate)}
                               className={cn(
                                 "flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent",
-                                index < visibleUsers.length - 1 && "border-b",
+                                index < searchCandidates.length - 1 && "border-b",
+                                isSelected && "bg-accent",
                               )}
                             >
                               <Avatar className="h-10 w-10">
@@ -670,7 +729,7 @@ function MessagesPage() {
                                 </div>
                               </div>
                               <span className="rounded-md border px-2.5 py-1 text-xs font-medium">
-                                Add
+                                {isSelected ? "Selected" : "Add"}
                               </span>
                             </button>
                           );

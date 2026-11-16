@@ -93,9 +93,14 @@ describe("UI ownership guardrails", () => {
       // Organization/assignment-bound route and server-function composition, using shared primitives.
       "coaching/athletes/assigned-athlete-directory.tsx",
       "coaching/athletes/athlete-workspace-switcher.tsx",
+      "coaching/athletes/coach-activity-plan-publication.tsx",
       // Athlete-specific consented-calendar projection and server-function recovery.
       "coaching/athletes/coach-athlete-calendar.tsx",
+      "coaching/athletes/coach-athlete-completed-activities.tsx",
+      "coaching/athletes/coach-athlete-goals.tsx",
       "coaching/athletes/coach-athlete-overview.tsx",
+      "coaching/athletes/coach-athlete-zones-section.tsx",
+      "coaching/athletes/coach-athlete-zones.tsx",
       "coaching/coach-access-denied.tsx",
       "coaching/coach-shell.tsx",
       // Recipient-bound response and group roster workflows own web server-function recovery state.
@@ -184,6 +189,7 @@ describe("UI ownership guardrails", () => {
       "routes/route-event-attachment.tsx",
       "routes/route-library-controls.tsx",
       // Settings-specific analytics consent, theme state, and section anchors.
+      "settings/athlete-activity-plan-publication-permissions.tsx",
       "settings/settings-preferences-cards.tsx",
       "settings/settings-section-navigation.tsx",
       "sign-up-form.tsx",

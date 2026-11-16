@@ -5,6 +5,7 @@ export class MessagingPage {
 
   async openComposer() {
     await this.page.goto("/messages?compose=true");
+    await this.page.getByRole("heading", { name: "New message" }).waitFor();
   }
 
   async openInbox() {
@@ -12,11 +13,12 @@ export class MessagingPage {
   }
 
   async selectRecipient(username: string, input: "click" | "keyboard" = "click") {
-    await this.page.getByRole("searchbox", { name: "Search message recipients" }).fill(username);
+    const searchbox = this.page.getByRole("searchbox", { name: "Search message recipients" });
+    await searchbox.fill(username);
     const search = this.page.getByRole("button", { name: /^search$/i });
     const recipient = this.page.getByRole("button", { name: new RegExp(`@${username}`, "i") });
     if (input === "keyboard") {
-      await search.press("Enter");
+      await searchbox.press("Enter");
       await recipient.press("Enter");
     } else {
       await search.click();
@@ -41,6 +43,10 @@ export class MessagingPage {
       await this.page.getByLabel("Group name").fill(name);
       await this.page.getByRole("button", { name: "Create conversation" }).click();
     });
+  }
+
+  async removeRecipient(username: string) {
+    await this.page.getByRole("button", { name: `Remove @${username} from recipients` }).click();
   }
 
   async send(message: string, input: "click" | "keyboard" = "click") {

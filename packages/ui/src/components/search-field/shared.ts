@@ -14,5 +14,7 @@ export interface SearchFieldProps {
 }
 
 export interface SearchFieldWebProps extends SearchFieldProps {
+  "aria-controls"?: string;
+  "aria-describedby"?: string;
   name?: string;
 }
