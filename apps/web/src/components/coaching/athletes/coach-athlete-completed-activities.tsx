@@ -61,10 +61,10 @@ export function CoachAthleteCompletedActivities({
   const [accessRevoked, setAccessRevoked] = useState(false);
   const noticeKey = `coach-completion-review:${actorProfileId}:${organizationId}:${athleteProfileId}`;
   useEffect(() => {
-    const stored = window.sessionStorage.getItem(noticeKey);
-    if (!stored) return;
-    window.sessionStorage.removeItem(noticeKey);
     try {
+      const stored = window.sessionStorage.getItem(noticeKey);
+      if (!stored) return;
+      window.sessionStorage.removeItem(noticeKey);
       const { message, recordedAt } = JSON.parse(stored) as {
         message?: unknown;
         recordedAt?: unknown;

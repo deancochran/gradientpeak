@@ -17,6 +17,7 @@ describe("CoachAthleteCompletedActivities", () => {
     cleanup();
     window.sessionStorage.clear();
     acknowledge.mockReset();
+    vi.restoreAllMocks();
   });
   it("distinguishes a loading failure from denied consent and offers retry", () => {
     const retry = vi.fn();
@@ -135,6 +136,65 @@ describe("CoachAthleteCompletedActivities", () => {
     await waitFor(() => expect(retry).toHaveBeenCalledOnce());
     expect(screen.getByRole("status").textContent).toContain("changed since it was loaded");
     expect(screen.getByText("Completed session")).toBeTruthy();
+  });
+
+  it("keeps the queue visible when browser storage cannot be read", () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("storage disabled");
+    });
+    render(
+      <CoachAthleteCompletedActivities
+        {...props}
+        result={{
+          status: "granted",
+          items: [
+            {
+              activityCategory: "run",
+              activityId: props.athleteProfileId,
+              distanceMeters: null,
+              evidenceVersion: "v1",
+              elapsedMs: null,
+              planningDate: "2026-11-10",
+              sessionId: "22222222-2222-4222-8222-222222222222",
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Completed session")).toBeTruthy();
+    expect(acknowledge).not.toHaveBeenCalled();
+  });
+
+  it("keeps the queue visible when a stored notice cannot be removed", () => {
+    vi.spyOn(Storage.prototype, "getItem").mockReturnValue(
+      JSON.stringify({ message: "Marked reviewed.", recordedAt: Date.now() }),
+    );
+    vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => {
+      throw new Error("storage disabled");
+    });
+    render(
+      <CoachAthleteCompletedActivities
+        {...props}
+        result={{
+          status: "granted",
+          items: [
+            {
+              activityCategory: "run",
+              activityId: props.athleteProfileId,
+              distanceMeters: null,
+              evidenceVersion: "v1",
+              elapsedMs: null,
+              planningDate: "2026-11-10",
+              sessionId: "22222222-2222-4222-8222-222222222222",
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Completed session")).toBeTruthy();
+    expect(acknowledge).not.toHaveBeenCalled();
   });
 
   it("still reconciles a confirmed review when browser-local notice storage fails", async () => {
