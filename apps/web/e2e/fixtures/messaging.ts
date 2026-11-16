@@ -22,20 +22,21 @@ type MessagingHarness = {
 
 export const test = sharedTest.extend<{ messaging: MessagingHarness }>({
   messaging: async ({ actorFactory, e2eCleanup, e2eDatabase, e2eIdentity }, use) => {
-    const entries = await Promise.all(
-      (Object.keys(actorNames) as ActorKey[]).map(async (key) => {
-        const definition = actorNames[key];
-        const actor = await actorFactory.create("athlete", {
-          fullName: definition.name,
-          label: `messaging-${key}`,
-          primary: key === "a",
-          username: `${definition.username}_${e2eIdentity.suffix(`messaging-${key}`)}`,
-        });
-        if (!actor.username) throw new Error(`Messaging actor ${key} has no username.`);
-        const page = await actor.createPage("/");
-        return [key, Object.assign(actor, { page, username: actor.username })] as const;
-      }),
-    );
+    // These multi-actor journeys need messaging, not three concurrent dashboard loads.
+    // Keep actor preparation sequential to avoid competing cold route hydration bursts.
+    const entries: Array<readonly [ActorKey, Actor]> = [];
+    for (const key of Object.keys(actorNames) as ActorKey[]) {
+      const definition = actorNames[key];
+      const actor = await actorFactory.create("athlete", {
+        fullName: definition.name,
+        label: `messaging-${key}`,
+        primary: key === "a",
+        username: `${definition.username}_${e2eIdentity.suffix(`messaging-${key}`)}`,
+      });
+      if (!actor.username) throw new Error(`Messaging actor ${key} has no username.`);
+      const page = await actor.createPage("/messages");
+      entries.push([key, Object.assign(actor, { page, username: actor.username })]);
+    }
     const actors: Record<ActorKey, Actor> = {
       a: entries.find(([key]) => key === "a")?.[1] ?? failMissingActor("a"),
       b: entries.find(([key]) => key === "b")?.[1] ?? failMissingActor("b"),

@@ -19,7 +19,10 @@ const mocks = vi.hoisted(() => ({
     flashType: undefined,
   },
   inboxError: false,
+  searchFetching: false,
   refetchInbox: vi.fn(),
+  searchError: false,
+  refetchSearch: vi.fn(),
 }));
 
 vi.mock("@repo/api/react", () => ({
@@ -70,6 +73,9 @@ vi.mock("../../lib/api/client", () => ({
             users: [{ id: "user-2", username: "second", is_public: true, avatar_url: null }],
           },
           isLoading: false,
+          isFetching: mocks.searchFetching,
+          isError: mocks.searchError,
+          refetch: mocks.refetchSearch,
         }),
       },
     },
@@ -85,6 +91,8 @@ afterEach(() => {
     { id: "user-1", username: "rider", is_public: true, avatar_url: null },
   ];
   mocks.inboxError = false;
+  mocks.searchError = false;
+  mocks.searchFetching = false;
 });
 
 describe("messages recipient GET form", () => {
@@ -152,6 +160,54 @@ describe("messages recipient GET form", () => {
       }),
     );
     expect(mocks.getOrCreateDM).not.toHaveBeenCalled();
+  });
+
+  it("announces recipient selection, exposes pressed state, and removes a recipient", () => {
+    const MessagesPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<MessagesPage />);
+
+    const recipient = screen.getByRole("button", { name: /@second/i });
+    fireEvent.click(recipient);
+    expect(recipient.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("status").textContent).toContain("Added @second to recipients.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove @second from recipients" }));
+    expect(screen.getByRole("status").textContent).toContain("Removed @second from recipients.");
+  });
+
+  it("clears recipient announcements for a new search and announces its loading and result states", () => {
+    const MessagesPage = (Route as unknown as { component: React.ComponentType }).component;
+    const { rerender } = render(<MessagesPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: /@second/i }));
+    expect(screen.getByRole("status").textContent).toContain("Added @second to recipients.");
+
+    mocks.searchFetching = true;
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search message recipients" }), {
+      target: { value: "new search" },
+    });
+    rerender(<MessagesPage />);
+    expect(screen.getByRole("status", { name: "Searching profiles" })).toBeTruthy();
+
+    mocks.searchFetching = false;
+    rerender(<MessagesPage />);
+    expect(screen.getByRole("status").textContent).toContain("1 profile results available");
+  });
+
+  it("keeps recipient and group drafts visible when profile search fails and retries", () => {
+    mocks.routeSearch.composeRecipients = [
+      { id: "user-1", username: "rider", is_public: true, avatar_url: null },
+      { id: "user-2", username: "second", is_public: true, avatar_url: null },
+    ];
+    mocks.searchError = true;
+    const MessagesPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<MessagesPage />);
+
+    expect(screen.getByRole("alert").textContent).toContain("Profiles could not be loaded");
+    expect(screen.getByRole("button", { name: "Remove @rider from recipients" })).toBeTruthy();
+    expect((screen.getByLabelText("Group name") as HTMLInputElement).value).toBe("Paceline");
+    fireEvent.click(screen.getByRole("button", { name: "Retry search" }));
+    expect(mocks.refetchSearch).toHaveBeenCalledOnce();
   });
 });
 
