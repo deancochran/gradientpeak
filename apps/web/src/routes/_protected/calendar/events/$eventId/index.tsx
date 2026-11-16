@@ -460,7 +460,7 @@ function EventDetailPage() {
           ) : null}
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
+        <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr] lg:items-start">
           <div className="space-y-6">
             <Card>
               <CardHeader>
@@ -477,39 +477,45 @@ function EventDetailPage() {
                   <Badge variant="outline">{activityCategory}</Badge>
                   <Badge variant="secondary">{plannedSession.lifecycle.status}</Badge>
                 </div>
-                <DetailRow label="Planning date" value={plannedSession.planningDate} />
-                <DetailRow
-                  label="Planned duration"
-                  value={formatComparisonDuration(
-                    plannedSession.comparison?.planned.durationSeconds ?? null,
-                  )}
-                />
-                {plannedSession.comparison?.actual.state === "observed" ||
-                plannedSession.comparison?.actual.state === "unknown" ? (
-                  <>
-                    <DetailRow
-                      label="Actual duration"
-                      value={formatComparisonDuration(
-                        plannedSession.comparison.actual.durationSeconds,
-                      )}
-                    />
-                    <DetailRow
-                      label="Actual distance"
-                      value={formatComparisonDistance(
-                        plannedSession.comparison.actual.distanceMeters,
-                      )}
-                    />
-                  </>
-                ) : plannedSession.comparison?.actual.state === "not_performed" ? (
-                  <DetailRow label="Actual" value="Not performed" />
-                ) : null}
-                {completedActivityId ? (
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <DetailRow compact label="Planning date" value={plannedSession.planningDate} />
                   <DetailRow
-                    label="Completed activity"
-                    value="Linked activity available"
-                    href={`/activities/${completedActivityId}`}
+                    compact
+                    label="Planned duration"
+                    value={formatComparisonDuration(
+                      plannedSession.comparison?.planned.durationSeconds ?? null,
+                    )}
                   />
-                ) : null}
+                  {plannedSession.comparison?.actual.state === "observed" ||
+                  plannedSession.comparison?.actual.state === "unknown" ? (
+                    <>
+                      <DetailRow
+                        compact
+                        label="Actual duration"
+                        value={formatComparisonDuration(
+                          plannedSession.comparison.actual.durationSeconds,
+                        )}
+                      />
+                      <DetailRow
+                        compact
+                        label="Actual distance"
+                        value={formatComparisonDistance(
+                          plannedSession.comparison.actual.distanceMeters,
+                        )}
+                      />
+                    </>
+                  ) : plannedSession.comparison?.actual.state === "not_performed" ? (
+                    <DetailRow compact label="Actual" value="Not performed" />
+                  ) : null}
+                  {completedActivityId ? (
+                    <DetailRow
+                      compact
+                      label="Completed activity"
+                      value="Linked activity available"
+                      href={`/activities/${completedActivityId}`}
+                    />
+                  ) : null}
+                </div>
                 <Button asChild type="button" variant="outline">
                   <Link
                     to="/activity-plans/$activityPlanId"
@@ -528,7 +534,7 @@ function EventDetailPage() {
             <ActivityPlanSessionFlow structure={activityPlanQuery.data?.detail?.structure} />
           </div>
 
-          <Card>
+          <Card className="lg:self-start">
             <CardHeader>
               <CardTitle>Completion</CardTitle>
               <CardDescription>
@@ -990,9 +996,19 @@ export function EventDeleteForm({
   );
 }
 
-function DetailRow({ href, label, value }: { href?: string; label: string; value: string }) {
+function DetailRow({
+  compact = false,
+  href,
+  label,
+  value,
+}: {
+  compact?: boolean;
+  href?: string;
+  label: string;
+  value: string;
+}) {
   return (
-    <div className="rounded-xl border p-4">
+    <div className={compact ? "rounded-xl border p-3" : "rounded-xl border p-4"}>
       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
       {href ? (
         <a

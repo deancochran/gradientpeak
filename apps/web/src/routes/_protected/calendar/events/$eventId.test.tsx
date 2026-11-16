@@ -38,6 +38,8 @@ const mocks = vi.hoisted(() => ({
     isLoading: boolean;
     refetch: ReturnType<typeof vi.fn>;
   },
+  activityPlanInputs: [] as unknown[],
+  activityPlanOptions: [] as unknown[],
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -98,7 +100,11 @@ vi.mock("../../../../lib/api/client", () => ({
     profiles: { get: { useQuery: () => ({ data: { planning_timezone: "UTC" } }) } },
     activityPlans: {
       getById: {
-        useQuery: () => mocks.activityPlanQuery,
+        useQuery: (input: unknown, options: unknown) => {
+          mocks.activityPlanInputs.push(input);
+          mocks.activityPlanOptions.push(options);
+          return mocks.activityPlanQuery;
+        },
       },
     },
     activities: {
@@ -126,6 +132,8 @@ afterEach(() => {
   mocks.plannedSession = undefined;
   mocks.plannedSessionInputs = [];
   mocks.plannedSessionOptions = [];
+  mocks.activityPlanInputs = [];
+  mocks.activityPlanOptions = [];
   mocks.search = { month: "2026-07", view: "month" };
   mocks.completionCandidates = { canAssociate: true, items: [], nextCursor: null };
   mocks.plannedSessionMutationOptions = undefined;
@@ -236,6 +244,23 @@ describe("EventDetailPage", () => {
       planningDate: "2000-01-01",
       lifecycle: { status: "scheduled" },
       activityPlanId: "00000000-0000-4000-8000-000000000003",
+      prescription: {
+        resolutionManifest: {
+          resolved_structure: {
+            version: 5,
+            activity_category: "run",
+            items: [
+              {
+                type: "step",
+                id: "00000000-0000-4000-8000-000000000099",
+                name: "Legacy conflicting snapshot",
+                duration: { type: "time", seconds: 60 },
+                targets: [],
+              },
+            ],
+          },
+        },
+      },
     };
     mocks.activityPlanQuery = {
       data: {
@@ -286,9 +311,18 @@ describe("EventDetailPage", () => {
     expect(screen.getByText("Main set")).toBeTruthy();
     expect(screen.getByText("Repeat 3 times")).toBeTruthy();
     expect(screen.getByText("Easy running.")).toBeTruthy();
+    expect(screen.queryByText("Legacy conflicting snapshot")).toBeNull();
     expect(screen.getByText(/Current activity plan instructions/)).toBeTruthy();
+    expect(
+      screen.getByText(/Scheduling provenance is retained, but it is not the active instruction/),
+    ).toBeTruthy();
     expect(screen.queryByText(/Frozen prescription/i)).toBeNull();
     expect(screen.getByRole("link", { name: "Open activity plan" })).toBeTruthy();
+    expect(mocks.activityPlanInputs).toContainEqual({
+      id: "00000000-0000-4000-8000-000000000003",
+      personalize: false,
+    });
+    expect(mocks.activityPlanOptions).toContainEqual({ enabled: true });
   });
 
   it("keeps a planned session in a dependent-plan loading or retryable error state", () => {
