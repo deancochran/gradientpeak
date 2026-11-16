@@ -199,6 +199,13 @@ describe("TrainingLoadPath", () => {
 
     const { container, rerender } = render(<TrainingLoadPath projection={projection} />);
     expect(screen.getAllByText("Common Load ~35").length).toBeGreaterThanOrEqual(2);
+    const scheduledSummary = within(container).getByTestId("training-load-summary-scheduled");
+    const scheduledSummaryValue = within(scheduledSummary).getByTestId(
+      "training-load-summary-scheduled-value",
+    );
+    expect(scheduledSummaryValue.textContent).toBe("Common Load ~35");
+    expect(scheduledSummaryValue.className).toContain("max-w-full");
+    expect(scheduledSummaryValue.className).toContain("whitespace-normal");
     expect(screen.queryByText("Partial Common Load 35")).toBeNull();
     const completedItem = screen.getByText("Ride without Load").parentElement?.parentElement;
     if (!completedItem) throw new Error("Expected the completed activity row");
@@ -255,6 +262,9 @@ describe("TrainingLoadPath", () => {
       />,
     );
     expect(screen.getAllByText("Common Load unavailable").length).toBeGreaterThan(0);
+    expect(within(container).getByTestId("training-load-summary-scheduled-value").textContent).toBe(
+      "Common Load unavailable",
+    );
     expect(screen.queryByText("Partial Common Load 20")).toBeNull();
 
     rerender(

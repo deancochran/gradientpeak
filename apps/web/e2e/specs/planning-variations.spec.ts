@@ -1,3 +1,4 @@
+import type { Page } from "@playwright/test";
 import {
   activities,
   activitySegments,
@@ -11,6 +12,30 @@ import { withDayAgendaFixture } from "../planning/day-agenda";
 import { createDirectPlannedSessionFixture } from "../planning/planned-session";
 import { LocalE2EDatabase } from "../support/database";
 import { withTrainingPlanLibraryFixture } from "../training-plans/data";
+
+async function expectScheduledLoadLabelContained(athletePage: Page) {
+  const summary = athletePage.getByTestId("training-load-summary-scheduled");
+  const label = athletePage.getByTestId("training-load-summary-scheduled-value");
+  await expect(summary).toBeVisible();
+  await expect(label).toBeVisible();
+  await expect
+    .poll(() =>
+      label.evaluate((element) => {
+        const summaryElement = element.closest<HTMLElement>(
+          '[data-testid="training-load-summary-scheduled"]',
+        );
+        if (!summaryElement) return false;
+        const labelBounds = element.getBoundingClientRect();
+        const summaryBounds = summaryElement.getBoundingClientRect();
+        return (
+          element.scrollWidth <= element.clientWidth &&
+          labelBounds.left >= summaryBounds.left &&
+          labelBounds.right <= summaryBounds.right
+        );
+      }),
+    )
+    .toBe(true);
+}
 
 test("[variation:agenda-detail] planned and completed cards open and return to the selected day", async ({
   athleteActor,
@@ -119,6 +144,13 @@ test("[variation:plan-selected-day] selected date keeps canonical rows and an em
     await expect(athletePage.getByLabel("Selected day")).toHaveValue("2026-11-18");
     await expect(athletePage.getByText("Loading training path…")).not.toBeVisible();
     await expect(athletePage.getByTestId("plan-selected-day-context")).toBeInViewport();
+    await expectScheduledLoadLabelContained(athletePage);
+    if (testInfo.project.name === "Mobile Chrome 390x844") {
+      await athletePage.setViewportSize({ width: 320, height: 844 });
+      await expectScheduledLoadLabelContained(athletePage);
+      await athletePage.setViewportSize({ width: 390, height: 844 });
+      await expectScheduledLoadLabelContained(athletePage);
+    }
     await athletePage.screenshot({
       fullPage: true,
       path: testInfo.outputPath("plan-selected-day-future.png"),
