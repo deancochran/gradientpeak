@@ -120,10 +120,10 @@ describe("TrainingLoadPath", () => {
     expect(
       document.querySelector('[data-scheduled-item-id="00000000-0000-4000-8000-000000000001"]'),
     ).toBeTruthy();
-    expect(screen.getByText("Load timeline and activity diagnostics")).toBeTruthy();
+    expect(screen.getByText("Timeline & diagnostics")).toBeTruthy();
     expect(screen.getAllByText("Common Load 100").length).toBeGreaterThan(0);
     expect(screen.getByText(/for 2026-07-20–2026-07-26 in UTC/)).toBeTruthy();
-    screen.getByText("Load timeline and activity diagnostics").click();
+    screen.getByText("Timeline & diagnostics").click();
     const chart = screen.getByRole("img", { name: /Training load chart/ });
     expect(within(chart).getByText("Scheduled / planned Common Load")).toBeTruthy();
     expect(within(chart).getByText("Completed Common Load")).toBeTruthy();

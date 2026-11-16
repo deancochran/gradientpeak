@@ -2,9 +2,17 @@ import { type CalendarProjectionItem, formatDateOnlyInTimeZone } from "@repo/cor
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@repo/ui/components/dialog";
 import { Link } from "@tanstack/react-router";
 import { CalendarDays, CheckCircle2, CircleArrowRight, Flag } from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { PlanGoalForm } from "../../components/protected/plan-goal-form";
 import { api } from "../../lib/api/client";
 import {
   formatShortDayLabel,
@@ -65,21 +73,30 @@ export function PlanDashboard({
   const bootstrapToday = planningTimezone
     ? formatDateOnlyInTimeZone(new Date(), planningTimezone)
     : getTodayDateKey();
-  // Keep the request's selected date stable while the initial projection is loading.
-  // Its authoritative today then drives all temporal labels and goal boundaries.
-  const selectedDate =
+  const routeSelectedDate =
     selectedDateFromRoute && isValidDateKey(selectedDateFromRoute)
       ? selectedDateFromRoute
-      : bootstrapToday;
+      : undefined;
+  // A URL date always wins. Without one, request once from the bootstrap date and
+  // then re-anchor once to the server's authoritative planning-day boundary.
+  const [projectionAnchorDate, setProjectionAnchorDate] = useState(bootstrapToday);
+  const requestedDate = routeSelectedDate ?? projectionAnchorDate;
   const planTabQuery = api.trainingPlans.getPlanTabProjection.useQuery(
     {
-      startDate: shiftDateKey(selectedDate, -42),
-      endDate: shiftDateKey(selectedDate, 47),
+      startDate: shiftDateKey(requestedDate, -42),
+      endDate: shiftDateKey(requestedDate, 47),
     },
     { enabled: Boolean(profileQuery.data) },
   );
+  const authoritativeToday = planTabQuery.data?.today ?? null;
+  useEffect(() => {
+    if (!routeSelectedDate && authoritativeToday && authoritativeToday !== projectionAnchorDate) {
+      setProjectionAnchorDate(authoritativeToday);
+    }
+  }, [authoritativeToday, projectionAnchorDate, routeSelectedDate]);
+  const selectedDate = routeSelectedDate ?? authoritativeToday ?? projectionAnchorDate;
   const selectedDayQuery = api.calendar.day.useQuery({ date: selectedDate });
-  const today = planTabQuery.data?.today ?? bootstrapToday;
+  const today = authoritativeToday ?? bootstrapToday;
   const goalsQuery = api.goals.list.useQuery(
     {
       profile_id: profileQuery.data?.id ?? "00000000-0000-0000-0000-000000000000",
@@ -104,11 +121,16 @@ export function PlanDashboard({
       ),
     [selectedDate, selectedDayQuery.data?.projection.items],
   );
-  const profileUnavailable = profileQuery.isError || (profileQuery.isSuccess && !profileQuery.data);
+  const profileUnavailable = !profileQuery.data && (profileQuery.isError || profileQuery.isSuccess);
   const profileLoading = profileQuery.isLoading;
-  const trainingPathLoading = profileLoading || planTabQuery.isLoading;
+  const trainingPathLoading = !planTabQuery.data && (profileLoading || planTabQuery.isLoading);
   const trainingPathUnavailable =
-    profileUnavailable || (planTabQuery.isError && !planTabQuery.data);
+    !planTabQuery.data && (profileUnavailable || planTabQuery.isError);
+  const hasRefreshFailure =
+    (profileQuery.isError && Boolean(profileQuery.data)) ||
+    (planTabQuery.isError && Boolean(planTabQuery.data)) ||
+    selectedDayQuery.isError ||
+    goalsQuery.isError;
   const scheduledSession = selectedDayItems.find(
     (item) =>
       item.kind === "planned_activity" &&
@@ -123,18 +145,26 @@ export function PlanDashboard({
 
   return (
     <>
-      {selectedDayQuery.isError || goalsQuery.isError ? (
+      {hasRefreshFailure ? (
         <div
           role="alert"
           className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/40 p-4"
         >
           <p className="text-sm">
-            Some planning data could not be refreshed. Available data remains visible.
+            Some planning data could not be refreshed. Available data remains visible and may be
+            stale.
           </p>
           <Button
             variant="outline"
             size="sm"
-            onClick={() => void Promise.all([selectedDayQuery.refetch(), goalsQuery.refetch()])}
+            onClick={() =>
+              void Promise.all([
+                ...(profileQuery.isError ? [profileQuery.refetch()] : []),
+                ...(planTabQuery.isError ? [planTabQuery.refetch()] : []),
+                ...(selectedDayQuery.isError ? [selectedDayQuery.refetch()] : []),
+                ...(goalsQuery.isError ? [goalsQuery.refetch()] : []),
+              ])
+            }
           >
             Retry
           </Button>
@@ -155,7 +185,7 @@ export function PlanDashboard({
         selectedDate={selectedDate}
         {...(onSelectedDateChange ? { onSelectedDateChange } : {})}
       />
-      <Card className="overflow-hidden">
+      <Card className="overflow-hidden" data-testid="plan-selected-day-context">
         <CardHeader className="gap-3 border-b bg-muted/20 pb-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="space-y-1">
@@ -296,16 +326,60 @@ export function PlanDashboard({
           )}
         </CardContent>
       </Card>
-      {nextGoal || profileLoading || goalsQuery.isLoading ? (
+      {planTabQuery.data?.currentScheduledPlan ? (
         <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <Flag className="h-4 w-4 text-muted-foreground" />
-                  Goals
-                </CardTitle>
-              </div>
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
+            <div>
+              <p className="text-xs font-medium tracking-[0.12em] text-muted-foreground uppercase">
+                Current plan
+              </p>
+              <p className="font-medium">{planTabQuery.data.currentScheduledPlan.name}</p>
+            </div>
+            <Button asChild size="sm" variant="outline">
+              <Link
+                to="/calendar/events/$eventId"
+                params={{ eventId: planTabQuery.data.currentScheduledPlan.nextPlannedSessionId }}
+                search={{
+                  flash: undefined,
+                  flashType: undefined,
+                  month: getMonthKey(
+                    new Date(
+                      `${planTabQuery.data.currentScheduledPlan.nextPlannedSessionDate}T12:00:00`,
+                    ),
+                  ),
+                  resourceType: "planned_session",
+                  view: "agenda",
+                }}
+              >
+                {planTabQuery.data.currentScheduledPlan.nextPlannedSessionDate}
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <CardTitle className="flex items-center gap-2">
+              <Flag className="h-4 w-4 text-muted-foreground" />
+              Goals
+            </CardTitle>
+            <div className="flex flex-wrap gap-2">
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button size="sm">New goal</Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Create goal</DialogTitle>
+                  </DialogHeader>
+                  <PlanGoalForm
+                    {...(profileQuery.data?.id !== undefined
+                      ? { profileId: profileQuery.data.id }
+                      : {})}
+                  />
+                </DialogContent>
+              </Dialog>
               <Button asChild size="sm" variant="outline">
                 <Link
                   to="/goals"
@@ -321,34 +395,41 @@ export function PlanDashboard({
                 </Link>
               </Button>
             </div>
-          </CardHeader>
-          <CardContent>
-            {profileQuery.isLoading || goalsQuery.isLoading ? (
-              <p className="text-sm text-muted-foreground">Loading goals...</p>
-            ) : profileUnavailable || (goalsQuery.isError && !goalsQuery.data) ? (
-              <p className="text-sm text-muted-foreground">Goals are unavailable.</p>
-            ) : nextGoal ? (
-              <div className="space-y-3">
-                <div className="rounded-xl border p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-medium">{nextGoal.title}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {formatShortDayLabel(nextGoal.target_date)}
-                      </p>
-                    </div>
-                    <Badge variant="outline">{nextGoal.priority}/10</Badge>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <Badge>{nextGoal.activity_category}</Badge>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-          </CardContent>
-        </Card>
-      ) : null}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {profileQuery.isLoading || goalsQuery.isLoading ? (
+            <p className="text-sm text-muted-foreground">Loading goals...</p>
+          ) : profileUnavailable || (goalsQuery.isError && !goalsQuery.data) ? (
+            <p className="text-sm text-muted-foreground">Goals are unavailable.</p>
+          ) : nextGoal ? (
+            <Link
+              className="block rounded-xl border p-3 transition-colors hover:border-primary hover:bg-accent/40"
+              params={{ goalId: nextGoal.id }}
+              search={{ flash: undefined, flashType: undefined }}
+              to="/goals/$goalId"
+            >
+              <span className="flex items-start justify-between gap-3">
+                <span>
+                  <span className="block font-medium">{nextGoal.title}</span>
+                  <span className="block text-sm text-muted-foreground">
+                    {formatShortDayLabel(nextGoal.target_date)}
+                  </span>
+                </span>
+                <Badge variant="outline">{nextGoal.priority}/10</Badge>
+              </span>
+            </Link>
+          ) : (
+            <p className="text-sm text-muted-foreground">No upcoming goals yet.</p>
+          )}
+        </CardContent>
+      </Card>
       <div className="flex flex-wrap gap-2">
+        <Button asChild variant="outline">
+          <Link to="/training-plans" search={{ tab: "owned" }}>
+            Open training-plan library
+          </Link>
+        </Button>
         <Button asChild variant="outline">
           <Link to="/calendar" search={{ month: getMonthKey(new Date()), view: "month" }}>
             Open calendar

@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   goalInput: vi.fn(),
+  projectionInput: vi.fn(),
   profile: {
     data: { id: "profile" },
     isError: false,
@@ -34,10 +35,15 @@ vi.mock("@tanstack/react-router", () => ({
     search,
   }: {
     children: React.ReactNode;
-    params?: { eventId?: string };
+    params?: Record<string, string>;
     search?: { resourceType?: string };
   }) => (
-    <a data-event-id={params?.eventId} data-resource-type={search?.resourceType} href="/planning">
+    <a
+      data-event-id={params?.eventId}
+      data-goal-id={params?.goalId}
+      data-resource-type={search?.resourceType}
+      href="/planning"
+    >
       {children}
     </a>
   ),
@@ -58,7 +64,10 @@ vi.mock("../../lib/api/client", () => ({
     profiles: { get: { useQuery: () => state.profile } },
     trainingPlans: {
       getPlanTabProjection: {
-        useQuery: () => state.projection,
+        useQuery: (input: unknown) => {
+          state.projectionInput(input);
+          return state.projection;
+        },
       },
       list: { useQuery: () => ({ data: { items: [] }, isError: false, isLoading: false }) },
     },
@@ -83,12 +92,14 @@ vi.mock("../../lib/api/client", () => ({
     },
   },
 }));
+vi.mock("../../components/protected/plan-goal-form", () => ({ PlanGoalForm: () => null }));
 
 import { PlanDashboard } from "./plan-dashboard";
 
 afterEach(() => {
   cleanup();
   state.goalInput.mockReset();
+  state.projectionInput.mockReset();
   state.profile = {
     data: { id: "profile" },
     isError: false,
@@ -97,6 +108,12 @@ afterEach(() => {
     refetch: vi.fn(),
   };
   state.projection = { data: {}, isError: false, isLoading: false, refetch: vi.fn() };
+  state.goals = {
+    data: { items: [] },
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  };
   state.selectedDay = {
     data: { projection: { items: [] } },
     isError: false,
@@ -149,6 +166,53 @@ it("uses the projection's authoritative day for selected-day status and the goal
   );
 });
 
+it("reanchors a no-URL selection to the server planning day without navigation", async () => {
+  state.projection = {
+    data: {
+      today: "2026-04-02",
+      timeline: {
+        days: [
+          {
+            date: "2026-04-02",
+            load: {
+              completedLoad: 0,
+              completedLoadStatus: "known_zero",
+              plannedLoad: 0,
+              plannedLoadStatus: "known_zero",
+              scheduledLoad: 0,
+              scheduledLoadStatus: "known_zero",
+              remainingLoad: 0,
+              remainingLoadStatus: "known_zero",
+              recommendedLoad: null,
+              recommendedLoadStatus: "unavailable",
+              deltaLoad: null,
+            },
+            scheduledItems: [],
+            completedItems: [],
+            annotations: [],
+          },
+        ],
+      },
+      fitness: { actual: [], scheduled: [], recommended: [] },
+    },
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as never;
+
+  render(<PlanDashboard />);
+
+  await waitFor(() =>
+    expect(state.projectionInput).toHaveBeenCalledWith(
+      expect.objectContaining({ startDate: "2026-04-02", endDate: "2026-04-02" }),
+    ),
+  );
+  expect(screen.getByText("Today", { exact: true })).toBeTruthy();
+  expect(state.goalInput).toHaveBeenCalledWith(
+    expect.objectContaining({ target_date_on_or_after: "2026-04-02" }),
+  );
+});
+
 it("does not turn a failed profile dependency into absent planning data", () => {
   state.profile = {
     data: undefined,
@@ -157,6 +221,7 @@ it("does not turn a failed profile dependency into absent planning data", () => 
     isSuccess: false,
     refetch: vi.fn(),
   } as never;
+  state.projection = { data: undefined, isError: false, isLoading: false, refetch: vi.fn() };
   render(<PlanDashboard />);
 
   expect(screen.getByText(/planning profile could not be loaded/)).toBeTruthy();
@@ -172,6 +237,7 @@ it("keeps dependent planning surfaces loading while the profile is loading", () 
     isSuccess: false,
     refetch: vi.fn(),
   } as never;
+  state.projection = { data: undefined, isError: false, isLoading: false, refetch: vi.fn() };
   render(<PlanDashboard />);
 
   expect(screen.getByText("Loading training path…")).toBeTruthy();
@@ -187,6 +253,7 @@ it("reports a missing resolved profile as unavailable and retries the profile de
     isSuccess: true,
     refetch,
   } as never;
+  state.projection = { data: undefined, isError: false, isLoading: false, refetch: vi.fn() };
   render(<PlanDashboard />);
 
   expect(screen.getByText(/planning profile could not be loaded/)).toBeTruthy();
@@ -199,6 +266,100 @@ it("does not label an initial projection failure as no active plan", () => {
   render(<PlanDashboard />);
 
   expect(screen.getByText(/Training path could not be refreshed/)).toBeTruthy();
+});
+
+it("keeps a cached projection visible when its refresh fails", () => {
+  state.projection = {
+    data: {
+      today: "2026-04-01",
+      timeline: { days: [], weeks: [] },
+      fitness: { actual: [], scheduled: [], recommended: [] },
+    },
+    isError: true,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as never;
+  render(<PlanDashboard selectedDate="2026-04-01" />);
+
+  expect(screen.getByRole("alert").textContent).toMatch(/may be stale/);
+  expect(screen.getByRole("heading", { name: "Training path" })).toBeTruthy();
+  expect(screen.queryByText(/Training path could not be refreshed/)).toBeNull();
+});
+
+it("keeps cached profile-backed planning data visible when the profile refresh fails", () => {
+  state.profile = {
+    data: { id: "profile" },
+    isError: true,
+    isLoading: false,
+    isSuccess: true,
+    refetch: vi.fn(),
+  } as never;
+  state.projection = {
+    data: {
+      today: "2026-04-01",
+      timeline: { days: [], weeks: [] },
+      fitness: { actual: [], scheduled: [], recommended: [] },
+    },
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as never;
+  render(<PlanDashboard selectedDate="2026-04-01" />);
+
+  expect(screen.getByRole("alert").textContent).toMatch(/may be stale/);
+  expect(screen.getByRole("heading", { name: "Training path" })).toBeTruthy();
+  expect(screen.queryByText(/planning profile could not be loaded/)).toBeNull();
+});
+
+it("keeps compact goal, library, and current-session access available", () => {
+  state.goals = {
+    data: {
+      items: [
+        {
+          id: "goal-1",
+          title: "Spring race",
+          target_date: "2026-05-10",
+          priority: 7,
+          activity_category: "run",
+        },
+      ],
+    },
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as never;
+  state.projection = {
+    data: {
+      today: "2026-04-01",
+      currentScheduledPlan: {
+        id: "00000000-0000-4000-8000-000000000001",
+        name: "Race build",
+        applicationReceipt: "receipt",
+        nextPlannedSessionId: "00000000-0000-4000-8000-000000000002",
+        nextPlannedSessionTitle: "Tempo",
+        nextPlannedSessionDate: "2026-04-03",
+        nextActivityPlanId: null,
+      },
+      timeline: { days: [], weeks: [] },
+      fitness: { actual: [], scheduled: [], recommended: [] },
+    },
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as never;
+
+  render(<PlanDashboard selectedDate="2026-04-01" />);
+
+  expect(screen.getByText("Race build")).toBeTruthy();
+  const nextSession = screen.getByRole("link", { name: "2026-04-03" });
+  expect(nextSession.getAttribute("data-event-id")).toBe("00000000-0000-4000-8000-000000000002");
+  expect(nextSession.getAttribute("data-resource-type")).toBe("planned_session");
+  expect(screen.getByRole("button", { name: "New goal" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Open training-plan library" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "All goals" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: /Spring race/ }).getAttribute("data-goal-id")).toBe(
+    "goal-1",
+  );
 });
 
 it("only offers a follow-session action for a canonically scheduled session", () => {

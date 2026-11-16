@@ -154,11 +154,13 @@ export function TrainingLoadPath({
 
   return (
     <Card className="overflow-hidden">
-      <CardHeader className="gap-4 border-b bg-muted/20 pb-5">
+      <CardHeader className="gap-3 border-b bg-muted/20 px-4 py-4 sm:gap-4 sm:px-6 sm:py-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">
             <h2 className="leading-none font-semibold">Training path</h2>
-            <CardDescription>Load context {rangeLabel}.</CardDescription>
+            <CardDescription className="hidden sm:block">
+              Load context {rangeLabel}.
+            </CardDescription>
           </div>
           {timeline ? (
             <Badge className="font-normal" variant="outline">
@@ -167,7 +169,7 @@ export function TrainingLoadPath({
           ) : null}
         </div>
         {selectedDate && onSelectedDateChange ? (
-          <div className="flex flex-wrap items-end gap-2">
+          <div className="flex items-end justify-center gap-2 sm:flex-wrap sm:justify-start">
             <Button
               aria-label="Previous day"
               onClick={() => onSelectedDateChange(shiftDateKey(selectedDate, -1))}
@@ -178,10 +180,10 @@ export function TrainingLoadPath({
               <ChevronLeft aria-hidden="true" className="size-4" />
               <span className="hidden sm:inline">Previous day</span>
             </Button>
-            <label className="grid gap-1 text-sm font-medium" htmlFor="plan-selected-date">
+            <label className="grid min-w-0 gap-1 text-sm font-medium" htmlFor="plan-selected-date">
               <span className="text-xs text-muted-foreground">Selected day</span>
               <input
-                className="h-9 rounded-md border bg-background px-3 text-sm tabular-nums shadow-xs"
+                className="h-9 w-[11.5rem] rounded-md border bg-background px-3 text-sm tabular-nums shadow-xs sm:w-auto"
                 id="plan-selected-date"
                 onChange={(event) => {
                   if (event.currentTarget.value) onSelectedDateChange(event.currentTarget.value);
@@ -203,11 +205,11 @@ export function TrainingLoadPath({
           </div>
         ) : null}
       </CardHeader>
-      <CardContent className="pt-5">
+      <CardContent className="px-4 py-3 sm:px-6 sm:pt-5">
         {isLoading ? (
           <div aria-live="polite" className="space-y-3">
             <p className="text-sm text-muted-foreground">Loading training path…</p>
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-2">
               <div className="h-16 animate-pulse rounded-xl bg-muted" />
               <div className="h-16 animate-pulse rounded-xl bg-muted" />
             </div>
@@ -226,24 +228,24 @@ export function TrainingLoadPath({
             <p>No training path data is ready yet.</p>
           </div>
         ) : (
-          <div className="space-y-4">
-            <div className="grid gap-2 sm:grid-cols-2">
-              <div className="rounded-xl border bg-background p-3">
-                <p className="text-xs text-muted-foreground">Completed in this window</p>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-xl border bg-background p-2.5">
+                <p className="text-xs leading-tight text-muted-foreground">Completed</p>
                 <StatusAwareCommonLoadValue
                   status={completedLoad.status}
                   value={completedLoad.value}
                 />
               </div>
-              <div className="rounded-xl border bg-background p-3">
-                <p className="text-xs text-muted-foreground">Remaining scheduled work</p>
+              <div className="rounded-xl border bg-background p-2.5">
+                <p className="text-xs leading-tight text-muted-foreground">Scheduled</p>
                 <StatusAwareCommonLoadValue status={remainingLoadStatus} value={remainingLoad} />
               </div>
             </div>
             <details className="group rounded-xl border bg-muted/10">
-              <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium [&::-webkit-details-marker]:hidden">
+              <summary className="cursor-pointer list-none px-3 py-2.5 text-sm font-medium [&::-webkit-details-marker]:hidden">
                 <span className="flex items-center justify-between gap-3">
-                  Load timeline and activity diagnostics
+                  Timeline &amp; diagnostics
                   <span className="text-xs font-normal text-muted-foreground group-open:hidden">
                     Show details
                   </span>
