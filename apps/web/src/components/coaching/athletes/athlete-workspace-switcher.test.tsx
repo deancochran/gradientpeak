@@ -9,8 +9,18 @@ vi.mock("../../../lib/coaching/athletes-server-functions", () => ({
   loadAssignedCoachAthletes: vi.fn(),
 }));
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children, params }: { children: ReactNode; params: { athleteId: string } }) => (
-    <a href={`/${params.athleteId}`}>{children}</a>
+  Link: ({
+    children,
+    className,
+    params,
+  }: {
+    children: ReactNode;
+    className?: string;
+    params: { athleteId: string };
+  }) => (
+    <a className={className} href={`/${params.athleteId}`}>
+      {children}
+    </a>
   ),
 }));
 
@@ -44,7 +54,17 @@ it("keeps exact selected identity outside the first page, after filtering and fa
     />,
   );
   expect(screen.getByRole("heading", { name: selected.displayName })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: /Switch athlete/ }));
+  const switcherButton = screen.getByRole("button", { name: /Switch athlete/ });
+  expect(switcherButton.className).toContain("bg-slate-900");
+  fireEvent.click(switcherButton);
+  expect(screen.getByRole("dialog").className).toContain("bg-slate-950");
+  expect(screen.getByLabelText("Search assigned athletes").className).toContain("bg-slate-900");
+  expect(screen.getByRole("button", { name: "Search" }).className).toContain("bg-slate-800");
+  expect(screen.getByRole("button", { name: "First page" }).className).toContain("bg-slate-900");
+  expect(screen.getByRole("link", { name: "Other athlete" }).className).toContain("bg-slate-900");
+  expect(screen.getByRole("link", { name: "Other athlete" }).className).toContain(
+    "focus-visible:ring-cyan-300",
+  );
   fireEvent.change(screen.getByLabelText("Search assigned athletes"), {
     target: { value: "Unmatched" },
   });
