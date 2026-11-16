@@ -1,5 +1,5 @@
 import { Button } from "@repo/ui/components/button";
-import { createFileRoute, Link, useRouterState } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouter, useRouterState } from "@tanstack/react-router";
 import { AthleteWorkspaceSwitcher } from "../../../../../components/coaching/athletes/athlete-workspace-switcher";
 import { CoachActivityPlanPublication } from "../../../../../components/coaching/athletes/coach-activity-plan-publication";
 import { CoachAthleteCalendar } from "../../../../../components/coaching/athletes/coach-athlete-calendar";
@@ -104,6 +104,7 @@ export const Route = createFileRoute(
 });
 
 function AthleteWorkspacePage() {
+  const router = useRouter();
   const result = Route.useLoaderData();
   const { overview, directory, identity, calendar, completedActivities, goals, zones } = result;
   const { athleteId, organizationId } = Route.useParams();
@@ -165,6 +166,11 @@ function AthleteWorkspacePage() {
         result={identity ? calendar : forbiddenCalendar}
       />
       <CoachAthleteCompletedActivities
+        actorProfileId={actorProfileId}
+        athleteProfileId={athleteId}
+        key={`${actorProfileId}:${organizationId}:${athleteId}`}
+        organizationId={organizationId}
+        onRetry={() => router.invalidate({ sync: true })}
         result={
           identity ? (completedActivities ?? { status: "forbidden" }) : { status: "forbidden" }
         }

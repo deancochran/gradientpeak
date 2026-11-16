@@ -523,7 +523,7 @@ export function createPlannedSessionsRouter(
         assertOwnedProfile(ctx.session.user.id, input.profileId);
         try {
           const db = getRequiredDb(ctx);
-          const result = await db.transaction((tx) =>
+          const result = await withProfileFencedRepeatableReadSnapshot(db, input.profileId, (tx) =>
             services.reconcileManualCompletion({
               tx,
               profileId: input.profileId,

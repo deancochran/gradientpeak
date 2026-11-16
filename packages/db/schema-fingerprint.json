@@ -330,6 +330,12 @@
       "forceRls": false
     },
     {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=ar/postgres}",
+      "rls": true,
+      "name": "coaching_completion_reviews",
+      "forceRls": false
+    },
+    {
       "acl": "{postgres=arwdDxtm/postgres,service_role=rm/postgres}",
       "rls": true,
       "name": "coaching_engagements",
@@ -4541,6 +4547,146 @@
       "notNull": false,
       "identity": "",
       "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "coaching_completion_reviews",
+      "default": "gen_random_uuid()",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "organization_id",
+      "type": "uuid",
+      "table": "coaching_completion_reviews",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "engagement_id",
+      "type": "uuid",
+      "table": "coaching_completion_reviews",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "athlete_profile_id",
+      "type": "uuid",
+      "table": "coaching_completion_reviews",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "session_id",
+      "type": "uuid",
+      "table": "coaching_completion_reviews",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "activity_id",
+      "type": "uuid",
+      "table": "coaching_completion_reviews",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "evidence_version",
+      "type": "text",
+      "table": "coaching_completion_reviews",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "reviewed_by_profile_id",
+      "type": "uuid",
+      "table": "coaching_completion_reviews",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "reviewed_by_membership_id",
+      "type": "uuid",
+      "table": "coaching_completion_reviews",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
+      "name": "review_authority_kind",
+      "type": "text",
+      "table": "coaching_completion_reviews",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 10,
+      "generated": ""
+    },
+    {
+      "name": "reviewed_by_assignment_id",
+      "type": "uuid",
+      "table": "coaching_completion_reviews",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 11,
+      "generated": ""
+    },
+    {
+      "name": "reviewed_by_group_coach_assignment_id",
+      "type": "uuid",
+      "table": "coaching_completion_reviews",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 12,
+      "generated": ""
+    },
+    {
+      "name": "reviewed_by_group_athlete_membership_id",
+      "type": "uuid",
+      "table": "coaching_completion_reviews",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 13,
+      "generated": ""
+    },
+    {
+      "name": "reviewed_at",
+      "type": "timestamp with time zone",
+      "table": "coaching_completion_reviews",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 14,
       "generated": ""
     },
     {
@@ -10951,6 +11097,26 @@
       "definition": "CREATE UNIQUE INDEX coaching_assignments_pkey ON public.coaching_assignments USING btree (id)"
     },
     {
+      "name": "coaching_assignments_review_identity_unique",
+      "table": "coaching_assignments",
+      "definition": "CREATE UNIQUE INDEX coaching_assignments_review_identity_unique ON public.coaching_assignments USING btree (organization_id, engagement_id, coach_membership_id, id)"
+    },
+    {
+      "name": "coaching_completion_reviews_evidence_unique",
+      "table": "coaching_completion_reviews",
+      "definition": "CREATE UNIQUE INDEX coaching_completion_reviews_evidence_unique ON public.coaching_completion_reviews USING btree (engagement_id, session_id, evidence_version)"
+    },
+    {
+      "name": "coaching_completion_reviews_pending_lookup_idx",
+      "table": "coaching_completion_reviews",
+      "definition": "CREATE INDEX coaching_completion_reviews_pending_lookup_idx ON public.coaching_completion_reviews USING btree (engagement_id, session_id, evidence_version)"
+    },
+    {
+      "name": "coaching_completion_reviews_pkey",
+      "table": "coaching_completion_reviews",
+      "definition": "CREATE UNIQUE INDEX coaching_completion_reviews_pkey ON public.coaching_completion_reviews USING btree (id)"
+    },
+    {
       "name": "coaching_engagements_athlete_profile_organization_idx",
       "table": "coaching_engagements",
       "definition": "CREATE INDEX coaching_engagements_athlete_profile_organization_idx ON public.coaching_engagements USING btree (athlete_profile_id, organization_id)"
@@ -12129,6 +12295,18 @@
       "definition": "CREATE TRIGGER coaching_assignments_retained BEFORE DELETE OR UPDATE ON coaching_assignments FOR EACH ROW EXECUTE FUNCTION prevent_coaching_assignment_mutation()"
     },
     {
+      "name": "coaching_completion_reviews_authority",
+      "table": "coaching_completion_reviews",
+      "schema": "public",
+      "definition": "CREATE TRIGGER coaching_completion_reviews_authority BEFORE INSERT ON coaching_completion_reviews FOR EACH ROW EXECUTE FUNCTION validate_coaching_completion_review_insert()"
+    },
+    {
+      "name": "coaching_completion_reviews_immutable",
+      "table": "coaching_completion_reviews",
+      "schema": "public",
+      "definition": "CREATE TRIGGER coaching_completion_reviews_immutable BEFORE DELETE OR UPDATE ON coaching_completion_reviews FOR EACH ROW EXECUTE FUNCTION prevent_coaching_completion_review_mutation()"
+    },
+    {
       "name": "coaching_engagements_retained",
       "table": "coaching_engagements",
       "schema": "public",
@@ -12728,6 +12906,15 @@
       "securityDefiner": false
     },
     {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "prevent_coaching_completion_review_mutation()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_coaching_completion_review_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN\n  RAISE EXCEPTION 'coaching completion reviews are immutable';\nEND $function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
       "acl": "",
       "config": ["search_path=pg_catalog"],
       "identity": "prevent_coaching_engagement_mutation()",
@@ -12897,6 +13084,15 @@
       "definition": "CREATE OR REPLACE FUNCTION public.validate_activity_segment_set(target_activity_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare\n  parent_record record;\n  segment_count integer;\n  max_ordinal integer;\n  summed_active bigint;\n  summed_moving bigint;\n  complete_count integer;\nbegin\n  select elapsed_ms, active_ms, moving_ms, timing_coverage,\n    entry_provenance, manual_activity_category, diary_date, diary_timezone,\n    started_at, finished_at\n    into parent_record\n  from public.activities where id = target_activity_id;\n  if not found then return; end if;\n\n  -- Manual diary observations are scalar evidence. The immediate manual\n  -- contract check owns their nullable measurement fields; they have no segment set.\n  if parent_record.entry_provenance = 'manual'\n    and parent_record.manual_activity_category is not null\n    and parent_record.diary_date is not null\n    and parent_record.diary_timezone is not null\n    and ((parent_record.started_at is null and parent_record.finished_at is null)\n      or (parent_record.started_at is not null and parent_record.finished_at is not null)) then\n    return;\n  end if;\n\n  select count(*), max(ordinal), sum(active_ms), sum(moving_ms),\n    count(*) filter(where timing_coverage='complete' and active_ms is not null and moving_ms is not null)\n    into segment_count, max_ordinal, summed_active, summed_moving, complete_count\n  from public.activity_segments where activity_id = target_activity_id;\n  if segment_count = 0 or max_ordinal <> segment_count - 1 then\n    raise exception 'activity % segment ordinals must be contiguous from zero', target_activity_id;\n  end if;\n  if exists (select 1 from public.activity_segments where activity_id = target_activity_id and end_offset_ms > parent_record.elapsed_ms) then\n    raise exception 'activity % segment exceeds parent elapsed bounds', target_activity_id;\n  end if;\n  if exists (\n    select 1 from public.activity_segments s\n    left join public.activity_segments p on p.activity_id=s.activity_id and p.ordinal=s.ordinal-1\n    left join public.activity_segments n on n.activity_id=s.activity_id and n.ordinal=s.ordinal+1\n    where s.activity_id=target_activity_id and s.role='transition'\n      and (p.role is distinct from 'activity' or n.role is distinct from 'activity')\n  ) then raise exception 'activity % transition must be between activity segments', target_activity_id; end if;\n  if exists (\n    select 1 from public.activity_segments s join public.activity_segments n\n      on n.activity_id=s.activity_id and n.ordinal=s.ordinal+1\n    where s.activity_id=target_activity_id and s.role='rest' and n.role='rest'\n  ) then raise exception 'activity % has consecutive rest segments', target_activity_id; end if;\n  if parent_record.timing_coverage='complete' then\n    if complete_count<>segment_count then\n      raise exception 'activity % complete parent requires complete timing for every segment',target_activity_id;\n    end if;\n    if parent_record.active_ms is distinct from summed_active or parent_record.moving_ms is distinct from summed_moving then\n      raise exception 'activity % complete timing does not reconcile with segments',target_activity_id;\n    end if;\n  elsif parent_record.active_ms is not null or parent_record.moving_ms is not null then\n    raise exception 'activity % partial/unavailable parent timing totals must be null',target_activity_id;\n  end if;\n  if exists (\n    select 1 from public.activity_segments s\n    where s.activity_id=target_activity_id\n      and (s.summary->>'version' is distinct from s.summary_version::text\n        or s.summary#>>'{timing,timingCoverage}' is distinct from s.timing_coverage\n        or (s.summary#>>'{timing,activeMs}')::bigint is distinct from s.active_ms\n        or (s.summary#>>'{timing,movingMs}')::bigint is distinct from s.moving_ms)\n  ) then raise exception 'activity % segment summary timing/version mismatch', target_activity_id; end if;\nend $function$\n",
       "volatility": "v",
       "securityDefiner": true
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "validate_coaching_completion_review_insert()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.validate_coaching_completion_review_insert()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE\n  linked_activity_id uuid;\n  required_scope text;\nBEGIN\n  -- This is the common authority fence used by coaching writers. The session row\n  -- is also locked so an acknowledgement linearizes with a completion relink.\n  PERFORM 1 FROM public.organizations AS organization\n  WHERE organization.id = NEW.organization_id\n    AND organization.suspended_at IS NULL AND organization.closed_at IS NULL\n  FOR UPDATE;\n  IF NOT FOUND THEN\n    RAISE EXCEPTION 'completion review requires an active organization';\n  END IF;\n\n  SELECT session.completed_activity_id INTO linked_activity_id\n  FROM public.planned_sessions AS session\n  WHERE session.id = NEW.session_id AND session.profile_id = NEW.athlete_profile_id\n  FOR UPDATE;\n  IF NOT FOUND OR linked_activity_id IS DISTINCT FROM NEW.activity_id THEN\n    RAISE EXCEPTION 'completion review requires the currently linked completed activity';\n  END IF;\n  PERFORM 1 FROM public.activities AS activity\n  WHERE activity.id = NEW.activity_id AND activity.profile_id = NEW.athlete_profile_id\n  FOR SHARE;\n  IF NOT FOUND THEN\n    RAISE EXCEPTION 'completion review activity ownership mismatch';\n  END IF;\n  -- Group authority lifecycle writers hold the organization row first, then\n  -- mutate these exact retained facts. Lock them in the same order before the\n  -- authority predicate so a committed revoke/archive cannot be acknowledged\n  -- from an earlier group-relationship observation.\n  IF NEW.review_authority_kind = 'group' THEN\n    PERFORM 1\n    FROM public.organization_group_coach_assignments AS group_assignment\n    JOIN public.organization_groups AS organization_group\n      ON organization_group.organization_id = group_assignment.organization_id\n      AND organization_group.id = group_assignment.group_id\n    JOIN public.organization_group_athletes AS group_athlete\n      ON group_athlete.organization_id = group_assignment.organization_id\n      AND group_athlete.group_id = group_assignment.group_id\n    WHERE group_assignment.organization_id = NEW.organization_id\n      AND group_assignment.id = NEW.reviewed_by_group_coach_assignment_id\n      AND group_athlete.id = NEW.reviewed_by_group_athlete_membership_id\n    FOR SHARE OF group_assignment, organization_group, group_athlete;\n    IF NOT FOUND THEN\n      RAISE EXCEPTION 'completion review group authority facts are unavailable';\n    END IF;\n  END IF;\n\n  PERFORM 1\n  FROM public.coaching_engagements AS engagement\n  JOIN public.organization_memberships AS membership\n    ON membership.organization_id = engagement.organization_id\n      AND membership.id = NEW.reviewed_by_membership_id\n  JOIN public.organization_membership_role_grants AS coach_grant\n    ON coach_grant.organization_id = membership.organization_id AND coach_grant.membership_id = membership.id\n  WHERE engagement.organization_id = NEW.organization_id\n    AND engagement.id = NEW.engagement_id\n    AND engagement.athlete_profile_id = NEW.athlete_profile_id\n    AND engagement.paused_at IS NULL AND engagement.ended_at IS NULL\n    AND membership.profile_id = NEW.reviewed_by_profile_id\n    AND membership.suspended_at IS NULL AND membership.ended_at IS NULL\n    AND coach_grant.role_key = 'coach' AND coach_grant.revoked_at IS NULL\n    AND coach_grant.granted_at <= pg_catalog.transaction_timestamp()\n    AND (\n      (NEW.review_authority_kind = 'direct' AND EXISTS (\n        SELECT 1 FROM public.coaching_assignments AS assignment\n        WHERE assignment.organization_id = engagement.organization_id\n          AND assignment.engagement_id = engagement.id\n          AND assignment.id = NEW.reviewed_by_assignment_id\n          AND assignment.coach_membership_id = NEW.reviewed_by_membership_id\n          AND assignment.ended_at IS NULL\n          AND assignment.assigned_at <= pg_catalog.transaction_timestamp()\n      ))\n      OR\n      (NEW.review_authority_kind = 'group' AND EXISTS (\n        SELECT 1\n        FROM public.organization_group_coach_assignments AS group_assignment\n        JOIN public.organization_groups AS organization_group\n          ON organization_group.organization_id = group_assignment.organization_id\n          AND organization_group.id = group_assignment.group_id\n        JOIN public.organization_group_athletes AS group_athlete\n          ON group_athlete.organization_id = group_assignment.organization_id\n          AND group_athlete.group_id = group_assignment.group_id\n        WHERE group_assignment.organization_id = engagement.organization_id\n          AND group_assignment.id = NEW.reviewed_by_group_coach_assignment_id\n          AND group_assignment.coach_membership_id = NEW.reviewed_by_membership_id\n          AND group_assignment.ended_at IS NULL\n          AND group_assignment.assigned_at <= pg_catalog.transaction_timestamp()\n          AND organization_group.archived_at IS NULL\n          AND group_athlete.id = NEW.reviewed_by_group_athlete_membership_id\n          AND group_athlete.engagement_id = engagement.id\n          AND group_athlete.ended_at IS NULL\n          AND group_athlete.joined_at <= pg_catalog.transaction_timestamp()\n      ))\n    )\n  FOR SHARE OF engagement, membership, coach_grant;\n  IF NOT FOUND THEN\n    RAISE EXCEPTION 'completion review requires an active assigned coach';\n  END IF;\n\n  FOREACH required_scope IN ARRAY ARRAY['activities', 'calendar'] LOOP\n    PERFORM 1 FROM public.athlete_data_sharing_consents AS consent\n    WHERE consent.organization_id = NEW.organization_id\n      AND consent.engagement_id = NEW.engagement_id\n      AND consent.athlete_profile_id = NEW.athlete_profile_id\n      AND consent.scope_key = required_scope\n      AND consent.ended_at IS NULL AND consent.superseded_by_consent_id IS NULL\n      AND consent.granted_at <= pg_catalog.transaction_timestamp()\n      AND (consent.expires_at IS NULL OR consent.expires_at > pg_catalog.transaction_timestamp())\n    FOR SHARE;\n    IF NOT FOUND THEN\n      RAISE EXCEPTION 'completion review requires active % consent', required_scope;\n    END IF;\n  END LOOP;\n  RETURN NEW;\nEND $function$\n",
+      "volatility": "v",
+      "securityDefiner": false
     },
     {
       "acl": "",
@@ -14661,6 +14857,83 @@
       "table": "coaching_assignments",
       "validated": true,
       "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "kind": "u",
+      "name": "coaching_assignments_review_identity_unique",
+      "table": "coaching_assignments",
+      "validated": true,
+      "definition": "UNIQUE (organization_id, engagement_id, coach_membership_id, id)"
+    },
+    {
+      "kind": "f",
+      "name": "coaching_completion_reviews_activity_fkey",
+      "table": "coaching_completion_reviews",
+      "validated": true,
+      "definition": "FOREIGN KEY (activity_id, athlete_profile_id) REFERENCES activities(id, profile_id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "coaching_completion_reviews_authority_path_check",
+      "table": "coaching_completion_reviews",
+      "validated": true,
+      "definition": "CHECK (review_authority_kind = 'direct'::text AND reviewed_by_assignment_id IS NOT NULL AND reviewed_by_group_coach_assignment_id IS NULL AND reviewed_by_group_athlete_membership_id IS NULL OR review_authority_kind = 'group'::text AND reviewed_by_assignment_id IS NULL AND reviewed_by_group_coach_assignment_id IS NOT NULL AND reviewed_by_group_athlete_membership_id IS NOT NULL)"
+    },
+    {
+      "kind": "f",
+      "name": "coaching_completion_reviews_engagement_fkey",
+      "table": "coaching_completion_reviews",
+      "validated": true,
+      "definition": "FOREIGN KEY (organization_id, engagement_id, athlete_profile_id) REFERENCES coaching_engagements(organization_id, id, athlete_profile_id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "u",
+      "name": "coaching_completion_reviews_evidence_unique",
+      "table": "coaching_completion_reviews",
+      "validated": true,
+      "definition": "UNIQUE (engagement_id, session_id, evidence_version)"
+    },
+    {
+      "kind": "f",
+      "name": "coaching_completion_reviews_group_athlete_membership_fkey",
+      "table": "coaching_completion_reviews",
+      "validated": true,
+      "definition": "FOREIGN KEY (reviewed_by_group_athlete_membership_id) REFERENCES organization_group_athletes(id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "f",
+      "name": "coaching_completion_reviews_group_coach_assignment_fkey",
+      "table": "coaching_completion_reviews",
+      "validated": true,
+      "definition": "FOREIGN KEY (reviewed_by_group_coach_assignment_id) REFERENCES organization_group_coach_assignments(id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "p",
+      "name": "coaching_completion_reviews_pkey",
+      "table": "coaching_completion_reviews",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "kind": "f",
+      "name": "coaching_completion_reviews_reviewer_assignment_fkey",
+      "table": "coaching_completion_reviews",
+      "validated": true,
+      "definition": "FOREIGN KEY (organization_id, engagement_id, reviewed_by_membership_id, reviewed_by_assignment_id) REFERENCES coaching_assignments(organization_id, engagement_id, coach_membership_id, id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "f",
+      "name": "coaching_completion_reviews_reviewer_membership_fkey",
+      "table": "coaching_completion_reviews",
+      "validated": true,
+      "definition": "FOREIGN KEY (organization_id, reviewed_by_membership_id, reviewed_by_profile_id) REFERENCES organization_memberships(organization_id, id, profile_id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "f",
+      "name": "coaching_completion_reviews_session_fkey",
+      "table": "coaching_completion_reviews",
+      "validated": true,
+      "definition": "FOREIGN KEY (session_id, athlete_profile_id) REFERENCES planned_sessions(id, profile_id) ON DELETE RESTRICT"
     },
     {
       "kind": "f",
@@ -17271,6 +17544,14 @@
       "rls": true,
       "kind": "r",
       "name": "coaching_assignments",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=ar/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "coaching_completion_reviews",
       "managed": true,
       "forceRls": false
     },

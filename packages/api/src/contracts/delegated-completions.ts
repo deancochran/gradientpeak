@@ -20,6 +20,7 @@ export const delegatedCompletedActivitiesResponseSchema = z
             activityCategory: z.enum(["run", "bike", "swim", "strength", "other"]).nullable(),
             activityId: z.string().uuid(),
             distanceMeters: z.number().nullable(),
+            evidenceVersion: z.string().min(1),
             elapsedMs: z.number().nullable(),
             planningDate: dateOnlySchema,
             sessionId: z.string().uuid(),
@@ -29,6 +30,23 @@ export const delegatedCompletedActivitiesResponseSchema = z
       .readonly(),
   })
   .strict();
+
+export const acknowledgeDelegatedCompletionInputSchema = z
+  .object({
+    athleteProfileId: z.string().uuid(),
+    evidenceVersion: z.string().min(1).max(128),
+    organizationId: z.string().uuid(),
+    sessionId: z.string().uuid(),
+  })
+  .strict();
+
+export const acknowledgeDelegatedCompletionOutputSchema = z
+  .object({ outcome: z.enum(["acknowledged", "already_acknowledged", "stale"]) })
+  .strict();
+
+export type AcknowledgeDelegatedCompletionRequest = z.output<
+  typeof acknowledgeDelegatedCompletionInputSchema
+>;
 
 export type DelegatedCompletedActivitiesRequest = z.output<
   typeof delegatedCompletedActivitiesRequestSchema

@@ -492,6 +492,12 @@ export const coachingAssignments = pgTable(
     uniqueIndex("coaching_assignments_active_primary_unique")
       .on(table.engagement_id)
       .where(sql`${table.assignment_kind} = 'primary' and ${table.ended_at} is null`),
+    unique("coaching_assignments_review_identity_unique").on(
+      table.organization_id,
+      table.engagement_id,
+      table.coach_membership_id,
+      table.id,
+    ),
     uniqueIndex("coaching_assignments_active_kind_unique")
       .on(table.engagement_id, table.coach_membership_id, table.assignment_kind)
       .where(sql`${table.ended_at} is null`),
@@ -2767,6 +2773,103 @@ export const plannedSessions = pgTable(
     index("planned_sessions_completed_activity_idx")
       .on(table.completed_activity_id)
       .where(sql`${table.completed_activity_id} is not null`),
+  ],
+);
+
+/** Immutable acknowledgement of the exact completion evidence a coach reviewed. */
+export const coachingCompletionReviews = pgTable(
+  "coaching_completion_reviews",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organization_id: uuid("organization_id").notNull(),
+    engagement_id: uuid("engagement_id").notNull(),
+    athlete_profile_id: uuid("athlete_profile_id").notNull(),
+    session_id: uuid("session_id").notNull(),
+    activity_id: uuid("activity_id").notNull(),
+    evidence_version: text("evidence_version").notNull(),
+    reviewed_by_profile_id: uuid("reviewed_by_profile_id").notNull(),
+    reviewed_by_membership_id: uuid("reviewed_by_membership_id").notNull(),
+    /** Exactly one retained authority path: direct assignment or group facts. */
+    review_authority_kind: text("review_authority_kind").notNull(),
+    reviewed_by_assignment_id: uuid("reviewed_by_assignment_id"),
+    reviewed_by_group_coach_assignment_id: uuid("reviewed_by_group_coach_assignment_id"),
+    reviewed_by_group_athlete_membership_id: uuid("reviewed_by_group_athlete_membership_id"),
+    reviewed_at: timestamp("reviewed_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [
+        table.organization_id,
+        table.reviewed_by_membership_id,
+        table.reviewed_by_profile_id,
+      ],
+      foreignColumns: [
+        organizationMemberships.organization_id,
+        organizationMemberships.id,
+        organizationMemberships.profile_id,
+      ],
+      name: "coaching_completion_reviews_reviewer_membership_fkey",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.reviewed_by_group_coach_assignment_id],
+      foreignColumns: [organizationGroupCoachAssignments.id],
+      name: "coaching_completion_reviews_group_coach_assignment_fkey",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.reviewed_by_group_athlete_membership_id],
+      foreignColumns: [organizationGroupAthletes.id],
+      name: "coaching_completion_reviews_group_athlete_membership_fkey",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [
+        table.organization_id,
+        table.engagement_id,
+        table.reviewed_by_membership_id,
+        table.reviewed_by_assignment_id,
+      ],
+      foreignColumns: [
+        coachingAssignments.organization_id,
+        coachingAssignments.engagement_id,
+        coachingAssignments.coach_membership_id,
+        coachingAssignments.id,
+      ],
+      name: "coaching_completion_reviews_reviewer_assignment_fkey",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.organization_id, table.engagement_id, table.athlete_profile_id],
+      foreignColumns: [
+        coachingEngagements.organization_id,
+        coachingEngagements.id,
+        coachingEngagements.athlete_profile_id,
+      ],
+      name: "coaching_completion_reviews_engagement_fkey",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.session_id, table.athlete_profile_id],
+      foreignColumns: [plannedSessions.id, plannedSessions.profile_id],
+      name: "coaching_completion_reviews_session_fkey",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.activity_id, table.athlete_profile_id],
+      foreignColumns: [activities.id, activities.profile_id],
+      name: "coaching_completion_reviews_activity_fkey",
+    }).onDelete("restrict"),
+    unique("coaching_completion_reviews_evidence_unique").on(
+      table.engagement_id,
+      table.session_id,
+      table.evidence_version,
+    ),
+    index("coaching_completion_reviews_pending_lookup_idx").on(
+      table.engagement_id,
+      table.session_id,
+      table.evidence_version,
+    ),
+    check(
+      "coaching_completion_reviews_authority_path_check",
+      sql`(${table.review_authority_kind} = 'direct' and ${table.reviewed_by_assignment_id} is not null and ${table.reviewed_by_group_coach_assignment_id} is null and ${table.reviewed_by_group_athlete_membership_id} is null) or (${table.review_authority_kind} = 'group' and ${table.reviewed_by_assignment_id} is null and ${table.reviewed_by_group_coach_assignment_id} is not null and ${table.reviewed_by_group_athlete_membership_id} is not null)`,
+    ),
   ],
 );
 

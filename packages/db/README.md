@@ -114,6 +114,46 @@ notice delivery belong to the next API phase. Database rows alone do not deliver
 notifications or create coaching consent. Group names are currently immutable
 after creation; metadata-edit commands remain a deliberate API/schema follow-up.
 
+### Approved coaching completion-review preview upgrade
+
+`supabase/approved-upgrades/coaching-completion-review/` is a separate, one-time,
+additive compatibility upgrade for review acknowledgements. It is pinned to the exact
+`27be1741c23c27d46472f06a7f45c4cf000a9b02` full fingerprint and extracts only the
+`coaching_completion_reviews` table, its owner-composite foreign keys, uniqueness/index,
+and default-deny RLS from the fresh baseline. It never resets, seeds, or rewrites rows.
+
+`db:coaching:completion-review:upgrade:test` reconstructs the pinned prerequisite in a
+guarded disposable target, proves an existing row is unchanged, rejects unexpected state
+and replay, and checks the full post-upgrade fingerprint. The postcondition is generated
+only by `db:fresh:verify -- --write-fingerprint`; its checked-in copy is immutable review
+evidence, not a fingerprint writer.
+
+Only the preview coordinator may run `db:coaching:completion-review:upgrade:preview`
+under the shared-preview lock. Supply a private `COACHING_COMPLETION_REVIEW_PREVIEW_DATABASE_URL`
+for `127.0.0.1:54322/postgres` and a private `COACHING_COMPLETION_REVIEW_PREVIEW_BACKUP`
+custom-format archive. Its adjacent, mode-0600 manifest must bind the archive SHA-256,
+the pinned prerequisite-fingerprint SHA-256, and a target-matching timestamp less than one
+hour old. Before activation, the coordinator must run
+`db:coaching:completion-review:upgrade:rehearse` with that archive and the literal preview
+URL. It performs an actual `pg_restore` into a guarded disposable database, rechecks the
+source identity/fingerprint, applies the upgrade only to the restored copy, and writes a
+private receipt binding the archive SHA-256, source identity, prerequisite fingerprint,
+SQL SHA-256, and post-upgrade fingerprint. Activation requires that receipt in
+`COACHING_COMPLETION_REVIEW_PREVIEW_REHEARSAL_RECEIPT`; a PGDMP prefix alone is not proof.
+The rehearsal restores ownership and ACLs using `supabase_admin`. PostgreSQL logical restore
+compacts dropped-column `attnum` gaps, so only its restored-copy comparator treats positions as
+per-table relative ordinal ranks; every other fingerprint field remains exact. The preview
+activation preflight remains an exact physical fingerprint comparison and has no opt-in override.
+The external source URL remains the literal loopback preview endpoint; its Docker-internal server
+address is accepted only when current inspection proves it belongs to the repository-managed
+database container and that container maps port 54322 to PostgreSQL port 5432 in a way that serves
+the literal IPv4 loopback endpoint. The receipt
+binds that current container identity and internal address, so a changed container target requires
+a new rehearsal.
+The runner validates these bindings and target, locks organizations, refuses schema drift or
+replay, then rolls back unless the complete post-upgrade fingerprint matches. Do not run
+`upgrade.sql` directly.
+
 ### Approved retained-E2E reconciliation
 
 `supabase/approved-upgrades/retained-e2e/` is a separate, one-time reconciliation

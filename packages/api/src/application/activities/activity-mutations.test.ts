@@ -50,6 +50,17 @@ vi.mock("../../repositories/threshold-repository", () => ({
   rebuildThresholdChainWithProfileLockHeld: thresholdDeletion.rebuild,
 }));
 vi.mock("./submit-activity", () => ({ updateCanonicalActivityFields }));
+vi.mock("../../db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../db")>();
+  return {
+    ...actual,
+    withProfileFencedRepeatableReadSnapshot: async <Result>(
+      db: { transaction: (work: (tx: never) => Promise<Result>) => Promise<Result> },
+      _profileId: string,
+      write: (tx: never) => Promise<Result>,
+    ) => db.transaction(write),
+  };
+});
 
 import { deleteActivityForProfile, updateActivityForProfile } from "./activity-mutations";
 

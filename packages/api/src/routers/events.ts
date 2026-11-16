@@ -25,6 +25,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { toActivityDisplayModel } from "../application/activities/activity-display";
 import { estimateActivityPlans } from "../application/activity-plans/estimate-activity-plans";
+import { acknowledgeDelegatedCompletion } from "../application/calendar/acknowledge-delegated-completion";
 import { assembleCalendarProjectionRange } from "../application/calendar/assemble-projection";
 import {
   DelegatedCalendarAccessDeniedError,
@@ -43,6 +44,8 @@ import {
   delegatedCalendarRangeResponseSchema,
 } from "../contracts/delegated-calendar";
 import {
+  acknowledgeDelegatedCompletionInputSchema,
+  acknowledgeDelegatedCompletionOutputSchema,
   delegatedCompletedActivitiesRequestSchema,
   delegatedCompletedActivitiesResponseSchema,
 } from "../contracts/delegated-completions";
@@ -1207,6 +1210,25 @@ export const eventsRouter = createTRPCRouter({
 
 /** Date-keyed personal schedule projections. Event identity and mutations remain on eventsRouter. */
 export const calendarRouter = createTRPCRouter({
+  acknowledgeCoachAthleteCompletedActivity: protectedProcedure
+    .input(acknowledgeDelegatedCompletionInputSchema)
+    .output(acknowledgeDelegatedCompletionOutputSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await acknowledgeDelegatedCompletion({
+          actorProfileId: ctx.session.user.id,
+          db: getRequiredDb(ctx),
+          request: input,
+        });
+      } catch (error) {
+        if (error instanceof DelegatedCompletedActivitiesAccessDeniedError)
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Completed activity access is unavailable",
+          });
+        throw error;
+      }
+    }),
   coachAthleteCompletedActivities: protectedProcedure
     .input(delegatedCompletedActivitiesRequestSchema)
     .output(delegatedCompletedActivitiesResponseSchema)

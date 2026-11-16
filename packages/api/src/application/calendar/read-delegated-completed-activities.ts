@@ -1,6 +1,12 @@
-import { activities, activitySegments, plannedSessions } from "@repo/db";
+import {
+  activities,
+  activitySegments,
+  coachingCompletionReviews,
+  coachingEngagements,
+  plannedSessions,
+} from "@repo/db";
 import type { DrizzleDbClient } from "@repo/db/client";
-import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import type { DelegatedCompletedActivitiesRequest } from "../../contracts/delegated-completions";
 import { withAuthorizedAthleteReadScopes } from "../organizations/authorize-athlete-read";
 
@@ -10,6 +16,29 @@ export class DelegatedCompletedActivitiesAccessDeniedError extends Error {
     this.name = "DelegatedCompletedActivitiesAccessDeniedError";
   }
 }
+
+/**
+ * Version binds the completion link and the coach-approved evidence only.
+ * Private title, notes, and visibility edits deliberately do not requeue a
+ * completed review. Imported evidence advances through its segment revision;
+ * manual evidence has no segments, so its category and summary metrics are
+ * explicit version inputs.
+ */
+export const completionEvidenceVersion = sql<string>`md5(concat_ws(
+  ':',
+  ${plannedSessions.id}::text,
+  ${plannedSessions.completed_activity_id}::text,
+  ${plannedSessions.linked_at}::text,
+  ${activities.entry_provenance}::text,
+  case when ${activities.entry_provenance} = 'manual'
+    then ${activities.manual_activity_category}::text end,
+  case when ${activities.entry_provenance} = 'manual'
+    then ${activities.elapsed_ms}::text end,
+  case when ${activities.entry_provenance} = 'manual'
+    then ${activities.distance_meters}::text end,
+  case when ${activities.entry_provenance} is distinct from 'manual'
+    then ${activities.segments_revision}::text end
+))`;
 
 /** A deliberately small coach review feed: only activities linked to completed planned sessions. */
 export async function readDelegatedCompletedActivities(input: {
@@ -43,6 +72,7 @@ export async function readDelegatedCompletedActivities(input: {
           activityId: activities.id,
           distanceMeters: activities.distance_meters,
           elapsedMs: activities.elapsed_ms,
+          evidenceVersion: completionEvidenceVersion,
           planningDate: plannedSessions.planning_date,
           sessionId: plannedSessions.id,
         })
@@ -54,12 +84,29 @@ export async function readDelegatedCompletedActivities(input: {
             eq(activities.profile_id, plannedSessions.profile_id),
           ),
         )
+        .innerJoin(
+          coachingEngagements,
+          and(
+            eq(coachingEngagements.organization_id, input.request.organizationId),
+            eq(coachingEngagements.athlete_profile_id, input.request.athleteProfileId),
+            isNull(coachingEngagements.ended_at),
+          ),
+        )
+        .leftJoin(
+          coachingCompletionReviews,
+          and(
+            eq(coachingCompletionReviews.engagement_id, coachingEngagements.id),
+            eq(coachingCompletionReviews.session_id, plannedSessions.id),
+            eq(coachingCompletionReviews.evidence_version, completionEvidenceVersion),
+          ),
+        )
         .where(
           and(
             eq(plannedSessions.profile_id, input.request.athleteProfileId),
             eq(plannedSessions.status, "completed"),
             eq(plannedSessions.completion_state, "linked"),
             isNotNull(plannedSessions.completed_activity_id),
+            isNull(coachingCompletionReviews.id),
           ),
         )
         .orderBy(desc(plannedSessions.planning_date), desc(plannedSessions.id))

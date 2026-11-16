@@ -276,6 +276,46 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
       },
     ]);
 
+  // Add a second independently linked completion so the review surface is
+  // exercised as a queue. The runner owns this disposable database; the first
+  // completion above remains a real browser-created completion.
+  const secondActivityId = e2eIdentity.uuid("publication-second-completed-activity");
+  const secondSessionId = e2eIdentity.uuid("publication-second-completed-session");
+  const secondPlanningDate = addUtcDays(planningDate, -1);
+  const secondOperationId = e2eIdentity.uuid("publication-second-operation").replaceAll("-", "");
+  await e2eDatabase.typedTransaction(async (transaction) => {
+    await transaction.insert(activities).values({
+      id: secondActivityId,
+      profile_id: athleteActor.profileId,
+      name: "Disposable second completed session",
+      entry_provenance: "manual",
+      manual_activity_category: "run",
+      diary_date: secondPlanningDate,
+      diary_timezone: "UTC",
+      elapsed_ms: 1_800_000,
+      parser_version: "e2e-completion-review-v1",
+      decoded_contract_version: "e2e-completion-review-v1",
+      materializer_version: "e2e-completion-review-v1",
+    });
+    await transaction.insert(plannedSessions).values({
+      id: secondSessionId,
+      profile_id: athleteActor.profileId,
+      contract_version: "planned-session-v1",
+      session_revision: 1,
+      planning_date: secondPlanningDate,
+      original_target_date: secondPlanningDate,
+      source_kind: "direct",
+      direct_operation_id: secondOperationId,
+      idempotency_key: `direct:${secondOperationId}`,
+      activity_plan_id: publication.copiedActivityPlanId,
+      status: "completed",
+      completed_activity_id: secondActivityId,
+      completion_state: "linked",
+      completion_outcome: "full",
+      linked_at: new Date("2026-11-05T12:00:00.000Z"),
+    });
+  });
+
   const activitiesPolicyId = e2eIdentity.uuid("publication-activities-policy");
   const calendarPolicyId = e2eIdentity.uuid("publication-calendar-policy");
   const activitiesConsentId = e2eIdentity.uuid("publication-activities-consent");
@@ -325,6 +365,7 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
   await waitForAppHydration(coachPage);
   await expect(coachPage.getByText("Completed activities", { exact: true })).toBeVisible();
   const completedActivities = coachPage.getByRole("list", { name: "Completed activities" });
+  await expect(completedActivities.getByRole("listitem")).toHaveCount(2);
   await expect(completedActivities).toContainText("Completed session");
   await expect(completedActivities).toContainText(`Planned ${planningDate}`);
   await expect(completedActivities).not.toContainText(publishedActivityPlanName);
@@ -341,6 +382,7 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
   // Reading is observational: it must neither duplicate nor rewrite the link.
   await coachPage.reload();
   await waitForAppHydration(coachPage);
+  await expect(completedActivities.getByRole("listitem")).toHaveCount(2);
   await expect(completedActivities).toContainText("Completed session");
   await expect(completedActivities).not.toContainText(completionNote);
   expect(
@@ -355,6 +397,27 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
       .from(activities)
       .where(eq(activities.id, completedActivityId)),
   ).toHaveLength(1);
+
+  // Reading above did not acknowledge either row. Acknowledging one must leave
+  // the other pending after the authoritative reload.
+  const originalCompletion = completedActivities
+    .getByRole("listitem")
+    .filter({ hasText: `Planned ${planningDate}` });
+  await originalCompletion.getByRole("button", { name: "Mark reviewed", exact: true }).click();
+  await expect(completedActivities.getByRole("listitem")).toHaveCount(1);
+  await coachPage.reload();
+  await waitForAppHydration(coachPage);
+  await expect(completedActivities.getByRole("listitem")).toHaveCount(1);
+
+  // Review history is versioned. A changed completion must reappear rather
+  // than being hidden by acknowledgement of its prior evidence version.
+  await e2eDatabase.db
+    .update(plannedSessions)
+    .set({ linked_at: new Date("2026-11-06T12:00:00.000Z") })
+    .where(eq(plannedSessions.id, linkedSession.id));
+  await coachPage.reload();
+  await waitForAppHydration(coachPage);
+  await expect(completedActivities.getByRole("listitem")).toHaveCount(2);
 
   // Consent facts are append/revoke-only: revoke calendar while activities is
   // still valid, then revoke activities too. Each independently denies access.

@@ -8,7 +8,11 @@ import {
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, eq, sql } from "drizzle-orm";
-import type { DrizzleTransactionClient, getRequiredDb } from "../../db";
+import {
+  type DrizzleTransactionClient,
+  type getRequiredDb,
+  withProfileFencedRepeatableReadSnapshot,
+} from "../../db";
 import {
   createDrizzleAthleteDerivedStateRepository,
   createDrizzlePlannedSessionRepository,
@@ -132,7 +136,7 @@ export async function updateActivityForProfile({
 }) {
   const { operationId, ...fields } = input;
   if (!operationId) {
-    const data = await db.transaction((tx) =>
+    const data = await withProfileFencedRepeatableReadSnapshot(db, profileId, (tx) =>
       updateCanonicalActivityFields(tx, { activityId: input.id, profileId, fields }),
     );
     if (!data) {
@@ -143,7 +147,7 @@ export async function updateActivityForProfile({
     }
     return data;
   }
-  const data = await db.transaction((tx) =>
+  const data = await withProfileFencedRepeatableReadSnapshot(db, profileId, (tx) =>
     executeWithOperationReceipt({
       tx,
       actorId: profileId,

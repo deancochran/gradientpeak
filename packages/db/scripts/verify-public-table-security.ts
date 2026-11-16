@@ -39,6 +39,7 @@ const immutableDerivedTables = [
   "threshold_evaluations",
   "threshold_evaluation_efforts",
   "thresholds",
+  "coaching_completion_reviews",
 ] as const;
 const immutableDerivedTableSet = new Set<string>(immutableDerivedTables);
 

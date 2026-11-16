@@ -17,6 +17,72 @@ function getManagedSupabaseDatabaseIdentity() {
   return { containerName: `supabase_db_${projectId}`, port };
 }
 
+type ManagedSupabaseDatabaseIdentity = ReturnType<typeof getManagedSupabaseDatabaseIdentity>;
+
+type DockerDatabaseInspection = {
+  Name?: string;
+  State?: { Running?: boolean };
+  NetworkSettings?: {
+    Ports?: Record<string, Array<{ HostIp?: string; HostPort?: string }> | null>;
+    Networks?: Record<string, { IPAddress?: string }>;
+  };
+};
+
+function servesLiteralIpv4Loopback(host: string | undefined) {
+  return host === "127.0.0.1" || host === "0.0.0.0";
+}
+
+/** Proves an internal server address belongs to the repository-managed DB container. */
+export function assertManagedSupabaseDatabaseTarget(
+  identity: ManagedSupabaseDatabaseIdentity,
+  inspection: DockerDatabaseInspection,
+) {
+  const bindings = inspection.NetworkSettings?.Ports?.["5432/tcp"] ?? [];
+  const mapped = bindings.some(
+    (binding) => binding.HostPort === identity.port && servesLiteralIpv4Loopback(binding.HostIp),
+  );
+  const addresses = Object.values(inspection.NetworkSettings?.Networks ?? {})
+    .map((network) => network.IPAddress)
+    .filter((address): address is string => Boolean(address));
+  const [serverAddress] = addresses;
+  if (
+    inspection.Name !== `/${identity.containerName}` ||
+    inspection.State?.Running !== true ||
+    !mapped ||
+    addresses.length !== 1 ||
+    !serverAddress ||
+    !/^\d{1,3}(?:\.\d{1,3}){3}$/.test(serverAddress)
+  )
+    throw new Error("refusing unmanaged Supabase database container target");
+  return {
+    containerName: identity.containerName,
+    serverAddress,
+    sourceTarget: `127.0.0.1:${identity.port}/postgres`,
+  };
+}
+
+/** Returns the exact current Docker-internal address for the repository-managed DB only. */
+export function requireManagedSupabaseDatabaseTarget() {
+  const identity = getManagedSupabaseDatabaseIdentity();
+  let inspections: DockerDatabaseInspection[];
+  try {
+    inspections = JSON.parse(
+      execFileSync("docker", ["inspect", identity.containerName], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      }),
+    ) as DockerDatabaseInspection[];
+  } catch {
+    throw new Error("refusing unavailable repository-managed Supabase database container");
+  }
+  if (inspections.length !== 1)
+    throw new Error("refusing ambiguous repository-managed Supabase database container");
+  const [inspection] = inspections;
+  if (!inspection)
+    throw new Error("refusing ambiguous repository-managed Supabase database container");
+  return assertManagedSupabaseDatabaseTarget(identity, inspection);
+}
+
 function isManagedSupabaseDatabaseContainerRunning(input: { containerName: string; port: string }) {
   try {
     const running = execFileSync(
