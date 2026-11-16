@@ -2,17 +2,9 @@ import { type CalendarProjectionItem, formatDateOnlyInTimeZone } from "@repo/cor
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@repo/ui/components/dialog";
 import { Link } from "@tanstack/react-router";
-import { CalendarDays, Flag } from "lucide-react";
+import { CalendarDays, CheckCircle2, CircleArrowRight, Flag } from "lucide-react";
 import { useMemo } from "react";
-import { PlanGoalForm } from "../../components/protected/plan-goal-form";
 import { api } from "../../lib/api/client";
 import {
   formatShortDayLabel,
@@ -86,7 +78,6 @@ export function PlanDashboard({
     },
     { enabled: Boolean(profileQuery.data) },
   );
-  const trainingPlansQuery = api.trainingPlans.list.useQuery({ ownerScope: "own", limit: 6 });
   const selectedDayQuery = api.calendar.day.useQuery({ date: selectedDate });
   const today = planTabQuery.data?.today ?? bootstrapToday;
   const goalsQuery = api.goals.list.useQuery(
@@ -118,6 +109,17 @@ export function PlanDashboard({
   const trainingPathLoading = profileLoading || planTabQuery.isLoading;
   const trainingPathUnavailable =
     profileUnavailable || (planTabQuery.isError && !planTabQuery.data);
+  const scheduledSession = selectedDayItems.find(
+    (item) =>
+      item.kind === "planned_activity" &&
+      item.status === "scheduled" &&
+      item.plannedSession?.lifecycle.status === "scheduled",
+  );
+  const completedSession = selectedDayItems.find(
+    (item) =>
+      item.kind === "planned_activity" &&
+      (item.status === "completed" || item.plannedSession?.lifecycle.status === "completed"),
+  );
 
   return (
     <>
@@ -153,14 +155,22 @@ export function PlanDashboard({
         selectedDate={selectedDate}
         {...(onSelectedDateChange ? { onSelectedDateChange } : {})}
       />
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <CalendarDays className="h-4 w-4 text-muted-foreground" />
-            {selectedDate === today ? "Today" : formatShortDayLabel(selectedDate)}
-          </CardTitle>
+      <Card className="overflow-hidden">
+        <CardHeader className="gap-3 border-b bg-muted/20 pb-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="space-y-1">
+              <p className="text-xs font-medium tracking-[0.16em] text-muted-foreground uppercase">
+                Your day
+              </p>
+              <CardTitle className="flex items-center gap-2 text-2xl">
+                <CalendarDays className="h-5 w-5 text-primary" />
+                {selectedDate === today ? "Today" : formatShortDayLabel(selectedDate)}
+              </CardTitle>
+            </div>
+            {selectedDate === today ? <Badge>Selected</Badge> : null}
+          </div>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-5 pt-5">
           {selectedTimelineDay ? (
             <div className="grid gap-2 sm:grid-cols-2">
               {selectedDate <= today ? (
@@ -181,18 +191,38 @@ export function PlanDashboard({
           ) : (
             <p className="text-sm text-muted-foreground">Load is unavailable for this day.</p>
           )}
+          {selectedDate >= today &&
+          selectedTimelineDay?.load.plannedLoadStatus === "unavailable" &&
+          selectedDayItems.length > 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Planned Load is unavailable for this day. Scheduled work is listed below with its own
+              available details.
+            </p>
+          ) : null}
           {selectedDate === today ? (
-            selectedTimelineDay?.scheduledItems.find((item) => item.status !== "cancelled") ? (
-              <div className="flex flex-wrap items-center gap-2 rounded-xl border p-3">
-                <p className="text-sm">Next action: follow your scheduled session.</p>
+            profileUnavailable ? (
+              <div className="rounded-xl border border-dashed p-4">
+                <p className="font-medium">Today’s next action is unavailable</p>
+                <p className="text-sm text-muted-foreground">
+                  Reload your planning profile to see today’s session.
+                </p>
+              </div>
+            ) : scheduledSession ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/30 bg-primary/5 p-4">
+                <div className="space-y-1">
+                  <p className="text-xs font-medium tracking-[0.12em] text-primary uppercase">
+                    Next up
+                  </p>
+                  <p className="font-medium">{scheduledSession.title}</p>
+                  <p className="text-sm text-muted-foreground">
+                    Open your scheduled session when you’re ready.
+                  </p>
+                </div>
                 <Button asChild size="sm">
                   <Link
                     to="/calendar/events/$eventId"
                     params={{
-                      eventId:
-                        selectedTimelineDay.scheduledItems.find(
-                          (item) => item.status !== "cancelled",
-                        )?.id ?? "",
+                      eventId: scheduledSession.id,
                     }}
                     search={{
                       flash: undefined,
@@ -202,14 +232,42 @@ export function PlanDashboard({
                       view: "agenda",
                     }}
                   >
-                    Open & follow session
+                    Open session
+                    <CircleArrowRight aria-hidden="true" className="size-4" />
                   </Link>
                 </Button>
               </div>
+            ) : completedSession ? (
+              <div className="flex items-center gap-3 rounded-xl border border-emerald-700/25 bg-emerald-500/5 p-4">
+                <CheckCircle2 aria-hidden="true" className="size-5 text-emerald-700" />
+                <div>
+                  <p className="font-medium">Session complete</p>
+                  <p className="text-sm text-muted-foreground">
+                    Today’s scheduled work is already completed.
+                  </p>
+                </div>
+              </div>
             ) : (
-              <p className="text-sm text-muted-foreground">
-                Next action: add or plan today’s work.
-              </p>
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed p-4">
+                <div>
+                  <p className="font-medium">No session scheduled</p>
+                  <p className="text-sm text-muted-foreground">
+                    Add today’s work when you’re ready to plan it.
+                  </p>
+                </div>
+                <Button asChild size="sm" variant="outline">
+                  <Link
+                    to="/calendar/new"
+                    search={{
+                      date: selectedDate,
+                      month: getMonthKey(new Date(`${selectedDate}T12:00:00`)),
+                      view: "month",
+                    }}
+                  >
+                    Add work
+                  </Link>
+                </Button>
+              </div>
             )
           ) : null}
           {selectedDayQuery.isLoading ? (
@@ -238,70 +296,9 @@ export function PlanDashboard({
           )}
         </CardContent>
       </Card>
-      <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
+      {nextGoal || profileLoading || goalsQuery.isLoading ? (
         <Card>
-          <CardHeader>
-            <CardTitle>Active plan</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {planTabQuery.data?.currentScheduledPlan ? (
-              <>
-                <div>
-                  <p className="text-xl font-semibold">
-                    {planTabQuery.data.currentScheduledPlan.name}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="outline">
-                    Next session{` `}
-                    {new Date(
-                      `${planTabQuery.data.currentScheduledPlan.nextPlannedSessionDate}T12:00:00`,
-                    ).toLocaleDateString()}
-                  </Badge>
-                </div>
-              </>
-            ) : profileLoading || planTabQuery.isLoading ? (
-              <p className="text-sm text-muted-foreground">Loading active plan...</p>
-            ) : profileUnavailable || (planTabQuery.isError && !planTabQuery.data) ? (
-              <p className="text-sm text-muted-foreground">Active plan is unavailable.</p>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                No active plan detected from future planned sessions.
-              </p>
-            )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Next goal anchor</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {profileQuery.isLoading || goalsQuery.isLoading ? (
-              <p className="text-sm text-muted-foreground">Loading goals...</p>
-            ) : profileUnavailable || (goalsQuery.isError && !goalsQuery.data) ? (
-              <p className="text-sm text-muted-foreground">Goal anchors are unavailable.</p>
-            ) : nextGoal ? (
-              <>
-                <div className="rounded-xl border p-4">
-                  <p className="font-medium">{nextGoal.title}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {formatShortDayLabel(nextGoal.target_date)}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Badge>{nextGoal.activity_category}</Badge>
-                  <Badge variant="outline">Priority {nextGoal.priority}/10</Badge>
-                </div>
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground">No upcoming goals.</p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-      <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-        <Card>
-          <CardHeader>
+          <CardHeader className="pb-3">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <CardTitle className="flex items-center gap-2">
@@ -309,21 +306,6 @@ export function PlanDashboard({
                   Goals
                 </CardTitle>
               </div>
-              <Dialog>
-                <DialogTrigger asChild>
-                  <Button size="sm">New goal</Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Create goal</DialogTitle>
-                  </DialogHeader>
-                  <PlanGoalForm
-                    {...(profileQuery.data?.id !== undefined
-                      ? { profileId: profileQuery.data.id }
-                      : {})}
-                  />
-                </DialogContent>
-              </Dialog>
               <Button asChild size="sm" variant="outline">
                 <Link
                   to="/goals"
@@ -362,44 +344,11 @@ export function PlanDashboard({
                   </div>
                 </div>
               </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                No upcoming goals. Add one to anchor your plan.
-              </p>
-            )}
+            ) : null}
           </CardContent>
         </Card>
-      </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Available training plans</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {trainingPlansQuery.isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading training plans...</p>
-          ) : trainingPlansQuery.isError && !trainingPlansQuery.data ? (
-            <p className="text-sm text-muted-foreground">Training plans are unavailable.</p>
-          ) : trainingPlansQuery.data?.items?.length ? (
-            <div className="flex flex-wrap gap-2">
-              {trainingPlansQuery.data.items.map((plan) => (
-                <Badge asChild key={plan.id} variant="outline">
-                  <Link params={{ planId: plan.id }} to="/training-plans/$planId">
-                    {plan.name}
-                  </Link>
-                </Badge>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">No saved training plans yet.</p>
-          )}
-        </CardContent>
-      </Card>
+      ) : null}
       <div className="flex flex-wrap gap-2">
-        <Button asChild variant="outline">
-          <Link to="/training-plans" search={{ tab: "owned" }}>
-            Open training-plan library
-          </Link>
-        </Button>
         <Button asChild variant="outline">
           <Link to="/calendar" search={{ month: getMonthKey(new Date()), view: "month" }}>
             Open calendar

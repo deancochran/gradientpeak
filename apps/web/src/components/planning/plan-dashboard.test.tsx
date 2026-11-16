@@ -28,14 +28,30 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children }: { children: React.ReactNode }) => <a href="/planning">{children}</a>,
+  Link: ({
+    children,
+    params,
+    search,
+  }: {
+    children: React.ReactNode;
+    params?: { eventId?: string };
+    search?: { resourceType?: string };
+  }) => (
+    <a data-event-id={params?.eventId} data-resource-type={search?.resourceType} href="/planning">
+      {children}
+    </a>
+  ),
 }));
 vi.mock("../../lib/planning", () => ({
   formatShortDayLabel: (date: string) => date,
+  formatDayLabel: (date: string) => date,
   getMonthKey: () => "2026-04",
   getTodayDateKey: () => "2026-04-01",
   isValidDateKey: (date: string) => /^\d{4}-\d{2}-\d{2}$/.test(date),
   shiftDateKey: (date: string) => date,
+}));
+vi.mock("../calendar/calendar-projection-card", () => ({
+  CalendarProjectionCard: ({ item }: { item: { title: string } }) => <div>{item.title}</div>,
 }));
 vi.mock("../../lib/api/client", () => ({
   api: {
@@ -67,7 +83,6 @@ vi.mock("../../lib/api/client", () => ({
     },
   },
 }));
-vi.mock("../../components/protected/plan-goal-form", () => ({ PlanGoalForm: () => null }));
 
 import { PlanDashboard } from "./plan-dashboard";
 
@@ -144,11 +159,9 @@ it("does not turn a failed profile dependency into absent planning data", () => 
   } as never;
   render(<PlanDashboard />);
 
-  expect(screen.getByText("Active plan is unavailable.")).toBeTruthy();
-  expect(screen.getByText("Goal anchors are unavailable.")).toBeTruthy();
   expect(screen.getByText(/planning profile could not be loaded/)).toBeTruthy();
   expect(screen.getByRole("button", { name: "Retry planning profile" })).toBeTruthy();
-  expect(screen.queryByText("No upcoming goals.")).toBeNull();
+  expect(screen.getByText("Today’s next action is unavailable")).toBeTruthy();
 });
 
 it("keeps dependent planning surfaces loading while the profile is loading", () => {
@@ -161,9 +174,7 @@ it("keeps dependent planning surfaces loading while the profile is loading", () 
   } as never;
   render(<PlanDashboard />);
 
-  expect(screen.getByText("Loading active plan...")).toBeTruthy();
   expect(screen.getByText("Loading training path…")).toBeTruthy();
-  expect(screen.queryByText("Active plan is unavailable.")).toBeNull();
   expect(screen.queryByText("No training path data is ready yet.")).toBeNull();
 });
 
@@ -187,14 +198,158 @@ it("does not label an initial projection failure as no active plan", () => {
   state.projection = { data: undefined, isError: true, isLoading: false, refetch: vi.fn() };
   render(<PlanDashboard />);
 
-  expect(screen.getByText("Active plan is unavailable.")).toBeTruthy();
   expect(screen.getByText(/Training path could not be refreshed/)).toBeTruthy();
-  expect(screen.queryByText("No active plan detected from future planned sessions.")).toBeNull();
+});
+
+it("only offers a follow-session action for a canonically scheduled session", () => {
+  state.selectedDay = {
+    data: {
+      projection: {
+        items: [
+          {
+            id: "completed-session",
+            calendarDate: "2026-04-02",
+            kind: "planned_activity",
+            status: "completed",
+            plannedSession: { lifecycle: { status: "completed" } },
+          },
+          {
+            id: "scheduled-session",
+            calendarDate: "2026-04-02",
+            kind: "planned_activity",
+            status: "scheduled",
+            title: "Tempo session",
+            plannedSession: { lifecycle: { status: "scheduled" } },
+          },
+        ],
+      },
+    },
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as never;
+  state.projection = {
+    data: {
+      today: "2026-04-02",
+      timeline: {
+        days: [
+          {
+            date: "2026-04-02",
+            load: {
+              completedLoad: 0,
+              completedLoadStatus: "known_zero",
+              plannedLoad: null,
+              plannedLoadStatus: "unavailable",
+              scheduledLoad: 30,
+              scheduledLoadStatus: "complete",
+              remainingLoad: 30,
+              remainingLoadStatus: "complete",
+              recommendedLoad: null,
+              recommendedLoadStatus: "unavailable",
+              deltaLoad: null,
+            },
+            scheduledItems: [],
+            completedItems: [],
+            annotations: [],
+          },
+        ],
+      },
+      fitness: { actual: [], scheduled: [], recommended: [] },
+    },
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as never;
+
+  render(<PlanDashboard selectedDate="2026-04-02" />);
+
+  expect(screen.getAllByText("Tempo session").length).toBeGreaterThan(0);
+  const openSession = screen.getByRole("link", { name: /Open session/ });
+  expect(openSession.getAttribute("data-event-id")).toBe("scheduled-session");
+  expect(openSession.getAttribute("data-resource-type")).toBe("planned_session");
+  expect(
+    screen.getByText(
+      "Planned Load is unavailable for this day. Scheduled work is listed below with its own available details.",
+    ),
+  ).toBeTruthy();
+  expect(screen.queryByText("Session complete")).toBeNull();
+});
+
+it("shows completed work truthfully instead of offering an already completed session", () => {
+  state.selectedDay = {
+    data: {
+      projection: {
+        items: [
+          {
+            id: "completed-session",
+            calendarDate: "2026-04-02",
+            kind: "planned_activity",
+            status: "completed",
+            plannedSession: { lifecycle: { status: "completed" } },
+          },
+        ],
+      },
+    },
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as never;
+  state.projection = {
+    data: {
+      today: "2026-04-02",
+      timeline: { days: [], weeks: [] },
+      fitness: { actual: [], scheduled: [], recommended: [] },
+    },
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as never;
+
+  render(<PlanDashboard selectedDate="2026-04-02" />);
+
+  expect(screen.getByText("Session complete")).toBeTruthy();
+  expect(screen.queryByRole("link", { name: /Open session/ })).toBeNull();
+});
+
+it("does not offer a next-session action for a cancelled session", () => {
+  state.selectedDay = {
+    data: {
+      projection: {
+        items: [
+          {
+            id: "cancelled-session",
+            calendarDate: "2026-04-02",
+            kind: "planned_activity",
+            status: "cancelled",
+            plannedSession: { lifecycle: { status: "scheduled" } },
+          },
+        ],
+      },
+    },
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as never;
+  state.projection = {
+    data: {
+      today: "2026-04-02",
+      timeline: { days: [], weeks: [] },
+      fitness: { actual: [], scheduled: [], recommended: [] },
+    },
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as never;
+
+  render(<PlanDashboard selectedDate="2026-04-02" />);
+
+  expect(screen.getByText("No session scheduled")).toBeTruthy();
+  expect(screen.queryByRole("link", { name: /Open session/ })).toBeNull();
 });
 
 it("requests the first future goal with a bounded server-side date predicate", () => {
   render(<PlanDashboard />);
-  expect(screen.getByText("No upcoming goals.")).toBeTruthy();
+  expect(screen.queryByText("No upcoming goals.")).toBeNull();
   expect(state.goalInput).toHaveBeenCalledWith(
     expect.objectContaining({
       limit: 1,

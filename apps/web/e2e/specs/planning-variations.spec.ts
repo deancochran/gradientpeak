@@ -66,6 +66,10 @@ test("[variation:plan-selected-day] selected date keeps canonical rows and an em
       name: `Open planned activity ${fixture.plannedAgendaTitle}`,
     });
     await expect(planned).toBeVisible();
+    await athletePage.screenshot({
+      fullPage: true,
+      path: testInfo.outputPath("plan-selected-day-populated.png"),
+    });
     await planned.click();
     await expect(athletePage).toHaveURL(
       (url) =>
@@ -94,6 +98,23 @@ test("[variation:plan-selected-day] selected date keeps canonical rows and an em
     );
     await athletePage.reload();
     await expect(athletePage.getByLabel("Selected day")).toHaveValue(emptyDate);
+    await expect(add).toBeVisible();
+    await athletePage.screenshot({
+      fullPage: true,
+      path: testInfo.outputPath("plan-selected-day-empty.png"),
+    });
+    await athletePage.goto("/plan?date=2026-11-14");
+    await expect(athletePage.getByLabel("Selected day")).toHaveValue("2026-11-14");
+    await athletePage.screenshot({
+      fullPage: true,
+      path: testInfo.outputPath("plan-selected-day-past.png"),
+    });
+    await athletePage.goto("/plan?date=2026-11-18");
+    await expect(athletePage.getByLabel("Selected day")).toHaveValue("2026-11-18");
+    await athletePage.screenshot({
+      fullPage: true,
+      path: testInfo.outputPath("plan-selected-day-future.png"),
+    });
     await athletePage.goto("/plan?date=not-a-date");
     await expect(athletePage.getByLabel("Selected day")).not.toHaveValue("not-a-date");
   });

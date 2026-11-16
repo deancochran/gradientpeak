@@ -2,7 +2,7 @@ import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardDescription, CardHeader } from "@repo/ui/components/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@repo/ui/components/tabs";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { formatShortDayLabel, shiftDateKey } from "../../lib/planning";
 import { TrainingLoadChart } from "./training-load-chart";
 
@@ -153,12 +153,21 @@ export function TrainingLoadPath({
     : "for the requested planning window";
 
   return (
-    <Card>
-      <CardHeader>
-        <h2 className="leading-none font-semibold">Training path</h2>
-        <CardDescription>Server-composed Common Load {rangeLabel}.</CardDescription>
+    <Card className="overflow-hidden">
+      <CardHeader className="gap-4 border-b bg-muted/20 pb-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1">
+            <h2 className="leading-none font-semibold">Training path</h2>
+            <CardDescription>Load context {rangeLabel}.</CardDescription>
+          </div>
+          {timeline ? (
+            <Badge className="font-normal" variant="outline">
+              {timeline.days.length} days
+            </Badge>
+          ) : null}
+        </div>
         {selectedDate && onSelectedDateChange ? (
-          <div className="flex flex-wrap items-end gap-2 pt-2">
+          <div className="flex flex-wrap items-end gap-2">
             <Button
               aria-label="Previous day"
               onClick={() => onSelectedDateChange(shiftDateKey(selectedDate, -1))}
@@ -166,12 +175,13 @@ export function TrainingLoadPath({
               type="button"
               variant="outline"
             >
-              Previous day
+              <ChevronLeft aria-hidden="true" className="size-4" />
+              <span className="hidden sm:inline">Previous day</span>
             </Button>
             <label className="grid gap-1 text-sm font-medium" htmlFor="plan-selected-date">
-              Selected day
+              <span className="text-xs text-muted-foreground">Selected day</span>
               <input
-                className="h-9 rounded-md border bg-background px-2 text-sm"
+                className="h-9 rounded-md border bg-background px-3 text-sm tabular-nums shadow-xs"
                 id="plan-selected-date"
                 onChange={(event) => {
                   if (event.currentTarget.value) onSelectedDateChange(event.currentTarget.value);
@@ -187,16 +197,21 @@ export function TrainingLoadPath({
               type="button"
               variant="outline"
             >
-              Next day
+              <span className="hidden sm:inline">Next day</span>
+              <ChevronRight aria-hidden="true" className="size-4" />
             </Button>
           </div>
         ) : null}
       </CardHeader>
-      <CardContent>
+      <CardContent className="pt-5">
         {isLoading ? (
-          <p aria-live="polite" className="text-sm text-muted-foreground">
-            Loading training path…
-          </p>
+          <div aria-live="polite" className="space-y-3">
+            <p className="text-sm text-muted-foreground">Loading training path…</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div className="h-16 animate-pulse rounded-xl bg-muted" />
+              <div className="h-16 animate-pulse rounded-xl bg-muted" />
+            </div>
+          </div>
         ) : isError ? (
           <div className="space-y-2 rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
             <p>{errorMessage}</p>
@@ -211,28 +226,41 @@ export function TrainingLoadPath({
             <p>No training path data is ready yet.</p>
           </div>
         ) : (
-          <Tabs defaultValue="firm">
-            <TabsList>
-              <TabsTrigger value="firm">Firm</TabsTrigger>
-            </TabsList>
-            <TabsContent className="space-y-3" value="firm">
-              <div className="grid gap-2 sm:grid-cols-2">
-                <div className="rounded-xl border p-3">
-                  <p className="text-xs text-muted-foreground">Completed</p>
-                  <StatusAwareCommonLoadValue
-                    status={completedLoad.status}
-                    value={completedLoad.value}
-                  />
-                </div>
-                <div className="rounded-xl border p-3">
-                  <p className="text-xs text-muted-foreground">Remaining scheduled work</p>
-                  <StatusAwareCommonLoadValue status={remainingLoadStatus} value={remainingLoad} />
-                </div>
+          <div className="space-y-4">
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div className="rounded-xl border bg-background p-3">
+                <p className="text-xs text-muted-foreground">Completed in this window</p>
+                <StatusAwareCommonLoadValue
+                  status={completedLoad.status}
+                  value={completedLoad.value}
+                />
               </div>
-              <TrainingLoadChart fitness={projection.fitness} days={timeline.days} />
-              <ItemList emptyMessage="No activities are scheduled in this window." items={items} />
-            </TabsContent>
-          </Tabs>
+              <div className="rounded-xl border bg-background p-3">
+                <p className="text-xs text-muted-foreground">Remaining scheduled work</p>
+                <StatusAwareCommonLoadValue status={remainingLoadStatus} value={remainingLoad} />
+              </div>
+            </div>
+            <details className="group rounded-xl border bg-muted/10">
+              <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium [&::-webkit-details-marker]:hidden">
+                <span className="flex items-center justify-between gap-3">
+                  Load timeline and activity diagnostics
+                  <span className="text-xs font-normal text-muted-foreground group-open:hidden">
+                    Show details
+                  </span>
+                  <span className="hidden text-xs font-normal text-muted-foreground group-open:inline">
+                    Hide details
+                  </span>
+                </span>
+              </summary>
+              <div className="space-y-3 border-t p-4">
+                <TrainingLoadChart fitness={projection.fitness} days={timeline.days} />
+                <ItemList
+                  emptyMessage="No activities are scheduled in this window."
+                  items={items}
+                />
+              </div>
+            </details>
+          </div>
         )}
       </CardContent>
     </Card>
