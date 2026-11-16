@@ -8,7 +8,7 @@ import {
 } from "@repo/ui/components/card";
 import { Label } from "@repo/ui/components/label";
 import { Link } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { api } from "../../../lib/api/client";
 import {
   type ActivityPlanPreparationSearch,
@@ -79,6 +79,7 @@ export function CoachActivityPlanPublication({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const operationId = useRef(crypto.randomUUID());
+  const previewGeneration = useRef(0);
 
   // The library list is intentionally paginated. Resolve the selected id independently so a
   // prepared plan beyond its first page can still be published, while canEdit keeps this flow
@@ -122,14 +123,13 @@ export function CoachActivityPlanPublication({
     { enabled: false, retry: false },
   );
 
-  // A changed date or activity plan is a new intent: discard its old preview and make a fresh idempotency key.
-  useEffect(() => {
-    void key;
+  function invalidatePreviewIntent() {
+    previewGeneration.current += 1;
     setPreviewed(null);
     setError(null);
     setSuccess(null);
     operationId.current = crypto.randomUUID();
-  }, [key]);
+  }
 
   // The workspace can remain mounted when a coach changes dates. Always derive outbound
   // preparation from the current form state rather than reusing the arrival URL's old date.
@@ -142,14 +142,18 @@ export function CoachActivityPlanPublication({
   const selectedPlanIsInLibrary = plans.some((plan) => plan.id === selectedPlan?.id);
 
   async function requestPreview() {
-    if (!input) return;
+    if (!input || !key) return;
+    const requestGeneration = previewGeneration.current;
+    const requestKey = key;
     setError(null);
     setSuccess(null);
     try {
       const result = await preview.refetch({ throwOnError: true });
-      if (!result.data || key !== inputKey(input)) return;
-      setPreviewed({ key, data: result.data });
+      if (!result.data || previewGeneration.current !== requestGeneration || key !== requestKey)
+        return;
+      setPreviewed({ key: requestKey, data: result.data });
     } catch (caught) {
+      if (previewGeneration.current !== requestGeneration) return;
       setPreviewed(null);
       setError(errorMessage(caught));
     }
@@ -172,9 +176,7 @@ export function CoachActivityPlanPublication({
 
   async function refreshSelectedPlan() {
     if (!activityPlanId) return;
-    setError(null);
-    setPreviewed(null);
-    setSuccess(null);
+    invalidatePreviewIntent();
     try {
       await selectedPlanQuery.refetch({ throwOnError: true });
     } catch (caught) {
@@ -183,10 +185,12 @@ export function CoachActivityPlanPublication({
   }
 
   return (
-    <Card className="border-cyan-900 bg-slate-950 text-slate-50">
-      <CardHeader>
-        <p className="text-xs font-medium uppercase tracking-[0.18em] text-cyan-300">Plan</p>
-        <CardTitle>Publish an activity plan</CardTitle>
+    <Card className="border-cyan-800/90 bg-slate-950 text-slate-50 shadow-[0_0_0_1px_rgba(34,211,238,0.04)]">
+      <CardHeader className="space-y-2">
+        <p className="text-xs font-medium uppercase tracking-[0.18em] text-cyan-300">
+          Primary action
+        </p>
+        <CardTitle className="text-xl tracking-tight">Publish an activity plan</CardTitle>
         <CardDescription className="text-slate-400">
           Choose one of your activity plans and the athlete’s local planning date. Publishing
           creates a planned session; it does not promise delivery to a connected provider.
@@ -195,7 +199,7 @@ export function CoachActivityPlanPublication({
       <CardContent className="space-y-4">
         <Button
           asChild
-          className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
+          className="border-slate-600 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
           disabled={!preparationContext}
           type="button"
           variant="outline"
@@ -245,10 +249,13 @@ export function CoachActivityPlanPublication({
           <div className="space-y-2">
             <Label htmlFor="coach-activity-plan">Your activity plan</Label>
             <select
-              className="min-h-10 w-full rounded-md border border-slate-700 bg-slate-900 px-3 text-sm"
+              className="min-h-10 w-full rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-slate-50"
               disabled={!coachMembership || publish.isPending}
               id="coach-activity-plan"
-              onChange={(event) => setActivityPlanId(event.target.value)}
+              onChange={(event) => {
+                invalidatePreviewIntent();
+                setActivityPlanId(event.target.value);
+              }}
               value={activityPlanId}
             >
               <option value="">Choose an activity plan</option>
@@ -272,10 +279,13 @@ export function CoachActivityPlanPublication({
           <div className="space-y-2">
             <Label htmlFor="coach-planning-date">Athlete planning date</Label>
             <input
-              className="min-h-10 w-full rounded-md border border-slate-700 bg-slate-900 px-3 text-sm"
+              className="min-h-10 w-full rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-slate-50 [color-scheme:dark]"
               disabled={!coachMembership || publish.isPending}
               id="coach-planning-date"
-              onChange={(event) => setPlanningDate(event.target.value)}
+              onChange={(event) => {
+                invalidatePreviewIntent();
+                setPlanningDate(event.target.value);
+              }}
               type="date"
               value={planningDate}
             />
@@ -353,7 +363,7 @@ export function CoachActivityPlanPublication({
         ) : null}
         <div className="flex flex-wrap gap-2">
           <Button
-            className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
+            className="border-slate-600 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
             disabled={!input || preview.isFetching || publish.isPending}
             onClick={() => void requestPreview()}
             type="button"
@@ -362,6 +372,7 @@ export function CoachActivityPlanPublication({
             {preview.isFetching ? "Checking publication…" : "Preview publication"}
           </Button>
           <Button
+            className="bg-cyan-400 font-semibold text-slate-950 hover:bg-cyan-300 focus-visible:ring-cyan-200 disabled:bg-slate-800 disabled:text-slate-500"
             disabled={
               !input ||
               !previewed ||

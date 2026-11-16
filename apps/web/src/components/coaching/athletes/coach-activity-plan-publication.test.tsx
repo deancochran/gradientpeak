@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -191,6 +191,57 @@ describe("CoachActivityPlanPublication", () => {
       target: { value: "2026-11-13" },
     });
     await waitFor(() => expect(screen.queryByText(/Ready to publish/)).toBeNull());
+    expect(
+      screen.getByRole("button", { name: "Publish activity plan" }).hasAttribute("disabled"),
+    ).toBe(true);
+  });
+
+  it("rejects a late A preview after the coach changes A to B and back to A", async () => {
+    let resolveFirstPreview!: (value: {
+      data: {
+        athleteTimezone: string;
+        versionMatches: boolean;
+        activityPlan: { name: string; revision: number };
+      };
+    }) => void;
+    mocks.preview.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFirstPreview = resolve;
+      }),
+    );
+    render(
+      <CoachActivityPlanPublication
+        athleteId="22222222-2222-4222-8222-222222222222"
+        organizationId="11111111-1111-4111-8111-111111111111"
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Your activity plan"), {
+      target: { value: "44444444-4444-4444-8444-444444444444" },
+    });
+    fireEvent.change(screen.getByLabelText("Athlete planning date"), {
+      target: { value: "2026-11-12" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Preview publication" }));
+    await waitFor(() => expect(mocks.preview).toHaveBeenCalledOnce());
+
+    fireEvent.change(screen.getByLabelText("Athlete planning date"), {
+      target: { value: "2026-11-13" },
+    });
+    fireEvent.change(screen.getByLabelText("Athlete planning date"), {
+      target: { value: "2026-11-12" },
+    });
+    await act(async () =>
+      resolveFirstPreview({
+        data: {
+          athleteTimezone: "Europe/London",
+          versionMatches: true,
+          activityPlan: { name: "Threshold", revision: 3 },
+        },
+      }),
+    );
+
+    expect(screen.queryByText(/Ready to publish/)).toBeNull();
     expect(
       screen.getByRole("button", { name: "Publish activity plan" }).hasAttribute("disabled"),
     ).toBe(true);

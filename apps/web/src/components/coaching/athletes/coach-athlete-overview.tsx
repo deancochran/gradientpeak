@@ -61,7 +61,7 @@ export function CoachAthleteOverview({
   if (result.status === "unavailable")
     return (
       <section>
-        <h1 className="text-3xl font-semibold text-white">Athlete workspace unavailable</h1>
+        <h2 className="text-xl font-semibold text-white">Athlete workspace unavailable</h2>
         <p className="mt-2 max-w-xl text-sm text-slate-400">
           This athlete is unavailable in this organization, or their metrics are not shared with
           you.
@@ -76,9 +76,9 @@ export function CoachAthleteOverview({
     <div className="space-y-6" key={athleteId}>
       <header className="space-y-2">
         <p className="text-sm font-medium uppercase tracking-[0.18em] text-cyan-300">
-          Read-only overview
+          Shared training context
         </p>
-        <h1 className="text-3xl font-semibold text-white">Current training state</h1>
+        <h2 className="text-2xl font-semibold tracking-tight text-white">Current training state</h2>
         <p className="text-sm text-slate-400">
           Metrics are presented only when the athlete has shared this scope through the selected
           organization.
