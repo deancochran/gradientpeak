@@ -21,16 +21,33 @@ type PathItem = {
 
 function StatusAwareCommonLoadValue({
   status,
+  testId,
   value,
 }: {
   status: LoadStatus;
+  testId?: string;
   value: number | null | undefined;
 }) {
   if (status === "unavailable" || value === null || value === undefined) {
-    return <Badge variant="outline">Common Load unavailable</Badge>;
+    return (
+      <Badge
+        className="h-auto max-w-full overflow-visible text-left whitespace-normal break-words"
+        testId={testId}
+        variant="outline"
+      >
+        Common Load unavailable
+      </Badge>
+    );
   }
   const label = `Common Load ${status === "partial" ? "~" : ""}${Math.round(value * 10) / 10}`;
-  return <Badge>{label}</Badge>;
+  return (
+    <Badge
+      className="h-auto max-w-full overflow-visible text-left whitespace-normal break-words"
+      testId={testId}
+    >
+      {label}
+    </Badge>
+  );
 }
 
 function sumPlanned(values: Array<number | null | undefined>) {
@@ -230,16 +247,27 @@ export function TrainingLoadPath({
         ) : (
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-xl border bg-background p-2.5">
+              <div
+                className="min-w-0 rounded-xl border bg-background p-2.5"
+                data-testid="training-load-summary-completed"
+              >
                 <p className="text-xs leading-tight text-muted-foreground">Completed</p>
                 <StatusAwareCommonLoadValue
                   status={completedLoad.status}
+                  testId="training-load-summary-completed-value"
                   value={completedLoad.value}
                 />
               </div>
-              <div className="rounded-xl border bg-background p-2.5">
+              <div
+                className="min-w-0 rounded-xl border bg-background p-2.5"
+                data-testid="training-load-summary-scheduled"
+              >
                 <p className="text-xs leading-tight text-muted-foreground">Scheduled</p>
-                <StatusAwareCommonLoadValue status={remainingLoadStatus} value={remainingLoad} />
+                <StatusAwareCommonLoadValue
+                  status={remainingLoadStatus}
+                  testId="training-load-summary-scheduled-value"
+                  value={remainingLoad}
+                />
               </div>
             </div>
             <details className="group rounded-xl border bg-muted/10">
