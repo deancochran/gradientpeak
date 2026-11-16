@@ -1,10 +1,28 @@
 // @vitest-environment jsdom
 
-import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { TrainingLoadPath } from "./training-load-path";
 
 describe("TrainingLoadPath", () => {
+  it("keeps the selected day as an accessible, URL-ownable control", () => {
+    const onSelectedDateChange = vi.fn();
+    render(
+      <TrainingLoadPath
+        onSelectedDateChange={onSelectedDateChange}
+        projection={undefined}
+        selectedDate="2026-07-25"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous day" }));
+    expect(onSelectedDateChange).toHaveBeenLastCalledWith("2026-07-24");
+    fireEvent.change(screen.getByLabelText("Selected day"), { target: { value: "2026-07-27" } });
+    expect(onSelectedDateChange).toHaveBeenLastCalledWith("2026-07-27");
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    expect(onSelectedDateChange).toHaveBeenLastCalledWith("2026-07-26");
+  });
+
   it("renders scheduled firm work from the single Plan-tab projection DTO", () => {
     render(
       <TrainingLoadPath
@@ -102,9 +120,10 @@ describe("TrainingLoadPath", () => {
     expect(
       document.querySelector('[data-scheduled-item-id="00000000-0000-4000-8000-000000000001"]'),
     ).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "Firm" })).toBeTruthy();
+    expect(screen.getByText("Timeline & diagnostics")).toBeTruthy();
     expect(screen.getAllByText("Common Load 100").length).toBeGreaterThan(0);
     expect(screen.getByText(/for 2026-07-20–2026-07-26 in UTC/)).toBeTruthy();
+    screen.getByText("Timeline & diagnostics").click();
     const chart = screen.getByRole("img", { name: /Training load chart/ });
     expect(within(chart).getByText("Scheduled / planned Common Load")).toBeTruthy();
     expect(within(chart).getByText("Completed Common Load")).toBeTruthy();

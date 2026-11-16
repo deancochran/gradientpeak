@@ -55,6 +55,79 @@ test("[variation:agenda-detail] planned and completed cards open and return to t
   });
 });
 
+test("[variation:plan-selected-day] selected date keeps canonical rows and an empty-day add action", async ({
+  athleteActor,
+  athletePage,
+}, testInfo) => {
+  await withDayAgendaFixture(testInfo, athleteActor, async (fixture) => {
+    await athletePage.goto(`/plan?date=${fixture.date}`);
+    await expect(athletePage.getByRole("heading", { name: "Training path" })).toBeVisible();
+    const planned = athletePage.getByRole("link", {
+      name: `Open planned activity ${fixture.plannedAgendaTitle}`,
+    });
+    await expect(planned).toBeVisible();
+    await expect(athletePage.getByText("Loading training path…")).not.toBeVisible();
+    await expect(athletePage.getByTestId("plan-selected-day-context")).toBeInViewport();
+    await athletePage.screenshot({
+      fullPage: true,
+      path: testInfo.outputPath("plan-selected-day-populated.png"),
+    });
+    await planned.click();
+    await expect(athletePage).toHaveURL(
+      (url) =>
+        url.pathname === `/calendar/events/${fixture.eventId}` &&
+        url.searchParams.get("resourceType") === "planned_session",
+    );
+    await athletePage.goBack();
+    await expect(athletePage).toHaveURL((url) => url.searchParams.get("date") === fixture.date);
+
+    await athletePage.getByRole("button", { name: "Next day" }).click();
+    const nextDate = new Date(`${fixture.date}T12:00:00Z`);
+    nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+    const expectedNextDate = nextDate.toISOString().slice(0, 10);
+    await expect(athletePage).toHaveURL((url) => url.searchParams.get("date") === expectedNextDate);
+    await athletePage.goBack();
+    await expect(athletePage).toHaveURL((url) => url.searchParams.get("date") === fixture.date);
+    await athletePage.goForward();
+    await expect(athletePage).toHaveURL((url) => url.searchParams.get("date") === expectedNextDate);
+
+    const emptyDate = "2026-11-28";
+    await athletePage.goto(`/plan?date=${emptyDate}`);
+    const add = athletePage.getByRole("link", { name: "Add to this day" });
+    await expect(add).toHaveAttribute(
+      "href",
+      `/calendar/new?date=${emptyDate}&month=2026-11&view=month`,
+    );
+    await athletePage.reload();
+    await expect(athletePage.getByLabel("Selected day")).toHaveValue(emptyDate);
+    await expect(add).toBeVisible();
+    await expect(athletePage.getByText("Loading training path…")).not.toBeVisible();
+    await expect(athletePage.getByTestId("plan-selected-day-context")).toBeInViewport();
+    await athletePage.screenshot({
+      fullPage: true,
+      path: testInfo.outputPath("plan-selected-day-empty.png"),
+    });
+    await athletePage.goto("/plan?date=2026-11-14");
+    await expect(athletePage.getByLabel("Selected day")).toHaveValue("2026-11-14");
+    await expect(athletePage.getByText("Loading training path…")).not.toBeVisible();
+    await expect(athletePage.getByTestId("plan-selected-day-context")).toBeInViewport();
+    await athletePage.screenshot({
+      fullPage: true,
+      path: testInfo.outputPath("plan-selected-day-past.png"),
+    });
+    await athletePage.goto("/plan?date=2026-11-18");
+    await expect(athletePage.getByLabel("Selected day")).toHaveValue("2026-11-18");
+    await expect(athletePage.getByText("Loading training path…")).not.toBeVisible();
+    await expect(athletePage.getByTestId("plan-selected-day-context")).toBeInViewport();
+    await athletePage.screenshot({
+      fullPage: true,
+      path: testInfo.outputPath("plan-selected-day-future.png"),
+    });
+    await athletePage.goto("/plan?date=not-a-date");
+    await expect(athletePage.getByLabel("Selected day")).not.toHaveValue("not-a-date");
+  });
+});
+
 test("[variation:training-plan-keyboard] searched plan opens, schedules, and returns from agenda", async ({
   athleteActor,
   athletePage,
