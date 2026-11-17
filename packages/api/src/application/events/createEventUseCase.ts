@@ -2,8 +2,7 @@ import type { PublicEventStatus } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import type { Context } from "../../context";
 import type { createEventWriteRepository } from "../../infrastructure/repositories";
-import { logger } from "../../lib/logger";
-import type { PlannedWorkoutQueueResult } from "../../lib/provider-sync/planned-workouts";
+import type { WahooPlannedActivityQueueResult } from "../../lib/provider-sync/planned-activities";
 import type { createContentAccessPermissions } from "../../permissions/content-access";
 
 type ProtectedContext = Context & {
@@ -12,11 +11,9 @@ type ProtectedContext = Context & {
   };
 };
 
-type CoreEventType = "planned" | "rest_day" | "race_target" | "custom" | "imported";
-type DbEventType = "planned_activity" | "rest_day" | "race" | "custom" | "imported";
+type CoreEventType = "race_target" | "custom";
 
 type NormalizedCreateInput = {
-  activityPlanId: string | null;
   allDay: boolean;
   description: string | null;
   endsAt: string | null;
@@ -25,15 +22,13 @@ type NormalizedCreateInput = {
   recurrence?: {
     rule: string;
     timezone: string;
-    exdates?: string[];
-    exceptions?: unknown[];
   } | null;
-  sourceProvider: string | null;
+  routeId: string | null;
+  scheduledDate: string;
   startsAt: string;
   status: PublicEventStatus;
   timezone: string;
   title: string;
-  trainingPlanId: string | null;
 };
 
 type MaterializedOccurrence = {
@@ -43,16 +38,12 @@ type MaterializedOccurrence = {
 };
 
 type CreatedEventRecord = {
-  activity_plan_id: string | null;
   id: string;
   profile_id: string;
-  training_plan_id: string | null;
 };
 
 type MappedCreatedEvent = CreatedEventRecord & {
   event_type: CoreEventType;
-  training_plan_id: string | null;
-  legacy_event_type: DbEventType;
   scheduled_date: string;
   updated_at: string;
 };
@@ -75,17 +66,15 @@ type CreateEventUseCaseDependencies<
     endsAt: string | null;
     recurrence: NonNullable<TNormalized["recurrence"]>;
   }) => MaterializedOccurrence[];
-  enqueueProviderPlannedActivityJobs: (
+  enqueueWahooPlannedActivityJobs?: (
     ctx: ProtectedContext,
     input: { eventIds: string[]; operation: "publish" | "unsync"; profileId?: string },
-  ) => Promise<PlannedWorkoutQueueResult | null>;
-  ensurePersistableRecurrence: (recurrence: TNormalized["recurrence"]) => void;
+  ) => Promise<WahooPlannedActivityQueueResult | null>;
   getContentPermissions: (ctx: Context) => ContentPermissions;
   getEventWriteRepository: (ctx: Context) => ReturnType<typeof createEventWriteRepository>;
   mapEvent: (event: unknown) => TMappedEvent;
   normalizeEventCreateInput: (input: TInput) => TNormalized;
-  plannedEventType: DbEventType;
-  toDbEventType: (eventType: CoreEventType) => DbEventType;
+  toDbEventType: (eventType: CoreEventType) => CoreEventType;
 };
 
 export async function createEventUseCase<
@@ -105,70 +94,30 @@ export async function createEventUseCase<
 
   dependencies.assertRestDayWritesBlocked(normalizedEventType, "create");
 
-  if (normalizedEventType === "imported") {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: "Imported events are managed by integrations",
-    });
-  }
-
   const recurrence = normalizedCreate.recurrence;
-  dependencies.ensurePersistableRecurrence(recurrence as TNormalized["recurrence"]);
-
-  if (normalizedEventType === "planned" && !normalizedCreate.activityPlanId) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: 'activity_plan_id is required when event_type is "planned"',
-    });
-  }
-
-  if (normalizedCreate.activityPlanId) {
+  if (normalizedCreate.routeId) {
     if (permissions) {
       await permissions.requireRead(
         ctx.session.user.id,
-        { type: "activity_plan", id: normalizedCreate.activityPlanId },
-        "Activity plan not found or not accessible",
+        { type: "activity_route", id: normalizedCreate.routeId },
+        "Route not found or not accessible",
       );
     } else {
-      const activityPlan = await eventWriteRepository.getAccessibleActivityPlan({
-        activityPlanId: normalizedCreate.activityPlanId,
+      const route = await eventWriteRepository.getAccessibleActivityRoute({
         profileId: ctx.session.user.id,
+        routeId: normalizedCreate.routeId,
       });
 
-      if (!activityPlan) {
+      if (!route) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "Activity plan not found or not accessible",
+          message: "Route not found or not accessible",
         });
       }
     }
   }
 
-  const trainingPlanId = normalizedCreate.trainingPlanId;
-
-  if (trainingPlanId) {
-    if (permissions) {
-      await permissions.requireRead(
-        ctx.session.user.id,
-        { type: "training_plan", id: trainingPlanId },
-        "Training plan not found or not accessible",
-      );
-    } else {
-      const trainingPlan = await eventWriteRepository.getOwnedTrainingPlan({
-        profileId: ctx.session.user.id,
-        trainingPlanId,
-      });
-
-      if (!trainingPlan) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Training plan not found or not accessible",
-        });
-      }
-    }
-  }
-
-  let data;
+  let data: CreatedEventRecord | undefined;
   let createdEvents: CreatedEventRecord[] = [];
   try {
     const occurrences = recurrence
@@ -185,50 +134,46 @@ export async function createEventUseCase<
           },
         ];
 
-    data = await eventWriteRepository.createOwnedEvent({
+    const sharedEventInput = {
       profileId: ctx.session.user.id,
       eventType: dependencies.toDbEventType(normalizedEventType),
       title: normalizedCreate.title,
       allDay: normalizedCreate.allDay,
       timezone: normalizedCreate.timezone,
+      scheduledDate: normalizedCreate.scheduledDate,
       startsAt: occurrences[0]?.startsAt ?? normalizedCreate.startsAt,
       endsAt: occurrences[0]?.endsAt ?? normalizedCreate.endsAt,
       status: normalizedCreate.status,
-      activityPlanId: normalizedCreate.activityPlanId,
-      trainingPlanId,
       notes: normalizedCreate.notes,
       description: normalizedCreate.description,
       recurrenceRule: recurrence?.rule ?? null,
       recurrenceTimezone: recurrence?.timezone ?? null,
-      seriesId: null,
-      occurrenceKey: recurrence ? (occurrences[0]?.occurrenceKey ?? null) : null,
-      originalStartsAt: recurrence ? (occurrences[0]?.startsAt ?? null) : null,
-      sourceProvider: normalizedCreate.sourceProvider,
-    });
-    createdEvents = [data as CreatedEventRecord];
+      routeId: normalizedCreate.routeId,
+    };
 
-    for (const occurrence of occurrences.slice(1)) {
-      const occurrenceData = await eventWriteRepository.createOwnedEvent({
-        profileId: ctx.session.user.id,
-        eventType: dependencies.toDbEventType(normalizedEventType),
-        title: normalizedCreate.title,
-        allDay: normalizedCreate.allDay,
-        timezone: normalizedCreate.timezone,
+    createdEvents = (await eventWriteRepository.createOwnedEvents({
+      anchor: {
+        ...sharedEventInput,
+        scheduledDate: recurrence
+          ? (occurrences[0]?.occurrenceKey ?? normalizedCreate.scheduledDate)
+          : normalizedCreate.scheduledDate,
+        seriesId: null,
+        occurrenceKey: recurrence ? (occurrences[0]?.occurrenceKey ?? null) : null,
+        originalStartsAt: recurrence ? (occurrences[0]?.startsAt ?? null) : null,
+      },
+      occurrences: occurrences.slice(1).map((occurrence) => ({
+        ...sharedEventInput,
+        scheduledDate: occurrence.occurrenceKey,
         startsAt: occurrence.startsAt,
         endsAt: occurrence.endsAt,
-        status: normalizedCreate.status,
-        activityPlanId: normalizedCreate.activityPlanId,
-        trainingPlanId,
-        notes: normalizedCreate.notes,
-        description: normalizedCreate.description,
-        recurrenceRule: recurrence?.rule ?? null,
-        recurrenceTimezone: recurrence?.timezone ?? null,
-        seriesId: data.id,
         occurrenceKey: occurrence.occurrenceKey,
         originalStartsAt: occurrence.startsAt,
-        sourceProvider: normalizedCreate.sourceProvider,
-      });
-      createdEvents.push(occurrenceData as CreatedEventRecord);
+      })),
+    })) as CreatedEventRecord[];
+    data = createdEvents[0];
+
+    if (!data) {
+      throw new Error("Failed to create event");
     }
   } catch (error) {
     throw new TRPCError({
@@ -245,42 +190,13 @@ export async function createEventUseCase<
         actorProfileId: ctx.session.user.id,
         granteeProfileId: createdEvent.profile_id,
         eventId: createdEvent.id,
-        activityPlanId: createdEvent.activity_plan_id,
-        trainingPlanId: createdEvent.training_plan_id,
       });
-    }
-  }
-
-  let plannedWorkoutSyncResult: PlannedWorkoutQueueResult | null = null;
-  if (event.legacy_event_type === dependencies.plannedEventType) {
-    try {
-      plannedWorkoutSyncResult = await dependencies.enqueueProviderPlannedActivityJobs(ctx, {
-        eventIds: createdEvents.map((createdEvent) => createdEvent.id),
-        operation: "publish",
-      });
-    } catch (error) {
-      logger.error("Failed to enqueue planned workout sync", {
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
-      plannedWorkoutSyncResult = {
-        affectedCount: 1,
-        operation: "publish",
-        queued: false,
-        success: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unknown error during planned workout sync queueing",
-      };
     }
   }
 
   return {
     ...event,
-    plannedWorkoutSync: plannedWorkoutSyncResult,
-    wahooSync: plannedWorkoutSyncResult,
     insight_refresh_hint: dependencies.buildInsightRefreshHint({
-      trainingPlanId: event.training_plan_id,
       changedDate: event.scheduled_date,
       changeAt: event.updated_at,
     }),

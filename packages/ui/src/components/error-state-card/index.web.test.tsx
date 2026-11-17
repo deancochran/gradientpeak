@@ -10,9 +10,9 @@ describe("ErrorStateCard web", () => {
 
     renderWeb(<ErrorStateCard {...errorStateCardFixtures.generic} onRetry={onRetry} />);
 
-    expect(screen.getByText(errorStateCardFixtures.generic.title!)).toBeInTheDocument();
+    expect(screen.getByText(errorStateCardFixtures.generic.title)).toBeInTheDocument();
     fireEvent.click(
-      screen.getByRole("button", { name: errorStateCardFixtures.generic.retryLabel! }),
+      screen.getByRole("button", { name: errorStateCardFixtures.generic.retryLabel }),
     );
     expect(onRetry).toHaveBeenCalled();
   });
