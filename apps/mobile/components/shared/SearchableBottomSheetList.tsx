@@ -1,18 +1,20 @@
 import { BottomSheetFlatList } from "@gorhom/bottom-sheet";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
-import type { ReactElement, ReactNode } from "react";
-import { ActivityIndicator, View } from "react-native";
+import type { ReactElement } from "react";
+import { View } from "react-native";
 import {
   APP_BOTTOM_SHEET_ACTION_FOOTER_BOTTOM_INSET,
   APP_BOTTOM_SHEET_SEARCH_HEADER_CONTENT_TOP_INSET,
 } from "@/components/shared/AppBottomSheet";
 import { IndexResultsSummary } from "@/components/shared/IndexSearchBar";
+import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
 
 type SearchableBottomSheetListProps<TItem> = {
   data: TItem[];
   emptyMessage: string;
   hasNextPage?: boolean;
+  headerInLayout?: boolean;
   isFetchingNextPage?: boolean;
   isLoading?: boolean;
   keyExtractor: (item: TItem) => string;
@@ -28,6 +30,7 @@ export function SearchableBottomSheetList<TItem>({
   data,
   emptyMessage,
   hasNextPage,
+  headerInLayout = false,
   isFetchingNextPage,
   isLoading,
   keyExtractor,
@@ -49,7 +52,7 @@ export function SearchableBottomSheetList<TItem>({
       style={{ flex: 1 }}
       contentContainerStyle={{
         paddingHorizontal: 16,
-        paddingTop: APP_BOTTOM_SHEET_SEARCH_HEADER_CONTENT_TOP_INSET,
+        paddingTop: headerInLayout ? 16 : APP_BOTTOM_SHEET_SEARCH_HEADER_CONTENT_TOP_INSET,
         paddingBottom: APP_BOTTOM_SHEET_ACTION_FOOTER_BOTTOM_INSET,
       }}
       ListHeaderComponent={
@@ -67,27 +70,20 @@ export function SearchableBottomSheetList<TItem>({
         </View>
       }
       ListEmptyComponent={
-        isLoading ? (
-          <View className="items-center justify-center py-8">
-            <ActivityIndicator />
-            <Text className="mt-2 text-sm text-muted-foreground">{loadingMessage}</Text>
-          </View>
-        ) : (
-          <View className="rounded-2xl border border-dashed border-border p-4">
-            <Text className="text-center text-sm text-muted-foreground">{emptyMessage}</Text>
-          </View>
-        )
+        isLoading ? <LoadingState message={loadingMessage} /> : <EmptyState title={emptyMessage} />
       }
       ListFooterComponent={
         hasNextPage && onFetchNextPage ? (
           <View className="pt-4">
             <Button disabled={isFetchingNextPage} onPress={onFetchNextPage} variant="outline">
-              <Text>{isFetchingNextPage ? "Loading more..." : "Load more"}</Text>
+              <Text className="text-foreground">
+                {isFetchingNextPage ? "Loading more..." : "Load more"}
+              </Text>
             </Button>
           </View>
         ) : null
       }
-      renderItem={({ item }: { item: unknown }) => renderItem(item as TItem) as ReactNode}
+      renderItem={({ item }: { item: unknown }) => renderItem(item as TItem)}
       showsVerticalScrollIndicator
     />
   );

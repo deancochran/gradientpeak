@@ -1,16 +1,15 @@
-import { GLOBAL_DEFAULTS } from "../calculations/defaults";
+import { type CompiledActivityPlan, compileActivityPlan } from "../activity-plan";
+import type { AthletePerformanceTargetFacts } from "../performance-model";
 import type { RecordingServiceActivityPlan } from "../schemas";
+import { resolvePerformanceTargetValue } from "../utils/recording-plan-target-resolver";
 
 export interface PlanValidationMetrics {
-  ftp?: number;
-  thresholdHr?: number;
-  weightKg?: number;
+  performanceTargets?: AthletePerformanceTargetFacts;
 }
 
 export interface MissingMetric {
   name: string;
   description: string;
-  settingPath: string;
 }
 
 export interface PlanValidationResult {
@@ -34,55 +33,53 @@ export function validatePlanRequirements(
   plan: RecordingServiceActivityPlan,
   metrics?: PlanValidationMetrics,
 ): PlanValidationResult {
-  const structure = plan.structure as {
-    intervals?: Array<{
-      steps?: Array<{
-        targets?: Array<{ type?: string }>;
-      }>;
-    }>;
-  };
-
-  if (!structure?.intervals) {
-    return { isValid: true, missingMetrics: [], warnings: [] };
+  let compiled: CompiledActivityPlan;
+  try {
+    compiled = compileActivityPlan(plan.structure);
+  } catch {
+    return {
+      isValid: false,
+      missingMetrics: [],
+      warnings: ["Recording requires a valid activity-plan structure."],
+    };
   }
 
-  const allTargetTypes = new Set<string>();
-
-  for (const interval of structure.intervals) {
-    for (const step of interval.steps || []) {
-      for (const target of step.targets || []) {
-        if (typeof target.type === "string") {
-          allTargetTypes.add(target.type);
-        }
+  const missingMetrics = new Map<string, MissingMetric>();
+  for (const occurrence of compiled.occurrences) {
+    for (const target of occurrence.targets) {
+      if (
+        (target.type === "%FTP" || target.type === "%ThresholdHR" || target.type === "%MaxHR") &&
+        !resolvePerformanceTargetValue({
+          target,
+          activityCategory: occurrence.activity_category,
+          ...(metrics?.performanceTargets !== undefined
+            ? { performanceTargets: metrics.performanceTargets }
+            : {}),
+        })
+      ) {
+        const activityCategoryLabel =
+          occurrence.activity_category.charAt(0).toUpperCase() +
+          occurrence.activity_category.slice(1);
+        const name =
+          target.type === "%FTP"
+            ? "planning threshold power"
+            : target.type === "%ThresholdHR"
+              ? `${activityCategoryLabel} LTHR`
+              : `${activityCategoryLabel} max HR`;
+        missingMetrics.set(`${occurrence.activity_category}:${target.type}`, {
+          name,
+          description: `A current ${name} performance-model fact is required for ${target.type} targets.`,
+        });
       }
     }
   }
 
-  const warnings: string[] = [];
-
-  if (allTargetTypes.has("%FTP") && !metrics?.ftp) {
-    warnings.push(
-      `Using default FTP (${GLOBAL_DEFAULTS.ftp}W). Set your FTP in Settings for more accurate training.`,
-    );
-  }
-
-  if (allTargetTypes.has("%ThresholdHR") && !metrics?.thresholdHr) {
-    warnings.push(
-      `Using default Threshold HR (${GLOBAL_DEFAULTS.thresholdHr} bpm). Set yours in Settings for more accurate training.`,
-    );
-  }
-
-  if ((allTargetTypes.has("%FTP") || allTargetTypes.has("watts")) && !metrics?.ftp) {
-    const fallbackWarning = "Consider setting your FTP for more accurate power-based training.";
-    if (!warnings.includes(fallbackWarning)) {
-      warnings.push(fallbackWarning);
-    }
-  }
+  const missing = [...missingMetrics.values()];
 
   return {
-    isValid: true,
-    missingMetrics: [],
-    warnings,
+    isValid: missing.length === 0,
+    missingMetrics: missing,
+    warnings: [],
   };
 }
 

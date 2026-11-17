@@ -1,13 +1,15 @@
-import { likes, profiles, trainingPlans } from "@repo/db";
+import { comments, follows, likes, profiles, trainingPlans } from "@repo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { socialRouter } from "../social";
 
-type SelectTableName = "likes" | "profiles" | "trainingPlans";
+type SelectTableName = "comments" | "follows" | "likes" | "profiles" | "trainingPlans";
 
 type DbPlan = {
   select?: Partial<Record<SelectTableName, Array<unknown[]>>>;
   execute?: Array<Array<Record<string, unknown>>>;
+  deletedLikes?: Array<Array<{ id: string }>>;
+  initialLike?: boolean;
   query?: {
     activities?: unknown[];
     events?: unknown[];
@@ -27,6 +29,8 @@ function getSelectTableName(table: unknown): SelectTableName {
   if (table === likes) return "likes";
   if (table === profiles) return "profiles";
   if (table === trainingPlans) return "trainingPlans";
+  if (table === follows) return "follows";
+  if (table === comments) return "comments";
   throw new Error(`Unhandled select table: ${String(table)}`);
 }
 
@@ -35,10 +39,15 @@ function createDbMock(plan: DbPlan = {}) {
     likes: [...(plan.select?.likes ?? [])],
     profiles: [...(plan.select?.profiles ?? [])],
     trainingPlans: [...(plan.select?.trainingPlans ?? [])],
+    follows: [...(plan.select?.follows ?? [])],
+    comments: [...(plan.select?.comments ?? [])],
   } satisfies Record<SelectTableName, Array<unknown[]>>;
   const executeQueue = [...(plan.execute ?? [])];
   const activityQueryQueue = [...(plan.query?.activities ?? [])];
   const eventQueryQueue = [...(plan.query?.events ?? [])];
+  const deletedLikesQueue = [...(plan.deletedLikes ?? [])];
+  let hasLike = plan.initialLike ?? false;
+  let transactionTail = Promise.resolve();
 
   const calls = {
     selects: [] as Array<{ table: SelectTableName }>,
@@ -47,56 +56,99 @@ function createDbMock(plan: DbPlan = {}) {
     executes: [] as unknown[],
   };
 
-  return {
-    calls,
-    db: {
-      select: () => {
-        let tableName: SelectTableName | null = null;
+  const db = {
+    select: () => {
+      let tableName: SelectTableName | null = null;
 
-        const builder: any = {
+      const builder = Object.assign(
+        Promise.resolve().then(() => {
+          if (!tableName) {
+            throw new Error("Select called without table");
+          }
+
+          if (tableName === "likes" || tableName === "profiles" || tableName === "trainingPlans") {
+            calls.selects.push({ table: tableName });
+          }
+          return selectQueues[tableName].shift() ?? executeQueue.shift() ?? [];
+        }),
+        {
           from: (table: unknown) => {
             tableName = getSelectTableName(table);
             return builder;
           },
           where: () => builder,
           limit: () => builder,
-          then: (onFulfilled: (value: unknown[]) => unknown) => {
-            if (!tableName) {
-              throw new Error("Select called without table");
-            }
+          offset: () => builder,
+          orderBy: () => builder,
+          innerJoin: () => builder,
+          leftJoin: () => builder,
+          for: () => builder,
+        },
+      );
 
-            calls.selects.push({ table: tableName });
-            return Promise.resolve(selectQueues[tableName].shift() ?? []).then(onFulfilled);
+      return builder;
+    },
+    insert: (table: unknown) => ({
+      values: (values: Record<string, unknown>) => {
+        calls.inserts.push({ table: table === likes ? "likes" : String(table), values });
+        const consume = () => Promise.resolve(executeQueue.shift() ?? []);
+        const result = Object.assign(Promise.resolve([]), {
+          onConflictDoNothing: () => {
+            if (table === likes) hasLike = true;
+            return Object.assign(Promise.resolve([]), { returning: consume });
           },
+          onConflictDoUpdate: () => Object.assign(Promise.resolve([]), { returning: consume }),
+          returning: consume,
+        });
+        return result;
+      },
+    }),
+    delete: (table: unknown) => ({
+      where: (whereArg: unknown) => {
+        calls.deletes.push({ table: table === likes ? "likes" : String(table), whereArg });
+        const returning = () => {
+          if (table !== likes) return Promise.resolve(executeQueue.shift() ?? []);
+          const explicit = deletedLikesQueue.shift();
+          if (explicit) return Promise.resolve(explicit);
+          const rows = table === likes && hasLike ? [{ id: "existing-like" }] : [];
+          if (table === likes) hasLike = false;
+          return Promise.resolve(rows);
         };
-
-        return builder;
+        return Object.assign(Promise.resolve().then(returning), {
+          returning,
+        });
       },
-      insert: (table: unknown) => ({
-        values: (values: Record<string, unknown>) => {
-          calls.inserts.push({ table: table === likes ? "likes" : String(table), values });
-          return Promise.resolve();
-        },
+    }),
+    update: (_table: unknown) => ({
+      set: () => ({
+        where: () => ({ returning: () => Promise.resolve(executeQueue.shift() ?? []) }),
       }),
-      delete: (table: unknown) => ({
-        where: (whereArg: unknown) => {
-          calls.deletes.push({ table: table === likes ? "likes" : String(table), whereArg });
-          return Promise.resolve();
-        },
-      }),
-      execute: async (query: unknown) => {
-        calls.executes.push(query);
-        return { rows: executeQueue.shift() ?? [] };
+    }),
+    execute: async (query: unknown) => {
+      calls.executes.push(query);
+      return { rows: executeQueue.shift() ?? [] };
+    },
+    query: {
+      activities: {
+        findFirst: vi.fn(async () => activityQueryQueue.shift() ?? null),
       },
-      query: {
-        activities: {
-          findFirst: vi.fn(async () => activityQueryQueue.shift() ?? null),
-        },
-        events: {
-          findFirst: vi.fn(async () => eventQueryQueue.shift() ?? null),
-        },
+      events: {
+        findFirst: vi.fn(async () => eventQueryQueue.shift() ?? null),
       },
     },
+    transaction: (callback: (tx: unknown) => unknown) => {
+      const result = transactionTail.then(() => callback(db));
+      transactionTail = result.then(
+        () => undefined,
+        () => undefined,
+      );
+      return result;
+    },
+  };
+
+  return {
+    calls,
+    db,
   };
 }
 
@@ -104,12 +156,12 @@ function createCaller(plan: DbPlan = {}, userId = SESSION_USER_ID) {
   const { db, calls } = createDbMock(plan);
 
   const caller = socialRouter.createCaller({
-    db: db as any,
+    db,
     session: { user: { id: userId } },
     headers: new Headers(),
     clientType: "test",
     trpcSource: "vitest",
-  } as any);
+  } as never);
 
   return { caller, calls };
 }
@@ -125,9 +177,7 @@ describe("socialRouter", () => {
         profiles: [[{ is_public: false }]],
       },
       execute: [
-        [],
         [{ follower_id: SESSION_USER_ID, following_id: TARGET_USER_ID, status: "pending" }],
-        [{ has_notification: false }],
         [],
       ],
     });
@@ -140,22 +190,23 @@ describe("socialRouter", () => {
       status: "pending",
     });
     expect(calls.selects).toEqual([{ table: "profiles" }]);
-    expect(calls.executes).toHaveLength(4);
+    expect(calls.executes).toHaveLength(0);
   });
 
-  it("unfollowUser deletes the relationship and returns success", async () => {
-    const { caller, calls } = createCaller({ execute: [[]] });
+  it("unfollowUser deletes the relationship and its pending-request notification", async () => {
+    const { caller, calls } = createCaller({ execute: [[], []] });
 
     const result = await caller.unfollowUser({ target_user_id: TARGET_USER_ID });
 
     expect(result).toEqual({ success: true });
-    expect(calls.executes).toHaveLength(1);
+    expect(calls.executes).toHaveLength(0);
   });
 
   it("acceptFollowRequest accepts a pending request and notifies the follower", async () => {
     const { caller, calls } = createCaller({
       execute: [
         [{ follower_id: FOLLOWER_ID, following_id: SESSION_USER_ID, status: "pending" }],
+        [{ follower_id: FOLLOWER_ID }],
         [],
         [],
         [],
@@ -165,14 +216,14 @@ describe("socialRouter", () => {
     const result = await caller.acceptFollowRequest({ follower_id: FOLLOWER_ID });
 
     expect(result).toEqual({ success: true });
-    expect(calls.executes).toHaveLength(4);
+    expect(calls.executes).toHaveLength(0);
   });
 
   it("rejectFollowRequest removes a pending request", async () => {
     const { caller, calls } = createCaller({
       execute: [
         [{ follower_id: FOLLOWER_ID, following_id: SESSION_USER_ID, status: "pending" }],
-        [],
+        [{ follower_id: FOLLOWER_ID }],
         [],
       ],
     });
@@ -180,7 +231,7 @@ describe("socialRouter", () => {
     const result = await caller.rejectFollowRequest({ follower_id: FOLLOWER_ID });
 
     expect(result).toEqual({ success: true });
-    expect(calls.executes).toHaveLength(3);
+    expect(calls.executes).toHaveLength(0);
   });
 
   it("toggleLike inserts a like when the viewer can access the activity", async () => {
@@ -189,7 +240,7 @@ describe("socialRouter", () => {
         likes: [[]],
       },
       query: {
-        activities: [{ profile_id: TARGET_USER_ID, is_private: false }],
+        activities: [{ profile_id: TARGET_USER_ID, content_visibility: "public" }],
       },
     });
 
@@ -207,8 +258,30 @@ describe("socialRouter", () => {
     });
   });
 
+  it("serializes concurrent toggles and preserves read-after-write toggle state", async () => {
+    const { caller, calls } = createCaller({
+      query: {
+        activities: [
+          { profile_id: TARGET_USER_ID, content_visibility: "public" },
+          { profile_id: TARGET_USER_ID, content_visibility: "public" },
+          { profile_id: TARGET_USER_ID, content_visibility: "public" },
+        ],
+      },
+    });
+    const input = { entity_id: ACTIVITY_ID, entity_type: "activity" as const };
+
+    const concurrent = await Promise.all([caller.toggleLike(input), caller.toggleLike(input)]);
+    const after = await caller.toggleLike(input);
+
+    expect(concurrent).toEqual([{ liked: true }, { liked: false }]);
+    expect(after).toEqual({ liked: true });
+    expect(calls.executes).toHaveLength(3);
+    expect(calls.inserts).toHaveLength(2);
+    expect(calls.deletes).toHaveLength(3);
+  });
+
   it("getFollowers returns follower rows with relationship status for the viewer", async () => {
-    const { caller } = createCaller({
+    const { caller, calls } = createCaller({
       select: {
         profiles: [[{ is_public: true }]],
       },
@@ -217,6 +290,7 @@ describe("socialRouter", () => {
           {
             id: FOLLOWER_ID,
             username: "follower-one",
+            full_name: "Follower One",
             avatar_url: "https://example.com/one.png",
             is_public: true,
             created_at: "2026-04-01T12:00:00.000Z",
@@ -225,6 +299,7 @@ describe("socialRouter", () => {
           {
             id: FOLLOWER_TWO_ID,
             username: "follower-two",
+            full_name: null,
             avatar_url: null,
             is_public: false,
             created_at: "2026-03-31T12:00:00.000Z",
@@ -232,7 +307,7 @@ describe("socialRouter", () => {
           },
         ],
         [{ value: 3 }],
-        [{ follower_id: FOLLOWER_ID, status: "accepted" }],
+        [{ following_id: FOLLOWER_ID, status: "accepted" }],
       ],
     });
 
@@ -243,6 +318,7 @@ describe("socialRouter", () => {
         {
           id: FOLLOWER_ID,
           username: "follower-one",
+          full_name: "Follower One",
           avatar_url: "https://example.com/one.png",
           is_public: true,
           created_at: "2026-04-01T12:00:00.000Z",
@@ -252,6 +328,7 @@ describe("socialRouter", () => {
         {
           id: FOLLOWER_TWO_ID,
           username: "follower-two",
+          full_name: null,
           avatar_url: null,
           is_public: false,
           created_at: "2026-03-31T12:00:00.000Z",
@@ -263,10 +340,37 @@ describe("socialRouter", () => {
       hasMore: true,
       nextCursor: "index:2",
     });
+    expect(calls.selects).toEqual([{ table: "profiles" }]);
+    expect(calls.executes).toHaveLength(0);
+  });
+
+  it("getFollowers exposes the viewer's outbound follow state required by relationship-list UI", async () => {
+    const { caller } = createCaller({
+      select: { profiles: [[{ is_public: true }]] },
+      execute: [
+        [
+          {
+            id: FOLLOWER_ID,
+            username: "follower-one",
+            full_name: "Follower One",
+            avatar_url: null,
+            is_public: true,
+            created_at: "2026-04-01T12:00:00.000Z",
+            updated_at: "2026-04-01T12:00:00.000Z",
+          },
+        ],
+        [{ value: 1 }],
+        [{ following_id: FOLLOWER_ID, status: "pending" }],
+      ],
+    });
+
+    const result = await caller.getFollowers({ user_id: TARGET_USER_ID, limit: 20 });
+
+    expect(result.users[0]?.follow_status).toBe("pending");
   });
 
   it("getFollowing returns followed users with viewer-specific relationship status", async () => {
-    const { caller } = createCaller({
+    const { caller, calls } = createCaller({
       select: {
         profiles: [[{ is_public: true }]],
       },
@@ -275,6 +379,7 @@ describe("socialRouter", () => {
           {
             id: FOLLOWING_ID,
             username: "following-one",
+            full_name: "Following One",
             avatar_url: "https://example.com/following.png",
             is_public: true,
             created_at: "2026-04-02T12:00:00.000Z",
@@ -283,6 +388,7 @@ describe("socialRouter", () => {
           {
             id: FOLLOWING_TWO_ID,
             username: "following-two",
+            full_name: null,
             avatar_url: null,
             is_public: true,
             created_at: "2026-04-01T12:00:00.000Z",
@@ -301,6 +407,7 @@ describe("socialRouter", () => {
         {
           id: FOLLOWING_ID,
           username: "following-one",
+          full_name: "Following One",
           avatar_url: "https://example.com/following.png",
           is_public: true,
           created_at: "2026-04-02T12:00:00.000Z",
@@ -310,6 +417,7 @@ describe("socialRouter", () => {
         {
           id: FOLLOWING_TWO_ID,
           username: "following-two",
+          full_name: null,
           avatar_url: null,
           is_public: true,
           created_at: "2026-04-01T12:00:00.000Z",
@@ -321,6 +429,8 @@ describe("socialRouter", () => {
       hasMore: false,
       nextCursor: undefined,
     });
+    expect(calls.selects).toEqual([{ table: "profiles" }]);
+    expect(calls.executes).toHaveLength(0);
   });
 
   it("getFollowers rejects private social graph access for non-followers", async () => {
@@ -337,7 +447,7 @@ describe("socialRouter", () => {
       code: "FORBIDDEN",
     });
 
-    expect(calls.executes).toHaveLength(1);
+    expect(calls.executes).toHaveLength(0);
   });
 
   it("searchUsers trims the query and returns paginated matches", async () => {
@@ -347,8 +457,10 @@ describe("socialRouter", () => {
           {
             id: TARGET_USER_ID,
             username: "target-runner",
+            full_name: "Target Athlete",
             avatar_url: null,
             is_public: true,
+            follow_status: "pending",
             created_at: "2026-04-03T12:00:00.000Z",
             updated_at: "2026-04-03T12:00:00.000Z",
           },
@@ -364,8 +476,10 @@ describe("socialRouter", () => {
         {
           id: TARGET_USER_ID,
           username: "target-runner",
+          full_name: "Target Athlete",
           avatar_url: null,
           is_public: true,
+          follow_status: "pending",
           created_at: "2026-04-03T12:00:00.000Z",
           updated_at: "2026-04-03T12:00:00.000Z",
         },
@@ -376,15 +490,41 @@ describe("socialRouter", () => {
     });
   });
 
+  it("searchUsers supports full-name matches and bounded empty-query suggestions", async () => {
+    const publicSuggestion = {
+      id: TARGET_USER_ID,
+      username: "public-runner",
+      full_name: "Public Athlete",
+      avatar_url: null,
+      is_public: true,
+      follow_status: null,
+      created_at: "2026-04-03T12:00:00.000Z",
+      updated_at: "2026-04-03T12:00:00.000Z",
+    };
+    const { caller, calls } = createCaller({
+      execute: [[publicSuggestion], [{ value: 1 }], [publicSuggestion], [{ value: 1 }]],
+    });
+
+    await expect(
+      caller.searchUsers({ query: "Public Athlete", limit: 10, offset: 0 }),
+    ).resolves.toMatchObject({ users: [publicSuggestion], total: 1 });
+    await expect(caller.searchUsers({ query: "", limit: 5, offset: 0 })).resolves.toMatchObject({
+      users: [publicSuggestion],
+      total: 1,
+      hasMore: false,
+    });
+    expect(calls.executes).toHaveLength(0);
+  });
+
   it("searchUsers rejects unexpected input keys", async () => {
     const { caller } = createCaller();
 
     await expect(
-      caller.searchUsers({ query: "target", limit: 1, offset: 0, extra: true } as any),
+      caller.searchUsers({ query: "target", limit: 1, offset: 0, extra: true } as never),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 
-  it("addComment stores trimmed content and serializes the timestamp", async () => {
+  it("addComment stores trimmed content and idempotently reuses a client comment id", async () => {
     const createdAt = new Date("2026-04-03T12:30:00.000Z");
     const { caller } = createCaller({
       execute: [
@@ -398,13 +538,27 @@ describe("socialRouter", () => {
             created_at: createdAt,
           },
         ],
+        [
+          {
+            id: COMMENT_ID,
+            profile_id: SESSION_USER_ID,
+            entity_id: ACTIVITY_ID,
+            entity_type: "activity",
+            content: "nice work",
+            created_at: createdAt,
+          },
+        ],
       ],
       query: {
-        activities: [{ profile_id: TARGET_USER_ID, is_private: false }],
+        activities: [
+          { profile_id: TARGET_USER_ID, content_visibility: "public" },
+          { profile_id: TARGET_USER_ID, content_visibility: "public" },
+        ],
       },
     });
 
     const result = await caller.addComment({
+      comment_id: COMMENT_ID,
       entity_id: ACTIVITY_ID,
       entity_type: "activity",
       content: "  nice work  ",
@@ -418,22 +572,19 @@ describe("socialRouter", () => {
       content: "nice work",
       created_at: createdAt.toISOString(),
     });
-  });
-
-  it("deleteComment allows owners to remove their comment", async () => {
-    const { caller, calls } = createCaller({
-      execute: [[{ profile_id: SESSION_USER_ID }], []],
-    });
-
-    const result = await caller.deleteComment({ comment_id: COMMENT_ID });
-
-    expect(result).toEqual({ success: true });
-    expect(calls.executes).toHaveLength(2);
+    await expect(
+      caller.addComment({
+        comment_id: COMMENT_ID,
+        entity_id: ACTIVITY_ID,
+        entity_type: "activity",
+        content: "  nice work  ",
+      }),
+    ).resolves.toEqual(result);
   });
 
   it("getComments returns serialized comments with nested profile data", async () => {
     const createdAt = new Date("2026-04-03T14:00:00.000Z");
-    const { caller } = createCaller({
+    const { caller, calls } = createCaller({
       execute: [
         [
           {
@@ -448,7 +599,7 @@ describe("socialRouter", () => {
         [{ value: 2 }],
       ],
       query: {
-        activities: [{ profile_id: TARGET_USER_ID, is_private: false }],
+        activities: [{ profile_id: TARGET_USER_ID, content_visibility: "public" }],
       },
     });
 
@@ -475,6 +626,7 @@ describe("socialRouter", () => {
       hasMore: true,
       nextCursor: "index:1",
     });
+    expect(calls.executes).toHaveLength(0);
   });
 
   it("getComments allows system training plans with null owner profile_id", async () => {
@@ -488,7 +640,7 @@ describe("socialRouter", () => {
             {
               id: trainingPlanId,
               ownerProfileId: null,
-              templateVisibility: "public",
+              contentVisibility: "public",
               isSystem: true,
             },
           ],
