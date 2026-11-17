@@ -94,6 +94,15 @@ describe("parseAuthTrustedOrigins", () => {
 });
 
 describe("resolveDevelopmentAuthTrustedOrigins", () => {
+  it("shares the built-in development origins with all runtime consumers", () => {
+    expect(resolveDevelopmentAuthTrustedOrigins("development", undefined)).toEqual([
+      "http://100.119.109.24:3000",
+      "https://tokyo.goose-noodlefish.ts.net",
+    ]);
+    expect(resolveDevelopmentAuthTrustedOrigins("production", undefined)).toEqual([]);
+    expect(resolveDevelopmentAuthTrustedOrigins("test", undefined)).toEqual([]);
+  });
+
   it("includes exact configured and default origins only in development", () => {
     expect(
       resolveDevelopmentAuthTrustedOrigins("development", "https://dev.gradientpeak.com", [

@@ -58,6 +58,11 @@ vi.mock("../../infrastructure/repositories", () => ({
   createIntegrationsRepositories: vi.fn(() => mocks.repositories),
   createWahooSyncRepository: vi.fn(() => mocks.providerSyncRepository),
 }));
+// These policy tests vary NODE_ENV without a database. Rate-limit persistence
+// is a separate boundary; keep it isolated rather than selecting a live store.
+vi.mock("../../lib/rate-limit", () => ({
+  checkApiRateLimit: vi.fn().mockResolvedValue({ allowed: true }),
+}));
 vi.mock("@repo/db", () => ({
   publicIntegrationProviderSchema: z.enum(["strava", "wahoo", "trainingpeaks", "garmin", "zwift"]),
   publicIntegrationsRowSchema: z.object({
@@ -81,6 +86,10 @@ const originalEnv = { ...process.env };
 describe("integrationsRouter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    delete process.env.APP_URL;
+    delete process.env.AUTH_TRUSTED_ORIGINS;
+    delete process.env.WAHOO_OAUTH_TEST_ADAPTER;
+    process.env.NODE_ENV = "test";
     process.env.OAUTH_CALLBACK_BASE_URL = "https://app.example.com";
     process.env.OAUTH_MOBILE_CALLBACK_URL = "gradientpeak://integrations";
     process.env.WAHOO_CLIENT_ID = "wahoo-client-id";
@@ -181,6 +190,96 @@ describe("integrationsRouter", () => {
       }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(mocks.repositories.oauthStates.create).not.toHaveBeenCalled();
+    expect(mocks.createPendingOAuthStateWithFence).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "/integrations",
+    "/onboarding",
+  ])("returns to the configured web app at %s without changing the provider callback", async (path) => {
+    process.env.APP_URL = "https://web.example.com";
+    const redirectUri = `https://web.example.com${path}`;
+
+    const authorization = await createCaller().getAuthUrl({ provider: "wahoo", redirectUri });
+
+    expect(new URL(authorization.url).searchParams.get("redirect_uri")).toBe(
+      "https://app.example.com/api/integrations/callback/wahoo",
+    );
+    expect(mocks.createPendingOAuthStateWithFence).toHaveBeenCalledWith(
+      expect.objectContaining({
+        callbackUri: "https://app.example.com/api/integrations/callback/wahoo",
+        mobileRedirectUri: redirectUri,
+        profileId: PROFILE_ID,
+      }),
+    );
+  });
+
+  it.each([
+    "http://127.0.0.1:3000",
+    "https://preview.example.com",
+  ])("allows the explicitly trusted development web origin %s without the test adapter", async (origin) => {
+    process.env.NODE_ENV = "development";
+    process.env.APP_URL = "https://web.example.com";
+    process.env.AUTH_TRUSTED_ORIGINS = "http://127.0.0.1:3000, https://preview.example.com";
+    const redirectUri = `${origin}/integrations`;
+
+    await expect(createCaller().getAuthUrl({ provider: "wahoo", redirectUri })).resolves.toEqual(
+      expect.objectContaining({ state: expect.any(String) }),
+    );
+    expect(mocks.createPendingOAuthStateWithFence).toHaveBeenCalledWith(
+      expect.objectContaining({ mobileRedirectUri: redirectUri }),
+    );
+  });
+
+  it.each([
+    "http://100.119.109.24:3000",
+    "https://tokyo.goose-noodlefish.ts.net",
+  ])("shares the built-in auth development origin %s without explicit aliases", async (origin) => {
+    process.env.NODE_ENV = "development";
+    await expect(
+      createCaller().getAuthUrl({ provider: "wahoo", redirectUri: `${origin}/integrations` }),
+    ).resolves.toEqual(expect.objectContaining({ state: expect.any(String) }));
+    expect(mocks.createPendingOAuthStateWithFence).toHaveBeenCalledWith(
+      expect.objectContaining({ mobileRedirectUri: `${origin}/integrations` }),
+    );
+  });
+
+  it.each([
+    "https://preview.example.com",
+    "https://tokyo.goose-noodlefish.ts.net",
+  ])("does not enable development origin %s in production", async (origin) => {
+    process.env.NODE_ENV = "production";
+    process.env.APP_URL = "https://web.example.com";
+    process.env.AUTH_TRUSTED_ORIGINS = "https://preview.example.com";
+
+    await expect(
+      createCaller().getAuthUrl({
+        provider: "wahoo",
+        redirectUri: `${origin}/integrations`,
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(mocks.createPendingOAuthStateWithFence).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "https://web.example.com.attacker.example/integrations",
+    "https://web.example.com:444/integrations",
+    "https://attacker@web.example.com/integrations",
+    "https://web.example.com/integrations/child",
+    "https://web.example.com/integrations?redirect=https://attacker.example",
+    "https://web.example.com/integrations#return",
+    "http://localhost:3001/integrations",
+    "ftp://127.0.0.1:3000/integrations",
+  ])("rejects an untrusted web return %s before creating authorization or state", async (redirectUri) => {
+    process.env.NODE_ENV = "development";
+    process.env.APP_URL = "https://web.example.com";
+    process.env.AUTH_TRUSTED_ORIGINS = "http://127.0.0.1:3000";
+
+    await expect(
+      createCaller().getAuthUrl({ provider: "wahoo", redirectUri }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(mocks.providerRuntimeComponents.createOAuthAuthorization).not.toHaveBeenCalled();
+    expect(mocks.createPendingOAuthStateWithFence).not.toHaveBeenCalled();
   });
 
   it("allows only the exact same-origin onboarding web return", async () => {

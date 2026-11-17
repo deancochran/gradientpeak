@@ -1,3 +1,4 @@
+import { resolveDevelopmentAuthTrustedOrigins } from "@repo/auth/env";
 import {
   executableIntegrationProviderIdSchema,
   providerOnboardingPresentationSchema,
@@ -383,19 +384,33 @@ function getApplicationBaseUrl(): string {
 function requireAllowedOAuthReturn(redirectUri?: string): string {
   const defaultMobileRedirect = getDefaultMobileOAuthRedirect();
   const target = redirectUri ?? defaultMobileRedirect;
+  if (target === defaultMobileRedirect) return target;
+
   const parsedTarget = new URL(target);
+  const isWebReturn =
+    (parsedTarget.protocol === "https:" || parsedTarget.protocol === "http:") &&
+    !parsedTarget.username &&
+    !parsedTarget.password &&
+    (parsedTarget.pathname === "/integrations" || parsedTarget.pathname === "/onboarding") &&
+    parsedTarget.search === "" &&
+    parsedTarget.hash === "";
+  // The provider's registered callback can use a different public origin from
+  // the web app. Return only to explicitly configured app/auth origins, never
+  // an Origin/Host header supplied by the caller. Keep the prior callback
+  // origin allowed for existing deployments; development aliases follow auth.
+  const configuredWebBases = [
+    getApplicationBaseUrl(),
+    process.env.APP_URL,
+    ...resolveDevelopmentAuthTrustedOrigins(process.env.NODE_ENV, process.env.AUTH_TRUSTED_ORIGINS),
+  ];
   const isConfiguredWebReturn =
-    parsedTarget.origin === new URL(getApplicationBaseUrl()).origin &&
-    (parsedTarget.pathname === "/integrations" || parsedTarget.pathname === "/onboarding") &&
-    parsedTarget.search === "" &&
-    parsedTarget.hash === "";
+    isWebReturn &&
+    configuredWebBases.some((base) => base && parsedTarget.origin === new URL(base).origin);
   const isLocalAdapterWebReturn =
+    isWebReturn &&
     isLocalWahooOAuthTestAdapterEnabled() &&
-    ["127.0.0.1", "localhost"].includes(parsedTarget.hostname) &&
-    (parsedTarget.pathname === "/integrations" || parsedTarget.pathname === "/onboarding") &&
-    parsedTarget.search === "" &&
-    parsedTarget.hash === "";
-  if (target !== defaultMobileRedirect && !isConfiguredWebReturn && !isLocalAdapterWebReturn) {
+    ["127.0.0.1", "localhost"].includes(parsedTarget.hostname);
+  if (!isConfiguredWebReturn && !isLocalAdapterWebReturn) {
     throw new TRPCError({ code: "BAD_REQUEST", message: "OAuth redirect URI is not allowed" });
   }
   return target;

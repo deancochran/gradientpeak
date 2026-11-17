@@ -117,10 +117,15 @@ export function parseAuthTrustedOrigins(input?: string): string[] {
   );
 }
 
+const defaultDevelopmentAuthTrustedOrigins = [
+  "http://100.119.109.24:3000",
+  "https://tokyo.goose-noodlefish.ts.net",
+] as const;
+
 export function resolveDevelopmentAuthTrustedOrigins(
   nodeEnv: string | undefined,
   configuredOrigins: string | undefined,
-  defaults: readonly string[] = [],
+  defaults: readonly string[] = defaultDevelopmentAuthTrustedOrigins,
 ): string[] {
   if (nodeEnv !== "development") return [];
   return Array.from(new Set([...parseAuthTrustedOrigins(configuredOrigins), ...defaults]));

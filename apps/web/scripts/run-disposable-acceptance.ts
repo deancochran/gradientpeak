@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { once } from "node:events";
 import { chmodSync, closeSync, mkdirSync, openSync } from "node:fs";
 import { createServer } from "node:net";
@@ -96,6 +97,9 @@ await withDisposableDatabase(
           PORT: String(port),
           OAUTH_CALLBACK_BASE_URL: browserOrigin,
           BETTER_AUTH_SECRET: `local-only-${runId}-synthetic-secret`,
+          // Credentials belong only to this disposable database, never a shared
+          // environment. Keep its encryption key ephemeral and out of artifacts.
+          PROVIDER_TOKEN_ENCRYPTION_KEY: randomBytes(32).toString("base64"),
           // Private file capture enables real signup/verification without external email.
           ...(captureAuthMail ? { NODE_ENV: "test" } : {}),
           AUTH_EMAIL_MODE: captureAuthMail ? "capture" : "disabled",
