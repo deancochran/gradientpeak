@@ -6,13 +6,14 @@ import { IntegerStepper } from "@repo/ui/components/integer-stepper";
 import { Label } from "@repo/ui/components/label";
 import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
-import { AlertCircle, CheckCircle, Lock, TrendingUp } from "lucide-react-native";
+import { AlertCircle, Lock, TrendingUp } from "lucide-react-native";
 import React from "react";
 import { View } from "react-native";
+import { parseDateKey, toDateKey } from "@/lib/calendar/dateMath";
 
 interface PeriodizationTemplate {
-  starting_ctl: number;
-  target_ctl: number;
+  starting_longTermLoad: number;
+  target_longTermLoad: number;
   ramp_rate: number;
   target_date: string;
 }
@@ -21,33 +22,34 @@ interface PeriodizationFormProps {
   data: PeriodizationTemplate | null | undefined;
   onChange: (data: PeriodizationTemplate | null) => void;
   errors: Record<string, string>;
-  currentCTL?: number; // Current CTL from API (read-only)
+  currentLongTermLoad?: number | null;
 }
 
 export function PeriodizationForm({
   data,
   onChange,
   errors,
-  currentCTL = 0, // Default to 0 for new users
+  currentLongTermLoad,
 }: PeriodizationFormProps) {
   const [isEnabled, setIsEnabled] = React.useState(!!data);
 
-  // Use currentCTL as starting point (not editable)
-  const startingCtl = currentCTL;
+  const startingLongTermLoad = currentLongTermLoad ?? 0;
 
-  const [targetCtlText, setTargetCtlText] = React.useState(data?.target_ctl?.toString() || "85");
+  const [targetCtlText, setTargetCtlText] = React.useState(
+    data?.target_longTermLoad?.toString() || "85",
+  );
   const [rampRateText, setRampRateText] = React.useState(
     data?.ramp_rate ? (data.ramp_rate * 100).toFixed(0) : "5",
   );
   const [targetDate, setTargetDate] = React.useState<Date>(
     data?.target_date
-      ? new Date(data.target_date)
+      ? parseDateKey(data.target_date)
       : new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
   );
 
   // Calculate progression preview
   const progressionPreview = React.useMemo(() => {
-    const startCtl = startingCtl;
+    const startCtl = startingLongTermLoad;
     const targetCtl = parseInt(targetCtlText, 10) || 0;
     const rampRate = (parseInt(rampRateText, 10) || 5) / 100;
 
@@ -70,9 +72,8 @@ export function PeriodizationForm({
       weeksNeeded,
       achievable: weeksNeeded <= weeksToTarget,
       ctlIncrease: targetCtl - startCtl,
-      weeklyGain: weeksToTarget > 0 ? (targetCtl - startCtl) / weeksToTarget : 0,
     };
-  }, [startingCtl, targetCtlText, rampRateText, targetDate]);
+  }, [startingLongTermLoad, targetCtlText, rampRateText, targetDate]);
 
   const handleToggle = (enabled: boolean) => {
     setIsEnabled(enabled);
@@ -80,10 +81,10 @@ export function PeriodizationForm({
       onChange(null);
     } else {
       onChange({
-        starting_ctl: startingCtl,
-        target_ctl: parseInt(targetCtlText, 10) || 85,
+        starting_longTermLoad: startingLongTermLoad,
+        target_longTermLoad: parseInt(targetCtlText, 10) || 85,
         ramp_rate: (parseInt(rampRateText, 10) || 5) / 100,
-        target_date: targetDate.toISOString().split("T")[0] || "",
+        target_date: toDateKey(targetDate),
       });
     }
   };
@@ -93,10 +94,10 @@ export function PeriodizationForm({
     const value = parseInt(text, 10);
     if (!Number.isNaN(value) && isEnabled) {
       onChange({
-        starting_ctl: startingCtl,
-        target_ctl: value,
+        starting_longTermLoad: startingLongTermLoad,
+        target_longTermLoad: value,
         ramp_rate: (parseInt(rampRateText, 10) || 5) / 100,
-        target_date: targetDate.toISOString().split("T")[0] || "",
+        target_date: toDateKey(targetDate),
       });
     }
   };
@@ -106,46 +107,31 @@ export function PeriodizationForm({
     const value = parseInt(text, 10);
     if (!Number.isNaN(value) && isEnabled) {
       onChange({
-        starting_ctl: startingCtl,
-        target_ctl: parseInt(targetCtlText, 10) || 85,
+        starting_longTermLoad: startingLongTermLoad,
+        target_longTermLoad: parseInt(targetCtlText, 10) || 85,
         ramp_rate: value / 100,
-        target_date: targetDate.toISOString().split("T")[0] || "",
+        target_date: toDateKey(targetDate),
       });
     }
   };
 
   return (
     <View className="gap-6">
-      {/* Header */}
       <View className="gap-2">
         <Text className="text-2xl font-bold">Periodization Planning</Text>
-        <Text className="text-muted-foreground">
-          Use periodization to progressively build your Chronic Training Load (CTL) toward a
-          specific goal target.
-        </Text>
       </View>
 
-      {/* Enable/Disable Toggle */}
-      <Card>
-        <CardContent className="p-4">
-          <View className="flex-row items-center justify-between">
-            <View className="flex-1 pr-4">
-              <Text className="font-semibold mb-1">Enable Periodization Planning</Text>
-              <Text className="text-sm text-muted-foreground">
-                Plan your training progression toward a target date and fitness level
-              </Text>
-            </View>
-            <Switch checked={isEnabled} onCheckedChange={handleToggle} />
-          </View>
-        </CardContent>
-      </Card>
+      <View className="flex-row items-center justify-between">
+        <Text className="font-semibold">Enable periodization</Text>
+        <Switch checked={isEnabled} onCheckedChange={handleToggle} />
+      </View>
 
       {/* Periodization Form (only shown when enabled) */}
       {isEnabled && (
         <>
-          {/* Current CTL (Read-Only) */}
+          {/* Current Fitness (Read-Only) */}
           <View className="gap-3">
-            <Label className="text-base font-semibold">Your Current Fitness</Label>
+            <Label className="text-base font-semibold">Current Load History</Label>
             <Card className="bg-muted/50 border-muted">
               <CardContent className="p-4">
                 <View className="flex-row items-center justify-between">
@@ -153,13 +139,15 @@ export function PeriodizationForm({
                     <View className="flex-row items-center gap-2 mb-1">
                       <Icon as={Lock} size={16} className="text-muted-foreground" />
                       <Text className="text-sm text-muted-foreground font-medium">
-                        Starting CTL
+                        Starting Long-term Load
                       </Text>
                     </View>
-                    <Text className="text-3xl font-bold text-foreground">{startingCtl} CTL</Text>
-                    {startingCtl === 0 ? (
+                    <Text className="text-3xl font-bold text-foreground">
+                      {startingLongTermLoad} Long-term Load
+                    </Text>
+                    {startingLongTermLoad === 0 ? (
                       <Text className="text-xs text-muted-foreground mt-2">
-                        Your fitness will update as you sync activities from connected services
+                        Long-term Load will update as you sync activities from connected services
                       </Text>
                     ) : (
                       <Text className="text-xs text-muted-foreground mt-2">
@@ -172,69 +160,62 @@ export function PeriodizationForm({
             </Card>
           </View>
 
-          {/* Target CTL */}
+          {/* Target Long-term Load */}
           <View className="gap-3">
-            <Label className="text-base font-semibold">Target CTL</Label>
-            <Text className="text-sm text-muted-foreground">
-              The fitness level you want to reach by your target date
-            </Text>
+            <Label className="text-base font-semibold">Target Long-term Load</Label>
             <IntegerStepper
               id="periodization-target-ctl"
               value={parseInt(targetCtlText, 10) || 85}
               min={0}
               max={250}
               onChange={(nextCtl) => handleTargetCtlChange(String(nextCtl))}
-              helperText="Set your CTL goal by your target date"
-              error={errors.target_ctl}
+              helperText=""
+              {...(errors.target_longTermLoad === undefined
+                ? {}
+                : { error: errors.target_longTermLoad })}
             />
           </View>
 
           {/* Ramp Rate */}
           <View className="gap-3">
             <Label className="text-base font-semibold">Weekly Ramp Rate (%)</Label>
-            <Text className="text-sm text-muted-foreground">
-              How much your CTL increases each week (5-7% is typical)
-            </Text>
             <IntegerStepper
               id="periodization-ramp-rate"
               value={parseInt(rampRateText, 10) || 5}
               min={1}
               max={20}
               onChange={(nextRate) => handleRampRateChange(String(nextRate))}
-              helperText="Set weekly CTL increase percentage"
-              error={errors.ramp_rate}
+              helperText=""
+              {...(errors.ramp_rate === undefined ? {} : { error: errors.ramp_rate })}
             />
           </View>
 
           {/* Target Date */}
           <View className="gap-3">
             <Label className="text-base font-semibold">Target Date</Label>
-            <Text className="text-sm text-muted-foreground">
-              Your goal date for this fitness target
-            </Text>
             <DateInput
               accessibilityHint="Choose the goal date for this target"
               id="periodization-target-date"
-              label="Target Date"
+              label=""
               minimumDate={new Date()}
               onChange={(value) => {
                 if (!value) {
                   return;
                 }
 
-                const selectedDate = new Date(`${value}T12:00:00.000Z`);
+                const selectedDate = parseDateKey(value);
                 setTargetDate(selectedDate);
                 if (isEnabled) {
                   onChange({
-                    starting_ctl: startingCtl,
-                    target_ctl: parseInt(targetCtlText, 10) || 85,
+                    starting_longTermLoad: startingLongTermLoad,
+                    target_longTermLoad: parseInt(targetCtlText, 10) || 85,
                     ramp_rate: (parseInt(rampRateText, 10) || 5) / 100,
                     target_date: value,
                   });
                 }
               }}
               pickerPresentation="modal"
-              value={targetDate.toISOString().split("T")[0] || ""}
+              value={toDateKey(targetDate)}
             />
             {errors.target_date && (
               <Text className="text-destructive text-xs">{errors.target_date}</Text>
@@ -242,120 +223,55 @@ export function PeriodizationForm({
           </View>
 
           {/* Progression Preview */}
-          {startingCtl > 0 && parseInt(targetCtlText, 10) > 0 && parseInt(rampRateText, 10) > 0 && (
-            <Card className="bg-primary/5 border-primary/20">
-              <CardContent className="p-4 gap-3">
-                <View className="flex-row items-center gap-2">
-                  <Icon as={TrendingUp} size={20} className="text-primary" />
-                  <Text className="font-semibold text-primary">Progression Preview</Text>
-                </View>
+          {startingLongTermLoad > 0 &&
+            parseInt(targetCtlText, 10) > 0 &&
+            parseInt(rampRateText, 10) > 0 && (
+              <Card className="bg-primary/5 border-primary/20">
+                <CardContent className="p-4 gap-3">
+                  <View className="flex-row items-center gap-2">
+                    <Icon as={TrendingUp} size={20} className="text-primary" />
+                    <Text className="font-semibold text-primary">Progression Preview</Text>
+                  </View>
 
-                <View className="gap-2">
-                  <View className="flex-row justify-between">
-                    <Text className="text-muted-foreground">CTL increase:</Text>
-                    <Text className="font-semibold">
-                      +{progressionPreview.ctlIncrease} ({startingCtl} → {targetCtlText})
-                    </Text>
+                  <View className="gap-2">
+                    <View className="flex-row justify-between">
+                      <Text className="text-muted-foreground">Long-term Load increase:</Text>
+                      <Text className="font-semibold">
+                        +{progressionPreview.ctlIncrease} ({startingLongTermLoad} → {targetCtlText})
+                      </Text>
+                    </View>
+                    <View className="flex-row justify-between">
+                      <Text className="text-muted-foreground">Time to target:</Text>
+                      <Text className="font-semibold">
+                        {progressionPreview.weeksToTarget} weeks ({progressionPreview.daysToTarget}{" "}
+                        days)
+                      </Text>
+                    </View>
                   </View>
-                  <View className="flex-row justify-between">
-                    <Text className="text-muted-foreground">Time to target:</Text>
-                    <Text className="font-semibold">
-                      {progressionPreview.weeksToTarget} weeks ({progressionPreview.daysToTarget}{" "}
-                      days)
-                    </Text>
-                  </View>
-                  <View className="flex-row justify-between">
-                    <Text className="text-muted-foreground">Avg weekly gain:</Text>
-                    <Text className="font-semibold">
-                      +{progressionPreview.weeklyGain.toFixed(1)} CTL/week
-                    </Text>
-                  </View>
-                  <View className="flex-row justify-between">
-                    <Text className="text-muted-foreground">Weeks needed:</Text>
-                    <Text className="font-semibold">{progressionPreview.weeksNeeded} weeks</Text>
-                  </View>
-                </View>
-
-                {/* Achievability indicator */}
-                {progressionPreview.achievable ? (
-                  <View className="flex-row items-center gap-2 bg-success/10 p-2 rounded-md mt-2">
-                    <Icon as={CheckCircle} size={16} className="text-success" />
-                    <Text className="text-success text-sm font-medium">
-                      Goal is achievable with this plan
-                    </Text>
-                  </View>
-                ) : (
-                  <View className="flex-row items-center gap-2 bg-destructive/10 p-2 rounded-md mt-2">
-                    <Icon as={AlertCircle} size={16} className="text-destructive" />
-                    <Text className="text-destructive text-sm font-medium">
-                      Goal may not be achievable - need {progressionPreview.weeksNeeded} weeks but
-                      only have {progressionPreview.weeksToTarget}
-                    </Text>
-                  </View>
-                )}
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Tips Card */}
-          <Card className="bg-muted/50">
-            <CardContent className="p-4 gap-2">
-              <Text className="font-semibold mb-1">💡 Periodization Tips</Text>
-              <Text className="text-sm text-muted-foreground">
-                • CTL of 40-60 is typical for recreational athletes
-              </Text>
-              <Text className="text-sm text-muted-foreground">
-                • CTL of 80-100 is common for competitive athletes
-              </Text>
-              <Text className="text-sm text-muted-foreground">
-                • A 5-7% weekly ramp rate allows for sustainable progress
-              </Text>
-              <Text className="text-sm text-muted-foreground">
-                • Include recovery weeks every 3-4 weeks to consolidate fitness
-              </Text>
-            </CardContent>
-          </Card>
+                  {!progressionPreview.achievable ? (
+                    <View className="flex-row items-center gap-2 bg-destructive/10 p-2 rounded-md mt-2">
+                      <Icon as={AlertCircle} size={16} className="text-destructive" />
+                      <Text className="text-destructive text-sm font-medium">
+                        Goal may not be achievable - need {progressionPreview.weeksNeeded} weeks but
+                        only have {progressionPreview.weeksToTarget}
+                      </Text>
+                    </View>
+                  ) : null}
+                </CardContent>
+              </Card>
+            )}
 
           {/* Warning for aggressive ramp rate */}
           {parseInt(rampRateText, 10) > 10 && (
             <Alert icon={AlertCircle} iconClassName="text-amber-500">
-              <AlertTitle className="text-amber-500">Warning: Very Aggressive Ramp Rate</AlertTitle>
+              <AlertTitle className="text-amber-500">Large Weekly Long-term Load Change</AlertTitle>
               <AlertDescription className="text-amber-500">
-                A ramp rate above 10% per week is very aggressive and significantly increases injury
-                risk. Most athletes should aim for 5-7% per week.
+                This setting projects a Long-term Load increase above 10% per week. Review the
+                resulting values and date before saving.
               </AlertDescription>
             </Alert>
           )}
         </>
-      )}
-
-      {/* Info card when disabled */}
-      {!isEnabled && (
-        <Card className="bg-muted/50">
-          <CardContent className="p-4 gap-3">
-            <Text className="font-semibold">What is Periodization?</Text>
-            <Text className="text-sm text-muted-foreground">
-              Periodization is a systematic approach to training that progressively builds your
-              fitness (CTL) over time toward a specific goal or event. It helps you:
-            </Text>
-            <View className="gap-1 ml-2">
-              <Text className="text-sm text-muted-foreground">• Peak at the right time</Text>
-              <Text className="text-sm text-muted-foreground">
-                • Avoid overtraining and burnout
-              </Text>
-              <Text className="text-sm text-muted-foreground">
-                • Build fitness progressively and safely
-              </Text>
-              <Text className="text-sm text-muted-foreground">
-                • Track progress toward your goals
-              </Text>
-            </View>
-            <Text className="text-sm text-muted-foreground mt-2">
-              Enable periodization if you&apos;re training for a specific event or want structured
-              fitness progression.
-            </Text>
-          </CardContent>
-        </Card>
       )}
     </View>
   );

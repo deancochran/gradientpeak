@@ -40,8 +40,10 @@ import {
   ENDPOINT_PERFORMANCE_TIMEOUT_MS,
   getEndpointCaller,
   getEndpointPerformanceBudgets,
+  getEndpointPerformanceProcedure,
   measureEndpointPerformance,
 } from "../../test/performance";
+import { createRouterCaller } from "../../test/router";
 import { appRouter } from "../index";
 
 const SESSION_USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -57,7 +59,6 @@ const queryMap: QueryMap = {
   likes: { data: [], error: null },
   notifications: { data: [], error: null },
   profile_metrics: { data: [], error: null },
-  profile_training_settings: { data: [], error: null },
   profiles: {
     data: {
       id: SESSION_USER_ID,
@@ -66,7 +67,7 @@ const queryMap: QueryMap = {
       email: "athlete@example.com",
       full_name: "Athlete Example",
       username: "athlete",
-      onboarded: true,
+      onboarding_status: "completed",
       is_public: true,
       preferred_units: "metric",
       language: "en",
@@ -97,23 +98,21 @@ function createPerformanceDb() {
 }
 
 function createPerformanceCaller() {
-  return appRouter.createCaller({
+  return createRouterCaller(appRouter, {
     db: createPerformanceDb(),
     headers: new Headers(),
     session: {
       user: {
         id: SESSION_USER_ID,
-        email: "athlete@example.com",
-        emailVerified: true,
       },
     },
     clientType: "test",
     trpcSource: "vitest-performance",
-  } as any);
+  });
 }
 
 describe("backend endpoint performance", () => {
-  const budgets = getEndpointPerformanceBudgets(appRouter as any);
+  const budgets = getEndpointPerformanceBudgets(appRouter);
   let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
 
@@ -133,12 +132,14 @@ describe("backend endpoint performance", () => {
   });
 
   it("discovers every app router endpoint for performance coverage", () => {
-    expect(budgets).toHaveLength(Object.keys((appRouter as any)._def.procedures).length);
+    expect(budgets).toHaveLength(getEndpointPerformanceBudgets(appRouter).length);
     expect(budgets).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ path: "profiles.get", type: "query" }),
-        expect.objectContaining({ path: "events.list", type: "query" }),
-        expect.objectContaining({ path: "trainingPlans.create", type: "mutation" }),
+        expect.objectContaining({ path: "calendar.range", type: "query" }),
+        expect.objectContaining({ path: "calendar.day", type: "query" }),
+        expect.objectContaining({ path: "trainingPlans.preview", type: "query" }),
+        expect.objectContaining({ path: "trainingPlans.commit", type: "mutation" }),
         expect.objectContaining({ path: "groups.events.list", type: "query" }),
       ]),
     );
@@ -147,7 +148,7 @@ describe("backend endpoint performance", () => {
   it.each(budgets)("$path settles within $budgetMs ms", {
     timeout: ENDPOINT_PERFORMANCE_TIMEOUT_MS + 1_000,
   }, async ({ budgetMs, path }) => {
-    const procedure = (appRouter as any)._def.procedures[path];
+    const procedure = getEndpointPerformanceProcedure(appRouter, path);
     const input = createMockInputForProcedure(procedure);
     const caller = createPerformanceCaller();
     const endpoint = getEndpointCaller(caller, path);

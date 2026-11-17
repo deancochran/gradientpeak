@@ -2,12 +2,13 @@ export default {
   clearMocks: true,
   moduleFileExtensions: ["native.tsx", "native.ts", "tsx", "ts", "jsx", "js", "json"],
   moduleNameMapper: {
+    "\\.(gif|jpe?g|png|svg|webp)$": "<rootDir>/test/asset-mock.js",
+    "^expo-router/react-navigation$": "<rootDir>/test/expo-router-react-navigation-mock.js",
     "^@/(.*)$": "<rootDir>/$1",
     "^@repo/core$": "<rootDir>/../../packages/core/index.ts",
     "^@repo/core/(.*)$": "<rootDir>/../../packages/core/$1",
     "^@repo/api$": "<rootDir>/../../packages/api/index.ts",
     "^@repo/api/(.*)$": "<rootDir>/../../packages/api/src/$1",
-    "^@repo/ui$": "<rootDir>/../../packages/ui/src/index.ts",
     "^@repo/ui/(.*)$": "<rootDir>/../../packages/ui/src/$1",
   },
   rootDir: ".",
@@ -18,7 +19,11 @@ export default {
   },
   testMatch: ["<rootDir>/**/*.jest.test.ts", "<rootDir>/**/*.jest.test.tsx"],
   transformIgnorePatterns: [
-    "node_modules/(?!(superjson|copy-anything|is-what|expo(nent)?|@expo|expo-modules-core|expo-asset|expo-file-system|expo-linking|expo-constants|expo-font|expo-crypto|expo-router|react-native|react-native-css-interop|nativewind|@react-native|@react-navigation)/)",
+    "node_modules/(?!(" +
+      "@deancochran/ftms|superjson|copy-anything|is-what|expo(nent)?|@expo|expo-modules-core|" +
+      "expo-asset|expo-file-system|expo-linking|expo-constants|expo-font|expo-crypto|" +
+      "expo-router|react-native|react-native-css-interop|nativewind|@react-native|" +
+      "@react-navigation)/)",
   ],
   transform: {
     "^.+\\.(t|j)sx?$": [
