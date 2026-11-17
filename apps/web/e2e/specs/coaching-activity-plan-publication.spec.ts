@@ -190,10 +190,7 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
   await preparedStep
     .getByLabel("Instructions (optional)", { exact: true })
     .fill("Hold smooth pressure through the full interval.");
-  // Editing the optional instruction rerenders the step editor. Resolve the
-  // unique native combobox by its rendered accessible role/name after that
-  // state transition; the snapshot confirms the control is rendered without a
-  // stable label association for Playwright's label locator.
+  // Use the native combobox’s rendered accessible role and name.
   await coachPage.getByRole("combobox", { name: "Completion", exact: true }).selectOption("time");
   await coachPage.getByLabel("Quantity", { exact: true }).fill("600");
   await coachPage.getByRole("button", { name: "Add target", exact: true }).click();
@@ -654,9 +651,16 @@ test("[coaching-publication] coach can cancel creation and correct a seeded plan
   await coachPage
     .getByRole("button", { name: `Open activity plan ${planName}`, exact: true })
     .click();
+  await coachPage.getByRole("link", { name: "Back to activity plans", exact: true }).click();
+  await expect(coachPage.getByText("Preparing for an athlete", { exact: true })).toBeVisible();
+  await coachPage.getByRole("searchbox", { name: "Search activity plans" }).fill(planName);
+  await coachPage
+    .getByRole("button", { name: `Open activity plan ${planName}`, exact: true })
+    .click();
   await coachPage.getByRole("button", { name: "Edit", exact: true }).click();
   const planNameField = coachPage.getByLabel("Plan name", { exact: true });
   await planNameField.fill("");
+  await expect(planNameField).toHaveValue("");
   await expect(coachPage.getByRole("button", { name: "Save changes", exact: true })).toBeDisabled();
   await planNameField.fill(revisedPlanName);
   await coachPage.getByRole("button", { name: "Save changes", exact: true }).click();
