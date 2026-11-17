@@ -8,24 +8,47 @@ import {
 import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useMemo, useRef } from "react";
-import { Alert, KeyboardAvoidingView, Platform, View } from "react-native";
+import { useEffect, useMemo, useRef } from "react";
+import { View } from "react-native";
 import { GoalEditorForm, type GoalEditorFormHandle } from "@/components/goals";
+import { FormScreen } from "@/components/shared/FormScreen";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
+import { useCreationFlowActive } from "@/lib/hooks/useCreationFlowActive";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { publishTrainingPlanGoalCreation } from "@/lib/training-plan-creation/goalCreationHandoff";
 
 export default function GoalCreateScreen() {
+  const flow = useCreationFlowActive(["goal-create"]);
+  return flow.active ? <GoalCreateSession key={flow.key} isCurrent={flow.isCurrent} /> : null;
+}
+
+function GoalCreateSession({ isCurrent }: { isCurrent: () => boolean }) {
   const router = useRouter();
   const params = useLocalSearchParams<{ returnToTrainingPlanCreate?: string }>();
   const utils = api.useUtils();
   const formRef = useRef<GoalEditorFormHandle>(null);
   const profileId = useAuthStore((state) => state.profile?.id ?? null);
+  const draftOwnerId = useAuthStore((state) => state.user?.id ?? state.profile?.id ?? "loading");
+  const currentProfileId = useRef(profileId);
+  currentProfileId.current = profileId;
   const initialDraft = useMemo(() => createEmptyGoalDraft(), []);
+  const active = useRef(true);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
   const createGoalMutation = api.goals.create.useMutation({
-    onSuccess: async (goal) => {
-      await invalidateGoalQueries(utils, { goalId: goal.id });
+    onSuccess: async (goal, variables) => {
+      if (!active.current || !isCurrent() || variables.profile_id !== currentProfileId.current)
+        return;
+      await Promise.allSettled([
+        Promise.resolve().then(() => invalidateGoalQueries(utils, { goalId: goal.id })),
+      ]);
+      if (!active.current || !isCurrent() || variables.profile_id !== currentProfileId.current)
+        return;
       if (params.returnToTrainingPlanCreate === "1") {
         const parsedObjective = canonicalGoalObjectiveSchema.safeParse(goal.target_payload);
         publishTrainingPlanGoalCreation({
@@ -44,32 +67,22 @@ export default function GoalCreateScreen() {
   });
 
   const handleSubmit = async (draft: GoalEditorDraft) => {
+    if (!active.current || !isCurrent()) return;
     if (!profileId) {
-      Alert.alert("Unable to create goal", "Your profile is still loading. Please try again.");
-      return;
+      throw new Error("Your profile is still loading. Please try again.");
     }
 
-    try {
-      await createGoalMutation.mutateAsync(buildGoalCreatePayload({ draft, profileId }));
-    } catch (error) {
-      Alert.alert(
-        "Unable to create goal",
-        error instanceof Error ? error.message : "Please try again.",
-      );
-    }
+    await createGoalMutation.mutateAsync(buildGoalCreatePayload({ draft, profileId }));
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      className="flex-1 gap-3 bg-background p-3"
-      keyboardVerticalOffset={80}
-      testID="goal-create-screen"
-    >
+    <FormScreen testID="goal-create-screen">
       <Stack.Screen
         options={{
           headerRight: () => (
             <LoadingButton
+              testID="goal-create-submit"
+              className="min-h-11"
               disabled={createGoalMutation.isPending}
               loading={createGoalMutation.isPending}
               loadingLabel="Creating..."
@@ -83,18 +96,22 @@ export default function GoalCreateScreen() {
           ),
         }}
       />
-      <View className="gap-0.5">
-        <Text className="text-xl font-semibold text-foreground">Create Goal</Text>
-        <Text className="text-xs text-muted-foreground">Pick a focus, date, and target.</Text>
+      <View testID="goal-create-scroll">
+        <View className="gap-0.5">
+          <Text className="text-xl font-semibold text-foreground">Create Goal</Text>
+          <Text className="text-xs text-muted-foreground">Pick a focus, date, and target.</Text>
+        </View>
+        <GoalEditorForm
+          key={draftOwnerId}
+          ref={formRef}
+          contentSizing="intrinsic"
+          initialValue={initialDraft}
+          submitLabel="Create Goal"
+          isSubmitting={createGoalMutation.isPending}
+          showSubmitAction={false}
+          onSubmit={handleSubmit}
+        />
       </View>
-      <GoalEditorForm
-        ref={formRef}
-        initialValue={initialDraft}
-        submitLabel="Create Goal"
-        isSubmitting={createGoalMutation.isPending}
-        showSubmitAction={false}
-        onSubmit={handleSubmit}
-      />
-    </KeyboardAvoidingView>
+    </FormScreen>
   );
 }

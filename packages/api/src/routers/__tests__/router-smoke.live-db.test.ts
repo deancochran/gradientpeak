@@ -3,7 +3,7 @@ import { db, pool } from "@repo/db/client";
 import { activityRoutes, events, profiles, users } from "@repo/db/schema";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
-import { eventsRouter } from "../events";
+import { calendarRouter } from "../events";
 import { routesRouter } from "../routes";
 
 type SeedState = {
@@ -52,8 +52,9 @@ async function seedUserProfile() {
     email,
     full_name: "Live DB Test User",
     username: `live-db-${userId.slice(0, 8)}`,
-    onboarded: true,
+    onboarding_status: "completed",
     is_public: true,
+    planning_timezone: "UTC",
   });
 
   const seedState: SeedState = {
@@ -112,13 +113,12 @@ describe("router live-db smoke", () => {
       elevation_polyline: null,
       polyline: "_p~iF~ps|U_ulLnnqC_mqNvxq`@",
       is_public: false,
-      likes_count: 0,
       created_at: new Date("2026-04-01T09:00:00.000Z"),
       updated_at: new Date("2026-04-01T09:00:00.000Z"),
     });
 
     const caller = routesRouter.createCaller(
-      createCallerContext(seedState.profileId, email) as any,
+      createCallerContext(seedState.profileId, email) as never,
     );
     const result = await caller.list({ direction: "forward", limit: 20 });
 
@@ -134,7 +134,7 @@ describe("router live-db smoke", () => {
     );
   });
 
-  it("events.list succeeds against the migrated local database", async () => {
+  it("calendar.range succeeds against the migrated local database", async () => {
     const { email, seedState } = await seedUserProfile();
     const eventId = randomUUID();
     seedState.eventId = eventId;
@@ -148,7 +148,7 @@ describe("router live-db smoke", () => {
       description: "Event seeded for live DB smoke test.",
       all_day: false,
       timezone: "UTC",
-      occurrence_key: `live-db-${eventId}`,
+      occurrence_key: "",
       starts_at: new Date("2026-04-02T07:30:00.000Z"),
       ends_at: new Date("2026-04-02T08:15:00.000Z"),
       scheduled_date: "2026-04-02",
@@ -156,14 +156,14 @@ describe("router live-db smoke", () => {
       updated_at: new Date("2026-04-01T09:00:00.000Z"),
     });
 
-    const caller = eventsRouter.createCaller(
-      createCallerContext(seedState.profileId, email) as any,
+    const caller = calendarRouter.createCaller(
+      createCallerContext(seedState.profileId, email) as never,
     );
-    const result = await caller.list({
-      include_adhoc: true,
+    const result = await caller.range({
+      includeAdhoc: true,
       limit: 20,
-      date_from: "2026-04-01",
-      date_to: "2026-04-03",
+      startDate: "2026-04-01",
+      endDateExclusive: "2026-04-04",
     });
 
     expect(result.items).toEqual(
@@ -171,8 +171,8 @@ describe("router live-db smoke", () => {
         expect.objectContaining({
           id: eventId,
           title: "Live DB Calendar Event",
-          event_type: "custom",
-          scheduled_date: "2026-04-02",
+          calendarDate: "2026-04-02",
+          event: expect.objectContaining({ type: "custom" }),
         }),
       ]),
     );

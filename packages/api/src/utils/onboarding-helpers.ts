@@ -4,111 +4,37 @@
  * Reusable utilities for the onboarding flow to reduce code duplication
  * and improve maintainability. Provides abstraction layer for:
  * - Batch inserting profile metrics
- * - Batch inserting activity efforts
- * - Deriving efforts for different sports
  * - Preparing metrics by merging user input with baseline
  */
 
 import { randomUUID } from "node:crypto";
-import {
-  type ActivityEffortInsert,
-  activityEfforts,
-  type DrizzleDbClient,
-  type ProfileMetricInsert,
-  type PublicActivityCategory,
-  type PublicEffortType,
-  type PublicProfileMetricType,
-  profileMetrics,
-} from "@repo/db";
-import { bumpProfileEstimationState } from "./profile-estimation-state";
-
-// These specific calculation modules are new and might not be in the main exports yet
-// Import them directly from their source files until they're properly exported
-const derivePowerCurveFromFTP = (ftp: number): DerivedEffort[] => {
-  // We'll implement inline to avoid import issues
-  const durations = [5, 10, 30, 60, 180, 300, 600, 1200, 1800, 3600];
-  const wPrime = 20000;
-  return durations.map((duration) => ({
-    duration_seconds: duration,
-    effort_type: "power" as const,
-    value: Math.round(ftp + wPrime / duration),
-    unit: "watts",
-    activity_category: "bike" as const,
-  }));
-};
-
-const deriveSpeedCurveFromThresholdPace = (thresholdPaceSecondsPerKm: number): DerivedEffort[] => {
-  const durations = [5, 10, 30, 60, 180, 300, 600, 1200, 1800, 3600];
-  const thresholdSpeedMps = 1000 / thresholdPaceSecondsPerKm;
-
-  return durations.map((duration) => {
-    let multiplier: number;
-    if (duration < 60)
-      multiplier = 1.15; // Sprint
-    else if (duration < 300)
-      multiplier = 1.08; // VO2max
-    else if (duration < 1200)
-      multiplier = 1.0; // Threshold
-    else multiplier = 0.92; // Tempo
-
-    return {
-      duration_seconds: duration,
-      effort_type: "speed" as const,
-      value: Math.round(thresholdSpeedMps * multiplier * 100) / 100,
-      unit: "meters_per_second",
-      activity_category: "run" as const,
-    };
-  });
-};
-
-const deriveSwimPaceCurveFromCSS = (cssSecondsPerHundredMeters: number): DerivedEffort[] => {
-  const durations = [10, 20, 30, 60, 120, 180, 300, 600, 900, 1800];
-  const cssSpeedMps = 100 / cssSecondsPerHundredMeters;
-
-  return durations.map((duration) => {
-    let multiplier: number;
-    if (duration < 60)
-      multiplier = 1.1; // Sprint
-    else if (duration < 180)
-      multiplier = 1.06; // Middle
-    else if (duration < 600)
-      multiplier = 1.0; // CSS
-    else multiplier = 0.93; // Distance
-
-    return {
-      duration_seconds: duration,
-      effort_type: "speed" as const,
-      value: Math.round(cssSpeedMps * multiplier * 100) / 100,
-      unit: "meters_per_second",
-      activity_category: "swim" as const,
-    };
-  });
-};
-
-// Define types locally since they aren't exported at top level yet
-interface DerivedEffort {
-  duration_seconds: number;
-  effort_type: "power" | "speed";
-  value: number;
-  unit: string;
-  activity_category: "bike" | "run" | "swim";
-}
+import type {
+  OnboardingBaselineFieldSource,
+  OnboardingBaselineFieldSources,
+} from "@repo/core/schemas/onboarding";
+import { type ProfileMetricInsert, type PublicProfileMetricType, profileMetrics } from "@repo/db";
+import type { getRequiredDb } from "../db";
 
 interface BaselineProfile {
   max_hr: number;
   resting_hr: number;
-  lthr: number;
   vo2_max: number;
-  ftp?: number;
-  threshold_pace_seconds_per_km?: number;
-  css_seconds_per_hundred_meters?: number;
   confidence: "high" | "medium" | "low";
   source: string;
 }
 
 type ProfileMetricType = PublicProfileMetricType;
-type ActivityCategory = PublicActivityCategory;
-type EffortType = PublicEffortType;
+type OnboardingTransaction = Parameters<
+  Parameters<ReturnType<typeof getRequiredDb>["transaction"]>[0]
+>[0];
+type OnboardingWriteClient = ReturnType<typeof getRequiredDb> | OnboardingTransaction;
+type OnboardingMetricSourceField = Exclude<keyof OnboardingBaselineFieldSources, "dob" | "gender">;
+
+type PrepareProfileMetricsOptions = {
+  fieldSources?: OnboardingBaselineFieldSources;
+  preserveImportedFields?: ReadonlySet<OnboardingMetricSourceField>;
+  importedProvenance?: Partial<Record<OnboardingMetricSourceField, Record<string, unknown>>>;
+};
 
 /**
  * Batch insert profile metrics with consistent formatting.
@@ -122,13 +48,17 @@ type EffortType = PublicEffortType;
  * @returns Insert result
  */
 export async function batchInsertProfileMetrics(
-  db: DrizzleDbClient,
+  tx: OnboardingWriteClient,
   profileId: string,
   metrics: Array<{
     metric_type: ProfileMetricType;
     value: number;
     unit: string;
     source?: string;
+    observationSource: NonNullable<ProfileMetricInsert["source"]>;
+    method: string;
+    calculationVersion: string;
+    provenance: Record<string, unknown>;
   }>,
 ) {
   if (metrics.length === 0) {
@@ -144,83 +74,13 @@ export async function batchInsertProfileMetrics(
     unit: m.unit,
     recorded_at: new Date(),
     notes: m.source ? `Generated from ${m.source}` : null,
+    source: m.observationSource,
+    method: m.method,
+    calculation_version: m.calculationVersion,
+    provenance: m.provenance,
   })) satisfies ProfileMetricInsert[];
 
-  await db.insert(profileMetrics).values(metricsToInsert);
-  await bumpProfileEstimationState(db, profileId, ["metrics"]);
-}
-
-/**
- * Batch insert activity efforts with consistent formatting.
- *
- * Handles formatting of timestamps, profile_id, and activity_id for all efforts,
- * reducing duplication across different sports.
- *
- * @param db - Drizzle database client
- * @param profileId - User's profile ID
- * @param efforts - Array of derived efforts to insert
- * @param source - Source of the efforts (e.g., 'onboarding', 'baseline_beginner')
- * @returns Insert result
- */
-export async function batchInsertActivityEfforts(
-  db: DrizzleDbClient,
-  profileId: string,
-  efforts: DerivedEffort[],
-  _source: string = "onboarding",
-  activityId: string | null = null,
-) {
-  if (efforts.length === 0) {
-    return;
-  }
-
-  // Some deployments require non-null activity_id while newer schema allows null.
-  // Use caller-provided activityId when available for compatibility.
-  const effortsToInsert = efforts.map((e) => ({
-    id: randomUUID(),
-    created_at: new Date(),
-    profile_id: profileId,
-    activity_id: activityId,
-    activity_category: e.activity_category as ActivityCategory,
-    duration_seconds: e.duration_seconds,
-    effort_type: e.effort_type as EffortType,
-    value: e.value,
-    unit: e.unit,
-    recorded_at: new Date(),
-    start_offset: null,
-    // source: source, // Uncomment if source column exists
-  })) satisfies ActivityEffortInsert[];
-
-  await db.insert(activityEfforts).values(effortsToInsert);
-  await bumpProfileEstimationState(db, profileId, ["performance"]);
-}
-
-/**
- * Derive efforts for a specific sport from a single metric.
- *
- * Provides unified interface for deriving efforts across all sports,
- * reducing switch statements in the main procedure.
- *
- * @param sport - Sport type ('cycling', 'running', 'swimming')
- * @param metric - Performance metric value (FTP, threshold pace, or CSS)
- * @returns Array of derived efforts for standard durations
- *
- * @example
- * const cyclingEfforts = deriveEffortsForSport('cycling', 250); // FTP = 250W
- * const runningEfforts = deriveEffortsForSport('running', 315); // 5:15/km
- * const swimmingEfforts = deriveEffortsForSport('swimming', 90); // 1:30/100m
- */
-export function deriveEffortsForSport(
-  sport: "cycling" | "running" | "swimming",
-  metric: number,
-): DerivedEffort[] {
-  switch (sport) {
-    case "cycling":
-      return derivePowerCurveFromFTP(metric);
-    case "running":
-      return deriveSpeedCurveFromThresholdPace(metric);
-    case "swimming":
-      return deriveSwimPaceCurveFromCSS(metric);
-  }
+  await tx.insert(profileMetrics).values(metricsToInsert);
 }
 
 /**
@@ -238,51 +98,119 @@ export function prepareProfileMetrics(
     weight_kg?: number;
     max_hr?: number;
     resting_hr?: number;
-    lthr?: number;
     vo2max?: number;
   },
   baseline: BaselineProfile | null,
+  options: PrepareProfileMetricsOptions = {},
 ): Array<{
   metric_type: ProfileMetricType;
   value: number;
   unit: string;
   source?: string;
+  observationSource: NonNullable<ProfileMetricInsert["source"]>;
+  method: string;
+  calculationVersion: string;
+  provenance: Record<string, unknown>;
 }> {
   const metrics: Array<{
     metric_type: ProfileMetricType;
     value: number;
     unit: string;
     source?: string;
+    observationSource: NonNullable<ProfileMetricInsert["source"]>;
+    method: string;
+    calculationVersion: string;
+    provenance: Record<string, unknown>;
   }> = [];
 
+  const sourceFor = (
+    field: OnboardingMetricSourceField,
+    hasSubmittedValue: boolean,
+  ): Exclude<OnboardingBaselineFieldSource, "cleared"> | "baseline" | null => {
+    const explicitSource = options.fieldSources?.[field];
+    if (explicitSource === "cleared") return null;
+    if (hasSubmittedValue) return explicitSource ?? "manual";
+    return "baseline";
+  };
+  const observationFor = (
+    field: OnboardingMetricSourceField,
+    source: Exclude<ReturnType<typeof sourceFor>, null>,
+    baselineSource?: string,
+  ) => {
+    if (source === "baseline") {
+      return {
+        observationSource: "estimated" as const,
+        method: "onboarding_baseline_seed",
+        provenance: {
+          input: "onboarding",
+          seed_type: "baseline",
+          baseline_source: baselineSource,
+        },
+      };
+    }
+    return {
+      observationSource: source,
+      method: `onboarding_${source}_seed`,
+      provenance: {
+        input: "onboarding",
+        seed_type: source,
+        ...(source === "imported" ? options.importedProvenance?.[field] : undefined),
+      },
+    };
+  };
+  const shouldPreserveImported = (field: OnboardingMetricSourceField) =>
+    options.preserveImportedFields?.has(field) ?? false;
+
   // Weight (if provided)
-  if (input.weight_kg) {
+  const weightSource = sourceFor("weight_kg", input.weight_kg !== undefined);
+  if (input.weight_kg && weightSource && !shouldPreserveImported("weight_kg")) {
+    const observation = observationFor("weight_kg", weightSource);
     metrics.push({
       metric_type: "weight_kg",
       value: input.weight_kg,
       unit: "kg",
+      observationSource: observation.observationSource,
+      method: observation.method,
+      calculationVersion: "onboarding-v1",
+      provenance: observation.provenance,
     });
   }
 
-  // Merge HR metrics with baseline
-  const maxHR = input.max_hr ?? baseline?.max_hr;
-  const restingHR = input.resting_hr ?? baseline?.resting_hr;
+  // Non-threshold HR measurements may be seeded; training thresholds are activity-derived only.
+  const maxHrSource = sourceFor("max_hr", input.max_hr !== undefined);
+  const restingHrSource = sourceFor("resting_hr", input.resting_hr !== undefined);
+  const maxHR = maxHrSource ? (input.max_hr ?? baseline?.max_hr) : undefined;
+  const restingHR = restingHrSource ? (input.resting_hr ?? baseline?.resting_hr) : undefined;
 
-  if (maxHR) {
+  if (maxHR && maxHrSource && !shouldPreserveImported("max_hr")) {
+    const observation = observationFor("max_hr", maxHrSource, baseline?.source);
     metrics.push({
       metric_type: "max_hr",
       value: maxHR,
       unit: "bpm",
-      source: input.max_hr ? undefined : baseline?.source,
+      ...(maxHrSource === "baseline" && baseline?.source !== undefined
+        ? { source: baseline.source }
+        : {}),
+      observationSource: observation.observationSource,
+      method: observation.method,
+      calculationVersion: "onboarding-v1",
+      provenance: observation.provenance,
     });
   }
 
-  if (restingHR) {
+  if (restingHR && restingHrSource && !shouldPreserveImported("resting_hr")) {
+    const observation = observationFor("resting_hr", restingHrSource, baseline?.source);
     metrics.push({
       metric_type: "resting_hr",
       value: restingHR,
       unit: "bpm",
-      source: input.resting_hr ? undefined : baseline?.source,
+      ...(restingHrSource === "baseline" && baseline?.source !== undefined
+        ? { source: baseline.source }
+        : {}),
+      observationSource: observation.observationSource,
+      method: observation.method,
+      calculationVersion: "onboarding-v1",
+      provenance: observation.provenance,
     });
   }
 
@@ -293,18 +221,14 @@ export function prepareProfileMetrics(
       metric_type: "vo2_max",
       value: vo2max,
       unit: "ml/kg/min",
-      source: input.vo2max ? undefined : "calculated_from_hr",
-    });
-  }
-
-  // LTHR (estimated or from baseline)
-  const lthr = input.lthr ?? baseline?.lthr;
-  if (lthr) {
-    metrics.push({
-      metric_type: "lthr",
-      value: lthr,
-      unit: "bpm",
-      source: input.lthr ? undefined : "estimated",
+      ...(input.vo2max ? {} : { source: "calculated_from_hr" }),
+      observationSource: input.vo2max ? "manual" : "estimated",
+      method: input.vo2max ? "onboarding_manual_seed" : "onboarding_derived_estimate",
+      calculationVersion: "onboarding-v1",
+      provenance: {
+        input: "onboarding",
+        seed_type: input.vo2max ? "manual" : "estimated",
+      },
     });
   }
 

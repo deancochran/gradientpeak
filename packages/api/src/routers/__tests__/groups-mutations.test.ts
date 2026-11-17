@@ -31,17 +31,19 @@ function createDbMock(plan: DbPlan = {}) {
   const updateCalls: Array<{ table: unknown; values: unknown }> = [];
   let transactionCount = 0;
 
-  const db: any = {
+  const db = {
     select: () => {
-      const builder: any = {
-        from: () => builder,
-        innerJoin: () => builder,
-        where: () => builder,
-        orderBy: () => builder,
-        limit: () => builder,
-        then: (resolve: (rows: unknown[]) => unknown) =>
-          Promise.resolve(selectQueue.shift() ?? []).then(resolve),
-      };
+      const builder = Object.assign(
+        Promise.resolve().then(() => selectQueue.shift() ?? []),
+        {
+          from: () => builder,
+          innerJoin: () => builder,
+          where: () => builder,
+          orderBy: () => builder,
+          limit: () => builder,
+          for: () => builder,
+        },
+      );
       return builder;
     },
     insert: (table: unknown) => ({
@@ -49,6 +51,9 @@ function createDbMock(plan: DbPlan = {}) {
         insertCalls.push({ table, values });
         return {
           returning: async () => insertReturningQueue.shift() ?? [],
+          onConflictDoUpdate: () => ({
+            returning: async () => insertReturningQueue.shift() ?? [],
+          }),
           onConflictDoNothing: () => ({
             returning: async () => insertReturningQueue.shift() ?? [],
           }),
@@ -63,7 +68,7 @@ function createDbMock(plan: DbPlan = {}) {
         };
       },
     }),
-    transaction: async (callback: (tx: any) => unknown) => {
+    transaction: async (callback: (tx: unknown) => unknown) => {
       transactionCount += 1;
       return callback(db);
     },
@@ -84,6 +89,14 @@ function createCaller(db: unknown, userId = VIEWER_ID) {
 }
 
 describe("groupsRouter mutations", () => {
+  it("joinOrRequest accepts only the canonical groupId input", async () => {
+    const { db } = createDbMock();
+
+    await expect(
+      createCaller(db).joinOrRequest({ groupId: GROUP_ID, policy: "open" } as never),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" } satisfies Partial<TRPCError>);
+  });
+
   it("creates a group and owner membership in one transaction", async () => {
     const createdGroup = buildGroupRow();
     const mock = createDbMock({
@@ -130,6 +143,17 @@ describe("groupsRouter mutations", () => {
     } satisfies Partial<TRPCError>);
   });
 
+  it("rejects group archival from non-owner members", async () => {
+    const { db } = createDbMock({
+      select: [[{ id: VIEWER_ID }], [buildGroupRow()], [{ role: "member", status: "active" }]],
+    });
+
+    await expect(createCaller(db).delete({ groupId: GROUP_ID })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+      message: "Group owner access required",
+    } satisfies Partial<TRPCError>);
+  });
+
   it("accepts an invite by activating membership and marking the invite accepted transactionally", async () => {
     const acceptedInvite = buildGroupInvitationRow({ status: "accepted" });
     const activeMembership = buildGroupMembershipRow({ role: "member" });
@@ -137,7 +161,6 @@ describe("groupsRouter mutations", () => {
       select: [
         [{ id: VIEWER_ID }],
         [{ invitation: buildGroupInvitationRow(), group: buildGroupRow() }],
-        [],
       ],
       insertReturning: [[activeMembership]],
       updateReturning: [[acceptedInvite]],
@@ -191,21 +214,92 @@ describe("groupsRouter mutations", () => {
     expect(mock.insertCalls).toHaveLength(0);
   });
 
-  it("rejects join requests from active members", async () => {
+  it("returns the current membership when an active member requests access again", async () => {
+    const activeMembership = buildGroupMembershipRow({ role: "member", status: "active" });
     const mock = createDbMock({
       select: [
         [{ id: VIEWER_ID }],
         [buildGroupRow({ join_policy: "invite_only" })],
         [{ role: "member", status: "active" }],
+        [activeMembership],
       ],
     });
     const caller = createCaller(mock.db);
 
-    await expect(caller.requestToJoin({ groupId: GROUP_ID })).rejects.toMatchObject({
-      code: "CONFLICT",
-      message: "You are already a member of this group",
-    } satisfies Partial<TRPCError>);
+    await expect(caller.requestToJoin({ groupId: GROUP_ID })).resolves.toMatchObject({
+      joinRequest: null,
+      membership: { group_id: GROUP_ID, profile_id: VIEWER_ID, status: "active" },
+    });
     expect(mock.insertCalls).toHaveLength(0);
+  });
+
+  it("returns the current membership when the same accepted invite is accepted again", async () => {
+    const acceptedInvite = buildGroupInvitationRow({ status: "accepted" });
+    const activeMembership = buildGroupMembershipRow({ role: "member", status: "active" });
+    const mock = createDbMock({
+      select: [
+        [{ id: VIEWER_ID }],
+        [{ invitation: acceptedInvite, group: buildGroupRow() }],
+        [acceptedInvite],
+        [activeMembership],
+      ],
+      insertReturning: [[activeMembership]],
+    });
+    const caller = createCaller(mock.db);
+
+    await expect(caller.acceptInvite({ invitationId: INVITATION_ID })).resolves.toMatchObject({
+      invitation: { id: INVITATION_ID, status: "accepted" },
+      membership: { group_id: GROUP_ID, profile_id: VIEWER_ID, status: "active" },
+    });
+    expect(mock.transactionCount).toBe(1);
+    expect(mock.updateCalls).toHaveLength(1);
+  });
+
+  it.each([
+    "declined",
+    "revoked",
+  ] as const)("keeps %s invitations as acceptance conflicts", async (status) => {
+    const mock = createDbMock({
+      select: [
+        [{ id: VIEWER_ID }],
+        [{ invitation: buildGroupInvitationRow({ status }), group: buildGroupRow() }],
+        [buildGroupInvitationRow({ status })],
+      ],
+    });
+
+    await expect(
+      createCaller(mock.db).acceptInvite({ invitationId: INVITATION_ID }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+    } satisfies Partial<TRPCError>);
+  });
+
+  it("rejects an expired pending invitation", async () => {
+    const mock = createDbMock({
+      select: [
+        [{ id: VIEWER_ID }],
+        [
+          {
+            invitation: buildGroupInvitationRow({
+              expires_at: new Date("2020-01-01T00:00:00.000Z"),
+            }),
+            group: buildGroupRow(),
+          },
+        ],
+        [
+          buildGroupInvitationRow({
+            expires_at: new Date("2020-01-01T00:00:00.000Z"),
+          }),
+        ],
+      ],
+    });
+
+    await expect(
+      createCaller(mock.db).acceptInvite({ invitationId: INVITATION_ID }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: "Invitation has expired",
+    } satisfies Partial<TRPCError>);
   });
 
   it("prevents removed members from rejoining open groups directly", async () => {
@@ -248,7 +342,6 @@ describe("groupsRouter mutations", () => {
         [{ id: VIEWER_ID }],
         [{ request: buildGroupJoinRequestRow({ profile_id: TARGET_ID }), group: buildGroupRow() }],
         [{ role: "admin", status: "active" }],
-        [],
       ],
       updateReturning: [[approvedRequest]],
       insertReturning: [[activeMembership]],
@@ -317,7 +410,7 @@ describe("groupsRouter mutations", () => {
     expect(mock.updateCalls).toHaveLength(0);
   });
 
-  it("rejects invitation acceptance by profiles other than the invite target", async () => {
+  it("does not disclose invitations to profiles other than the invite target", async () => {
     const mock = createDbMock({
       select: [
         [{ id: VIEWER_ID }],
@@ -332,10 +425,10 @@ describe("groupsRouter mutations", () => {
     const caller = createCaller(mock.db);
 
     await expect(caller.acceptInvite({ invitationId: INVITATION_ID })).rejects.toMatchObject({
-      code: "FORBIDDEN",
-      message: "You cannot accept this invitation",
+      code: "NOT_FOUND",
+      message: "Invitation not found",
     } satisfies Partial<TRPCError>);
-    expect(mock.transactionCount).toBe(0);
+    expect(mock.transactionCount).toBe(1);
   });
 
   it("prevents non-owners from changing member roles", async () => {
@@ -362,7 +455,7 @@ describe("groupsRouter mutations", () => {
         [{ role: "owner", status: "active" }],
         [{ role: "member", status: "active" }],
       ],
-      updateReturning: [[targetOwner]],
+      updateReturning: [[buildGroupMembershipRow({ role: "admin" })], [targetOwner]],
     });
     const caller = createCaller(mock.db);
 

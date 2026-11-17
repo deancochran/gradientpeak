@@ -40,7 +40,7 @@ function normalizeFollowerInput(data: unknown) {
 }
 
 export const followUserAction = createServerFn({ method: "POST" })
-  .inputValidator((data) => normalizeTargetUserInput(data))
+  .validator((data) => normalizeTargetUserInput(data))
   .handler(async ({ data }) => {
     try {
       const caller = await createServerActionCaller();
@@ -69,7 +69,7 @@ export const followUserAction = createServerFn({ method: "POST" })
   });
 
 export const unfollowUserAction = createServerFn({ method: "POST" })
-  .inputValidator((data) => normalizeTargetUserInput(data))
+  .validator((data) => normalizeTargetUserInput(data))
   .handler(async ({ data }) => {
     try {
       const caller = await createServerActionCaller();
@@ -98,7 +98,7 @@ export const unfollowUserAction = createServerFn({ method: "POST" })
   });
 
 export const acceptFollowRequestAction = createServerFn({ method: "POST" })
-  .inputValidator((data) => normalizeFollowerInput(data))
+  .validator((data) => normalizeFollowerInput(data))
   .handler(async ({ data }) => {
     try {
       const caller = await createServerActionCaller();
@@ -134,7 +134,7 @@ export const acceptFollowRequestAction = createServerFn({ method: "POST" })
   });
 
 export const rejectFollowRequestAction = createServerFn({ method: "POST" })
-  .inputValidator((data) => normalizeFollowerInput(data))
+  .validator((data) => normalizeFollowerInput(data))
   .handler(async ({ data }) => {
     try {
       const caller = await createServerActionCaller();
@@ -170,7 +170,7 @@ export const rejectFollowRequestAction = createServerFn({ method: "POST" })
   });
 
 export const startDirectMessageAction = createServerFn({ method: "POST" })
-  .inputValidator((data) => normalizeTargetUserInput(data))
+  .validator((data) => normalizeTargetUserInput(data))
   .handler(async ({ data }) => {
     let conversationId: string | null = null;
 
