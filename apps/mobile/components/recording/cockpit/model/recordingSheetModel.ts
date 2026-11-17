@@ -53,7 +53,6 @@ export function buildRecordingControlSheetModel(params: {
     recordingState: params.recordingState,
   });
   const actions: RecordingQuickAction[] = params.sessionContract?.ui.controls.quickActions ?? [
-    "gps",
     "sensors",
     "plan",
     "route",
@@ -83,22 +82,10 @@ function buildSetupItem(
         ...action,
         detail: action.disabled
           ? "Locked after session identity is set."
-          : "Choose the sport type.",
+          : "Choose the activity_category type.",
         section: "session",
         title: "Activity",
         tone: action.disabled ? "locked" : "idle",
-      };
-    case "gps":
-      return {
-        ...action,
-        detail: getGpsDetail(contract),
-        section: "session",
-        title: "GPS",
-        tone: action.disabled
-          ? "locked"
-          : contract?.guidance.routeMode === "live_navigation"
-            ? "active"
-            : "idle",
       };
     case "plan":
       return {
@@ -107,7 +94,7 @@ function buildSetupItem(
           ? "Activity structure attached."
           : "No structured activity.",
         section: "guidance",
-        title: "Activity",
+        title: "Activity plan",
         tone: action.disabled ? "locked" : contract?.guidance.hasPlan ? "active" : "idle",
       };
     case "route":
@@ -183,33 +170,9 @@ function getSensorsDetail(contract: RecordingSessionContract | null, sensorCount
     : "No sensors connected.";
 }
 
-function getGpsDetail(contract: RecordingSessionContract | null): string {
-  if (!contract) {
-    return "Choose location capture.";
-  }
-
-  if (contract.guidance.routeMode === "live_navigation") {
-    return "Recording location for live route guidance.";
-  }
-
-  if (contract.guidance.routeMode === "virtual") {
-    return "GPS off; route guidance stays virtual.";
-  }
-
-  if (contract.ui.backdropMode === "gps_unavailable" || contract.degraded.gps) {
-    return "GPS requested but currently unavailable.";
-  }
-
-  return contract.devices.gpsAvailable ? "GPS source available." : "GPS source not active.";
-}
-
 function getRouteDetail(contract: RecordingSessionContract | null): string {
   if (!contract?.guidance.hasRoute) {
     return "No route attached.";
-  }
-
-  if (contract.guidance.routeMode === "live_navigation") {
-    return "Route paired with live GPS navigation.";
   }
 
   if (contract.guidance.routeMode === "virtual") {

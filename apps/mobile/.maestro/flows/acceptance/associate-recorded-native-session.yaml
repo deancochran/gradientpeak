@@ -1,0 +1,64 @@
+appId: com.deancochran.gradientpeak.dev
+name: Open the completed session from Calendar and replace it with the named saved recording
+---
+# Navigation boundary: Calendar date -> training breakdown -> named plan row.
+- tapOn:
+    id: tab-button-plan
+- tapOn:
+    id: plan-view-calendar
+- extendedWaitUntil:
+    visible:
+      id: calendar-screen-ready
+    timeout: 30000
+- tapOn:
+    id: calendar-date-jump-entry
+- tapOn: ${MAESTRO_ACCEPTANCE_SESSION_DAY}
+- tapOn: "OK"
+- tapOn:
+    id: calendar-day-select-${MAESTRO_ACCEPTANCE_SESSION_DATE}
+- extendedWaitUntil:
+    visible:
+      id: planning-ledger-screen
+    timeout: 30000
+- assertVisible: ${MAESTRO_ACCEPTANCE_PLAN_NAME}
+- tapOn: ${MAESTRO_ACCEPTANCE_PLAN_NAME}
+- extendedWaitUntil:
+    visible:
+      id: planned-session-detail-screen
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: planned-session-associate-recorded
+    direction: DOWN
+- tapOn:
+    id: planned-session-associate-recorded
+- extendedWaitUntil:
+    visible:
+      id: planned-session-completion-candidates
+    timeout: 30000
+- assertVisible: ${MAESTRO_ACCEPTANCE_RECORDED_ACTIVITY_NAME}
+- tapOn: ${MAESTRO_ACCEPTANCE_RECORDED_ACTIVITY_NAME}
+- tapOn:
+    id: planned-session-confirm-association
+- extendedWaitUntil:
+    visible:
+      id: planned-session-linked-activity
+    timeout: 30000
+- tapOn:
+    id: planned-session-linked-activity
+- extendedWaitUntil:
+    visible:
+      id: activity-detail-screen
+    timeout: 30000
+- assertVisible:
+    id: activity-detail-summary
+- assertVisible: ${MAESTRO_ACCEPTANCE_RECORDED_ACTIVITY_NAME}
+# Return through visible back navigation to Calendar so the later scheduling
+# flow must rediscover its plan rather than retain a route-provided session.
+- pressKey: back
+- pressKey: back
+- pressKey: back
+- extendedWaitUntil:
+    visible:
+      id: calendar-screen-ready
+    timeout: 30000

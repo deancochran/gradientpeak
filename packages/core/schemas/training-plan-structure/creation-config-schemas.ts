@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { canonicalActivityCategorySchema } from "../activity-category";
 import {
   creationContextSummarySchema,
   creationFeasibilitySafetySummarySchema,
@@ -109,7 +110,7 @@ export const creationOptimizationProfileEnum = z.enum(["outcome_first", "balance
 
 export type CreationOptimizationProfile = z.infer<typeof creationOptimizationProfileEnum>;
 
-export const creationBehaviorControlsV1Schema = z
+export const creationBehaviorControlsSchema = z
   .object({
     aggressiveness: z.number().min(0).max(1),
     variability: z.number().min(0).max(1),
@@ -121,10 +122,10 @@ export const creationBehaviorControlsV1Schema = z
   })
   .strict();
 
-export type CreationBehaviorControlsV1 = z.infer<typeof creationBehaviorControlsV1Schema>;
+export type CreationBehaviorControls = z.infer<typeof creationBehaviorControlsSchema>;
 
-export const CREATION_MAX_WEEKLY_TSS_RAMP_PCT = 40;
-export const CREATION_MAX_CTL_RAMP_PER_WEEK = 12;
+export const CREATION_MAX_WEEKLY_COMMON_LOAD_RAMP_PCT = 40;
+export const CREATION_MAX_LongTermLoad_RAMP_PER_WEEK = 12;
 
 const calibrationBoundedNumber = (min: number, max: number) =>
   z.number().min(min).max(max).finite();
@@ -158,7 +159,7 @@ export type ReadinessCompositeCalibration = z.infer<typeof readinessCompositeCal
 
 export const readinessTimelineCalibrationSchema = z
   .object({
-    target_tsb: calibrationBoundedNumber(-5, 20).default(8),
+    target_loadBalance: calibrationBoundedNumber(-5, 20).default(8),
     form_tolerance: calibrationBoundedNumber(8, 40).default(20),
     fatigue_overflow_scale: calibrationBoundedNumber(0.1, 1).default(0.4),
     feasibility_blend_weight: calibrationBoundedNumber(0, 1).default(0),
@@ -241,7 +242,7 @@ export const trainingPlanCalibrationConfigSchema = z
       evidence_weight: 0.1,
     }),
     readiness_timeline: readinessTimelineCalibrationSchema.default({
-      target_tsb: 8,
+      target_loadBalance: 8,
       form_tolerance: 20,
       fatigue_overflow_scale: 0.4,
       feasibility_blend_weight: 0,
@@ -311,6 +312,20 @@ export const creationConstraintsBaseSchema = z.object({
   min_sessions_per_week: z.number().int().min(0).max(21).optional(),
   max_sessions_per_week: z.number().int().min(0).max(21).optional(),
   max_single_session_duration_minutes: z.number().int().min(20).max(600).optional(),
+  max_weekly_duration_minutes: z.number().int().min(30).max(10080).optional(),
+  activity_category_overrides: z
+    .partialRecord(
+      canonicalActivityCategorySchema,
+      z
+        .object({
+          min_sessions_per_week: z.number().int().min(0).max(21).optional(),
+          max_sessions_per_week: z.number().int().min(0).max(21).optional(),
+          max_single_session_duration_minutes: z.number().int().min(20).max(600).optional(),
+          max_weekly_duration_minutes: z.number().int().min(30).max(10080).optional(),
+        })
+        .strict(),
+    )
+    .optional(),
   goal_difficulty_preference: creationGoalDifficultyPreferenceEnum.default("balanced"),
 });
 
@@ -347,6 +362,52 @@ export const creationConstraintsSchema = creationConstraintsBaseSchema.superRefi
       message: "Minimum sessions exceed available training days after hard rest constraints",
     });
   }
+
+  if (
+    data.max_single_session_duration_minutes !== undefined &&
+    data.max_weekly_duration_minutes !== undefined &&
+    data.max_single_session_duration_minutes > data.max_weekly_duration_minutes
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["max_single_session_duration_minutes"],
+      message: "Maximum single-session duration cannot exceed maximum weekly duration",
+    });
+  }
+
+  for (const [activity_category, override] of Object.entries(
+    data.activity_category_overrides ?? {},
+  )) {
+    if (
+      override.min_sessions_per_week !== undefined &&
+      override.max_sessions_per_week !== undefined &&
+      override.min_sessions_per_week > override.max_sessions_per_week
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["activity_category_overrides", activity_category, "min_sessions_per_week"],
+        message:
+          "ActivityCategory minimum sessions cannot exceed activity_category maximum sessions",
+      });
+    }
+
+    if (
+      override.max_single_session_duration_minutes !== undefined &&
+      override.max_weekly_duration_minutes !== undefined &&
+      override.max_single_session_duration_minutes > override.max_weekly_duration_minutes
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: [
+          "activity_category_overrides",
+          activity_category,
+          "max_single_session_duration_minutes",
+        ],
+        message:
+          "ActivityCategory single-session duration cannot exceed activity_category weekly duration",
+      });
+    }
+  }
 });
 
 export type CreationConstraints = z.infer<typeof creationConstraintsSchema>;
@@ -369,22 +430,24 @@ export const creationFieldLockSchema = z
 
 export type CreationFieldLock = z.infer<typeof creationFieldLockSchema>;
 
-export const creationConfigLocksSchema = z.object({
-  availability_config: creationFieldLockSchema.default({ locked: false }),
-  recent_influence: creationFieldLockSchema.default({ locked: false }),
-  hard_rest_days: creationFieldLockSchema.default({ locked: false }),
-  min_sessions_per_week: creationFieldLockSchema.default({ locked: false }),
-  max_sessions_per_week: creationFieldLockSchema.default({ locked: false }),
-  max_single_session_duration_minutes: creationFieldLockSchema.default({
-    locked: false,
-  }),
-  goal_difficulty_preference: creationFieldLockSchema.default({
-    locked: false,
-  }),
-  optimization_profile: creationFieldLockSchema.default({ locked: false }),
-  post_goal_recovery_days: creationFieldLockSchema.default({ locked: false }),
-  behavior_controls_v1: creationFieldLockSchema.default({ locked: false }),
-});
+export const creationConfigLocksSchema = z
+  .object({
+    availability_config: creationFieldLockSchema.default({ locked: false }),
+    recent_influence: creationFieldLockSchema.default({ locked: false }),
+    hard_rest_days: creationFieldLockSchema.default({ locked: false }),
+    min_sessions_per_week: creationFieldLockSchema.default({ locked: false }),
+    max_sessions_per_week: creationFieldLockSchema.default({ locked: false }),
+    max_single_session_duration_minutes: creationFieldLockSchema.default({
+      locked: false,
+    }),
+    goal_difficulty_preference: creationFieldLockSchema.default({
+      locked: false,
+    }),
+    optimization_profile: creationFieldLockSchema.default({ locked: false }),
+    post_goal_recovery_days: creationFieldLockSchema.default({ locked: false }),
+    behavior_controls: creationFieldLockSchema.default({ locked: false }),
+  })
+  .strict();
 
 export type CreationConfigLocks = z.infer<typeof creationConfigLocksSchema>;
 
@@ -426,6 +489,7 @@ export const creationProvenanceReferenceSchema = z.object({
 export type CreationProvenanceReference = z.infer<typeof creationProvenanceReferenceSchema>;
 
 export const creationProvenanceSchema = z.object({
+  method_version: z.string().min(1).max(120),
   source: creationValueSourceEnum,
   confidence: z.number().min(0).max(1).nullable(),
   rationale: z.array(z.string().min(1).max(120)).default([]),
@@ -454,7 +518,7 @@ export const trainingPlanCreationConfigSchema = z
     constraints: creationConstraintsSchema,
     optimization_profile: creationOptimizationProfileEnum.default("balanced"),
     post_goal_recovery_days: z.number().int().min(0).max(28).default(5),
-    behavior_controls_v1: creationBehaviorControlsV1Schema.default({
+    behavior_controls: creationBehaviorControlsSchema.default({
       aggressiveness: 0.5,
       variability: 0.5,
       spike_frequency: 0.35,
@@ -472,7 +536,7 @@ export const trainingPlanCreationConfigSchema = z
         evidence_weight: 0.1,
       },
       readiness_timeline: {
-        target_tsb: 8,
+        target_loadBalance: 8,
         form_tolerance: 20,
         fatigue_overflow_scale: 0.4,
         feasibility_blend_weight: 0,
