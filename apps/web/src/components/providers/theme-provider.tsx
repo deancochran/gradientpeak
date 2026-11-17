@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
+import { ensureCurrentBrowserContractEpoch } from "../../lib/contract-epoch";
+
 type ThemePreference = "system" | "light" | "dark";
 type ResolvedTheme = "light" | "dark";
 
@@ -22,10 +24,22 @@ function getSystemTheme(): ResolvedTheme {
 function getStoredTheme(): ThemePreference {
   if (typeof window === "undefined") return "system";
 
-  const storedTheme = window.localStorage.getItem(themeStorageKey);
-  return storedTheme === "light" || storedTheme === "dark" || storedTheme === "system"
-    ? storedTheme
-    : "system";
+  try {
+    const storedTheme = window.localStorage.getItem(themeStorageKey);
+    return storedTheme === "light" || storedTheme === "dark" || storedTheme === "system"
+      ? storedTheme
+      : "system";
+  } catch {
+    return "system";
+  }
+}
+
+function persistTheme(theme: ThemePreference) {
+  try {
+    window.localStorage.setItem(themeStorageKey, theme);
+  } catch {
+    // A blocked storage area must not prevent rendering or change the safe system default.
+  }
 }
 
 function resolveTheme(theme: ThemePreference): ResolvedTheme {
@@ -41,14 +55,43 @@ function applyTheme(theme: ThemePreference) {
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<ThemePreference>(getStoredTheme);
+  // Start with the server-safe value so the first client render hydrates the server markup.
+  // The persisted value is restored only after hydration, before any write is allowed.
+  const [theme, setThemeState] = useState<ThemePreference>("system");
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() => resolveTheme(theme));
+  const [hasRestoredTheme, setHasRestoredTheme] = useState(false);
 
   useEffect(() => {
+    let active = true;
+    void ensureCurrentBrowserContractEpoch().then(
+      () => {
+        if (!active) return;
+        const storedTheme = getStoredTheme();
+        applyTheme(storedTheme);
+        setResolvedTheme(resolveTheme(storedTheme));
+        setThemeState(storedTheme);
+        setHasRestoredTheme(true);
+      },
+      () => {
+        if (!active) return;
+        applyTheme("system");
+        setResolvedTheme(resolveTheme("system"));
+        setHasRestoredTheme(true);
+      },
+    );
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hasRestoredTheme) return;
+
     applyTheme(theme);
     setResolvedTheme(resolveTheme(theme));
-    window.localStorage.setItem(themeStorageKey, theme);
-  }, [theme]);
+    persistTheme(theme);
+  }, [hasRestoredTheme, theme]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
