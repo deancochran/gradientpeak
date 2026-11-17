@@ -1,28 +1,35 @@
 import {
-  BLE_SERVICE_UUIDS,
-  type CscParserState,
-  detectFtmsMachineType,
+  FTMS_SERVICE_UUIDS,
   type FtmsMachineType,
-  type FtmsMachineTypeSource,
   type FtmsParserDefinition,
   listFtmsParserDefinitions,
   type ParsedFtmsPayload,
+} from "@deancochran/ftms";
+import {
+  type CscParserState,
+  type CyclingPowerParserState,
+  listStandardBleProfileDefinitions,
+  matchStandardBleProfiles,
   parseCscMeasurement,
-  parseCyclingPowerMeasurement,
+  parseCyclingPowerMeasurementWithState,
   parseHeartRateMeasurement,
-} from "@repo/core";
+  parseRunningSpeedAndCadenceMeasurement,
+  type StandardBleMetric,
+  type StandardBleMetricCapability,
+  type StandardBleProfileDefinition,
+  type StandardBleProfileId,
+} from "@repo/core/bluetooth";
+import { BLE_CHARACTERISTIC_UUIDS } from "@repo/core/constants/ble";
 import { type BleError, BleManager, type Characteristic, type Device } from "react-native-ble-plx";
 import { BleScanController } from "./BleScanController";
-import { decodeBase64ToBytes, toDataView } from "./ble-bytes";
+import { decodeBase64ToBytes } from "./ble-bytes";
 import { DeviceGattQueueRegistry } from "./DeviceGattQueue";
-import {
-  type ControlMode,
-  type FTMSCommandContext,
-  FTMSController,
-  type FTMSFeatures,
-} from "./FTMSController";
+import { type FTMSCommandContext, FTMSController, type FTMSFeatures } from "./FTMSController";
 import { KnownSensorRegistry, type PersistedSensor } from "./KnownSensorRegistry";
+import { detectFtmsMachineType, type FtmsMachineTypeSource } from "./recordingTrainerPolicy";
 import type {
+  FtmsControlEvent,
+  FtmsControllerMode,
   RecordingServiceError,
   RecordingServiceErrorCategory,
   RecordingTrainerConnectionState,
@@ -68,13 +75,16 @@ export interface ConnectedSensor {
   connectionState: SensorConnectionState;
   lastDataTimestamp?: number;
   observedMetrics?: Set<SensorReading["metric"]>;
+  profiles?: SensorProfileSnapshot[];
+  ftmsStreamState?: "waiting_for_data" | "flowing" | "failed";
+  ftmsMetricLastDataTimestamps?: Partial<Record<SensorReading["metric"], number>>;
 
   // FTMS control support
   isTrainer?: boolean;
   isControllable?: boolean;
   ftmsController?: FTMSController;
   ftmsFeatures?: FTMSFeatures;
-  currentControlMode?: ControlMode;
+  currentControlMode?: FtmsControllerMode;
   lastServiceError?: RecordingServiceError;
 
   // Battery monitoring
@@ -88,56 +98,19 @@ export interface ConnectedSensor {
   };
 }
 
-/** --- Metric Types --- */
-export enum BleMetricType {
-  HeartRate = "heartrate",
-  Power = "power",
-  Cadence = "cadence",
-  Speed = "speed",
-  Battery = "battery",
+export type SensorProfileStreamState = "subscribing" | "waiting_for_data" | "flowing" | "failed";
+
+export interface SensorProfileSnapshot {
+  id: StandardBleProfileId;
+  name: string;
+  metrics: readonly StandardBleMetricCapability[];
+  streamState: SensorProfileStreamState;
+  lastDataTimestamp?: number;
+  metricLastDataTimestamps?: Partial<Record<StandardBleMetric, number>>;
+  lastError?: string;
 }
 
-/** --- Standard BLE Characteristics --- */
-export const BleCharacteristicParsers: Record<
-  string,
-  {
-    parserId: string;
-    metricType: BleMetricType;
-    purpose: "activity_metric" | "device_diagnostic";
-  }
-> = {
-  "00002a37-0000-1000-8000-00805f9b34fb": {
-    parserId: "heart-rate-measurement",
-    metricType: BleMetricType.HeartRate,
-    purpose: "activity_metric",
-  },
-  "00002a63-0000-1000-8000-00805f9b34fb": {
-    parserId: "cycling-power-measurement",
-    metricType: BleMetricType.Power,
-    purpose: "activity_metric",
-  },
-  "00002a5b-0000-1000-8000-00805f9b34fb": {
-    parserId: "cycling-speed-cadence-measurement",
-    metricType: BleMetricType.Cadence,
-    purpose: "activity_metric",
-  },
-  "00002a53-0000-1000-8000-00805f9b34fb": {
-    parserId: "running-speed-cadence-measurement",
-    metricType: BleMetricType.Speed,
-    purpose: "activity_metric",
-  },
-  "00002a19-0000-1000-8000-00805f9b34fb": {
-    parserId: "battery-level",
-    metricType: BleMetricType.Battery,
-    purpose: "device_diagnostic",
-  },
-};
-
-export const KnownCharacteristics: Record<string, BleMetricType> = {
-  ...Object.fromEntries(
-    Object.entries(BleCharacteristicParsers).map(([uuid, parser]) => [uuid, parser.metricType]),
-  ),
-};
+export const SENSOR_READING_STALE_AFTER_MS = 60_000;
 
 /** --- Sensor Data Types (imported from types.ts) --- */
 // SensorReading is now imported from types.ts for consistency
@@ -163,7 +136,7 @@ export interface FtmsDeviceSnapshot {
   supportsControl: boolean;
 }
 
-/** --- Generic Sports BLE Manager --- */
+/** --- Generic ActivityCategories BLE Manager --- */
 export class SensorsManager {
   private bleManager = new BleManager();
   private scanController = new BleScanController(this.bleManager, (error) => {
@@ -173,12 +146,14 @@ export class SensorsManager {
   });
   private connectedSensors: Map<string, ConnectedSensor> = new Map();
   private gattQueues = new DeviceGattQueueRegistry();
+  private disconnectPromises = new Map<string, Promise<void>>();
   private monitorSubscriptions: Map<string, Array<{ remove: () => void }>> = new Map();
   private dataCallbacks: Set<(reading: SensorReading) => void> = new Set();
   private connectionCallbacks: Set<(sensor: ConnectedSensor) => void> = new Set();
   private bleStateCallbacks: Set<(state: string) => void> = new Set();
-  private connectionMonitorTimer?: ReturnType<typeof setInterval>;
-  private readonly DISCONNECT_TIMEOUT_MS = 60000; // 60 seconds (increased from 30s for better stability)
+  private bleStateSubscription?: { remove: () => void } | undefined;
+  private connectionMonitorTimer?: ReturnType<typeof setInterval> | undefined;
+  private readonly DISCONNECT_TIMEOUT_MS = SENSOR_READING_STALE_AFTER_MS;
   private readonly HEALTH_CHECK_INTERVAL_MS = 15000; // 15 seconds (increased from 10s to reduce battery drain)
 
   // BLE state tracking
@@ -186,7 +161,7 @@ export class SensorsManager {
 
   private ftmsControllers: Map<string, FTMSController> = new Map();
   private ftmsCandidates: Map<string, FtmsDeviceSnapshot> = new Map();
-  private selectedFtmsDeviceId?: string;
+  private selectedFtmsDeviceId?: string | undefined;
   private trainerState: TrainerStateSnapshot = this.createEmptyTrainerState();
 
   // Enhanced reconnection with exponential backoff
@@ -198,6 +173,7 @@ export class SensorsManager {
 
   private knownSensorRegistry = new KnownSensorRegistry();
   private sensorSetupResetVersion = 0;
+  private disposed = false;
 
   // State transition debouncing
   private stateTransitionTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
@@ -205,12 +181,13 @@ export class SensorsManager {
 
   // CSC parser state must be maintained per-device for delta-based cadence.
   private cscParserStates: Map<string, CscParserState> = new Map();
+  private cyclingPowerParserStates: Map<string, CyclingPowerParserState> = new Map();
 
   constructor() {
     this.initialize();
     this.startConnectionMonitoring();
     // Load persisted sensors and attempt auto-reconnection
-    this.knownSensorRegistry.load();
+    void this.knownSensorRegistry.load();
   }
 
   private toHex(bytes: Uint8Array): string {
@@ -255,7 +232,8 @@ export class SensorsManager {
 
   /** Initialize BLE manager */
   private initialize() {
-    this.bleManager.onStateChange((state) => {
+    this.bleStateSubscription = this.bleManager.onStateChange((state) => {
+      if (this.disposed) return;
       // Track BLE state for UI
       this.bleState = state;
       this.notifyBleStateChange();
@@ -272,7 +250,7 @@ export class SensorsManager {
           console.log(
             `[SensorsManager] BLE powered on, attempting to reconnect ${this.knownSensorRegistry.size} persisted sensors`,
           );
-          this.reconnectPersistedSensors();
+          void this.reconnectPersistedSensors();
         }
       }
       if (state === "PoweredOff" || state === "Unauthorized") {
@@ -282,7 +260,9 @@ export class SensorsManager {
             ? "Bluetooth permission unavailable"
             : "Bluetooth is powered off",
           {
-            deviceId: this.trainerState.deviceId ?? undefined,
+            ...(this.trainerState.deviceId === null
+              ? {}
+              : { deviceId: this.trainerState.deviceId }),
             recoverable: true,
           },
         );
@@ -296,7 +276,12 @@ export class SensorsManager {
           });
         }
         console.log(`[SensorsManager] BLE ${state}, disconnecting all sensors`);
-        this.disconnectAll();
+        void this.disconnectAll().catch((error) => {
+          console.warn(
+            "[SensorsManager] Unable to fully disconnect after Bluetooth became unavailable",
+            error instanceof Error ? error.name : "unknown_error",
+          );
+        });
       }
     }, true);
   }
@@ -358,7 +343,7 @@ export class SensorsManager {
       // Process any pending transitions
       if (sensor.pendingStateTransition) {
         const pending = sensor.pendingStateTransition;
-        sensor.pendingStateTransition = undefined;
+        delete sensor.pendingStateTransition;
 
         // Only apply if still recent (within 2 seconds)
         if (Date.now() - pending.timestamp < 2000) {
@@ -430,8 +415,8 @@ export class SensorsManager {
       const sensor = this.connectedSensors.get(sensorId);
       if (sensor) {
         sensor.isControllable = false;
-        sensor.ftmsController = undefined;
-        sensor.currentControlMode = undefined;
+        delete sensor.ftmsController;
+        delete sensor.currentControlMode;
       }
       this.ftmsControllers.get(sensorId)?.dispose();
       this.ftmsControllers.delete(sensorId);
@@ -465,6 +450,8 @@ export class SensorsManager {
       this.selectedFtmsDeviceId = undefined;
     }
     this.gattQueues.cancelDevice(deviceId, reason);
+    this.cscParserStates.delete(deviceId);
+    this.cyclingPowerParserStates.delete(deviceId);
   }
 
   private recordServiceError(
@@ -479,7 +466,7 @@ export class SensorsManager {
       category,
       message,
       recordedAt: Date.now(),
-      deviceId: options?.deviceId,
+      ...(options?.deviceId === undefined ? {} : { deviceId: options.deviceId }),
       recoverable: options?.recoverable ?? true,
     };
 
@@ -501,7 +488,7 @@ export class SensorsManager {
     if (deviceId) {
       const sensor = this.connectedSensors.get(deviceId);
       if (sensor) {
-        sensor.lastServiceError = undefined;
+        delete sensor.lastServiceError;
       }
 
       if (this.trainerState.deviceId === deviceId) {
@@ -620,7 +607,7 @@ export class SensorsManager {
     }
 
     this.connectionMonitorTimer = setInterval(() => {
-      this.checkSensorHealth();
+      void this.checkSensorHealth();
     }, this.HEALTH_CHECK_INTERVAL_MS);
   }
 
@@ -634,10 +621,6 @@ export class SensorsManager {
 
   /** Check health of all connected sensors */
   private async checkSensorHealth() {
-    if (!this.autoReconnectEnabled) {
-      return;
-    }
-
     const now = Date.now();
     const sensors = Array.from(this.connectedSensors.values());
 
@@ -647,6 +630,21 @@ export class SensorsManager {
         continue;
       }
 
+      for (const profile of sensor.profiles ?? []) {
+        if (
+          profile.streamState === "flowing" &&
+          profile.lastDataTimestamp &&
+          now - profile.lastDataTimestamp > this.DISCONNECT_TIMEOUT_MS
+        ) {
+          this.updateProfileState(
+            sensor,
+            profile.id,
+            "failed",
+            `No ${profile.name} data received recently`,
+          );
+        }
+      }
+
       // Check if sensor has gone silent
       if (sensor.lastDataTimestamp) {
         const timeSinceLastData = now - sensor.lastDataTimestamp;
@@ -654,7 +652,8 @@ export class SensorsManager {
         if (
           timeSinceLastData > this.DISCONNECT_TIMEOUT_MS &&
           sensor.connectionState === "connected" &&
-          !this.reconnectionAttempts.has(sensor.id) // Check if reconnection in progress
+          !this.reconnectionAttempts.has(sensor.id) && // Check if reconnection in progress
+          this.autoReconnectEnabled
         ) {
           console.log(
             `[SensorsManager] Sensor ${sensor.name} disconnected (no data for ${timeSinceLastData}ms)`,
@@ -788,7 +787,7 @@ export class SensorsManager {
 
     const timer = setTimeout(() => {
       this.reconnectionTimers.delete(sensorId);
-      this.attemptReconnection(sensorId, nextAttempt);
+      void this.attemptReconnection(sensorId, nextAttempt);
     }, delayMs);
 
     this.reconnectionTimers.set(sensorId, timer);
@@ -936,7 +935,9 @@ export class SensorsManager {
           () => service.characteristics(),
           { timeoutMs: 5000 },
         );
-        chars.forEach((c) => characteristics.set(c.uuid.toLowerCase(), service.uuid));
+        chars.forEach((c) => {
+          characteristics.set(c.uuid.toLowerCase(), service.uuid);
+        });
       }
 
       const connectedSensor: ConnectedSensor = {
@@ -946,19 +947,33 @@ export class SensorsManager {
         device: discovered,
         connectionState: "connected",
         characteristics,
+        profiles: matchStandardBleProfiles({
+          services: services.map((service) => service.uuid),
+          characteristics,
+        }).map((profile) => ({
+          id: profile.id,
+          name: profile.name,
+          metrics: profile.metrics,
+          streamState: "subscribing" as const,
+        })),
       };
 
       this.connectedSensors.set(device.id, connectedSensor);
       this.clearServiceError(device.id);
       this.cscParserStates.delete(device.id);
+      this.cyclingPowerParserStates.delete(device.id);
       await this.monitorKnownCharacteristics(connectedSensor);
 
       // Check if device supports FTMS control
-      const hasFTMS = services.some((s) => s.uuid.toLowerCase().includes("1826"));
+      const hasFTMS = services.some((service) => {
+        const uuid = service.uuid.toLowerCase();
+        return uuid === FTMS_SERVICE_UUIDS.FITNESS_MACHINE || uuid === "1826";
+      });
 
       if (hasFTMS) {
         console.log(`[SensorsManager] Detected FTMS trainer: ${connectedSensor.name}`);
         connectedSensor.isTrainer = true;
+        connectedSensor.ftmsStreamState = "waiting_for_data";
         this.updateTrainerState({
           deviceId: connectedSensor.id,
           deviceName: connectedSensor.name,
@@ -976,17 +991,18 @@ export class SensorsManager {
 
       // Enhanced disconnect handler with reconnection
       device.onDisconnected((error) => {
+        if (this.connectedSensors.get(connectedSensor.id) !== connectedSensor) return;
         console.log("Disconnected:", device.name, error?.message || "");
 
         if (connectedSensor.connectionState === "disconnecting") {
           this.transitionSensorState(connectedSensor, "disconnected", true);
-          connectedSensor.lastDataTimestamp = undefined;
+          delete connectedSensor.lastDataTimestamp;
           this.clearDeviceGattRuntime(connectedSensor.id, "Device disconnected");
           return;
         }
 
         this.transitionSensorState(connectedSensor, "disconnected", true);
-        connectedSensor.lastDataTimestamp = undefined;
+        delete connectedSensor.lastDataTimestamp;
         this.clearDeviceGattRuntime(connectedSensor.id, "Device disconnected");
         if (this.trainerState.deviceId === connectedSensor.id) {
           this.clearControllableTrainer(connectedSensor.id);
@@ -1078,7 +1094,29 @@ export class SensorsManager {
   async disconnectSensor(
     deviceId: string,
     options?: { forgetPersisted?: boolean; suppressAutoReconnect?: boolean },
-  ) {
+  ): Promise<void> {
+    const activeDisconnect = this.disconnectPromises.get(deviceId);
+    if (activeDisconnect) {
+      await activeDisconnect;
+      if (options?.forgetPersisted) await this.knownSensorRegistry.remove(deviceId);
+      return;
+    }
+
+    const disconnect = this.disconnectSensorOnce(deviceId, options);
+    this.disconnectPromises.set(deviceId, disconnect);
+    try {
+      await disconnect;
+    } finally {
+      if (this.disconnectPromises.get(deviceId) === disconnect) {
+        this.disconnectPromises.delete(deviceId);
+      }
+    }
+  }
+
+  private async disconnectSensorOnce(
+    deviceId: string,
+    options?: { forgetPersisted?: boolean; suppressAutoReconnect?: boolean },
+  ): Promise<void> {
     const shouldForgetPersisted = options?.forgetPersisted ?? false;
     const shouldSuppressAutoReconnect = options?.suppressAutoReconnect ?? !shouldForgetPersisted;
     await this.knownSensorRegistry.setAutoReconnectSuppressed(
@@ -1108,21 +1146,33 @@ export class SensorsManager {
       });
     }
 
+    this.clearDeviceGattRuntime(deviceId, "Sensor disconnecting");
+
     // Cancel BLE connection if device exists
     if (sensor.device) {
       try {
-        await this.gattQueues.enqueue(
+        await this.gattQueues.interruptDevice(
           deviceId,
           "disconnect",
           () => sensor.device.cancelConnection(),
           {
             timeoutMs: 5000,
           },
+          "Sensor disconnecting",
         );
         console.log(`Successfully disconnected from ${sensor.name}`);
       } catch (error) {
         console.error(`Error disconnecting from ${sensor.name}:`, error);
+        this.recordServiceError(
+          "device_connect_error",
+          "Native Bluetooth disconnect did not complete before local teardown.",
+          { deviceId, recoverable: true },
+        );
       }
+    }
+
+    if (this.connectedSensors.get(deviceId) !== sensor) {
+      return;
     }
 
     this.transitionSensorState(sensor, "disconnected", true);
@@ -1130,7 +1180,7 @@ export class SensorsManager {
     // Remove from connected sensors map
     this.connectedSensors.delete(deviceId);
     this.cscParserStates.delete(deviceId);
-    this.clearDeviceGattRuntime(deviceId, "Sensor disconnected");
+    this.cyclingPowerParserStates.delete(deviceId);
 
     // Disconnect preserves known-device memory unless explicitly forgotten.
     if (shouldForgetPersisted) {
@@ -1139,7 +1189,6 @@ export class SensorsManager {
       );
       await this.knownSensorRegistry.remove(deviceId);
     }
-
     if (this.trainerState.deviceId === deviceId) {
       if (shouldForgetPersisted) {
         this.trainerState = this.createEmptyTrainerState();
@@ -1173,11 +1222,18 @@ export class SensorsManager {
     // Cancel all ongoing reconnection attempts
     this.cancelReconnectionAttempts();
 
-    await Promise.allSettled(
+    const results = await Promise.allSettled(
       Array.from(this.connectedSensors.keys()).map((id) => this.disconnectSensor(id, options)),
     );
     this.cscParserStates.clear();
+    this.cyclingPowerParserStates.clear();
     this.clearControllableTrainer();
+    const failure = results.find(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    if (failure) {
+      throw failure.reason;
+    }
   }
 
   /**
@@ -1227,7 +1283,7 @@ export class SensorsManager {
     } catch (error) {
       console.error("[SensorsManager] FTMS setup failed:", error);
       sensor.isControllable = false;
-      sensor.ftmsController = undefined;
+      delete sensor.ftmsController;
       this.clearControllableTrainer(sensor.id);
       const setupError = this.recordServiceError(
         "ftms_control_request_error",
@@ -1289,95 +1345,193 @@ export class SensorsManager {
     return { ...this.trainerState };
   }
 
-  /** Monitor known characteristics */
+  private updateProfileState(
+    sensor: ConnectedSensor,
+    profileId: StandardBleProfileId,
+    streamState: SensorProfileStreamState,
+    lastError?: string,
+  ): void {
+    const profile = sensor.profiles?.find(({ id }) => id === profileId);
+    if (!profile || (profile.streamState === streamState && profile.lastError === lastError))
+      return;
+
+    profile.streamState = streamState;
+    if (lastError === undefined) {
+      delete profile.lastError;
+    } else {
+      profile.lastError = lastError;
+    }
+    this.notifyConnectionChange(sensor);
+  }
+
+  private failProfileStream(
+    sensor: ConnectedSensor,
+    profile: StandardBleProfileDefinition,
+    error: unknown,
+  ): void {
+    const message =
+      error instanceof Error ? error.message : `Could not subscribe to ${profile.name}`;
+    this.recordServiceError("measurement_subscription_error", message, {
+      deviceId: sensor.id,
+      recoverable: true,
+    });
+    this.updateProfileState(sensor, profile.id, "failed", message);
+  }
+
+  /** Monitor explicitly matched standard Bluetooth SIG sensor profiles. */
   private async monitorKnownCharacteristics(sensor: ConnectedSensor) {
-    for (const [charUuid, serviceUuid] of sensor.characteristics) {
-      const parser = BleCharacteristicParsers[charUuid.toLowerCase()];
-      if (parser?.purpose !== "activity_metric") continue;
+    const definitionsById = new Map(
+      listStandardBleProfileDefinitions().map((definition) => [definition.id, definition]),
+    );
 
-      const metricType = parser.metricType;
-      if (!metricType) continue;
+    for (const profileSnapshot of sensor.profiles ?? []) {
+      const profile = definitionsById.get(profileSnapshot.id);
+      if (!profile) continue;
 
-      const service = (
-        await this.gattQueues.enqueue(
-          sensor.id,
-          `services:${serviceUuid}`,
-          () => sensor.device.services(),
-          {
-            timeoutMs: 5000,
-          },
-        )
-      ).find((s) => s.uuid === serviceUuid);
-      if (!service) continue;
-
-      const characteristic = (
-        await this.gattQueues.enqueue(
-          sensor.id,
-          `characteristics:${serviceUuid}`,
-          () => service.characteristics(),
-          { timeoutMs: 5000 },
-        )
-      ).find((c) => c.uuid === charUuid);
-      if (!characteristic) continue;
-
-      let retries = 0;
-      const maxRetries = 2;
-
-      const monitorCallback = (error: BleError | null, char: Characteristic | null) => {
-        // Check if sensor is still in the connected sensors map
-        // If not, it was disconnected intentionally - stop monitoring
-        const stillConnected = this.connectedSensors.has(sensor.id);
-        if (!stillConnected) {
-          return;
+      try {
+        const service = (
+          await this.gattQueues.enqueue(
+            sensor.id,
+            `services:${profile.serviceUuid}`,
+            () => sensor.device.services(),
+            { timeoutMs: 5000 },
+          )
+        ).find((candidate) => candidate.uuid.toLowerCase() === profile.serviceUuid.toLowerCase());
+        if (!service) {
+          this.failProfileStream(sensor, profile, new Error(`${profile.name} service disappeared`));
+          continue;
         }
 
-        if (error) {
-          // Only log and retry if sensor is still connected
-          if (sensor.connectionState === "connected") {
-            console.warn(`Error monitoring ${metricType}:`, error);
-            if (retries < maxRetries) {
-              retries++;
-              console.log(`Retrying monitor for ${metricType} (${retries}/${maxRetries})`);
-              void this.gattQueues
-                .enqueue(
-                  sensor.id,
-                  `monitor-retry:${metricType}:${charUuid}`,
-                  async () => characteristic.monitor(monitorCallback),
-                  { timeoutMs: 5000 },
-                )
-                .then((subscription) => this.addMonitorSubscription(sensor.id, subscription))
-                .catch((retryError) => {
-                  console.warn(`Retry monitor failed for ${metricType}:`, retryError);
-                });
+        const characteristic = (
+          await this.gattQueues.enqueue(
+            sensor.id,
+            `characteristics:${profile.serviceUuid}`,
+            () => service.characteristics(),
+            { timeoutMs: 5000 },
+          )
+        ).find(
+          (candidate) =>
+            candidate.uuid.toLowerCase() === profile.measurementCharacteristicUuid.toLowerCase(),
+        );
+        if (!characteristic) {
+          this.failProfileStream(
+            sensor,
+            profile,
+            new Error(`${profile.name} measurement disappeared`),
+          );
+          continue;
+        }
+
+        if (characteristic.isNotifiable === false && characteristic.isIndicatable === false) {
+          this.failProfileStream(
+            sensor,
+            profile,
+            new Error(`${profile.name} measurement does not support notifications`),
+          );
+          continue;
+        }
+
+        const maxRetries = 2;
+        let currentAttempt = 0;
+
+        const startMonitorAttempt = async (attempt: number): Promise<void> => {
+          let attemptSubscription: { remove: () => void } | undefined;
+          let attemptSettled = false;
+          const transactionId = `sensor:${sensor.id}:profile:${profile.id}:${attempt}`;
+          const monitorCallback = (error: BleError | null, char: Characteristic | null) => {
+            if (
+              attemptSettled ||
+              currentAttempt !== attempt ||
+              this.connectedSensors.get(sensor.id) !== sensor ||
+              sensor.connectionState !== "connected"
+            ) {
+              return;
             }
+
+            if (error) {
+              attemptSettled = true;
+              attemptSubscription?.remove();
+              currentAttempt = attempt + 1;
+              if (attempt >= maxRetries) {
+                this.failProfileStream(sensor, profile, error);
+                return;
+              }
+
+              this.updateProfileState(sensor, profile.id, "subscribing");
+              void startMonitorAttempt(currentAttempt).catch((retryError) => {
+                if (
+                  this.connectedSensors.get(sensor.id) === sensor &&
+                  sensor.connectionState === "connected"
+                ) {
+                  this.failProfileStream(sensor, profile, retryError);
+                }
+              });
+              return;
+            }
+
+            if (!char?.value) return;
+            const readings = this.parseStandardProfileReadings(
+              profile.id,
+              decodeBase64ToBytes(char.value),
+              sensor.id,
+            );
+            if (readings.length === 0) return;
+
+            const now = Date.now();
+            const profileSnapshot = sensor.profiles?.find(({ id }) => id === profile.id);
+            if (profileSnapshot) {
+              profileSnapshot.lastDataTimestamp = now;
+              profileSnapshot.metricLastDataTimestamps ??= {};
+              for (const reading of readings) {
+                const metric =
+                  reading.metric === "heartrate"
+                    ? "heart_rate"
+                    : reading.metric === "power" ||
+                        reading.metric === "cadence" ||
+                        reading.metric === "speed"
+                      ? reading.metric
+                      : null;
+                if (metric) profileSnapshot.metricLastDataTimestamps[metric] = now;
+              }
+            }
+            this.updateProfileState(sensor, profile.id, "flowing");
+            this.updateSensorDataTimestamp(sensor.id);
+            readings.forEach((reading) => {
+              this.markObservedMetric(sensor.id, reading.metric);
+              this.dataCallbacks.forEach((callback) => {
+                callback(reading);
+              });
+            });
+          };
+
+          const subscription = await this.gattQueues.enqueue(
+            sensor.id,
+            attempt === 0 ? `monitor:${profile.id}` : `monitor-retry:${profile.id}:${attempt}`,
+            async () => characteristic.monitor(monitorCallback, transactionId),
+            { timeoutMs: 5000 },
+          );
+
+          if (
+            currentAttempt !== attempt ||
+            this.connectedSensors.get(sensor.id) !== sensor ||
+            sensor.connectionState !== "connected"
+          ) {
+            attemptSettled = true;
+            subscription.remove();
+            return;
           }
-          return;
-        }
 
-        if (!char?.value) return;
+          attemptSubscription = subscription;
+          this.addMonitorSubscription(sensor.id, subscription);
+          this.updateProfileState(sensor, profile.id, "waiting_for_data");
+        };
 
-        const rawBytes = decodeBase64ToBytes(char.value);
-        const readings = this.parseBleReadings(metricType, rawBytes, sensor.id);
-        if (readings.length > 0) {
-          // Update sensor health timestamp
-          this.updateSensorDataTimestamp(sensor.id);
-          readings.forEach((reading) => {
-            this.markObservedMetric(sensor.id, reading.metric);
-            this.dataCallbacks.forEach((cb) => cb(reading));
-          });
-        }
-      };
-
-      const subscription = await this.gattQueues.enqueue(
-        sensor.id,
-        `monitor:${metricType}:${charUuid}`,
-        async () => characteristic.monitor(monitorCallback),
-        { timeoutMs: 5000 },
-      );
-      this.addMonitorSubscription(sensor.id, subscription);
+        await startMonitorAttempt(0);
+      } catch (error) {
+        this.failProfileStream(sensor, profile, error);
+      }
     }
 
-    // Monitor battery service if available
     await this.monitorBatteryService(sensor);
   }
 
@@ -1387,7 +1541,7 @@ export class SensorsManager {
    */
   private async monitorBatteryService(sensor: ConnectedSensor): Promise<void> {
     const batteryServiceUuid = "0000180f-0000-1000-8000-00805f9b34fb";
-    const batteryLevelCharUuid = "00002a19-0000-1000-8000-00805f9b34fb";
+    const batteryLevelCharUuid = BLE_CHARACTERISTIC_UUIDS.BATTERY_LEVEL;
 
     if (!sensor.characteristics.has(batteryLevelCharUuid.toLowerCase())) {
       console.log(`[SensorsManager] ${sensor.name} does not support Battery Service`);
@@ -1434,9 +1588,14 @@ export class SensorsManager {
         () => characteristic.read(),
         { timeoutMs: 5000 },
       );
-      if (initialValue?.value) {
+      if (
+        initialValue?.value &&
+        this.connectedSensors.get(sensor.id) === sensor &&
+        sensor.connectionState === "connected"
+      ) {
         const bytes = decodeBase64ToBytes(initialValue.value);
         const batteryLevel = bytes[0];
+        if (batteryLevel === undefined) return;
         console.log(`[SensorsManager] Initial battery level for ${sensor.name}: ${batteryLevel}%`);
         this.handleBatteryUpdate(sensor.id, sensor.name, batteryLevel);
       }
@@ -1447,6 +1606,12 @@ export class SensorsManager {
         "battery:monitor-level",
         async () =>
           characteristic.monitor((error, char) => {
+            if (
+              this.connectedSensors.get(sensor.id) !== sensor ||
+              sensor.connectionState !== "connected"
+            ) {
+              return;
+            }
             if (error) {
               // Battery monitoring errors are non-critical - sensor will continue to work
               // Only log as debug info, don't treat as error
@@ -1461,12 +1626,20 @@ export class SensorsManager {
 
             const bytes = decodeBase64ToBytes(char.value);
             const batteryLevel = bytes[0];
+            if (batteryLevel === undefined) return;
 
             console.log(`[SensorsManager] Battery level for ${sensor.name}: ${batteryLevel}%`);
             this.handleBatteryUpdate(sensor.id, sensor.name, batteryLevel);
           }),
         { timeoutMs: 5000 },
       );
+      if (
+        this.connectedSensors.get(sensor.id) !== sensor ||
+        sensor.connectionState !== "connected"
+      ) {
+        subscription.remove();
+        return;
+      }
       this.addMonitorSubscription(sensor.id, subscription);
     } catch (_error) {
       // Battery monitoring errors are non-critical - sensor continues to provide data
@@ -1520,7 +1693,7 @@ export class SensorsManager {
             timeoutMs: 5000,
           },
         )
-      ).find((s) => s.uuid.toLowerCase() === BLE_SERVICE_UUIDS.FITNESS_MACHINE.toLowerCase());
+      ).find((s) => s.uuid.toLowerCase() === FTMS_SERVICE_UUIDS.FITNESS_MACHINE.toLowerCase());
 
       if (!service) {
         console.warn(`[SensorsManager] Fitness Machine service not found for ${sensor.name}`);
@@ -1550,6 +1723,13 @@ export class SensorsManager {
           async () => characteristic.monitor(this.createFtmsMonitorCallback(sensor, definition)),
           { timeoutMs: 5000 },
         );
+        if (
+          this.connectedSensors.get(sensor.id) !== sensor ||
+          sensor.connectionState !== "connected"
+        ) {
+          subscription.remove();
+          return;
+        }
         this.addMonitorSubscription(sensor.id, subscription);
       }
     } catch (error) {
@@ -1568,13 +1748,17 @@ export class SensorsManager {
         dataFlowState: "lost",
         lastServiceError: subscriptionError,
       });
+      sensor.ftmsStreamState = "failed";
       this.notifyConnectionChange(sensor);
     }
   }
 
   private createFtmsMonitorCallback(sensor: ConnectedSensor, definition: FtmsParserDefinition) {
     return (error: BleError | null, char: Characteristic | null) => {
-      if (!this.connectedSensors.has(sensor.id)) {
+      if (
+        this.connectedSensors.get(sensor.id) !== sensor ||
+        sensor.connectionState !== "connected"
+      ) {
         return;
       }
 
@@ -1583,6 +1767,9 @@ export class SensorsManager {
           `[SensorsManager] ${definition.name} monitoring error for ${sensor.name}:`,
           error,
         );
+        if (definition.kind !== "measurement") {
+          return;
+        }
         const subscriptionError = this.recordServiceError(
           "measurement_subscription_error",
           error.message || `${definition.name} monitoring failed for ${sensor.name}`,
@@ -1597,6 +1784,7 @@ export class SensorsManager {
             lastServiceError: subscriptionError,
           });
         }
+        sensor.ftmsStreamState = "failed";
         this.notifyConnectionChange(sensor);
         return;
       }
@@ -1606,8 +1794,22 @@ export class SensorsManager {
       const rawBytes = decodeBase64ToBytes(char.value);
       const parsed = definition.parse(rawBytes);
       this.logParserDebug(`ftms:${definition.uuid.toLowerCase()}:${sensor.id}`, rawBytes, parsed);
+      if (parsed.kind === "machine_status") {
+        const permissionLost =
+          sensor.ftmsController?.handleMachineStatus(parsed.status?.code ?? null) === true;
+        if (permissionLost) {
+          delete sensor.currentControlMode;
+          const candidate = this.ftmsCandidates.get(sensor.id);
+          if (candidate) candidate.controlState = "control_lost";
+          if (this.trainerState.deviceId === sensor.id) {
+            this.updateTrainerState({ controlState: "control_lost" });
+          }
+          this.notifyConnectionChange(sensor);
+        }
+      }
 
-      const readings = this.createFtmsReadings(parsed, sensor.id, Date.now())
+      const timestamp = Date.now();
+      const readings = this.createFtmsReadings(parsed, sensor.id, timestamp)
         .map((reading) => this.validateSensorReading(reading))
         .filter((reading): reading is SensorReading => reading !== null);
       if (readings.length === 0) {
@@ -1615,9 +1817,15 @@ export class SensorsManager {
       }
 
       this.updateSensorDataTimestamp(sensor.id);
+      sensor.ftmsStreamState = "flowing";
+      sensor.ftmsMetricLastDataTimestamps ??= {};
+      const metricTimestamps = sensor.ftmsMetricLastDataTimestamps;
       readings.forEach((reading) => {
+        metricTimestamps[reading.metric] = timestamp;
         this.markObservedMetric(sensor.id, reading.metric);
-        this.dataCallbacks.forEach((cb) => cb(reading));
+        this.dataCallbacks.forEach((cb) => {
+          cb(reading);
+        });
       });
     };
   }
@@ -1659,20 +1867,6 @@ export class SensorsManager {
     return this.createReading("heartrate", parsed.hrBpm, deviceId);
   }
 
-  parsePower(data: Uint8Array | ArrayBuffer, deviceId: string): SensorReading | null {
-    const bytes = this.toBytes(data);
-    const parsed = parseCyclingPowerMeasurement(data);
-    this.logParserDebug(`cycling-power:${deviceId}`, bytes, parsed);
-    if (typeof parsed.powerWatts !== "number") return null;
-
-    const value = Math.max(0, Math.min(parsed.powerWatts, 4000));
-    return this.createReading("power", value, deviceId);
-  }
-
-  parseCSCMeasurement(data: Uint8Array | ArrayBuffer, deviceId: string): SensorReading | null {
-    return this.parseCSCMeasurements(data, deviceId)[0] ?? null;
-  }
-
   parseCSCMeasurements(data: Uint8Array | ArrayBuffer, deviceId: string): SensorReading[] {
     const bytes = this.toBytes(data);
     const previousState = this.cscParserStates.get(deviceId);
@@ -1695,85 +1889,67 @@ export class SensorsManager {
     return readings;
   }
 
-  parseRSCMeasurement(data: Uint8Array | ArrayBuffer, deviceId: string): SensorReading | null {
-    return this.parseRSCMeasurements(data, deviceId)[0] ?? null;
-  }
-
   parseRSCMeasurements(data: Uint8Array | ArrayBuffer, deviceId: string): SensorReading[] {
     const bytes = this.toBytes(data);
-    const view = toDataView(bytes);
-    if (bytes.byteLength < 1) return [];
-    const flags = view.getUint8(0);
-    let offset = 1;
+    const parsed = parseRunningSpeedAndCadenceMeasurement(bytes);
     const readings: SensorReading[] = [];
+    this.logParserDebug(`rsc:${deviceId}`, bytes, parsed);
 
-    // Instantaneous Speed is always present (uint16, 1/256 m/s)
-    if (bytes.byteLength >= offset + 2) {
-      const rawSpeed = view.getUint16(offset, true);
-      const speedMs = rawSpeed / 256; // Convert to m/s
-      offset += 2;
-
-      const speedReading = this.createReading("speed", speedMs, deviceId);
+    if (typeof parsed.speedMps === "number") {
+      const speedReading = this.createReading("speed", parsed.speedMps, deviceId);
       if (speedReading) readings.push(speedReading);
-
-      // Instantaneous Cadence (uint8, steps/min) - only if bit 0 is set
-      if (flags & 0x01 && bytes.byteLength >= offset + 1) {
-        const cadence = view.getUint8(offset);
-        this.logParserDebug(`rsc:${deviceId}`, bytes, {
-          flags,
-          cadenceRpm: cadence,
-          speedMps: speedMs,
-        });
-        const cadenceReading = this.createReading("cadence", cadence, deviceId);
-        if (cadenceReading) readings.push(cadenceReading);
-        return readings;
-      }
-
-      this.logParserDebug(`rsc:${deviceId}`, bytes, {
-        flags,
-        cadenceRpm: null,
-        speedMps: speedMs,
-      });
-      return readings;
+    }
+    if (typeof parsed.cadenceRpm === "number") {
+      const cadenceReading = this.createReading("cadence", parsed.cadenceRpm, deviceId);
+      if (cadenceReading) readings.push(cadenceReading);
     }
     return readings;
   }
 
-  parseBleReadings(metricType: BleMetricType, raw: Uint8Array, deviceId: string): SensorReading[] {
-    switch (metricType) {
-      case BleMetricType.Cadence:
-        return this.parseCSCMeasurements(raw, deviceId);
-      case BleMetricType.Speed:
-        return this.parseRSCMeasurements(raw, deviceId);
-      default: {
-        const reading = this.parseBleData(metricType, raw, deviceId);
+  private parseStandardProfileReadings(
+    profileId: StandardBleProfileId,
+    raw: Uint8Array,
+    deviceId: string,
+  ): SensorReading[] {
+    switch (profileId) {
+      case "heart_rate": {
+        const reading = this.parseHeartRate(raw, deviceId);
         return reading ? [reading] : [];
       }
+      case "cycling_power": {
+        const parsed = parseCyclingPowerMeasurementWithState(
+          raw,
+          this.cyclingPowerParserStates.get(deviceId),
+        );
+        this.cyclingPowerParserStates.set(deviceId, parsed.nextState);
+        this.logParserDebug(`cycling-power:${deviceId}`, raw, parsed);
+        const readings: SensorReading[] = [];
+
+        if (typeof parsed.powerWatts === "number") {
+          const power = this.createReading(
+            "power",
+            Math.max(0, Math.min(parsed.powerWatts, 4000)),
+            deviceId,
+            "ble_cycling_power",
+          );
+          if (power) readings.push(power);
+        }
+        if (typeof parsed.cadenceRpm === "number") {
+          const cadence = this.createReading(
+            "cadence",
+            parsed.cadenceRpm,
+            deviceId,
+            "ble_cycling_power",
+          );
+          if (cadence) readings.push(cadence);
+        }
+        return readings;
+      }
+      case "cycling_speed_and_cadence":
+        return this.parseCSCMeasurements(raw, deviceId);
+      case "running_speed_and_cadence":
+        return this.parseRSCMeasurements(raw, deviceId);
     }
-  }
-
-  parseBleData(metricType: BleMetricType, raw: Uint8Array, deviceId: string): SensorReading | null {
-    let reading: SensorReading | null = null;
-
-    switch (metricType) {
-      case BleMetricType.HeartRate:
-        reading = this.parseHeartRate(raw, deviceId);
-        break;
-      case BleMetricType.Power:
-        reading = this.parsePower(raw, deviceId);
-        break;
-      case BleMetricType.Cadence:
-        reading = this.parseCSCMeasurement(raw, deviceId);
-        break;
-      case BleMetricType.Speed:
-        // RSC characteristic (0x2A53) uses different format than CSC
-        reading = this.parseRSCMeasurement(raw, deviceId);
-        break;
-      default:
-        return null;
-    }
-
-    return reading;
   }
 
   smoothSensorData(values: number[], window = 3): number[] {
@@ -1813,6 +1989,15 @@ export class SensorsManager {
    * Get the currently connected controllable trainer
    */
   getControllableTrainer(): ConnectedSensor | undefined {
+    const selected = this.getSelectedFTMSTrainer();
+    return selected?.connectionState === "connected" &&
+      selected.ftmsController?.hasControlPermission()
+      ? selected
+      : undefined;
+  }
+
+  /** Get the selected feature-eligible trainer, regardless of current control permission. */
+  getSelectedFTMSTrainer(): ConnectedSensor | undefined {
     const selectedId = this.selectedFtmsDeviceId;
     return selectedId ? this.connectedSensors.get(selectedId) : undefined;
   }
@@ -1960,14 +2145,14 @@ export class SensorsManager {
   /**
    * Reset trainer control
    */
-  async resetTrainerControl(): Promise<boolean> {
+  async resetTrainerControl(context?: FTMSCommandContext): Promise<boolean> {
     const controller = this.getSelectedFTMSController();
     if (!controller) {
       console.warn("[SensorsManager] No controllable trainer connected");
       return false;
     }
 
-    return await controller.reset();
+    return await controller.reset(context);
   }
 
   /**
@@ -1981,14 +2166,50 @@ export class SensorsManager {
   }
 
   public async cleanup(): Promise<void> {
+    if (this.disposed) return;
+    this.disposed = true;
     this.stopConnectionMonitoring();
-    await this.disconnectAll();
+    this.stopScan();
+    this.setAutoReconnectEnabled(false);
+    this.cancelReconnectionAttempts();
+    for (const timer of this.stateTransitionTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.stateTransitionTimers.clear();
+
+    let cleanupFailure: unknown;
+    try {
+      await this.disconnectAll({ suppressAutoReconnect: true });
+    } catch (error) {
+      cleanupFailure = error;
+    } finally {
+      this.bleStateSubscription?.remove();
+      this.bleStateSubscription = undefined;
+      this.dataCallbacks.clear();
+      this.connectionCallbacks.clear();
+      this.bleStateCallbacks.clear();
+      // BLE PLX teardown is asynchronous. Leaving its rejected promise detached
+      // produces an app-wide unhandled-rejection overlay even though recording
+      // does not require a Bluetooth device.
+      try {
+        await this.bleManager.destroy();
+      } catch (error) {
+        console.warn(
+          "[SensorsManager] Bluetooth manager teardown did not complete",
+          error instanceof Error ? error.name : "unknown_error",
+        );
+      }
+    }
+
+    if (cleanupFailure) {
+      throw cleanupFailure;
+    }
   }
 
   /**
    * Get control events for current session
    */
-  getControlEvents(): any[] {
+  getControlEvents(): FtmsControlEvent[] {
     const controller = this.getSelectedFTMSController();
     if (!controller) {
       return [];

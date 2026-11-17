@@ -1,62 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-  deriveSpeedCurveFromThresholdPace,
-  estimateSpeedForDuration,
   formatPace,
+  kilometersPerHourToPaceSeconds,
+  paceSecondsPerKilometerToKilometersPerHour,
   paceToSpeed,
   parsePace,
-  SPEED_MULTIPLIERS,
-  STANDARD_SPEED_DURATIONS,
   speedToPace,
 } from "../speed-curve";
-
-describe("deriveSpeedCurveFromThresholdPace", () => {
-  it("should generate 10 speed efforts from threshold pace", () => {
-    const thresholdPace = 270; // 4:30/km
-    const curve = deriveSpeedCurveFromThresholdPace(thresholdPace);
-
-    expect(curve).toHaveLength(10);
-    expect(curve.length).toBe(STANDARD_SPEED_DURATIONS.length);
-  });
-
-  it("should have correct format for all efforts", () => {
-    const thresholdPace = 300; // 5:00/km
-    const curve = deriveSpeedCurveFromThresholdPace(thresholdPace);
-
-    curve.forEach((effort) => {
-      expect(effort.effort_type).toBe("speed");
-      expect(effort.unit).toBe("meters_per_second");
-      expect(effort.activity_category).toBe("run");
-      expect(effort.value).toBeGreaterThan(0);
-      expect(effort.duration_seconds).toBeGreaterThan(0);
-    });
-  });
-
-  it("should have sprint efforts faster than threshold", () => {
-    const thresholdPace = 300; // 5:00/km
-    const thresholdSpeed = paceToSpeed(thresholdPace);
-    const curve = deriveSpeedCurveFromThresholdPace(thresholdPace);
-
-    const sprintEffort = curve[0]; // 5 seconds
-    expect(sprintEffort?.value).toBeGreaterThan(thresholdSpeed);
-  });
-
-  it("should have tempo efforts slower than threshold", () => {
-    const thresholdPace = 300; // 5:00/km
-    const thresholdSpeed = paceToSpeed(thresholdPace);
-    const curve = deriveSpeedCurveFromThresholdPace(thresholdPace);
-
-    const tempoEffort = curve[curve.length - 1]; // 60 minutes
-    expect(tempoEffort?.value).toBeLessThan(thresholdSpeed);
-  });
-
-  it("should throw error for invalid pace", () => {
-    expect(() => deriveSpeedCurveFromThresholdPace(0)).toThrow();
-    expect(() => deriveSpeedCurveFromThresholdPace(-100)).toThrow();
-    expect(() => deriveSpeedCurveFromThresholdPace(100)).toThrow(); // Too fast
-    expect(() => deriveSpeedCurveFromThresholdPace(700)).toThrow(); // Too slow
-  });
-});
 
 describe("paceToSpeed and speedToPace", () => {
   it("should convert pace to speed correctly", () => {
@@ -76,6 +26,12 @@ describe("paceToSpeed and speedToPace", () => {
     const speed = paceToSpeed(originalPace);
     const convertedPace = speedToPace(speed);
     expect(convertedPace).toBe(originalPace);
+  });
+
+  it("keeps the 4:30/km to km/h conversion explicit without rounding its source value", () => {
+    const speed = paceSecondsPerKilometerToKilometersPerHour(270);
+    expect(speed).toBeCloseTo(13.333333333333334);
+    expect(kilometersPerHourToPaceSeconds(speed)).toBe(270);
   });
 
   it("should throw error for invalid inputs", () => {
@@ -111,34 +67,5 @@ describe("formatPace and parsePace", () => {
     expect(() => parsePace("4")).toThrow();
     expect(() => parsePace("4:")).toThrow();
     expect(() => parsePace("4:70")).toThrow(); // Invalid seconds
-  });
-});
-
-describe("estimateSpeedForDuration", () => {
-  it("should calculate speed for specific duration", () => {
-    const thresholdPace = 300; // 5:00/km
-    const thresholdSpeed = paceToSpeed(thresholdPace);
-
-    const sprintSpeed = estimateSpeedForDuration(thresholdPace, 30);
-    expect(sprintSpeed).toBeCloseTo(thresholdSpeed * SPEED_MULTIPLIERS.sprint, 2);
-
-    const thresholdSpeed300 = estimateSpeedForDuration(thresholdPace, 600);
-    expect(thresholdSpeed300).toBeCloseTo(thresholdSpeed * SPEED_MULTIPLIERS.threshold, 2);
-  });
-
-  it("should match curve values", () => {
-    const thresholdPace = 300;
-    const curve = deriveSpeedCurveFromThresholdPace(thresholdPace);
-
-    const fiveMinEffort = curve.find((e) => e.duration_seconds === 300);
-    expect(fiveMinEffort).toBeDefined();
-    const calculatedSpeed = estimateSpeedForDuration(thresholdPace, 300);
-
-    expect(calculatedSpeed).toBeCloseTo(fiveMinEffort!.value, 2);
-  });
-
-  it("should throw error for invalid inputs", () => {
-    expect(() => estimateSpeedForDuration(0, 300)).toThrow();
-    expect(() => estimateSpeedForDuration(300, 0)).toThrow();
   });
 });

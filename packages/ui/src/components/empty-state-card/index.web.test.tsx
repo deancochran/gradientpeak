@@ -21,7 +21,7 @@ describe("EmptyStateCard web", () => {
     expect(screen.getByText(emptyStateCardFixtures.generic.description)).toBeInTheDocument();
 
     fireEvent.click(
-      screen.getByRole("button", { name: emptyStateCardFixtures.generic.actionLabel! }),
+      screen.getByRole("button", { name: emptyStateCardFixtures.generic.actionLabel }),
     );
     expect(onAction).toHaveBeenCalled();
   });

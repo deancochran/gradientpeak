@@ -1,15 +1,19 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Text } from "@repo/ui/components/text";
 import { Users } from "lucide-react-native";
-import { TouchableOpacity, View } from "react-native";
+import { View } from "react-native";
+import { ResourceCardShell } from "@/components/shared/ResourceCardPrimitives";
 import type { DisplayGroupViewerState, GroupListItem } from "@/lib/groups";
 import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
 import { GroupAccessLevelBadge, GroupJoinPolicyBadge, GroupRelationshipBadge } from "./GroupBadges";
 
 type GroupCardProps = {
+  disabled?: boolean;
   group: GroupListItem;
   onPress?: (group: GroupListItem) => void;
+  selected?: boolean;
   testID?: string;
+  variant?: "default" | "compact";
   viewer?: DisplayGroupViewerState | null;
 };
 
@@ -41,67 +45,75 @@ function GroupAvatar({
   );
 }
 
-export function GroupCard({ group, onPress, testID, viewer }: GroupCardProps) {
+export function GroupCard({
+  disabled,
+  group,
+  onPress,
+  selected,
+  testID,
+  variant = "default",
+  viewer,
+}: GroupCardProps) {
+  const isDisabled = disabled ?? !onPress;
+  const handlePress = onPress ? () => onPress(group) : undefined;
+
   return (
-    <TouchableOpacity
-      activeOpacity={0.85}
-      disabled={!onPress}
-      onPress={() => onPress?.(group)}
-      testID={testID}
+    <ResourceCardShell
+      accessibilityLabel={`View group ${group.name?.trim() || "Group"}`}
+      accessibilityState={{ selected }}
+      cardClassName={variant === "compact" ? "rounded-xl py-3" : "rounded-2xl py-4"}
+      compact={variant === "compact"}
+      contentClassName={variant === "compact" ? "px-3" : "gap-3 px-4"}
+      disabled={isDisabled}
+      {...(handlePress ? { onPress: handlePress } : {})}
+      testID={testID ?? `group-card-${group.id}`}
     >
-      <View className="gap-3 rounded-2xl border border-border bg-card p-4">
-        <View className="flex-row items-start gap-3">
-          <GroupAvatar group={group} />
-          <View className="min-w-0 flex-1 gap-1">
-            <Text className="text-lg font-semibold text-foreground" numberOfLines={2}>
+      {variant === "compact" ? (
+        <View className="min-h-11 flex-row items-center gap-3">
+          <GroupAvatar group={group} size="sm" />
+          <View className="min-w-0 flex-1 gap-0.5">
+            <Text className="text-base font-semibold text-foreground" numberOfLines={1}>
               {group.name}
             </Text>
-            <Text className="text-xs text-muted-foreground" numberOfLines={1}>
-              @{group.slug}
-            </Text>
+            <View className="flex-row items-center gap-1.5">
+              <Users size={12} className="text-muted-foreground" />
+              <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+                {group.description?.trim() || formatCompactPolicy(group.join_policy)}
+              </Text>
+            </View>
           </View>
           {viewer ? <GroupRelationshipBadge relationshipState={viewer.relationshipState} /> : null}
         </View>
+      ) : (
+        <View className="gap-3">
+          <View className="flex-row items-start gap-3">
+            <GroupAvatar group={group} />
+            <View className="min-w-0 flex-1 gap-1">
+              <Text className="text-lg font-semibold text-foreground" numberOfLines={2}>
+                {group.name}
+              </Text>
+              <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+                @{group.slug}
+              </Text>
+            </View>
+            {viewer ? (
+              <GroupRelationshipBadge relationshipState={viewer.relationshipState} />
+            ) : null}
+          </View>
 
-        {group.description ? (
-          <Text className="text-sm leading-5 text-muted-foreground" numberOfLines={3}>
-            {group.description}
-          </Text>
-        ) : null}
-
-        <View className="flex-row flex-wrap gap-2">
-          <GroupAccessLevelBadge accessLevel={group.access_level} />
-          <GroupJoinPolicyBadge joinPolicy={group.join_policy} />
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-export function GroupCompactCard({ group, onPress, testID, viewer }: GroupCardProps) {
-  return (
-    <TouchableOpacity
-      activeOpacity={0.85}
-      disabled={!onPress}
-      onPress={() => onPress?.(group)}
-      testID={testID}
-    >
-      <View className="flex-row items-center gap-3 rounded-xl border border-border bg-card p-3">
-        <GroupAvatar group={group} size="sm" />
-        <View className="min-w-0 flex-1 gap-0.5">
-          <Text className="text-base font-semibold text-foreground" numberOfLines={1}>
-            {group.name}
-          </Text>
-          <View className="flex-row items-center gap-1.5">
-            <Users size={12} className="text-muted-foreground" />
-            <Text className="text-xs text-muted-foreground" numberOfLines={1}>
-              {group.description?.trim() || formatCompactPolicy(group.join_policy)}
+          {group.description ? (
+            <Text className="text-sm leading-5 text-muted-foreground" numberOfLines={3}>
+              {group.description}
             </Text>
+          ) : null}
+
+          <View className="flex-row flex-wrap gap-2">
+            <GroupAccessLevelBadge accessLevel={group.access_level} />
+            <GroupJoinPolicyBadge joinPolicy={group.join_policy} />
           </View>
         </View>
-        {viewer ? <GroupRelationshipBadge relationshipState={viewer.relationshipState} /> : null}
-      </View>
-    </TouchableOpacity>
+      )}
+    </ResourceCardShell>
   );
 }
 
