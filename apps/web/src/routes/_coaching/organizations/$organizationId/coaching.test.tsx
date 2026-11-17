@@ -98,6 +98,10 @@ afterEach(() => {
 });
 
 describe("organization coaching facts route", () => {
+  it("does not preload an aggregate read before navigation", () => {
+    expect(state.options.preload).toBe(false);
+  });
+
   it("binds its aggregate read to the current organization", async () => {
     const route = Route as unknown as {
       loader: (input: {

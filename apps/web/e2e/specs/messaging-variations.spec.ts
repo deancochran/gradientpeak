@@ -83,6 +83,7 @@ test("[variation:messaging.conversations:group-history] group unread counts clea
   const sender = new MessagingPage(a.page);
   await sender.createGroup("Variation History Group", [b.username, c.username]);
   await sender.send("History group hello");
+  await expect(a.page.getByText("History group hello", { exact: true }).last()).toBeVisible();
   await new MessagingPage(b.page).openInbox();
   const group = b.page.getByRole("link", { name: /Variation History Group/i }).first();
   await expect(group.getByText("1", { exact: true })).toBeVisible();
@@ -134,9 +135,11 @@ test("[variation:messaging.composer:search-failure] a failed profile search pres
     is_public: null,
     username: recipient.username,
   }));
+  const initialSearchResponse = waitForSearchResponse(a.page);
   await a.page.goto(
     `/messages?compose=true&composeGroup=${encodeURIComponent("Retained after search failure")}&composeRecipients=${encodeURIComponent(JSON.stringify(recipients))}`,
   );
+  await expect((await initialSearchResponse).ok()).toBeTruthy();
 
   await withTrpcFailure(
     a.page,

@@ -220,8 +220,8 @@ test("coaching read failure discovers and retries its generated server-function 
       .click();
     await expect.poll(() => attempts).toBe(2);
     await expect(
-      page.getByRole("button", { name: "Retrying coaching assignment facts…" }),
-    ).toBeDisabled();
+      page.getByRole("status", { name: "Loading coaching assignment facts" }),
+    ).toBeVisible();
     releaseRetryFailure();
     await expect(page.getByRole("alert")).toContainText("could not load coaching assignment facts");
     expect(interceptedEndpoints).toEqual([endpoint, endpoint]);

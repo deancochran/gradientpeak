@@ -8,6 +8,7 @@ import {
 import { loadOrganizationCoachingQuality } from "../../../../lib/coaching/organization-coaching-quality-server-functions";
 
 export const Route = createFileRoute("/_coaching/organizations/$organizationId/coaching")({
+  preload: false,
   loader: async ({ params, context }) => ({
     organizationId: params.organizationId,
     actorProfileId: context.actorProfileId,

@@ -169,8 +169,13 @@ test("coaching POC session shows structured instructions and persists a valid pa
   await captureSessionSurface(athletePage, testInfo);
 
   await athletePage.getByRole("link", { name: "Open activity plan", exact: true }).click();
+  await waitForAppHydration(athletePage);
+  const reschedule = athletePage.getByRole("button", { name: "Reschedule", exact: true });
+  await expect(reschedule).toBeEnabled();
+  await expect(athletePage.getByText(`Currently scheduled for ${futureDate}.`)).toBeVisible();
   await athletePage.getByLabel("Schedule date", { exact: true }).fill(pastDate);
-  await athletePage.getByRole("button", { name: "Reschedule", exact: true }).click();
+  await expect(athletePage.getByLabel("Schedule date", { exact: true })).toHaveValue(pastDate);
+  await reschedule.click();
   await expect(athletePage.getByText(`Currently scheduled for ${pastDate}.`)).toBeVisible();
 
   await athletePage.goto(`/calendar/events/${futureSession.id}?resourceType=planned_session`);

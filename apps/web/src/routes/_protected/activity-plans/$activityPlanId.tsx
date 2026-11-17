@@ -537,7 +537,16 @@ function ActivityPlanDetailPage() {
           <CardContent className="flex flex-wrap items-end gap-3">
             <div className="min-w-56">
               <DateInput
-                disabled={scheduleHeld || createSchedule.isPending || updateSchedule.isPending}
+                disabled={
+                  scheduleHeld ||
+                  !profileQuery.data?.id ||
+                  profileQuery.isLoading ||
+                  profileQuery.isError ||
+                  scheduleQuery.isLoading ||
+                  scheduleQuery.isError ||
+                  createSchedule.isPending ||
+                  updateSchedule.isPending
+                }
                 id="activity-plan-schedule-date"
                 label="Schedule date"
                 onChange={(value) => {

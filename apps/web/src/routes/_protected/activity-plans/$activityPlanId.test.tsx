@@ -5,11 +5,17 @@ import { Route } from "./$activityPlanId";
 
 const mocks = vi.hoisted(() => ({
   createEvent: vi.fn(),
+  moveEvent: vi.fn(),
   createOptions: null as null | {
     onError: (error: { message: string }) => void;
     onSettled: () => void;
   },
   scheduleError: false,
+  scheduleItems: [] as Array<Record<string, unknown>>,
+  scheduleLoading: false,
+  profile: { id: "owner-1" } as { id: string } | undefined,
+  profileError: false,
+  profileLoading: false,
   refetchSchedule: vi.fn(),
   eventListInput: undefined as unknown,
   plan: undefined as unknown,
@@ -105,16 +111,22 @@ vi.mock("../../../lib/api/client", () => ({
       },
     },
     profiles: {
-      get: { useQuery: () => ({ data: { id: "owner-1" }, isError: false, isLoading: false }) },
+      get: {
+        useQuery: () => ({
+          data: mocks.profile,
+          isError: mocks.profileError,
+          isLoading: mocks.profileLoading,
+        }),
+      },
     },
     plannedSessions: {
       range: {
         useQuery: (input: unknown) => {
           mocks.eventListInput = input;
           return {
-            data: { items: [] },
+            data: { items: mocks.scheduleItems },
             isError: mocks.scheduleError,
-            isLoading: false,
+            isLoading: mocks.scheduleLoading,
             refetch: mocks.refetchSchedule,
           };
         },
@@ -125,7 +137,7 @@ vi.mock("../../../lib/api/client", () => ({
           return { isPending: false, mutate: mocks.createEvent };
         },
       },
-      move: { useMutation: () => ({ isPending: false, mutate: vi.fn() }) },
+      move: { useMutation: () => ({ isPending: false, mutate: mocks.moveEvent }) },
       cancel: { useMutation: () => ({ isPending: false, mutate: vi.fn(), mutateAsync: vi.fn() }) },
     },
     events: {
@@ -140,7 +152,13 @@ vi.mock("../../../lib/api/client", () => ({
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 beforeEach(() => {
   mocks.createEvent.mockReset();
+  mocks.moveEvent.mockReset();
   mocks.scheduleError = false;
+  mocks.scheduleItems = [];
+  mocks.scheduleLoading = false;
+  mocks.profile = { id: "owner-1" };
+  mocks.profileError = false;
+  mocks.profileLoading = false;
   mocks.refetchSchedule.mockReset();
   mocks.eventListInput = undefined;
   mocks.planInputs = [];
@@ -414,6 +432,65 @@ describe("ActivityPlanDetailPage print", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry loading schedule" }));
     expect(mocks.refetchSchedule).toHaveBeenCalledTimes(1);
     expect((screen.getByLabelText("Schedule date") as HTMLInputElement).value).toBe("2026-10-26");
+  });
+  it("waits for the initial identity and schedule read before accepting a reschedule draft", () => {
+    mocks.profile = undefined;
+    mocks.plan = {
+      detail: {
+        id: "invalid-plan",
+        name: "Scheduled bike",
+        description: null,
+        notes: null,
+        activityCategory: "bike",
+        visibility: "private",
+        createdAt: "2026-07-01T00:00:00.000Z",
+        gpsRecordingEnabled: true,
+        owner: null,
+        capabilities: { canDuplicate: false, canEdit: true, canSchedule: true },
+        engagement: { likes: 0, viewerHasLiked: false },
+        metrics: [],
+        structure: null,
+      },
+      edit: null,
+    };
+    const ActivityPlanDetailPage = (
+      Route as unknown as {
+        component: React.ComponentType;
+      }
+    ).component;
+    const view = render(<ActivityPlanDetailPage />);
+    const scheduleDate = screen.getByLabelText("Schedule date") as HTMLInputElement;
+    expect(scheduleDate.disabled).toBe(true);
+
+    mocks.profile = { id: "owner-1" };
+    mocks.scheduleLoading = true;
+    view.rerender(<ActivityPlanDetailPage />);
+    expect(scheduleDate.disabled).toBe(true);
+
+    mocks.scheduleLoading = false;
+    mocks.scheduleItems = [
+      {
+        id: "scheduled-session",
+        activityPlanId: "invalid-plan",
+        planningDate: "2026-11-19",
+        sessionRevision: 1,
+        lifecycle: { status: "scheduled" },
+      },
+    ];
+    view.rerender(<ActivityPlanDetailPage />);
+    expect(scheduleDate.disabled).toBe(false);
+    expect(scheduleDate.value).toBe("2026-11-19");
+
+    fireEvent.change(scheduleDate, { target: { value: "2026-11-16" } });
+    view.rerender(<ActivityPlanDetailPage />);
+    expect(scheduleDate.value).toBe("2026-11-16");
+    fireEvent.click(screen.getByRole("button", { name: "Reschedule" }));
+    expect(mocks.moveEvent).toHaveBeenCalledWith({
+      expectedRevision: 1,
+      planningDate: "2026-11-16",
+      profileId: "owner-1",
+      sessionId: "scheduled-session",
+    });
   });
   it("renders a fixed authored relative prescription for a non-owner", () => {
     mocks.plan = {
