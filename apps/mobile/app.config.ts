@@ -1,4 +1,6 @@
+import { withSentry } from "@sentry/react-native/expo";
 import type { ConfigContext, ExpoConfig } from "expo/config";
+import { createMobileSentryOptions } from "./lib/services/sentry-options.js";
 import { version } from "./package.json";
 
 const EAS_PROJECT_ID = "6d9b541c-ffca-46c3-b323-af579ff46b68";
@@ -12,20 +14,26 @@ const ICON = "./assets/images/icons/splash-icon-prod.png";
 const ADAPTIVE_ICON = "./assets/images/icons/splash-icon-prod.png";
 const SCHEME = "gradientpeak";
 
+const RUNTIME_VERSION_POLICY = { policy: "fingerprint" } as const;
+
 export default ({ config }: ConfigContext): ExpoConfig => {
   const environment =
     (process.env.APP_ENV as "development" | "preview" | "production") || "development";
   const { name, bundleIdentifier, icon, adaptiveIcon, packageName, scheme } =
     getDynamicAppConfig(environment);
 
-  return {
+  const sentryDsn = process.env.EXPO_PUBLIC_SENTRY_DSN;
+  const sentryOrganization = process.env.SENTRY_ORG;
+  const sentryProject = process.env.SENTRY_PROJECT;
+  const hasSentryAuthToken = Boolean(process.env.SENTRY_AUTH_TOKEN);
+
+  const expoConfig: ExpoConfig = {
     ...config,
     name,
     version,
     slug: PROJECT_SLUG,
     orientation: "portrait",
     userInterfaceStyle: "automatic",
-    newArchEnabled: true, // Required for TurboModules
     icon,
     scheme,
     ios: {
@@ -33,16 +41,12 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       supportsTablet: true,
       infoPlist: {
         UIBackgroundModes: [
-          "location",
           "fetch",
           "background-processing",
           "bluetooth-central",
           "remote-notification", // needed for background notifications
         ],
         NSBluetoothAlwaysUsageDescription: "This app needs Bluetooth to connect to your devices.",
-        NSLocationAlwaysAndWhenInUseUsageDescription:
-          "This app needs location access to track activities even when the app is in the background.",
-        NSLocationWhenInUseUsageDescription: "This app needs your location to track activities.",
         NSMotionUsageDescription: "This app needs motion access to track your activity.",
         NSHealthShareUsageDescription:
           "This app needs access to your health data to sync your activities and biometrics.",
@@ -58,24 +62,19 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         backgroundColor: "#ffffff",
       },
       package: packageName,
-      edgeToEdgeEnabled: true,
       permissions: [
         "android.permission.BLUETOOTH_SCAN",
         "android.permission.BLUETOOTH_CONNECT",
-        "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.ACCESS_BACKGROUND_LOCATION",
         "android.permission.ACTIVITY_RECOGNITION",
         "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_LOCATION",
         "android.permission.WAKE_LOCK",
         "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
         "android.permission.POST_NOTIFICATIONS",
       ],
-      config: {
-        googleMaps: {
-          apiKey: process.env.EXPO_PUBLIC_GOOGLE_API_KEY,
-        },
-      },
+      config:
+        process.env.EXPO_PUBLIC_GOOGLE_API_KEY === undefined
+          ? {}
+          : { googleMaps: { apiKey: process.env.EXPO_PUBLIC_GOOGLE_API_KEY } },
     },
     updates:
       environment === "development"
@@ -85,31 +84,56 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         : {
             url: `https://u.expo.dev/${EAS_PROJECT_ID}`,
           },
-    runtimeVersion: {
-      policy: "appVersion",
-    },
+    runtimeVersion: environment === "development" ? "development" : RUNTIME_VERSION_POLICY,
     extra: {
       eas: {
         projectId: EAS_PROJECT_ID,
       },
       // OAuth and API configuration
+      appEnv: environment,
       redirectUri: process.env.EXPO_PUBLIC_REDIRECT_URI || `${scheme}://integrations`,
       apiUrl: process.env.EXPO_PUBLIC_API_URL,
+      sentryDsn,
+      posthogKey: process.env.EXPO_PUBLIC_POSTHOG_KEY,
+      posthogHost: process.env.EXPO_PUBLIC_POSTHOG_HOST,
     },
     plugins: [
       "expo-router",
       "expo-web-browser",
-      "expo-build-properties",
+      ...(environment === "development"
+        ? ["expo-build-properties" as NonNullable<ExpoConfig["plugins"]>[number]]
+        : [
+            [
+              "expo-build-properties",
+              {
+                android: {
+                  usesCleartextTraffic: environment === "preview",
+                },
+              },
+            ] as NonNullable<ExpoConfig["plugins"]>[number],
+          ]),
+      "@react-native-community/datetimepicker",
+      "expo-font",
+      "expo-image",
       "expo-secure-store",
-      [
-        "expo-dev-client",
-        {
-          launchMode: environment === "development" ? "launcher" : "most-recent",
-          android: {
-            launchMode: environment === "development" ? "launcher" : "most-recent",
-          },
-        },
-      ],
+      "expo-sqlite",
+      "expo-localization",
+      "expo-sharing",
+      "expo-status-bar",
+      "posthog-react-native/expo",
+      ...(environment === "development"
+        ? [
+            [
+              "expo-dev-client",
+              {
+                launchMode: "launcher",
+                android: {
+                  launchMode: "launcher",
+                },
+              },
+            ] as NonNullable<ExpoConfig["plugins"]>[number],
+          ]
+        : []),
       [
         "expo-splash-screen",
         {
@@ -117,19 +141,6 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           imageWidth: 200,
           resizeMode: "contain",
           backgroundColor: "#ffffff",
-        },
-      ],
-      [
-        "expo-location",
-        {
-          locationAlwaysAndWhenInUsePermission:
-            "Allow $(PRODUCT_NAME) to use your location to track activities.",
-          locationAlwaysPermission:
-            "Allow $(PRODUCT_NAME) to track your location even when the app is in the background.",
-          locationWhenInUsePermission:
-            "Allow $(PRODUCT_NAME) to use your location to track activities.",
-          isAndroidBackgroundLocationEnabled: true,
-          isAndroidForegroundServiceEnabled: true,
         },
       ],
       [
@@ -148,12 +159,19 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       // ],
     ],
     experiments: {
-      autolinkingModuleResolution: true,
       typedRoutes: true,
       buildCacheProvider: "eas",
     },
     owner: OWNER,
   };
+
+  return withSentry(expoConfig, {
+    disableAutoUpload: !(sentryOrganization && sentryProject && hasSentryAuthToken),
+    ...(sentryOrganization === undefined ? {} : { organization: sentryOrganization }),
+    ...(sentryProject === undefined ? {} : { project: sentryProject }),
+    useNativeInit: Boolean(sentryDsn),
+    ...(sentryDsn ? { options: createMobileSentryOptions(process.env, environment) } : {}),
+  });
 };
 
 export function getDevelopmentTransportSecurity(
@@ -168,9 +186,6 @@ export function getDevelopmentTransportSecurity(
       NSAllowsArbitraryLoads: true,
       NSExceptionDomains: {
         localhost: {
-          NSExceptionAllowsInsecureHTTPLoads: true,
-        },
-        "100.119.109.24": {
           NSExceptionAllowsInsecureHTTPLoads: true,
         },
       },

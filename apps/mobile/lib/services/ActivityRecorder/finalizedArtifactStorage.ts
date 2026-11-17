@@ -1,33 +1,22 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Directory, File } from "expo-file-system";
+import type { ActivitySubmissionQueueJob } from "../activitySubmissionQueue/types";
+import {
+  completeAcceptedRecordingEvidenceCleanup,
+  completeDiscardedRecordingEvidenceCleanup,
+  loadDueAcceptedRecordingEvidenceCleanups,
+  loadDueDiscardedRecordingEvidenceCleanups,
+  retryAcceptedRecordingEvidenceCleanup,
+  retryDiscardedRecordingEvidenceCleanup,
+  tombstoneAcceptedRecordingEvidence,
+} from "./recordingEvidenceJournal";
 import type { RecordingSessionArtifact } from "./types";
 
-const PENDING_FINALIZED_ARTIFACT_KEY = "activity-recorder:pending-finalized-artifact";
-
-export async function persistPendingFinalizedArtifact(
-  artifact: RecordingSessionArtifact,
-): Promise<void> {
-  await AsyncStorage.setItem(PENDING_FINALIZED_ARTIFACT_KEY, JSON.stringify(artifact));
-}
-
-export async function loadPendingFinalizedArtifact(): Promise<RecordingSessionArtifact | null> {
-  const raw = await AsyncStorage.getItem(PENDING_FINALIZED_ARTIFACT_KEY);
-
-  if (!raw) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(raw) as RecordingSessionArtifact;
-  } catch (error) {
-    console.warn("[finalizedArtifactStorage] Failed to parse pending artifact", error);
-    await AsyncStorage.removeItem(PENDING_FINALIZED_ARTIFACT_KEY);
-    return null;
-  }
-}
-
-export async function clearPendingFinalizedArtifact(): Promise<void> {
-  await AsyncStorage.removeItem(PENDING_FINALIZED_ARTIFACT_KEY);
+export function finalizedArtifactReferencesLocalFiles(
+  artifact: RecordingSessionArtifact | null,
+): boolean {
+  return Boolean(
+    artifact && (artifact.activityFilePath || (artifact.streamArtifactPaths?.length ?? 0) > 0),
+  );
 }
 
 export async function deleteFinalizedArtifactFiles(
@@ -44,7 +33,7 @@ export async function deleteFinalizedArtifactFiles(
         activityFile.delete();
       }
     } catch (error) {
-      console.warn("[finalizedArtifactStorage] Failed to delete activity file", error);
+      throw new Error("activity-file-delete-failed", { cause: error });
     }
   }
 
@@ -55,7 +44,80 @@ export async function deleteFinalizedArtifactFiles(
         directory.delete();
       }
     } catch (error) {
-      console.warn("[finalizedArtifactStorage] Failed to delete stream artifact", error);
+      throw new Error("stream-directory-delete-failed", { cause: error });
     }
   }
+}
+
+/**
+ * The caller supplies the durable acceptance transition (a completed exact operation).
+ * Evidence shared by any non-complete queue row is never collected.
+ */
+export async function garbageCollectAcceptedQueueEvidence(
+  job: ActivitySubmissionQueueJob,
+): Promise<boolean> {
+  if (job.status !== "complete" || !job.activityId) return false;
+  // The SQLite tombstone/delete is the durable acceptance boundary.  File
+  // deletion is intentionally after it and remains retryable if the OS fails.
+  if (!(await tombstoneAcceptedRecordingEvidence(job))) return false;
+  const sessionId = job.sessionId ?? job.draft.recordingSessionId ?? job.artifactId;
+  try {
+    await deleteFinalizedArtifactFiles({
+      activityFilePath: job.localActivityFilePath,
+      streamArtifactPaths: job.streamArtifactPaths,
+    } as RecordingSessionArtifact);
+    await completeAcceptedRecordingEvidenceCleanup(sessionId);
+  } catch (error) {
+    const category =
+      error instanceof Error && /stream-directory/.test(error.message)
+        ? "stream-directory-delete-failed"
+        : "activity-file-delete-failed";
+    await retryAcceptedRecordingEvidenceCleanup(sessionId, category);
+  }
+  return true;
+}
+
+/** Executes due accepted cleanup effects. Failed deletion remains accepted and is
+ * retried from SQLite; raw evidence is released only after success. */
+export async function garbageCollectDueAcceptedQueueEvidence(now = Date.now()): Promise<number> {
+  const due = await loadDueAcceptedRecordingEvidenceCleanups(now);
+  let cleaned = 0;
+  for (const item of due) {
+    try {
+      await deleteFinalizedArtifactFiles({
+        activityFilePath: item.activityFilePath,
+        streamArtifactPaths: item.streamArtifactPaths,
+      } as RecordingSessionArtifact);
+      await completeAcceptedRecordingEvidenceCleanup(item.sessionId);
+      cleaned += 1;
+    } catch (error) {
+      const category =
+        error instanceof Error && /stream-directory/.test(error.message)
+          ? "stream-directory-delete-failed"
+          : "activity-file-delete-failed";
+      await retryAcceptedRecordingEvidenceCleanup(item.sessionId, category, now);
+    }
+  }
+  return cleaned;
+}
+
+/** User-discarded evidence is terminal before this retryable OS effect runs. */
+export async function garbageCollectDueDiscardedRecordingEvidence(
+  now = Date.now(),
+): Promise<number> {
+  const due = await loadDueDiscardedRecordingEvidenceCleanups(now);
+  let cleaned = 0;
+  for (const item of due) {
+    try {
+      await deleteFinalizedArtifactFiles({
+        activityFilePath: item.activityFilePath,
+        streamArtifactPaths: item.streamArtifactPaths,
+      } as RecordingSessionArtifact);
+      await completeDiscardedRecordingEvidenceCleanup(item.sessionId);
+      cleaned += 1;
+    } catch {
+      await retryDiscardedRecordingEvidenceCleanup(item.sessionId);
+    }
+  }
+  return cleaned;
 }

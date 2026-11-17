@@ -1,7 +1,12 @@
+import { numericUxPolicies } from "@repo/core/utils/numeric-ux-policy";
+import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
-import { Pressable, View } from "react-native";
+import { useInputDraft } from "@repo/ui/hooks";
+import { useEffect, useRef } from "react";
+import { View } from "react-native";
 import { PlanningInputFieldRow } from "@/components/training-plan/PlanningInputFieldRow";
+import { omitUndefined } from "@/lib/omitUndefined";
 
 export interface BuilderFieldDescriptor<TKey extends string = string> {
   key: TKey;
@@ -18,6 +23,11 @@ export interface BuilderFieldDescriptor<TKey extends string = string> {
   reason: string | null;
   canRemove: boolean;
   defaultUnit?: string | null;
+  helperText?: string;
+  max?: number;
+  min?: number;
+  step?: number;
+  decimals?: number;
 }
 
 interface BuilderFieldListProps<TKey extends string> {
@@ -27,6 +37,10 @@ interface BuilderFieldListProps<TKey extends string> {
   onAddField: (fieldKey: TKey) => void;
   onChangeField: (fieldKey: TKey, value: number | null) => void;
   onRemoveField: (fieldKey: TKey) => void;
+  showSupportingText?: boolean;
+  rawDrafts?: Record<string, string> | undefined;
+  onRawDraftChange?: ((key: string, value: string) => void) | undefined;
+  onInvalidChange?: ((key: string, message: string | null) => void) | undefined;
 }
 
 function formatFieldSource(source: string, overridden?: boolean) {
@@ -40,24 +54,18 @@ function formatFieldSource(source: string, overridden?: boolean) {
   return "Not set";
 }
 
-export function getBuilderNumberStep({
-  label,
-  unitLabel,
-}: {
-  label: string;
-  unitLabel?: string | null;
-}) {
-  const normalizedLabel = label.toLowerCase();
+export function getBuilderNumberStep({ unitLabel }: { unitLabel?: string | null }) {
   const normalizedUnit = unitLabel?.toLowerCase();
 
-  if (normalizedUnit === "kg" || normalizedUnit === "cm" || normalizedUnit === "bpm") return 1;
-  if (normalizedUnit === "w" || normalizedUnit === "watts") return 5;
-  if (normalizedUnit === "h" || normalizedUnit === "hr" || normalizedUnit === "hours") return 0.5;
-  if (normalizedLabel.includes("hour")) return 0.5;
-  if (normalizedLabel.includes("ftp") || normalizedLabel.includes("power")) return 5;
-  if (normalizedLabel.includes("ctl")) return 5;
-  if (normalizedLabel.includes("tss") || normalizedLabel.includes("load")) return 10;
-  return 1;
+  if (normalizedUnit === "kg" || normalizedUnit === "lb" || normalizedUnit === "lbs")
+    return numericUxPolicies.weight.adjustmentStep;
+  if (normalizedUnit === "cm") return numericUxPolicies.count.adjustmentStep;
+  if (normalizedUnit === "bpm") return numericUxPolicies.plannedBpm.adjustmentStep;
+  if (normalizedUnit === "w" || normalizedUnit === "watts")
+    return numericUxPolicies.plannedPowerWatts.adjustmentStep;
+  if (normalizedUnit === "h" || normalizedUnit === "hr" || normalizedUnit === "hours")
+    return numericUxPolicies.durationHours.adjustmentStep;
+  return numericUxPolicies.count.adjustmentStep;
 }
 
 export function BuilderFieldList<TKey extends string>({
@@ -67,6 +75,10 @@ export function BuilderFieldList<TKey extends string>({
   onAddField,
   onChangeField,
   onRemoveField,
+  showSupportingText = true,
+  rawDrafts,
+  onRawDraftChange,
+  onInvalidChange,
 }: BuilderFieldListProps<TKey>) {
   const visibleFields = fields.filter((field) => field.visible);
   const addableFields = fields.filter((field) => !field.visible && field.inputKind === "number");
@@ -81,13 +93,16 @@ export function BuilderFieldList<TKey extends string>({
               className={index < visibleFields.length - 1 ? "border-b border-border/70" : ""}
             >
               <PlanningInputFieldRow
+                {...omitUndefined({
+                  onClear: field.canRemove ? () => onRemoveField(field.key) : undefined,
+                  supportingText: showSupportingText
+                    ? field.required
+                      ? field.reason
+                      : field.helperText ||
+                        formatFieldSource(field.value.source, field.value.overridden)
+                    : undefined,
+                })}
                 label={field.label}
-                onClear={field.canRemove ? () => onRemoveField(field.key) : undefined}
-                supportingText={
-                  field.required
-                    ? field.reason
-                    : formatFieldSource(field.value.source, field.value.overridden)
-                }
               >
                 {field.inputKind === "derived" ? (
                   <Text className="text-sm text-foreground">
@@ -95,9 +110,25 @@ export function BuilderFieldList<TKey extends string>({
                   </Text>
                 ) : (
                   <CompactNumberControl
+                    {...omitUndefined({
+                      max: field.max,
+                      min: field.min,
+                      step: field.step,
+                      decimals: field.decimals,
+                      rawValue: rawDrafts?.[field.key],
+                      unitLabel: field.value.unit ?? field.defaultUnit ?? undefined,
+                    })}
                     label={field.label}
+                    onRawChange={(value) => {
+                      onRawDraftChange?.(field.key, value);
+                    }}
+                    onInvalidChange={(invalid) => {
+                      onInvalidChange?.(
+                        field.key,
+                        invalid ? `Correct ${field.label} or clear it.` : null,
+                      );
+                    }}
                     value={field.value.value}
-                    unitLabel={field.value.unit ?? field.defaultUnit ?? undefined}
                     onChange={(value) => onChangeField(field.key, value)}
                   />
                 )}
@@ -133,41 +164,66 @@ export function BuilderFieldList<TKey extends string>({
 
 function CompactNumberControl({
   label,
+  max,
+  min = 0,
   onChange,
+  step: providedStep,
   unitLabel,
   value,
+  decimals,
+  rawValue,
+  onRawChange,
+  onInvalidChange,
 }: {
   label: string;
+  max?: number;
+  min?: number;
   onChange: (value: number | null) => void;
+  step?: number;
   unitLabel?: string;
   value: number | null;
+  decimals?: number | undefined;
+  rawValue?: string | undefined;
+  onRawChange: (value: string) => void;
+  onInvalidChange: (invalid: boolean) => void;
 }) {
-  const step = getBuilderNumberStep({ label, unitLabel });
-  const nextValue = value ?? 0;
+  const step = providedStep ?? getBuilderNumberStep(omitUndefined({ unitLabel }));
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const [draft, setDraft] = useInputDraft(rawValue ?? (value === null ? "" : String(value)));
   return (
-    <View className="flex-row items-center justify-between gap-3 rounded-2xl bg-muted/30 px-3 py-2">
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`Decrease ${label}`}
-        className="h-9 w-9 items-center justify-center rounded-full bg-background"
-        disabled={value === null || value <= 0}
-        onPress={() => onChange(value !== null && value - step > 0 ? value - step : null)}
-      >
-        <Text className="text-lg font-medium text-foreground">−</Text>
-      </Pressable>
-      <View className="min-w-0 flex-1 items-center">
-        <Text className="text-base font-semibold text-foreground">
-          {value === null ? "Not set" : `${value}${unitLabel ? ` ${unitLabel}` : ""}`}
-        </Text>
-      </View>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`Increase ${label}`}
-        className="h-9 w-9 items-center justify-center rounded-full bg-background"
-        onPress={() => onChange(nextValue + step)}
-      >
-        <Text className="text-lg font-medium text-foreground">+</Text>
-      </Pressable>
-    </View>
+    <BoundedNumberInput
+      adjustmentStep={step}
+      // Descriptors carry their semantic authoring precision. Do not invent a
+      // high-precision fallback that makes every metric look equally precise.
+      decimals={decimals ?? 2}
+      clampProjection={false}
+      onInvalidChange={(invalid) => {
+        if (mounted.current) onInvalidChange(invalid);
+      }}
+      id={`builder-${label.replaceAll(/[^a-z0-9]+/gi, "-").toLowerCase()}`}
+      label={label}
+      {...(max === undefined ? {} : { max })}
+      min={min}
+      onChange={(nextValue) => {
+        if (!mounted.current) return;
+        setDraft(nextValue);
+        onRawChange(nextValue);
+        if (!nextValue.trim()) onChange(null);
+      }}
+      onNumberChange={(nextValue) => {
+        if (!mounted.current) return;
+        // Invalid text is still being edited; it must not remove the optional field.
+        if (nextValue !== undefined) onChange(nextValue);
+      }}
+      showAdjustmentButtons
+      {...(unitLabel === undefined ? {} : { unitLabel })}
+      value={draft}
+    />
   );
 }

@@ -1,7 +1,7 @@
-import type { Href, Router } from "expo-router";
+import type { Href, ImperativeRouter } from "expo-router";
 
 const RECORD_ROUTE = "/record" as Href;
 
-export function returnToRecordScreen(router: Pick<Router, "dismissTo">) {
+export function returnToRecordScreen(router: Pick<ImperativeRouter, "dismissTo">) {
   router.dismissTo(RECORD_ROUTE);
 }

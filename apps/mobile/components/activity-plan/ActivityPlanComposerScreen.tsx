@@ -1,520 +1,328 @@
-import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from "@gorhom/bottom-sheet";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
-  calculateActivityStatsV2,
-  decodePolyline,
-  type IntensityTargetV2,
-  type IntervalStepV2,
-  type IntervalV2,
+  type ActivityPlanDraftStep,
+  type ActivityTargetCategory,
+  createUnavailableAthletePerformanceTargetFacts,
 } from "@repo/core";
+import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
 import { randomUUID } from "expo-crypto";
 import { useNavigation, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, View } from "react-native";
+import { ActivityIndicator, Alert, View } from "react-native";
 import { NestableScrollContainer } from "react-native-draggable-flatlist";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ActivityPlanBasicsSection } from "@/components/activity-plan/ActivityPlanBasicsSection";
-import { ActivityPlanRouteSection } from "@/components/activity-plan/ActivityPlanRouteSection";
+import { ActivityPlanContentPreview } from "@/components/activity-plan/ActivityPlanContentPreview";
+import { ActivityPlanEstimatePresentation } from "@/components/activity-plan/ActivityPlanEstimatePresentation";
+import { StepEditorDialog } from "@/components/activity-plan/activity/StepEditorDialog";
+import {
+  canRetainSavedMobileActivityPlanEstimateMetrics,
+  resolveMobileActivityPlanEstimateMetrics,
+} from "@/components/activity-plan/resolveMobileActivityPlanEstimateMetrics";
 import { StructureBuilderCard } from "@/components/activity-plan/structure/StructureBuilderCard";
-import { StructureIntervalSheet } from "@/components/activity-plan/structure/StructureIntervalSheet";
+import { useActivityPlanBasicsForm } from "@/components/activity-plan/useActivityPlanBasicsForm";
 import { useActivityPlanComposerProcess } from "@/components/activity-plan/useActivityPlanComposerProcess";
-import { useActivityPlanRouteUpload } from "@/components/activity-plan/useActivityPlanRouteUpload";
-import { StepEditorDialog } from "@/components/activity-plan/workout/StepEditorDialog";
+import { createIncompleteActivityPlanStep } from "@/lib/activityPlanDefaults";
 import { api } from "@/lib/api";
-import { buildPlanRoute } from "@/lib/constants/routes";
 import { useActivityPlanForm } from "@/lib/hooks/forms/useActivityPlanForm";
+import { useAuth } from "@/lib/hooks/useAuth";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { useActivityPlanCreationStore } from "@/lib/stores/activityPlanCreation";
 
 export type ActivityPlanComposerModeContract =
-  | {
-      mode: "create";
-      planId?: never;
-    }
-  | {
-      mode: "edit";
-      planId: string;
-    };
+  | { mode: "create"; planId?: never }
+  | { mode: "edit"; planId: string };
 
-type ActivityCategory = "run" | "bike" | "swim" | "strength" | "other";
-const STRUCTURE_CHART_HINT_KEY = "activity-plan-structure-chart-hint-seen-v1";
-
-const createDefaultTarget = (category: ActivityCategory): IntensityTargetV2 => {
-  if (category === "bike") {
-    return { type: "%FTP", intensity: 75 };
-  }
-  if (category === "run") {
-    return { type: "%MaxHR", intensity: 75 };
-  }
-  return { type: "RPE", intensity: 5 };
-};
-
-const createDefaultStep = (category: ActivityCategory): IntervalStepV2 => ({
-  id: randomUUID(),
-  name: "New Step",
-  duration: { type: "time", seconds: 300 },
-  targets: [createDefaultTarget(category)],
-});
-
-const createDefaultInterval = (category: ActivityCategory, index: number): IntervalV2 => ({
-  id: randomUUID(),
-  name: `Interval ${index + 1}`,
-  repetitions: 1,
-  steps: [createDefaultStep(category)],
-});
-
-export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContract) {
+/** V5 authoring surface: an ordered sequence of standalone steps and repeat groups. */
+export function ActivityPlanComposerScreen(
+  props: ActivityPlanComposerModeContract & {
+    initialActivityCategory?: ActivityTargetCategory;
+    isFlowCurrent?: () => boolean;
+  },
+) {
   const isEditMode = props.mode === "edit";
   const router = useRouter();
   const navigation = useNavigation();
+  const { profile } = useAuth();
   const allowNavigationRef = useRef(false);
-  const structureStepSheetRef = useRef<BottomSheet>(null);
-
-  const [editingIntervalId, setEditingIntervalId] = useState<string | null>(null);
-  const [editingStepId, setEditingStepId] = useState<string | null>(null);
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [selectedIntervalId, setSelectedIntervalId] = useState<string | null>(null);
-  const [showChartCoachmark, setShowChartCoachmark] = useState(false);
-  const [undoState, setUndoState] = useState<{
-    message: string;
-    onUndo: () => void;
+  const { bottom } = useSafeAreaInsets();
+  const [editingStep, setEditingStep] = useState<{
+    step: ActivityPlanDraftStep;
+    isNew: boolean;
   } | null>(null);
-  const undoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
+  const [saveAttempted, setSaveAttempted] = useState(false);
   const {
-    addInterval,
-    addStepToInterval,
-    updateStepInInterval,
-    removeInterval,
-    removeStepFromInterval,
-    updateInterval,
-    copyInterval,
-    setStructure,
+    insertItem,
+    removeItem,
+    duplicateItem,
+    moveItem,
+    ungroupRepeat,
+    updateStep,
+    updateRepeatCount,
   } = useActivityPlanCreationStore();
-
+  const { data: viewerReadModel, isLoading: athleteFactsLoading } =
+    api.athleteIntelligence.getReadModel.useQuery(
+      { sections: { publishedState: true } },
+      { enabled: Boolean(profile), refetchOnWindowFocus: false },
+    );
+  const unavailablePerformanceTargets = useMemo(
+    () => createUnavailableAthletePerformanceTargetFacts(new Date().toISOString()),
+    [],
+  );
   const {
     form,
     setName,
     setDescription,
     setActivityCategory,
-    setRouteId,
     submit,
     validation,
-    canSubmit,
     isSubmitting,
     isLoading,
-  } = useActivityPlanForm({
-    planId: isEditMode ? props.planId : undefined,
-    onSuccess: (planId) => {
-      allowNavigationRef.current = true;
-      if (isEditMode) {
-        Alert.alert("Success", "Activity plan updated successfully.");
-        router.back();
-        return;
-      }
-
-      Alert.alert("Success", "Activity plan created successfully!", [
-        {
-          text: "Schedule Now",
-          onPress: () => {
-            router.replace(buildPlanRoute(planId, "schedule") as any);
-          },
-        },
-        {
-          text: "View Plan",
-          onPress: () => {
-            router.replace(buildPlanRoute(planId) as any);
-          },
-        },
-      ]);
-    },
-    onError: () => {
-      Alert.alert(
-        "Error",
-        `Failed to ${isEditMode ? "update" : "save"} activity plan. Please try again.`,
-      );
-    },
-  });
-
-  const showUndoToast = (message: string, onUndo: () => void) => {
-    if (undoTimeoutRef.current) {
-      clearTimeout(undoTimeoutRef.current);
-      undoTimeoutRef.current = null;
-    }
-
-    const undo = () => {
-      if (undoTimeoutRef.current) {
-        clearTimeout(undoTimeoutRef.current);
-        undoTimeoutRef.current = null;
-      }
-      onUndo();
-      setUndoState(null);
-    };
-
-    setUndoState({ message, onUndo: undo });
-    undoTimeoutRef.current = setTimeout(() => {
-      setUndoState(null);
-      undoTimeoutRef.current = null;
-    }, 5000);
-  };
-
-  const dismissChartCoachmark = () => {
-    setShowChartCoachmark(false);
-    AsyncStorage.setItem(STRUCTURE_CHART_HINT_KEY, "1").catch(() => null);
-  };
-
-  const intervals = form.structure.intervals || [];
-
-  const stepBeingEdited = useMemo(() => {
-    if (!editingIntervalId || !editingStepId) {
-      return undefined;
-    }
-
-    const interval = intervals.find((item) => item.id === editingIntervalId);
-    return interval?.steps.find((item) => item.id === editingStepId);
-  }, [editingIntervalId, editingStepId, intervals]);
-
-  const routeQuery = api.routes.get.useQuery({ id: form.routeId! }, { enabled: !!form.routeId });
-  const { isUploadingRoute, pickGpxFile } = useActivityPlanRouteUpload({
-    planName: form.name,
-    onRouteUploaded: setRouteId,
-  });
-
-  const structureStats = useMemo(() => {
-    if (intervals.length === 0) {
-      return {
-        durationMs: 0,
-        stepCount: 0,
-        estimatedTSS: 0,
-        distanceMeters: 0,
-      };
-    }
-
-    const stats = calculateActivityStatsV2({ version: 2, intervals });
-    let stepCount = 0;
-    let distanceMeters = 0;
-
-    intervals.forEach((interval) => {
-      stepCount += interval.steps.length * interval.repetitions;
-      interval.steps.forEach((step) => {
-        if (step.duration.type === "distance") {
-          distanceMeters += step.duration.meters * interval.repetitions;
+    isEditBlocked,
+    editStatus,
+    hydrationVersion,
+    persistedMetrics,
+    hydratedEditPlanId,
+    hydratedStructure,
+    reloadFromServer,
+    retryLoad,
+    submitError,
+  } = useActivityPlanForm(
+    omitUndefined({
+      planId: isEditMode ? props.planId : undefined,
+      ...(props.isFlowCurrent ? { isCurrent: props.isFlowCurrent } : {}),
+      onSuccess: (planId: string) => {
+        if (props.isFlowCurrent && !props.isFlowCurrent()) return;
+        allowNavigationRef.current = true;
+        if (isEditMode) {
+          router.back();
+          return;
         }
-      });
-    });
-
-    return {
-      durationMs: Math.round(stats.totalDuration * 1000),
-      stepCount,
-      estimatedTSS: stats.estimatedTSS,
-      distanceMeters,
-    };
-  }, [intervals]);
-
-  const selectedInterval = selectedIntervalId
-    ? intervals.find((interval) => interval.id === selectedIntervalId)
-    : undefined;
-  const selectedIntervalIndex = selectedInterval
-    ? intervals.findIndex((interval) => interval.id === selectedInterval.id)
-    : -1;
-  const structureStepSheetSnapPoints = useMemo(() => ["68%", "92%"], []);
-
+        router.replace({ pathname: "/activity-plan-detail", params: { planId } });
+      },
+      onError: () =>
+        Alert.alert(
+          "Error",
+          `Failed to ${isEditMode ? "update" : "save"} activity plan. Please try again.`,
+        ),
+      onConflict: () =>
+        Alert.alert(
+          "Plan changed elsewhere",
+          "Your edits are still here. Reloading replaces them with the latest plan.",
+          [
+            { text: "Keep editing", style: "cancel" },
+            { text: "Reload server plan", onPress: () => void reloadFromServer() },
+          ],
+        ),
+    }),
+  );
+  // Do not turn an untouched composer into a wall of errors. After Save, keep
+  // recovery focused on the first actionable boundary issue.
+  const visibleValidationErrors = useMemo(() => {
+    if (!saveAttempted) return {};
+    const firstKey = Object.keys(validation.errors)[0];
+    return firstKey ? { [firstKey]: validation.errors[firstKey] } : {};
+  }, [saveAttempted, validation.errors]);
+  const basicsForm = useActivityPlanBasicsForm(
+    omitUndefined({
+      description: form.description,
+      name: form.name,
+      nameError: visibleValidationErrors.name,
+      onDescriptionChange: setDescription,
+      onNameChange: setName,
+    }),
+  );
+  const items = form.structure.items;
+  const activityCategory = form.activityCategory;
+  const addStep = (repeatId?: string) => {
+    if (!activityCategory) return;
+    const step = createIncompleteActivityPlanStep();
+    const repeat = repeatId
+      ? items.find(
+          (item): item is Extract<typeof item, { type: "repeat" }> =>
+            item.type === "repeat" && item.id === repeatId,
+        )
+      : undefined;
+    const inserted = insertItem(
+      step,
+      repeatId ? { repeatId, index: repeat?.steps.length ?? 0 } : undefined,
+    );
+    if (inserted.success) setEditingStep({ step, isNew: true });
+  };
+  const appliedInitialCategory = useRef(false);
+  useEffect(() => {
+    if (
+      !appliedInitialCategory.current &&
+      !isEditMode &&
+      !activityCategory &&
+      props.initialActivityCategory
+    ) {
+      appliedInitialCategory.current = true;
+      setActivityCategory(props.initialActivityCategory);
+    }
+  }, [activityCategory, isEditMode, props.initialActivityCategory, setActivityCategory]);
+  const retainsSavedMetricsWhileFactsLoad = canRetainSavedMobileActivityPlanEstimateMetrics({
+    athleteFactsLoading,
+    editPlanId: props.planId,
+    hydratedPlanId: hydratedEditPlanId,
+    hydratedStructure,
+    isEditMode,
+    structure: form.structure,
+  });
+  const draftMetrics = useMemo(
+    () =>
+      resolveMobileActivityPlanEstimateMetrics({
+        structure: form.structure,
+        performanceTargets:
+          viewerReadModel?.publishedState?.performanceTargets ??
+          (retainsSavedMetricsWhileFactsLoad ? undefined : unavailablePerformanceTargets),
+        persistedMetrics,
+      }),
+    [
+      form.structure,
+      unavailablePerformanceTargets,
+      viewerReadModel?.publishedState?.performanceTargets,
+      persistedMetrics,
+      retainsSavedMetricsWhileFactsLoad,
+    ],
+  );
   useActivityPlanComposerProcess({
-    activityCategory: form.activityCategory,
+    activityCategory: activityCategory ?? "",
     allowNavigationRef,
-    canSubmit,
     description: form.description,
     isEditMode,
+    isEditBlocked,
+    hydrationVersion,
     isLoading,
     isSubmitting,
     name: form.name,
     navigation,
-    notes: form.notes,
-    routeId: form.routeId,
     structure: form.structure,
     submit,
+    onAttempt: () => setSaveAttempted(true),
   });
-
-  useEffect(() => {
-    AsyncStorage.getItem(STRUCTURE_CHART_HINT_KEY)
-      .then((value) => {
-        if (!value) {
-          setShowChartCoachmark(true);
-        }
-      })
-      .catch(() => {
-        setShowChartCoachmark(true);
-      });
-
-    return () => {
-      if (undoTimeoutRef.current) {
-        clearTimeout(undoTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!selectedInterval) {
-      structureStepSheetRef.current?.close();
-    }
-  }, [selectedInterval]);
-
-  const openIntervalSheet = (intervalId: string) => {
-    if (showChartCoachmark) {
-      dismissChartCoachmark();
-    }
-    setSelectedIntervalId(intervalId);
-    requestAnimationFrame(() => {
-      structureStepSheetRef.current?.snapToIndex(1);
-    });
-  };
-
-  const handleAddInterval = () => {
-    addInterval(createDefaultInterval(form.activityCategory, intervals.length));
-  };
-
-  const handleRemoveInterval = (intervalId: string) => {
-    const previousStructure = form.structure;
-    removeInterval(intervalId);
-    if (selectedIntervalId === intervalId) {
-      setSelectedIntervalId(null);
-      structureStepSheetRef.current?.close();
-    }
-    showUndoToast("Interval deleted", () => {
-      setStructure(previousStructure);
-      setSelectedIntervalId(intervalId);
-      requestAnimationFrame(() => {
-        structureStepSheetRef.current?.snapToIndex(1);
-      });
-    });
-  };
-
-  const handleDeleteStep = (intervalId: string, stepId: string) => {
-    const previousStructure = form.structure;
-    removeStepFromInterval(intervalId, stepId);
-    showUndoToast("Step deleted", () => {
-      setStructure(previousStructure);
-      setSelectedIntervalId(intervalId);
-      requestAnimationFrame(() => {
-        structureStepSheetRef.current?.snapToIndex(1);
-      });
-    });
-  };
-
-  const handleChangeIntervalRepetitions = (interval: IntervalV2, value: number) => {
-    updateInterval(interval.id, {
-      ...interval,
-      repetitions: Number.isFinite(value) ? value : 0,
-    });
-  };
-
-  const openAddStep = (intervalId: string) => {
-    setEditingIntervalId(intervalId);
-    setEditingStepId(null);
-    setEditDialogOpen(true);
-  };
-
-  const openEditStep = (intervalId: string, stepId: string) => {
-    setEditingIntervalId(intervalId);
-    setEditingStepId(stepId);
-    setEditDialogOpen(true);
-  };
-
-  const handleSaveStep = (step: IntervalStepV2) => {
-    if (!editingIntervalId) {
-      return;
-    }
-
-    if (editingStepId) {
-      updateStepInInterval(editingIntervalId, editingStepId, step);
-    } else {
-      addStepToInterval(editingIntervalId, step);
-    }
-
-    setEditDialogOpen(false);
-    setEditingIntervalId(null);
-    setEditingStepId(null);
-  };
-
-  if (isLoading) {
+  if (isLoading)
     return (
-      <View className="flex-1 bg-background items-center justify-center">
+      <View className="flex-1 items-center justify-center bg-background">
         <ActivityIndicator size="large" />
-        <Text className="text-muted-foreground mt-3">Loading plan...</Text>
+        <Text className="mt-3 text-muted-foreground">Loading plan...</Text>
       </View>
     );
-  }
-
-  const routeCoordinates = routeQuery.data?.polyline
-    ? decodePolyline(routeQuery.data.polyline)
-    : null;
-
-  const issueMaps = (() => {
-    const intervalIssues: Record<string, { interval: number; step: number; total: number }> = {};
-    const stepIssueCountsByInterval: Record<string, Record<string, number>> = {};
-
-    Object.entries(validation.errors).forEach(([key]) => {
-      if (key.startsWith("interval:")) {
-        const [, intervalId] = key.split(":");
-        if (!intervalId) {
-          return;
-        }
-        const current = intervalIssues[intervalId] ?? {
-          interval: 0,
-          step: 0,
-          total: 0,
-        };
-        current.interval += 1;
-        current.total += 1;
-        intervalIssues[intervalId] = current;
-        return;
-      }
-
-      if (key.startsWith("step:")) {
-        const [, intervalId, stepId] = key.split(":");
-        if (!intervalId || !stepId) {
-          return;
-        }
-        const current = intervalIssues[intervalId] ?? {
-          interval: 0,
-          step: 0,
-          total: 0,
-        };
-        current.step += 1;
-        current.total += 1;
-        intervalIssues[intervalId] = current;
-
-        const stepIssues = stepIssueCountsByInterval[intervalId] ?? {};
-        stepIssues[stepId] = (stepIssues[stepId] ?? 0) + 1;
-        stepIssueCountsByInterval[intervalId] = stepIssues;
-      }
-    });
-
-    return {
-      intervalIssues,
-      stepIssueCountsByInterval,
-    };
-  })();
-
+  if (isEditBlocked)
+    return (
+      <View className="flex-1 items-center justify-center gap-3 bg-background p-6">
+        <Text accessibilityRole="header" className="text-lg font-semibold">
+          Plan unavailable
+        </Text>
+        <Text className="text-center text-muted-foreground">
+          {editStatus === "error"
+            ? "The latest plan could not be loaded. Your changes have been kept."
+            : "This plan uses an unsupported activity structure and was not changed."}
+        </Text>
+        {editStatus === "error" ? (
+          <Button onPress={() => void retryLoad()}>
+            <Text>Retry</Text>
+          </Button>
+        ) : null}
+        <Button onPress={() => router.back()}>
+          <Text>Back to plans</Text>
+        </Button>
+      </View>
+    );
   return (
     <View className="flex-1 bg-background">
-      <NestableScrollContainer className="flex-1 p-4" showsVerticalScrollIndicator={false}>
-        <View className="gap-4 pb-10">
-          <ActivityPlanBasicsSection
-            activityCategory={form.activityCategory}
-            description={form.description}
-            errors={validation.errors}
-            name={form.name}
-            onChangeActivityCategory={(category) =>
-              setActivityCategory(category as ActivityCategory)
-            }
-            onChangeDescription={setDescription}
-            onChangeName={setName}
-          />
-
-          <ActivityPlanRouteSection
-            coordinates={routeCoordinates}
-            error={validation.errors.route_id}
-            isUploadingRoute={isUploadingRoute}
-            onClearRoute={() => setRouteId(null)}
-            onPickRoute={pickGpxFile}
-            onSelectRoute={setRouteId}
-            route={routeQuery.data}
-            routeId={form.routeId}
-          />
-
-          <StructureBuilderCard
-            structure={form.structure}
-            intervals={intervals}
-            structureStats={structureStats}
-            validationErrors={validation.errors}
-            selectedIntervalId={selectedIntervalId}
-            showChartCoachmark={showChartCoachmark}
-            onAddInterval={handleAddInterval}
-            onDismissChartCoachmark={dismissChartCoachmark}
-            onTimelineIntervalPress={openIntervalSheet}
-          />
+      {submitError ? (
+        <Text accessibilityRole="alert" className="px-6 text-destructive">
+          {submitError}
+        </Text>
+      ) : null}
+      <NestableScrollContainer
+        className="flex-1"
+        contentContainerStyle={{
+          paddingHorizontal: 16,
+          paddingTop: 16,
+          paddingBottom: Math.max(24, bottom + 16),
+        }}
+      >
+        <View className="gap-6" pointerEvents={isSubmitting ? "none" : "auto"}>
+          <View className="gap-4 rounded-3xl border border-border bg-card p-4">
+            <ActivityPlanBasicsSection
+              disabled={isSubmitting}
+              activityCategory={activityCategory ?? ""}
+              {...omitUndefined({
+                activityCategoryError: visibleValidationErrors.activity_category,
+              })}
+              form={basicsForm}
+              onChangeActivityCategory={(value) =>
+                setActivityCategory(value as ActivityTargetCategory)
+              }
+            />
+            <ActivityPlanEstimatePresentation metrics={draftMetrics} />
+          </View>
+          <View className="gap-2" testID="activity-plan-draft-timeline">
+            <ActivityPlanContentPreview plan={{ structure: form.structure }} size="medium" />
+          </View>
+          {activityCategory ? (
+            <StructureBuilderCard
+              activityCategory={activityCategory}
+              items={items}
+              validationErrors={visibleValidationErrors}
+              onEditStep={(step) => setEditingStep({ step, isNew: false })}
+              onAddStep={addStep}
+              onAddRepeat={() => {
+                insertItem({ type: "repeat", id: randomUUID(), count: 2, steps: [] });
+              }}
+              onRemove={removeItem}
+              onDuplicate={duplicateItem}
+              onUngroup={ungroupRepeat}
+              onMove={moveItem}
+              onRepeatCount={updateRepeatCount}
+            />
+          ) : (
+            <Text className="text-sm text-muted-foreground">
+              Choose an activity category before adding steps.
+            </Text>
+          )}
         </View>
       </NestableScrollContainer>
-
-      <StepEditorDialog
-        open={editDialogOpen}
-        onOpenChange={setEditDialogOpen}
-        step={stepBeingEdited}
-        onSave={handleSaveStep}
-        activityType={form.activityCategory}
-      />
-
-      <BottomSheet
-        ref={structureStepSheetRef}
-        index={-1}
-        snapPoints={structureStepSheetSnapPoints}
-        enableDynamicSizing={false}
-        enablePanDownToClose
-        onClose={() => {
-          setSelectedIntervalId(null);
-        }}
-        backdropComponent={(props) => (
-          <BottomSheetBackdrop
-            {...props}
-            appearsOnIndex={0}
-            disappearsOnIndex={-1}
-            opacity={0.45}
-            pressBehavior="close"
-          />
-        )}
+      <View
+        className="flex-row gap-2 border-t border-border bg-background px-4 py-3"
+        style={{ paddingBottom: Math.max(12, bottom) }}
       >
-        {selectedInterval ? (
-          <BottomSheetScrollView
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: 24 }}
-          >
-            <StructureIntervalSheet
-              interval={selectedInterval}
-              intervalIndex={selectedIntervalIndex >= 0 ? selectedIntervalIndex : 0}
-              intervalIssue={issueMaps.intervalIssues[selectedInterval.id]}
-              stepIssueCounts={issueMaps.stepIssueCountsByInterval[selectedInterval.id] ?? {}}
-              onAdjustRepetitions={(delta) =>
-                handleChangeIntervalRepetitions(
-                  selectedInterval,
-                  selectedInterval.repetitions + delta,
-                )
-              }
-              onAddStep={() => {
-                openAddStep(selectedInterval.id);
-                structureStepSheetRef.current?.close();
-              }}
-              onDuplicateInterval={() => copyInterval(selectedInterval.id)}
-              onDeleteInterval={() => {
-                handleRemoveInterval(selectedInterval.id);
-                structureStepSheetRef.current?.close();
-              }}
-              onDeleteStep={(stepId) => {
-                handleDeleteStep(selectedInterval.id, stepId);
-              }}
-              onEditStep={(stepId) => {
-                openEditStep(selectedInterval.id, stepId);
-                structureStepSheetRef.current?.close();
-              }}
-            />
-          </BottomSheetScrollView>
-        ) : null}
-      </BottomSheet>
-
-      {undoState ? (
-        <View className="absolute bottom-4 left-4 right-4 rounded-lg border border-border bg-card px-3 py-2">
-          <View className="flex-row items-center justify-between gap-3">
-            <Text className="flex-1 text-sm text-foreground">{undoState.message}</Text>
-            <Pressable
-              onPress={undoState.onUndo}
-              className="min-h-11 items-center justify-center rounded-md px-3"
-              accessibilityRole="button"
-              accessibilityLabel="Undo"
-              accessibilityHint="Restores the deleted item"
-            >
-              <Text className="text-sm font-semibold text-primary">Undo</Text>
-            </Pressable>
-          </View>
-        </View>
+        <Button
+          disabled={!activityCategory || isSubmitting}
+          variant="ghost"
+          onPress={() => addStep()}
+          accessibilityLabel="Add step"
+          testID="activity-plan-add-step"
+        >
+          <Text>Add Step</Text>
+        </Button>
+        <Button
+          disabled={!activityCategory || isSubmitting}
+          variant="ghost"
+          onPress={() => insertItem({ type: "repeat", id: randomUUID(), count: 2, steps: [] })}
+          accessibilityLabel="Add repeat"
+          testID="activity-plan-add-repeat"
+        >
+          <Text>Add Repeat</Text>
+        </Button>
+      </View>
+      {editingStep && activityCategory ? (
+        <StepEditorDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setEditingStep(null);
+          }}
+          step={editingStep.step}
+          activityCategory={activityCategory}
+          isNew={editingStep.isNew}
+          onDiscard={editingStep.isNew ? () => removeItem(editingStep.step.id) : undefined}
+          onSave={(step) => {
+            const outcome = updateStep(step);
+            if (!outcome.success) throw new Error(outcome.error);
+          }}
+        />
       ) : null}
     </View>
   );

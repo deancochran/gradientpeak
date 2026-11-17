@@ -1,123 +1,36 @@
+import type {
+  ActivityPlanDetail,
+  ActivityPlanSummary as ActivityPlanSummaryProjection,
+  ScheduledActivityPlanSummary,
+} from "@repo/core";
+import { deriveActivityPlanPresentation } from "@repo/core/activity-plan";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { format } from "date-fns";
-import { Calendar } from "lucide-react-native";
-import { View } from "react-native";
+import { Calendar, MessageCircle, Share2 } from "lucide-react-native";
+import { useMemo } from "react";
+import { Alert, Share, View } from "react-native";
 import { ActivityPlanContentPreview } from "@/components/activity-plan/ActivityPlanContentPreview";
-import { api } from "@/lib/api";
-import { getActivityCategoryConfig, getActivityConfig } from "@/lib/constants/activities";
+import { useEntityCommentsSheet } from "@/components/social/EntityCommentsSheetProvider";
+import { getUniqueActivityCategoryConfigs } from "@/lib/constants/activities";
 import { useResourceLike } from "@/lib/hooks/useResourceLike";
+import { omitUndefined } from "@/lib/omitUndefined";
+import { getPublicShareUrl } from "@/lib/share/public-share-url";
 import { ActivityPlanSummary } from "./ActivityPlanSummary";
-import type { EntityOwner } from "./EntityOwnerRow";
 import {
+  ResourceCardActionButton,
   ResourceCardShell,
+  ResourceCategoryItems,
   ResourceLikeButton,
   ResourceOwnerActionRow,
 } from "./ResourceCardPrimitives";
 
-// ============================================
-// TYPES
-// ============================================
-
-// Database object types
-export interface ActivityPlan {
-  id: string;
-  name: string;
-  activity_category: string;
-  description?: string | null;
-  structure?: unknown;
-  authoritative_metrics?: {
-    estimated_duration?: number | null;
-    estimated_tss?: number | null;
-    intensity_factor?: number | null;
-    estimated_distance?: number | null;
-  } | null;
-  route?: {
-    distance?: number | null;
-    ascent?: number | null;
-    descent?: number | null;
-  } | null;
-  route_id?: string | null;
-  notes?: string | null;
-  profile_id?: string | null;
-  template_visibility?: string | null;
-  is_public?: boolean | null;
-  is_system_template?: boolean | null;
-  created_at?: string;
-  updated_at?: string;
-  likes_count?: number | null;
-  has_liked?: boolean;
-  owner?: EntityOwner | null;
-}
-
-export interface PlannedActivity {
-  id: string;
-  activity_plan_id: string;
-  activity_plan?: ActivityPlan;
-  scheduled_date: string;
-  notes?: string | null;
-  completed_activity_id?: string | null;
-  profile_id?: string;
-  created_at?: string;
-  updated_at?: string;
-}
-
-type ActivityPlanCardRoute = {
-  id?: string | null;
-  name?: string | null;
-  polyline?: string | null;
-  total_distance?: number | null;
-  distance?: number | null;
-  total_ascent?: number | null;
-  ascent?: number | null;
-  total_descent?: number | null;
-  descent?: number | null;
-};
-
-type ActivityPlanCardFullRoute = {
-  coordinates?: Array<{ latitude: number; longitude: number; altitude?: number }>;
-};
-
-// Legacy data interface (for backwards compatibility)
-export interface ActivityPlanCardData {
-  id: string;
-  name: string;
-  activityType: string; // activity_category
-  description?: string;
-  structure?: unknown;
-  estimatedDuration?: number; // in seconds
-  estimatedTss?: number;
-  intensityFactor?: number;
-  estimatedDistance?: number; // in km, if route provided
-  routeId?: string;
-  routeName?: string;
-  notes?: string;
-  createdAt?: string;
-  updatedAt?: string;
-
-  // Scheduling info (optional)
-  scheduledDate?: string; // ISO date string
-  isCompleted?: boolean;
-
-  likes_count?: number | null;
-  has_liked?: boolean;
-  owner?: EntityOwner | null;
-}
-
 interface ActivityPlanCardProps {
-  // New flexible prop: accepts activity_plan directly, or planned_activity with nested activity_plan
-  activityPlan?: ActivityPlan;
-  plannedActivity?: PlannedActivity;
-
-  // Legacy support: accepts pre-formatted data
-  activity?: ActivityPlanCardData;
-
+  plan: ActivityPlanSummaryProjection | ActivityPlanDetail | ScheduledActivityPlanSummary;
   onPress?: () => void;
-  loadRoutePreview?: boolean;
-  route?: ActivityPlanCardRoute | null;
-  routeFull?: ActivityPlanCardFullRoute | null;
+  onCommentPress?: () => void;
   testID?: string;
-  variant?: "default" | "compact" | "hero";
+  variant?: "default" | "compact";
   showScheduleInfo?: boolean; // Show date/time badge
 }
 
@@ -126,38 +39,30 @@ interface ActivityPlanCardProps {
 // ============================================
 
 export function ActivityPlanCard({
-  activityPlan,
-  plannedActivity,
-  activity: legacyActivity,
-  loadRoutePreview = false,
+  plan,
   onPress,
-  route: routeProp,
-  routeFull: routeFullProp,
+  onCommentPress,
   testID,
   variant = "default",
   showScheduleInfo = false,
 }: ActivityPlanCardProps) {
-  // Transform database objects to internal format
-  const activity = legacyActivity || transformToCardData(activityPlan, plannedActivity);
-
-  // Determine card size based on variant
   const isCompact = variant === "compact";
-  const isHero = variant === "hero";
-  const activityConfig = activity.activityType.includes("_")
-    ? getActivityConfig(activity.activityType)
-    : getActivityCategoryConfig(activity.activityType);
-
-  const routeId = activity.routeId;
-  const { data: fetchedRoute } = api.routes.get.useQuery(
-    { id: routeId ?? "" },
-    { enabled: loadRoutePreview && !!routeId && !routeProp },
+  const entityCommentsSheet = useEntityCommentsSheet();
+  const presentation = useMemo(
+    () => deriveActivityPlanPresentation(plan.structure),
+    [plan.structure],
   );
-  const { data: routeFull } = api.routes.loadFull.useQuery(
-    { id: routeId ?? "" },
-    { enabled: loadRoutePreview && !!routeId && !routeFullProp },
-  );
-  const route = (routeProp ?? fetchedRoute ?? null) as ActivityPlanCardRoute | null;
-  const resolvedRouteFull = routeFullProp ?? routeFull ?? null;
+  const scheduledDate =
+    plan.contractVersion === "scheduled-activity-plan-summary-v1"
+      ? (plan.schedule.startsAt ?? plan.schedule.calendarDate)
+      : null;
+  const categoryItems = getUniqueActivityCategoryConfigs([
+    presentation?.activity_category ?? plan.activityCategory,
+  ]).map((activity_category) => ({
+    icon: activity_category.icon,
+    iconClassName: activity_category.color,
+    label: activity_category.name,
+  }));
 
   const {
     isLiked,
@@ -165,162 +70,149 @@ export function ActivityPlanCard({
     likeCount,
     toggleLike,
   } = useResourceLike({
-    entityId: activity.id,
+    entityId: plan.id,
     entityType: "activity_plan",
-    initialCount: activity.likes_count,
-    initialLiked: activity.has_liked,
+    initialCount: plan.engagement.likes,
+    initialLiked: plan.engagement.viewerHasLiked,
   });
+  const handleCommentPress =
+    onCommentPress ??
+    (entityCommentsSheet
+      ? () =>
+          entityCommentsSheet.openEntityComments({
+            entityId: plan.id,
+            entityType: "activity_plan",
+          })
+      : undefined);
+  const handleShare = async () => {
+    if (plan.visibility !== "public") {
+      Alert.alert(
+        "Not public",
+        "Only public activity plans have a share link. Change visibility to Public first.",
+      );
+      return;
+    }
+
+    const url = getPublicShareUrl(`/share/activity-plans/${plan.id}`);
+    try {
+      await Share.share({ message: url, url });
+    } catch {
+      Alert.alert("Unable to share", "The activity plan could not be shared. Try again.");
+    }
+  };
 
   return (
     <ResourceCardShell
-      cardClassName={activity.isCompleted ? "opacity-60" : undefined}
+      {...omitUndefined({
+        accessibilityLabel: onPress ? `Open activity plan ${plan.name}` : undefined,
+        actionRegion: isCompact ? undefined : (
+          <ResourceOwnerActionRow
+            actions={
+              <ResourceCardActionButton
+                accessibilityLabel="Share activity plan"
+                onPress={() => void handleShare()}
+                testID={`activity-plan-card-share-button-${plan.id}`}
+              >
+                <View className="flex-row items-center rounded-full bg-muted px-2.5 py-1.5">
+                  <Icon as={Share2} size={14} className="text-muted-foreground" />
+                  <Text className="ml-1 text-xs font-medium text-muted-foreground">Share</Text>
+                </View>
+              </ResourceCardActionButton>
+            }
+            compact={isCompact}
+            categoryItems={categoryItems}
+            fallbackLabel="GradientPeak"
+            owner={
+              plan.owner
+                ? {
+                    id: plan.owner.id,
+                    username: plan.owner.username,
+                    avatar_url: plan.owner.avatarUrl,
+                  }
+                : null
+            }
+          />
+        ),
+      })}
+      {...omitUndefined({
+        cardClassName:
+          plan.contractVersion === "scheduled-activity-plan-summary-v1" &&
+          plan.schedule.status === "completed"
+            ? "opacity-60"
+            : undefined,
+      })}
       compact={isCompact}
       contentClassName={isCompact ? "gap-3 px-2" : "gap-3 px-3"}
-      highlighted={isHero}
-      onPress={onPress}
-      testID={testID ?? `activity-plan-card-${activity.id}`}
+      {...omitUndefined({ onPress })}
+      testID={testID ?? `activity-plan-card-${plan.id}`}
     >
-      <ResourceOwnerActionRow
-        actions={
+      {isCompact ? <ResourceCategoryItems items={categoryItems} /> : null}
+
+      <ActivityPlanSummary
+        description={plan.description}
+        owner={
+          plan.owner
+            ? { id: plan.owner.id, username: plan.owner.username, avatar_url: plan.owner.avatarUrl }
+            : null
+        }
+        presentation={presentation}
+        projectionMetrics={plan.metrics}
+        structure={plan.structure}
+        title={plan.name}
+        variant="standalone"
+        showAttribution={false}
+      />
+
+      <ActivityPlanContentPreview
+        compact={isCompact}
+        size={isCompact ? "small" : "medium"}
+        plan={{ structure: plan.structure }}
+        presentation={presentation}
+        testIDPrefix={`activity-plan-card-preview-${plan.id}`}
+      />
+
+      {!isCompact ? (
+        <View className="flex-row items-center gap-2" testID="activity-plan-card-social-actions">
           <ResourceLikeButton
             disabled={isLikePending}
             isLiked={isLiked}
             likeCount={likeCount}
             onPress={toggleLike}
+            testID={`activity-plan-card-like-button-${plan.id}`}
           />
-        }
-        compact={isCompact}
-        categoryIcon={activityConfig.icon}
-        categoryIconClassName={activityConfig.color}
-        categoryLabel={activityConfig.name}
-        fallbackLabel="GradientPeak"
-        owner={activity.owner}
-        timestamp={activity.createdAt ?? activity.updatedAt}
-      />
+          <ResourceCardActionButton
+            accessibilityLabel="Comments"
+            disabled={!handleCommentPress}
+            onPress={handleCommentPress ?? (() => {})}
+            testID={`activity-plan-card-comments-button-${plan.id}`}
+          >
+            <View className="flex-row items-center rounded-full bg-muted px-2.5 py-1.5">
+              <Icon as={MessageCircle} size={14} className="text-muted-foreground" />
+              <Text className="ml-1 text-xs font-medium text-muted-foreground">Comments</Text>
+            </View>
+          </ResourceCardActionButton>
+        </View>
+      ) : null}
 
-      <ActivityPlanSummary
-        activityCategory={activity.activityType}
-        description={activity.description || activity.notes || null}
-        estimatedDuration={activity.estimatedDuration}
-        estimatedTss={activity.estimatedTss}
-        intensityFactor={activity.intensityFactor}
-        owner={activity.owner}
-        routeName={route?.name || activity.routeName}
-        routeProvided={!!activity.routeId}
-        structure={activity.structure}
-        title={activity.name}
-        variant="standalone"
-        showAttribution={false}
-      />
-
-      {showScheduleInfo && activity.scheduledDate && (
+      {showScheduleInfo &&
+      plan.contractVersion === "scheduled-activity-plan-summary-v1" &&
+      (scheduledDate || plan.schedule.trainingPlanId) ? (
         <View className="mb-2 mt-3 flex-row items-center">
           <Icon as={Calendar} size={12} className="text-muted-foreground mr-1.5" />
-          <Text className="text-xs text-muted-foreground">
-            {formatScheduledDateTime(activity.scheduledDate)}
-          </Text>
+          <View>
+            {scheduledDate ? (
+              <Text className="text-xs text-muted-foreground">
+                {formatScheduledDateTime(scheduledDate)}
+              </Text>
+            ) : null}
+            {plan.schedule.trainingPlanId ? (
+              <Text className="text-xs text-muted-foreground">From training plan</Text>
+            ) : null}
+          </View>
         </View>
-      )}
-
-      <ActivityPlanContentPreview
-        compact={isCompact}
-        size={isCompact ? "small" : isHero ? "large" : "medium"}
-        plan={{
-          authoritative_metrics: {
-            estimated_duration: activity.estimatedDuration,
-            estimated_tss: activity.estimatedTss,
-            intensity_factor: activity.intensityFactor,
-            estimated_distance: activity.estimatedDistance,
-          },
-          route: {
-            distance: activity.estimatedDistance,
-          },
-          route_id: activity.routeId,
-          structure: activity.structure,
-        }}
-        route={
-          route
-            ? {
-                ...route,
-                total_distance: route.total_distance ?? route.distance ?? null,
-                total_ascent: route.total_ascent ?? route.ascent ?? null,
-                total_descent: route.total_descent ?? route.descent ?? null,
-              }
-            : null
-        }
-        routeFull={resolvedRouteFull ? { coordinates: resolvedRouteFull.coordinates ?? [] } : null}
-        intensityFactor={activity.intensityFactor}
-        tss={activity.estimatedTss}
-        testIDPrefix={`activity-plan-card-preview-${activity.id}`}
-      />
+      ) : null}
     </ResourceCardShell>
   );
-}
-
-// ============================================
-// UTILITY FUNCTIONS
-// ============================================
-
-/**
- * Transform database objects to internal card data format
- */
-function transformToCardData(
-  activityPlan?: ActivityPlan,
-  plannedActivity?: PlannedActivity,
-): ActivityPlanCardData {
-  // Determine the source of activity_plan data
-  const plan = plannedActivity?.activity_plan || activityPlan;
-
-  if (!plan) {
-    throw new Error(
-      "ActivityPlanCard: Either activityPlan or plannedActivity with nested activity_plan must be provided",
-    );
-  }
-
-  // Extract route info from structure if available
-  const routeInfo = getStructureRouteInfo(plan.structure);
-  const authoritativeMetrics = plan.authoritative_metrics;
-  const planRoute = plan.route;
-
-  return {
-    id: plannedActivity?.id || plan.id,
-    name: plan.name,
-    activityType: plan.activity_category,
-    description: plan.description || undefined,
-    structure: plan.structure,
-    estimatedDuration: authoritativeMetrics?.estimated_duration ?? undefined,
-    estimatedTss: authoritativeMetrics?.estimated_tss ?? undefined,
-    intensityFactor: authoritativeMetrics?.intensity_factor ?? undefined,
-    estimatedDistance:
-      authoritativeMetrics?.estimated_distance ?? planRoute?.distance ?? routeInfo?.distance,
-    routeId: plan.route_id || undefined,
-    routeName: routeInfo?.name,
-    notes: plannedActivity?.notes || plan.description || plan.notes || undefined,
-    createdAt: plan.created_at || undefined,
-    updatedAt: plan.updated_at || undefined,
-    scheduledDate: plannedActivity?.scheduled_date,
-    isCompleted: Boolean(plannedActivity?.completed_activity_id),
-    likes_count: plan.likes_count,
-    has_liked: plan.has_liked,
-    owner: plan.owner ?? null,
-  };
-}
-
-function getStructureRouteInfo(structure: unknown): { distance?: number; name?: string } | null {
-  if (!structure || typeof structure !== "object" || !("route" in structure)) {
-    return null;
-  }
-
-  const route = structure.route;
-  if (!route || typeof route !== "object") {
-    return null;
-  }
-
-  return {
-    distance:
-      "distance" in route && typeof route.distance === "number" ? route.distance : undefined,
-    name: "name" in route && typeof route.name === "string" ? route.name : undefined,
-  };
 }
 
 /**
