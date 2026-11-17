@@ -56,7 +56,7 @@ vi.mock("@repo/ui/components/switch", () => ({
 vi.mock("@repo/ui/components/button", () => ({ Button: () => null }));
 vi.mock("../providers/theme-provider", () => ({ useTheme: vi.fn() }));
 vi.mock("../providers/app-providers", () => ({
-  useProductAnalyticsProviderReady: () => true,
+  useProductAnalyticsProviderStatus: () => "unavailable",
 }));
 
 describe("ProductAnalyticsCard persistence", () => {
@@ -114,6 +114,7 @@ describe("ProductAnalyticsCard persistence", () => {
   });
 
   it("persists a preference when product analytics is intentionally unavailable", async () => {
+    mocks.posthog = mocks.configuredPosthog;
     render(<ProductAnalyticsCard />);
 
     await waitFor(() =>
@@ -125,5 +126,7 @@ describe("ProductAnalyticsCard persistence", () => {
       expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("true"),
     );
     expect(localStorage.getItem("gradientpeak-product-analytics-consent")).toBe("granted");
+    expect(mocks.configuredPosthog.opt_in_capturing).not.toHaveBeenCalled();
+    expect(mocks.configuredPosthog.opt_out_capturing).not.toHaveBeenCalled();
   });
 });
