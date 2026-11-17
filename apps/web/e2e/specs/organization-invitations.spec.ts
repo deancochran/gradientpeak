@@ -19,7 +19,7 @@ test("administrator creates and revokes an invitation without implying email del
   await expect(athletePage).toHaveURL(/\/organizations\/[0-9a-f-]{36}\/dashboard$/);
   const organizationId = new URL(athletePage.url()).pathname.split("/")[2];
   if (!organizationId) throw new Error("Missing organization identity");
-  await athletePage.getByRole("link", { name: "Manage invitations", exact: true }).click();
+  await athletePage.getByRole("link", { name: "Invitations", exact: true }).click();
   await expect(
     athletePage.getByRole("heading", { name: "Organization invitations", exact: true }),
   ).toBeVisible();

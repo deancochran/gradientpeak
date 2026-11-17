@@ -98,6 +98,26 @@ async function choosePlanningTimezone(page: Page, timezone: string) {
     .click();
 }
 
+async function clickOrganizationAdministrationLink(
+  page: Page,
+  name: "Athletes" | "Dashboard" | "Staff",
+) {
+  const administration = page.getByRole("navigation", {
+    name: "Organization administration",
+  });
+  const desktopLink = administration.getByRole("link", { name, exact: true });
+  if (await desktopLink.isVisible()) {
+    await desktopLink.click();
+    return;
+  }
+
+  await page.getByRole("button", { name: "Open coaching navigation", exact: true }).click();
+  await page
+    .getByRole("navigation", { name: "Mobile coaching navigation" })
+    .getByRole("link", { name, exact: true })
+    .click();
+}
+
 test("settings.select-theme persists a chosen theme across reloads", async ({ athletePage }) => {
   await athletePage.goto("/settings");
 
@@ -240,7 +260,7 @@ test("coaching.view-assignment-facts opens a coach's scoped assignment facts", a
   }
 });
 
-test("coaching.admin-dashboard shows administrative staff and athlete roster records", async ({
+test("coaching.admin-overview navigates to administrative staff and empty athlete records", async ({
   athleteActor,
   athletePage,
   coachActor,
@@ -254,14 +274,43 @@ test("coaching.admin-dashboard shows administrative staff and athlete roster rec
   try {
     await athletePage.goto(`/organizations/${organization.organizationId}/dashboard`);
 
+    await expect(athletePage.getByRole("heading", { name: "Organization overview" })).toBeVisible();
     await expect(
-      athletePage.getByRole("heading", { name: "Organization management" }),
+      athletePage.getByRole("heading", { name: "No active athletes yet" }),
     ).toBeVisible();
-    await expect(athletePage.getByRole("list", { name: "Staff" })).toBeVisible();
-    await expect(athletePage.getByText("Athletes", { exact: true })).toBeVisible();
-    await expect(athletePage.getByText("No active athlete enrollments are listed.")).toBeVisible();
     await expect(
-      athletePage.getByText(/does not grant access to private athlete training/),
+      athletePage.getByRole("link", { name: "Invite athlete", exact: true }),
+    ).toBeVisible();
+    await expect(
+      athletePage.getByRole("link", { name: "Assign coach", exact: true }),
+    ).toBeVisible();
+
+    await clickOrganizationAdministrationLink(athletePage, "Staff");
+    await expect(
+      athletePage.getByRole("heading", { name: "Staff roster", exact: true }),
+    ).toBeVisible();
+    const activeStaff = athletePage.getByRole("list", { name: "Active staff roster" });
+    await expect(activeStaff).toBeVisible();
+    await expect(activeStaff).toContainText("Coach User");
+    await expect(
+      athletePage.getByText(/does not restore them or grant private-athlete access/),
+    ).toBeVisible();
+
+    await athletePage.goBack();
+    await expect(
+      athletePage.getByRole("heading", { name: "Organization overview", exact: true }),
+    ).toBeVisible();
+    await athletePage.getByRole("link", { name: "Assign coach", exact: true }).click();
+    await expect(
+      athletePage.getByText("No athletes on this page match this search.", { exact: true }),
+    ).toBeVisible();
+
+    await clickOrganizationAdministrationLink(athletePage, "Athletes");
+    await expect(
+      athletePage.getByRole("heading", { name: "Athlete roster", exact: true }),
+    ).toBeVisible();
+    await expect(
+      athletePage.getByText("No athlete engagements are listed.", { exact: true }),
     ).toBeVisible();
   } finally {
     await organization.cleanup();
