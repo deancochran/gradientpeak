@@ -10,6 +10,8 @@ import {
   organizationMembershipRoleGrants,
   organizationMemberships,
   plannedSessions,
+  profileAthleteState,
+  profilePerformanceEstimates,
   profiles,
 } from "@repo/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
@@ -61,9 +63,8 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
   // it must not claim a future planned session was performed.
   const planningDate = today;
   const deniedDate = addUtcDays(today, 1);
-  const activityPlanName = "Playwright Tempo Builder";
-  const editedActivityPlanName = "Playwright Tempo Builder — coach revised";
-  const publishedActivityPlanName = `${editedActivityPlanName} (Copy)`;
+  const activityPlanName = "Coach-prepared tempo with targets";
+  const publishedActivityPlanName = `${activityPlanName} (Copy)`;
 
   await athletePage.goto("/organizations/new");
   await athletePage.getByLabel("Organization name", { exact: true }).fill("Publication acceptance");
@@ -79,6 +80,8 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
 
   const coachMembershipId = e2eIdentity.uuid("publication-coach-membership");
   const engagementId = e2eIdentity.uuid("publication-engagement");
+  const metricsPolicyId = e2eIdentity.uuid("publication-metrics-policy");
+  const metricsConsentId = e2eIdentity.uuid("publication-metrics-consent");
   await e2eDatabase.typedTransaction(async (transaction) => {
     await transaction
       .update(profiles)
@@ -105,12 +108,50 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
       coach_membership_id: coachMembershipId,
       assignment_kind: "primary",
     });
+    await transaction.insert(athleteConsentPolicyVersions).values({
+      id: metricsPolicyId,
+      scope_key: "metrics",
+      effective_from: new Date(Date.now() - 1_000),
+      jurisdiction: "e2e",
+      terms_text: "Disposable coach assessment metrics consent",
+      content_digest: `sha256:${metricsPolicyId}`,
+    });
+    await transaction.insert(athleteDataSharingConsents).values({
+      id: metricsConsentId,
+      organization_id: organizationId,
+      engagement_id: engagementId,
+      athlete_profile_id: athleteActor.profileId,
+      scope_key: "metrics",
+      policy_version_id: metricsPolicyId,
+      granted_by_profile_id: athleteActor.profileId,
+    });
+    const assessedAt = new Date();
+    const athleteState = {
+      source_revision: 1,
+      published_revision: 1,
+      fitness: 52,
+      fatigue: 44,
+      computed_at: assessedAt,
+      coverage_end_at: assessedAt,
+      evidence_confidence: 0.8,
+    };
+    await transaction
+      .insert(profileAthleteState)
+      .values({ profile_id: athleteActor.profileId, ...athleteState })
+      .onConflictDoUpdate({ target: profileAthleteState.profile_id, set: athleteState });
+    await transaction.insert(profilePerformanceEstimates).values({
+      profile_id: athleteActor.profileId,
+      capability_kind: "bike_ftp",
+      activity_category: "bike",
+      value: 255,
+      unit: "watts",
+      confidence: 0.8,
+      effective_at: assessedAt,
+      computed_at: assessedAt,
+      algorithm_version: "publication-assessment-fixture-v1",
+      source_revision: 1,
+    });
   });
-  const { activityPlanId } = await seedOwnedActivityPlan(
-    e2eDatabase,
-    coachActor.profileId,
-    e2eIdentity.suffix("publication-coach-activity-plan", 64),
-  );
 
   await athletePage.goto("/settings#coaching");
   await waitForAppHydration(athletePage);
@@ -128,40 +169,79 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
 
   await coachPage.goto(`/organizations/${organizationId}/athletes/${athleteActor.profileId}`);
   await waitForAppHydration(coachPage);
+  await expect(coachPage.getByText("255 watts", { exact: true })).toBeVisible();
+  await expect(coachPage.getByText("Published training state", { exact: true })).toBeVisible();
+  await expect(coachPage.getByText(/Fitness \(Long-term load\)/)).toBeVisible();
+  await expect(coachPage.getByText(/Fatigue \(Recent load\)/)).toBeVisible();
+  await expect(coachPage.getByText(/Form \(Load balance\)/)).toBeVisible();
   await expect(coachPage.getByText("Publish an activity plan", { exact: true })).toBeVisible();
   await coachPage.getByLabel("Athlete planning date", { exact: true }).fill(planningDate);
   await coachPage.getByRole("link", { name: "Prepare activity plan", exact: true }).click();
   await expect(coachPage.getByText("Preparing for an athlete", { exact: true })).toBeVisible();
   await coachPage.getByRole("button", { name: "Create activity plan", exact: true }).click();
   await expect(coachPage.getByLabel("Plan name", { exact: true })).toBeVisible();
-  await coachPage.getByRole("button", { name: "Cancel", exact: true }).click();
-  await expect(coachPage.getByText("Preparing for an athlete", { exact: true })).toBeVisible();
-  await coachPage.getByRole("searchbox", { name: "Search activity plans" }).fill(activityPlanName);
-  await coachPage
-    .getByRole("button", { name: `Open activity plan ${activityPlanName}`, exact: true })
-    .click();
-  await coachPage.getByRole("link", { name: "Back to activity plans", exact: true }).click();
-  await expect(coachPage.getByText("Preparing for an athlete", { exact: true })).toBeVisible();
-  await coachPage.getByRole("searchbox", { name: "Search activity plans" }).fill(activityPlanName);
-  await coachPage
-    .getByRole("button", { name: `Open activity plan ${activityPlanName}`, exact: true })
-    .click();
-  await coachPage.getByRole("button", { name: "Edit", exact: true }).click();
-  const planName = coachPage.getByLabel("Plan name", { exact: true });
-  await planName.fill("");
-  await expect(planName).toHaveValue("");
-  await expect(coachPage.getByRole("button", { name: "Save changes", exact: true })).toBeDisabled();
-  await planName.fill(editedActivityPlanName);
-  await coachPage.getByRole("button", { name: "Save changes", exact: true }).click();
+  await coachPage.getByLabel("Plan name", { exact: true }).fill(activityPlanName);
+  await coachPage.getByLabel("Activity category", { exact: true }).selectOption("bike");
+  await coachPage.getByRole("button", { name: "Add step", exact: true }).click();
+  const preparedStep = coachPage.getByTestId("activity-plan-item-0");
+  await preparedStep.getByRole("button", { name: "Add name", exact: true }).click();
+  await preparedStep.getByLabel("Name (optional)", { exact: true }).fill("Tempo block");
+  await preparedStep.getByRole("button", { name: "Add instructions", exact: true }).click();
+  await preparedStep
+    .getByLabel("Instructions (optional)", { exact: true })
+    .fill("Hold smooth pressure through the full interval.");
+  // Editing the optional instruction rerenders the step editor. Resolve the
+  // unique native combobox by its rendered accessible role/name after that
+  // state transition; the snapshot confirms the control is rendered without a
+  // stable label association for Playwright's label locator.
+  await coachPage.getByRole("combobox", { name: "Completion", exact: true }).selectOption("time");
+  await coachPage.getByLabel("Quantity", { exact: true }).fill("600");
+  await coachPage.getByRole("button", { name: "Add target", exact: true }).click();
+  await coachPage.getByLabel("Target type 1", { exact: true }).selectOption("RPE");
+  await coachPage.getByLabel("Target intensity 1", { exact: true }).fill("4");
+  await coachPage.getByRole("button", { name: "Create plan", exact: true }).click();
   await expect(coachPage.getByText("Publish an activity plan", { exact: true })).toBeVisible();
   const activityPlan = coachPage.getByLabel("Your activity plan", { exact: true });
-  await expect(activityPlan).toHaveValue(activityPlanId);
+  await expect(activityPlan).toHaveValue(/^[0-9a-f-]{36}$/i);
+  const activityPlanId = await activityPlan.inputValue();
+  expect(activityPlanId).toMatch(/^[0-9a-f-]{36}$/i);
+  await expect
+    .poll(async () =>
+      e2eDatabase.db
+        .select({ name: activityPlans.name, structure: activityPlans.structure })
+        .from(activityPlans)
+        .where(
+          and(
+            eq(activityPlans.id, activityPlanId),
+            eq(activityPlans.profile_id, coachActor.profileId),
+          ),
+        ),
+    )
+    .toEqual([
+      {
+        name: activityPlanName,
+        structure: expect.objectContaining({
+          version: 5,
+          activity_category: "bike",
+          items: [
+            expect.objectContaining({
+              id: expect.stringMatching(/^[0-9a-f-]{36}$/i),
+              type: "step",
+              name: "Tempo block",
+              instructions: "Hold smooth pressure through the full interval.",
+              duration: { type: "time", seconds: 600 },
+              targets: [{ type: "RPE", intensity: 4 }],
+            }),
+          ],
+        }),
+      },
+    ]);
   await expect(coachPage.getByLabel("Athlete planning date", { exact: true })).toHaveValue(
     planningDate,
   );
   await coachPage.getByRole("button", { name: "Preview publication", exact: true }).click();
   await expect(
-    coachPage.getByText(`Ready to publish: ${editedActivityPlanName}`, { exact: true }),
+    coachPage.getByText(`Ready to publish: ${activityPlanName}`, { exact: true }),
   ).toBeVisible();
   await expect(
     coachPage.getByText(`${planningDate} in the athlete’s UTC planning time zone.`, {
@@ -173,7 +253,7 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
   await expect(
     coachPage
       .getByRole("status")
-      .filter({ hasText: `Published ${editedActivityPlanName} for ${planningDate}.` }),
+      .filter({ hasText: `Published ${activityPlanName} for ${planningDate}.` }),
   ).toBeVisible();
 
   const [publication] = await e2eDatabase.db
@@ -221,6 +301,17 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
   await expect(
     athletePage.getByRole("heading", { name: publishedActivityPlanName, exact: true }),
   ).toBeVisible();
+  await expect(
+    athletePage.getByText(
+      "Current activity plan instructions. No personalized adjustments are shown.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(athletePage.getByText("Tempo block", { exact: true })).toBeVisible();
+  await expect(
+    athletePage.getByText("Hold smooth pressure through the full interval.", { exact: true }),
+  ).toBeVisible();
+  await expect(athletePage.getByText("600 sec · 4 RPE", { exact: true })).toBeVisible();
   await expect(athletePage.getByText("Completion", { exact: true })).toBeVisible();
   await athletePage.getByRole("button", { name: "Actual details (optional)", exact: true }).click();
   await athletePage.getByLabel("Actual duration (minutes, optional)").fill("45");
@@ -479,4 +570,106 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
     coachPage.getByRole("button", { name: "Preview publication", exact: true }),
   ).toBeDisabled();
   await coachPage.close();
+});
+
+test("[coaching-publication] coach can cancel creation and correct a seeded plan before publishing", async ({
+  athleteActor,
+  athletePage,
+  coachActor,
+  coachPage,
+  e2eDatabase,
+  e2eIdentity,
+}) => {
+  test.setTimeout(120_000);
+  const planName = "Playwright Tempo Builder";
+  const revisedPlanName = "Playwright Tempo Builder — coach revised";
+
+  await athletePage.goto("/organizations/new");
+  await athletePage
+    .getByLabel("Organization name", { exact: true })
+    .fill("Publication edit coverage");
+  await athletePage
+    .getByLabel("Organization URL name", { exact: true })
+    .fill(`publication-edit-${e2eIdentity.uuid("organization")}`);
+  await athletePage.getByRole("button", { name: "Create organization", exact: true }).click();
+  await expect(athletePage).toHaveURL(/\/organizations\/[0-9a-f-]{36}\/dashboard$/i);
+  const organizationId = new URL(athletePage.url()).pathname.match(
+    /\/organizations\/([0-9a-f-]{36})\/dashboard$/i,
+  )?.[1];
+  if (!organizationId) throw new Error("Organization creation did not provide a UUID.");
+
+  const coachMembershipId = e2eIdentity.uuid("publication-edit-coach-membership");
+  const engagementId = e2eIdentity.uuid("publication-edit-engagement");
+  await e2eDatabase.typedTransaction(async (transaction) => {
+    await transaction.insert(organizationMemberships).values({
+      id: coachMembershipId,
+      organization_id: organizationId,
+      profile_id: coachActor.profileId,
+    });
+    await transaction.insert(organizationMembershipRoleGrants).values({
+      organization_id: organizationId,
+      membership_id: coachMembershipId,
+      role_key: "coach",
+    });
+    await transaction.insert(coachingEngagements).values({
+      id: engagementId,
+      organization_id: organizationId,
+      athlete_profile_id: athleteActor.profileId,
+    });
+    await transaction.insert(coachingAssignments).values({
+      organization_id: organizationId,
+      engagement_id: engagementId,
+      coach_membership_id: coachMembershipId,
+      assignment_kind: "primary",
+    });
+  });
+  const { activityPlanId } = await seedOwnedActivityPlan(
+    e2eDatabase,
+    coachActor.profileId,
+    e2eIdentity.suffix("publication-edit-coach-activity-plan", 64),
+  );
+
+  await athletePage.goto("/settings#coaching");
+  await waitForAppHydration(athletePage);
+  const grant = athletePage.getByRole("switch", {
+    name: /Allow .* to publish activity plans/i,
+  });
+  await expect(grant).not.toBeChecked();
+  await grant.click();
+  await expect(grant).toBeChecked();
+
+  await coachPage.goto(`/organizations/${organizationId}/athletes/${athleteActor.profileId}`);
+  await waitForAppHydration(coachPage);
+  await coachPage
+    .getByLabel("Athlete planning date", { exact: true })
+    .fill(new Date().toISOString().slice(0, 10));
+  await coachPage.getByRole("link", { name: "Prepare activity plan", exact: true }).click();
+  await expect(coachPage.getByText("Preparing for an athlete", { exact: true })).toBeVisible();
+  await coachPage.getByRole("button", { name: "Create activity plan", exact: true }).click();
+  await expect(coachPage.getByLabel("Plan name", { exact: true })).toBeVisible();
+  await coachPage.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(coachPage.getByText("Preparing for an athlete", { exact: true })).toBeVisible();
+
+  await coachPage.getByRole("searchbox", { name: "Search activity plans" }).fill(planName);
+  await coachPage
+    .getByRole("button", { name: `Open activity plan ${planName}`, exact: true })
+    .click();
+  await coachPage.getByRole("button", { name: "Edit", exact: true }).click();
+  const planNameField = coachPage.getByLabel("Plan name", { exact: true });
+  await planNameField.fill("");
+  await expect(coachPage.getByRole("button", { name: "Save changes", exact: true })).toBeDisabled();
+  await planNameField.fill(revisedPlanName);
+  await coachPage.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(coachPage.getByText("Publish an activity plan", { exact: true })).toBeVisible();
+  await expect(coachPage.getByLabel("Your activity plan", { exact: true })).toHaveValue(
+    activityPlanId,
+  );
+  await expect
+    .poll(async () =>
+      e2eDatabase.db
+        .select({ name: activityPlans.name })
+        .from(activityPlans)
+        .where(eq(activityPlans.id, activityPlanId)),
+    )
+    .toEqual([{ name: revisedPlanName }]);
 });
