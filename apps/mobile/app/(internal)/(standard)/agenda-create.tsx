@@ -14,9 +14,11 @@ import { GoalEditorForm, type GoalEditorFormHandle } from "@/components/goals";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { markEstimated } from "@/lib/estimatedMetrics";
+import { useDirtyNavigationGuard } from "@/lib/hooks/useDirtyNavigationGuard";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { useAuthStore } from "@/lib/stores/auth-store";
 
-type AgendaCreateType = "event" | "planned" | "goal";
+type AgendaCreateType = "event" | "goal";
 
 const CREATE_TYPES: Array<{
   description: string;
@@ -27,11 +29,6 @@ const CREATE_TYPES: Array<{
     value: "event",
     label: "Event",
     description: "Add a race, appointment, or calendar item.",
-  },
-  {
-    value: "planned",
-    label: "Planned activity",
-    description: "Schedule one of your saved activity plans.",
   },
   {
     value: "goal",
@@ -45,24 +42,24 @@ function readParam(value: string | string[] | undefined) {
 }
 
 function isCreateType(value: string | undefined): value is AgendaCreateType {
-  return value === "event" || value === "planned" || value === "goal";
+  return value === "event" || value === "goal";
 }
 
-function parseSuggestionTssDelta(value: string | undefined) {
+function parseSuggestionLoadDelta(value: string | undefined) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
 function buildPlanSuggestionDefaults(input: {
   description?: string;
-  tssDelta: number | null;
+  loadDelta: number | null;
   type?: string;
 }): (CreateEventDefaults & { targetType: AgendaCreateType }) | null {
-  const roundedDelta = input.tssDelta === null ? null : Math.round(input.tssDelta);
+  const roundedDelta = input.loadDelta === null ? null : Math.round(input.loadDelta);
   const absoluteDelta = roundedDelta === null ? null : Math.abs(roundedDelta);
   const targetCopy =
     absoluteDelta && absoluteDelta > 0
-      ? `Target: about ${markEstimated(`${absoluteDelta} TSS`)}.`
+      ? `Target: about ${markEstimated(`${absoluteDelta} Load`)}.`
       : null;
   const notes = [
     input.description?.trim() || null,
@@ -74,9 +71,10 @@ function buildPlanSuggestionDefaults(input: {
 
   if ((input.type === "add_load" || (roundedDelta ?? 0) > 0) && (roundedDelta ?? 0) > 0) {
     return {
-      createEventType: "planned",
+      createEventType: "custom",
       notes,
-      targetType: "planned",
+      title: "Training session",
+      targetType: "event",
     };
   }
 
@@ -101,27 +99,29 @@ export default function AgendaCreateScreen() {
   const params = useLocalSearchParams<{
     date?: string;
     planSuggestionDescription?: string;
-    planSuggestionTssDelta?: string;
+    planSuggestionLoadDelta?: string;
     planSuggestionType?: string;
-    trainingPlanId?: string;
     type?: string;
   }>();
   const createDate = readParam(params.date);
-  const trainingPlanId = readParam(params.trainingPlanId);
   const planSuggestionDefaults = useMemo(
     () =>
-      buildPlanSuggestionDefaults({
-        description: readParam(params.planSuggestionDescription),
-        tssDelta: parseSuggestionTssDelta(readParam(params.planSuggestionTssDelta)),
-        type: readParam(params.planSuggestionType),
-      }),
-    [params.planSuggestionDescription, params.planSuggestionTssDelta, params.planSuggestionType],
+      buildPlanSuggestionDefaults(
+        omitUndefined({
+          description: readParam(params.planSuggestionDescription),
+          loadDelta: parseSuggestionLoadDelta(readParam(params.planSuggestionLoadDelta)),
+          type: readParam(params.planSuggestionType),
+        }),
+      ),
+    [params.planSuggestionDescription, params.planSuggestionLoadDelta, params.planSuggestionType],
   );
   const requestedType = readParam(params.type);
   const initialType: AgendaCreateType = isCreateType(requestedType)
     ? requestedType
     : (planSuggestionDefaults?.targetType ?? "event");
   const [createType, setCreateType] = useState<AgendaCreateType>(initialType);
+  const [eventPending, setEventPending] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
   const initialGoalDraft = useMemo(
     () => ({
       ...createEmptyGoalDraft(),
@@ -132,9 +132,12 @@ export default function AgendaCreateScreen() {
   const createGoalMutation = api.goals.create.useMutation({
     onSuccess: async (goal) => {
       await invalidateGoalQueries(utils, { goalId: goal.id });
+      allowNavigationAfterSuccess();
       router.replace(ROUTES.GOALS.DETAIL(goal.id) as never);
     },
   });
+  const isPending = createType === "goal" ? createGoalMutation.isPending : eventPending;
+  const { allowNavigationAfterSuccess } = useDirtyNavigationGuard({ isDirty, isPending });
 
   const handleCreate = () => {
     if (createType === "goal") {
@@ -173,8 +176,8 @@ export default function AgendaCreateScreen() {
           title: "Create",
           headerRight: () => (
             <LoadingButton
-              disabled={createGoalMutation.isPending}
-              loading={createGoalMutation.isPending}
+              disabled={isPending}
+              loading={isPending}
               loadingLabel="Creating..."
               loadingTextClassName="text-primary"
               onPress={handleCreate}
@@ -227,6 +230,7 @@ export default function AgendaCreateScreen() {
             ref={goalFormRef}
             initialValue={initialGoalDraft}
             isSubmitting={createGoalMutation.isPending}
+            onDirtyChange={setIsDirty}
             onSubmit={handleCreateGoal}
             showSubmitAction={false}
             submitLabel="Create Goal"
@@ -235,16 +239,22 @@ export default function AgendaCreateScreen() {
           <CreateEventFlow
             key={createType}
             ref={eventFlowRef}
-            createDate={createDate}
+            {...omitUndefined({ createDate })}
             defaults={{
               ...planSuggestionDefaults,
-              createEventType: createType === "planned" ? "planned" : "custom",
+              createEventType: "custom",
             }}
             onCancel={() => router.back()}
-            onCreated={(createdEvent) => router.replace(ROUTES.PLAN.EVENT_DETAIL(createdEvent.id))}
+            onDirtyChange={setIsDirty}
+            onPendingChange={setEventPending}
+            onCreated={(resource) => {
+              allowNavigationAfterSuccess();
+              resource.kind === "event"
+                ? router.replace(ROUTES.PLAN.EVENT_DETAIL(resource.id))
+                : router.replace(ROUTES.PLAN.CALENDAR);
+            }}
             showFooterActions={false}
             testIDPrefix="agenda-create-event"
-            trainingPlanId={trainingPlanId}
           />
         )}
       </ScrollView>

@@ -5,6 +5,7 @@ import { Platform, StyleSheet, View } from "react-native";
 import { FadeIn, FadeOut } from "react-native-reanimated";
 import { FullWindowOverlay as RNFullWindowOverlay } from "react-native-screens";
 import { cn } from "../../lib/cn";
+import { omitUndefined } from "../../lib/omit-undefined";
 import { Icon } from "./icon";
 import { NativeOnlyAnimatedView } from "./native-only-animated-view";
 import { TextClassContext } from "./text";
@@ -79,7 +80,7 @@ function SelectContent({
   portalHost?: string;
 }) {
   return (
-    <SelectPrimitive.Portal hostName={portalHost}>
+    <SelectPrimitive.Portal {...omitUndefined({ hostName: portalHost })}>
       <FullWindowOverlay>
         <SelectPrimitive.Overlay style={Platform.select({ native: StyleSheet.absoluteFill })}>
           <TextClassContext.Provider value="text-popover-foreground">

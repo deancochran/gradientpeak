@@ -1,4 +1,4 @@
-import { expect, fireEvent, within } from "@storybook/test";
+import { expect, fireEvent, within } from "storybook/test";
 
 export async function exerciseDateInputStory({
   canvasElement,
