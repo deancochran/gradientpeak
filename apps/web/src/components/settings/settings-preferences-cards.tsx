@@ -11,7 +11,7 @@ import { Label } from "@repo/ui/components/label";
 import { Switch } from "@repo/ui/components/switch";
 import { useEffect, useState } from "react";
 
-import { useProductAnalyticsProviderReady } from "../providers/app-providers";
+import { useProductAnalyticsProviderStatus } from "../providers/app-providers";
 import { useTheme } from "../providers/theme-provider";
 
 const productAnalyticsConsentStorageKey = "gradientpeak-product-analytics-consent";
@@ -37,7 +37,9 @@ export function ProductAnalyticsCard() {
   const posthog = usePostHog();
   const [enabled, setEnabled] = useState(false);
   const [hasLoadedConsent, setHasLoadedConsent] = useState(false);
-  const isAnalyticsProviderReady = useProductAnalyticsProviderReady();
+  const analyticsProviderStatus = useProductAnalyticsProviderStatus();
+  const canUseAnalyticsPreference = analyticsProviderStatus !== "initializing";
+  const canCallAnalyticsSdk = analyticsProviderStatus === "ready";
 
   useEffect(() => {
     const storedConsent = readProductAnalyticsConsent();
@@ -48,7 +50,7 @@ export function ProductAnalyticsCard() {
   const updateConsent = (nextEnabled: boolean) => {
     if (!persistProductAnalyticsConsent(nextEnabled)) {
       setEnabled(false);
-      if (isAnalyticsProviderReady) {
+      if (canCallAnalyticsSdk) {
         try {
           posthog?.opt_out_capturing?.();
         } catch {
@@ -59,7 +61,7 @@ export function ProductAnalyticsCard() {
     }
 
     setEnabled(nextEnabled);
-    if (isAnalyticsProviderReady) {
+    if (canCallAnalyticsSdk) {
       try {
         if (nextEnabled) {
           posthog?.opt_in_capturing?.({ captureEventName: false });
@@ -85,7 +87,7 @@ export function ProductAnalyticsCard() {
           <Label htmlFor="product-analytics-consent">Product analytics</Label>
           <Switch
             checked={enabled}
-            disabled={!hasLoadedConsent || !isAnalyticsProviderReady}
+            disabled={!hasLoadedConsent || !canUseAnalyticsPreference}
             id="product-analytics-consent"
             onCheckedChange={updateConsent}
           />

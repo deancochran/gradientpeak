@@ -10,7 +10,9 @@ import { posthogOptions, posthogProjectToken } from "../../lib/telemetry";
 import { ThemeProvider } from "./theme-provider";
 
 const productAnalyticsConsentStorageKey = "gradientpeak-product-analytics-consent";
-const ProductAnalyticsProviderReadyContext = createContext(true);
+type ProductAnalyticsProviderStatus = "initializing" | "ready" | "unavailable";
+const ProductAnalyticsProviderStatusContext =
+  createContext<ProductAnalyticsProviderStatus>("unavailable");
 type PostHogConsentClient = PostHogInterface & {
   opt_in_capturing: (options: { captureEventName: false }) => void;
 };
@@ -35,8 +37,8 @@ function reconcileProductAnalyticsConsent(posthog: PostHogInterface) {
   }
 }
 
-export function useProductAnalyticsProviderReady() {
-  return useContext(ProductAnalyticsProviderReadyContext);
+export function useProductAnalyticsProviderStatus() {
+  return useContext(ProductAnalyticsProviderStatusContext);
 }
 
 export function AppProviders({
@@ -92,17 +94,17 @@ function MaybePostHogProvider({ children }: { children: React.ReactNode }) {
 
   if (!posthogProjectToken) {
     return (
-      <ProductAnalyticsProviderReadyContext.Provider value>
+      <ProductAnalyticsProviderStatusContext.Provider value="unavailable">
         {children}
-      </ProductAnalyticsProviderReadyContext.Provider>
+      </ProductAnalyticsProviderStatusContext.Provider>
     );
   }
 
   return (
     <PostHogProvider apiKey={posthogProjectToken} options={options}>
-      <ProductAnalyticsProviderReadyContext.Provider value={isReady}>
+      <ProductAnalyticsProviderStatusContext.Provider value={isReady ? "ready" : "initializing"}>
         {children}
-      </ProductAnalyticsProviderReadyContext.Provider>
+      </ProductAnalyticsProviderStatusContext.Provider>
     </PostHogProvider>
   );
 }
