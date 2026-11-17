@@ -1,4 +1,12 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { ensureCurrentBrowserContractEpoch } from "../../lib/contract-epoch";
 
@@ -60,6 +68,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<ThemePreference>("system");
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() => resolveTheme(theme));
   const [hasRestoredTheme, setHasRestoredTheme] = useState(false);
+  const hasUserSelectedTheme = useRef(false);
+  const latestTheme = useRef<ThemePreference>("system");
+
+  const setTheme = useCallback((nextTheme: ThemePreference) => {
+    hasUserSelectedTheme.current = true;
+    latestTheme.current = nextTheme;
+    setThemeState(nextTheme);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -67,9 +83,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       () => {
         if (!active) return;
         const storedTheme = getStoredTheme();
-        applyTheme(storedTheme);
-        setResolvedTheme(resolveTheme(storedTheme));
-        setThemeState(storedTheme);
+        const restoredTheme = hasUserSelectedTheme.current ? latestTheme.current : storedTheme;
+        applyTheme(restoredTheme);
+        setResolvedTheme(resolveTheme(restoredTheme));
+        setThemeState(restoredTheme);
         setHasRestoredTheme(true);
       },
       () => {
@@ -112,9 +129,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     () => ({
       theme,
       resolvedTheme,
-      setTheme: setThemeState,
+      setTheme,
     }),
-    [resolvedTheme, theme],
+    [resolvedTheme, setTheme, theme],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
