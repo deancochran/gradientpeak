@@ -91,11 +91,13 @@ vi.mock("@repo/ui/lib/cn", () => ({
 function item({
   date,
   id,
+  lifecycle = { status: "scheduled" },
   planned = false,
   title,
 }: {
   date: string;
   id: string;
+  lifecycle?: Record<string, unknown>;
   planned?: boolean;
   title: string;
 }) {
@@ -108,7 +110,7 @@ function item({
     plannedSession: planned
       ? {
           id,
-          lifecycle: { status: "scheduled" },
+          lifecycle,
           planningDate: date,
           profileId: "profile-1",
           sessionRevision: 1,
@@ -232,6 +234,35 @@ describe("CalendarIndexPage", () => {
     });
     rerender(<CalendarIndexPage />);
     expect(screen.getByText("Cached event")).toBeTruthy();
+  });
+
+  it("labels skipped planned sessions truthfully in the personal sessions list", () => {
+    mocks.query = query({
+      data: {
+        items: [
+          item({
+            date: "2026-12-01",
+            id: "skipped",
+            lifecycle: {
+              status: "completed",
+              completion: {
+                state: "skipped",
+                skippedAt: "2026-12-01T12:00:00.000Z",
+                operationId: "00000000-0000-4000-8000-000000000001",
+              },
+            },
+            planned: true,
+            title: "Skipped plan",
+          }),
+        ],
+        truncation: query().data.truncation,
+      },
+    });
+
+    render(<CalendarIndexPage />);
+
+    expect(screen.getByText(/2026-12-01 · Skipped/)).toBeTruthy();
+    expect(screen.queryByText(/2026-12-01 · completed/)).toBeNull();
   });
 
   it("anchors a stale selected date to the visible month when changing to week view and alerts for every truncation source", () => {

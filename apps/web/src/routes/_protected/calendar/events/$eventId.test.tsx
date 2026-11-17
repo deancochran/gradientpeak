@@ -454,6 +454,51 @@ describe("EventDetailPage", () => {
     expect(screen.queryByRole("link", { name: "Edit plan for all sessions" })).toBeNull();
   });
 
+  it("renders truthful skipped and partial completion labels", () => {
+    mocks.search = { month: "2026-07", resourceType: "planned_session", view: "month" };
+    mocks.plannedSession = {
+      id: "00000000-0000-4000-8000-000000000001",
+      profileId: "00000000-0000-4000-8000-000000000002",
+      sessionRevision: 1,
+      planningDate: "2000-01-01",
+      lifecycle: {
+        status: "completed",
+        completion: {
+          state: "skipped",
+          skippedAt: "2026-07-01T00:00:00.000Z",
+          operationId: "00000000-0000-4000-8000-000000000005",
+        },
+      },
+      activityPlanId: "00000000-0000-4000-8000-000000000003",
+    };
+    const EventDetailPage = (Route as unknown as { component: React.ComponentType }).component;
+    const { rerender } = render(<EventDetailPage />);
+
+    expect(screen.getByText("Skipped")).toBeTruthy();
+    expect(screen.getByText("This session was skipped.")).toBeTruthy();
+    expect(screen.queryByText("This session is completed.")).toBeNull();
+
+    mocks.plannedSession = {
+      id: "00000000-0000-4000-8000-000000000001",
+      profileId: "00000000-0000-4000-8000-000000000002",
+      sessionRevision: 1,
+      planningDate: "2000-01-01",
+      lifecycle: {
+        status: "completed",
+        completion: {
+          state: "linked",
+          activityId: "00000000-0000-4000-8000-000000000004",
+          linkedAt: "2026-07-01T00:00:00.000Z",
+          outcome: "partial",
+        },
+      },
+      activityPlanId: "00000000-0000-4000-8000-000000000003",
+    };
+    rerender(<EventDetailPage />);
+
+    expect(screen.getByText("Partially completed")).toBeTruthy();
+  });
+
   it("keeps an invalid actual draft visible and does not capture a completion payload", async () => {
     mocks.search = { month: "2026-07", resourceType: "planned_session", view: "month" };
     mocks.plannedSession = {

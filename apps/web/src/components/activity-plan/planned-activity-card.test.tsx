@@ -39,6 +39,7 @@ function planned(
     metrics,
     navigation: { href: "/calendar/events/planned-1", target: "event" },
     plan,
+    plannedSession: null,
     status: "scheduled",
     subtitle: "Aerobic run",
     title: "Morning run",
@@ -74,5 +75,36 @@ describe("PlannedActivityCard", () => {
     expect(card.getAttribute("href")).toBe("/calendar/events/planned-1");
     expect(card.getAttribute("data-load")).toBe("55");
     expect(screen.getByRole("link", { name: "Open planned activity Morning run" })).toBeTruthy();
+  });
+
+  it("does not describe a skipped planned session as completed", () => {
+    render(
+      <PlannedActivityCard
+        item={{
+          ...planned(null),
+          plannedSession: {
+            id: "planned-1",
+            planningDate: "2026-08-20",
+            profileId: "00000000-0000-4000-8000-000000000010",
+            sessionRevision: 1,
+            source: {
+              kind: "direct",
+              operationId: "completion-outcome-planned-activity-card",
+            },
+            lifecycle: {
+              status: "completed",
+              completion: {
+                state: "skipped",
+                skippedAt: "2026-08-20T12:00:00.000Z",
+                operationId: "00000000-0000-4000-8000-000000000001",
+              },
+            },
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Skipped")).toBeTruthy();
+    expect(screen.queryByText("Completed")).toBeNull();
   });
 });

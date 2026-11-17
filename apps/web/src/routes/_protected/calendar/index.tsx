@@ -23,6 +23,7 @@ import { CalendarProjectionCard } from "../../../components/calendar/calendar-pr
 import { RouteFlashToast, type RouteFlashType } from "../../../components/route-flash-toast";
 import { api } from "../../../lib/api/client";
 import { loadRouteQuery } from "../../../lib/api/route-loading";
+import { getPlannedSessionOutcomeLabel } from "../../../lib/planned-session-outcome";
 import {
   formatMonthLabel,
   formatShortDayLabel,
@@ -276,7 +277,7 @@ function CalendarIndexPage() {
                   <div>
                     <p className="font-medium capitalize">{title}</p>
                     <p className="text-sm text-muted-foreground">
-                      {session.planningDate} · {session.lifecycle.status}
+                      {session.planningDate} · {getPlannedSessionOutcomeLabel(session.lifecycle)}
                     </p>
                   </div>
                   {session.lifecycle.status === "scheduled" ? (
