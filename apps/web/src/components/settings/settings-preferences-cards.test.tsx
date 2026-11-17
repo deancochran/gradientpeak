@@ -6,7 +6,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProductAnalyticsCard } from "./settings-preferences-cards";
 
 const mocks = vi.hoisted(() => ({
-  posthog: {
+  posthog: undefined as
+    | {
+        opt_in_capturing: ReturnType<typeof vi.fn>;
+        opt_out_capturing: ReturnType<typeof vi.fn>;
+      }
+    | undefined,
+  configuredPosthog: {
     opt_in_capturing: vi.fn(),
     opt_out_capturing: vi.fn(),
   },
@@ -28,15 +34,18 @@ vi.mock("@repo/ui/components/label", () => ({
 vi.mock("@repo/ui/components/switch", () => ({
   Switch: ({
     checked,
+    disabled,
     id,
     onCheckedChange,
   }: {
     checked: boolean;
+    disabled?: boolean;
     id: string;
     onCheckedChange: (checked: boolean) => void;
   }) => (
     <button
       aria-checked={checked}
+      disabled={disabled}
       id={id}
       onClick={() => onCheckedChange(!checked)}
       role="switch"
@@ -46,15 +55,22 @@ vi.mock("@repo/ui/components/switch", () => ({
 }));
 vi.mock("@repo/ui/components/button", () => ({ Button: () => null }));
 vi.mock("../providers/theme-provider", () => ({ useTheme: vi.fn() }));
+vi.mock("../providers/app-providers", () => ({
+  useProductAnalyticsProviderReady: () => true,
+}));
 
 describe("ProductAnalyticsCard persistence", () => {
   beforeEach(() => {
     localStorage.clear();
-    mocks.posthog.opt_in_capturing.mockReset();
-    mocks.posthog.opt_out_capturing.mockReset();
+    mocks.posthog = undefined;
+    mocks.configuredPosthog.opt_in_capturing.mockReset();
+    mocks.configuredPosthog.opt_out_capturing.mockReset();
   });
 
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
 
   it("restores only an explicit persisted opt-in", async () => {
     localStorage.setItem("gradientpeak-product-analytics-consent", "granted");
@@ -64,7 +80,7 @@ describe("ProductAnalyticsCard persistence", () => {
     await waitFor(() =>
       expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("true"),
     );
-    expect(mocks.posthog.opt_in_capturing).toHaveBeenCalledWith({ captureEventName: false });
+    expect(mocks.configuredPosthog.opt_in_capturing).not.toHaveBeenCalled();
   });
 
   it("keeps analytics opted out when storage is blocked", async () => {
@@ -77,7 +93,7 @@ describe("ProductAnalyticsCard persistence", () => {
     await waitFor(() =>
       expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("false"),
     );
-    expect(mocks.posthog.opt_out_capturing).toHaveBeenCalledOnce();
+    expect(mocks.configuredPosthog.opt_out_capturing).not.toHaveBeenCalled();
   });
 
   it("does not enable analytics when persisting the opt-in fails", async () => {
@@ -86,11 +102,28 @@ describe("ProductAnalyticsCard persistence", () => {
     });
 
     render(<ProductAnalyticsCard />);
+    await waitFor(() =>
+      expect((screen.getByRole("switch") as HTMLButtonElement).disabled).toBe(false),
+    );
     fireEvent.click(screen.getByRole("switch"));
 
     await waitFor(() =>
       expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("false"),
     );
-    expect(mocks.posthog.opt_out_capturing).toHaveBeenCalled();
+    expect(mocks.configuredPosthog.opt_out_capturing).not.toHaveBeenCalled();
+  });
+
+  it("persists a preference when product analytics is intentionally unavailable", async () => {
+    render(<ProductAnalyticsCard />);
+
+    await waitFor(() =>
+      expect((screen.getByRole("switch") as HTMLButtonElement).disabled).toBe(false),
+    );
+    fireEvent.click(screen.getByRole("switch"));
+
+    await waitFor(() =>
+      expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("true"),
+    );
+    expect(localStorage.getItem("gradientpeak-product-analytics-consent")).toBe("granted");
   });
 });

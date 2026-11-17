@@ -5,8 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ThemeProvider, useTheme } from "./theme-provider";
 
+const epochMocks = vi.hoisted(() => ({
+  ensureCurrentBrowserContractEpoch: vi.fn(),
+}));
+
 vi.mock("../../lib/contract-epoch", () => ({
-  ensureCurrentBrowserContractEpoch: vi.fn().mockResolvedValue(false),
+  ensureCurrentBrowserContractEpoch: epochMocks.ensureCurrentBrowserContractEpoch,
 }));
 
 function ThemeValue() {
@@ -24,6 +28,7 @@ describe("ThemeProvider persistence", () => {
       matches: false,
       removeEventListener: vi.fn(),
     });
+    epochMocks.ensureCurrentBrowserContractEpoch.mockResolvedValue(false);
   });
 
   afterEach(() => {
@@ -62,5 +67,37 @@ describe("ThemeProvider persistence", () => {
     await act(async () => {});
     expect(screen.getByRole("status").textContent).toBe("system:light");
     expect(document.documentElement.classList.contains("dark")).toBe(false);
+  });
+
+  it("keeps a selection made while contract-epoch restoration is pending", async () => {
+    let resolveEpoch!: (value: boolean) => void;
+    epochMocks.ensureCurrentBrowserContractEpoch.mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        resolveEpoch = resolve;
+      }),
+    );
+    localStorage.setItem("gradientpeak-theme-store", "dark");
+
+    function ThemeSelector() {
+      const { setTheme } = useTheme();
+      return (
+        <button type="button" onClick={() => setTheme("light")}>
+          Choose light
+        </button>
+      );
+    }
+
+    render(
+      <ThemeProvider>
+        <ThemeValue />
+        <ThemeSelector />
+      </ThemeProvider>,
+    );
+
+    screen.getByRole("button", { name: "Choose light" }).click();
+    resolveEpoch(false);
+
+    await waitFor(() => expect(screen.getByRole("status").textContent).toBe("light:light"));
+    await waitFor(() => expect(localStorage.getItem("gradientpeak-theme-store")).toBe("light"));
   });
 });

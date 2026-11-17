@@ -9,8 +9,9 @@ import {
 } from "@repo/ui/components/card";
 import { Label } from "@repo/ui/components/label";
 import { Switch } from "@repo/ui/components/switch";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
+import { useProductAnalyticsProviderReady } from "../providers/app-providers";
 import { useTheme } from "../providers/theme-provider";
 
 const productAnalyticsConsentStorageKey = "gradientpeak-product-analytics-consent";
@@ -34,45 +35,40 @@ function persistProductAnalyticsConsent(enabled: boolean) {
 
 export function ProductAnalyticsCard() {
   const posthog = usePostHog();
-  const initialPosthog = useRef(posthog);
   const [enabled, setEnabled] = useState(false);
   const [hasLoadedConsent, setHasLoadedConsent] = useState(false);
+  const isAnalyticsProviderReady = useProductAnalyticsProviderReady();
 
   useEffect(() => {
     const storedConsent = readProductAnalyticsConsent();
     setEnabled(storedConsent);
-    try {
-      if (storedConsent) {
-        initialPosthog.current?.opt_in_capturing?.({ captureEventName: false });
-      } else {
-        initialPosthog.current?.opt_out_capturing?.();
-      }
-    } catch {
-      // The local consent preference remains authoritative if the SDK is unavailable.
-    }
     setHasLoadedConsent(true);
   }, []);
 
   const updateConsent = (nextEnabled: boolean) => {
     if (!persistProductAnalyticsConsent(nextEnabled)) {
       setEnabled(false);
-      try {
-        posthog?.opt_out_capturing?.();
-      } catch {
-        // The UI remains opted out even when the SDK cannot accept the update.
+      if (isAnalyticsProviderReady) {
+        try {
+          posthog?.opt_out_capturing?.();
+        } catch {
+          // The UI remains opted out even when the SDK cannot accept the update.
+        }
       }
       return;
     }
 
     setEnabled(nextEnabled);
-    try {
-      if (nextEnabled) {
-        posthog?.opt_in_capturing?.({ captureEventName: false });
-      } else {
-        posthog?.opt_out_capturing?.();
+    if (isAnalyticsProviderReady) {
+      try {
+        if (nextEnabled) {
+          posthog?.opt_in_capturing?.({ captureEventName: false });
+        } else {
+          posthog?.opt_out_capturing?.();
+        }
+      } catch {
+        // The persisted preference is applied after a configured provider is ready.
       }
-    } catch {
-      // A persisted preference is restored when the SDK becomes available.
     }
   };
 
@@ -89,7 +85,7 @@ export function ProductAnalyticsCard() {
           <Label htmlFor="product-analytics-consent">Product analytics</Label>
           <Switch
             checked={enabled}
-            disabled={!hasLoadedConsent}
+            disabled={!hasLoadedConsent || !isAnalyticsProviderReady}
             id="product-analytics-consent"
             onCheckedChange={updateConsent}
           />
