@@ -98,26 +98,6 @@ async function choosePlanningTimezone(page: Page, timezone: string) {
     .click();
 }
 
-async function clickOrganizationAdministrationLink(
-  page: Page,
-  name: "Athletes" | "Dashboard" | "Staff",
-) {
-  const administration = page.getByRole("navigation", {
-    name: "Organization administration",
-  });
-  const desktopLink = administration.getByRole("link", { name, exact: true });
-  if (await desktopLink.isVisible()) {
-    await desktopLink.click();
-    return;
-  }
-
-  await page.getByRole("button", { name: "Open coaching navigation", exact: true }).click();
-  await page
-    .getByRole("navigation", { name: "Mobile coaching navigation" })
-    .getByRole("link", { name, exact: true })
-    .click();
-}
-
 test("settings.select-theme persists a chosen theme across reloads", async ({ athletePage }) => {
   await athletePage.goto("/settings");
 
@@ -259,6 +239,26 @@ test("coaching.view-assignment-facts opens a coach's scoped assignment facts", a
     await organization.cleanup();
   }
 });
+
+async function clickOrganizationAdministrationLink(
+  page: Page,
+  name: "Athletes" | "Dashboard" | "Staff",
+) {
+  const administration = page.getByRole("navigation", {
+    name: "Organization administration",
+  });
+  const desktopLink = administration.getByRole("link", { name, exact: true });
+  if (await desktopLink.isVisible()) {
+    await desktopLink.click();
+    return;
+  }
+
+  await page.getByRole("button", { name: "Open coaching navigation", exact: true }).click();
+  await page
+    .getByRole("navigation", { name: "Mobile coaching navigation" })
+    .getByRole("link", { name, exact: true })
+    .click();
+}
 
 test("coaching.admin-overview navigates to administrative staff and empty athlete records", async ({
   athleteActor,
