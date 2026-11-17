@@ -9,35 +9,71 @@ import {
 } from "@repo/ui/components/card";
 import { Label } from "@repo/ui/components/label";
 import { Switch } from "@repo/ui/components/switch";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useTheme } from "../providers/theme-provider";
 
 const productAnalyticsConsentStorageKey = "gradientpeak-product-analytics-consent";
 
+function readProductAnalyticsConsent() {
+  try {
+    return window.localStorage.getItem(productAnalyticsConsentStorageKey) === "granted";
+  } catch {
+    return false;
+  }
+}
+
+function persistProductAnalyticsConsent(enabled: boolean) {
+  try {
+    window.localStorage.setItem(productAnalyticsConsentStorageKey, enabled ? "granted" : "denied");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function ProductAnalyticsCard() {
   const posthog = usePostHog();
+  const initialPosthog = useRef(posthog);
   const [enabled, setEnabled] = useState(false);
+  const [hasLoadedConsent, setHasLoadedConsent] = useState(false);
 
   useEffect(() => {
-    const storedConsent = window.localStorage.getItem(productAnalyticsConsentStorageKey);
-    setEnabled(
-      storedConsent === "granted" ||
-        (storedConsent === null && posthog?.has_opted_out_capturing?.() === false),
-    );
-  }, [posthog]);
+    const storedConsent = readProductAnalyticsConsent();
+    setEnabled(storedConsent);
+    try {
+      if (storedConsent) {
+        initialPosthog.current?.opt_in_capturing?.({ captureEventName: false });
+      } else {
+        initialPosthog.current?.opt_out_capturing?.();
+      }
+    } catch {
+      // The local consent preference remains authoritative if the SDK is unavailable.
+    }
+    setHasLoadedConsent(true);
+  }, []);
 
   const updateConsent = (nextEnabled: boolean) => {
-    window.localStorage.setItem(
-      productAnalyticsConsentStorageKey,
-      nextEnabled ? "granted" : "denied",
-    );
-    if (nextEnabled) {
-      posthog?.opt_in_capturing?.({ captureEventName: false });
-    } else {
-      posthog?.opt_out_capturing?.();
+    if (!persistProductAnalyticsConsent(nextEnabled)) {
+      setEnabled(false);
+      try {
+        posthog?.opt_out_capturing?.();
+      } catch {
+        // The UI remains opted out even when the SDK cannot accept the update.
+      }
+      return;
     }
+
     setEnabled(nextEnabled);
+    try {
+      if (nextEnabled) {
+        posthog?.opt_in_capturing?.({ captureEventName: false });
+      } else {
+        posthog?.opt_out_capturing?.();
+      }
+    } catch {
+      // A persisted preference is restored when the SDK becomes available.
+    }
   };
 
   return (
@@ -53,6 +89,7 @@ export function ProductAnalyticsCard() {
           <Label htmlFor="product-analytics-consent">Product analytics</Label>
           <Switch
             checked={enabled}
+            disabled={!hasLoadedConsent}
             id="product-analytics-consent"
             onCheckedChange={updateConsent}
           />
