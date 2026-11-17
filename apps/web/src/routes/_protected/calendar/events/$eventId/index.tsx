@@ -32,6 +32,10 @@ import { api } from "../../../../../lib/api/client";
 import { loadRouteQuery } from "../../../../../lib/api/route-loading";
 import { contractEpochFormInputProps } from "../../../../../lib/contract-epoch";
 import {
+  describePlannedSessionOutcome,
+  getPlannedSessionOutcomeLabel,
+} from "../../../../../lib/planned-session-outcome";
+import {
   formatDayLabel,
   formatEventTimeRange,
   getEventTitle,
@@ -475,7 +479,9 @@ function EventDetailPage() {
               <CardContent className="space-y-4">
                 <div className="flex flex-wrap gap-2">
                   <Badge variant="outline">{activityCategory}</Badge>
-                  <Badge variant="secondary">{plannedSession.lifecycle.status}</Badge>
+                  <Badge variant="secondary">
+                    {getPlannedSessionOutcomeLabel(plannedSession.lifecycle)}
+                  </Badge>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-3">
                   <DetailRow compact label="Planning date" value={plannedSession.planningDate} />
@@ -790,7 +796,7 @@ function EventDetailPage() {
                 </>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  This session is {plannedSession.lifecycle.status}.
+                  {describePlannedSessionOutcome(plannedSession.lifecycle)}
                 </p>
               )}
             </CardContent>

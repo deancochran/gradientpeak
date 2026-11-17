@@ -1,6 +1,10 @@
 import type { CalendarProjectionItem } from "@repo/core";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { CalendarDays } from "lucide-react";
+import {
+  getCalendarStatusLabel,
+  getPlannedSessionOutcomeLabel,
+} from "../../lib/planned-session-outcome";
 import { formatDayLabel } from "../../lib/planning";
 import { AppHrefLink } from "../app-href-link";
 import { ActivityPlanCard } from "./activity-plan-card";
@@ -8,15 +12,16 @@ import { ActivityPlanEstimateRow } from "./activity-plan-estimates";
 
 type PlannedActivityCardData = Pick<
   CalendarProjectionItem,
-  "calendarDate" | "id" | "metrics" | "navigation" | "plan" | "status" | "subtitle" | "title"
+  | "calendarDate"
+  | "id"
+  | "metrics"
+  | "navigation"
+  | "plan"
+  | "plannedSession"
+  | "status"
+  | "subtitle"
+  | "title"
 >;
-
-function statusLabel(status: PlannedActivityCardData["status"]) {
-  if (status === "completed") return "Completed";
-  if (status === "cancelled") return "Cancelled";
-  if (status === "expired") return "Unverified";
-  return "Planned";
-}
 
 export function PlannedActivityCard({ item }: { item: PlannedActivityCardData }) {
   if (item.plan) {
@@ -51,7 +56,11 @@ export function PlannedActivityCard({ item }: { item: PlannedActivityCardData })
             <ActivityPlanEstimateRow compact metrics={item.metrics} />
             <span className="mt-3 flex gap-4 text-xs text-muted-foreground">
               <span>{formatDayLabel(item.calendarDate)}</span>
-              <span>{statusLabel(item.status)}</span>
+              <span>
+                {item.plannedSession
+                  ? getPlannedSessionOutcomeLabel(item.plannedSession.lifecycle)
+                  : getCalendarStatusLabel(item.status)}
+              </span>
             </span>
           </span>
         </AppHrefLink>
