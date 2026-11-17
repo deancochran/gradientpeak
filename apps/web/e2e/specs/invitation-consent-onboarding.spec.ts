@@ -94,29 +94,69 @@ test("new invited email verifies in a separate tab and explicitly accepts six-sc
   await anonymousPage.getByRole("button", { name: /^sign up$/i }).click();
   await expect(anonymousPage).toHaveURL(/\/auth\/verify/);
   // Exercise the native POST fallback, not only the enhanced resend handler.
-  await anonymousPage.locator('form[method="post"]').evaluate((form) => {
+  const resendForm = anonymousPage
+    .getByRole("button", { name: "Resend Verification Email", exact: true })
+    .locator("xpath=ancestor::form");
+  await expect(resendForm).toBeVisible();
+  const resendAction = await resendForm.getAttribute("action");
+  if (!resendAction) throw new Error("Verification form is missing its native POST action");
+  const resendUrl = new URL(resendAction, anonymousPage.url()).toString();
+  const resendStartedAt = Date.now();
+  const nativeRedirect = anonymousPage.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.url() === resendUrl &&
+      response.status() === 303,
+  );
+  await resendForm.evaluate((form) => {
     if (!(form instanceof HTMLFormElement)) throw new Error("Missing verification form");
     form.submit();
   });
-  await expect(anonymousPage).toHaveURL(/flashType=success/);
-  expect(new URL(anonymousPage.url()).searchParams.get("redirect")).toBe(
-    "/organization-invitations",
+  const redirectLocation = (await nativeRedirect).headers().location;
+  if (!redirectLocation) throw new Error("Verification resend POST did not return a redirect");
+  const nativeReturn = new URL(redirectLocation, anonymousPage.url());
+  expect(nativeReturn.pathname).toBe("/auth/verify");
+  expect(nativeReturn.searchParams.get("flashType")).toBe("success");
+  expect(nativeReturn.searchParams.get("flash")).toBe(
+    "Verification email sent. Check your inbox and spam folder.",
   );
+  expect(nativeReturn.searchParams.get("redirect")).toBe("/organization-invitations");
+  await expect(
+    anonymousPage.getByText("Verification email sent. Check your inbox and spam folder.", {
+      exact: true,
+    }),
+  ).toBeVisible();
   await assertNotAccepted();
   const capturePath = process.env.AUTH_EMAIL_CAPTURE_PATH;
   if (!capturePath) throw new Error("Missing private disposable mail capture");
   let actionUrl = "";
   await expect
-    .poll(async () => {
-      const lines = (await readFile(capturePath, "utf8").catch(() => ""))
-        .split("\n")
-        .filter(Boolean);
-      const mail = lines
-        .map((line) => JSON.parse(line) as { to: string; kind: string; actionUrl: string })
-        .find((item) => item.to === email && item.kind === "verification");
-      actionUrl = mail?.actionUrl ?? "";
-      return Boolean(actionUrl);
-    })
+    .poll(
+      async () => {
+        const mail = (await readFile(capturePath, "utf8").catch(() => ""))
+          .split("\n")
+          .filter(Boolean)
+          .map(
+            (line) =>
+              JSON.parse(line) as {
+                capturedAt: string;
+                to: string;
+                kind: string;
+                actionUrl: string;
+              },
+          )
+          .reverse()
+          .find(
+            (item) =>
+              item.to === email &&
+              item.kind === "verification" &&
+              Date.parse(item.capturedAt) >= resendStartedAt,
+          );
+        actionUrl = mail?.actionUrl ?? "";
+        return Boolean(actionUrl);
+      },
+      { timeout: 15_000 },
+    )
     .toBe(true);
   // A new tab has no original token handoff: discovery must use verified identity.
   const verifiedPage = await anonymousPage.context().newPage();
