@@ -356,7 +356,7 @@ function MessagesPage() {
   };
 
   return (
-    <div className="h-[calc(100vh-8rem)] w-full overflow-hidden rounded-lg border bg-background">
+    <div className="h-[calc(100dvh-8rem)] w-full overflow-hidden rounded-lg border bg-background">
       <RouteFlashToast
         {...(flash === undefined ? {} : { message: flash })}
         {...(flashType === undefined ? {} : { type: flashType })}
@@ -376,7 +376,7 @@ function MessagesPage() {
           })
         }
       />
-      <div className="flex h-full w-full">
+      <div className="flex h-full w-full min-w-0">
         <div className="hidden h-full w-[28%] min-w-[18rem] max-w-[28rem] shrink-0 border-r xl:block">
           <div className="flex h-full flex-col">
             <div className="flex items-center justify-between gap-3 p-4">
@@ -478,7 +478,7 @@ function MessagesPage() {
             </ScrollArea>
           </div>
         </div>
-        <div className="flex-1">
+        <div className="flex min-w-0 flex-1 flex-col">
           {!compose ? (
             <div className="flex items-center justify-between border-b p-4 xl:hidden">
               <h1 className="font-semibold">Messages</h1>
@@ -543,7 +543,7 @@ function MessagesPage() {
             </div>
           ) : null}
           {compose ? (
-            <div className="flex h-full flex-col">
+            <div className="flex min-h-0 flex-1 flex-col">
               <div className="flex items-center justify-between border-b p-4">
                 <div>
                   <h1 className="font-semibold">New message</h1>
@@ -768,7 +768,7 @@ function MessagesPage() {
           ) : conversationsQuery.isError ? (
             <MessagesInboxErrorState onRetry={() => void conversationsQuery.refetch()} />
           ) : selectedId && selectedConversation ? (
-            <div className="flex h-full flex-col">
+            <div className="flex min-h-0 flex-1 flex-col">
               <div className="flex items-center border-b p-4">
                 <div className="flex items-center gap-3">
                   <Avatar>
@@ -792,7 +792,7 @@ function MessagesPage() {
                   </div>
                 </div>
               </div>
-              <ScrollArea className="flex-1 p-4">
+              <ScrollArea className="min-h-0 flex-1 p-4">
                 <div className="flex flex-col gap-4">
                   {messages.map((message) => {
                     const isMe = message.sender_id === user?.id;
@@ -800,7 +800,7 @@ function MessagesPage() {
                       <div
                         key={message.id}
                         className={cn(
-                          "flex w-max max-w-[75%] flex-col gap-2 rounded-lg px-3 py-2 text-sm",
+                          "flex min-w-0 w-fit max-w-[75%] flex-col gap-2 wrap-anywhere rounded-lg px-3 py-2 text-sm",
                           isMe ? "ml-auto bg-primary text-primary-foreground" : "bg-muted",
                         )}
                       >
@@ -815,7 +815,7 @@ function MessagesPage() {
                   ) : null}
                 </div>
               </ScrollArea>
-              <div className="border-t p-4">
+              <div className="shrink-0 border-t p-4">
                 <Form {...form}>
                   <form action={sendMessageAction.url} method="post" onSubmit={handleSend}>
                     <input {...contractEpochFormInputProps} />
