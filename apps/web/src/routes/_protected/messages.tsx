@@ -800,7 +800,7 @@ function MessagesPage() {
                       <div
                         key={message.id}
                         className={cn(
-                          "flex min-w-0 w-fit max-w-[75%] flex-col gap-2 break-all rounded-lg px-3 py-2 text-sm",
+                          "flex min-w-0 w-fit max-w-[75%] flex-col gap-2 wrap-anywhere rounded-lg px-3 py-2 text-sm",
                           isMe ? "ml-auto bg-primary text-primary-foreground" : "bg-muted",
                         )}
                       >

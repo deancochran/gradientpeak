@@ -6,11 +6,24 @@ test("messaging conversation keeps the composer and long messages within mobile 
 }, testInfo) => {
   const { a, b } = messaging.actors;
   const sender = new MessagingPage(a.page);
-  const message = `Readable conversation text ${"x".repeat(640)}`;
+  const normalMessage =
+    "Please review the interval instructions before you begin your next distance session.";
+  const longMessage = `Readable conversation text ${"x".repeat(640)}`;
 
   await sender.startDirectMessage(b.username);
-  await sender.send(message);
-  await expect(a.page.getByText(message, { exact: true }).last()).toBeVisible();
+  await sender.send(normalMessage);
+  await sender.send(longMessage);
+  const normalBubble = a.page.getByText(normalMessage, { exact: true }).last();
+  await expect(normalBubble).toBeVisible();
+  await expect(a.page.getByText(longMessage, { exact: true }).last()).toBeVisible();
+  await expect
+    .poll(() =>
+      normalBubble.evaluate((element) => {
+        const styles = window.getComputedStyle(element);
+        return { overflowWrap: styles.overflowWrap, wordBreak: styles.wordBreak };
+      }),
+    )
+    .toEqual({ overflowWrap: "anywhere", wordBreak: "normal" });
 
   for (const viewport of [
     { width: 320, height: 844 },
@@ -21,7 +34,7 @@ test("messaging conversation keeps the composer and long messages within mobile 
 
     const composer = a.page.getByPlaceholder("Type a message...");
     const send = a.page.getByRole("button", { name: "Send message" });
-    const bubble = a.page.getByText(message, { exact: true }).last();
+    const bubble = a.page.getByText(longMessage, { exact: true }).last();
     await expect(composer).toBeVisible();
     await expect(send).toBeVisible();
     await expect(bubble).toBeVisible();
