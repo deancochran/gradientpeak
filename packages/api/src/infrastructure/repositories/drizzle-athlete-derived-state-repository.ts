@@ -812,7 +812,7 @@ export function createDrizzleAthleteDerivedStateRepository(
             lease_expires_at: leaseExpiresAt,
             retry_after: null,
             last_failure_code: null,
-            updated_at: claimedAt,
+            updated_at: sql`clock_timestamp()`,
           })
           .where(
             and(
@@ -839,7 +839,7 @@ export function createDrizzleAthleteDerivedStateRepository(
             lease_expires_at: new Date(transition.leaseExpiresAt),
             retry_after: null,
             last_failure_code: null,
-            updated_at: new Date(transition.claimedAt),
+            updated_at: sql`clock_timestamp()`,
           })
           .where(
             and(
@@ -861,7 +861,7 @@ export function createDrizzleAthleteDerivedStateRepository(
           .update(profileAthleteState)
           .set({
             lease_expires_at: new Date(transition.leaseExpiresAt),
-            updated_at: new Date(transition.renewedAt),
+            updated_at: sql`clock_timestamp()`,
           })
           .where(
             and(
