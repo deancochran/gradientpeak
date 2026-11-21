@@ -19,6 +19,7 @@ import {
   type AthletePerformanceModelReadInput,
   createAthletePerformanceModelRepository,
 } from "./athlete-performance-model-repository";
+import { markAthleteStateDirty } from "./athlete-state-repository";
 
 const seededProfileIds: string[] = [];
 const seededAt = new Date("2026-08-01T02:00:00.000Z");
@@ -190,20 +191,29 @@ async function seedCanonicalBikeEffort(
 
 async function seedMaxHrEvidence(activity: SeededBikeActivity, recordedAt: Date): Promise<string> {
   const evidenceId = randomUUID();
-  await db.insert(profileMetrics).values({
-    id: evidenceId,
-    profile_id: activity.profileId,
-    metric_type: "max_hr",
-    recorded_at: recordedAt,
-    unit: "bpm",
-    value: 170,
-    source: "derived",
-    method: "max_hr_progressive_test_v1",
-    calculation_version: "max_hr_progressive_test_v1",
-    provenance: { segment_id: activity.segmentId },
-    reference_activity_id: activity.activityId,
-    created_at: seededAt,
-    updated_at: seededAt,
+  await db.transaction(async (tx) => {
+    await tx.insert(profileMetrics).values({
+      id: evidenceId,
+      profile_id: activity.profileId,
+      metric_type: "max_hr",
+      recorded_at: recordedAt,
+      unit: "bpm",
+      value: 170,
+      source: "derived",
+      method: "max_hr_progressive_test_v1",
+      calculation_version: "max_hr_progressive_test_v1",
+      provenance: { segment_id: activity.segmentId },
+      reference_activity_id: activity.activityId,
+      created_at: seededAt,
+      updated_at: seededAt,
+    });
+    // Profile metrics intentionally have no generic trigger. Reproduce the accepted
+    // evidence boundary by invalidating the athlete state in the same transaction.
+    await markAthleteStateDirty(tx, {
+      profileId: activity.profileId,
+      effectiveAt: recordedAt,
+      now: seededAt,
+    });
   });
   return evidenceId;
 }
