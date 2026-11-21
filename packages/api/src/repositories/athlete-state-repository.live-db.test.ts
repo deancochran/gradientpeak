@@ -2794,6 +2794,7 @@ describe("athlete state persistence", () => {
       .where(eq(profileAthleteState.profile_id, profileId));
     if (!beforeImport || beforeImport.dirty_from_at !== null)
       throw new Error("Expected published calibration baseline");
+    expect(beforeImport.published_revision).toBe(beforeImport.source_revision);
     expect(beforeImport.fitness).toBe(0);
     await expect(
       db
@@ -2895,7 +2896,11 @@ describe("athlete state persistence", () => {
       fromDay: "2026-01-01",
       toDay: "2026-01-02",
     }).state;
-    expect(published?.published_revision).toBe(expectedRevision);
+    expect(published).toMatchObject({
+      source_revision: expectedRevision,
+      published_revision: expectedRevision,
+      dirty_from_at: null,
+    });
     const effects = await db
       .select({ load: activityTrainingEffects.common_load })
       .from(activityTrainingEffects)

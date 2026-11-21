@@ -11,6 +11,7 @@ describe.runIf(enabled)("guarded disposable runner fixture", () => {
     const postgresUrl = process.env.POSTGRES_URL;
     expect(databaseUrl).toMatch(/^postgresql:\/\/[^/]+\/gradientpeak_api_live_db_\d+_\d+$/);
     expect(postgresUrl).toBe(databaseUrl);
+    expect(process.env.RUN_LIVE_DB_TESTS).toBe("1");
     writeFileSync(receiptPath, JSON.stringify({ databaseUrl, postgresUrl }));
     if (process.env.LIVE_DB_DISPOSABLE_FORCE_FAILURE === "1") {
       throw new Error("intentional disposable runner failure");
