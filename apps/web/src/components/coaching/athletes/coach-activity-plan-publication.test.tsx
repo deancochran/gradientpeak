@@ -341,6 +341,31 @@ describe("CoachActivityPlanPublication", () => {
     );
   });
 
+  it("retains a newer blank date draft when a delayed valid return context arrives", () => {
+    const props = {
+      athleteId: "22222222-2222-4222-8222-222222222222",
+      organizationId: "11111111-1111-4111-8111-111111111111",
+    };
+    const view = render(<CoachActivityPlanPublication {...props} />);
+    const date = screen.getByLabelText("Athlete planning date");
+    fireEvent.change(date, { target: { value: "2026-11-23" } });
+    fireEvent.change(date, { target: { value: "" } });
+
+    view.rerender(
+      <CoachActivityPlanPublication
+        {...props}
+        preparation={{
+          athleteId: props.athleteId,
+          organizationId: props.organizationId,
+          planningDate: "2026-11-23",
+          returnTo: "athlete-workspace",
+        }}
+      />,
+    );
+
+    expect((screen.getByLabelText("Athlete planning date") as HTMLInputElement).value).toBe("");
+  });
+
   it("resolves a prepared owned plan outside the first library page", async () => {
     mocks.selectedPlan = {
       activityPlanRevision: 7,

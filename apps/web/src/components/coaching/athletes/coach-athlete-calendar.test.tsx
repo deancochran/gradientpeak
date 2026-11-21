@@ -115,11 +115,7 @@ describe("CoachAthleteCalendar", () => {
     });
     await screen.findByText("2026-03-09");
     expect(screen.getAllByText("2026-03-08")).toHaveLength(1);
-    expect(mocks.navigate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        replace: true,
-      }),
-    );
+    expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
   it("discards a deferred completion through an actor A-B-A scope transition", async () => {

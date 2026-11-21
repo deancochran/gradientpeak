@@ -156,13 +156,15 @@ export function CoachAthleteCalendar({
         return;
       }
       setRange(nextRange);
-      void navigate({
-        search: ((previous: Record<string, unknown>) => ({
-          ...previous,
-          calendarStartDate: nextRange.startDate,
-        })) as never,
-        replace: true,
-      });
+      if (!append) {
+        void navigate({
+          search: ((previous: Record<string, unknown>) => ({
+            ...previous,
+            calendarStartDate: nextRange.startDate,
+          })) as never,
+          replace: true,
+        });
+      }
       setResult(
         append && result.status === "granted"
           ? {

@@ -116,8 +116,9 @@ function AthleteWorkspacePage() {
   const result = Route.useLoaderData();
   const { overview, directory, identity, calendar, completedActivities, goals, zones } = result;
   const { athleteId, organizationId } = Route.useParams();
+  const workspaceSearch = Route.useSearch();
   const preparationSearch = parseActivityPlanPreparationSearch(
-    Route.useSearch() as Record<string, unknown>,
+    workspaceSearch as Record<string, unknown>,
   );
   const { actorProfileId } = Route.useRouteContext();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
@@ -173,10 +174,10 @@ function AthleteWorkspacePage() {
             actorProfileId={actorProfileId}
             athleteId={athleteId}
             initialRange={
-              preparation?.calendarStartDate
+              workspaceSearch.calendarStartDate
                 ? {
-                    startDate: preparation.calendarStartDate,
-                    endDateExclusive: addDaysDateOnlyUtc(preparation.calendarStartDate, 7),
+                    startDate: workspaceSearch.calendarStartDate,
+                    endDateExclusive: addDaysDateOnlyUtc(workspaceSearch.calendarStartDate, 7),
                   }
                 : result.calendarRange
             }
@@ -188,10 +189,10 @@ function AthleteWorkspacePage() {
         {identity ? (
           <CoachActivityPlanPublication
             athleteId={athleteId}
-            {...(preparation?.calendarStartDate
-              ? { calendarStartDate: preparation.calendarStartDate }
+            {...(workspaceSearch.calendarStartDate
+              ? { calendarStartDate: workspaceSearch.calendarStartDate }
               : {})}
-            key={`${organizationId}:${athleteId}:${preparation?.activityPlanId ?? ""}:${preparation?.planningDate ?? ""}`}
+            key={`${organizationId}:${athleteId}`}
             organizationId={organizationId}
             preparation={preparation}
           />
