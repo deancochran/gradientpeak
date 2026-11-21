@@ -75,19 +75,6 @@ jobs:
       - name: Check dead files and dependencies
         run: pnpm knip
 
-      - name: Start local database
-        run: pnpm --filter @repo/db self-host:up
-
-      - name: Verify database migrations
-        run: pnpm --filter @repo/db db:verify
-
-      - name: Run live database tests
-        run: pnpm --filter @repo/api test:live-db
-
-      - name: Stop local database
-        if: always()
-        run: pnpm --filter @repo/db self-host:down
-
       - name: Tests
         run: pnpm test
 
@@ -99,7 +86,9 @@ jobs:
     if: needs.classify.outputs.profile == 'db' || needs.classify.outputs.profile == 'full'
     needs: classify
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # This now owns the full suite formerly run by static (GitHub's 360-minute default).
+    # Preserve that budget until cold CI timings support a smaller bound.
+    timeout-minutes: 360
     env:
       CI: true
     steps:
@@ -116,8 +105,12 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Start required local database
         run: pnpm --filter @repo/db self-host:up
-      - name: Run required database check
-        run: pnpm qa:run --profile db --integration-only
+      - name: Verify database migrations
+        run: pnpm --filter @repo/db db:verify
+      - name: Run live database suite
+        run: pnpm --filter @repo/api test:live-db
+      - name: Verify disposable database runner cleanup
+        run: pnpm --filter @repo/api test:live-db:runner:disposable
       - name: Stop local database
         if: always()
         run: pnpm --filter @repo/db self-host:down
