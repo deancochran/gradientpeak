@@ -109,3 +109,21 @@ export function trainingStateHasValues(
 ) {
   return points.some((point) => point[source][metric] !== null);
 }
+
+export function getTrainingStateAccessibilityLabel(
+  visual: TrainingStateVisualContract,
+  metric: TrainingStateMetricId,
+  source: TrainingStateSource,
+) {
+  const definition = getTrainingStateMetric(metric);
+  const values = visual.points
+    .map((point) => point[source][metric])
+    .filter((value): value is number => value !== null);
+  const sourceLabel = getTrainingStateSourceLabel(source);
+  if (!values.length) {
+    return `${definition.label} ${sourceLabel} training state. No values are available.`;
+  }
+  const first = values[0];
+  const latest = values.at(-1);
+  return `${definition.label} ${sourceLabel} training state. ${values.length} values in ${visual.unitLabel}. First ${formatTrainingStateValue(first ?? null, visual.unitLabel)}. Latest ${formatTrainingStateValue(latest ?? null, visual.unitLabel)}.`;
+}

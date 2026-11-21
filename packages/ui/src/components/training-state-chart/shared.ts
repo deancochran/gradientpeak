@@ -1,6 +1,7 @@
 export {
   formatTrainingStateDate,
   formatTrainingStateValue,
+  getTrainingStateAccessibilityLabel,
   getTrainingStateMetric,
   getTrainingStateSourceLabel,
   getTrainingStateSourceStatus,
@@ -16,6 +17,7 @@ export {
   trainingStateSourceLabels,
 } from "../../lib/training-state";
 
+import type React from "react";
 import type {
   TrainingStateMetricId,
   TrainingStateSource,
@@ -31,3 +33,15 @@ export type TrainingStateLegendProps = {
 };
 
 export type TrainingStateVisualFixture = TrainingStateVisualContract & TrainingStateLegendProps;
+
+export type TrainingStateChartProps = {
+  children?: React.ReactNode;
+  className?: string;
+  description?: string;
+  emptyMessage: string;
+  metric: TrainingStateMetricId;
+  source: TrainingStateSource;
+  testId?: string;
+  title?: string;
+  visual: TrainingStateVisualContract;
+};

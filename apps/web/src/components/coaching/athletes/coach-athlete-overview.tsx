@@ -9,9 +9,10 @@ import {
 import {
   formatTrainingStateDate,
   getTrainingStateMetric,
-  getTrainingStateSourceStatus,
+  TrainingStateChart,
   TrainingStateLegend,
   type TrainingStateMetricId,
+  type TrainingStateVisualContract,
   type TrainingStateVisualPoint,
 } from "@repo/ui/components/training-state-chart";
 import { SimpleTrendChart } from "../../charts/simple-trend-chart";
@@ -241,6 +242,12 @@ function TrainingLoadHistory({ history }: { history: OverviewModel["loadHistory"
       form: point.loadBalance,
     },
   }));
+  const trainingStateVisual: TrainingStateVisualContract = {
+    points: trainingStatePoints,
+    sourceStatus: "recorded",
+    timeZone: timezone,
+    unitLabel: "Common Load points",
+  };
   return (
     <section aria-label="Recent training load" className="space-y-3">
       <SimpleTrendChart
@@ -285,20 +292,17 @@ function TrainingLoadHistory({ history }: { history: OverviewModel["loadHistory"
       <div className="grid gap-3 lg:grid-cols-3">
         <HistoricalLoadChart
           metric="fitness"
-          points={trainingStatePoints}
-          timeZone={timezone}
+          visual={trainingStateVisual}
           description="Historical modeled long-term load from the same completed daily Common Load observations."
         />
         <HistoricalLoadChart
           metric="fatigue"
-          points={trainingStatePoints}
-          timeZone={timezone}
+          visual={trainingStateVisual}
           description="Historical modeled recent load from the same completed daily Common Load observations."
         />
         <HistoricalLoadChart
           metric="form"
-          points={trainingStatePoints}
-          timeZone={timezone}
+          visual={trainingStateVisual}
           description="Historical modeled load balance from the same completed daily Common Load observations; negative values are shown as recorded."
         />
       </div>
@@ -337,46 +341,24 @@ function TrainingLoadHistory({ history }: { history: OverviewModel["loadHistory"
 function HistoricalLoadChart({
   description,
   metric,
-  points,
-  timeZone,
+  visual,
 }: {
   description: string;
   metric: TrainingStateMetricId;
-  points: readonly TrainingStateVisualPoint[];
-  timeZone: string;
+  visual: TrainingStateVisualContract;
 }) {
   const definition = getTrainingStateMetric(metric);
-  const sourceStatus = getTrainingStateSourceStatus(points);
   return (
-    <div className={trainingStateTrendColorClasses[metric]}>
-      <SimpleTrendChart
-        axisLabels={{ x: "Planning date", y: "Load" }}
-        description={description}
-        emptyMessage={`No historical ${definition.label.toLowerCase()} values are available.`}
-        formatX={(point) =>
-          formatTrainingStateDate(new Date(point).toISOString().slice(0, 10), timeZone)
-        }
-        formatValue={(point) => point.toFixed(1)}
-        points={points.map((point) => ({
-          id: point.date,
-          label: point.date,
-          value: point.recorded[metric],
-          x: Date.parse(`${point.date}T00:00:00Z`),
-        }))}
-        summaryLabels={{ first: "First", latest: "Latest", trend: "Change" }}
-        title={`Historical ${definition.label} (${sourceStatus})`}
-      />
-    </div>
+    <TrainingStateChart
+      description={description}
+      emptyMessage={`No historical ${definition.label.toLowerCase()} values are available.`}
+      metric={metric}
+      source="recorded"
+      title={`Historical ${definition.label} (recorded)`}
+      visual={visual}
+    />
   );
 }
-
-const trainingStateTrendColorClasses: Record<TrainingStateMetricId, string> = {
-  fatigue:
-    "[&_polyline.text-primary]:!text-[var(--chart-3)] [&_[data-chart-point]]:!border-[var(--chart-3)]",
-  fitness:
-    "[&_polyline.text-primary]:!text-[var(--chart-1)] [&_[data-chart-point]]:!border-[var(--chart-1)]",
-  form: "[&_polyline.text-primary]:!text-[var(--chart-5)] [&_[data-chart-point]]:!border-[var(--chart-5)]",
-};
 
 function formatCoverage(value: string | null) {
   return value ? new Date(value).toLocaleString() : "not available";

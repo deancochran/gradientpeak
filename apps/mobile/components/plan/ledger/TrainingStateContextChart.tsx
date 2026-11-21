@@ -1,6 +1,7 @@
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import {
+  TrainingStateChart,
   TrainingStateLegend,
   type TrainingStateVisualPoint,
   trainingStateMetrics,
@@ -85,6 +86,12 @@ export function TrainingStateContextChart({
     projectedFitness: point.projected.fitness,
     projectedForm: point.projected.form,
   }));
+  const visual = {
+    points: visualPoints,
+    sourceStatus: state.sourceStatus,
+    timeZone: state.timeZone,
+    unitLabel: state.unitLabel,
+  } as const;
   const sourceStatus = state.sourceStatus;
   const sources =
     sourceStatus === "mixed"
@@ -107,12 +114,12 @@ export function TrainingStateContextChart({
         </Text>
       </View>
       {chartData.length ? (
-        <View
-          accessible
-          accessibilityLabel={state.summary}
-          accessibilityRole="image"
-          className="h-40 overflow-hidden rounded-2xl border border-border bg-card p-2"
-          testID="planning-ledger-state-chart"
+        <TrainingStateChart
+          emptyMessage="Training state is unavailable for this period."
+          metric="fitness"
+          source={sourceStatus === "projected" ? "projected" : "recorded"}
+          testId="planning-ledger-state-chart"
+          visual={visual}
         >
           <CartesianChart<StateDatum, "index", StateKey>
             data={chartData}
@@ -178,7 +185,7 @@ export function TrainingStateContextChart({
               </>
             )}
           </CartesianChart>
-        </View>
+        </TrainingStateChart>
       ) : (
         <Text className="rounded-xl bg-muted/20 px-3 py-3 text-sm text-muted-foreground">
           Training state is unavailable for this period.

@@ -1,12 +1,18 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { trainingStateChartFixtures } from "./fixtures";
-import { TrainingStateLegend } from "./index.web";
+import { TrainingStateChart } from "./index.web";
 
 const meta = {
   title: "Components/TrainingStateChart",
-  component: TrainingStateLegend,
-  args: trainingStateChartFixtures.mixedSeries,
-} satisfies Meta<typeof TrainingStateLegend>;
+  component: TrainingStateChart,
+  args: {
+    emptyMessage: "Training state is unavailable for this period.",
+    metric: "fitness",
+    source: "recorded",
+    title: "Historical Fitness",
+    visual: trainingStateChartFixtures.mixedSeries,
+  },
+} satisfies Meta<typeof TrainingStateChart>;
 
 export default meta;
 
