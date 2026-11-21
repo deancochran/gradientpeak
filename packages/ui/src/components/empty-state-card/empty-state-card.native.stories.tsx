@@ -26,3 +26,12 @@ export const Playground: Story = {
     </View>
   ),
 };
+
+export const UnbrokenContent: Story = {
+  ...Playground,
+  args: emptyStateCardFixtures.unbrokenText,
+};
+export const Unavailable: Story = {
+  ...Playground,
+  args: emptyStateCardFixtures.unavailable,
+};

@@ -20,3 +20,6 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Playground: Story = {};
+
+export const UnbrokenContent: Story = { args: emptyStateCardFixtures.unbrokenText };
+export const Unavailable: Story = { args: emptyStateCardFixtures.unavailable };

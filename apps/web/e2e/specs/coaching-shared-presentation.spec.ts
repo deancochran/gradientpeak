@@ -139,11 +139,11 @@ test("shared coaching presentation retains themes, search and navigation across 
     await organizationLink.click();
     await expect(ownerPage).toHaveURL(`/organizations/${organizationId}/dashboard`);
 
-    for (const [label, destination] of [
-      ["Staff", "staff"],
-      ["Assignments", "assignments"],
-      ["Invitations", "invitations"],
-      ["Overview", "dashboard"],
+    for (const [label, destination, readySelector] of [
+      ["Staff", "staff", "#staff-roster-heading"],
+      ["Assignments", "assignments", 'h1:has-text("Coach assignments")'],
+      ["Invitations", "invitations", "#organization-invitations-heading"],
+      ["Overview", "dashboard", '[data-testid="organization-overview-metrics"]'],
     ] as const) {
       const administration = ownerPage.getByRole("navigation", {
         name: "Organization administration",
@@ -154,7 +154,13 @@ test("shared coaching presentation retains themes, search and navigation across 
       await expect(ownerPage).toHaveURL(
         new RegExp(`/organizations/${organizationId}/${destination}(?:\\?.*)?$`),
       );
+      await expect(ownerPage.locator(readySelector)).toBeVisible();
       await expect(administration).toBeVisible();
+      await expect(administration.getByRole("link", { name: label, exact: true })).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+      await expect(administration.locator('a[aria-current="page"]')).toHaveCount(1);
       await inspectSurface(ownerPage, testInfo, `${theme}-administration-${destination}`);
     }
 
@@ -177,6 +183,10 @@ test("shared coaching presentation retains themes, search and navigation across 
     await inspectSurface(coachPage, testInfo, `${theme}-directory`);
     await athleteLink.click();
     await expect(coachPage.getByText("Athlete workspace unavailable")).toBeVisible();
+    await expect(coachPage.getByText("Athlete workspace unavailable", { exact: true })).toHaveCSS(
+      "color",
+      await coachPage.evaluate(() => getComputedStyle(document.body).color),
+    );
     await expect(
       coachPage.getByRole("heading", { name: "Historical modeled load state" }),
     ).toHaveCount(0);

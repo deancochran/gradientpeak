@@ -22,11 +22,8 @@ export const emptyStateCardFixtures = {
     actionLabel: "Return to assignments",
   } satisfies EmptyStateCardProps,
   unbrokenText: {
-    title:
-      "athlete-identity-avery-carter-with-an-unbroken-identifier-that-must-wrap-within-a-narrow-mobile-state-card",
-    description:
-      "assignment-context-with-an-unbroken-supporting-identifier-that-must-not-overflow-the-state-card-at-a-compact-width",
-    actionLabel:
-      "Retry-the-unbroken-organization-assignment-request-without-expanding-the-compact-state-card",
+    title: "AthleteIdentity".repeat(8),
+    description: "AssignmentContext".repeat(8),
+    actionLabel: "RetryOrganizationAssignment".repeat(4),
   } satisfies EmptyStateCardProps,
 };
