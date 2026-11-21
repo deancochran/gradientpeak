@@ -1,4 +1,5 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
+import { IdentitySummary } from "@repo/ui/components/identity-summary";
 import { Text } from "@repo/ui/components/text";
 import type { ReactNode } from "react";
 import { Pressable, View } from "react-native";
@@ -84,25 +85,18 @@ export function EntityOwnerRow({
           </Text>
         </AvatarFallback>
       </Avatar>
-      <View className="flex-1 gap-0.5">
-        <Text
-          className={
-            compact
-              ? "text-xs font-medium text-muted-foreground"
-              : minimal
-                ? "text-xs font-medium text-muted-foreground"
-                : "text-sm font-semibold text-foreground"
-          }
-          numberOfLines={1}
-        >
-          {displayName}
-        </Text>
-        {typeof subtitle === "string" ? (
-          <Text className="text-xs text-muted-foreground">{subtitle}</Text>
-        ) : (
-          subtitle
-        )}
-      </View>
+      <IdentitySummary
+        className="gap-0.5"
+        supporting={
+          typeof subtitle === "string" ? (
+            <Text className="text-xs text-muted-foreground">{subtitle}</Text>
+          ) : (
+            subtitle
+          )
+        }
+        title={displayName}
+        titleNumberOfLines={1}
+      />
     </>
   );
 

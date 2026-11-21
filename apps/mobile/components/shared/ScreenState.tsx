@@ -6,7 +6,7 @@ import type { ComponentType, ReactNode } from "react";
 import { View } from "react-native";
 import { omitUndefined } from "@/lib/omitUndefined";
 
-type ScreenStateTone = "default" | "error" | "empty";
+type ScreenStateTone = "default" | "denied" | "error" | "empty";
 type IconComponent = ComponentType<{ className?: string; color?: string; size?: number }>;
 
 export type ScreenStateProps = {
@@ -31,14 +31,18 @@ export function ScreenState({
   tone = "default",
 }: ScreenStateProps) {
   const isError = tone === "error";
+  const isDenied = tone === "denied";
 
   return (
     <View
       className={`items-center justify-center gap-3 rounded-2xl border px-4 py-8 ${
         isError
           ? "border-destructive/30 bg-destructive/10"
-          : "border-dashed border-border bg-card/50"
+          : isDenied
+            ? "border-warning/30 bg-warning/10"
+            : "border-dashed border-border bg-card/50"
       }`}
+      accessibilityLiveRegion={isError ? "assertive" : undefined}
       testID={testID}
     >
       {icon ? (
@@ -46,13 +50,17 @@ export function ScreenState({
           <Icon
             as={icon}
             size={22}
-            className={isError ? "text-destructive" : "text-muted-foreground"}
+            className={
+              isError ? "text-destructive" : isDenied ? "text-warning" : "text-muted-foreground"
+            }
           />
         </View>
       ) : null}
       <View className="items-center gap-1">
         <Text
-          className={`text-center text-base font-semibold ${isError ? "text-destructive" : "text-foreground"}`}
+          className={`text-center text-base font-semibold ${
+            isError ? "text-destructive" : isDenied ? "text-warning" : "text-foreground"
+          }`}
         >
           {title}
         </Text>
@@ -117,6 +125,23 @@ export function ErrorState({
       })}
       title={title}
       tone="error"
+    />
+  );
+}
+
+/** Use for an authorization result, never to represent an empty or failed query. */
+export function DeniedState({
+  actionLabel,
+  description,
+  onAction,
+  testID,
+  title = "Access unavailable",
+}: Partial<Omit<ScreenStateProps, "tone">> & { title?: string }) {
+  return (
+    <ScreenState
+      {...omitUndefined({ actionLabel, description, onAction, testID })}
+      title={title}
+      tone="denied"
     />
   );
 }
