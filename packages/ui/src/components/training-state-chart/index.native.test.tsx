@@ -1,6 +1,41 @@
+import mockReact from "react";
 import { renderNative } from "../../test/render-native";
 import { trainingStateChartFixtures } from "./fixtures";
 import { TrainingStateChart } from "./index.native";
+
+type HostProps = Record<string, unknown> & { children?: mockReact.ReactNode };
+
+// Keep the canvas boundary local: shared setup is also imported by app suites
+// whose Victory mocks expose different chart bounds and interaction hooks.
+jest.mock("victory-native", () => ({
+  CartesianChart: ({ children, data = [], xKey, yKeys }: HostProps) => {
+    const render = children as
+      | ((value: { points: Record<string, unknown> }) => mockReact.ReactNode)
+      | undefined;
+    return mockReact.createElement(
+      "CartesianChart",
+      { data, testID: "victory-cartesian-chart", xKey, yKeys },
+      render
+        ? render({
+            points: Object.fromEntries(
+              (yKeys as string[]).map((key) => [
+                key,
+                (data as Record<string, unknown>[]).map((datum, index) => ({
+                  x: index,
+                  y: typeof datum[key] === "number" ? datum[key] : null,
+                  yValue: typeof datum[key] === "number" ? datum[key] : null,
+                })),
+              ]),
+            ),
+          })
+        : children,
+    );
+  },
+  Line: (props: HostProps) =>
+    mockReact.createElement("VictoryLine", { ...props, testID: "victory-line" }),
+  Scatter: (props: HostProps) =>
+    mockReact.createElement("VictoryScatter", { ...props, testID: "victory-scatter" }),
+}));
 
 describe("TrainingStateChart native", () => {
   const allSeries = [
