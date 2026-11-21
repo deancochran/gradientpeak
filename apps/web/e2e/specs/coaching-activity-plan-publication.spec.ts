@@ -548,8 +548,14 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
     `/organizations/${organizationId}/athletes/${athleteActor.profileId}`,
   );
   await expect(
-    foreignCoachPage.getByRole("heading", { name: "Coaching access required", exact: true }),
+    foreignCoachPage.getByRole("heading", { name: "Organization access unavailable", exact: true }),
   ).toBeVisible();
+  await expect(foreignCoachPage.getByText("Publish an activity plan", { exact: true })).toHaveCount(
+    0,
+  );
+  await expect(foreignCoachPage.getByLabel("Athlete planning date", { exact: true })).toHaveCount(
+    0,
+  );
   await foreignCoachPage.close();
 
   await athletePage.goto("/settings#coaching");
