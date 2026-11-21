@@ -422,6 +422,9 @@ export function createDrizzleAthleteDerivedStateRepository(
             eq(activityTrainingEffects.profile_id, input.profileId),
             gte(activityTrainingEffects.effective_at, new Date(input.fromEffectiveAt)),
             lte(activityTrainingEffects.source_revision, input.throughSourceRevision),
+            input.throughEffectiveAt
+              ? lte(activityTrainingEffects.effective_at, new Date(input.throughEffectiveAt))
+              : undefined,
             sql`${activityTrainingEffects.activity_analysis_revision} = (
               select max(revision.revision)
               from ${activityAnalysisRevisions} revision
@@ -787,7 +790,7 @@ export function createDrizzleAthleteDerivedStateRepository(
               lte(athleteRecalculationQueue.earliest_affected_at, claimedAt),
               or(
                 sql`${profileAthleteState.lease_token} is null`,
-                lte(profileAthleteState.lease_expires_at, claimedAt),
+                lte(profileAthleteState.lease_expires_at, sql`clock_timestamp()`),
               ),
               or(
                 sql`${profileAthleteState.retry_after} is null`,
@@ -816,7 +819,7 @@ export function createDrizzleAthleteDerivedStateRepository(
               eq(profileAthleteState.profile_id, candidate.profileId),
               or(
                 sql`${profileAthleteState.lease_token} is null`,
-                lte(profileAthleteState.lease_expires_at, claimedAt),
+                lte(profileAthleteState.lease_expires_at, sql`clock_timestamp()`),
               ),
             ),
           )
@@ -843,7 +846,7 @@ export function createDrizzleAthleteDerivedStateRepository(
               eq(profileAthleteState.profile_id, input.profileId),
               or(
                 sql`${profileAthleteState.lease_token} is null`,
-                lte(profileAthleteState.lease_expires_at, new Date(transition.claimedAt)),
+                lte(profileAthleteState.lease_expires_at, sql`clock_timestamp()`),
               ),
               sql`exists (select 1 from ${athleteRecalculationQueue} queue where queue.profile_id = ${input.profileId}::uuid)`,
             ),
@@ -916,9 +919,55 @@ export function createDrizzleAthleteDerivedStateRepository(
           .limit(1)
           .for("update");
         if (!owned) return queueTransitionMiss(db, input.profileId, claimToken);
-        await tx
-          .delete(athleteRecalculationQueue)
-          .where(eq(athleteRecalculationQueue.profile_id, input.profileId));
+        const [queue] = await tx
+          .select()
+          .from(athleteRecalculationQueue)
+          .where(eq(athleteRecalculationQueue.profile_id, input.profileId))
+          .limit(1)
+          .for("update");
+        if (!queue) return queueTransitionMiss(db, input.profileId, claimToken);
+        const [nextFutureEffect] =
+          transition.action === "complete"
+            ? await tx
+                .select({
+                  effectiveAt: activityTrainingEffects.effective_at,
+                  planningDate: activityTrainingEffects.planning_date,
+                })
+                .from(activityTrainingEffects)
+                .where(
+                  and(
+                    eq(activityTrainingEffects.profile_id, input.profileId),
+                    lte(activityTrainingEffects.source_revision, queue.source_revision),
+                    gt(activityTrainingEffects.effective_at, new Date(transition.completedAt)),
+                    sql`${activityTrainingEffects.activity_analysis_revision} = (
+                      select max(revision.revision)
+                      from ${activityAnalysisRevisions} revision
+                      where revision.activity_id = ${activityTrainingEffects.activity_id}
+                        and revision.profile_id = ${activityTrainingEffects.profile_id}
+                    )`,
+                  ),
+                )
+                .orderBy(
+                  asc(activityTrainingEffects.effective_at),
+                  asc(activityTrainingEffects.activity_id),
+                  asc(activityTrainingEffects.activity_analysis_revision),
+                )
+                .limit(1)
+            : [];
+        if (nextFutureEffect) {
+          await tx
+            .update(athleteRecalculationQueue)
+            .set({
+              earliest_affected_at: nextFutureEffect.effectiveAt,
+              earliest_affected_planning_date: nextFutureEffect.planningDate,
+              updated_at: new Date(),
+            })
+            .where(eq(athleteRecalculationQueue.profile_id, input.profileId));
+        } else {
+          await tx
+            .delete(athleteRecalculationQueue)
+            .where(eq(athleteRecalculationQueue.profile_id, input.profileId));
+        }
         await tx
           .update(profileAthleteState)
           .set({

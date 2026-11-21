@@ -44,10 +44,12 @@ await withDisposableDatabase(
       );
       const core = await import("@repo/core/athlete-derived-state");
       const { eq, sql } = drizzle;
-      const { activities, activityAnalysisRevisions, profiles, users } = schema;
+      const { activities, activityAnalysisRevisions, profileAthleteState, profiles, users } =
+        schema;
       const profileId = randomUUID();
       const otherProfileId = randomUUID();
       const activityId = randomUUID();
+      const futureActivityId = randomUUID();
       try {
         for (const [id, label] of [
           [profileId, "Athlete derived owner"],
@@ -84,22 +86,22 @@ await withDisposableDatabase(
             materializer_version: "disposable-v1",
           });
         });
-        const insertAnalysisRevision = async (revision: number) => {
+        const insertAnalysisRevision = async (input: { activityId: string; revision: number }) => {
           await db.insert(activityAnalysisRevisions).values({
-            activity_id: activityId,
+            activity_id: input.activityId,
             profile_id: profileId,
-            revision,
+            revision: input.revision,
             source_segments_revision: 1,
             analysis_version: "manual-profile-activity-analysis-v1",
             reason: "manual_profile_reprocess",
             performance_target_snapshot: {},
-            target_fingerprint: `sha256:${String(revision).padStart(64, "a").slice(-64)}`,
+            target_fingerprint: `sha256:${String(input.revision).padStart(64, "a").slice(-64)}`,
             segment_load_projection: {},
-            output_fingerprint: `sha256:${String(revision).padStart(64, "b").slice(-64)}`,
+            output_fingerprint: `sha256:${String(input.revision).padStart(64, "b").slice(-64)}`,
             computed_at: new Date("2026-08-10T12:00:00.000Z"),
           });
         };
-        await insertAnalysisRevision(1);
+        await insertAnalysisRevision({ activityId, revision: 1 });
         const repository = repositoryModule.createDrizzleAthleteDerivedStateRepository(db);
         const effect = (revision: number, sourceRevision: number, effectiveAt: string) => ({
           contractVersion: core.ATHLETE_DERIVED_STATE_PERSISTENCE_CONTRACT_VERSION,
@@ -138,7 +140,7 @@ await withDisposableDatabase(
           "applied",
         );
 
-        await insertAnalysisRevision(2);
+        await insertAnalysisRevision({ activityId, revision: 2 });
         const older = await services.recordActivityTrainingEffect({
           repository,
           request: {
@@ -165,6 +167,33 @@ await withDisposableDatabase(
         assert.equal(pending?.earliestAffectedAt, "2026-08-04T12:00:00.000Z");
         assert.equal(pending?.sourceRevision, 3);
         assert.deepEqual(pending?.reasons, ["analysis_replaced", "threshold_changed"]);
+        await db.transaction(async (tx) => {
+          await tx.execute(sql`set local session_replication_role = replica`);
+          await tx.insert(activities).values({
+            id: futureActivityId,
+            profile_id: profileId,
+            name: "Queued future ride",
+            started_at: new Date("2026-08-20T11:00:00.000Z"),
+            finished_at: new Date("2026-08-20T12:00:00.000Z"),
+            elapsed_ms: 3_600_000,
+            segments_revision: 1,
+            parser_version: "disposable-v1",
+            decoded_contract_version: "disposable-v1",
+            materializer_version: "disposable-v1",
+          });
+        });
+        await insertAnalysisRevision({ activityId: futureActivityId, revision: 1 });
+        await repository.upsertActivityTrainingEffect({
+          profileId,
+          effect: {
+            ...effect(1, 3, "2026-08-20T12:00:00.000Z"),
+            activityId: futureActivityId,
+            stimulus: {
+              ...effect(1, 3, "2026-08-20T12:00:00.000Z").stimulus,
+              sourceId: futureActivityId,
+            },
+          },
+        });
 
         const publicationState = {
           computedAt: "2026-08-10T12:00:00.000Z",
@@ -207,11 +236,45 @@ await withDisposableDatabase(
         );
 
         const worker = new workerModule.AthleteDerivedStateWorkerService({ db });
-        assert.deepEqual(await worker.processDueJobs({ limit: 1 }), {
-          completed: 1,
-          failed: 0,
-          processed: 1,
+        assert.deepEqual(
+          await worker.processDueJobs({ limit: 1, now: new Date("2026-08-11T00:00:00.000Z") }),
+          {
+            completed: 1,
+            failed: 0,
+            processed: 1,
+          },
+        );
+        assert.equal(
+          (await repository.readPendingRecalculation({ profileId }))?.earliestAffectedAt,
+          "2026-08-20T12:00:00.000Z",
+        );
+        const beforeFutureDue = await readModule.readPublishedAthleteLoad({
+          repository,
+          profileId,
+          startDate: "2026-08-01",
+          endDate: "2026-08-31",
         });
+        assert.equal(beforeFutureDue.publishedRevision, 3);
+        assert.equal(beforeFutureDue.days.length, 1);
+        assert.equal(beforeFutureDue.days[0]?.commonLoad, 40);
+        assert.equal(
+          (
+            await db
+              .select({ lastActivityAt: profileAthleteState.last_activity_at })
+              .from(profileAthleteState)
+              .where(eq(profileAthleteState.profile_id, profileId))
+          )[0]?.lastActivityAt?.toISOString(),
+          "2026-08-05T12:00:00.000Z",
+        );
+        assert.deepEqual(
+          await worker.processDueJobs({ limit: 1, now: new Date("2026-08-21T00:00:00.000Z") }),
+          {
+            completed: 1,
+            failed: 0,
+            processed: 1,
+          },
+        );
+        assert.equal(await repository.readPendingRecalculation({ profileId }), null);
         const published = await readModule.readPublishedAthleteLoad({
           repository,
           profileId,
@@ -220,8 +283,17 @@ await withDisposableDatabase(
         });
         assert.equal(published.publishedRevision, 3);
         assert.ok(published.days.every((day) => day.sourceRevision === 3));
-        assert.equal(published.days.length, 1);
-        assert.equal(published.days[0]?.commonLoad, 40);
+        assert.equal(published.days.length, 2);
+        assert.equal(published.days.at(-1)?.commonLoad, 50);
+        assert.equal(
+          (
+            await db
+              .select({ lastActivityAt: profileAthleteState.last_activity_at })
+              .from(profileAthleteState)
+              .where(eq(profileAthleteState.profile_id, profileId))
+          )[0]?.lastActivityAt?.toISOString(),
+          "2026-08-20T12:00:00.000Z",
+        );
 
         const thresholdRecord = {
           contractVersion: core.ATHLETE_DERIVED_STATE_PERSISTENCE_CONTRACT_VERSION,

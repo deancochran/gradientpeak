@@ -158,4 +158,59 @@ describe("AthleteDerivedStateWorkerService", () => {
       }),
     );
   });
+
+  it("publishes due evidence without reading coalesced future evidence", async () => {
+    const dueEffect = {
+      contractVersion: ATHLETE_DERIVED_STATE_PERSISTENCE_CONTRACT_VERSION,
+      profileId,
+      activityId,
+      activityAnalysisRevision: 1,
+      effectiveAt: "2026-08-01T12:00:00.000Z",
+      planningDate: "2026-08-01",
+      sourceRevision: 2,
+      calculationVersion: "effect-v1",
+      inputFingerprint: "a".repeat(64),
+      stimulus: {
+        kind: "observed" as const,
+        sourceId: activityId,
+        occurredAt: "2026-08-01T12:00:00.000Z",
+        activityCategory: "bike" as const,
+        commonLoad: 30,
+        evidenceConfidence: 0.9,
+        capabilityObservation: null,
+      },
+    };
+    const listEffects = vi.fn(async () => ({ items: [dueEffect], hasMore: false }));
+    const publish = vi.fn(async () => ({ status: "published" as const, publishedRevision: 2 }));
+    const transition = vi.fn(async () => ({ status: "completed" as const }));
+    const repository = {
+      claimNextRecalculation: vi.fn(async () => claimedItem()),
+      lockPublicationState: vi.fn(async () => publication),
+      listActivityTrainingEffects: listEffects,
+      publishDailyTrainingLoad: publish,
+      transitionRecalculation: transition,
+    } as unknown as AthleteDerivedStateRepositoryPort;
+
+    await expect(
+      new AthleteDerivedStateWorkerService({ db: {} as never, repository }).processDueJobs({
+        limit: 1,
+        now: new Date("2026-08-02T00:00:00.000Z"),
+      }),
+    ).resolves.toEqual({ completed: 1, failed: 0, processed: 1 });
+
+    expect(listEffects).toHaveBeenCalledWith(
+      expect.objectContaining({
+        throughEffectiveAt: "2026-08-02T00:00:00.000Z",
+      }),
+    );
+    expect(publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetPublishedRevision: 2,
+        days: [expect.objectContaining({ planningDate: "2026-08-01" })],
+      }),
+    );
+    expect(transition).toHaveBeenCalledWith(
+      expect.objectContaining({ transition: expect.objectContaining({ action: "complete" }) }),
+    );
+  });
 });

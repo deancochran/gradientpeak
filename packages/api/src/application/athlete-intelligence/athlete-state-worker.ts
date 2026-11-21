@@ -190,20 +190,6 @@ export class AthleteDerivedStateWorkerService {
         if (item.request.sourceRevision > publication.sourceRevision) {
           throw new Error("Athlete recalculation revision is ahead of publication state");
         }
-        if (publication.publishedRevision === item.request.sourceRevision) {
-          const completed = await repository.transitionRecalculation({
-            profileId: item.request.profileId,
-            transition: {
-              action: "complete",
-              claimToken,
-              completedAt: now.toISOString(),
-              resultingPublishedRevision: item.request.sourceRevision,
-            },
-          });
-          if (completed.status !== "completed") throw new AthleteStateLeaseLostError();
-          result.completed += 1;
-          continue;
-        }
         const effects: ActivityTrainingEffect[] = [];
         let after:
           | { effectiveAt: string; activityId: string; activityAnalysisRevision: number }
@@ -213,6 +199,7 @@ export class AthleteDerivedStateWorkerService {
             profileId: item.request.profileId,
             fromEffectiveAt: "1970-01-01T00:00:00.000Z",
             throughSourceRevision: item.request.sourceRevision,
+            throughEffectiveAt: now.toISOString(),
             limit: DERIVED_EFFECT_PAGE_SIZE,
             ...(after === undefined ? {} : { after }),
           });
