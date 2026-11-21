@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   create: vi.fn(),
   revoke: vi.fn(),
+  inspect: vi.fn(),
   capabilities: vi.fn(),
 }));
 vi.mock("@tanstack/react-start", () => ({
@@ -33,6 +34,7 @@ vi.mock("@repo/api/server", () => ({
           listForOrganization: mocks.list,
           create: mocks.create,
           revoke: mocks.revoke,
+          resolveAcceptedRelationship: mocks.inspect,
         },
       },
     }),
@@ -42,6 +44,7 @@ vi.mock("@repo/api/server", () => ({
 import {
   createOrganizationInvitation,
   loadOrganizationInvitations,
+  resolveAcceptedOrganizationInvitationRelationship,
   revokeOrganizationInvitation,
 } from "./organization-invitations-server-functions";
 
@@ -62,6 +65,10 @@ describe("organization invitation server functions", () => {
       expiresAt: new Date(),
     });
     mocks.revoke.mockResolvedValue({ invitationId, status: "revoked" });
+    mocks.inspect.mockResolvedValue({
+      relationshipState: "athlete_paused",
+      navigationTarget: "none",
+    });
   });
   it("uses the request session to load a bounded organization page", async () => {
     await expect(
@@ -174,5 +181,19 @@ describe("organization invitation server functions", () => {
     await expect(
       revokeOrganizationInvitation({ data: { organizationId, invitationId } }),
     ).resolves.toEqual({ status: "access_lost" });
+  });
+  it("uses a strict, identity-free accepted relationship read", async () => {
+    await expect(
+      resolveAcceptedOrganizationInvitationRelationship({ data: { organizationId, invitationId } }),
+    ).resolves.toEqual({
+      status: "granted",
+      relationship: { relationshipState: "athlete_paused", navigationTarget: "none" },
+    });
+    expect(mocks.inspect).toHaveBeenCalledWith({ organizationId, invitationId });
+    await expect(
+      resolveAcceptedOrganizationInvitationRelationship({
+        data: { organizationId, invitationId, email: "leak@example.test" },
+      }),
+    ).rejects.toThrow();
   });
 });

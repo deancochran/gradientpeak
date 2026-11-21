@@ -41,6 +41,57 @@ export type OrganizationInvitationListPage = {
   hasMore: boolean;
 };
 
+export type AcceptedInvitationRelationship = {
+  relationshipState:
+    | "staff_active"
+    | "staff_suspended"
+    | "staff_ended"
+    | "staff_not_provisioned"
+    | "staff_no_effective_role"
+    | "athlete_active"
+    | "athlete_paused"
+    | "athlete_no_current_engagement";
+  navigationTarget: "staff_roster" | "none";
+};
+
+export function mapAcceptedInvitationRelationship(input: {
+  kind: "staff" | "athlete";
+  membershipId: string | null;
+  membershipSuspendedAt: Date | null;
+  membershipEndedAt: Date | null;
+  membershipHasEffectiveStaffRole: boolean | null;
+  membershipIsRootOwner: boolean | null;
+  engagementId: string | null;
+  engagementPausedAt: Date | null;
+  engagementEndedAt: Date | null;
+}): AcceptedInvitationRelationship {
+  if (input.kind === "staff") {
+    const relationshipState = !input.membershipId
+      ? "staff_not_provisioned"
+      : input.membershipEndedAt
+        ? "staff_ended"
+        : input.membershipSuspendedAt
+          ? "staff_suspended"
+          : input.membershipHasEffectiveStaffRole !== true && input.membershipIsRootOwner !== true
+            ? "staff_no_effective_role"
+            : "staff_active";
+    return {
+      relationshipState,
+      navigationTarget:
+        input.membershipHasEffectiveStaffRole === true &&
+        (relationshipState === "staff_active" || relationshipState === "staff_suspended")
+          ? "staff_roster"
+          : "none",
+    };
+  }
+  const relationshipState = !input.engagementId
+    ? "athlete_no_current_engagement"
+    : input.engagementPausedAt
+      ? "athlete_paused"
+      : "athlete_active";
+  return { relationshipState, navigationTarget: "none" };
+}
+
 export function decodeInvitationListCursor(value: string): InvitationListCursor | null {
   try {
     const parsed = invitationListCursorPayloadSchema.safeParse(
@@ -586,6 +637,33 @@ export async function listOrganizationInvitations(input: {
             })
           : null,
     };
+  });
+}
+
+/**
+ * Resolves only an accepted invitation for a current organization administrator.
+ * Acceptance and a currently active membership/engagement are deliberately
+ * separate facts; this read never changes either lifecycle.
+ */
+export async function resolveAcceptedInvitationRelationship(input: {
+  db: DrizzleDbClient;
+  actorProfileId: string;
+  organizationId: string;
+  invitationId: string;
+}): Promise<AcceptedInvitationRelationship> {
+  return withRepeatableReadSnapshot(input.db, async (tx) => {
+    const repository = createOrganizationManagementRepository(tx);
+    const administrator = await repository.findActiveAdminMembership(
+      input.organizationId,
+      input.actorProfileId,
+    );
+    if (!administrator) throw new OrganizationManagementError("forbidden");
+    const relationship = await repository.findAcceptedInvitationRelationship(
+      input.organizationId,
+      input.invitationId,
+    );
+    if (!relationship) throw new OrganizationManagementError("not_found");
+    return mapAcceptedInvitationRelationship(relationship);
   });
 }
 

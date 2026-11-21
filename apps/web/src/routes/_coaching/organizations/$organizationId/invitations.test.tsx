@@ -40,6 +40,7 @@ vi.mock("../../../../lib/coaching/organization-invitations-server-functions", ()
   loadOrganizationInvitations: vi.fn(),
   createOrganizationInvitation: vi.fn(),
   revokeOrganizationInvitation: vi.fn(),
+  resolveAcceptedOrganizationInvitationRelationship: vi.fn(),
 }));
 
 import { Route } from "./invitations";

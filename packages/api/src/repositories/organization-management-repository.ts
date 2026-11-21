@@ -29,6 +29,18 @@ export type OrganizationInvitationSummaryRow = {
   createdAtCursor: string;
 };
 
+export type AcceptedInvitationRelationshipRow = {
+  kind: "staff" | "athlete";
+  membershipId: string | null;
+  membershipSuspendedAt: Date | null;
+  membershipEndedAt: Date | null;
+  membershipHasEffectiveStaffRole: boolean | null;
+  membershipIsRootOwner: boolean | null;
+  engagementId: string | null;
+  engagementPausedAt: Date | null;
+  engagementEndedAt: Date | null;
+};
+
 export function createOrganizationManagementRepository(db: DrizzleQueryExecutor) {
   return {
     lockOrganization: async (id: string) =>
@@ -114,6 +126,7 @@ export function createOrganizationManagementRepository(db: DrizzleQueryExecutor)
             and(
               eq(organizations.id, organizationId),
               eq(organizationMemberships.profile_id, profileId),
+              lte(organizationMemberships.created_at, sql`transaction_timestamp()`),
               isNull(organizations.suspended_at),
               isNull(organizations.closed_at),
               isNull(organizationMemberships.suspended_at),
@@ -122,6 +135,68 @@ export function createOrganizationManagementRepository(db: DrizzleQueryExecutor)
                 eq(organizations.root_owner_membership_id, organizationMemberships.id),
                 eq(organizationMembershipRoleGrants.role_key, "admin"),
               ),
+            ),
+          )
+          .limit(1)
+      )[0] ?? null,
+    findAcceptedInvitationRelationship: async (
+      organizationId: string,
+      invitationId: string,
+    ): Promise<AcceptedInvitationRelationshipRow | null> =>
+      (
+        await db
+          .select({
+            kind: organizationInvitations.invitation_kind,
+            membershipId: organizationMemberships.id,
+            membershipSuspendedAt: organizationMemberships.suspended_at,
+            membershipEndedAt: organizationMemberships.ended_at,
+            membershipHasEffectiveStaffRole: sql<boolean | null>`case
+              when ${organizationMemberships.id} is null then null
+              else exists (
+                select 1
+                from organization_membership_role_grants effective_role
+                where effective_role.organization_id = ${organizationInvitations.organization_id}
+                  and effective_role.membership_id = ${organizationMemberships.id}
+                  and effective_role.granted_at <= transaction_timestamp()
+                  and effective_role.revoked_at is null
+              )
+            end`,
+            membershipIsRootOwner: sql<boolean | null>`case
+              when ${organizationMemberships.id} is null then null
+              else ${organizations.root_owner_membership_id} = ${organizationMemberships.id}
+            end`,
+            engagementId: coachingEngagements.id,
+            engagementPausedAt: coachingEngagements.paused_at,
+            engagementEndedAt: coachingEngagements.ended_at,
+          })
+          .from(organizationInvitations)
+          .innerJoin(organizations, eq(organizations.id, organizationInvitations.organization_id))
+          .leftJoin(
+            organizationMemberships,
+            and(
+              eq(organizationMemberships.organization_id, organizationInvitations.organization_id),
+              eq(
+                organizationMemberships.profile_id,
+                organizationInvitations.accepted_by_profile_id,
+              ),
+            ),
+          )
+          .leftJoin(
+            coachingEngagements,
+            and(
+              eq(coachingEngagements.organization_id, organizationInvitations.organization_id),
+              eq(
+                coachingEngagements.athlete_profile_id,
+                organizationInvitations.accepted_by_profile_id,
+              ),
+              isNull(coachingEngagements.ended_at),
+            ),
+          )
+          .where(
+            and(
+              eq(organizationInvitations.organization_id, organizationId),
+              eq(organizationInvitations.id, invitationId),
+              eq(organizationInvitations.status, "accepted"),
             ),
           )
           .limit(1)
