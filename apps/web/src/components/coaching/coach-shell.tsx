@@ -199,6 +199,9 @@ function CoachingNavigationLink({
     </>
   );
   const props = {
+    // Router's default fuzzy matching would mark Organizations current below an
+    // organization route. The destination model is the sole active-state policy.
+    activeOptions: { exact: true, includeSearch: false },
     "aria-current": destination.matches(location.pathname, organizationId)
       ? ("page" as const)
       : undefined,
