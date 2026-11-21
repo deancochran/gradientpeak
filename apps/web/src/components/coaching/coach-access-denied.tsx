@@ -5,13 +5,19 @@ import { ShieldX } from "lucide-react";
 
 export function CoachAccessDenied() {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background p-6 text-foreground">
+    <section
+      aria-labelledby="coach-access-denied-heading"
+      className="flex items-center justify-center p-6 text-foreground"
+    >
       <Card className="w-full max-w-lg">
         <CardHeader>
           <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-muted">
             <ShieldX className="h-5 w-5 text-muted-foreground" />
           </div>
-          <h1 className="font-semibold leading-none tracking-tight">
+          <h1
+            id="coach-access-denied-heading"
+            className="font-semibold leading-none tracking-tight"
+          >
             Organization access unavailable
           </h1>
           <CardDescription>
@@ -28,6 +34,6 @@ export function CoachAccessDenied() {
           </Button>
         </CardContent>
       </Card>
-    </main>
+    </section>
   );
 }

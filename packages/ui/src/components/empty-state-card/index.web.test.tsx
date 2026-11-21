@@ -47,4 +47,20 @@ describe("EmptyStateCard web", () => {
 
     expect(screen.getByRole("alert")).toHaveAttribute("aria-live", "assertive");
   });
+
+  it("contains unbroken title, description, and action labels at compact widths", () => {
+    renderWeb(<EmptyStateCard {...emptyStateCardFixtures.unbrokenText} onAction={vi.fn()} />);
+
+    expect(screen.getByText(emptyStateCardFixtures.unbrokenText.title).className).toContain(
+      "[overflow-wrap:anywhere]",
+    );
+    expect(screen.getByText(emptyStateCardFixtures.unbrokenText.description).className).toContain(
+      "[overflow-wrap:anywhere]",
+    );
+    const action = screen.getByRole("button", {
+      name: emptyStateCardFixtures.unbrokenText.actionLabel,
+    });
+    expect(action.className).toContain("whitespace-normal");
+    expect(action.className).toContain("[overflow-wrap:anywhere]");
+  });
 });

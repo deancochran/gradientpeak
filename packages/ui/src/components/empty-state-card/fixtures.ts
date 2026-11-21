@@ -21,4 +21,12 @@ export const emptyStateCardFixtures = {
       "Try adjusting your filters or return after an organization administrator has completed the assignment. This explanation remains readable without changing the hierarchy or action order.",
     actionLabel: "Return to assignments",
   } satisfies EmptyStateCardProps,
+  unbrokenText: {
+    title:
+      "athlete-identity-avery-carter-with-an-unbroken-identifier-that-must-wrap-within-a-narrow-mobile-state-card",
+    description:
+      "assignment-context-with-an-unbroken-supporting-identifier-that-must-not-overflow-the-state-card-at-a-compact-width",
+    actionLabel:
+      "Retry-the-unbroken-organization-assignment-request-without-expanding-the-compact-state-card",
+  } satisfies EmptyStateCardProps,
 };

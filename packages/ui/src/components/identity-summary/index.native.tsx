@@ -8,6 +8,7 @@ function IdentitySummary({
   status,
   supporting,
   title,
+  titleAs = "p",
   titleClassName,
   titleNumberOfLines = 2,
 }: IdentitySummaryProps) {
@@ -16,6 +17,7 @@ function IdentitySummary({
       <View className="flex-row items-start justify-between gap-3">
         <Text
           className={`min-w-0 flex-1 font-medium text-foreground ${titleClassName ?? ""}`}
+          accessibilityRole={titleAs === "p" ? undefined : "header"}
           numberOfLines={titleNumberOfLines}
         >
           {title}
