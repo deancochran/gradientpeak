@@ -341,7 +341,7 @@ describe("CoachActivityPlanPublication", () => {
     );
   });
 
-  it("retains a newer blank date draft when a delayed valid return context arrives", () => {
+  it("retains a newer blank date draft when a delayed local plan-selection URL update arrives", () => {
     const props = {
       athleteId: "22222222-2222-4222-8222-222222222222",
       organizationId: "11111111-1111-4111-8111-111111111111",
@@ -349,12 +349,16 @@ describe("CoachActivityPlanPublication", () => {
     const view = render(<CoachActivityPlanPublication {...props} />);
     const date = screen.getByLabelText("Athlete planning date");
     fireEvent.change(date, { target: { value: "2026-11-23" } });
+    fireEvent.change(screen.getByLabelText("Your activity plan"), {
+      target: { value: "44444444-4444-4444-8444-444444444444" },
+    });
     fireEvent.change(date, { target: { value: "" } });
 
     view.rerender(
       <CoachActivityPlanPublication
         {...props}
         preparation={{
+          activityPlanId: "44444444-4444-4444-8444-444444444444",
           athleteId: props.athleteId,
           organizationId: props.organizationId,
           planningDate: "2026-11-23",

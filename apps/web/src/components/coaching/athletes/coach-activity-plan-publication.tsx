@@ -8,7 +8,7 @@ import {
 } from "@repo/ui/components/card";
 import { Label } from "@repo/ui/components/label";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { api } from "../../../lib/api/client";
 import {
   type ActivityPlanPreparationSearch,
@@ -83,25 +83,6 @@ export function CoachActivityPlanPublication({
   const [success, setSuccess] = useState<string | null>(null);
   const operationId = useRef(crypto.randomUUID());
   const previewGeneration = useRef(0);
-  const appliedReturnPlanId = useRef(preparation?.activityPlanId ?? null);
-
-  // The workspace stays mounted while local date/plan edits update its return
-  // URL. Only a newly returned saved plan may replace the local authoring
-  // selection; this fences delayed valid URL updates from overwriting a newer
-  // optional/invalid date draft.
-  useEffect(() => {
-    if (!preparation?.activityPlanId || preparation.activityPlanId === appliedReturnPlanId.current)
-      return;
-    appliedReturnPlanId.current = preparation.activityPlanId;
-    previewGeneration.current += 1;
-    setPreviewed(null);
-    setError(null);
-    setSuccess(null);
-    operationId.current = crypto.randomUUID();
-    setActivityPlanId(preparation.activityPlanId);
-    setPlanningDate(preparation.planningDate);
-  }, [preparation?.activityPlanId, preparation?.planningDate]);
-
   // The library list is intentionally paginated. Resolve the selected id independently so a
   // prepared plan beyond its first page can still be published, while canEdit keeps this flow
   // restricted to the coach's own plan.
