@@ -48,7 +48,12 @@ describeDisposable("organization access against a disposable migrated PostgreSQL
       const rootMembershipId = randomUUID();
       const coachMembershipId = randomUUID();
       const otherRootMembershipId = randomUUID();
-      const now = new Date();
+      const { rows: transactionTimestampRows } = await connection.query<{
+        transactionTimestamp: Date;
+      }>('select transaction_timestamp() as "transactionTimestamp"');
+      const transactionTimestamp = transactionTimestampRows[0]?.transactionTimestamp;
+      if (!transactionTimestamp) throw new Error("Expected PostgreSQL transaction timestamp");
+      const now = new Date(transactionTimestamp);
       const future = new Date(now.getTime() + 60_000);
 
       for (const [id, label] of [
@@ -142,13 +147,19 @@ describeDisposable("organization access against a disposable migrated PostgreSQL
         organization_id: organizationId,
         membership_id: coachMembershipId,
         role_key: "coach",
-        granted_at: new Date(now.getTime() - 1_000),
+        granted_at: now,
       });
       await expect(
         repository.findActiveMembershipContext({ organizationId, profileId: coachProfileId }),
       ).resolves.toEqual(
         expect.objectContaining({ membershipId: coachMembershipId, roleKeys: ["coach"] }),
       );
+      await expect(
+        readOrganizationContext({ repository, organizationId, profileId: coachProfileId }),
+      ).resolves.toMatchObject({
+        membership: { membershipId: coachMembershipId, roles: ["coach"] },
+        isRootOwner: false,
+      });
       await expect(
         repository.findActiveMembershipContext({ organizationId, profileId: rootProfileId }),
       ).resolves.toEqual(
