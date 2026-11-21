@@ -14,6 +14,7 @@ import {
   type ActivityPlanPreparationSearch,
   activityPlanPreparationSearch,
   parseActivityPlanPreparationContext,
+  parseAthleteWorkspaceSearch,
 } from "../../../lib/coaching/activity-plan-preparation-context";
 
 type PublicationInput = {
@@ -155,7 +156,7 @@ export function CoachActivityPlanPublication({
   const selectedPlanIsInLibrary = plans.some((plan) => plan.id === selectedPlan?.id);
 
   function retainWorkspaceContext(next: { activityPlanId?: string; planningDate: string }) {
-    const context = parseActivityPlanPreparationContext({
+    const nextContext = parseActivityPlanPreparationContext({
       athleteId,
       ...(currentCalendarStartDate ? { calendarStartDate: currentCalendarStartDate } : {}),
       organizationId,
@@ -164,14 +165,38 @@ export function CoachActivityPlanPublication({
     });
     // A date control can temporarily be blank while the coach corrects it.
     // Keep that in-memory draft and the last valid return URL intact.
-    if (!context) return;
+    if (!nextContext) return;
     void navigate({
       to: "/organizations/$organizationId/athletes/$athleteId",
       params: { athleteId, organizationId },
-      search: ((previous: Record<string, unknown>) => ({
-        ...previous,
-        ...activityPlanPreparationSearch(context, next.activityPlanId),
-      })) as never,
+      search: ((previous: Record<string, unknown>) => {
+        const {
+          activityPlanId: _priorActivityPlanId,
+          athleteId: _priorAthleteId,
+          calendarStartDate: _priorCalendarStartDate,
+          organizationId: _priorOrganizationId,
+          planningDate: _priorPlanningDate,
+          returnTo: _priorReturnTo,
+          ...otherSearch
+        } = previous;
+        const latest = parseAthleteWorkspaceSearch(previous);
+        const context = parseActivityPlanPreparationContext({
+          athleteId,
+          ...((latest.calendarStartDate ?? currentCalendarStartDate)
+            ? { calendarStartDate: latest.calendarStartDate ?? currentCalendarStartDate }
+            : {}),
+          organizationId,
+          planningDate: next.planningDate,
+          returnTo: "athlete-workspace",
+        });
+        // nextContext proves this date is valid. Keep the fallback fail-closed
+        // in case a future caller changes the callback's previous search shape.
+        if (!context) return otherSearch;
+        return {
+          ...otherSearch,
+          ...activityPlanPreparationSearch(context, next.activityPlanId),
+        };
+      }) as never,
       replace: true,
     } as never);
   }

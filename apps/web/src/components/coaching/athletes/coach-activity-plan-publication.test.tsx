@@ -365,14 +365,45 @@ describe("CoachActivityPlanPublication", () => {
     const navigation = mocks.navigate.mock.calls.at(-1)?.[0] as {
       search: (previous: Record<string, unknown>) => Record<string, unknown>;
     };
-    expect(navigation.search({ calendarStartDate: "2026-11-28" })).toMatchObject({
-      calendarStartDate: "2026-11-28",
+    expect(navigation.search({ calendarStartDate: "2026-12-05" })).toMatchObject({
+      calendarStartDate: "2026-12-05",
       planningDate: "2026-11-23",
     });
     expect(mocks.linkSearch).toMatchObject({
       calendarStartDate: "2026-11-28",
       planningDate: "2026-11-23",
     });
+  });
+
+  it("removes a cleared local plan from the URL instead of reviving it on Back", () => {
+    render(
+      <CoachActivityPlanPublication
+        athleteId="22222222-2222-4222-8222-222222222222"
+        organizationId="11111111-1111-4111-8111-111111111111"
+        preparation={{
+          activityPlanId: "44444444-4444-4444-8444-444444444444",
+          athleteId: "22222222-2222-4222-8222-222222222222",
+          organizationId: "11111111-1111-4111-8111-111111111111",
+          planningDate: "2026-11-23",
+          returnTo: "athlete-workspace",
+        }}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Your activity plan"), { target: { value: "" } });
+
+    const navigation = mocks.navigate.mock.calls.at(-1)?.[0] as {
+      search: (previous: Record<string, unknown>) => Record<string, unknown>;
+    };
+    const nextSearch = navigation.search({
+      activityPlanId: "44444444-4444-4444-8444-444444444444",
+      athleteId: "22222222-2222-4222-8222-222222222222",
+      organizationId: "11111111-1111-4111-8111-111111111111",
+      planningDate: "2026-11-23",
+      returnTo: "athlete-workspace",
+    });
+    expect(nextSearch).not.toHaveProperty("activityPlanId");
+    expect(nextSearch).toMatchObject({ planningDate: "2026-11-23" });
   });
 
   it("retains a newer blank date draft when a delayed local plan-selection URL update arrives", () => {
