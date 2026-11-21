@@ -54,11 +54,7 @@ pnpm dev:web:local
    pnpm --filter web check-types
    ```
 
-6. Before integrating a cross-workspace change, run:
-
-   ```bash
-   pnpm quality:agent
-   ```
+6. Use the verification guidance below; do not run every command for every edit.
 
 ## Choose a lane
 
@@ -87,17 +83,41 @@ the Cloudflare Tunnel for `https://dev.gradientpeak.com`, so provider callbacks 
 
 ## Verification progression
 
-1. Run the smallest package test, type check, or lint command for the changed area.
-2. Run `pnpm verify` when the change spans normal static and test checks.
-3. Run `pnpm quality:agent` before integration. Database ownership changes also require the
-   relevant database verification from `packages/db/README.md`.
-
-CI additionally verifies generated artifacts, Maestro syntax, live database behavior, and the
-production build. It is the final integration signal, not the first command a new contributor runs.
+- While iterating, run the owning package's test or type check, for example
+  `pnpm --filter web check-types`. Add a regression test when behavior changes;
+  do not duplicate the same assertion across every test layer.
+- For cross-package changes, `pnpm verify` runs static checks and tests. Use
+  `pnpm quality:agent` when changed-path-selected runtime verification is needed.
+  These commands overlap: choose the appropriate one rather than running both.
+- Database changes require the relevant verification in `packages/db/README.md`.
+  Never reset a preserved/shared database to make a check pass.
+- CI runs static checks, tests, and the production build once, with database and
+  browser checks in their selected lanes. The required `Basic checks` status
+  remains fail-closed. Security checks remain independent.
 
 The `db` and `full` quality profiles run the same complete API live-database matrix as CI.
-`pnpm --filter @repo/api test:live-db` creates a fresh, uniquely named database on the verified
+`pnpm --filter @repo/api test:live-db:disposable --disposable --local --all` creates a fresh,
+uniquely named database on the verified
 repository-managed local PostgreSQL host and removes it afterward; it does not use an ambient
-application database URL. Append a test path for a focused iteration. No matching tests and interrupted
-runs fail rather than passing; normal completion, test failure, SIGINT and SIGTERM clean up the owned
-target. SIGKILL or host failure still requires inspection of the exact run-owned resources.
+application database URL. Replace `--all` with one package-relative `src/**/*.live-db.test.ts`
+path for a focused iteration. The guarded runner requires POSIX process groups (Linux/macOS);
+no matching tests and interrupted runs fail rather than passing. Normal completion, test failure,
+SIGINT and SIGTERM clean up the owned target. SIGKILL or host failure still requires inspection
+of the exact run-owned resources.
+
+Lefthook installs during `pnpm install`. Pre-commit formats/lints staged files;
+there is no pre-push suite. A successful push is not acceptance evidence.
+
+## Code and documentation
+
+- Keep routes and screens in apps, reusable domain logic in `packages/core`,
+  API orchestration in `packages/api`, and reusable primitives in `packages/ui`.
+- Prefer a small direct implementation over a new framework, wrapper, or script.
+  Extract shared code when there are real callers, not hypothetical reuse.
+- Keep setup here, package-specific details in the owning README, and durable
+  contracts/runbooks in `docs`. Avoid copying the same instructions across files.
+- Record notable changes in `CHANGELOG.md`. Keep task progress, raw test output,
+  generated catalog PDFs, and review screenshots out of the repository. Previous
+  reports remain recoverable through Git history.
+- Do not remove migrations, the lockfile, generated contracts consumed by the app,
+  or safety checks merely because they are generated or inconvenient.
