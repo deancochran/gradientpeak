@@ -3,6 +3,13 @@
   "rootTestId": "ui-preview-surface",
   "scenarios": [
     {
+      "description": "Shared identity hierarchy with supporting context and status.",
+      "testId": "ui-preview-scenario-identity-summary",
+      "title": "Identity summary",
+      "key": "identitySummary",
+      "selectors": []
+    },
+    {
       "description": "A shared card with input and save action fixtures.",
       "testId": "ui-preview-scenario-account-controls",
       "title": "Account controls",

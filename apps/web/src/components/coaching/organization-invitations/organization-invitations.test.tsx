@@ -249,17 +249,17 @@ describe("organization invitations", () => {
     );
     expect(screen.getByText(/staff suspended/i)).toBeTruthy();
     expect(screen.getByRole("link", { name: "Manage staff memberships" }).className).toContain(
-      "bg-slate-950",
+      "bg-background",
     );
     expect(screen.getByRole("link", { name: "Manage staff memberships" }).className).toContain(
-      "text-cyan-200",
+      "text-primary",
     );
     expect(
       screen.getByRole("button", { name: "Inspect accepted relationship" }).className,
-    ).toContain("bg-slate-950");
+    ).toContain("bg-background");
     expect(
       screen.getByRole("button", { name: "Inspect accepted relationship" }).className,
-    ).toContain("text-cyan-200");
+    ).toContain("text-primary");
     expect(document.body.textContent).not.toContain("person@example.test");
   });
   it("uses staff-specific copy and offers no roster navigation for an accepted roleless membership", async () => {

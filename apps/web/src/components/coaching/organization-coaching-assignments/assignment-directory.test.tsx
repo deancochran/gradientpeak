@@ -108,15 +108,13 @@ describe("AssignmentDirectory", () => {
     expect(
       screen.getByText(/Temporary coverage and handovers are unavailable in this directory/),
     ).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Apply filters" }).className).toContain(
-      "bg-cyan-400",
-    );
+    expect(screen.getByRole("button", { name: "Apply filters" }).className).toContain("bg-primary");
     const findAthlete = screen.getAllByRole("button", { name: "Find an athlete to assign" })[0];
     if (!findAthlete) throw new Error("Missing assignment workflow entry point");
     fireEvent.click(findAthlete);
     expect(document.activeElement).toBe(screen.getByLabelText("Search athletes on this page"));
     expect(screen.getAllByRole("button", { name: "Manage coaches" })[0]?.className).toContain(
-      "bg-slate-900",
+      "bg-card",
     );
   });
 

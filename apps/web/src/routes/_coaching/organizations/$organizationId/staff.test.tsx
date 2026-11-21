@@ -36,6 +36,10 @@ describe("staff route", () => {
     const Component = (Route as unknown as { component: React.ComponentType }).component;
     render(<Component />);
     expect(screen.getByText("No active staff on this page.")).toBeTruthy();
+    expect(screen.getByRole("navigation", { name: "Organization administration" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Assignments" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Invitations" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Overview" })).toBeTruthy();
   });
 
   it("renders access lost instead of stale tenant data", () => {

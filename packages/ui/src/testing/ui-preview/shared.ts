@@ -3,6 +3,7 @@ import { cardFixtures } from "../../components/card/fixtures";
 import { checkboxFixtures } from "../../components/checkbox/fixtures";
 import { emptyStateCardFixtures } from "../../components/empty-state-card/fixtures";
 import { errorStateCardFixtures } from "../../components/error-state-card/fixtures";
+import { identitySummaryFixtures } from "../../components/identity-summary/fixtures";
 import { inputFixtures } from "../../components/input/fixtures";
 import { loadingSkeletonFixtures } from "../../components/loading-skeletons/fixtures";
 import { radioGroupFixtures } from "../../components/radio-group/fixtures";
@@ -19,6 +20,7 @@ export const uiPreviewFixtures = {
   checkbox: checkboxFixtures.terms,
   emptyStateCard: emptyStateCardFixtures.generic,
   errorStateCard: errorStateCardFixtures.generic,
+  identitySummary: identitySummaryFixtures.assignedAthlete,
   input: inputFixtures.email,
   loadingSkeleton: loadingSkeletonFixtures,
   radioGroup: radioGroupFixtures.activityCategory,

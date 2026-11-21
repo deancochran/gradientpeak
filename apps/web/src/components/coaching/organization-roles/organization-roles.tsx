@@ -196,17 +196,17 @@ function OrganizationRolesContents({
 
   if (accessLost)
     return (
-      <p role="alert" className="text-sm text-red-300">
+      <p role="alert" className="text-sm text-destructive">
         Your administrative access changed. Organization roles are no longer shown.
       </p>
     );
 
   return (
     <section aria-labelledby="organization-roles-heading" className="space-y-6">
-      <Card className="border-cyan-900 bg-slate-950 text-slate-50">
+      <Card className="border-primary/30 bg-background text-foreground">
         <CardHeader>
           <CardTitle id="organization-roles-heading">Organization roles</CardTitle>
-          <CardDescription className="text-slate-400">
+          <CardDescription className="text-muted-foreground">
             Review one fixed Admin or Coach role change before saving. Admin grants are available
             only to the organization root owner; the server checks current authority again when
             saved.
@@ -214,7 +214,7 @@ function OrganizationRolesContents({
         </CardHeader>
         <CardContent className="space-y-5">
           {receipt ? (
-            <p role="status" className="text-sm text-emerald-300">
+            <p role="status" className="text-sm text-success">
               {receipt}{" "}
               <Link
                 className="underline"
@@ -227,13 +227,13 @@ function OrganizationRolesContents({
             </p>
           ) : null}
           {error ? (
-            <p role="alert" className="text-sm text-red-300">
+            <p role="alert" className="text-sm text-destructive">
               {error}
             </p>
           ) : null}
           {refreshRequired ? (
             <div className="space-y-3">
-              <p className="text-sm text-amber-200">
+              <p className="text-sm text-warning">
                 Current role controls are hidden until the authoritative staff roster refreshes.
               </p>
               <Button type="button" onClick={() => void retryRefresh()}>
@@ -247,7 +247,7 @@ function OrganizationRolesContents({
                   <Label htmlFor="role-member">Staff member</Label>
                   <select
                     id="role-member"
-                    className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-50"
+                    className="w-full rounded-md border border-border bg-card px-3 py-2 text-foreground"
                     disabled={interactionLocked}
                     value={membershipId}
                     onChange={(event) => selectMember(event.target.value)}
@@ -290,7 +290,7 @@ function OrganizationRolesContents({
                 </fieldset>
               </div>
               {member ? (
-                <p className="text-sm text-slate-300">
+                <p className="text-sm text-muted-foreground">
                   Current roles for {memberLabel(member)}:{" "}
                   {member.roleKeys.length
                     ? member.roleKeys.map((item) => roleLabels[item]).join(", ")
@@ -302,18 +302,18 @@ function OrganizationRolesContents({
                 type="button"
                 disabled={!member || !eligible || interactionLocked || Boolean(preview)}
                 onClick={makePreview}
-                className="bg-cyan-400 text-slate-950 hover:bg-cyan-300"
+                className="bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 Preview role change
               </Button>
               {member && !eligible ? (
-                <p className="text-sm text-amber-200">
+                <p className="text-sm text-warning">
                   This change is unavailable for your current role or this staff member. It has not
                   been requested or saved.
                 </p>
               ) : null}
               {page.items.length === 0 ? (
-                <p className="text-sm text-slate-400">
+                <p className="text-sm text-muted-foreground">
                   No active staff are available on this authorized page. Review the{" "}
                   <Link
                     className="underline"
@@ -327,7 +327,7 @@ function OrganizationRolesContents({
                 </p>
               ) : null}
               {page.hasMore ? (
-                <p className="text-sm text-slate-400">
+                <p className="text-sm text-muted-foreground">
                   This page contains at most the first 50 authorized active staff, not the full
                   roster. Use the{" "}
                   <Link
@@ -375,10 +375,10 @@ function RolePreview({
   const current = preview.currentRoles.includes(preview.role);
   const proposed = preview.mutation === "grant";
   return (
-    <Card className="border-cyan-700 bg-slate-900 text-slate-50">
+    <Card className="border-primary/30 bg-card text-foreground">
       <CardHeader>
         <CardTitle>Confirm role change</CardTitle>
-        <CardDescription className="text-slate-400">
+        <CardDescription className="text-muted-foreground">
           This frozen preview is the only change that can be saved. Editing the staff member, role,
           organization, or actor starts a new preview.
         </CardDescription>
@@ -386,15 +386,15 @@ function RolePreview({
       <CardContent className="space-y-4">
         <dl className="grid gap-2 text-sm sm:grid-cols-2">
           <div>
-            <dt className="text-slate-400">Staff member</dt>
+            <dt className="text-muted-foreground">Staff member</dt>
             <dd>{preview.memberLabel}</dd>
           </div>
           <div>
-            <dt className="text-slate-400">Operation</dt>
+            <dt className="text-muted-foreground">Operation</dt>
             <dd>{action}</dd>
           </div>
           <div>
-            <dt className="text-slate-400">Current role</dt>
+            <dt className="text-muted-foreground">Current role</dt>
             <dd>
               {current
                 ? `Includes ${roleLabels[preview.role]}`
@@ -402,7 +402,7 @@ function RolePreview({
             </dd>
           </div>
           <div>
-            <dt className="text-slate-400">Proposed role</dt>
+            <dt className="text-muted-foreground">Proposed role</dt>
             <dd>
               {proposed
                 ? `Includes ${roleLabels[preview.role]}`
@@ -411,12 +411,12 @@ function RolePreview({
           </div>
         </dl>
         {preview.mutation === "revoke" && preview.role === "coach" ? (
-          <p className="text-sm text-amber-200">
+          <p className="text-sm text-warning">
             Revoking Coach ends existing direct and group coaching assignments. It does not estimate
             an affected count.
           </p>
         ) : null}
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-muted-foreground">
           Roles do not grant messaging, exports, billing, or plan-editing capabilities. Training or
           private-athlete access requires a separate assignment and consent.
         </p>
@@ -426,7 +426,7 @@ function RolePreview({
             variant="outline"
             disabled={saving || outcomeUnknown}
             onClick={onCancel}
-            className="border-slate-600 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white focus-visible:ring-cyan-300 disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500"
+            className="border-border bg-card text-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring disabled:border-border disabled:bg-muted disabled:text-muted-foreground"
           >
             Back to edit
           </Button>
@@ -434,7 +434,7 @@ function RolePreview({
             type="button"
             disabled={saving}
             onClick={onSave}
-            className="bg-cyan-400 text-slate-950 hover:bg-cyan-300"
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
           >
             {saving ? "Saving…" : outcomeUnknown ? `Retry same ${action} role` : `${action} role`}
           </Button>
@@ -461,8 +461,8 @@ function RoleButton({
       onClick={onClick}
       className={
         active
-          ? "border border-cyan-300 bg-cyan-400 text-slate-950 hover:bg-cyan-300 focus-visible:ring-cyan-300 disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500"
-          : "border-slate-600 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white focus-visible:ring-cyan-300 disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500"
+          ? "border border-primary bg-primary text-primary-foreground hover:bg-primary/90 focus-visible:ring-ring disabled:border-border disabled:bg-muted disabled:text-muted-foreground"
+          : "border-border bg-card text-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring disabled:border-border disabled:bg-muted disabled:text-muted-foreground"
       }
     >
       {children}

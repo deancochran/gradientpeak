@@ -272,7 +272,7 @@ function Contents({
   }
   if (accessLost)
     return (
-      <p role="alert" className="text-sm text-red-300">
+      <p role="alert" className="text-sm text-destructive">
         Your administrative access changed. Coaching responsibilities are no longer shown.
       </p>
     );
@@ -280,27 +280,27 @@ function Contents({
     candidates.items.find((candidate) => candidate.membershipId === membershipId)?.label ??
     "Organization coach";
   return (
-    <Card className="border-cyan-900 bg-slate-950 text-slate-50">
+    <Card className="border-primary/30 bg-background text-foreground">
       <CardHeader>
         <CardTitle>Manage coaching responsibility for {athleteName}</CardTitle>
-        <CardDescription className="text-slate-400">
+        <CardDescription className="text-muted-foreground">
           Direct responsibility is separate from athlete consent and does not grant private training
           access.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {notice ? (
-          <p role="status" className="text-sm text-emerald-300">
+          <p role="status" className="text-sm text-success">
             {notice}
           </p>
         ) : null}
         {error ? (
-          <p role="alert" className="text-sm text-red-300">
+          <p role="alert" className="text-sm text-destructive">
             {error}
           </p>
         ) : null}
         {loading ? (
-          <p role="status" className="text-sm text-slate-400">
+          <p role="status" className="text-sm text-muted-foreground">
             Loading responsibilities…
           </p>
         ) : (
@@ -336,7 +336,9 @@ function Contents({
                   </li>
                 ))
               ) : (
-                <li className="text-sm text-slate-400">No current coaching responsibility.</li>
+                <li className="text-sm text-muted-foreground">
+                  No current coaching responsibility.
+                </li>
               )}
             </ul>
             <div className="grid gap-3 sm:grid-cols-3">
@@ -398,7 +400,7 @@ function Contents({
           </>
         )}
         {intent || uncertain ? (
-          <div className="rounded-md border border-amber-700 p-3">
+          <div className="rounded-md border border-warning/40 p-3">
             <p className="text-sm">
               {uncertain
                 ? "Retry the exact unresolved request only after you have reconciled current assignments."

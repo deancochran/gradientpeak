@@ -68,6 +68,10 @@ describe("organization invitations route", () => {
     const Component = (Route as unknown as { component: React.ComponentType }).component;
     render(<Component />);
     expect(screen.getByRole("heading", { name: "Organization invitations" })).toBeTruthy();
+    expect(screen.getByRole("navigation", { name: "Organization administration" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Staff" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Assignments" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Overview" })).toBeTruthy();
   });
   it("renders access loss instead of stale invitation data", () => {
     state.loaded = {

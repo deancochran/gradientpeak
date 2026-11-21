@@ -148,22 +148,22 @@ export function CoachAthleteGoals({
     return <SectionError loading={loading} retry={() => request(null, false)} />;
 
   return (
-    <Card className="border-slate-800 bg-slate-900 text-slate-50">
+    <Card className="border-border bg-card text-foreground">
       <CardHeader>
-        <p className="text-xs font-medium uppercase tracking-[0.18em] text-cyan-300">Read-only</p>
+        <p className="text-xs font-medium uppercase tracking-[0.18em] text-primary">Read-only</p>
         <CardTitle>
           <h2>Goals</h2>
         </CardTitle>
-        <CardDescription className="text-slate-400">
+        <CardDescription className="text-muted-foreground">
           Consented goal summaries for this athlete. Target dates are date-only records.
         </CardDescription>
       </CardHeader>
       <CardContent>
         {failedCursor !== undefined ? (
-          <div aria-live="assertive" role="alert" className="mb-3 text-sm text-amber-200">
+          <div aria-live="assertive" role="alert" className="mb-3 text-sm text-warning">
             Goals could not be loaded.{" "}
             <Button
-              className="text-cyan-200 hover:text-cyan-100 focus-visible:ring-cyan-300"
+              className="text-primary hover:text-primary focus-visible:ring-ring"
               onClick={() => request(failedCursor, Boolean(failedCursor))}
               type="button"
               variant="link"
@@ -173,7 +173,7 @@ export function CoachAthleteGoals({
           </div>
         ) : null}
         {loading ? (
-          <p aria-live="polite" role="status" className="mb-3 text-sm text-slate-400">
+          <p aria-live="polite" role="status" className="mb-3 text-sm text-muted-foreground">
             Loading goals…
           </p>
         ) : null}
@@ -181,16 +181,16 @@ export function CoachAthleteGoals({
           <ul aria-label="Goals" className="space-y-2">
             {displayed.items.map((goal) => (
               <li
-                className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-800 p-3"
+                className="flex flex-wrap items-center justify-between gap-2 rounded border border-border p-3"
                 key={goal.id}
               >
                 <div>
                   <p className="font-medium">{goal.name}</p>
-                  <p className="text-sm text-slate-400">
+                  <p className="text-sm text-muted-foreground">
                     Target date: {goal.targetDate} · {goal.category} · Priority {goal.priority}
                   </p>
                 </div>
-                <Badge className="border-cyan-800 bg-cyan-950 text-cyan-200">
+                <Badge className="border-primary/30 bg-primary/10 text-primary">
                   {goal.status === "unavailable"
                     ? "Lifecycle unavailable: athlete planning timezone is not set"
                     : `Lifecycle: ${goal.status.replaceAll("_", " ")}`}
@@ -199,7 +199,7 @@ export function CoachAthleteGoals({
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-slate-400">No goals are shared for this athlete.</p>
+          <p className="text-sm text-muted-foreground">No goals are shared for this athlete.</p>
         )}
         {displayed.nextCursor ? (
           <DarkButton disabled={loading} onClick={() => request(displayed.nextCursor, true)}>
@@ -212,7 +212,7 @@ export function CoachAthleteGoals({
 }
 
 const darkButton =
-  "mt-3 border-slate-600 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white focus-visible:ring-cyan-300 disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500";
+  "mt-3 border-border bg-card text-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring disabled:border-border disabled:bg-muted disabled:text-muted-foreground";
 function DarkButton({ children, ...props }: ComponentProps<typeof Button>) {
   return (
     <Button className={darkButton} type="button" variant="outline" {...props}>
@@ -222,12 +222,12 @@ function DarkButton({ children, ...props }: ComponentProps<typeof Button>) {
 }
 function SectionUnavailable() {
   return (
-    <Card className="border-slate-800 bg-slate-900 text-slate-50">
+    <Card className="border-border bg-card text-foreground">
       <CardHeader>
         <CardTitle>
           <h2>Goals unavailable</h2>
         </CardTitle>
-        <CardDescription className="text-slate-400">
+        <CardDescription className="text-muted-foreground">
           Goal sharing is not available for this athlete in the selected organization.
         </CardDescription>
       </CardHeader>
@@ -236,12 +236,12 @@ function SectionUnavailable() {
 }
 function SectionError({ loading, retry }: { loading: boolean; retry: () => void }) {
   return (
-    <Card className="border-slate-800 bg-slate-900 text-slate-50">
+    <Card className="border-border bg-card text-foreground">
       <CardHeader>
         <CardTitle>
           <h2>Goals could not be loaded</h2>
         </CardTitle>
-        <CardDescription className="text-slate-400">
+        <CardDescription className="text-muted-foreground">
           The athlete overview is still available. Retry this goals section.
         </CardDescription>
         <DarkButton disabled={loading} onClick={retry}>

@@ -7,6 +7,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
+import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
+import { IdentitySummary } from "@repo/ui/components/identity-summary";
 import { SearchField } from "@repo/ui/components/search-field";
 import { Link, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
@@ -90,14 +92,15 @@ function OrganizationSelectorPage({
   return (
     <section aria-labelledby="organization-list-heading" className="space-y-4">
       <div>
-        <h2 id="organization-list-heading" className="text-xl font-semibold text-white">
+        <h2 id="organization-list-heading" className="text-xl font-semibold text-foreground">
           Your organizations
         </h2>
-        <p className="mt-1 text-sm text-slate-400">
+        <p className="mt-1 text-sm text-muted-foreground">
           Choose a coaching workspace to continue. Your Personal workspace stays separate.
         </p>
       </div>
       <SearchField
+        aria-describedby="organization-filter-description"
         accessibilityLabel="Filter organizations on this page"
         maxLength={100}
         name="organizationFilter"
@@ -106,11 +109,11 @@ function OrganizationSelectorPage({
         testId="organization-filter"
         value={filter}
       />
-      <p id="organization-filter-description" className="text-sm text-slate-400">
+      <p id="organization-filter-description" className="text-sm text-muted-foreground">
         Filters organizations shown on this page only.
       </p>
       {filteredItems.length === 0 ? (
-        <p role="status" className="text-sm text-slate-400">
+        <p role="status" className="text-sm text-muted-foreground">
           No organizations on this page match this filter.
         </p>
       ) : (
@@ -123,28 +126,30 @@ function OrganizationSelectorPage({
 
             return (
               <li key={organization.organizationId} className="min-w-0">
-                <Card className="min-w-0 border-slate-800 bg-slate-900 text-slate-50">
+                <Card className="min-w-0">
                   <CardHeader>
                     <CardTitle>
-                      <h3 className="[overflow-wrap:anywhere]">{organization.name}</h3>
+                      <IdentitySummary
+                        status={
+                          <>
+                            {membership.roles.filter(isFixedRole).map((role) => (
+                              <Badge key={role} variant="secondary">
+                                {ROLE_LABELS[role]}
+                              </Badge>
+                            ))}
+                            {isRootOwner ? <Badge>Root owner</Badge> : null}
+                          </>
+                        }
+                        title={organization.name}
+                        titleAs="h3"
+                        titleClassName="[overflow-wrap:anywhere]"
+                      />
                     </CardTitle>
-                    <CardDescription className="flex flex-wrap gap-2 text-slate-400">
-                      {membership.roles.filter(isFixedRole).map((role) => (
-                        <Badge key={role} className="border-slate-700 bg-slate-800 text-slate-200">
-                          {ROLE_LABELS[role]}
-                        </Badge>
-                      ))}
-                      {isRootOwner ? (
-                        <Badge className="border-cyan-700 bg-cyan-950 text-cyan-200">
-                          Root owner
-                        </Badge>
-                      ) : null}
-                    </CardDescription>
                   </CardHeader>
                   <CardContent className="min-w-0">
                     <Button
                       asChild
-                      className="h-auto max-w-full min-w-0 whitespace-normal bg-cyan-400 text-left text-slate-950 [overflow-wrap:anywhere] hover:bg-cyan-300"
+                      className="h-auto max-w-full min-w-0 whitespace-normal text-left [overflow-wrap:anywhere]"
                     >
                       <Link
                         to={defaultWorkspace}
@@ -179,16 +184,11 @@ export function OrganizationSelectorFrame({
   children: React.ReactNode;
 }) {
   return (
-    <div className="gp-protected-shell min-h-screen bg-slate-950 text-slate-50">
-      <header className="border-b border-slate-800 bg-slate-950">
+    <div className="gp-protected-shell min-h-screen bg-background text-foreground">
+      <header className="border-b border-border bg-background">
         <div className="mx-auto flex h-16 w-full max-w-4xl items-center px-4 sm:px-6">
           <span className="text-sm font-semibold">GradientPeak Coaching</span>
-          <Button
-            asChild
-            variant="outline"
-            size="sm"
-            className="ml-auto border-slate-700 bg-transparent text-slate-200 hover:bg-slate-900 hover:text-white"
-          >
+          <Button asChild variant="outline" size="sm" className="ml-auto bg-transparent">
             <Link to="/">Personal workspace</Link>
           </Button>
         </div>
@@ -197,7 +197,10 @@ export function OrganizationSelectorFrame({
         aria-labelledby="organizations-heading"
         className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6"
       >
-        <h1 id="organizations-heading" className="text-3xl font-semibold tracking-tight text-white">
+        <h1
+          id="organizations-heading"
+          className="text-3xl font-semibold tracking-tight text-foreground"
+        >
           {heading}
         </h1>
         <div className="mt-6">{children}</div>
@@ -209,7 +212,7 @@ export function OrganizationSelectorFrame({
 export function OrganizationSelectorPending() {
   return (
     <OrganizationSelectorFrame heading="Loading organizations">
-      <p role="status" aria-live="polite" className="text-sm text-slate-400">
+      <p role="status" aria-live="polite" className="text-sm text-muted-foreground">
         Loading your coaching workspaces…
       </p>
     </OrganizationSelectorFrame>
@@ -221,14 +224,13 @@ export function OrganizationSelectorError() {
 
   return (
     <OrganizationSelectorFrame heading="Organizations unavailable">
-      <Card className="border-slate-800 bg-slate-900 text-slate-50">
-        <CardContent className="flex flex-wrap items-center gap-3 py-6">
-          <p role="alert" className="text-sm text-slate-400">
-            We could not load your coaching organizations.
-          </p>
-          <Button onClick={() => void router.invalidate()}>Retry</Button>
-        </CardContent>
-      </Card>
+      <EmptyStateCard
+        actionLabel="Retry"
+        description="We could not load your coaching organizations."
+        onAction={() => void router.invalidate()}
+        title="Organizations unavailable"
+        tone="unavailable"
+      />
     </OrganizationSelectorFrame>
   );
 }
@@ -240,12 +242,12 @@ function isFixedRole(role: string): role is FixedRole {
 function NoOrganizations() {
   return (
     <section aria-labelledby="no-organizations-heading">
-      <Card className="border-slate-800 bg-slate-900 text-slate-50">
+      <Card>
         <CardHeader>
           <CardTitle>
             <h2 id="no-organizations-heading">No coaching organizations</h2>
           </CardTitle>
-          <CardDescription className="text-slate-400">
+          <CardDescription>
             No active coaching organization is available for this profile. You can create one or
             return here after accepting an organization invitation.
           </CardDescription>
@@ -254,11 +256,7 @@ function NoOrganizations() {
           <Button asChild>
             <Link to="/organizations/new">Create organization</Link>
           </Button>
-          <Button
-            asChild
-            variant="outline"
-            className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
-          >
+          <Button asChild variant="outline" className="bg-transparent">
             <Link to="/">Go to Personal workspace</Link>
           </Button>
         </CardContent>
@@ -270,21 +268,15 @@ function NoOrganizations() {
 function EmptyCursorPage() {
   return (
     <section aria-labelledby="empty-organization-page-heading">
-      <Card className="border-slate-800 bg-slate-900 text-slate-50">
+      <Card>
         <CardHeader>
           <CardTitle>
             <h2 id="empty-organization-page-heading">No organizations on this page</h2>
           </CardTitle>
-          <CardDescription className="text-slate-400">
-            This saved page no longer has organizations to show.
-          </CardDescription>
+          <CardDescription>This saved page no longer has organizations to show.</CardDescription>
         </CardHeader>
         <CardContent>
-          <Button
-            asChild
-            variant="outline"
-            className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
-          >
+          <Button asChild variant="outline" className="bg-transparent">
             <Link to="/organizations" search={{ cursor: undefined }}>
               Back to first page
             </Link>
@@ -310,12 +302,12 @@ function InvitationStatus({
   if (invitationStatus.status === "unavailable") {
     return (
       <section aria-labelledby="invitation-status-unavailable-heading">
-        <Card className="border-amber-900/70 bg-slate-900 text-slate-50">
+        <Card className="border-warning/50">
           <CardHeader>
             <CardTitle>
               <h2 id="invitation-status-unavailable-heading">Invitation status unavailable</h2>
             </CardTitle>
-            <CardDescription className="text-slate-400">
+            <CardDescription>
               Your coaching organizations are still available. We could not check invitations.
             </CardDescription>
           </CardHeader>
@@ -323,14 +315,14 @@ function InvitationStatus({
             <Button
               onClick={() => void router.invalidate()}
               variant="outline"
-              className="h-auto max-w-full whitespace-normal border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
+              className="h-auto max-w-full whitespace-normal bg-transparent"
             >
               Retry invitation status
             </Button>
             <Button
               asChild
               variant="outline"
-              className="h-auto max-w-full whitespace-normal border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
+              className="h-auto max-w-full whitespace-normal bg-transparent"
             >
               <Link to="/organization-invitations">Review organization invitations</Link>
             </Button>
@@ -348,12 +340,12 @@ function InvitationStatus({
 
   return (
     <section aria-labelledby="pending-invitations-heading">
-      <Card className="border-amber-900/70 bg-slate-900 text-slate-50">
+      <Card className="border-warning/50">
         <CardHeader>
           <CardTitle>
             <h2 id="pending-invitations-heading">Membership pending</h2>
           </CardTitle>
-          <CardDescription className="text-slate-400">
+          <CardDescription>
             {invitations.length > 0
               ? `This invitation page has ${invitations.length} pending organization ${invitationLabel}`
               : "Additional organization invitations may be available on later pages"}
@@ -365,11 +357,7 @@ function InvitationStatus({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Button
-            asChild
-            variant="outline"
-            className="border-amber-700 bg-slate-900 text-amber-100 hover:bg-slate-800 hover:text-amber-50"
-          >
+          <Button asChild variant="outline" className="bg-transparent">
             <Link to="/organization-invitations">Review pending invitations</Link>
           </Button>
         </CardContent>
@@ -392,11 +380,7 @@ function Pagination({
   return (
     <nav aria-label="Organization pages" className="flex flex-wrap gap-3">
       {cursor ? (
-        <Button
-          asChild
-          variant="outline"
-          className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
-        >
+        <Button asChild variant="outline" className="bg-transparent">
           <Link to="/organizations" search={{ cursor: undefined }}>
             First page
           </Link>

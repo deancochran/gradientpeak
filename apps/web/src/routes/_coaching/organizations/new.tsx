@@ -18,10 +18,10 @@ export const Route = createFileRoute("/_coaching/organizations/new")({
 function CreateOrganizationPage() {
   return (
     <OrganizationSelectorFrame heading="Create a coaching organization">
-      <Card className="max-w-xl border-slate-800 bg-slate-900 text-slate-50">
+      <Card className="max-w-xl border-border bg-card text-foreground">
         <CardHeader>
           <CardTitle>Start an organization</CardTitle>
-          <CardDescription className="text-slate-400">
+          <CardDescription className="text-muted-foreground">
             You will be its root owner. Invitations and athlete enrollment are managed separately.
           </CardDescription>
         </CardHeader>
@@ -30,7 +30,7 @@ function CreateOrganizationPage() {
           <Button
             asChild
             variant="outline"
-            className="border-slate-700 bg-transparent text-slate-100 hover:bg-slate-800 hover:text-white"
+            className="border-border bg-transparent text-foreground hover:bg-muted hover:text-foreground"
           >
             <Link to="/organizations">Cancel</Link>
           </Button>

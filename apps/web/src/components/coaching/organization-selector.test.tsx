@@ -205,6 +205,11 @@ describe("OrganizationSelector", () => {
     expect(screen.getByText("Peak Development")).toBeTruthy();
     expect(screen.queryByText("Summit Coaching")).toBeNull();
     expect(screen.getByText("Filters organizations shown on this page only.")).toBeTruthy();
+    expect(
+      screen
+        .getByRole("searchbox", { name: "Filter organizations on this page" })
+        .getAttribute("aria-describedby"),
+    ).toBe("organization-filter-description");
   });
 
   it("preserves a valid unbroken organization name while allowing its heading and action to wrap", () => {

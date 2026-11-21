@@ -910,6 +910,9 @@ importers:
       tailwind-merge:
         specifier: ^3.6.0
         version: 3.6.0
+      victory-native:
+        specifier: 41.20.2
+        version: 41.20.2(539c278217a1a345808690fd6bb44aac)
       zod:
         specifier: ^4.5.4
         version: 4.6.7

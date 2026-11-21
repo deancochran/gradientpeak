@@ -41,7 +41,7 @@ export const Route = createFileRoute("/_coaching/organizations/$organizationId/a
     }),
   }),
   pendingComponent: () => (
-    <p role="status" className="text-sm text-slate-400">
+    <p role="status" className="text-sm text-muted-foreground">
       Loading coach assignments…
     </p>
   ),

@@ -20,6 +20,7 @@ import {
   FormTextareaField,
   FormTextField,
 } from "../../components/form/index.native";
+import { IdentitySummary } from "../../components/identity-summary/index.native";
 import { Input } from "../../components/input/index.native";
 import { Label } from "../../components/label/index.native";
 import { ChartSkeleton, ListSkeleton } from "../../components/loading-skeletons/index.native";
@@ -89,6 +90,14 @@ function UiPreviewSurface() {
         </Text>
         <Text className="text-3xl font-semibold">{uiPreviewContract.mobileTitle}</Text>
         <Text className="text-sm text-muted-foreground">{uiPreviewContract.description}</Text>
+      </View>
+
+      <View className="gap-4" testID={uiPreviewContract.scenarios.identitySummary.testId}>
+        <ScenarioHeader
+          description={uiPreviewContract.scenarios.identitySummary.description}
+          title={uiPreviewContract.scenarios.identitySummary.title}
+        />
+        <IdentitySummary {...uiPreviewFixtures.identitySummary} />
       </View>
 
       <View className="gap-4" testID={uiPreviewContract.scenarios.accountControls.testId}>

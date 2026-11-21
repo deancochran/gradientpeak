@@ -88,7 +88,7 @@ export const Route = createFileRoute(
     };
   },
   pendingComponent: () => (
-    <p role="status" className="text-sm text-slate-400">
+    <p role="status" className="text-sm text-muted-foreground">
       Loading athlete workspace…
     </p>
   ),
@@ -132,7 +132,7 @@ function AthleteWorkspacePage() {
       <Button
         asChild
         variant="outline"
-        className="border-slate-600 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white focus-visible:ring-cyan-300 disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500"
+        className="border-border bg-card text-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring disabled:border-border disabled:bg-muted disabled:text-muted-foreground"
       >
         <Link
           to="/organizations/$organizationId/athletes"
@@ -179,19 +179,17 @@ function AthleteWorkspacePage() {
           result={identity ? calendar : forbiddenCalendar}
         />
       </div>
-      <details className="group rounded-xl border border-slate-800 bg-slate-950/50" open>
-        <summary className="cursor-pointer list-none px-5 py-4 font-medium text-slate-100 marker:hidden">
+      <details className="group rounded-xl border border-border bg-muted/50" open>
+        <summary className="cursor-pointer list-none px-5 py-4 font-medium text-foreground marker:hidden">
           <span className="flex items-center justify-between gap-4">
             Training context and shared data
-            <span className="text-sm font-normal text-cyan-300 group-open:hidden">
-              Show details
-            </span>
-            <span className="hidden text-sm font-normal text-cyan-300 group-open:inline">
+            <span className="text-sm font-normal text-primary group-open:hidden">Show details</span>
+            <span className="hidden text-sm font-normal text-primary group-open:inline">
               Hide details
             </span>
           </span>
         </summary>
-        <div className="space-y-6 border-t border-slate-800 p-5">
+        <div className="space-y-6 border-t border-border p-5">
           <CoachAthleteOverview
             athleteId={athleteId}
             result={identity ? overview : { status: "unavailable" }}

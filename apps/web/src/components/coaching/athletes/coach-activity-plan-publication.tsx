@@ -185,13 +185,13 @@ export function CoachActivityPlanPublication({
   }
 
   return (
-    <Card className="border-cyan-800/90 bg-slate-950 text-slate-50 shadow-[0_0_0_1px_rgba(34,211,238,0.04)]">
+    <Card className="border-primary/30 bg-background text-foreground shadow-[0_0_0_1px_rgba(34,211,238,0.04)]">
       <CardHeader className="space-y-2">
-        <p className="text-xs font-medium uppercase tracking-[0.18em] text-cyan-300">
+        <p className="text-xs font-medium uppercase tracking-[0.18em] text-primary">
           Primary action
         </p>
         <CardTitle className="text-xl tracking-tight">Publish an activity plan</CardTitle>
-        <CardDescription className="text-slate-400">
+        <CardDescription className="text-muted-foreground">
           Choose one of your activity plans and the athlete’s local planning date. Publishing
           creates a planned session; it does not promise delivery to a connected provider.
         </CardDescription>
@@ -199,7 +199,7 @@ export function CoachActivityPlanPublication({
       <CardContent className="space-y-4">
         <Button
           asChild
-          className="border-slate-600 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
+          className="border-border bg-card text-foreground hover:bg-muted hover:text-foreground"
           disabled={!preparationContext}
           type="button"
           variant="outline"
@@ -219,28 +219,28 @@ export function CoachActivityPlanPublication({
           </Link>
         </Button>
         {!preparationContext ? (
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-muted-foreground">
             Choose a real athlete planning date before preparing an activity plan.
           </p>
         ) : null}
         {preparation ? (
-          <p className="text-sm text-cyan-100">
+          <p className="text-sm text-primary">
             Preparing a coach-owned draft for {planningDate}. A fresh publication preview is still
             required before it becomes visible to the athlete.
           </p>
         ) : null}
         {organizations.isLoading || activityPlans.isLoading ? (
-          <p role="status" className="text-sm text-slate-400">
+          <p role="status" className="text-sm text-muted-foreground">
             Loading your activity-plan library…
           </p>
         ) : null}
         {organizations.error || activityPlans.error ? (
-          <p role="alert" className="text-sm text-red-300">
+          <p role="alert" className="text-sm text-destructive">
             Your publishing options could not be loaded. Refresh the page and try again.
           </p>
         ) : null}
         {!organizations.isLoading && !coachMembership ? (
-          <p role="alert" className="text-sm text-amber-200">
+          <p role="alert" className="text-sm text-warning">
             Your active coach membership for this organization is unavailable. No activity plan can
             be published from this workspace.
           </p>
@@ -249,7 +249,7 @@ export function CoachActivityPlanPublication({
           <div className="space-y-2">
             <Label htmlFor="coach-activity-plan">Your activity plan</Label>
             <select
-              className="min-h-10 w-full rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-slate-50"
+              className="min-h-10 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground"
               disabled={!coachMembership || publish.isPending}
               id="coach-activity-plan"
               onChange={(event) => {
@@ -271,7 +271,7 @@ export function CoachActivityPlanPublication({
               ))}
             </select>
             {!activityPlans.isLoading && plans.length === 0 ? (
-              <p className="text-sm text-slate-400">
+              <p className="text-sm text-muted-foreground">
                 Create an activity plan in your library first.
               </p>
             ) : null}
@@ -279,7 +279,7 @@ export function CoachActivityPlanPublication({
           <div className="space-y-2">
             <Label htmlFor="coach-planning-date">Athlete planning date</Label>
             <input
-              className="min-h-10 w-full rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-slate-50 [color-scheme:dark]"
+              className="min-h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
               disabled={!coachMembership || publish.isPending}
               id="coach-planning-date"
               onChange={(event) => {
@@ -292,17 +292,17 @@ export function CoachActivityPlanPublication({
           </div>
         </div>
         {activityPlanId && selectedPlanQuery.isLoading ? (
-          <p role="status" className="text-sm text-slate-400">
+          <p role="status" className="text-sm text-muted-foreground">
             Loading selected activity plan…
           </p>
         ) : null}
         {activityPlanId && selectedPlanQuery.isError ? (
           <div className="space-y-2">
-            <p role="alert" className="text-sm text-red-300">
+            <p role="alert" className="text-sm text-destructive">
               The selected activity plan could not be loaded. Your selection has not been changed.
             </p>
             <Button
-              className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
+              className="border-border bg-card text-foreground hover:bg-muted hover:text-foreground"
               onClick={() => void refreshSelectedPlan()}
               size="sm"
               type="button"
@@ -316,37 +316,37 @@ export function CoachActivityPlanPublication({
         !selectedPlanQuery.isLoading &&
         !selectedPlanQuery.isError &&
         !selectedPlan ? (
-          <p role="alert" className="text-sm text-amber-200">
+          <p role="alert" className="text-sm text-warning">
             {selectedPlanDetail
               ? "The selected activity plan is not editable in your owned library."
               : "The selected activity plan is no longer available."}
           </p>
         ) : null}
         {error ? (
-          <p role="alert" className="text-sm text-red-300">
+          <p role="alert" className="text-sm text-destructive">
             {error}
           </p>
         ) : null}
         {success ? (
-          <p role="status" className="text-sm text-emerald-300">
+          <p role="status" className="text-sm text-success">
             {success}
           </p>
         ) : null}
         {previewed?.key === key ? (
-          <div className="rounded-md border border-cyan-800 bg-cyan-950/40 p-3 text-sm">
+          <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
             <p className="font-medium">Ready to publish: {previewed.data.activityPlan.name}</p>
-            <p className="mt-1 text-slate-300">
+            <p className="mt-1 text-muted-foreground">
               {input?.planningDate} in the athlete’s {previewed.data.athleteTimezone} planning time
               zone.
             </p>
             {!previewed.data.versionMatches ? (
               <div className="mt-2 space-y-2">
-                <p role="alert" className="text-amber-200">
+                <p role="alert" className="text-warning">
                   This activity plan changed since it was selected. Refresh the current revision,
                   then preview it again before publishing.
                 </p>
                 <Button
-                  className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
+                  className="border-border bg-card text-foreground hover:bg-muted hover:text-foreground"
                   disabled={selectedPlanQuery.isFetching}
                   onClick={() => void refreshSelectedPlan()}
                   size="sm"
@@ -363,7 +363,7 @@ export function CoachActivityPlanPublication({
         ) : null}
         <div className="flex flex-wrap gap-2">
           <Button
-            className="border-slate-600 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
+            className="border-border bg-card text-foreground hover:bg-muted hover:text-foreground"
             disabled={!input || preview.isFetching || publish.isPending}
             onClick={() => void requestPreview()}
             type="button"
@@ -372,7 +372,7 @@ export function CoachActivityPlanPublication({
             {preview.isFetching ? "Checking publication…" : "Preview publication"}
           </Button>
           <Button
-            className="bg-cyan-400 font-semibold text-slate-950 hover:bg-cyan-300 focus-visible:ring-cyan-200 disabled:bg-slate-800 disabled:text-slate-500"
+            className="bg-primary font-semibold text-primary-foreground hover:bg-primary/90 focus-visible:ring-ring disabled:bg-muted disabled:text-muted-foreground"
             disabled={
               !input ||
               !previewed ||

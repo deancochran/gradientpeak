@@ -37,9 +37,9 @@ import {
 
 const PAGE_SIZE = 20;
 const darkOutlineControl =
-  "border-slate-600 bg-slate-950 text-slate-100 hover:bg-slate-800 hover:text-white focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 disabled:border-slate-800 disabled:bg-slate-900 disabled:text-slate-500 disabled:hover:bg-slate-900 disabled:hover:text-slate-500";
+  "border-border bg-background text-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:border-border disabled:bg-card disabled:text-muted-foreground disabled:hover:bg-card disabled:hover:text-muted-foreground";
 const selectedStatusControl =
-  "bg-cyan-500 text-slate-950 hover:bg-cyan-400 hover:text-slate-950 focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950";
+  "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 type StaffStatus = "active" | "suspended";
 type StaffAction =
   | "suspend"
@@ -245,10 +245,13 @@ function StaffRosterContents({
   return (
     <section aria-labelledby="staff-roster-heading" className="space-y-5">
       <div className="space-y-1">
-        <h1 id="staff-roster-heading" className="text-3xl font-semibold tracking-tight text-white">
+        <h1
+          id="staff-roster-heading"
+          className="text-3xl font-semibold tracking-tight text-foreground"
+        >
           Staff roster
         </h1>
-        <p className="max-w-3xl text-sm leading-6 text-slate-400">
+        <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
           Review active and suspended administrative memberships. Suspension ends active coaching
           assignments; resuming does not restore them or grant private-athlete access.
         </p>
@@ -266,12 +269,12 @@ function StaffRosterContents({
         />
       </nav>
       {notice ? (
-        <p role="status" className="text-sm text-emerald-300">
+        <p role="status" className="text-sm text-success">
           {notice}
         </p>
       ) : null}
       {error ? (
-        <p role="alert" className="text-sm text-red-300">
+        <p role="alert" className="text-sm text-destructive">
           {error}
         </p>
       ) : null}
@@ -280,16 +283,16 @@ function StaffRosterContents({
           Refresh roster
         </Button>
       ) : null}
-      <Card className="border-slate-800 bg-slate-900 text-slate-50">
+      <Card className="border-border bg-card text-foreground">
         <CardHeader>
           <CardTitle>{status === "active" ? "Active staff" : "Suspended staff"}</CardTitle>
-          <CardDescription className="text-slate-400">
+          <CardDescription className="text-muted-foreground">
             {page.items.length} shown on this page
           </CardDescription>
         </CardHeader>
         <CardContent>
           {page.items.length === 0 ? (
-            <p className="text-sm text-slate-400">No {status} staff on this page.</p>
+            <p className="text-sm text-muted-foreground">No {status} staff on this page.</p>
           ) : (
             <ul
               aria-label={`${status === "active" ? "Active" : "Suspended"} staff roster`}
@@ -302,7 +305,7 @@ function StaffRosterContents({
                 return (
                   <li
                     key={member.membershipId}
-                    className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3 last:border-0 last:pb-0"
+                    className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3 last:border-0 last:pb-0"
                   >
                     <div>
                       <p className="font-medium">{displayIdentity(member.identity)}</p>
@@ -310,12 +313,12 @@ function StaffRosterContents({
                         {member.roleKeys.map((role) => (
                           <Badge
                             key={role}
-                            className="border-slate-700 bg-slate-800 capitalize text-slate-200"
+                            className="border-border bg-muted capitalize text-foreground"
                           >
                             {role}
                           </Badge>
                         ))}
-                        <Badge className="border-slate-700 bg-slate-800 capitalize text-slate-200">
+                        <Badge className="border-border bg-muted capitalize text-foreground">
                           {member.status}
                         </Badge>
                       </div>
@@ -364,7 +367,7 @@ function StaffRosterContents({
                       })}
                     </div>
                     {!statusEligible ? (
-                      <p className="max-w-sm text-sm text-slate-400">
+                      <p className="max-w-sm text-sm text-muted-foreground">
                         {member.endMembership.reason === "root_owner"
                           ? "The root-owner membership cannot be suspended or resumed."
                           : "Your current authority does not allow this membership status change."}
@@ -409,7 +412,7 @@ function StaffRosterContents({
             <AlertDialogDescription>{commandImpact(selectedAction)}</AlertDialogDescription>
           </AlertDialogHeader>
           {selectedProtected ? (
-            <p role="alert" className="text-sm text-red-300">
+            <p role="alert" className="text-sm text-destructive">
               This protected membership cannot be changed.
             </p>
           ) : null}
@@ -510,34 +513,34 @@ function OffboardingImpactDialog({
   }, [load]);
   return (
     <AlertDialog open onOpenChange={(open) => !open && onClose()}>
-      <AlertDialogContent className="border-slate-700 bg-slate-900 text-slate-100">
+      <AlertDialogContent className="border-border bg-card text-foreground">
         <AlertDialogHeader>
-          <AlertDialogTitle className="text-slate-50">Review offboarding impact</AlertDialogTitle>
-          <AlertDialogDescription className="text-slate-300">
+          <AlertDialogTitle className="text-foreground">Review offboarding impact</AlertDialogTitle>
+          <AlertDialogDescription className="text-muted-foreground">
             This is a read-only handover preparation. Ending membership is not available here.
           </AlertDialogDescription>
         </AlertDialogHeader>
         {state.status === "loading" ? (
-          <p role="status" className="text-sm text-slate-400">
+          <p role="status" className="text-sm text-muted-foreground">
             Loading offboarding impact…
           </p>
         ) : null}
         {state.status === "error" ? (
-          <p role="alert" className="text-sm text-red-300">
+          <p role="alert" className="text-sm text-destructive">
             We could not load the offboarding impact. No offboarding action is available.
           </p>
         ) : null}
         {state.status === "forbidden" ? (
-          <p role="alert" className="text-sm text-red-300">
+          <p role="alert" className="text-sm text-destructive">
             Offboarding impact is no longer available for this staff membership.
           </p>
         ) : null}
         {state.status === "ready" ? <OffboardingImpactDetails impact={state.impact} /> : null}
-        <AlertDialogFooter className="text-slate-100">
+        <AlertDialogFooter className="text-foreground">
           {state.status === "error" || state.status === "forbidden" ? (
             <Button
               type="button"
-              className="bg-cyan-500 text-slate-950 hover:bg-cyan-400"
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
               onClick={() => void load()}
             >
               Retry
@@ -545,7 +548,7 @@ function OffboardingImpactDialog({
           ) : null}
           <AlertDialogCancel
             type="button"
-            className="border-slate-600 bg-slate-800 text-slate-100 hover:bg-slate-700 hover:text-slate-50"
+            className="border-border bg-muted text-foreground hover:bg-muted hover:text-foreground"
             onClick={onClose}
           >
             Close
@@ -559,9 +562,9 @@ function OffboardingImpactDialog({
 function OffboardingImpactDetails({ impact }: { impact: OffboardingImpact }) {
   const reason = impact.target.offboarding.reason;
   return (
-    <div className="space-y-4 text-sm text-slate-300">
+    <div className="space-y-4 text-sm text-muted-foreground">
       <p>
-        <strong className="text-slate-100">{displayIdentity(impact.target.identity)}</strong> has{" "}
+        <strong className="text-foreground">{displayIdentity(impact.target.identity)}</strong> has{" "}
         {impact.assignedAthleteCount} assigned{" "}
         {impact.assignedAthleteCount === 1 ? "athlete" : "athletes"}.
       </p>
@@ -668,7 +671,7 @@ function StaffPagination({
 }
 export function StaffRosterPending() {
   return (
-    <p role="status" aria-live="polite" className="text-sm text-slate-400">
+    <p role="status" aria-live="polite" className="text-sm text-muted-foreground">
       Loading staff roster…
     </p>
   );
@@ -782,9 +785,9 @@ export function StaffRosterError({
   status: StaffStatus;
 }) {
   return (
-    <Card className="border-slate-800 bg-slate-900 text-slate-50">
+    <Card className="border-border bg-card text-foreground">
       <CardContent className="flex flex-wrap items-center gap-3 py-6">
-        <p role="alert" className="text-sm text-slate-400">
+        <p role="alert" className="text-sm text-muted-foreground">
           We could not load the staff roster.
         </p>
         <Button asChild>
@@ -804,9 +807,9 @@ export function StaffRosterError({
 export function StaffAccessLost() {
   const router = useRouter();
   return (
-    <Card className="border-slate-800 bg-slate-900 text-slate-50">
+    <Card className="border-border bg-card text-foreground">
       <CardContent className="flex flex-wrap items-center gap-3 py-6">
-        <p role="alert" className="text-sm text-slate-400">
+        <p role="alert" className="text-sm text-muted-foreground">
           Your organization staff-management access has changed. Reauthorize the roster before
           taking another action.
         </p>

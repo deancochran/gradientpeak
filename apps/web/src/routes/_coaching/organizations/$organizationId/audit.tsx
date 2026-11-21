@@ -41,7 +41,7 @@ export const Route = createFileRoute("/_coaching/organizations/$organizationId/a
     }),
   }),
   pendingComponent: () => (
-    <p role="status" className="text-sm text-slate-400">
+    <p role="status" className="text-sm text-muted-foreground">
       Loading audit history…
     </p>
   ),
@@ -94,17 +94,17 @@ function AuditHistoryError() {
   }
   return (
     <div className="space-y-3">
-      <p role="alert" className="text-sm text-red-300">
+      <p role="alert" className="text-sm text-destructive">
         Audit history could not be loaded. Your submitted filters are retained in this address.
       </p>
       <Button
         disabled={retrying}
         onClick={() => void retry()}
-        className="bg-cyan-400 text-slate-950 hover:bg-cyan-300"
+        className="bg-primary text-primary-foreground hover:bg-primary/90"
       >
         {retrying ? "Retrying audit history…" : "Retry audit history"}
       </Button>
-      <Link to="/organizations" className="block text-sm text-cyan-300">
+      <Link to="/organizations" className="block text-sm text-primary">
         Return to organizations
       </Link>
     </div>

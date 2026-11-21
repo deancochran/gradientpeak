@@ -341,36 +341,39 @@ function OrganizationGroupCoachesContents({
   return (
     <section aria-labelledby="group-coaches-heading" className="space-y-4">
       <div>
-        <h2 id="group-coaches-heading" className="text-2xl font-semibold tracking-tight text-white">
+        <h2
+          id="group-coaches-heading"
+          className="text-2xl font-semibold tracking-tight text-foreground"
+        >
           Coaches
         </h2>
-        <p className="mt-1 text-sm text-slate-400">Assign active coaches to this group.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Assign active coaches to this group.</p>
       </div>
       {notice ? (
-        <p role="status" className="text-sm text-emerald-300">
+        <p role="status" className="text-sm text-success">
           {notice}
         </p>
       ) : null}
       {error ? (
-        <p role="alert" className="text-sm text-red-300">
+        <p role="alert" className="text-sm text-destructive">
           {error}
         </p>
       ) : null}
       {locked ? (
-        <p role="status" className="text-sm text-amber-200">
+        <p role="status" className="text-sm text-warning">
           Refresh this page before another change.
         </p>
       ) : null}
-      <Card className="border-slate-800 bg-slate-900 text-slate-50">
+      <Card className="border-border bg-card text-foreground">
         <CardHeader>
           <CardTitle>Assigned coaches</CardTitle>
-          <CardDescription className="text-slate-400">
+          <CardDescription className="text-muted-foreground">
             Only active coach-role memberships can be assigned.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {links.length === 0 ? (
-            <p className="text-sm text-slate-400">No coaches assigned.</p>
+            <p className="text-sm text-muted-foreground">No coaches assigned.</p>
           ) : null}
           <ul aria-label="Assigned coaches" className="space-y-2">
             {links.map((link) => (
@@ -442,7 +445,7 @@ function OrganizationGroupCoachesContents({
             </Button>
           </div>
           {committedAssignmentReceipt.current ? (
-            <p role="status" className="text-sm text-slate-400">
+            <p role="status" className="text-sm text-muted-foreground">
               Confirming the coach assignment before another assignment.
             </p>
           ) : null}
@@ -457,7 +460,7 @@ function OrganizationGroupCoachesContents({
             </Button>
           ) : null}
           {availableCandidates.length === 0 ? (
-            <p className="text-sm text-slate-400">No other active coaches are available.</p>
+            <p className="text-sm text-muted-foreground">No other active coaches are available.</p>
           ) : null}
         </CardContent>
       </Card>
@@ -493,7 +496,11 @@ function OrganizationGroupCoachesContents({
 
 export function OrganizationGroupCoachesPending() {
   return (
-    <p aria-label="Loading coach assignments" role="status" className="text-sm text-slate-400">
+    <p
+      aria-label="Loading coach assignments"
+      role="status"
+      className="text-sm text-muted-foreground"
+    >
       Loading coach assignments…
     </p>
   );
@@ -513,7 +520,7 @@ export function OrganizationGroupCoachesError() {
   }
   return (
     <div className="space-y-3">
-      <p role="alert" className="text-sm text-red-300">
+      <p role="alert" className="text-sm text-destructive">
         We could not load coach assignments.
       </p>
       <Button disabled={retrying} onClick={() => void retry()} type="button">
@@ -525,8 +532,10 @@ export function OrganizationGroupCoachesError() {
 function GroupCoachAccessLost() {
   return (
     <section>
-      <h2 className="text-xl font-semibold tracking-tight text-white">Group access required</h2>
-      <p className="mt-1 text-sm text-slate-400">
+      <h2 className="text-xl font-semibold tracking-tight text-foreground">
+        Group access required
+      </h2>
+      <p className="mt-1 text-sm text-muted-foreground">
         Your access changed. Coach assignments are no longer shown.
       </p>
     </section>

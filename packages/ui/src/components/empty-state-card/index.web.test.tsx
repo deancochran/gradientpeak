@@ -25,4 +25,42 @@ describe("EmptyStateCard web", () => {
     );
     expect(onAction).toHaveBeenCalled();
   });
+
+  it("keeps icon, content, and action in the native-aligned vertical order for long text", () => {
+    const { container } = renderWeb(
+      <EmptyStateCard
+        {...emptyStateCardFixtures.longText}
+        icon={CircleAlertIcon}
+        onAction={vi.fn()}
+      />,
+    );
+
+    const content = container.querySelector(".flex.flex-col.items-center");
+    expect(content?.className).toContain("flex-col");
+    expect(content?.textContent).toContain(emptyStateCardFixtures.longText.title);
+    expect(content?.textContent).toContain(emptyStateCardFixtures.longText.description);
+    expect(content?.textContent).toContain(emptyStateCardFixtures.longText.actionLabel);
+  });
+
+  it("announces recoverable unavailable errors without treating them as empty", () => {
+    renderWeb(<EmptyStateCard {...emptyStateCardFixtures.unavailable} onAction={vi.fn()} />);
+
+    expect(screen.getByRole("alert")).toHaveAttribute("aria-live", "assertive");
+  });
+
+  it("contains unbroken title, description, and action labels at compact widths", () => {
+    renderWeb(<EmptyStateCard {...emptyStateCardFixtures.unbrokenText} onAction={vi.fn()} />);
+
+    expect(screen.getByText(emptyStateCardFixtures.unbrokenText.title).className).toContain(
+      "[overflow-wrap:anywhere]",
+    );
+    expect(screen.getByText(emptyStateCardFixtures.unbrokenText.description).className).toContain(
+      "[overflow-wrap:anywhere]",
+    );
+    const action = screen.getByRole("button", {
+      name: emptyStateCardFixtures.unbrokenText.actionLabel,
+    });
+    expect(action.className).toContain("whitespace-normal");
+    expect(action.className).toContain("[overflow-wrap:anywhere]");
+  });
 });

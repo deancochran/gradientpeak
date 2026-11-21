@@ -46,7 +46,7 @@ export const Route = createFileRoute("/_coaching/organizations/$organizationId/a
           }),
   }),
   pendingComponent: () => (
-    <p role="status" className="text-sm text-slate-400">
+    <p role="status" className="text-sm text-muted-foreground">
       Loading assigned athletes…
     </p>
   ),
@@ -96,7 +96,7 @@ function AthletesLanding() {
         to="/organizations/$organizationId/athletes"
         params={{ organizationId }}
         search={{ view: "administration" }}
-        className="text-sm text-cyan-300 underline"
+        className="text-sm text-primary underline"
       >
         Administrative roster (administrator access required)
       </Link>
