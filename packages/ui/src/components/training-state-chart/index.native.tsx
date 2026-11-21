@@ -7,7 +7,6 @@ import {
   getTrainingStateSourceLabel,
   type TrainingStateChartProps,
   type TrainingStateLegendProps,
-  trainingStateHasValues,
 } from "./shared";
 
 function TrainingStateLegend({
