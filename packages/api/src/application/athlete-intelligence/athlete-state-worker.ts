@@ -598,7 +598,7 @@ export class AthleteStateWorkerService {
           if (continuationProfileId === undefined) break claimSlots;
           break;
         }
-        result.processed += 1;
+        if (continuationProfileId === undefined) result.processed += 1;
         try {
           if (claim.dirtyFromAt !== null && claim.dirtyFromAt.getTime() <= now.getTime()) {
             await renewClaimOrThrow(

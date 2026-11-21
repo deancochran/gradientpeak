@@ -17,16 +17,19 @@ import {
 import { db, pool } from "@repo/db/client";
 import {
   activities,
+  activityAnalysisRevisions,
   activityPlans,
+  activityTrainingEffects,
   dailyTrainingLoad,
   groupEvents,
   groupMemberships,
   groups,
+  profileAthleteState,
   profiles,
   trainingPlans,
   users,
 } from "@repo/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { activityPlanStructureHash } from "../../application/activity-plans/structure-hash";
 import { createResolutionManifestFixture } from "../../test/builders/planned-session";
@@ -36,35 +39,11 @@ import { createEventReadRepository } from "./drizzle-event-read-repository";
 import { createDrizzlePlannedSessionRepository } from "./drizzle-planned-session-repository";
 
 function isDisposableLocalDatabase(): boolean {
-  if (isRunnerGeneratedDisposableDatabase()) return true;
   if (process.env.RUN_LIVE_DB_TESTS !== "1" && process.env.RUN_PHASE_ONE_REPOSITORY_LIVE_DB !== "1")
     return false;
   try {
     const url = new URL(process.env.DATABASE_URL ?? "");
-    return (
-      ["127.0.0.1", "localhost"].includes(url.hostname) &&
-      (url.port === "54322" ||
-        (url.port === "55439" && process.env.RUN_PHASE_ONE_REPOSITORY_LIVE_DB === "1")) &&
-      url.pathname === "/postgres"
-    );
-  } catch {
-    return false;
-  }
-}
-
-function isRunnerGeneratedDisposableDatabase(): boolean {
-  if (process.env.RUN_PHASE_ONE_REPOSITORY_LIVE_DB !== "1") return false;
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl || databaseUrl !== process.env.POSTGRES_URL) return false;
-  try {
-    const url = new URL(databaseUrl);
-    return (
-      (url.protocol === "postgres:" || url.protocol === "postgresql:") &&
-      ["127.0.0.1", "[::1]"].includes(url.hostname) &&
-      url.port === "54322" &&
-      !/%|\\|\0/.test(url.pathname) &&
-      /^\/gradientpeak_api_live_db_\d+_\d+$/.test(url.pathname)
-    );
+    return url.hostname === "127.0.0.1" && /^\/gradientpeak_[a-z_]+_\d+_\d+$/.test(url.pathname);
   } catch {
     return false;
   }
@@ -97,7 +76,7 @@ afterEach(async () => {
 afterAll(async () => {
   await pool.end();
 });
-describeDisposable("Phase 1 Drizzle repositories against a disposable database", () => {
+describeDisposable("Phase 1 Drizzle repositories against a guarded disposable database", () => {
   it("reads a new reference-based session with all legacy snapshot columns null", async () => {
     const profileId = await seedProfile("Current-plan effective-load owner");
     const activityPlanId = randomUUID();
@@ -185,13 +164,54 @@ describeDisposable("Phase 1 Drizzle repositories against a disposable database",
     });
     const claimedAt = new Date();
     const claimToken = randomUUID();
+    const futureLogicalClaimedAt = "2099-01-01T00:00:00.000Z";
     const claim = await repository.claimNextRecalculation({
       claimToken,
-      now: claimedAt.toISOString(),
-      claimedAt: claimedAt.toISOString(),
-      leaseExpiresAt: new Date(claimedAt.getTime() + 60000).toISOString(),
+      now: futureLogicalClaimedAt,
+      claimedAt: futureLogicalClaimedAt,
+      leaseExpiresAt: new Date(Date.now() + 60_000).toISOString(),
     });
     expect(claim).toMatchObject({ lifecycle: { state: "processing", claimToken } });
+    const unrelatedClaim = await repository.claimNextRecalculation({
+      claimToken: randomUUID(),
+      now: futureLogicalClaimedAt,
+      claimedAt: futureLogicalClaimedAt,
+      leaseExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+    expect(unrelatedClaim?.request.profileId).not.toBe(profileId);
+    await expect(
+      db
+        .select({ leaseToken: profileAthleteState.lease_token })
+        .from(profileAthleteState)
+        .where(eq(profileAthleteState.profile_id, profileId)),
+    ).resolves.toEqual([{ leaseToken: claimToken }]);
+    if (unrelatedClaim?.lifecycle.state === "processing") {
+      await db
+        .update(profileAthleteState)
+        .set({ lease_token: null, lease_expires_at: null })
+        .where(
+          and(
+            eq(profileAthleteState.profile_id, unrelatedClaim.request.profileId),
+            eq(profileAthleteState.lease_token, unrelatedClaim.lifecycle.claimToken),
+          ),
+        );
+    }
+    await db
+      .update(profileAthleteState)
+      .set({ lease_expires_at: new Date("2000-01-01T00:00:00.000Z") })
+      .where(eq(profileAthleteState.profile_id, profileId));
+    const recoveredToken = randomUUID();
+    await expect(
+      repository.claimNextRecalculation({
+        claimToken: recoveredToken,
+        now: claimedAt.toISOString(),
+        claimedAt: claimedAt.toISOString(),
+        leaseExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+      }),
+    ).resolves.toMatchObject({
+      request: { profileId },
+      lifecycle: { state: "processing", claimToken: recoveredToken },
+    });
     const day = {
       contractVersion: ATHLETE_DERIVED_STATE_PERSISTENCE_CONTRACT_VERSION,
       profileId,
@@ -226,7 +246,7 @@ describeDisposable("Phase 1 Drizzle repositories against a disposable database",
         fromPlanningDate: "2026-08-10",
         expectedPublishedRevision: 1,
         targetPublishedRevision: 5,
-        claimToken,
+        claimToken: recoveredToken,
         days: [day],
         state: publicationState,
       }),
@@ -265,7 +285,7 @@ describeDisposable("Phase 1 Drizzle repositories against a disposable database",
         fromPlanningDate: "2026-08-10",
         expectedPublishedRevision: 0,
         targetPublishedRevision: 5,
-        claimToken,
+        claimToken: recoveredToken,
         days: [day],
         state: publicationState,
       }),
@@ -278,6 +298,73 @@ describeDisposable("Phase 1 Drizzle repositories against a disposable database",
         publishedRevision: 5,
       }),
     ).resolves.toEqual([day]);
+    const futureActivityId = randomUUID();
+    const futureEffectiveAt = "2099-01-01T12:00:00.000Z";
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`set local session_replication_role = replica`);
+      await tx.insert(activities).values({
+        id: futureActivityId,
+        profile_id: profileId,
+        name: "Queued future ride",
+        started_at: new Date(futureEffectiveAt),
+        finished_at: new Date("2099-01-01T12:30:00.000Z"),
+        elapsed_ms: 1_800_000,
+        parser_version: "phase-one-v1",
+        decoded_contract_version: "phase-one-v1",
+        materializer_version: "phase-one-v1",
+      });
+    });
+    await db.insert(activityAnalysisRevisions).values({
+      activity_id: futureActivityId,
+      profile_id: profileId,
+      revision: 1,
+      source_segments_revision: 1,
+      analysis_version: "phase-one-v1",
+      reason: "manual_profile_reprocess",
+      performance_target_snapshot: {},
+      target_fingerprint: `sha256:${"a".repeat(64)}`,
+      segment_load_projection: {},
+      output_fingerprint: `sha256:${"b".repeat(64)}`,
+      computed_at: new Date(claimedAt),
+    });
+    await db.insert(activityTrainingEffects).values({
+      profile_id: profileId,
+      activity_id: futureActivityId,
+      activity_analysis_revision: 1,
+      effective_at: new Date(futureEffectiveAt),
+      planning_date: "2099-01-01",
+      source_revision: 5,
+      calculation_version: "effect-v1",
+      input_fingerprint: "c".repeat(64),
+      activity_category: "bike",
+      common_load: 50,
+      evidence_confidence: 0.9,
+    });
+    await expect(
+      repository.listActivityTrainingEffects({
+        profileId,
+        fromEffectiveAt: "1970-01-01T00:00:00.000Z",
+        throughEffectiveAt: claimedAt.toISOString(),
+        throughSourceRevision: 5,
+        limit: 10,
+      }),
+    ).resolves.toEqual({ items: [], hasMore: false });
+    await expect(
+      repository.transitionRecalculation({
+        profileId,
+        transition: {
+          action: "complete",
+          claimToken: recoveredToken,
+          completedAt: claimedAt.toISOString(),
+          resultingPublishedRevision: 5,
+        },
+      }),
+    ).resolves.toEqual({ status: "completed" });
+    await expect(repository.readPendingRecalculation({ profileId })).resolves.toMatchObject({
+      earliestAffectedAt: futureEffectiveAt,
+      earliestAffectedPlanningDate: "2099-01-01",
+      sourceRevision: 5,
+    });
     const activityId = randomUUID();
     await db.transaction(async (tx) => {
       await tx.execute(sql`set local session_replication_role = replica`);

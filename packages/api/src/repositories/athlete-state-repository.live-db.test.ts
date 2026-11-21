@@ -5,16 +5,10 @@ import {
   advanceAthleteStateTo,
   advanceObservedAthleteState,
   athleteStateBaselineSchema,
+  completedActivityPerformanceTargetSnapshotSchema,
+  createUnavailableAthletePerformanceTargetFacts,
 } from "@repo/core";
-import {
-  BEST_EFFORT_CALCULATION_VERSION,
-  calculateCyclingNormalizedPower,
-} from "@repo/core/calculations";
-import {
-  selectThresholdCandidate,
-  thresholdEvidenceSchema,
-} from "@repo/core/performance-calibration";
-import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
+import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
 import { db, pool } from "@repo/db/client";
 import {
   activities,
@@ -24,35 +18,36 @@ import {
   activityImportRuns,
   activitySegments,
   activitySourceReferences,
+  activityTrainingEffects,
   integrations,
   profileAthleteState,
   profileMetrics,
   profilePerformanceEstimates,
   profiles,
   providerSyncJobs,
-  thresholds,
   users,
 } from "@repo/db/schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import {
-  ACTIVITY_ANALYSIS_REFRESH_BATCH_SIZE,
-  reprocessProfileActivityAnalysis,
-} from "../application/activity-analysis/reprocess-profile-activity-analysis";
+  type ActivitySubmission,
+  activityArtifactId,
+  submitActivity,
+} from "../application/activities/submit-activity";
 import { readAthleteReadModel } from "../application/athlete-intelligence/athlete-read-model";
 import { materializeActivityAthleteStateEvidence } from "../application/athlete-intelligence/athlete-state-evidence";
 import { AthleteStateWorkerService } from "../application/athlete-intelligence/athlete-state-worker";
-import {
-  readPublishedAthleteStateSnapshot,
-  tryPublishIncrementalAthleteStateContribution,
-} from "../application/athlete-intelligence/published-athlete-state";
+import { readPublishedAthleteStateSnapshot } from "../application/athlete-intelligence/published-athlete-state";
+import { createAthletePerformanceTargetFactsReader } from "../application/performance-model/get-athlete-performance-model-as-of";
 import { withRepeatableReadSnapshot } from "../db";
+import { readyActivityIngestion } from "../test-support/ready-activity-ingestion";
 import { createActivityImportRepository } from "./activity-import-repository";
 import {
   attachActivitySourceReference,
   lockActivitySourceResolution,
   resolveCanonicalActivityReference,
 } from "./activity-source-reference-repository";
+import { createAthletePerformanceModelRepository } from "./athlete-performance-model-repository";
 import {
   claimNextAthleteState,
   failAthleteStateClaim,
@@ -62,36 +57,10 @@ import {
   readPublishedAthleteStateSnapshotData,
   renewAthleteStateClaim,
 } from "./athlete-state-repository";
-import {
-  insertThresholdEvaluation,
-  planThresholdChain,
-  thresholdEffortId,
-  thresholdEvaluationId,
-} from "./threshold-repository";
 
 const unavailableNormalizedPower = calculateCyclingNormalizedPower({ samples: [] });
-const canonicalNormalizedPower = calculateCyclingNormalizedPower({
-  samples: Array.from({ length: 361 }, (_, index) => ({
-    timestampSeconds: index * 5,
-    powerWatts: 200,
-  })),
-});
 
 const seededProfileIds: string[] = [];
-
-function performanceTargetSnapshot(profileId: string, capturedAt: Date, canonicalLoad = false) {
-  return {
-    contractVersion: "completed-activity-performance-target-snapshot-v2" as const,
-    capturedAt: capturedAt.toISOString(),
-    publishedRevision: null,
-    publicationStatus: "unavailable" as const,
-    targets: buildPerformanceTargetFactsFixture({
-      athleteId: profileId,
-      asOf: capturedAt.toISOString(),
-      ...(canonicalLoad ? { bikeThresholdWatts: 250 } : {}),
-    }),
-  };
-}
 
 function readPublishedReadModel(profileId: string, now: Date, includeLoadHistory = false) {
   return readAthleteReadModel({
@@ -145,13 +114,6 @@ async function seedProfile(planningTimezone = "UTC") {
   return profileId;
 }
 
-async function readDatabaseClock() {
-  const result = await pool.query<{ now: Date }>("select clock_timestamp() as now");
-  const now = result.rows[0]?.now;
-  if (!now) throw new Error("Expected database clock timestamp");
-  return now;
-}
-
 async function seedIntegration(
   profileId: string,
   provider: "garmin" | "strava" | "trainingpeaks" | "wahoo",
@@ -172,7 +134,7 @@ async function seedActivity(input: {
   commonLoad?: number;
   confidence?: number;
   durationMs?: number;
-  canonicalLoad?: boolean;
+  withPerformanceTargetSnapshot?: boolean;
 }) {
   const activityId = randomUUID();
   const artifactId = randomUUID();
@@ -185,7 +147,7 @@ async function seedActivity(input: {
     await tx.insert(activities).values({
       id: activityId,
       profile_id: input.profileId,
-      name: "Canonical activity",
+      name: "Canonical run",
       started_at: startedAt,
       finished_at: input.finishedAt,
       elapsed_ms: durationMs,
@@ -197,11 +159,20 @@ async function seedActivity(input: {
       decoded_contract_version: "athlete-state-live-test-v1",
       materializer_version: "athlete-state-live-test-v1",
       segments_generated_at: input.finishedAt,
-      performance_target_snapshot: performanceTargetSnapshot(
-        input.profileId,
-        input.finishedAt,
-        input.canonicalLoad,
-      ),
+      ...(input.withPerformanceTargetSnapshot === false
+        ? {}
+        : {
+            performance_target_snapshot: {
+              contractVersion: "completed-activity-performance-target-snapshot-v2",
+              capturedAt: input.finishedAt.toISOString(),
+              publishedRevision: null,
+              publicationStatus: "unavailable",
+              targets: createUnavailableAthletePerformanceTargetFacts(
+                input.finishedAt.toISOString(),
+                input.profileId,
+              ),
+            },
+          }),
       athlete_state_common_load: input.commonLoad ?? null,
       athlete_state_activity_category: input.commonLoad === undefined ? null : "run",
       athlete_state_evidence_confidence:
@@ -244,7 +215,7 @@ async function seedActivity(input: {
       profile_id: input.profileId,
       ordinal: 0,
       role: "activity",
-      activity_category: input.canonicalLoad ? "bike" : "run",
+      activity_category: "run",
       start_offset_ms: 0,
       end_offset_ms: durationMs,
       source_artifact_id: artifactId,
@@ -253,10 +224,7 @@ async function seedActivity(input: {
         version: 1,
         timing: { timingCoverage: "complete", activeMs: durationMs, movingMs: durationMs },
         distanceMeters: 1_000,
-        ...(input.canonicalLoad ? { averagePowerWatts: 200 } : {}),
-        normalizedPowerResult: input.canonicalLoad
-          ? canonicalNormalizedPower
-          : unavailableNormalizedPower,
+        normalizedPowerResult: unavailableNormalizedPower,
       },
       summary_version: 1,
       timing_coverage: "complete",
@@ -271,170 +239,158 @@ async function seedActivity(input: {
   return activityId;
 }
 
-/**
- * The history reprocessor resolves targets as-of each segment's start, rather
- * than using the completed activity's captured target snapshot. Seed a real,
- * effective-dated threshold before replaying canonical bike-load fixtures.
- */
-async function seedHistoricalBikePowerThreshold(input: { profileId: string; observedAt: Date }) {
-  const sourceActivityId = await seedActivity({
+async function submitCanonicalBikeFixture(input: {
+  profileId: string;
+  finishedAt: Date;
+  durationMs: number;
+  powerWatts: number;
+  calibration?: boolean;
+  deferAthleteStateRefresh?: boolean;
+  distanceMeters?: number;
+}) {
+  const activityId = randomUUID();
+  const segmentId = randomUUID();
+  const digest = `${randomUUID().replaceAll("-", "")}${randomUUID().replaceAll("-", "")}`;
+  const artifact = {
+    sha256: digest,
+    byteSize: 1_024,
+    bucket: "activity-files",
+    path: `artifacts/sha256/${input.profileId}/${digest}`,
+    mediaType: "application/vnd.ant.fit" as const,
+    format: "fit" as const,
+  };
+  const startedAt = new Date(input.finishedAt.getTime() - input.durationMs);
+  const sourceArtifactId = activityArtifactId(input.profileId, artifact.sha256, artifact.byteSize);
+  const ingestion = await readyActivityIngestion(db, {
     profileId: input.profileId,
-    finishedAt: input.observedAt,
-    durationMs: 30 * 60_000,
-    canonicalLoad: true,
+    operationId: `athlete-state-live:${activityId}`,
+    source: "manual_import",
+    artifact,
   });
-  const createdAt = new Date();
-  await db.transaction(async (tx) => {
-    const [sourceSegment] = await tx
-      .select({
-        id: activitySegments.id,
-        sourceArtifactId: activitySegments.source_artifact_id,
-        sourceRevision: activitySegments.segment_revision,
-      })
-      .from(activitySegments)
-      .where(eq(activitySegments.activity_id, sourceActivityId))
-      .limit(1);
-    if (!sourceSegment?.sourceArtifactId) {
-      throw new Error("Expected historical threshold source segment");
-    }
-    const rawPowerWatts = 250 / 0.95;
-    const startTimestampSeconds = input.observedAt.getTime() / 1_000 - 1_800;
-    const effortId = thresholdEffortId({
-      activityId: sourceActivityId,
-      segmentId: sourceSegment.id,
-      sourceArtifactId: sourceSegment.sourceArtifactId,
-      sourceRevision: sourceSegment.sourceRevision,
-      effortType: "power",
-      sourceSeries: "power",
-      startOffsetMs: 0,
-      endOffsetMs: 1_800_000,
-      method: "activity_file_best_effort",
-      calculationVersion: BEST_EFFORT_CALCULATION_VERSION,
-    });
-    const selection = selectThresholdCandidate({
-      activityCategory: "bike",
-      metric: "power",
-      observations: [
+  const normalizedPowerResult = calculateCyclingNormalizedPower({
+    samples: Array.from({ length: input.durationMs / 5_000 + 1 }, (_, index) => ({
+      timestampSeconds: Math.min(index * 5, input.durationMs / 1_000),
+      powerWatts: input.powerWatts,
+    })),
+  });
+  if (normalizedPowerResult.status === "unavailable") throw new Error("Expected numeric power");
+  const effortId = randomUUID();
+  const submission: ActivitySubmission = {
+    requestedActivityId: activityId,
+    profileId: input.profileId,
+    name: "Canonical cycling state fixture",
+    notes: null,
+    contentVisibility: "private",
+    startedAt,
+    finishedAt: input.finishedAt,
+    elapsedMs: input.durationMs,
+    activeMs: input.durationMs,
+    movingMs: input.durationMs,
+    timingCoverage: "complete",
+    distanceMeters: input.distanceMeters ?? 20_000,
+    calories: null,
+    elevationGainMeters: null,
+    avgHeartRate: null,
+    maxHeartRate: null,
+    avgPower: Math.round(input.powerWatts),
+    maxPower: Math.round(input.powerWatts),
+    avgCadence: null,
+    maxCadence: null,
+    avgSpeedMps: null,
+    maxSpeedMps: null,
+    normalizedSpeedMps: null,
+    avgTemperature: null,
+    deviceManufacturer: null,
+    deviceProduct: null,
+    laps: null,
+    mapBounds: null,
+    polyline: null,
+    segmentSet: {
+      version: 1,
+      elapsedMs: input.durationMs,
+      segments: [
         {
-          evidenceId: effortId,
-          activityId: sourceActivityId,
-          seriesId: "power",
-          metric: "power",
-          sourceAccepted: true,
-          ownershipVerified: true,
-          availability: "available",
-          durationSeconds: 1_800,
-          value: rawPowerWatts,
-          startTimestampSeconds,
-          endTimestampSeconds: input.observedAt.getTime() / 1_000,
-          windowCoverage: 1,
-          maximumGapSeconds: 2,
-        },
-      ],
-    });
-    if (selection.status !== "qualified") {
-      throw new Error("Expected canonical bike threshold selection");
-    }
-    const primaryAttempt = selection.attempts.find(
-      (attempt) =>
-        attempt.role === selection.selectedRole && attempt.evaluation.status === "qualified",
-    );
-    if (!primaryAttempt || primaryAttempt.evaluation.status !== "qualified") {
-      throw new Error("Expected canonical qualified bike threshold evaluation");
-    }
-    const { candidate } = primaryAttempt.evaluation;
-    const identity = {
-      activityCategory: candidate.activityCategory,
-      metric: candidate.metric,
-    };
-    const evaluationId = thresholdEvaluationId({
-      profileId: input.profileId,
-      sourceActivityId,
-      sourceRevision: sourceSegment.sourceRevision,
-      identity,
-      method: candidate.method,
-      policyVersion: candidate.policyVersion,
-    });
-    const evidence = thresholdEvidenceSchema.parse({
-      ...candidate,
-      evidenceId: evaluationId,
-      activityId: sourceActivityId,
-      observedAt: input.observedAt.toISOString(),
-    });
-    const plannedThreshold = planThresholdChain({
-      profileId: input.profileId,
-      identity,
-      evidence: [evidence],
-      now: createdAt,
-    }).desired[0];
-    if (!plannedThreshold) throw new Error("Expected canonical bike threshold publication");
-    await tx.insert(activityEfforts).values({
-      id: effortId,
-      created_at: createdAt,
-      profile_id: input.profileId,
-      activity_id: sourceActivityId,
-      segment_id: sourceSegment.id,
-      recorded_at: input.observedAt,
-      activity_category: "bike",
-      effort_type: "power",
-      source_series: "power",
-      duration_seconds: 1_800,
-      source_artifact_id: sourceSegment.sourceArtifactId,
-      source_revision: sourceSegment.sourceRevision,
-      start_offset_ms: 0,
-      end_offset_ms: 1_800_000,
-      window_coverage: 1,
-      max_gap_seconds: 2,
-      unit: "watts",
-      value: rawPowerWatts,
-      source: "imported",
-      method: "activity_file_best_effort",
-      calculation_version: BEST_EFFORT_CALCULATION_VERSION,
-      provenance: {
-        observation_id: effortId,
-        activity_id: sourceActivityId,
-        segment_id: sourceSegment.id,
-        derived_from: "activity_file_stream",
-        source_series: "power",
-        interval_convention: "current_sample_applies_to_preceding_interval",
-        exact_window_start_timestamp_seconds: startTimestampSeconds,
-        exact_window_end_timestamp_seconds: input.observedAt.getTime() / 1_000,
-        exact_window_start_offset_seconds: 0,
-        exact_window_end_offset_seconds: 1_800,
-        duration_seconds: 1_800,
-        contributing_duration_seconds: 1_800,
-        window_coverage: 1,
-        source_time_coverage: 1,
-        extraction_status: "available",
-        extraction_reason: null,
-        persisted_start_offset_quantization: "nearest_millisecond_v1",
-        calculation_version: BEST_EFFORT_CALCULATION_VERSION,
-      },
-    });
-    await insertThresholdEvaluation(tx, {
-      id: evaluationId,
-      profileId: input.profileId,
-      identity,
-      evaluation: primaryAttempt.evaluation,
-      selection,
-      persistedValue: plannedThreshold.value,
-      sourceActivityId,
-      sourceRevision: sourceSegment.sourceRevision,
-      observedAt: input.observedAt,
-      effortLinks: [
-        {
-          effortId,
-          activityId: sourceActivityId,
-          sourceRevision: sourceSegment.sourceRevision,
-          effortType: "power",
-          sourceSeries: "power",
-          role: "primary",
+          id: segmentId,
           ordinal: 0,
+          role: "activity",
+          activity_category: "bike",
+          startOffsetMs: 0,
+          endOffsetMs: input.durationMs,
+          source: {
+            kind: "artifact",
+            artifactId: sourceArtifactId,
+            source: { standard: "fit", format: "fit" },
+          },
+          summary: {
+            version: 1,
+            timing: {
+              timingCoverage: "complete",
+              activeMs: input.durationMs,
+              movingMs: input.durationMs,
+            },
+            distanceMeters: input.distanceMeters ?? 20_000,
+            averagePowerWatts: input.powerWatts,
+            normalizedPowerResult,
+          },
         },
       ],
-      now: createdAt,
-    });
-    await tx.insert(thresholds).values(plannedThreshold);
+    },
+    analysis: {
+      efforts: input.calibration
+        ? [
+            {
+              id: effortId,
+              created_at: input.finishedAt,
+              profile_id: input.profileId,
+              activity_id: activityId,
+              segment_id: segmentId,
+              recorded_at: input.finishedAt,
+              activity_category: "bike",
+              effort_type: "power",
+              source_series: "power",
+              duration_seconds: input.durationMs / 1_000,
+              source_artifact_id: sourceArtifactId,
+              source_revision: 1,
+              start_offset_ms: 0,
+              end_offset_ms: input.durationMs,
+              window_coverage: 1,
+              max_gap_seconds: 2,
+              unit: "watts",
+              value: input.powerWatts,
+              source: "imported",
+              method: "activity_file_best_effort",
+              calculation_version: "best-effort-extraction-v1",
+              provenance: {
+                observation_id: effortId,
+                activity_id: activityId,
+                segment_id: segmentId,
+                derived_from: "activity_file_stream",
+                source_series: "power",
+                interval_convention: "current_sample_applies_to_preceding_interval",
+                exact_window_start_timestamp_seconds: startedAt.getTime() / 1_000,
+                exact_window_end_timestamp_seconds: input.finishedAt.getTime() / 1_000,
+                exact_window_start_offset_seconds: 0,
+                exact_window_end_offset_seconds: input.durationMs / 1_000,
+                duration_seconds: input.durationMs / 1_000,
+                contributing_duration_seconds: input.durationMs / 1_000,
+                window_coverage: 1,
+                source_time_coverage: 1,
+                extraction_status: "available",
+                extraction_reason: null,
+                persisted_start_offset_quantization: "nearest_millisecond_v1",
+                calculation_version: "best-effort-extraction-v1",
+              },
+            },
+          ]
+        : [],
+      detectedLTHR: null,
+      ingestion: { source: "manual_import", ...ingestion, artifact },
+    },
+  };
+  return submitActivity(db, submission, {
+    ...(input.deferAthleteStateRefresh === undefined
+      ? {}
+      : { deferAthleteStateRefresh: input.deferAthleteStateRefresh }),
   });
 }
 
@@ -487,12 +443,29 @@ describe("athlete state persistence", () => {
   it("publishes a chronological contribution incrementally and agrees with a fenced rebuild", async () => {
     const profileId = await seedProfile();
     const firstFinishedAt = new Date("2026-01-01T10:00:00.000Z");
-    const firstActivityId = await seedActivity({
+    await submitCanonicalBikeFixture({
+      profileId,
+      finishedAt: new Date("2025-12-31T10:00:00.000Z"),
+      durationMs: 1_800_000,
+      powerWatts: 300,
+      calibration: true,
+    });
+    const first = await submitCanonicalBikeFixture({
       profileId,
       finishedAt: firstFinishedAt,
-      canonicalLoad: true,
-      durationMs: 30 * 60_000,
+      durationMs: 1_440_000,
+      powerWatts: 300,
     });
+    const [firstActivity] = await db
+      .select({ snapshot: activities.performance_target_snapshot })
+      .from(activities)
+      .where(eq(activities.id, first.id));
+    const firstSnapshot = completedActivityPerformanceTargetSnapshotSchema.parse(
+      firstActivity?.snapshot,
+    );
+    const firstFtp = firstSnapshot.targets.thresholds.bike;
+    if (firstFtp.status !== "available") throw new Error("Expected captured bike FTP");
+    const expectedFirstCommonLoad = (1_440_000 / 3_600_000) * (300 / firstFtp.value) ** 2 * 100;
     const firstPublishAt = new Date("2026-01-01T12:00:00.000Z");
     await db.transaction((tx) =>
       markAthleteStateDirty(tx, {
@@ -505,56 +478,47 @@ describe("athlete state persistence", () => {
       limit: 1,
       now: firstPublishAt,
     });
+    await new AthleteStateWorkerService({ db }).processDueJobs({
+      limit: 1,
+      now: firstPublishAt,
+    });
 
+    const [preSubmit] = await db
+      .select()
+      .from(profileAthleteState)
+      .where(eq(profileAthleteState.profile_id, profileId));
+    if (!preSubmit || preSubmit.published_revision === null)
+      throw new Error("Expected published first contribution");
+    expect(preSubmit.source_revision).toBe(preSubmit.published_revision);
     const secondFinishedAt = new Date("2026-01-02T10:00:00.000Z");
-    const secondActivityId = await seedActivity({
+    const second = await submitCanonicalBikeFixture({
       profileId,
       finishedAt: secondFinishedAt,
-      canonicalLoad: true,
-      durationMs: 30 * 60_000,
+      durationMs: 2_160_000,
+      powerWatts: firstFtp.value,
     });
     const secondPublishAt = new Date("2026-01-02T11:00:00.000Z");
-    const secondEvidence = await db.transaction((tx) =>
-      materializeActivityAthleteStateEvidence(tx, {
-        profileId,
-        activityId: secondActivityId,
-        computedAt: secondPublishAt,
-        contextDb: db,
-        deferAthleteStateRefresh: true,
-      }),
-    );
-    if (secondEvidence.commonLoad === null || secondEvidence.confidence === null) {
-      throw new Error("Expected canonical second-activity athlete-state evidence");
-    }
-    await expect(
-      db.transaction(async (tx) => {
-        await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${profileId}, 0))`);
-        return tryPublishIncrementalAthleteStateContribution({
-          tx,
-          profileId,
-          contribution: {
-            activityId: secondActivityId,
-            finishedAt: secondFinishedAt,
-            commonLoad: secondEvidence.commonLoad,
-            activityCategory: "run",
-            evidenceConfidence: secondEvidence.confidence,
-            capabilityDistanceMeters: 1_000,
-            capabilityDurationMinutes: 1,
-          },
-          now: secondPublishAt,
-        });
-      }),
-    ).resolves.toBe(true);
+    const [firstEffect] = await db
+      .select()
+      .from(activityTrainingEffects)
+      .where(eq(activityTrainingEffects.activity_id, first.id));
+    const [secondEffect] = await db
+      .select()
+      .from(activityTrainingEffects)
+      .where(eq(activityTrainingEffects.activity_id, second.id));
+    expect(firstEffect?.common_load).toBeCloseTo(expectedFirstCommonLoad, 10);
+    expect(secondEffect?.common_load).toBeCloseTo(60, 10);
     const [incremental] = await db
       .select()
       .from(profileAthleteState)
       .where(eq(profileAthleteState.profile_id, profileId));
     expect(incremental).toMatchObject({
-      source_revision: 2,
-      published_revision: 2,
+      source_revision: preSubmit.published_revision + 1,
+      published_revision: preSubmit.published_revision + 1,
       dirty_from_at: null,
       computed_at: secondFinishedAt,
     });
+    expect(incremental?.published_revision).toBe(incremental?.source_revision);
 
     await db.transaction((tx) =>
       markAthleteStateDirty(tx, {
@@ -571,18 +535,21 @@ describe("athlete state persistence", () => {
       .select()
       .from(profileAthleteState)
       .where(eq(profileAthleteState.profile_id, profileId));
-    expect(rebuilt).toMatchObject({
-      source_revision: 3,
-      published_revision: 3,
-      dirty_from_at: null,
-    });
+    expect(rebuilt?.dirty_from_at).toBeNull();
+    expect(rebuilt?.published_revision).toBe(rebuilt?.source_revision);
     expect(rebuilt?.fitness).toBeCloseTo(incremental?.fitness ?? -1, 10);
     expect(rebuilt?.fatigue).toBeCloseTo(incremental?.fatigue ?? -1, 10);
+    expect(rebuilt).toMatchObject({
+      evidence_confidence: incremental?.evidence_confidence,
+      coverage_start_at: incremental?.coverage_start_at,
+      coverage_end_at: incremental?.coverage_end_at,
+      last_activity_at: incremental?.last_activity_at,
+    });
     await expect(readPublishedReadModel(profileId, secondPublishAt)).resolves.toMatchObject({
-      publishedRevision: 3,
+      publishedRevision: rebuilt?.published_revision,
       status: { freshness: "fresh", rebuildStatus: "fresh" },
     });
-    expect(firstActivityId).not.toBe(secondActivityId);
+    expect(first.id).not.toBe(second.id);
   });
 
   it("renews only the current unexpired replay owner", async () => {
@@ -1001,31 +968,26 @@ describe("athlete state persistence", () => {
 
   it("publishes a partial same-day replay without advancing through a future day-end", async () => {
     const profileId = await seedProfile("UTC");
-    const finishedAt = new Date("2026-08-06T15:00:00.000Z");
-    await seedHistoricalBikePowerThreshold({
+    await submitCanonicalBikeFixture({
       profileId,
-      observedAt: new Date("2026-08-06T12:00:00.000Z"),
+      finishedAt: new Date("2026-08-05T10:00:00.000Z"),
+      durationMs: 1_800_000,
+      powerWatts: 300,
+      calibration: true,
     });
-    const activityId = await seedActivity({
+    await new AthleteStateWorkerService({ db }).processDueJobs({
+      limit: 1,
+      now: new Date("2026-08-05T12:00:00.000Z"),
+    });
+    const finishedAt = new Date("2026-08-06T15:00:00.000Z");
+    await submitCanonicalBikeFixture({
       profileId,
       finishedAt,
-      canonicalLoad: true,
-      durationMs: 30 * 60_000,
+      durationMs: 15 * 60_000,
+      powerWatts: 285,
+      deferAthleteStateRefresh: true,
     });
     const now = new Date("2026-08-06T16:00:00.000Z");
-    await expect(
-      reprocessProfileActivityAnalysis(db, {
-        profileId,
-        apply: false,
-        from: finishedAt,
-        now,
-      }),
-    ).resolves.toMatchObject({
-      scopedActivities: 1,
-      availableSegments: 1,
-      partialSegments: 0,
-      unavailableSegments: 0,
-    });
     await db.transaction((tx) =>
       markAthleteStateDirty(tx, { profileId, effectiveAt: finishedAt, now }),
     );
@@ -1033,12 +995,6 @@ describe("athlete state persistence", () => {
     await expect(
       new AthleteStateWorkerService({ db }).processDueJobs({ limit: 1, now }),
     ).resolves.toEqual({ completed: 1, failed: 0, processed: 1 });
-    await expect(
-      db
-        .select({ commonLoad: activities.athlete_state_common_load })
-        .from(activities)
-        .where(eq(activities.id, activityId)),
-    ).resolves.toEqual([expect.objectContaining({ commonLoad: expect.any(Number) })]);
     const [state] = await db
       .select()
       .from(profileAthleteState)
@@ -1049,20 +1005,45 @@ describe("athlete state persistence", () => {
 
   it("publishes due evidence while retaining a future-due revision until it becomes observable", async () => {
     const profileId = await seedProfile("UTC");
+    await submitCanonicalBikeFixture({
+      profileId,
+      finishedAt: new Date("2026-08-05T10:00:00.000Z"),
+      durationMs: 1_800_000,
+      powerWatts: 300,
+      calibration: true,
+    });
+    await new AthleteStateWorkerService({ db }).processDueJobs({
+      limit: 1,
+      now: new Date("2026-08-05T12:00:00.000Z"),
+    });
+    const [baseline] = await db
+      .select()
+      .from(profileAthleteState)
+      .where(eq(profileAthleteState.profile_id, profileId));
+    if (!baseline) throw new Error("Expected calibration publication");
     const currentFinishedAt = new Date("2026-08-06T10:00:00.000Z");
     const futureFinishedAt = new Date("2026-08-07T10:00:00.000Z");
     const futureEffortRecordedAt = new Date("2026-08-07T08:00:00.000Z");
-    const currentActivityId = await seedActivity({
+    const targets = await createAthletePerformanceTargetFactsReader(
+      createAthletePerformanceModelRepository(db),
+      db,
+    )({ actorProfileId: profileId, asOf: currentFinishedAt });
+    const ftp = targets.thresholds.bike;
+    if (ftp.status !== "available") throw new Error("Expected canonical cycling FTP");
+    const currentActivity = await submitCanonicalBikeFixture({
       profileId,
       finishedAt: currentFinishedAt,
-      canonicalLoad: true,
-      durationMs: 30 * 60_000,
+      durationMs: 12 * 60_000,
+      powerWatts: ftp.value,
+      deferAthleteStateRefresh: true,
     });
-    await seedActivity({
+    const currentActivityId = currentActivity.id;
+    await submitCanonicalBikeFixture({
       profileId,
       finishedAt: futureFinishedAt,
-      canonicalLoad: true,
-      durationMs: 30 * 60_000,
+      durationMs: 18 * 60_000,
+      powerWatts: ftp.value,
+      deferAthleteStateRefresh: true,
     });
     const currentNow = new Date("2026-08-06T12:00:00.000Z");
     const [currentSegment] = await db
@@ -1083,8 +1064,8 @@ describe("athlete state persistence", () => {
       segment_id: currentSegment.id,
       recorded_at: futureEffortRecordedAt,
       activity_category: "bike",
-      effort_type: "speed",
-      source_series: "raw_speed",
+      effort_type: "power",
+      source_series: "power",
       duration_seconds: 60,
       distance_meters: 250,
       source_artifact_id: currentSegment.sourceArtifactId,
@@ -1093,8 +1074,8 @@ describe("athlete state persistence", () => {
       end_offset_ms: 60_000,
       window_coverage: 1,
       max_gap_seconds: 2,
-      unit: "meters_per_second",
-      value: 4.1667,
+      unit: "watts",
+      value: ftp.value,
       source: "test",
       method: "athlete_state_dirty_test",
       calculation_version: "test-v1",
@@ -1121,17 +1102,19 @@ describe("athlete state persistence", () => {
       .from(profileAthleteState)
       .where(eq(profileAthleteState.profile_id, profileId));
     expect(pending).toMatchObject({
-      source_revision: 3,
-      published_revision: 2,
+      source_revision: baseline.source_revision + 3,
+      published_revision: baseline.source_revision + 2,
       dirty_from_at: futureEffortRecordedAt,
       last_activity_at: currentFinishedAt,
     });
     await expect(readPublishedReadModel(profileId, currentNow, true)).resolves.toMatchObject({
-      publishedRevision: 2,
+      publishedRevision: baseline.source_revision + 2,
       status: { freshness: "fresh", rebuildStatus: "fresh" },
-      currentBaseline: { baseline: expect.objectContaining({ stateRevision: 2 }) },
+      currentBaseline: {
+        baseline: expect.objectContaining({ stateRevision: baseline.source_revision + 2 }),
+      },
       loadHistory: expect.objectContaining({
-        publishedRevision: 2,
+        publishedRevision: baseline.source_revision + 2,
         algorithmVersion: ATHLETE_STATE_PROJECTION_ALGORITHM_VERSION,
       }),
     });
@@ -1145,17 +1128,17 @@ describe("athlete state persistence", () => {
       .from(profileAthleteState)
       .where(eq(profileAthleteState.profile_id, profileId));
     expect(current).toMatchObject({
-      source_revision: 3,
-      published_revision: 3,
+      source_revision: baseline.source_revision + 3,
+      published_revision: baseline.source_revision + 3,
       dirty_from_at: null,
       last_activity_at: futureFinishedAt,
     });
     await expect(readPublishedReadModel(profileId, futureNow, true)).resolves.toMatchObject({
-      publishedRevision: 3,
+      publishedRevision: baseline.source_revision + 3,
       algorithmVersion: ATHLETE_STATE_PROJECTION_ALGORITHM_VERSION,
       status: { freshness: "fresh", rebuildStatus: "fresh" },
       loadHistory: {
-        publishedRevision: 3,
+        publishedRevision: baseline.source_revision + 3,
         algorithmVersion: ATHLETE_STATE_PROJECTION_ALGORITHM_VERSION,
       },
     });
@@ -1163,15 +1146,13 @@ describe("athlete state persistence", () => {
 
   it("retains a future effort on an old activity until its observation time becomes due", async () => {
     const profileId = await seedProfile("UTC");
-    const databaseNow = await readDatabaseClock();
-    const activityFinishedAt = new Date(databaseNow.getTime() - 5 * 86_400_000);
-    const beforeDue = new Date(databaseNow.getTime() + 60_000);
-    const effortRecordedAt = new Date(beforeDue.getTime() + 86_400_000);
+    const activityFinishedAt = new Date("2026-08-01T10:00:00.000Z");
+    const beforeDue = new Date("2026-08-06T12:00:00.000Z");
+    const effortRecordedAt = new Date("2026-08-07T10:00:00.000Z");
     const activityId = await seedActivity({
       profileId,
       finishedAt: activityFinishedAt,
-      durationMs: 30 * 60_000,
-      canonicalLoad: true,
+      durationMs: 20 * 60_000,
     });
     await db.transaction(async (tx) => {
       await materializeActivityAthleteStateEvidence(tx, {
@@ -1182,18 +1163,9 @@ describe("athlete state persistence", () => {
         canonicalEvidenceMaterialChanged: true,
       });
     });
-    const initialResult = await new AthleteStateWorkerService({ db }).processDueJobs({
-      limit: 1,
-      now: beforeDue,
-    });
-    const [initialState] = await db
-      .select({ failureCode: profileAthleteState.last_failure_code })
-      .from(profileAthleteState)
-      .where(eq(profileAthleteState.profile_id, profileId));
-    expect({ result: initialResult, failureCode: initialState?.failureCode }).toEqual({
-      result: { completed: 1, failed: 0, processed: 1 },
-      failureCode: null,
-    });
+    await expect(
+      new AthleteStateWorkerService({ db }).processDueJobs({ limit: 1, now: beforeDue }),
+    ).resolves.toEqual({ completed: 1, failed: 0, processed: 1 });
 
     await db.transaction(async (tx) => {
       const [segment] = await tx
@@ -1213,7 +1185,7 @@ describe("athlete state persistence", () => {
         activity_id: activityId,
         segment_id: segment.id,
         recorded_at: effortRecordedAt,
-        activity_category: "bike",
+        activity_category: "run",
         effort_type: "heart_rate",
         source_series: "heart_rate",
         duration_seconds: 1_200,
@@ -1254,9 +1226,9 @@ describe("athlete state persistence", () => {
     await expect(
       new AthleteStateWorkerService({ db }).processDueJobs({
         limit: 1,
-        now: new Date(beforeDue.getTime() + 6 * 60 * 60_000),
+        now: new Date("2026-08-06T18:00:00.000Z"),
       }),
-    ).resolves.toEqual({ completed: 1, failed: 0, processed: 1 });
+    ).resolves.toEqual({ completed: 0, failed: 0, processed: 0 });
     await expect(readPublishedReadModel(profileId, beforeDue)).resolves.toMatchObject({
       publishedRevision: 1,
       status: { freshness: "fresh", rebuildStatus: "fresh" },
@@ -1273,7 +1245,7 @@ describe("athlete state persistence", () => {
         ),
     ).resolves.toEqual([]);
 
-    const afterDue = new Date(effortRecordedAt.getTime() + 60 * 60_000);
+    const afterDue = new Date("2026-08-07T11:00:00.000Z");
     await expect(
       new AthleteStateWorkerService({ db }).processDueJobs({ limit: 1, now: afterDue }),
     ).resolves.toEqual({ completed: 1, failed: 0, processed: 1 });
@@ -1296,15 +1268,13 @@ describe("athlete state persistence", () => {
 
   it("does not claim an early-recorded effort before its future parent activity finishes", async () => {
     const profileId = await seedProfile("UTC");
-    const databaseNow = await readDatabaseClock();
-    const beforeDue = new Date(databaseNow.getTime() + 60_000);
-    const effortRecordedAt = new Date(beforeDue.getTime() + 86_400_000);
-    const activityFinishedAt = new Date(effortRecordedAt.getTime() + 86_400_000);
+    const beforeDue = new Date("2026-08-06T12:00:00.000Z");
+    const effortRecordedAt = new Date("2026-08-07T10:00:00.000Z");
+    const activityFinishedAt = new Date("2026-08-08T10:00:00.000Z");
     const activityId = await seedActivity({
       profileId,
       finishedAt: activityFinishedAt,
-      durationMs: 30 * 60_000,
-      canonicalLoad: true,
+      durationMs: 20 * 60_000,
     });
 
     await db.transaction(async (tx) => {
@@ -1325,7 +1295,7 @@ describe("athlete state persistence", () => {
         activity_id: activityId,
         segment_id: segment.id,
         recorded_at: effortRecordedAt,
-        activity_category: "bike",
+        activity_category: "run",
         effort_type: "heart_rate",
         source_series: "heart_rate",
         duration_seconds: 1_200,
@@ -1349,6 +1319,7 @@ describe("athlete state persistence", () => {
           activityId,
           computedAt: beforeDue,
           contextDb: db,
+          canonicalEvidenceMaterialChanged: true,
           effortMaterialRecordedAt: effortRecordedAt,
         }),
       ).resolves.toMatchObject({ effectiveAt: activityFinishedAt, materialChanged: true });
@@ -1364,19 +1335,13 @@ describe("athlete state persistence", () => {
       dirty_from_at: activityFinishedAt,
       lease_token: null,
     });
-    const afterEffortBeforeActivity = new Date(effortRecordedAt.getTime() + 60 * 60_000);
-    const earlyResult = await new AthleteStateWorkerService({ db }).processDueJobs({
-      limit: 1,
-      now: afterEffortBeforeActivity,
-    });
-    const [earlyState] = await db
-      .select({ failureCode: profileAthleteState.last_failure_code })
-      .from(profileAthleteState)
-      .where(eq(profileAthleteState.profile_id, profileId));
-    expect({ result: earlyResult, failureCode: earlyState?.failureCode }).toEqual({
-      result: { completed: 1, failed: 0, processed: 1 },
-      failureCode: null,
-    });
+    const afterEffortBeforeActivity = new Date("2026-08-07T11:00:00.000Z");
+    await expect(
+      new AthleteStateWorkerService({ db }).processDueJobs({
+        limit: 1,
+        now: afterEffortBeforeActivity,
+      }),
+    ).resolves.toEqual({ completed: 0, failed: 0, processed: 0 });
     const [stillPending] = await db
       .select()
       .from(profileAthleteState)
@@ -1394,7 +1359,7 @@ describe("athlete state persistence", () => {
         .where(eq(profilePerformanceEstimates.profile_id, profileId)),
     ).resolves.toEqual([]);
 
-    const afterDue = new Date(activityFinishedAt.getTime() + 60 * 60_000);
+    const afterDue = new Date("2026-08-08T11:00:00.000Z");
     await expect(
       new AthleteStateWorkerService({ db }).processDueJobs({ limit: 1, now: afterDue }),
     ).resolves.toEqual({ completed: 1, failed: 0, processed: 1 });
@@ -1952,12 +1917,16 @@ describe("athlete state persistence", () => {
     const activityId = await seedActivity({
       profileId,
       finishedAt: new Date("2026-08-01T10:00:00.000Z"),
+      withPerformanceTargetSnapshot: false,
     });
     const effectiveAt = new Date("2026-08-01T10:00:00.000Z");
     await db.transaction(async (tx) => {
       await tx
         .update(activities)
-        .set({ canonical_evidence_tier: "raw_samples", segments_revision: 2 })
+        .set({
+          canonical_evidence_tier: "raw_samples",
+          segments_revision: 2,
+        })
         .where(eq(activities.id, activityId));
       await tx
         .update(activitySegments)
@@ -2793,26 +2762,66 @@ describe("athlete state persistence", () => {
     });
   });
 
-  it("publishes one state refresh after a 501-activity onboarding import", async () => {
-    const activityCount = 501;
+  // Real canonical submissions plus the paged replay measured ~14s locally.
+  // Keep a bounded budget for this 501-record integration case, not a global timeout.
+  it("publishes one state refresh after a 501-activity onboarding import", {
+    timeout: 30_000,
+  }, async () => {
     const profileId = await seedProfile("America/Los_Angeles");
     const integrationId = await seedIntegration(profileId, "wahoo");
-    const firstFinishedAt = new Date("2026-01-01T08:01:00.000Z");
-    await seedHistoricalBikePowerThreshold({
+    const calibrationFinishedAt = new Date("2025-12-31T10:00:00.000Z");
+    const calibration = await submitCanonicalBikeFixture({
       profileId,
-      observedAt: new Date("2025-12-31T08:00:00.000Z"),
+      finishedAt: calibrationFinishedAt,
+      durationMs: 1_800_000,
+      powerWatts: 300,
+      calibration: true,
     });
-    const importedActivityIds: string[] = [];
-    for (let index = 0; index < activityCount; index += 1) {
-      importedActivityIds.push(
-        await seedActivity({
-          profileId,
-          finishedAt: new Date(firstFinishedAt.getTime() + index * 60_000),
-          canonicalLoad: true,
-          durationMs: 30 * 60_000,
-        }),
-      );
+    await new AthleteStateWorkerService({ db }).processDueJobs({
+      limit: 1,
+      now: new Date("2025-12-31T12:00:00.000Z"),
+    });
+    const firstFinishedAt = new Date("2026-01-01T08:01:00.000Z");
+    const targets = await createAthletePerformanceTargetFactsReader(
+      createAthletePerformanceModelRepository(db),
+      db,
+    )({ actorProfileId: profileId, asOf: firstFinishedAt });
+    const ftp = targets.thresholds.bike;
+    if (ftp.status !== "available") throw new Error("Expected canonical calibration FTP");
+    const [beforeImport] = await db
+      .select()
+      .from(profileAthleteState)
+      .where(eq(profileAthleteState.profile_id, profileId));
+    if (!beforeImport || beforeImport.dirty_from_at !== null)
+      throw new Error("Expected published calibration baseline");
+    expect(beforeImport.published_revision).toBe(beforeImport.source_revision);
+    expect(beforeImport.fitness).toBe(0);
+    await expect(
+      db
+        .select()
+        .from(activityTrainingEffects)
+        .where(eq(activityTrainingEffects.activity_id, calibration.id)),
+    ).resolves.toEqual([]);
+    const expectedRevision = beforeImport.source_revision + 1;
+    const subjectIds: string[] = [];
+    for (let index = 0; index < 501; index += 1) {
+      const subject = await submitCanonicalBikeFixture({
+        profileId,
+        finishedAt: new Date(firstFinishedAt.getTime() + index * 60_000),
+        durationMs: 60_000,
+        powerWatts: ftp.value * Math.sqrt(0.6),
+        distanceMeters: 1_000,
+        deferAthleteStateRefresh: true,
+      });
+      subjectIds.push(subject.id);
     }
+    const [afterSubjects] = await db
+      .select()
+      .from(profileAthleteState)
+      .where(eq(profileAthleteState.profile_id, profileId));
+    expect(afterSubjects?.source_revision).toBe(beforeImport.source_revision);
+    expect(afterSubjects?.published_revision).toBe(beforeImport.published_revision);
+    expect(subjectIds).toHaveLength(501);
     const now = new Date("2026-01-03T00:00:00.000Z");
     const imports = createActivityImportRepository(db);
     const run = await imports.create({
@@ -2826,12 +2835,12 @@ describe("athlete state persistence", () => {
     await imports.start(run.id, now);
     await imports.recordPageCommitted({
       id: run.id,
-      discovered: activityCount,
-      imported: activityCount,
+      discovered: 501,
+      imported: 501,
       skipped: 0,
       failed: 0,
       earliestActivityAt: firstFinishedAt,
-      latestActivityAt: new Date(firstFinishedAt.getTime() + (activityCount - 1) * 60_000),
+      latestActivityAt: new Date(firstFinishedAt.getTime() + 500 * 60_000),
       now,
     });
     await markRunMaterial(run.id, firstFinishedAt);
@@ -2843,56 +2852,26 @@ describe("athlete state persistence", () => {
       .where(eq(activityImportRuns.id, run.id));
     expect(completedRun).toMatchObject({
       status: "completed",
-      discovered_count: activityCount,
-      imported_count: activityCount,
+      discovered_count: 501,
+      imported_count: 501,
     });
 
-    await expect(
-      reprocessProfileActivityAnalysis(db, {
-        profileId,
-        apply: false,
-        from: firstFinishedAt,
-        now,
-      }),
-    ).resolves.toMatchObject({
-      scopedActivities: activityCount,
-      availableSegments: activityCount,
-      partialSegments: 0,
-      unavailableSegments: 0,
-    });
-
-    // An import material change at the first completed activity must analyze
-    // every imported activity, including the one whose started_at precedes its
-    // finished_at boundary. The durable drain is one final publication after
-    // exact bounded continuation accounting.
-    const expectedContinuationClaims = Math.ceil(
-      activityCount / ACTIVITY_ANALYSIS_REFRESH_BATCH_SIZE,
-    );
     await expect(
       new AthleteStateWorkerService({ db }).processDueJobs({ limit: 1, now }),
     ).resolves.toEqual({
       completed: 1,
       failed: 0,
-      processed: expectedContinuationClaims,
+      processed: 1,
     });
     const [published] = await db
       .select()
       .from(profileAthleteState)
       .where(eq(profileAthleteState.profile_id, profileId));
-    // The historical threshold source is not part of this onboarding import.
-    const materializedLoads = await db
-      .select({ commonLoad: activities.athlete_state_common_load })
-      .from(activities)
-      .where(
-        and(eq(activities.profile_id, profileId), inArray(activities.id, importedActivityIds)),
-      );
-    expect(materializedLoads).toHaveLength(activityCount);
-    expect(materializedLoads.every(({ commonLoad }) => commonLoad !== null)).toBe(true);
-    const latestFinishedAt = new Date(firstFinishedAt.getTime() + (activityCount - 1) * 60_000);
+    const latestFinishedAt = new Date(firstFinishedAt.getTime() + 500 * 60_000);
     const initial = athleteStateBaselineSchema.parse({
       contractVersion: ATHLETE_STATE_PROJECTION_ALGORITHM_VERSION,
       athleteId: profileId,
-      stateRevision: 1,
+      stateRevision: expectedRevision,
       asOf: latestFinishedAt.toISOString(),
       longTermLoad: 0,
       recentLoad: 0,
@@ -2908,11 +2887,8 @@ describe("athlete state persistence", () => {
         sourceId: "athlete-state-day:2026-01-01",
         occurredAt: latestFinishedAt.toISOString(),
         activityCategory: "other",
-        commonLoad: materializedLoads.reduce(
-          (total, { commonLoad }) => total + (commonLoad ?? 0),
-          0,
-        ),
-        evidenceConfidence: 1,
+        commonLoad: 501,
+        evidenceConfidence: 0.9,
         capabilityObservation: null,
       },
     }).state;
@@ -2920,8 +2896,17 @@ describe("athlete state persistence", () => {
       fromDay: "2026-01-01",
       toDay: "2026-01-02",
     }).state;
-    expect(published?.published_revision).toBe(1);
-    expect(published?.source_revision).toBe(1);
+    expect(published).toMatchObject({
+      source_revision: expectedRevision,
+      published_revision: expectedRevision,
+      dirty_from_at: null,
+    });
+    const effects = await db
+      .select({ load: activityTrainingEffects.common_load })
+      .from(activityTrainingEffects)
+      .where(inArray(activityTrainingEffects.activity_id, subjectIds));
+    expect(effects).toHaveLength(501);
+    for (const effect of effects) expect(effect.load).toBeCloseTo(1, 10);
     expect(published?.fitness).toBeCloseTo(expected.longTermLoad, 8);
     expect(published?.fatigue).toBeCloseTo(expected.recentLoad, 8);
     expect(published?.coverage_start_at).toEqual(firstFinishedAt);
@@ -2937,16 +2922,16 @@ describe("athlete state persistence", () => {
           activity_category: "bike",
           value: 1_000,
           unit: "meters",
-          source_revision: 1,
+          source_revision: expectedRevision,
         }),
         expect.objectContaining({
           capability_kind: "longest_duration",
           activity_category: "bike",
-          value: 30,
+          value: 1,
           unit: "minutes",
-          source_revision: 1,
+          source_revision: expectedRevision,
         }),
       ]),
     );
-  }, 60_000);
+  });
 });
