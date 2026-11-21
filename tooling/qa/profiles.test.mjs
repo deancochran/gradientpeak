@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { test } from "node:test";
 import { formatQaError, parseArguments } from "./cli.mjs";
-import { createProfilePlan, profileForPaths, validateCiRuntimeDelegation } from "./profiles.mjs";
+import { createProfilePlan, profileForPaths } from "./profiles.mjs";
 
 test("changed paths select static, web, backend, or full verification", () => {
   assert.equal(profileForPaths([]), "static");
@@ -21,6 +21,24 @@ test("changed paths select static, web, backend, or full verification", () => {
 });
 
 test("runtime profiles point directly to the maintained browser smoke test", () => {
+  const db = createProfilePlan({ profile: "db", includeStatic: false });
+  assert.deepEqual(db.commands, [
+    {
+      command: "pnpm",
+      args: [
+        "--filter",
+        "@repo/api",
+        "test:live-db:disposable",
+        "--disposable",
+        "--local",
+        "--all",
+      ],
+    },
+    {
+      command: "pnpm",
+      args: ["--filter", "@repo/api", "test:live-db:runner:disposable"],
+    },
+  ]);
   const web = createProfilePlan({ profile: "web", includeStatic: false });
   assert.deepEqual(web.commands, [
     {
@@ -39,6 +57,10 @@ test("runtime profiles point directly to the maintained browser smoke test", () 
     },
   ]);
   const fullCommands = createProfilePlan({ profile: "full", includeStatic: false }).commands;
+  assert.equal(
+    fullCommands.some((entry) => entry.args.includes("test:live-db:runner:disposable")),
+    true,
+  );
   assert.equal(
     fullCommands.some((entry) => entry.args.includes("e2e/specs/smoke.spec.ts")),
     true,
@@ -59,7 +81,37 @@ test("CLI accepts only named profile and changed-path options", () => {
   assert.throws(() => parseArguments(["--changed-paths"]), /at least one path/);
 });
 
-test("normal quality, pre-push, and CI use focused owner checks", async () => {
+test("database and full profiles run the complete CI live-database matrix", async () => {
+  for (const profile of ["db", "full"]) {
+    const plan = createProfilePlan({ profile, includeStatic: false });
+    const databaseCommands = plan.commands.filter((entry) =>
+      entry.args.includes("test:live-db:disposable"),
+    );
+    assert.deepEqual(databaseCommands, [
+      {
+        command: "pnpm",
+        args: [
+          "--filter",
+          "@repo/api",
+          "test:live-db:disposable",
+          "--disposable",
+          "--local",
+          "--all",
+        ],
+      },
+    ]);
+  }
+  const workflow = await readFile(
+    path.resolve(import.meta.dirname, "../../.github/workflows/ci.yml"),
+    "utf8",
+  );
+  assert.match(
+    workflow,
+    /run: pnpm --filter @repo\/api test:live-db:disposable --disposable --local --all\s*\n/,
+  );
+});
+
+test("CI owns full validation while Git hooks stay lightweight", async () => {
   const root = path.resolve(import.meta.dirname, "../..");
   const [manifestSource, lefthook, workflow] = await Promise.all([
     readFile(path.join(root, "package.json"), "utf8"),
@@ -68,22 +120,27 @@ test("normal quality, pre-push, and CI use focused owner checks", async () => {
   ]);
   const manifest = JSON.parse(manifestSource);
   assert.match(manifest.scripts.test, /test:parity/);
-  assert.match(lefthook, /pre-push:[\s\S]*pnpm quality:push \{push_files\}/);
+  assert.doesNotMatch(lefthook, /^pre-push:/m);
+  assert.match(lefthook, /\{staged_files\}/);
   assert.match(workflow, /run: pnpm test/);
-  assert.deepEqual(validateCiRuntimeDelegation(workflow), []);
-
-  const mismatchedCommand = workflow.replace(
-    "pnpm qa:run --profile web --integration-only",
-    "pnpm qa:run --profile mobile --integration-only",
+  const staticJob = workflow.split("  static:")[1]?.split("  runtime-db:")[0];
+  assert.ok(staticJob);
+  assert.doesNotMatch(staticJob, /self-host:|test:live-db|db:verify/);
+  const database = workflow.split("  runtime-db:")[1]?.split("  runtime-web:")[0];
+  assert.ok(database);
+  assert.match(database, /run: pnpm --filter @repo\/db db:verify/);
+  assert.match(
+    database,
+    /run: pnpm --filter @repo\/api test:live-db:disposable --disposable --local --all\n/,
   );
-  assert.deepEqual(validateCiRuntimeDelegation(mismatchedCommand), [
-    "runtime-web must execute exactly once: pnpm qa:run --profile web --integration-only",
-  ]);
-
-  const duplicatedReference = `${workflow}\n# e2e/specs/smoke.spec.ts\n`;
-  assert.deepEqual(validateCiRuntimeDelegation(duplicatedReference), [
-    "CI workflow duplicates the QA-owned smoke reference: apps/web/e2e/specs/smoke.spec.ts",
-  ]);
+  const browser = workflow.split("  runtime-web:")[1]?.split("  ci:")[0];
+  assert.ok(browser);
+  assert.match(browser, /run: pnpm --filter @repo\/db self-host:up/);
+  assert.match(browser, /if: always\(\)\s+run: pnpm --filter @repo\/db self-host:down/);
+  assert.doesNotMatch(browser, /db:e2e:|prepare-runtime-web-e2e\.mjs/);
+  assert.match(database, /run: pnpm --filter @repo\/api test:live-db:runner:disposable/);
+  assert.doesNotMatch(database, /qa:run/);
+  assert.match(browser, /run: pnpm qa:run --profile web --integration-only/);
 });
 
 test("QA failures expose the exact failed command", () => {
