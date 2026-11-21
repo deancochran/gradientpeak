@@ -11,24 +11,29 @@ import { loadOrganizationGroupCoaches } from "../../../../../../lib/coaching/org
 export const Route = createFileRoute(
   "/_coaching/organizations/$organizationId/groups/$groupId/coaches",
 )({
-  loader: ({ params }) =>
-    loadOrganizationGroupCoaches({
+  loader: async ({ params, context }) => ({
+    organizationId: params.organizationId,
+    groupId: params.groupId,
+    actorProfileId: context.actorProfileId,
+    result: await loadOrganizationGroupCoaches({
       data: { ...params, limit: 20, linkCursor: null, candidateCursor: null },
     }),
+  }),
+  pendingMs: 0,
   pendingComponent: OrganizationGroupCoachesPending,
   errorComponent: OrganizationGroupCoachesError,
   component: OrganizationGroupCoachesPage,
 });
 
 function OrganizationGroupCoachesPage() {
-  const result = Route.useLoaderData();
+  const loaded = Route.useLoaderData();
   const { organizationId, groupId } = Route.useParams();
-  if (result.status === "forbidden") return <CoachAccessDenied />;
+  if (loaded.result.status === "forbidden") return <CoachAccessDenied />;
   return (
     <OrganizationGroupCoaches
-      candidatePage={result.candidates}
+      candidatePage={loaded.result.candidates}
       groupId={groupId}
-      linkPage={result.links}
+      linkPage={loaded.result.links}
       organizationId={organizationId}
     />
   );

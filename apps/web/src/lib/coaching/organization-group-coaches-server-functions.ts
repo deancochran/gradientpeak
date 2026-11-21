@@ -149,7 +149,7 @@ export const assignOrganizationGroupCoach = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     try {
       const caller = await createRequestApiCaller();
-      return caller.organizations.organizationGroups.coaches.assign(data);
+      return await caller.organizations.organizationGroups.coaches.assign(data);
     } catch (error) {
       if (isAccessError(error)) return { status: "forbidden" as const };
       throw error;
@@ -161,7 +161,7 @@ export const removeOrganizationGroupCoach = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     try {
       const caller = await createRequestApiCaller();
-      return caller.organizations.organizationGroups.coaches.remove(data);
+      return await caller.organizations.organizationGroups.coaches.remove(data);
     } catch (error) {
       if (isAccessError(error)) return { status: "forbidden" as const };
       throw error;

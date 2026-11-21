@@ -6,6 +6,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
+import { useRouter } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -14,6 +15,7 @@ import {
   loadOrganizationGroupAthleteLinks,
   removeOrganizationGroupAthlete,
 } from "../../../lib/coaching/organization-group-athletes-server-functions";
+import { useOrganizationGroupAccessLoss } from "../organization-groups/organization-group-access";
 
 const PAGE_SIZE = 20;
 type Athlete = {
@@ -25,6 +27,38 @@ type Link = { id: string; engagementId: string };
 type Page<T> = { items: T[]; nextCursor: string | null; hasMore: boolean };
 type InitialPage = { links: Page<Link>; candidates: Page<Athlete> };
 
+export function OrganizationGroupAthletesPending() {
+  return (
+    <p aria-label="Loading athlete assignments" role="status" className="text-sm text-slate-400">
+      Loading athlete assignments…
+    </p>
+  );
+}
+export function OrganizationGroupAthletesError() {
+  const router = useRouter();
+  const [retrying, setRetrying] = useState(false);
+  async function retry() {
+    setRetrying(true);
+    try {
+      await router.invalidate({ sync: true });
+    } catch {
+      // Keep the failed loader state visible until an authoritative reread succeeds.
+    } finally {
+      setRetrying(false);
+    }
+  }
+  return (
+    <div className="space-y-3">
+      <p role="alert" className="text-sm text-red-300">
+        We could not load athlete assignments.
+      </p>
+      <Button disabled={retrying} onClick={() => void retry()} type="button">
+        {retrying ? "Retrying athlete assignments…" : "Retry athlete assignments"}
+      </Button>
+    </div>
+  );
+}
+
 export function OrganizationGroupAthletes({
   organizationId,
   groupId,
@@ -35,6 +69,7 @@ export function OrganizationGroupAthletes({
   initialPage: InitialPage;
 }) {
   const addAthlete = useServerFn(addOrganizationGroupAthlete);
+  const accessLoss = useOrganizationGroupAccessLoss();
   const removeAthlete = useServerFn(removeOrganizationGroupAthlete);
   const loadLinks = useServerFn(loadOrganizationGroupAthleteLinks);
   const loadCandidates = useServerFn(loadOrganizationGroupAthleteCandidates);
@@ -128,6 +163,7 @@ export function OrganizationGroupAthletes({
       if (!current(context) || linksRequestVersion.current !== request) return;
       if (result.status === "forbidden") {
         setAccessLost(true);
+        if (accessLoss) accessLoss.reportAccessLost(accessLoss.scope);
         return;
       }
       applyLinks(
@@ -159,6 +195,7 @@ export function OrganizationGroupAthletes({
       if (!current(context) || candidatesRequestVersion.current !== request) return;
       if (result.status === "forbidden") {
         setAccessLost(true);
+        if (accessLoss) accessLoss.reportAccessLost(accessLoss.scope);
         return;
       }
       applyCandidates({ ...result, items: [...candidates.items, ...result.items] });
@@ -200,6 +237,7 @@ export function OrganizationGroupAthletes({
       if (!current(context)) return;
       if (result.status === "forbidden") {
         setAccessLost(true);
+        if (accessLoss) accessLoss.reportAccessLost(accessLoss.scope);
         return;
       }
       const receipt = {
@@ -240,6 +278,7 @@ export function OrganizationGroupAthletes({
       if (!current(context)) return;
       if (result.status === "forbidden") {
         setAccessLost(true);
+        if (accessLoss) accessLoss.reportAccessLost(accessLoss.scope);
         return;
       }
       removedLinkIds.current.add(removal.id);

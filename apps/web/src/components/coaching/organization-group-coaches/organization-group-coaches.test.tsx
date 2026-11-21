@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { StrictMode } from "react";
+import { StrictMode, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -31,7 +31,12 @@ vi.mock("@repo/ui/components/alert-dialog", () => ({
   ),
 }));
 
-import { OrganizationGroupCoaches } from "./organization-group-coaches";
+import { OrganizationGroupAccessLossProvider } from "../organization-groups/organization-group-access";
+import {
+  OrganizationGroupCoaches,
+  OrganizationGroupCoachesError,
+  OrganizationGroupCoachesPending,
+} from "./organization-group-coaches";
 
 const organizationId = "11111111-1111-4111-8111-111111111111";
 const groupId = "22222222-2222-4222-8222-222222222222";
@@ -399,5 +404,64 @@ describe("organization group coaches", () => {
     fireEvent.click(screen.getByRole("button", { name: "Assign coach" }));
     expect(await screen.findByText(/access changed/)).toBeTruthy();
     expect(screen.queryByText("Coach assigned.")).toBeNull();
+    expect(screen.queryByRole("list", { name: "Assigned coaches" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Assign coach" })).toBeNull();
+    expect(screen.queryByRole("option", { name: "Coach Ada" })).toBeNull();
+  });
+  it("redacts existing links and candidates when a pagination read loses access", async () => {
+    mocks.links.mockResolvedValueOnce({ status: "forbidden" });
+    render(
+      <OrganizationGroupCoaches
+        candidatePage={{ items: candidates, nextCursor: otherMembershipId, hasMore: true }}
+        groupId={groupId}
+        linkPage={{ items: [{ id: linkId, membershipId }], nextCursor: linkId, hasMore: true }}
+        organizationId={organizationId}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Load more assigned coaches" }));
+    expect(await screen.findByRole("heading", { name: "Group access required" })).toBeTruthy();
+    expect(screen.queryByRole("list", { name: "Assigned coaches" })).toBeNull();
+    expect(screen.queryByRole("option", { name: "Coach Ada" })).toBeNull();
+  });
+  it("signals the scoped parent to redact group detail after a forbidden mutation", async () => {
+    mocks.assign.mockResolvedValueOnce({ status: "forbidden" });
+    function Parent() {
+      const [lost, setLost] = useState(false);
+      return lost ? (
+        <h1>Group access required</h1>
+      ) : (
+        <OrganizationGroupAccessLossProvider
+          value={{
+            scope: { organizationId, groupId, actorProfileId: "profile-1", generation: 0 },
+            reportAccessLost: () => setLost(true),
+          }}
+        >
+          <h1>Visible group detail</h1>
+          <OrganizationGroupCoaches
+            candidatePage={{ items: candidates, nextCursor: null, hasMore: false }}
+            groupId={groupId}
+            linkPage={{ items: [{ id: linkId, membershipId }], nextCursor: null, hasMore: false }}
+            organizationId={organizationId}
+          />
+        </OrganizationGroupAccessLossProvider>
+      );
+    }
+    render(<Parent />);
+    fireEvent.change(screen.getByLabelText("Coach"), { target: { value: otherMembershipId } });
+    fireEvent.click(screen.getByRole("button", { name: "Assign coach" }));
+    expect(await screen.findByRole("heading", { name: "Group access required" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Visible group detail" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Assign coach" })).toBeNull();
+  });
+  it("names pending coach reads and retries a failed child loader synchronously", async () => {
+    render(<OrganizationGroupCoachesPending />);
+    expect(screen.getByRole("status", { name: "Loading coach assignments" })).toBeTruthy();
+    cleanup();
+    render(<OrganizationGroupCoachesError />);
+    fireEvent.click(screen.getByRole("button", { name: "Retry coach assignments" }));
+    expect(mocks.invalidate).toHaveBeenCalledWith({ sync: true });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Retry coach assignments" })).toBeTruthy(),
+    );
   });
 });
