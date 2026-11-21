@@ -784,6 +784,7 @@ export function createDrizzleAthleteDerivedStateRepository(
           )
           .where(
             and(
+              lte(athleteRecalculationQueue.earliest_affected_at, claimedAt),
               or(
                 sql`${profileAthleteState.lease_token} is null`,
                 lte(profileAthleteState.lease_expires_at, claimedAt),

@@ -5,6 +5,7 @@ import {
   advanceAthleteStateTo,
   advanceObservedAthleteState,
   athleteStateBaselineSchema,
+  createUnavailableAthletePerformanceTargetFacts,
 } from "@repo/core";
 import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
 import { db, pool } from "@repo/db/client";
@@ -126,6 +127,7 @@ async function seedActivity(input: {
   commonLoad?: number;
   confidence?: number;
   durationMs?: number;
+  withPerformanceTargetSnapshot?: boolean;
 }) {
   const activityId = randomUUID();
   const artifactId = randomUUID();
@@ -150,6 +152,20 @@ async function seedActivity(input: {
       decoded_contract_version: "athlete-state-live-test-v1",
       materializer_version: "athlete-state-live-test-v1",
       segments_generated_at: input.finishedAt,
+      ...(input.withPerformanceTargetSnapshot === false
+        ? {}
+        : {
+            performance_target_snapshot: {
+              contractVersion: "completed-activity-performance-target-snapshot-v2",
+              capturedAt: input.finishedAt.toISOString(),
+              publishedRevision: null,
+              publicationStatus: "unavailable",
+              targets: createUnavailableAthletePerformanceTargetFacts(
+                input.finishedAt.toISOString(),
+                input.profileId,
+              ),
+            },
+          }),
       athlete_state_common_load: input.commonLoad ?? null,
       athlete_state_activity_category: input.commonLoad === undefined ? null : "run",
       athlete_state_evidence_confidence:
@@ -1664,12 +1680,16 @@ describe("athlete state persistence", () => {
     const activityId = await seedActivity({
       profileId,
       finishedAt: new Date("2026-08-01T10:00:00.000Z"),
+      withPerformanceTargetSnapshot: false,
     });
     const effectiveAt = new Date("2026-08-01T10:00:00.000Z");
     await db.transaction(async (tx) => {
       await tx
         .update(activities)
-        .set({ canonical_evidence_tier: "raw_samples", segments_revision: 2 })
+        .set({
+          canonical_evidence_tier: "raw_samples",
+          segments_revision: 2,
+        })
         .where(eq(activities.id, activityId));
       await tx
         .update(activitySegments)

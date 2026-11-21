@@ -144,6 +144,7 @@ export async function materializeActivityAthleteStateEvidence(
   if (
     !analysisRevision &&
     summaries.length > 0 &&
+    activity.performance_target_snapshot !== null &&
     (!input.deferAthleteStateRefresh || input.targetSourceRevision !== undefined)
   ) {
     const originalSnapshot = completedActivityPerformanceTargetSnapshotSchema.parse(
@@ -242,7 +243,6 @@ export async function materializeActivityAthleteStateEvidence(
       activityId: input.activityId,
     });
     if (effectiveAt !== null && !input.deferAthleteStateRefresh) {
-      if (!analysisRevision) throw new Error("Activity analysis revision is unavailable");
       const repository = createDrizzleAthleteDerivedStateRepository(tx);
       const state = await repository.lockPublicationState({ profileId: input.profileId });
       if (!state) throw new Error("Athlete publication state is unavailable");
@@ -257,7 +257,7 @@ export async function materializeActivityAthleteStateEvidence(
             state.planningTimezone,
           ),
           sourceRevision: state.sourceRevision + 1,
-          reasons: [analysisRevision.revision === 1 ? "activity_created" : "analysis_replaced"],
+          reasons: [analysisRevision?.revision === 1 ? "activity_created" : "analysis_replaced"],
           requestedAt: input.computedAt.toISOString(),
         }),
       });

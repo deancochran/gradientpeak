@@ -164,7 +164,7 @@ export class AthleteDerivedStateWorkerService {
       const item = await repository.claimNextRecalculation({
         claimToken,
         claimedAt: now.toISOString(),
-        leaseExpiresAt: new Date(now.getTime() + ATHLETE_STATE_LEASE_MILLISECONDS).toISOString(),
+        leaseExpiresAt: new Date(Date.now() + ATHLETE_STATE_LEASE_MILLISECONDS).toISOString(),
       });
       if (!item) break;
       result.processed += 1;
@@ -602,7 +602,7 @@ export class AthleteStateWorkerService {
           if (continuationProfileId === undefined) break claimSlots;
           break;
         }
-        result.processed += 1;
+        if (continuationProfileId === undefined) result.processed += 1;
         try {
           if (claim.dirtyFromAt !== null && claim.dirtyFromAt.getTime() <= now.getTime()) {
             await renewClaimOrThrow(
