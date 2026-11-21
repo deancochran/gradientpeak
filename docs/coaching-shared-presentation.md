@@ -74,5 +74,97 @@ The existing web history charts were confirmed in source; the prepared preview
 athlete did not have populated historical observations. No populated-history
 visual result is inferred from that preview fixture.
 
-Implementation and final evidence will be recorded as they become available;
-this document does not claim that planned checks have passed.
+## Implemented presentation boundaries
+
+- Coaching shells and administration pages use semantic theme tokens and existing
+  shared controls. One destination model drives desktop and compact navigation;
+  exact Router matching prevents duplicate current links, and administration keeps
+  its active tab inside the horizontal navigation viewport.
+- `@repo/ui/components/training-state-chart` explicitly exports paired web/native
+  renderers. Both consume the same required `series` selection and point contract.
+  Web uses SVG; native owns the existing Victory renderer rather than accepting an
+  app-local injected plot. Selected series govern availability, geometry, labels
+  and accessibility. Source-specific presentation, sparse markers, null gaps,
+  zeroes, negative values, units and planning timezone are retained.
+- The web athlete overview supplies recorded historical series only. The native
+  planning ledger explicitly supplies its authorized recorded/projected data.
+  Adapters, domain decisions, directions and permission handling remain app-owned.
+- Native rendering reuses `victory-native` 41.20.2 and the existing peer snapshot:
+  only its UI importer declaration was added to the lockfile. No new native module
+  or package version was introduced.
+- Shared `IdentitySummary` and `EmptyStateCard` have real web/native consumers.
+  State tone, vertical reading order, unbroken text/action wrapping, native heading
+  semantics and selector descriptions are explicit. Denied content does not
+  introduce a nested main landmark. Retry and navigation callbacks remain with
+  their apps.
+- Both chart stories and fixture-driven preview surfaces exercise six selected
+  recorded/projected series. State stories include empty, unavailable, recoverable
+  error and denied cases; the unbroken fixture contains strings without spaces or
+  hyphens.
+
+## Accepted evidence at implementation checkpoint `4d63c8a6`
+
+Independent source review of the summary follow-up and final chart/navigation
+corrections found no remaining concrete blocker in their bounded scopes. The
+chart follow-up also inspected supplied web fixture screenshots. Review is
+separate from the checks executed by the implementation coordinator.
+
+- Canonical Node toolchain via `mise exec`: UI/web/mobile typechecks, scoped
+  Biome, generated UI artifact checks and architecture (zero new violations)
+  passed.
+- Full shared-UI suite before the last corrective additions: **221 web tests and
+  245 native tests passed**. After those additions, focused UI chart/semantic tests
+  **8 web / 4 native**, mobile ledger/presentation **7**, web overview **9**, and
+  administration route tests **19** passed. These counts describe different
+  runs, not a summed final full-suite result.
+- Final independent disposable acceptance run
+  `acceptance-2712078-1795237162884`: **4/4 passed** at the exact implementation
+  checkpoint. It executes the two specifications named above on 1440×1000 and
+  390×844 browser projects, including ready administration content, visible current
+  tabs, theme persistence, search/clear, unshared context, populated history and
+  consent withdrawal.
+- Final populated-history and ready administration screenshots were inspected.
+  Shared chart fixture captures at 1440/390 in Light/Dark show six series and
+  three projected selections without horizontal overflow. The compact unbroken
+  state fixture retains a readable wrapping action.
+- Production web build passed, confirming the web export graph bundles without
+  pulling the native renderer into that surface. Existing bundle/chunk warnings
+  are not interpreted as runtime or production acceptance.
+- Local Expo iOS and Android exports passed with Hermes bytecode generation and
+  two Metro workers. These prove platform import/bundle compatibility, not native
+  binary compilation or device usability. Telemetry/upload credentials were
+  disabled; nothing was uploaded, installed or deployed. The initial export
+  destination was unwritable, so the successful exports used ignored feature-local
+  `.logs/coaching-shared-ui/bundles/` without changing host permissions.
+
+Detailed local logs and captures live in `.logs/coaching-shared-ui/` and the
+disposable run directory. They are ignored artifacts, not published test data.
+The shared-preview activation ledger records exact integrations and runtime
+identity separately; preview walkthroughs never replace disposable acceptance.
+
+## Evidence and delivery limits
+
+Native component tests exercise selection/data/accessibility contracts with the
+canvas boundary mocked. No attached native device was available: native visual
+layout, gestures, text scaling and TalkBack/VoiceOver remain unverified. The
+previously inactive shared Metro service is not started by this task.
+
+The complete implementation checkpoint is **live in web preview**, integrated
+from `09580d94fb6dfa0cca39c86fdfc82e93277de0bd` to
+`e34933e5c026bccc8ea4edf2b4438f5479d73ba2`. Locked ancestry/clean-status checks,
+HTTP health and served overview/navigation module checks passed. The owned web
+PID stayed `1140936`; no dependency install or service restart was needed.
+
+The final prepared-account overview walkthrough passed at 1440/390 in Light/Dark:
+theme persistence, disclosure collapse/reopen and no horizontal overflow, with
+screenshots inspected and stable preview/runtime identity. This prepared account
+has no populated historical observations; that case is proven by disposable
+acceptance, not inferred from preview. No preserved account/data/provider writes
+or external requests occurred. Earlier accepted chooser/directory walkthrough
+evidence remains in the same local artifact directory.
+
+Full quality/publication results are tracked by `gp-6sa` and the consolidated PR;
+they are not inferred from the preview checks above.
+Main/release prerequisite reconciliation remains separately owned by `gp-awt.42`;
+this presentation work does not authorize schema changes, preserved-data resets,
+provider activation, production deployment or bypassing required checks.
