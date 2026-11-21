@@ -226,12 +226,21 @@ describe("accepted invitation relationship resolver against a disposable migrate
             operationId: randomUUID(),
             reason: "administrative_review",
           });
-          await ownerCaller.lifecycle.endMembership({
-            organizationId,
-            membershipId: endedMembershipId,
-            correlationId: randomUUID(),
-            reason: "administrative_review",
-          });
+          // Staff offboarding is unavailable until handover/resource-inventory
+          // prerequisites exist. Preserve that fail-closed endpoint contract, then
+          // seed the independently supported persisted terminal lifecycle state.
+          await expect(
+            ownerCaller.lifecycle.endMembership({
+              organizationId,
+              membershipId: endedMembershipId,
+              correlationId: randomUUID(),
+              reason: "administrative_review",
+            }),
+          ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+          await client.db
+            .update(organizationMemberships)
+            .set({ ended_at: new Date() })
+            .where(eq(organizationMemberships.id, endedMembershipId));
           await ownerCaller.staffRoles.revoke({
             organizationId,
             membershipId: revokedMembershipId,
