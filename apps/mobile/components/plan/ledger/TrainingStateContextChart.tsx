@@ -1,5 +1,10 @@
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
+import {
+  TrainingStateLegend,
+  type TrainingStateVisualPoint,
+  trainingStateMetrics,
+} from "@repo/ui/components/training-state-chart";
 import { Minus, TrendingDown, TrendingUp } from "lucide-react-native";
 import { View } from "react-native";
 import { CartesianChart, Line } from "victory-native";
@@ -57,15 +62,36 @@ export function TrainingStateContextChart({
 }) {
   const { resolvedTheme } = useTheme();
   const colors = getPlanChartTheme(resolvedTheme);
-  const chartData: StateDatum[] = state.points.map((point) => ({
-    actualFatigue: point.actualFatigue,
-    actualFitness: point.actualFitness,
-    actualForm: point.actualForm,
+  const visualPoints: TrainingStateVisualPoint[] = state.points.map((point) => ({
+    date: point.date,
     index: point.index,
-    projectedFatigue: point.projectedFatigue,
-    projectedFitness: point.projectedFitness,
-    projectedForm: point.projectedForm,
+    projected: {
+      fatigue: point.projectedFatigue,
+      fitness: point.projectedFitness,
+      form: point.projectedForm,
+    },
+    recorded: {
+      fatigue: point.actualFatigue,
+      fitness: point.actualFitness,
+      form: point.actualForm,
+    },
   }));
+  const chartData: StateDatum[] = visualPoints.map((point) => ({
+    actualFatigue: point.recorded.fatigue,
+    actualFitness: point.recorded.fitness,
+    actualForm: point.recorded.form,
+    index: point.index,
+    projectedFatigue: point.projected.fatigue,
+    projectedFitness: point.projected.fitness,
+    projectedForm: point.projected.form,
+  }));
+  const sourceStatus = state.sourceStatus;
+  const sources =
+    sourceStatus === "mixed"
+      ? (["recorded", "projected"] as const)
+      : sourceStatus === "unavailable"
+        ? []
+        : [sourceStatus];
 
   return (
     <View className="gap-3" testID="planning-ledger-training-state">
@@ -74,8 +100,10 @@ export function TrainingStateContextChart({
           Seven-day training state
         </Text>
         <Text className="text-xs text-muted-foreground">
-          Fitness, fatigue, and form in context
-          {state.latestSource ? ` · Latest values are ${state.latestSource.toLowerCase()}` : ""}
+          Fitness, fatigue, and form in {state.unitLabel.toLowerCase()} ({state.timeZone})
+          {sourceStatus !== "unavailable"
+            ? ` · ${sourceStatus === "mixed" ? "Recorded and projected values are shown separately" : `Values are ${sourceStatus}`}`
+            : ""}
         </Text>
       </View>
       {chartData.length ? (
@@ -103,28 +131,28 @@ export function TrainingStateContextChart({
             {({ points }) => (
               <>
                 <Line
-                  color={colors.fitness}
+                  color={colors.trainingState[trainingStateMetrics.fitness.id]}
                   connectMissingData={false}
                   curveType="natural"
                   points={points.actualFitness}
                   strokeWidth={3}
                 />
                 <Line
-                  color={colors.fatigue}
+                  color={colors.trainingState[trainingStateMetrics.fatigue.id]}
                   connectMissingData={false}
                   curveType="natural"
                   points={points.actualFatigue}
                   strokeWidth={2.5}
                 />
                 <Line
-                  color={colors.form}
+                  color={colors.trainingState[trainingStateMetrics.form.id]}
                   connectMissingData={false}
                   curveType="natural"
                   points={points.actualForm}
                   strokeWidth={2}
                 />
                 <Line
-                  color={colors.fitness}
+                  color={colors.trainingState[trainingStateMetrics.fitness.id]}
                   connectMissingData={false}
                   curveType="natural"
                   opacity={0.45}
@@ -132,7 +160,7 @@ export function TrainingStateContextChart({
                   strokeWidth={3}
                 />
                 <Line
-                  color={colors.fatigue}
+                  color={colors.trainingState[trainingStateMetrics.fatigue.id]}
                   connectMissingData={false}
                   curveType="natural"
                   opacity={0.45}
@@ -140,7 +168,7 @@ export function TrainingStateContextChart({
                   strokeWidth={2.5}
                 />
                 <Line
-                  color={colors.form}
+                  color={colors.trainingState[trainingStateMetrics.form.id]}
                   connectMissingData={false}
                   curveType="natural"
                   opacity={0.45}
@@ -156,10 +184,11 @@ export function TrainingStateContextChart({
           Training state is unavailable for this period.
         </Text>
       )}
-      <View className="flex-row gap-4">
-        <Text className="text-xs text-foreground">━ Recorded</Text>
-        <Text className="text-xs text-muted-foreground">━ Projected</Text>
-      </View>
+      <TrainingStateLegend
+        colors={colors.trainingState}
+        sources={sources}
+        testId="planning-ledger-state-legend"
+      />
       <View className="flex-row gap-4">
         <Metric
           direction={state.fitnessDirection}

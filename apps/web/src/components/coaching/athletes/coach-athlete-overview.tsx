@@ -6,6 +6,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
+import {
+  formatTrainingStateDate,
+  getTrainingStateMetric,
+  getTrainingStateSourceStatus,
+  TrainingStateLegend,
+  type TrainingStateMetricId,
+  type TrainingStateVisualPoint,
+} from "@repo/ui/components/training-state-chart";
 import { SimpleTrendChart } from "../../charts/simple-trend-chart";
 
 type LoadHistoryPoint = {
@@ -62,8 +70,8 @@ export function CoachAthleteOverview({
   if (result.status === "unavailable")
     return (
       <section>
-        <h2 className="text-xl font-semibold text-white">Athlete workspace unavailable</h2>
-        <p className="mt-2 max-w-xl text-sm text-slate-400">
+        <h2 className="text-xl font-semibold text-foreground">Athlete workspace unavailable</h2>
+        <p className="mt-2 max-w-xl text-sm text-muted-foreground">
           This athlete is unavailable in this organization, or their metrics are not shared with
           you.
         </p>
@@ -76,23 +84,22 @@ export function CoachAthleteOverview({
   return (
     <div className="space-y-6" key={athleteId}>
       <header className="space-y-2">
-        <p className="text-sm font-medium uppercase tracking-[0.18em] text-cyan-300">
+        <p className="text-sm font-medium uppercase tracking-[0.18em] text-primary">
           Shared training context
         </p>
-        <h2 className="text-2xl font-semibold tracking-tight text-white">Current training state</h2>
-        <p className="text-sm text-slate-400">
+        <h2 className="text-2xl font-semibold tracking-tight text-foreground">
+          Current training state
+        </h2>
+        <p className="text-sm text-muted-foreground">
           Metrics are presented only when the athlete has shared this scope through the selected
           organization.
         </p>
       </header>
       {metricsAvailable ? (
-        <Card
-          className="border-slate-800 bg-slate-900 text-slate-50"
-          data-testid="published-training-state"
-        >
+        <Card data-testid="published-training-state">
           <CardHeader>
             <CardTitle>Published training state</CardTitle>
-            <CardDescription className="text-slate-400">
+            <CardDescription>
               {model.publishedState
                 ? `Published ${new Date(model.publishedState.publishedAt).toLocaleString()}. This is a modeled state, not readiness advice.`
                 : "No published load state is available."}
@@ -109,7 +116,7 @@ export function CoachAthleteOverview({
                 </dl>
               </>
             ) : (
-              <p className="text-sm text-slate-400">
+              <p className="text-sm text-muted-foreground">
                 No published load state is available to this coaching view.
               </p>
             )}
@@ -119,10 +126,10 @@ export function CoachAthleteOverview({
       <TrainingLoadHistory history={model.loadHistory} />
       {metricsAvailable ? (
         <>
-          <Card className="border-slate-800 bg-slate-900 text-slate-50">
+          <Card>
             <CardHeader>
               <CardTitle>Published performance estimates</CardTitle>
-              <CardDescription className="text-slate-400">
+              <CardDescription>
                 Actual published estimates only; curves and unshared evidence are not shown here.
               </CardDescription>
             </CardHeader>
@@ -132,7 +139,7 @@ export function CoachAthleteOverview({
                   {model.publishedState.estimates.map((estimate) => (
                     <li
                       key={`${estimate.activityCategory}:${estimate.capabilityKind}:${estimate.effectiveAt}`}
-                      className="rounded border border-slate-800 p-3"
+                      className="rounded border border-border p-3"
                     >
                       <p className="font-medium">
                         {estimate.capabilityKind} · {estimate.activityCategory}
@@ -140,7 +147,7 @@ export function CoachAthleteOverview({
                       <p className="text-lg">
                         {estimate.value} {estimate.unit}
                       </p>
-                      <p className="text-sm text-slate-400">
+                      <p className="text-sm text-muted-foreground">
                         Confidence {(estimate.confidence * 100).toFixed(0)}% · effective{" "}
                         {new Date(estimate.effectiveAt).toLocaleDateString()} ·{" "}
                         {estimate.algorithmVersion}
@@ -149,41 +156,41 @@ export function CoachAthleteOverview({
                   ))}
                 </ul>
               ) : (
-                <p className="text-sm text-slate-400">
+                <p className="text-sm text-muted-foreground">
                   No published performance estimates are available to this coaching view.
                 </p>
               )}
             </CardContent>
           </Card>
-          <Card className="border-slate-800 bg-slate-900 text-slate-50">
+          <Card>
             <CardHeader>
               <CardTitle>Projection status</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-wrap gap-2">
-              <Badge className="border-cyan-800 bg-cyan-950 text-cyan-200">
+              <Badge className="border-border bg-muted text-foreground">
                 Freshness: {model.status?.freshness ?? "unknown"}
               </Badge>
-              <Badge className="border-slate-700 bg-slate-800 text-slate-200">
+              <Badge className="border-border bg-muted text-foreground">
                 Import: {model.status?.importStatus ?? "unknown"}
               </Badge>
               {model.status?.asOf ? (
-                <span className="w-full text-sm text-slate-400">
+                <span className="w-full text-sm text-muted-foreground">
                   Read model as of: {new Date(model.status.asOf).toLocaleString()}
                 </span>
               ) : null}
               {model.status?.coverage.startAt || model.status?.coverage.endAt ? (
-                <span className="w-full text-sm text-slate-400">
+                <span className="w-full text-sm text-muted-foreground">
                   Coverage: {formatCoverage(model.status.coverage.startAt)} to{" "}
                   {formatCoverage(model.status.coverage.endAt)}
                 </span>
               ) : null}
               {model.status?.coverage.lastActivityAt ? (
-                <span className="w-full text-sm text-slate-400">
+                <span className="w-full text-sm text-muted-foreground">
                   Last activity in projection:{" "}
                   {new Date(model.status.coverage.lastActivityAt).toLocaleString()}
                 </span>
               ) : (
-                <span className="w-full text-sm text-slate-400">
+                <span className="w-full text-sm text-muted-foreground">
                   No activity date is available in this projection.
                 </span>
               )}
@@ -198,10 +205,10 @@ export function CoachAthleteOverview({
 function TrainingLoadHistory({ history }: { history: OverviewModel["loadHistory"] }) {
   if (!history) {
     return (
-      <Card className="border-slate-800 bg-slate-900 text-slate-50">
+      <Card>
         <CardHeader>
           <CardTitle>Recent training load</CardTitle>
-          <CardDescription className="text-slate-400">
+          <CardDescription>
             Historical load is not available in the published projection.
           </CardDescription>
         </CardHeader>
@@ -210,10 +217,10 @@ function TrainingLoadHistory({ history }: { history: OverviewModel["loadHistory"
   }
   if (history.result.status === "unavailable") {
     return (
-      <Card className="border-slate-800 bg-slate-900 text-slate-50">
+      <Card>
         <CardHeader>
           <CardTitle>Recent training load</CardTitle>
-          <CardDescription className="text-slate-400">
+          <CardDescription>
             Historical load is unavailable ({history.result.reason.replaceAll("_", " ")}). No values
             are inferred.
           </CardDescription>
@@ -224,18 +231,24 @@ function TrainingLoadHistory({ history }: { history: OverviewModel["loadHistory"
 
   const points = history.result.points.slice(-28);
   const timezone = history.result.identity.planningTimezone;
+  const trainingStatePoints: TrainingStateVisualPoint[] = points.map((point, index) => ({
+    date: point.date,
+    index,
+    projected: { fatigue: null, fitness: null, form: null },
+    recorded: {
+      fatigue: point.recentLoad,
+      fitness: point.longTermLoad,
+      form: point.loadBalance,
+    },
+  }));
   return (
-    <section aria-label="Recent training load" className="dark space-y-3">
+    <section aria-label="Recent training load" className="space-y-3">
       <SimpleTrendChart
         axisLabels={{ x: "Planning date", y: "Common Load points" }}
         description={`Completed daily Common Load points for the latest ${points.length} complete planning days (${timezone}). This is derived load, not a performance estimate.`}
         emptyMessage="No complete daily load observations are available."
         formatX={(value) =>
-          new Date(value).toLocaleDateString(undefined, {
-            month: "short",
-            day: "numeric",
-            timeZone: "UTC",
-          })
+          formatTrainingStateDate(new Date(value).toISOString().slice(0, 10), timezone)
         }
         formatValue={(value) => value.toFixed(1)}
         points={points.map((point) => ({
@@ -251,50 +264,51 @@ function TrainingLoadHistory({ history }: { history: OverviewModel["loadHistory"
         }}
         title="Recent completed daily Common Load"
       />
-      <p className="text-xs text-slate-400">
+      <p className="text-xs text-muted-foreground">
         Common Load points are derived from completed activity. Dates are planning dates in{" "}
         {timezone}
         through {history.result.identity.endDate}. Complete days only; no future values are shown.
       </p>
       {history.result.maturity.status === "establishing_baseline" ? (
-        <p className="text-xs text-amber-200">
+        <p className="text-xs text-warning">
           Modeled baseline is still being established; treat long-term load with care.
         </p>
       ) : null}
       <div>
-        <h2 className="text-lg font-semibold text-white">Historical modeled load state</h2>
-        <p className="mt-1 text-xs text-slate-400">
+        <h2 className="text-lg font-semibold text-foreground">Historical modeled load state</h2>
+        <p className="mt-1 text-xs text-muted-foreground">
           This series is shown only when completed activity history is shared. It does not predict
           future load or availability.
         </p>
       </div>
+      <TrainingStateLegend sources={["recorded"]} />
       <div className="grid gap-3 lg:grid-cols-3">
         <HistoricalLoadChart
-          label="Fitness"
-          points={points}
-          value={(point) => point.longTermLoad}
+          metric="fitness"
+          points={trainingStatePoints}
+          timeZone={timezone}
           description="Historical modeled long-term load from the same completed daily Common Load observations."
         />
         <HistoricalLoadChart
-          label="Fatigue"
-          points={points}
-          value={(point) => point.recentLoad}
+          metric="fatigue"
+          points={trainingStatePoints}
+          timeZone={timezone}
           description="Historical modeled recent load from the same completed daily Common Load observations."
         />
         <HistoricalLoadChart
-          label="Form"
-          points={points}
-          value={(point) => point.loadBalance}
+          metric="form"
+          points={trainingStatePoints}
+          timeZone={timezone}
           description="Historical modeled load balance from the same completed daily Common Load observations; negative values are shown as recorded."
         />
       </div>
-      <div className="overflow-x-auto rounded border border-slate-800">
+      <div className="overflow-x-auto rounded border border-border">
         <table className="w-full min-w-[38rem] text-left text-sm">
           <caption className="sr-only">
             Completed Common Load points and modeled load state for the latest complete planning
             days
           </caption>
-          <thead className="bg-slate-950 text-slate-300">
+          <thead className="bg-muted text-muted-foreground">
             <tr>
               <th className="p-2">Planning date</th>
               <th className="p-2">Completed Common Load points</th>
@@ -305,7 +319,7 @@ function TrainingLoadHistory({ history }: { history: OverviewModel["loadHistory"
           </thead>
           <tbody>
             {[...points].reverse().map((point) => (
-              <tr className="border-t border-slate-800" key={point.date}>
+              <tr className="border-t border-border" key={point.date}>
                 <td className="p-2">{point.date}</td>
                 <td className="p-2">{point.dailyLoad.toFixed(1)}</td>
                 <td className="p-2">{point.recentLoad.toFixed(1)}</td>
@@ -322,39 +336,47 @@ function TrainingLoadHistory({ history }: { history: OverviewModel["loadHistory"
 
 function HistoricalLoadChart({
   description,
-  label,
+  metric,
   points,
-  value,
+  timeZone,
 }: {
   description: string;
-  label: string;
-  points: LoadHistoryPoint[];
-  value: (point: LoadHistoryPoint) => number;
+  metric: TrainingStateMetricId;
+  points: readonly TrainingStateVisualPoint[];
+  timeZone: string;
 }) {
+  const definition = getTrainingStateMetric(metric);
+  const sourceStatus = getTrainingStateSourceStatus(points);
   return (
-    <SimpleTrendChart
-      axisLabels={{ x: "Planning date", y: "Load" }}
-      description={description}
-      emptyMessage={`No historical ${label.toLowerCase()} values are available.`}
-      formatX={(point) =>
-        new Date(point).toLocaleDateString(undefined, {
-          month: "short",
-          day: "numeric",
-          timeZone: "UTC",
-        })
-      }
-      formatValue={(point) => point.toFixed(1)}
-      points={points.map((point) => ({
-        id: point.date,
-        label: point.date,
-        value: value(point),
-        x: Date.parse(`${point.date}T00:00:00Z`),
-      }))}
-      summaryLabels={{ first: "First", latest: "Latest", trend: "Change" }}
-      title={`Historical ${label}`}
-    />
+    <div className={trainingStateTrendColorClasses[metric]}>
+      <SimpleTrendChart
+        axisLabels={{ x: "Planning date", y: "Load" }}
+        description={description}
+        emptyMessage={`No historical ${definition.label.toLowerCase()} values are available.`}
+        formatX={(point) =>
+          formatTrainingStateDate(new Date(point).toISOString().slice(0, 10), timeZone)
+        }
+        formatValue={(point) => point.toFixed(1)}
+        points={points.map((point) => ({
+          id: point.date,
+          label: point.date,
+          value: point.recorded[metric],
+          x: Date.parse(`${point.date}T00:00:00Z`),
+        }))}
+        summaryLabels={{ first: "First", latest: "Latest", trend: "Change" }}
+        title={`Historical ${definition.label} (${sourceStatus})`}
+      />
+    </div>
   );
 }
+
+const trainingStateTrendColorClasses: Record<TrainingStateMetricId, string> = {
+  fatigue:
+    "[&_polyline.text-primary]:!text-[var(--chart-3)] [&_[data-chart-point]]:!border-[var(--chart-3)]",
+  fitness:
+    "[&_polyline.text-primary]:!text-[var(--chart-1)] [&_[data-chart-point]]:!border-[var(--chart-1)]",
+  form: "[&_polyline.text-primary]:!text-[var(--chart-5)] [&_[data-chart-point]]:!border-[var(--chart-5)]",
+};
 
 function formatCoverage(value: string | null) {
   return value ? new Date(value).toLocaleString() : "not available";
@@ -377,9 +399,9 @@ function PublishedStateFreshness({ status }: { status: OverviewModel["status"] }
             : null;
   return (
     <div className="flex flex-wrap items-center gap-2" role="status">
-      <Badge className="border-cyan-800 bg-cyan-950 text-cyan-200">Freshness: {freshness}</Badge>
-      <Badge className="border-slate-700 bg-slate-800 text-slate-200">Import: {importStatus}</Badge>
-      {warning ? <span className="w-full text-sm text-amber-200">{warning}</span> : null}
+      <Badge className="border-border bg-muted text-foreground">Freshness: {freshness}</Badge>
+      <Badge className="border-border bg-muted text-foreground">Import: {importStatus}</Badge>
+      {warning ? <span className="w-full text-sm text-warning">{warning}</span> : null}
     </div>
   );
 }
@@ -387,7 +409,7 @@ function PublishedStateFreshness({ status }: { status: OverviewModel["status"] }
 function Metric({ detail, label, value }: { detail: string; label: string; value: number }) {
   return (
     <div>
-      <dt className="text-sm text-slate-400">
+      <dt className="text-sm text-muted-foreground">
         {label} <span className="text-xs">({detail})</span>
       </dt>
       <dd className="mt-1 text-2xl font-semibold">{value.toFixed(1)}</dd>

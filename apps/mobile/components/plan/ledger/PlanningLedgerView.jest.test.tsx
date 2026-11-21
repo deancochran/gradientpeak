@@ -317,6 +317,11 @@ it("renders a visual-first weekly breakdown and normal numeric partial values", 
   expect(screen.getByTestId("planning-ledger-weekly-chart")).toBeTruthy();
   expect(screen.getByTestId("planning-ledger-consistency-strip")).toBeTruthy();
   expect(screen.getByTestId("planning-ledger-state-chart")).toBeTruthy();
+  expect(screen.getByTestId("planning-ledger-state-legend").props.accessibilityLabel).toBe(
+    "Training-state legend",
+  );
+  expect(screen.getByText("━ Recorded")).toBeTruthy();
+  expect(screen.queryByText("━ Projected")).toBeNull();
   expect(screen.getByTestId("training-composition-duration-donut")).toBeTruthy();
   expect(screen.getByTestId("planning-ledger-intensity-distribution")).toBeTruthy();
   expect(screen.getAllByText("20").length).toBeGreaterThan(0);

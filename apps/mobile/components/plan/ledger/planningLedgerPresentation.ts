@@ -1,5 +1,10 @@
 import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
 import type { PlanningLedger } from "@repo/core";
+import {
+  getTrainingStateSourceStatus,
+  type TrainingStateSourceStatus,
+  type TrainingStateVisualPoint,
+} from "@repo/ui/components/training-state-chart";
 
 export type MobileTrainingComposition =
   inferRouterOutputs<AppRouter>["trainingPlans"]["getPlanningLedger"]["trainingComposition"];
@@ -93,7 +98,10 @@ export type PlanningLedgerPresentation = {
     latestSource: "Recorded" | "Projected" | null;
     formDirection: "Falling" | "Rising" | "Stable";
     points: TrainingStatePointPresentation[];
+    sourceStatus: TrainingStateSourceStatus;
     summary: string;
+    timeZone: string;
+    unitLabel: string;
   };
 };
 
@@ -214,6 +222,21 @@ function buildState(ledger: PlanningLedger): PlanningLedgerPresentation["state"]
       projectedForm: stateValue(point.planned?.form),
     };
   });
+  const visualPoints: TrainingStateVisualPoint[] = points.map((point) => ({
+    date: point.date,
+    index: point.index,
+    projected: {
+      fatigue: point.projectedFatigue,
+      fitness: point.projectedFitness,
+      form: point.projectedForm,
+    },
+    recorded: {
+      fatigue: point.actualFatigue,
+      fitness: point.actualFitness,
+      form: point.actualForm,
+    },
+  }));
+  const sourceStatus = getTrainingStateSourceStatus(visualPoints);
   const latest = [...points]
     .reverse()
     .find((point) =>
@@ -268,7 +291,16 @@ function buildState(ledger: PlanningLedger): PlanningLedgerPresentation["state"]
     latestSource,
     formDirection: direction("form"),
     points,
-    summary: `Training state from ${range}. ${latestSource ?? "Latest"} fitness ${latestFitnessLabel}, fatigue ${latestFatigueLabel}, form ${latestFormLabel}. Recorded and projected segments are shown separately.`,
+    sourceStatus,
+    summary: `Training state from ${range} in ${ledger.planningTimezone ?? "UTC"}. Values are Common Load points. ${latestSource ?? "Latest"} fitness ${latestFitnessLabel}, fatigue ${latestFatigueLabel}, form ${latestFormLabel}. ${
+      sourceStatus === "mixed"
+        ? "Recorded and projected segments are shown separately."
+        : sourceStatus === "unavailable"
+          ? "No training-state values are available."
+          : `Values are ${sourceStatus}.`
+    }`,
+    timeZone: ledger.planningTimezone ?? "UTC",
+    unitLabel: "Common Load points",
   };
 }
 
