@@ -59,6 +59,21 @@ test("CLI accepts only named profile and changed-path options", () => {
   assert.throws(() => parseArguments(["--changed-paths"]), /at least one path/);
 });
 
+test("database and full profiles run the complete CI live-database matrix", async () => {
+  for (const profile of ["db", "full"]) {
+    const plan = createProfilePlan({ profile, includeStatic: false });
+    const databaseCommands = plan.commands.filter((entry) => entry.args.includes("test:live-db"));
+    assert.deepEqual(databaseCommands, [
+      { command: "pnpm", args: ["--filter", "@repo/api", "test:live-db"] },
+    ]);
+  }
+  const workflow = await readFile(
+    path.resolve(import.meta.dirname, "../../.github/workflows/ci.yml"),
+    "utf8",
+  );
+  assert.match(workflow, /run: pnpm --filter @repo\/api test:live-db\s*\n/);
+});
+
 test("normal quality, pre-push, and CI use focused owner checks", async () => {
   const root = path.resolve(import.meta.dirname, "../..");
   const [manifestSource, lefthook, workflow] = await Promise.all([

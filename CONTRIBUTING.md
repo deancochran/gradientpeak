@@ -94,3 +94,10 @@ the Cloudflare Tunnel for `https://dev.gradientpeak.com`, so provider callbacks 
 
 CI additionally verifies generated artifacts, Maestro syntax, live database behavior, and the
 production build. It is the final integration signal, not the first command a new contributor runs.
+
+The `db` and `full` quality profiles run the same complete API live-database matrix as CI.
+`pnpm --filter @repo/api test:live-db` creates a fresh, uniquely named database on the verified
+repository-managed local PostgreSQL host and removes it afterward; it does not use an ambient
+application database URL. Append a test path for a focused iteration. No matching tests and interrupted
+runs fail rather than passing; normal completion, test failure, SIGINT and SIGTERM clean up the owned
+target. SIGKILL or host failure still requires inspection of the exact run-owned resources.
