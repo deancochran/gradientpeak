@@ -61,8 +61,10 @@ function OrganizationGroupDetailPage() {
   if (childForbidden)
     return (
       <section>
-        <h1 className="text-3xl font-semibold tracking-tight text-white">Group access required</h1>
-        <p className="mt-2 text-sm text-slate-400">
+        <h1 className="text-3xl font-semibold tracking-tight text-foreground">
+          Group access required
+        </h1>
+        <p className="mt-2 text-sm text-muted-foreground">
           Your access changed. Group details and assignments are no longer shown.
         </p>
       </section>
@@ -78,14 +80,14 @@ function OrganizationGroupDetailPage() {
         <Link
           to="/organizations/$organizationId/groups/$groupId/coaches"
           params={{ organizationId, groupId }}
-          className="text-sm text-cyan-300 hover:text-cyan-200"
+          className="text-sm text-primary hover:text-primary"
         >
           Manage group coaches
         </Link>
         <Link
           to="/organizations/$organizationId/groups/$groupId/athletes"
           params={{ organizationId, groupId }}
-          className="text-sm text-cyan-300 hover:text-cyan-200"
+          className="text-sm text-primary hover:text-primary"
         >
           Manage group athletes
         </Link>

@@ -7,9 +7,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
+import { SearchField } from "@repo/ui/components/search-field";
 import { Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { Search } from "lucide-react";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 
 import { OrganizationCoachingAssignments } from "./organization-coaching-assignments";
 
@@ -48,7 +49,6 @@ export function AssignmentDirectory({
   const [selected, setSelected] = useState<Athlete | null>(null);
   const [accessLost, setAccessLost] = useState(false);
   const [refreshState, setRefreshState] = useState<"idle" | "loading" | "error">("idle");
-  const searchInput = useRef<HTMLInputElement>(null);
   useEffect(() => setQuery(search ?? ""), [search]);
 
   const visibleAthletes = useMemo(() => {
@@ -88,12 +88,14 @@ export function AssignmentDirectory({
   }
 
   function focusAthleteSearch() {
-    searchInput.current?.focus();
+    document
+      .querySelector<HTMLInputElement>('[aria-label="Search athletes on this page"]')
+      ?.focus();
   }
 
   if (accessLost)
     return (
-      <p role="alert" className="text-sm text-red-300">
+      <p role="alert" className="text-sm text-destructive">
         Your assignment-management access changed. Athlete and assignment details are no longer
         shown.
       </p>
@@ -123,28 +125,30 @@ export function AssignmentDirectory({
     <div className="space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div className="space-y-2">
-          <p className="text-sm font-medium uppercase tracking-[0.18em] text-cyan-300">
+          <p className="text-sm font-medium uppercase tracking-[0.18em] text-primary">
             Administration
           </p>
-          <h1 className="text-3xl font-semibold tracking-tight text-white">Coach assignments</h1>
-          <p className="max-w-3xl text-sm leading-6 text-slate-400">
+          <h1 className="text-3xl font-semibold tracking-tight text-foreground">
+            Coach assignments
+          </h1>
+          <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
             Primary coaches and supporting responsibility. Temporary coverage and handovers are
             unavailable in this directory.
           </p>
         </div>
         <Button
           type="button"
-          className="bg-cyan-400 text-slate-950 hover:bg-cyan-300"
+          className="bg-primary text-primary-foreground hover:bg-primary/90"
           onClick={focusAthleteSearch}
         >
           Find an athlete to assign
         </Button>
       </header>
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,0.38fr)]">
-        <Card className="@container min-w-0 border-slate-800 bg-slate-900 text-slate-50">
+        <Card className="@container min-w-0 border-border bg-card text-foreground">
           <CardHeader>
             <CardTitle>Assignment directory</CardTitle>
-            <CardDescription className="text-slate-400">
+            <CardDescription className="text-muted-foreground">
               {primary === "unassigned"
                 ? "Showing athletes without a current primary coach. Supporting responsibility alone does not satisfy this filter."
                 : "Choose an athlete to view or change their direct coaching responsibility."}
@@ -153,16 +157,12 @@ export function AssignmentDirectory({
           <CardContent className="space-y-4">
             <form onSubmit={applySearch} className="flex flex-wrap gap-2">
               <div className="min-w-52 flex-1">
-                <label className="sr-only" htmlFor="assignment-athlete-search">
-                  Search athletes on this page
-                </label>
-                <input
-                  ref={searchInput}
-                  id="assignment-athlete-search"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
+                <SearchField
+                  accessibilityLabel="Search athletes on this page"
+                  className="w-full"
+                  onValueChange={setQuery}
                   placeholder="Search this loaded page by athlete name"
-                  className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white placeholder:text-slate-500"
+                  value={query}
                 />
               </div>
               <label className="sr-only" htmlFor="assignment-primary-filter">
@@ -172,7 +172,7 @@ export function AssignmentDirectory({
                 id="assignment-primary-filter"
                 name="primary"
                 defaultValue={primary ?? "all"}
-                className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+                className="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
               >
                 <option value="all">All primary states</option>
                 <option value="unassigned">Unassigned primary</option>
@@ -184,27 +184,32 @@ export function AssignmentDirectory({
                 id="assignment-status-filter"
                 name="status"
                 defaultValue={status ?? "all"}
-                className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+                className="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
               >
                 <option value="all">All athlete states</option>
                 <option value="active">Active athletes</option>
                 <option value="paused">Paused athletes</option>
               </select>
-              <Button type="submit" className="bg-cyan-400 text-slate-950 hover:bg-cyan-300">
+              <Button
+                type="submit"
+                className="bg-primary text-primary-foreground hover:bg-primary/90"
+              >
                 <Search className="mr-2 h-4 w-4" />
                 Apply filters
               </Button>
             </form>
             {visibleAthletes.length === 0 ? (
-              <p className="text-sm text-slate-400">No athletes on this page match this search.</p>
+              <p className="text-sm text-muted-foreground">
+                No athletes on this page match this search.
+              </p>
             ) : (
               <ul
                 aria-label="Athlete coach assignments"
-                className="divide-y divide-slate-700 border-y border-slate-700"
+                className="divide-y divide-border border-y border-border"
               >
                 <li
                   aria-hidden="true"
-                  className="hidden grid-cols-[minmax(10rem,1.2fr)_minmax(9rem,1fr)_minmax(9rem,1fr)_minmax(8rem,0.8fr)_9rem] gap-3 px-3 py-2 text-xs font-medium uppercase tracking-wide text-slate-400 @min-[54rem]:grid"
+                  className="hidden grid-cols-[minmax(10rem,1.2fr)_minmax(9rem,1fr)_minmax(9rem,1fr)_minmax(8rem,0.8fr)_9rem] gap-3 px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground @min-[54rem]:grid"
                 >
                   <span>Athlete</span>
                   <span>Primary coach</span>
@@ -220,10 +225,12 @@ export function AssignmentDirectory({
                     <div className="min-w-0 space-y-1 break-words">
                       <p className="font-medium">{identityName(athlete)}</p>
                       {athlete.identity.username ? (
-                        <p className="text-sm text-slate-400">@{athlete.identity.username}</p>
+                        <p className="text-sm text-muted-foreground">
+                          @{athlete.identity.username}
+                        </p>
                       ) : null}
                       {athlete.status === "paused" ? (
-                        <Badge className="border-slate-700 bg-slate-800 text-slate-300">
+                        <Badge className="border-border bg-muted text-muted-foreground">
                           Paused
                         </Badge>
                       ) : null}
@@ -243,17 +250,17 @@ export function AssignmentDirectory({
                       empty="No supporting coach"
                     />
                     <div className="space-y-1 text-sm">
-                      <p className="text-xs font-medium uppercase tracking-wide text-slate-400 @min-[54rem]:sr-only">
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground @min-[54rem]:sr-only">
                         Coverage
                       </p>
-                      <Badge className="border-slate-700 bg-slate-800 text-slate-300">
+                      <Badge className="border-border bg-muted text-muted-foreground">
                         Coverage unavailable
                       </Badge>
                     </div>
                     <Button
                       type="button"
                       variant="outline"
-                      className="border-slate-600 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
+                      className="border-border bg-card text-foreground hover:bg-muted hover:text-foreground"
                       onClick={() => setSelected(athlete)}
                     >
                       Manage coaches
@@ -272,7 +279,7 @@ export function AssignmentDirectory({
                   primary: primary ?? undefined,
                   status: status ?? undefined,
                 }}
-                className="inline-block text-sm text-cyan-300 hover:text-cyan-100"
+                className="inline-block text-sm text-primary hover:text-primary"
               >
                 Next page of athletes
               </Link>
@@ -280,24 +287,24 @@ export function AssignmentDirectory({
           </CardContent>
         </Card>
         <aside className="space-y-4" aria-label="Assignment scope and guidance">
-          <Card className="border-slate-700 bg-slate-900 text-slate-50">
+          <Card className="border-border bg-card text-foreground">
             <CardHeader>
-              <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
+              <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
                 Organization scope
               </p>
               <CardTitle className="text-base">Authorized assignment directory</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm leading-6 text-slate-400">
+              <p className="text-sm leading-6 text-muted-foreground">
                 This directory only shows athletes and eligible coaches within your authorized
                 organization scope. It does not grant billing, consent, or private training access.
               </p>
             </CardContent>
           </Card>
-          <Card className="border-slate-700 bg-slate-900 text-slate-50">
+          <Card className="border-border bg-card text-foreground">
             <CardHeader>
               <CardTitle className="text-base">Next useful action</CardTitle>
-              <CardDescription className="text-slate-400">
+              <CardDescription className="text-muted-foreground">
                 Find the athlete whose primary responsibility needs review, then manage coaches from
                 their row.
               </CardDescription>
@@ -306,7 +313,7 @@ export function AssignmentDirectory({
               <Button
                 type="button"
                 variant="outline"
-                className="border-slate-600 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
+                className="border-border bg-card text-foreground hover:bg-muted hover:text-foreground"
                 onClick={focusAthleteSearch}
               >
                 Find an athlete to assign
@@ -330,7 +337,7 @@ function ResponsibilityColumn({
 }) {
   return (
     <div className="min-w-0 space-y-1 break-words text-sm">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-400 @min-[54rem]:sr-only">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground @min-[54rem]:sr-only">
         {label}
       </p>
       {assignments.length ? (
@@ -338,14 +345,14 @@ function ResponsibilityColumn({
           <Fragment key={assignment.assignmentId}>
             <p>{assignment.coachName}</p>
             {assignment.coachMembershipStatus !== "active" ? (
-              <Badge className="border-amber-800 bg-amber-950 capitalize text-amber-200">
+              <Badge className="border-warning/40 bg-warning/10 capitalize text-warning">
                 Coach {assignment.coachMembershipStatus}
               </Badge>
             ) : null}
           </Fragment>
         ))
       ) : (
-        <Badge className="border-amber-800 bg-amber-950 text-amber-200">{empty}</Badge>
+        <Badge className="border-warning/40 bg-warning/10 text-warning">{empty}</Badge>
       )}
     </div>
   );

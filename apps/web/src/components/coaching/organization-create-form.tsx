@@ -264,7 +264,7 @@ export function OrganizationCreateForm() {
             </FormItem>
           )}
         />
-        <div className="[&_button]:border-slate-700 [&_button]:bg-slate-950 [&_button]:text-slate-100 [&_button:hover]:bg-slate-800 [&_button:hover]:text-white">
+        <div className="[&_button]:border-border [&_button]:bg-background [&_button]:text-foreground [&_button:hover]:bg-muted [&_button:hover]:text-foreground">
           <FormTimezoneField
             control={form.control}
             deviceTimeZone={initialTimezone()}
@@ -274,13 +274,13 @@ export function OrganizationCreateForm() {
           />
         </div>
         {submissionError ? (
-          <p role="alert" className="text-sm text-red-200">
+          <p role="alert" className="text-sm text-destructive">
             {submissionError}
           </p>
         ) : null}
         {createdOrganizationId ? (
           <>
-            <p aria-live="polite" className="text-sm text-emerald-300" role="status">
+            <p aria-live="polite" className="text-sm text-success" role="status">
               {isRecoveringNavigation
                 ? "Organization created. Opening its dashboard…"
                 : "Organization created. Its dashboard is ready to open."}

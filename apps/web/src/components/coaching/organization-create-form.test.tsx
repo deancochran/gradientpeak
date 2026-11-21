@@ -446,6 +446,6 @@ describe("OrganizationCreateForm", () => {
   it("keeps the time-zone control readable in the coaching dark shell", () => {
     const { container } = render(<OrganizationCreateForm />);
 
-    expect(container.querySelector('[class*="border-slate-700"]')).toBeTruthy();
+    expect(container.querySelector('[class*="border-border"]')).toBeTruthy();
   });
 });

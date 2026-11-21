@@ -7,9 +7,10 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@repo/ui/components/dialog";
+import { SearchField } from "@repo/ui/components/search-field";
 import { Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { loadAssignedCoachAthletes } from "../../../lib/coaching/athletes-server-functions";
 
 type Athlete = { profileId: string; displayName: string | null; username: string | null };
@@ -37,7 +38,6 @@ function Switcher({
   initialPage: Page;
 }) {
   const load = useServerFn(loadAssignedCoachAthletes);
-  const inputId = useId();
   const version = useRef(0);
   const alive = useRef(true);
   const [open, setOpen] = useState(false);
@@ -73,16 +73,16 @@ function Switcher({
     }
   }
   return (
-    <section className="rounded-xl border border-cyan-900/90 bg-slate-900/95 px-5 py-4 shadow-[0_0_0_1px_rgba(34,211,238,0.04)] sm:flex sm:items-end sm:justify-between sm:gap-6">
+    <section className="rounded-xl border border-primary/30 bg-card/95 px-5 py-4 shadow-[0_0_0_1px_rgba(34,211,238,0.04)] sm:flex sm:items-end sm:justify-between sm:gap-6">
       <div className="min-w-0">
-        <p className="text-xs font-medium uppercase tracking-[0.18em] text-cyan-300">
+        <p className="text-xs font-medium uppercase tracking-[0.18em] text-primary">
           Selected athlete
         </p>
-        <h1 className="mt-1 truncate text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+        <h1 className="mt-1 truncate text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
           {selectedAthlete?.displayName ?? selectedAthlete?.username ?? "Athlete unavailable"}
         </h1>
         {selectedAthlete?.username ? (
-          <p className="text-sm text-slate-400">@{selectedAthlete.username}</p>
+          <p className="text-sm text-muted-foreground">@{selectedAthlete.username}</p>
         ) : null}
       </div>
       <Dialog open={open} onOpenChange={setOpen}>
@@ -90,15 +90,15 @@ function Switcher({
           <Button
             type="button"
             variant="outline"
-            className="mt-4 border-slate-600 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white focus-visible:ring-cyan-300 disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500 sm:mt-0"
+            className="mt-4 border-border bg-card text-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring disabled:border-border disabled:bg-muted disabled:text-muted-foreground sm:mt-0"
           >
             Switch athlete ▾
           </Button>
         </DialogTrigger>
-        <DialogContent className="max-h-[85dvh] grid-cols-1 overflow-y-auto border-slate-700 bg-slate-950 text-slate-100">
+        <DialogContent className="max-h-[85dvh] grid-cols-1 overflow-y-auto border-border bg-background text-foreground">
           <DialogHeader>
-            <DialogTitle className="text-white">Switch athlete</DialogTitle>
-            <DialogDescription className="text-slate-300">
+            <DialogTitle className="text-foreground">Switch athlete</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
               Search athletes assigned to you in this organization. Selection does not change their
               sharing permissions.
             </DialogDescription>
@@ -110,20 +110,19 @@ function Switcher({
               void search(null, query.trim());
             }}
           >
-            <label className="sr-only" htmlFor={inputId}>
-              Search assigned athletes
-            </label>
-            <input
-              id={inputId}
-              value={query}
+            <SearchField
+              accessibilityLabel="Search assigned athletes"
+              className="min-w-0 flex-1"
               maxLength={120}
-              onChange={(event) => setQuery(event.target.value)}
-              className="min-w-0 flex-1 rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-400 focus-visible:border-cyan-300 focus-visible:ring-2 focus-visible:ring-cyan-300"
+              onSubmit={() => void search(null, query.trim())}
+              onValueChange={setQuery}
+              placeholder="Search assigned athletes"
+              value={query}
             />
             <Button
               type="submit"
               disabled={loading}
-              className="border border-slate-600 bg-slate-800 text-slate-100 hover:bg-slate-700 hover:text-white focus-visible:ring-cyan-300 disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500"
+              className="border border-border bg-muted text-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring disabled:border-border disabled:bg-muted disabled:text-muted-foreground"
             >
               {error ? "Retry search" : "Search"}
             </Button>
@@ -145,7 +144,7 @@ function Switcher({
                         params={{ organizationId, athleteId: athlete.profileId }}
                         onClick={() => setOpen(false)}
                         aria-current={athlete.profileId === athleteId ? "page" : undefined}
-                        className="block rounded border border-transparent bg-slate-900 px-3 py-3 text-slate-100 hover:border-slate-600 hover:bg-slate-800 hover:text-white focus-visible:border-cyan-300 focus-visible:bg-slate-800 focus-visible:text-white focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 aria-[current=page]:border-cyan-500 aria-[current=page]:bg-slate-800 aria-[current=page]:text-white"
+                        className="block rounded border border-transparent bg-card px-3 py-3 text-foreground hover:border-border hover:bg-muted hover:text-foreground focus-visible:border-primary focus-visible:bg-muted focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background aria-[current=page]:border-primary aria-[current=page]:bg-muted aria-[current=page]:text-foreground"
                       >
                         {athlete.displayName ?? athlete.username ?? "Assigned athlete"}
                       </Link>
@@ -158,7 +157,7 @@ function Switcher({
                   type="button"
                   variant="outline"
                   onClick={() => void search(null, applied)}
-                  className="border-slate-600 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white focus-visible:ring-cyan-300 disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500"
+                  className="border-border bg-card text-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring disabled:border-border disabled:bg-muted disabled:text-muted-foreground"
                 >
                   First page
                 </Button>
@@ -168,7 +167,7 @@ function Switcher({
                     variant="outline"
                     disabled={query.trim() !== applied}
                     onClick={() => void search(page.nextCursor, applied)}
-                    className="border-slate-600 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white focus-visible:ring-cyan-300 disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500"
+                    className="border-border bg-card text-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring disabled:border-border disabled:bg-muted disabled:text-muted-foreground"
                   >
                     Next page
                   </Button>

@@ -25,19 +25,19 @@ export function OrganizationOverviewPending({ organizationId }: { organizationId
     <OrganizationOverviewFrame organizationId={organizationId}>
       <div aria-label="Loading organization overview" className="space-y-5" role="status">
         <div className="space-y-2">
-          <div className="h-4 w-72 animate-pulse rounded bg-slate-800" />
-          <div className="h-9 w-64 animate-pulse rounded bg-slate-800" />
-          <div className="h-4 w-80 animate-pulse rounded bg-slate-800" />
+          <div className="h-4 w-72 animate-pulse rounded bg-muted" />
+          <div className="h-9 w-64 animate-pulse rounded bg-muted" />
+          <div className="h-4 w-80 animate-pulse rounded bg-muted" />
         </div>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {["active-athletes", "active-staff", "unassigned", "coverage"].map((metric) => (
             <div
-              className="h-32 animate-pulse rounded-lg border border-slate-700 bg-slate-900"
+              className="h-32 animate-pulse rounded-lg border border-border bg-card"
               key={metric}
             />
           ))}
         </div>
-        <div className="h-56 animate-pulse rounded-lg border border-slate-700 bg-slate-900" />
+        <div className="h-56 animate-pulse rounded-lg border border-border bg-card" />
         <span className="sr-only">Loading organization overview…</span>
       </div>
     </OrganizationOverviewFrame>
@@ -61,18 +61,18 @@ export function OrganizationOverviewError({ organizationId }: { organizationId: 
 
   return (
     <OrganizationOverviewFrame organizationId={organizationId}>
-      <Card className="mx-auto max-w-2xl border-slate-700 bg-slate-900 text-slate-50">
+      <Card className="mx-auto max-w-2xl border-border bg-card text-foreground">
         <CardContent className="space-y-4 py-6">
           <div className="space-y-1">
             <h1 className="text-xl font-semibold">Organization overview unavailable</h1>
-            <p role="alert" className="text-sm text-slate-400">
+            <p role="alert" className="text-sm text-muted-foreground">
               We could not load the organization overview. Please try again.
             </p>
           </div>
           <Button
             disabled={retrying}
             onClick={() => void retry()}
-            className="bg-cyan-400 text-slate-950 hover:bg-cyan-300"
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
           >
             {retrying ? "Retrying organization overview…" : "Retry organization overview"}
           </Button>
@@ -101,9 +101,9 @@ function OrganizationAdministrationNavigation({
   activeTab: OrganizationAdministrationTab;
 }) {
   const navigationClassName =
-    "inline-flex shrink-0 rounded-md px-3 py-2 text-sm text-slate-300 hover:bg-slate-900 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2";
+    "inline-flex shrink-0 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-card hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2";
   const activeNavigationClassName =
-    "inline-flex shrink-0 rounded-md bg-slate-800 px-3 py-2 text-sm font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2";
+    "inline-flex shrink-0 rounded-md bg-muted px-3 py-2 text-sm font-medium text-foreground focus-visible:outline-2 focus-visible:outline-offset-2";
   const tabClassName = (tab: OrganizationAdministrationTab) =>
     activeTab === tab ? activeNavigationClassName : navigationClassName;
 

@@ -55,6 +55,33 @@ describe("CoachShell", () => {
       navigation.getByRole("link", { name: "Dashboard" }).getAttribute("aria-current"),
     ).toBeNull();
   });
+  it("shares the typed destination model between desktop and compact athlete navigation", () => {
+    location.pathname = "/organizations/11111111-1111-4111-8111-111111111111/athletes/athlete-1";
+    render(
+      <CoachShell
+        organization={{
+          id: "11111111-1111-4111-8111-111111111111",
+          name: "Summit Coaching",
+          slug: "summit-coaching",
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("navigation", { name: "Coaching navigation" })).toBeTruthy();
+    expect(screen.getAllByRole("link", { name: "Athletes" })[0]?.getAttribute("aria-current")).toBe(
+      "page",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open coaching navigation" }));
+    const mobileNavigation = within(
+      screen.getByRole("navigation", { name: "Mobile coaching navigation" }),
+    );
+    expect(
+      mobileNavigation.getByRole("link", { name: "Athletes" }).getAttribute("aria-current"),
+    ).toBe("page");
+    expect(
+      mobileNavigation.getByRole("link", { name: "Assignments" }).getAttribute("aria-current"),
+    ).toBeNull();
+  });
   it("uses coaching-specific identity and navigation instead of the standard profile shell", () => {
     render(
       <CoachShell

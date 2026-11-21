@@ -222,17 +222,17 @@ function AdministrativeAthleteRosterContents({
   return (
     <div className="space-y-6">
       <header className="space-y-2">
-        <p className="text-sm font-medium uppercase tracking-[0.18em] text-cyan-300">
+        <p className="text-sm font-medium uppercase tracking-[0.18em] text-primary">
           Administration
         </p>
-        <h1 className="text-3xl font-semibold tracking-tight text-white">Athlete roster</h1>
-        <p className="max-w-3xl text-sm leading-6 text-slate-400">
+        <h1 className="text-3xl font-semibold tracking-tight text-foreground">Athlete roster</h1>
+        <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
           Identity and engagement status only. This roster does not provide access to private
           athlete training.
         </p>
       </header>
       {saveNotice ? (
-        <p className="text-sm text-emerald-300" role="status">
+        <p className="text-sm text-success" role="status">
           {saveNotice}
         </p>
       ) : null}
@@ -241,17 +241,17 @@ function AdministrativeAthleteRosterContents({
           {loadError}
         </p>
       ) : null}
-      <Card className="border-slate-800 bg-slate-900 text-slate-50">
+      <Card className="border-border bg-card text-foreground">
         <CardHeader>
           <CardTitle>Enrolled athletes</CardTitle>
-          <CardDescription className="text-slate-400">
+          <CardDescription className="text-muted-foreground">
             Paused engagements remain visible. Pause and resume are unavailable here; ending an
             engagement remains subject to server authorization.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {page.items.length === 0 ? (
-            <p className="text-sm text-slate-400">No athlete engagements are listed.</p>
+            <p className="text-sm text-muted-foreground">No athlete engagements are listed.</p>
           ) : (
             <ul aria-label="Athletes" className="space-y-3">
               {page.items.map((athlete) => (
@@ -262,11 +262,13 @@ function AdministrativeAthleteRosterContents({
                   <span>
                     <span className="block font-medium">{identityName(athlete)}</span>
                     {athlete.identity.username ? (
-                      <span className="text-sm text-slate-400">@{athlete.identity.username}</span>
+                      <span className="text-sm text-muted-foreground">
+                        @{athlete.identity.username}
+                      </span>
                     ) : null}
                   </span>
                   <span className="flex items-center gap-2">
-                    <Badge className="border-slate-700 bg-slate-800 capitalize text-slate-200">
+                    <Badge className="border-border bg-muted capitalize text-foreground">
                       {athlete.status}
                     </Badge>
                     <Button
@@ -343,10 +345,10 @@ function AdministrativeAthleteRosterContents({
         />
       ) : null}
       {selected && !managingResponsibilitiesFor ? (
-        <Card className="border-destructive bg-slate-950 text-slate-50">
+        <Card className="border-destructive bg-background text-foreground">
           <CardHeader>
             <CardTitle>End engagement with {identityName(selected)}</CardTitle>
-            <CardDescription className="text-slate-400">
+            <CardDescription className="text-muted-foreground">
               This destructive administrative action ends the selected athlete’s engagement. It does
               not grant access to training data.
             </CardDescription>
@@ -405,8 +407,10 @@ function AdministrativeAthleteRosterContents({
 function RosterAccessLost() {
   return (
     <div>
-      <h1 className="text-3xl font-semibold tracking-tight text-white">Coaching access required</h1>
-      <p className="mt-2 text-sm text-slate-400">
+      <h1 className="text-3xl font-semibold tracking-tight text-foreground">
+        Coaching access required
+      </h1>
+      <p className="mt-2 text-sm text-muted-foreground">
         Your access to this organization changed. Athlete information is no longer shown.
       </p>
     </div>

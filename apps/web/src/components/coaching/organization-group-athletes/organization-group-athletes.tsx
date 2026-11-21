@@ -29,7 +29,11 @@ type InitialPage = { links: Page<Link>; candidates: Page<Athlete> };
 
 export function OrganizationGroupAthletesPending() {
   return (
-    <p aria-label="Loading athlete assignments" role="status" className="text-sm text-slate-400">
+    <p
+      aria-label="Loading athlete assignments"
+      role="status"
+      className="text-sm text-muted-foreground"
+    >
       Loading athlete assignments…
     </p>
   );
@@ -49,7 +53,7 @@ export function OrganizationGroupAthletesError() {
   }
   return (
     <div className="space-y-3">
-      <p role="alert" className="text-sm text-red-300">
+      <p role="alert" className="text-sm text-destructive">
         We could not load athlete assignments.
       </p>
       <Button disabled={retrying} onClick={() => void retry()} type="button">
@@ -308,21 +312,24 @@ export function OrganizationGroupAthletes({
   return (
     <section aria-labelledby="group-athletes-heading" className="space-y-4">
       <header>
-        <h2 className="text-xl font-semibold tracking-tight text-white" id="group-athletes-heading">
+        <h2
+          className="text-xl font-semibold tracking-tight text-foreground"
+          id="group-athletes-heading"
+        >
           Athletes
         </h2>
-        <p className="mt-1 text-sm text-slate-400">
+        <p className="mt-1 text-sm text-muted-foreground">
           Assign active organization athletes. This view shows identity and engagement metadata
           only.
         </p>
       </header>
       {notice ? (
-        <p className="text-sm text-emerald-300" role="status">
+        <p className="text-sm text-success" role="status">
           {notice}
         </p>
       ) : null}
       {addReceipt.current ? (
-        <p className="text-sm text-amber-300" role="status">
+        <p className="text-sm text-warning" role="status">
           Assignment confirmed; not in the loaded page. Reconcile this assignment before adding
           another athlete.
         </p>
@@ -332,10 +339,10 @@ export function OrganizationGroupAthletes({
           {error}
         </p>
       ) : null}
-      <Card className="border-slate-800 bg-slate-900 text-slate-50">
+      <Card className="border-border bg-card text-foreground">
         <CardHeader>
           <CardTitle>Assign an athlete</CardTitle>
-          <CardDescription className="text-slate-400">
+          <CardDescription className="text-muted-foreground">
             Paused and already assigned engagements are unavailable.
           </CardDescription>
         </CardHeader>
@@ -344,7 +351,7 @@ export function OrganizationGroupAthletes({
             Eligible athlete
           </label>
           <select
-            className="w-full rounded-md border border-slate-700 bg-slate-950 p-2 text-sm"
+            className="w-full rounded-md border border-border bg-background p-2 text-sm"
             disabled={isWriting || addReceipt.current !== null}
             id="group-athlete-selection"
             onChange={(event) => setSelectedEngagementId(event.target.value)}
@@ -358,7 +365,7 @@ export function OrganizationGroupAthletes({
             ))}
           </select>
           {available.length === 0 ? (
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-muted-foreground">
               No eligible athletes are available on this page.
             </p>
           ) : null}
@@ -381,13 +388,13 @@ export function OrganizationGroupAthletes({
           ) : null}
         </CardContent>
       </Card>
-      <Card className="border-slate-800 bg-slate-900 text-slate-50">
+      <Card className="border-border bg-card text-foreground">
         <CardHeader>
           <CardTitle>Assigned athletes</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {links.items.length === 0 ? (
-            <p className="text-sm text-slate-400">No athletes are assigned to this group.</p>
+            <p className="text-sm text-muted-foreground">No athletes are assigned to this group.</p>
           ) : (
             <ul aria-label="Assigned athletes" className="space-y-2">
               {links.items.map((link) => (
@@ -426,10 +433,10 @@ export function OrganizationGroupAthletes({
         </CardContent>
       </Card>
       {removal ? (
-        <Card className="border-destructive bg-slate-950 text-slate-50">
+        <Card className="border-destructive bg-background text-foreground">
           <CardHeader>
             <CardTitle>Remove athlete?</CardTitle>
-            <CardDescription className="text-slate-400">
+            <CardDescription className="text-muted-foreground">
               This removes the athlete from this group, not from the organization.
             </CardDescription>
           </CardHeader>
@@ -475,8 +482,10 @@ function athleteLabel(athlete: Athlete) {
 function GroupAthleteAccessLost() {
   return (
     <section>
-      <h2 className="text-xl font-semibold tracking-tight text-white">Group access required</h2>
-      <p className="mt-1 text-sm text-slate-400">
+      <h2 className="text-xl font-semibold tracking-tight text-foreground">
+        Group access required
+      </h2>
+      <p className="mt-1 text-sm text-muted-foreground">
         Your access changed or this group is no longer active. Athlete assignments are no longer
         shown.
       </p>

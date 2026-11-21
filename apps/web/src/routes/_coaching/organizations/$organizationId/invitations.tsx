@@ -8,6 +8,7 @@ import {
   OrganizationInvitationsError,
   OrganizationInvitationsPending,
 } from "../../../../components/coaching/organization-invitations/organization-invitations";
+import { OrganizationOverviewFrame } from "../../../../components/coaching/organization-overview-frame";
 import { loadOrganizationInvitations } from "../../../../lib/coaching/organization-invitations-server-functions";
 
 const invitationSearchSchema = z.object({ cursor: z.string().min(1).max(512).optional() }).strict();
@@ -28,8 +29,8 @@ export const Route = createFileRoute("/_coaching/organizations/$organizationId/i
     }),
   }),
   pendingMs: 0,
-  pendingComponent: OrganizationInvitationsPending,
-  errorComponent: OrganizationInvitationsError,
+  pendingComponent: InvitationRoutePending,
+  errorComponent: InvitationRouteError,
   component: InvitationPage,
 });
 
@@ -49,12 +50,32 @@ function InvitationPage() {
     return <OrganizationInvitationsPending />;
   if (loaded.result.status === "forbidden") return <CoachAccessDenied />;
   return (
-    <OrganizationInvitations
-      organizationId={organizationId}
-      actorProfileId={actorProfileId}
-      canInviteAdministrators={loaded.result.canInviteAdministrators}
-      page={loaded.result.page}
-      {...(cursor === undefined ? {} : { cursor })}
-    />
+    <OrganizationOverviewFrame activeTab="invitations" organizationId={organizationId}>
+      <OrganizationInvitations
+        organizationId={organizationId}
+        actorProfileId={actorProfileId}
+        canInviteAdministrators={loaded.result.canInviteAdministrators}
+        page={loaded.result.page}
+        {...(cursor === undefined ? {} : { cursor })}
+      />
+    </OrganizationOverviewFrame>
+  );
+}
+
+function InvitationRoutePending() {
+  const { organizationId } = Route.useParams();
+  return (
+    <OrganizationOverviewFrame activeTab="invitations" organizationId={organizationId}>
+      <OrganizationInvitationsPending />
+    </OrganizationOverviewFrame>
+  );
+}
+
+function InvitationRouteError() {
+  const { organizationId } = Route.useParams();
+  return (
+    <OrganizationOverviewFrame activeTab="invitations" organizationId={organizationId}>
+      <OrganizationInvitationsError />
+    </OrganizationOverviewFrame>
   );
 }

@@ -55,15 +55,15 @@ it("keeps exact selected identity outside the first page, after filtering and fa
   );
   expect(screen.getByRole("heading", { name: selected.displayName })).toBeTruthy();
   const switcherButton = screen.getByRole("button", { name: /Switch athlete/ });
-  expect(switcherButton.className).toContain("bg-slate-900");
+  expect(switcherButton.className).toContain("bg-card");
   fireEvent.click(switcherButton);
-  expect(screen.getByRole("dialog").className).toContain("bg-slate-950");
-  expect(screen.getByLabelText("Search assigned athletes").className).toContain("bg-slate-900");
-  expect(screen.getByRole("button", { name: "Search" }).className).toContain("bg-slate-800");
-  expect(screen.getByRole("button", { name: "First page" }).className).toContain("bg-slate-900");
-  expect(screen.getByRole("link", { name: "Other athlete" }).className).toContain("bg-slate-900");
+  expect(screen.getByRole("dialog").className).toContain("bg-background");
+  expect(screen.getByLabelText("Search assigned athletes").className).toContain("bg-transparent");
+  expect(screen.getByRole("button", { name: "Search" }).className).toContain("bg-muted");
+  expect(screen.getByRole("button", { name: "First page" }).className).toContain("bg-card");
+  expect(screen.getByRole("link", { name: "Other athlete" }).className).toContain("bg-card");
   expect(screen.getByRole("link", { name: "Other athlete" }).className).toContain(
-    "focus-visible:ring-cyan-300",
+    "focus-visible:ring-ring",
   );
   fireEvent.change(screen.getByLabelText("Search assigned athletes"), {
     target: { value: "Unmatched" },

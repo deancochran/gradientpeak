@@ -16,7 +16,11 @@ type Group = { id: string; name: string; description: string | null; createdAt: 
 
 export function OrganizationGroupDetailPending() {
   return (
-    <p aria-label="Loading organization group" role="status" className="text-sm text-slate-400">
+    <p
+      aria-label="Loading organization group"
+      role="status"
+      className="text-sm text-muted-foreground"
+    >
       Loading organization group…
     </p>
   );
@@ -37,7 +41,7 @@ export function OrganizationGroupDetailError() {
   }
   return (
     <div className="space-y-3">
-      <p role="alert" className="text-sm text-red-300">
+      <p role="alert" className="text-sm text-destructive">
         Organization group could not be loaded. Retry the current organization group read.
       </p>
       <Button disabled={retrying} onClick={() => void retry()} type="button">
@@ -143,8 +147,10 @@ export function OrganizationGroupDetail({
   if (archived)
     return (
       <div className="space-y-4">
-        <h1 className="text-3xl font-semibold tracking-tight text-white">{group.name} archived</h1>
-        <p className="text-sm text-slate-400">
+        <h1 className="text-3xl font-semibold tracking-tight text-foreground">
+          {group.name} archived
+        </h1>
+        <p className="text-sm text-muted-foreground">
           The group has been archived. It will not return to the active groups list.
         </p>
         <Button asChild>
@@ -157,8 +163,10 @@ export function OrganizationGroupDetail({
   if (accessLost)
     return (
       <section>
-        <h1 className="text-3xl font-semibold tracking-tight text-white">Group access required</h1>
-        <p className="mt-2 text-sm text-slate-400">
+        <h1 className="text-3xl font-semibold tracking-tight text-foreground">
+          Group access required
+        </h1>
+        <p className="mt-2 text-sm text-muted-foreground">
           Your access changed. Group details and assignments are no longer shown.
         </p>
       </section>
@@ -182,24 +190,26 @@ export function OrganizationGroupDetail({
     >
       <div className="space-y-6">
         <Link
-          className="text-sm text-cyan-300 hover:text-cyan-200"
+          className="text-sm text-primary hover:text-primary"
           to="/organizations/$organizationId/groups"
           params={{ organizationId }}
         >
           ← All organization groups
         </Link>
         <header>
-          <h1 className="text-3xl font-semibold tracking-tight text-white">{group.name}</h1>
+          <h1 className="text-3xl font-semibold tracking-tight text-foreground">{group.name}</h1>
           {group.description ? (
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">{group.description}</p>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+              {group.description}
+            </p>
           ) : (
-            <p className="mt-2 text-sm text-slate-400">No description provided.</p>
+            <p className="mt-2 text-sm text-muted-foreground">No description provided.</p>
           )}
         </header>
-        <Card className="border-destructive bg-slate-950 text-slate-50">
+        <Card className="border-destructive bg-background text-foreground">
           <CardHeader>
             <CardTitle>Archive group</CardTitle>
-            <CardDescription className="text-slate-400">
+            <CardDescription className="text-muted-foreground">
               Archiving removes this group from active administration. Athlete and coach assignments
               are not edited here.
             </CardDescription>

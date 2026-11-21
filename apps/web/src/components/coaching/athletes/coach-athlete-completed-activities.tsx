@@ -81,7 +81,7 @@ export function CoachAthleteCompletedActivities({
   }, [noticeKey]);
   if (!actorProfileId)
     return (
-      <Card className="border-slate-800 bg-slate-900 text-slate-50">
+      <Card className="border-border bg-card text-foreground">
         <CardHeader>
           <CardTitle>Completed activities unavailable</CardTitle>
         </CardHeader>
@@ -89,10 +89,10 @@ export function CoachAthleteCompletedActivities({
     );
   if (result.status === "error")
     return (
-      <Card className="border-slate-800 bg-slate-900 text-slate-50">
+      <Card className="border-border bg-card text-foreground">
         <CardHeader>
           <CardTitle>Completed activities could not be loaded</CardTitle>
-          <CardDescription className="text-slate-400" role="alert">
+          <CardDescription className="text-muted-foreground" role="alert">
             A loading error occurred. This does not mean the athlete changed sharing permissions.
           </CardDescription>
         </CardHeader>
@@ -103,10 +103,10 @@ export function CoachAthleteCompletedActivities({
     );
   if (result.status === "forbidden" || accessRevoked)
     return (
-      <Card className="border-slate-800 bg-slate-900 text-slate-50">
+      <Card className="border-border bg-card text-foreground">
         <CardHeader>
           <CardTitle>Completed activities unavailable</CardTitle>
-          <CardDescription className="text-slate-400">
+          <CardDescription className="text-muted-foreground">
             Activity and calendar sharing are both required to review completed sessions.
           </CardDescription>
         </CardHeader>
@@ -157,13 +157,11 @@ export function CoachAthleteCompletedActivities({
     }
   }
   return (
-    <Card className="border-slate-800 bg-slate-900 text-slate-50">
+    <Card className="border-border bg-card text-foreground">
       <CardHeader>
-        <p className="text-xs font-medium uppercase tracking-[0.18em] text-cyan-300">
-          Review queue
-        </p>
+        <p className="text-xs font-medium uppercase tracking-[0.18em] text-primary">Review queue</p>
         <CardTitle>Completed activities</CardTitle>
-        <CardDescription className="text-slate-400">
+        <CardDescription className="text-muted-foreground">
           Linked completions awaiting your review. Opening this list does not mark anything
           reviewed.
         </CardDescription>
@@ -177,7 +175,7 @@ export function CoachAthleteCompletedActivities({
         {notice ? (
           <p
             aria-live="polite"
-            className="mb-3 text-sm text-cyan-100"
+            className="mb-3 text-sm text-primary"
             role={refreshFailed ? "alert" : "status"}
           >
             {notice}
@@ -202,9 +200,9 @@ export function CoachAthleteCompletedActivities({
         {items.length ? (
           <ul className="space-y-3" aria-label="Completed activities">
             {items.map((item) => (
-              <li className="rounded border border-slate-800 p-3" key={item.sessionId}>
+              <li className="rounded border border-border p-3" key={item.sessionId}>
                 <p className="font-medium">Completed session</p>
-                <p className="text-sm text-slate-400">
+                <p className="text-sm text-muted-foreground">
                   Planned {item.planningDate} · {details(item)}
                 </p>
                 <Button
@@ -218,7 +216,7 @@ export function CoachAthleteCompletedActivities({
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-slate-400">No completions waiting for review.</p>
+          <p className="text-sm text-muted-foreground">No completions waiting for review.</p>
         )}
       </CardContent>
     </Card>

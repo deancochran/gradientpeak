@@ -70,15 +70,15 @@ export function OrganizationAuditHistory({
         <Button
           type="button"
           variant="outline"
-          className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
+          className="border-border bg-card text-foreground hover:bg-muted hover:text-foreground"
           onClick={() => setSelected(null)}
         >
           Back to audit history
         </Button>
-        <Card className="border-slate-800 bg-slate-900 text-slate-50">
+        <Card className="border-border bg-card text-foreground">
           <CardHeader>
             <CardTitle>Audit event</CardTitle>
-            <CardDescription className="text-slate-400">
+            <CardDescription className="text-muted-foreground">
               Event metadata is shown below. Private content is never shown in audit history.
             </CardDescription>
           </CardHeader>
@@ -88,15 +88,15 @@ export function OrganizationAuditHistory({
             <Detail label="Action" value={selected.action} />
             <Detail label="Resource" value={resourceName(selected)} />
             {selected.details === "redacted" ? (
-              <p className="flex gap-2 rounded-md border border-amber-800 bg-amber-950/40 p-3 text-amber-100">
+              <p className="flex gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-warning">
                 <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0" />
                 Sensitive event details are restricted. You can see the action metadata but not
                 private content.
               </p>
             ) : (
-              <p className="text-slate-400">No additional safe event detail is recorded.</p>
+              <p className="text-muted-foreground">No additional safe event detail is recorded.</p>
             )}
-            <p className="text-slate-500">
+            <p className="text-muted-foreground">
               This record does not include a discrete outcome field. Audit history does not infer
               one.
             </p>
@@ -108,94 +108,99 @@ export function OrganizationAuditHistory({
   return (
     <div className="space-y-6">
       <header className="space-y-2">
-        <p className="text-sm font-medium uppercase tracking-[0.18em] text-cyan-300">
+        <p className="text-sm font-medium uppercase tracking-[0.18em] text-primary">
           Administration
         </p>
-        <h1 className="text-3xl font-semibold tracking-tight text-white">Audit history</h1>
-        <p className="max-w-3xl text-sm leading-6 text-slate-400">
+        <h1 className="text-3xl font-semibold tracking-tight text-foreground">Audit history</h1>
+        <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
           Review organization event metadata. Private message contents, credentials, health data,
           and arbitrary event details are not shown here.
         </p>
       </header>
       <form
         onSubmit={applyFilters}
-        className="grid gap-3 rounded-md border border-slate-800 bg-slate-900 p-4 md:grid-cols-5"
+        className="grid gap-3 rounded-md border border-border bg-card p-4 md:grid-cols-5"
       >
-        <label className="grid gap-1 text-sm text-slate-300">
+        <label className="grid gap-1 text-sm text-muted-foreground">
           Action
           <input
             value={action}
             onChange={(event) => setAction(event.target.value)}
             placeholder="e.g. organization.closed"
-            className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-white placeholder:text-slate-500"
+            className="rounded-md border border-border bg-background px-3 py-2 text-foreground placeholder:text-muted-foreground"
           />
         </label>
-        <label className="grid gap-1 text-sm text-slate-300">
+        <label className="grid gap-1 text-sm text-muted-foreground">
           Actor ID
           <input
             value={actorProfileId}
             onChange={(event) => setActorProfileId(event.target.value)}
             placeholder="Profile UUID"
-            className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-white placeholder:text-slate-500"
+            className="rounded-md border border-border bg-background px-3 py-2 text-foreground placeholder:text-muted-foreground"
           />
         </label>
-        <label className="grid gap-1 text-sm text-slate-300">
+        <label className="grid gap-1 text-sm text-muted-foreground">
           Resource type
           <input
             value={resourceType}
             onChange={(event) => setResourceType(event.target.value)}
             placeholder="e.g. organization_membership"
-            className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-white placeholder:text-slate-500"
+            className="rounded-md border border-border bg-background px-3 py-2 text-foreground placeholder:text-muted-foreground"
           />
         </label>
-        <label className="grid gap-1 text-sm text-slate-300">
+        <label className="grid gap-1 text-sm text-muted-foreground">
           Resource ID
           <input
             value={resourceId}
             onChange={(event) => setResourceId(event.target.value)}
             placeholder="Resource UUID"
-            className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-white placeholder:text-slate-500"
+            className="rounded-md border border-border bg-background px-3 py-2 text-foreground placeholder:text-muted-foreground"
           />
         </label>
-        <label className="grid gap-1 text-sm text-slate-300">
+        <label className="grid gap-1 text-sm text-muted-foreground">
           From (UTC)
           <input
             type="date"
             value={fromInclusive}
             onChange={(event) => setFromInclusive(event.target.value)}
-            className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-white"
+            className="rounded-md border border-border bg-background px-3 py-2 text-foreground"
           />
         </label>
-        <label className="grid gap-1 text-sm text-slate-300">
+        <label className="grid gap-1 text-sm text-muted-foreground">
           Through day (UTC)
           <input
             type="date"
             value={throughDayUtc}
             onChange={(event) => setThroughDayUtc(event.target.value)}
-            className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-white"
+            className="rounded-md border border-border bg-background px-3 py-2 text-foreground"
           />
         </label>
         <div className="flex items-end">
-          <Button type="submit" className="w-full bg-cyan-400 text-slate-950 hover:bg-cyan-300">
+          <Button
+            type="submit"
+            className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+          >
             <Filter className="mr-2 h-4 w-4" />
             Filter
           </Button>
         </div>
       </form>
-      <Card className="border-slate-800 bg-slate-900 text-slate-50">
+      <Card className="border-border bg-card text-foreground">
         <CardHeader>
           <CardTitle>Organization events</CardTitle>
-          <CardDescription className="text-slate-400">
+          <CardDescription className="text-muted-foreground">
             Export is unavailable until a separately authorized export capability exists.
           </CardDescription>
         </CardHeader>
         <CardContent>
           {page.items.length === 0 ? (
-            <p className="text-sm text-slate-400">No audit events match the current scope.</p>
+            <p className="text-sm text-muted-foreground">
+              No audit events match the current scope.
+            </p>
           ) : (
             <div className="min-w-0 md:overflow-x-auto">
               <table className="block w-full text-left text-sm md:table md:min-w-[42rem]">
-                <thead className="sr-only border-b border-slate-800 text-slate-400 md:not-sr-only md:table-header-group">
+                <thead className="sr-only border-b border-border text-muted-foreground md:not-sr-only md:table-header-group">
                   <tr>
                     <th className="p-3">When (UTC)</th>
                     <th className="p-3">Actor</th>
@@ -210,25 +215,25 @@ export function OrganizationAuditHistory({
                   {page.items.map((item) => (
                     <tr
                       key={item.eventId}
-                      className="block border-b border-slate-800 py-3 last:border-0 md:table-row md:py-0"
+                      className="block border-b border-border py-3 last:border-0 md:table-row md:py-0"
                     >
                       <td className="block px-3 py-1 md:table-cell md:p-3 md:whitespace-nowrap">
-                        <span className="text-slate-400 md:hidden">When (UTC): </span>
+                        <span className="text-muted-foreground md:hidden">When (UTC): </span>
                         {formatDate(item.occurredAt)}
                       </td>
                       <td className="block break-words px-3 py-1 md:table-cell md:p-3">
-                        <span className="text-slate-400 md:hidden">Actor: </span>
+                        <span className="text-muted-foreground md:hidden">Actor: </span>
                         {actorName(item)}
                       </td>
                       <td className="block break-all px-3 py-1 font-medium md:table-cell md:p-3">
-                        <span className="text-slate-400 md:hidden">Action: </span>
+                        <span className="text-muted-foreground md:hidden">Action: </span>
                         {item.action}
                       </td>
                       <td className="block break-all px-3 py-1 md:table-cell md:p-3">
-                        <span className="text-slate-400 md:hidden">Resource: </span>
+                        <span className="text-muted-foreground md:hidden">Resource: </span>
                         {resourceName(item)}{" "}
                         {item.details === "redacted" ? (
-                          <Badge className="ml-2 border-amber-800 bg-amber-950 text-amber-200">
+                          <Badge className="ml-2 border-warning/40 bg-warning/10 text-warning">
                             Details hidden
                           </Badge>
                         ) : null}
@@ -237,7 +242,7 @@ export function OrganizationAuditHistory({
                         <Button
                           type="button"
                           variant="outline"
-                          className="border-slate-700 bg-slate-950 text-slate-100 hover:bg-slate-800 hover:text-white"
+                          className="border-border bg-background text-foreground hover:bg-muted hover:text-foreground"
                           onClick={() => setSelected(item)}
                         >
                           View event
@@ -254,7 +259,7 @@ export function OrganizationAuditHistory({
               to="/organizations/$organizationId/audit"
               params={{ organizationId }}
               search={{ ...filters, cursor: page.nextCursor }}
-              className="mt-4 inline-block text-sm text-cyan-300 hover:text-cyan-100"
+              className="mt-4 inline-block text-sm text-primary hover:text-primary"
             >
               Next page of audit events
             </Link>
@@ -268,7 +273,7 @@ export function OrganizationAuditHistory({
 function Detail({ label, value }: { label: string; value: string }) {
   return (
     <p>
-      <span className="text-slate-400">{label}: </span>
+      <span className="text-muted-foreground">{label}: </span>
       {value}
     </p>
   );

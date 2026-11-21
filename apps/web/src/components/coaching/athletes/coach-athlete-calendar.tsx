@@ -178,12 +178,12 @@ export function CoachAthleteCalendar({
 
   if (displayedResult.status === "forbidden")
     return (
-      <Card className="border-slate-800 bg-slate-900 text-slate-50">
+      <Card className="border-border bg-card text-foreground">
         <CardHeader>
           <CardTitle>
             <h2>Planned sessions unavailable</h2>
           </CardTitle>
-          <CardDescription className="text-slate-400">
+          <CardDescription className="text-muted-foreground">
             Calendar sharing is not available for this athlete in the selected organization.
           </CardDescription>
         </CardHeader>
@@ -192,16 +192,16 @@ export function CoachAthleteCalendar({
 
   if (displayedResult.status === "error")
     return (
-      <Card className="border-slate-800 bg-slate-900 text-slate-50">
+      <Card className="border-border bg-card text-foreground">
         <CardHeader>
           <CardTitle>
             <h2>Planned sessions could not be loaded</h2>
           </CardTitle>
-          <CardDescription className="text-slate-400">
+          <CardDescription className="text-muted-foreground">
             The athlete overview is still available. Retry this calendar section.
           </CardDescription>
           <Button
-            className="border-slate-600 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white focus-visible:ring-cyan-300 disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500"
+            className="border-border bg-card text-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring disabled:border-border disabled:bg-muted disabled:text-muted-foreground"
             disabled={displayedLoading}
             onClick={() => request(displayedRange, null, false)}
             type="button"
@@ -213,19 +213,19 @@ export function CoachAthleteCalendar({
     );
 
   return (
-    <Card className="border-slate-800 bg-slate-900 text-slate-50">
+    <Card className="border-border bg-card text-foreground">
       <CardHeader>
-        <p className="text-xs font-medium uppercase tracking-[0.18em] text-cyan-300">Read-only</p>
+        <p className="text-xs font-medium uppercase tracking-[0.18em] text-primary">Read-only</p>
         <CardTitle>
           <h2>Planned sessions</h2>
         </CardTitle>
-        <CardDescription className="text-slate-400">
+        <CardDescription className="text-muted-foreground">
           {displayedRange.startDate} to {displayedRange.endDateExclusive} (exclusive). Date-only
           planning records, not the athlete’s full personal calendar or availability.
         </CardDescription>
         <div className="flex gap-2">
           <Button
-            className="border-slate-600 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white focus-visible:ring-cyan-300 disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500"
+            className="border-border bg-card text-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring disabled:border-border disabled:bg-muted disabled:text-muted-foreground"
             disabled={displayedLoading}
             onClick={() => request(shiftCalendarWeek(displayedRange, -1), null, false)}
             type="button"
@@ -234,7 +234,7 @@ export function CoachAthleteCalendar({
             Previous week
           </Button>
           <Button
-            className="border-slate-600 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white focus-visible:ring-cyan-300 disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500"
+            className="border-border bg-card text-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring disabled:border-border disabled:bg-muted disabled:text-muted-foreground"
             disabled={displayedLoading}
             onClick={() => request(shiftCalendarWeek(displayedRange, 1), null, false)}
             type="button"
@@ -250,11 +250,11 @@ export function CoachAthleteCalendar({
             aria-atomic="true"
             aria-live="assertive"
             role="alert"
-            className="mb-3 text-sm text-amber-200"
+            className="mb-3 text-sm text-warning"
           >
             Planned sessions could not be loaded.{" "}
             <Button
-              className="text-cyan-200 hover:text-cyan-100 focus-visible:ring-cyan-300 disabled:text-slate-400"
+              className="text-primary hover:text-primary focus-visible:ring-ring disabled:text-muted-foreground"
               onClick={() =>
                 request(failedRequest.range, failedRequest.cursor, Boolean(failedRequest.cursor))
               }
@@ -266,7 +266,7 @@ export function CoachAthleteCalendar({
           </div>
         ) : null}
         {displayedLoading ? (
-          <p aria-live="polite" role="status" className="mb-3 text-sm text-slate-400">
+          <p aria-live="polite" role="status" className="mb-3 text-sm text-muted-foreground">
             Loading planned sessions…
           </p>
         ) : null}
@@ -275,22 +275,24 @@ export function CoachAthleteCalendar({
             {displayedResult.projection.events.map((event) => (
               <li
                 key={event.eventId}
-                className="flex items-center justify-between rounded border border-slate-800 p-3"
+                className="flex items-center justify-between rounded border border-border p-3"
               >
                 <span>{event.planningDate}</span>
-                <span className="capitalize text-slate-300">{event.activityCategory}</span>
-                <Badge className="border-cyan-800 bg-cyan-950 text-cyan-200">{event.status}</Badge>
+                <span className="capitalize text-muted-foreground">{event.activityCategory}</span>
+                <Badge className="border-primary/30 bg-primary/10 text-primary">
+                  {event.status}
+                </Badge>
               </li>
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-muted-foreground">
             No planned sessions are shared in this range. This does not indicate availability.
           </p>
         )}
         {displayedResult.truncated && displayedResult.nextCursor ? (
           <Button
-            className="mt-3 border-slate-600 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white focus-visible:ring-cyan-300 disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500"
+            className="mt-3 border-border bg-card text-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring disabled:border-border disabled:bg-muted disabled:text-muted-foreground"
             disabled={displayedLoading}
             onClick={() => request(displayedRange, displayedResult.nextCursor, true)}
             type="button"

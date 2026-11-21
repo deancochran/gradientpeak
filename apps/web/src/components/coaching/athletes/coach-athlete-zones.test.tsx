@@ -76,9 +76,9 @@ describe("CoachAthleteZonesCard", () => {
     expect(screen.getByText(/Threshold unavailable/)).toBeTruthy();
     expect(screen.queryByText(/max hr|run|swim/i)).toBeNull();
     const card = screen.getByTestId("coach-athlete-zones");
-    expect(card.className).toContain("bg-slate-950");
-    expect(card.className).toContain("text-slate-50");
-    expect(screen.getByLabelText("Power").className).toContain("bg-slate-900");
+    expect(card.className).toContain("bg-background");
+    expect(card.className).toContain("text-foreground");
+    expect(screen.getByLabelText("Power").className).toContain("bg-card");
   });
 
   it("uses explicit unavailable publication copy when the canonical computation time is unknown", () => {
@@ -108,7 +108,7 @@ describe("CoachAthleteZonesCard", () => {
     expect(screen.queryByText("org-private")).toBeNull();
     expect(screen.queryByText("athlete-private")).toBeNull();
     expect(screen.queryByText("237.5")).toBeNull();
-    expect(screen.getByTestId("coach-athlete-zones").className).toContain("bg-slate-950");
+    expect(screen.getByTestId("coach-athlete-zones").className).toContain("bg-background");
   });
 
   it("shows a local error without retained values and deduplicates retry while pending", () => {
@@ -123,12 +123,12 @@ describe("CoachAthleteZonesCard", () => {
     );
     expect(screen.getByRole("alert").textContent).toContain("could not be loaded");
     expect(screen.queryByText("237.5")).toBeNull();
-    expect(screen.getByTestId("coach-athlete-zones").className).toContain("bg-slate-950");
+    expect(screen.getByTestId("coach-athlete-zones").className).toContain("bg-background");
     fireEvent.click(screen.getByRole("button", { name: "Retry bike zones" }));
     expect(retry).toHaveBeenCalledTimes(1);
     view.rerender(<CoachAthleteZonesCard identity={identity} result={null} retryPending />);
     expect(screen.getByText("Loading bike zones…")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Retry bike zones" })).toBeNull();
-    expect(screen.getByTestId("coach-athlete-zones").className).toContain("bg-slate-950");
+    expect(screen.getByTestId("coach-athlete-zones").className).toContain("bg-background");
   });
 });

@@ -37,13 +37,20 @@ export function OrganizationManagementOverview({
     <div className="space-y-4 sm:space-y-5">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="space-y-1.5">
-          <p className="text-sm text-slate-400">Organization administration / Service health</p>
-          <h1 className="text-3xl font-semibold tracking-tight text-white">
+          <p className="text-sm text-muted-foreground">
+            Organization administration / Service health
+          </p>
+          <h1 className="text-3xl font-semibold tracking-tight text-foreground">
             Organization overview
           </h1>
-          <p className="text-sm text-slate-400">Operational membership and assignment signals.</p>
+          <p className="text-sm text-muted-foreground">
+            Operational membership and assignment signals.
+          </p>
         </div>
-        <Button asChild className="w-full bg-cyan-400 text-slate-950 hover:bg-cyan-300 sm:w-auto">
+        <Button
+          asChild
+          className="w-full bg-primary text-primary-foreground hover:bg-primary/90 sm:w-auto"
+        >
           <Link
             to="/organizations/$organizationId/assignments"
             params={{ organizationId }}
@@ -89,27 +96,25 @@ export function OrganizationManagementOverview({
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
         <div className="space-y-4">
-          <Card className="border-slate-700 bg-slate-900 text-slate-50">
+          <Card className="border-border bg-card text-foreground">
             <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0 pb-3">
               <div className="space-y-1">
                 <CardTitle>
                   <h2>Needs an owner</h2>
                 </CardTitle>
-                <CardDescription className="text-slate-400">
+                <CardDescription className="text-muted-foreground">
                   Active athletes without a current primary coach.
                 </CardDescription>
               </div>
-              <Badge className="shrink-0 border-slate-700 bg-slate-800 text-slate-200">
-                Your scope
-              </Badge>
+              <Badge className="shrink-0 border-border bg-muted text-foreground">Your scope</Badge>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-slate-700 bg-slate-950/40 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-muted/40 p-4">
                 <div>
-                  <p className="text-2xl font-semibold tabular-nums text-white">
+                  <p className="text-2xl font-semibold tabular-nums text-foreground">
                     {activeEngagementsWithoutPrimary}
                   </p>
-                  <p className="text-sm text-slate-400">
+                  <p className="text-sm text-muted-foreground">
                     {activeEngagementsWithoutPrimary === 1
                       ? "athlete needs a primary coach"
                       : "athletes need a primary coach"}
@@ -118,7 +123,7 @@ export function OrganizationManagementOverview({
                 <Button
                   asChild
                   variant="outline"
-                  className="border-slate-600 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
+                  className="border-border bg-card text-foreground hover:bg-muted hover:text-foreground"
                 >
                   <Link
                     to="/organizations/$organizationId/assignments"
@@ -134,7 +139,7 @@ export function OrganizationManagementOverview({
                   </Link>
                 </Button>
               </div>
-              <p className="text-sm leading-6 text-slate-400">
+              <p className="text-sm leading-6 text-muted-foreground">
                 Supporting coaches do not satisfy this assignment gap. Select an athlete to review
                 and set their accountable primary coach.
               </p>
@@ -157,7 +162,7 @@ export function OrganizationManagementOverview({
             description="Organization task assignments are not available in this workspace yet."
           />
           {pausedEngagements > 0 ? (
-            <p className="px-1 text-sm text-slate-400">
+            <p className="px-1 text-sm text-muted-foreground">
               {pausedEngagements} paused athlete{" "}
               {pausedEngagements === 1 ? "engagement is" : "engagements are"} excluded from active
               assignment gaps.{" "}
@@ -165,7 +170,7 @@ export function OrganizationManagementOverview({
                 to="/organizations/$organizationId/assignments"
                 params={{ organizationId }}
                 search={{ status: "paused", primary: undefined, cursor: undefined, q: undefined }}
-                className="text-cyan-300 underline underline-offset-4 hover:text-cyan-100"
+                className="text-primary underline underline-offset-4 hover:text-primary"
               >
                 View paused athletes
               </Link>
@@ -181,22 +186,28 @@ function EmptyOrganizationOverview({ organizationId }: { organizationId: string 
   return (
     <div className="space-y-4 sm:space-y-5">
       <header className="space-y-1.5">
-        <p className="text-sm text-slate-400">Organization administration / Service health</p>
-        <h1 className="text-3xl font-semibold tracking-tight text-white">Organization overview</h1>
-        <p className="text-sm text-slate-400">Operational membership and assignment signals.</p>
+        <p className="text-sm text-muted-foreground">
+          Organization administration / Service health
+        </p>
+        <h1 className="text-3xl font-semibold tracking-tight text-foreground">
+          Organization overview
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          Operational membership and assignment signals.
+        </p>
       </header>
-      <Card className="mx-auto max-w-3xl border-slate-700 bg-slate-900 text-slate-50">
+      <Card className="mx-auto max-w-3xl border-border bg-card text-foreground">
         <CardHeader>
           <CardTitle>
             <h2>No active athletes yet</h2>
           </CardTitle>
-          <CardDescription className="leading-6 text-slate-400">
+          <CardDescription className="leading-6 text-muted-foreground">
             There are no active or paused athlete engagements in this organization. Invite an
             athlete or open assignments when someone is ready to join.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-3">
-          <Button asChild className="bg-cyan-400 text-slate-950 hover:bg-cyan-300">
+          <Button asChild className="bg-primary text-primary-foreground hover:bg-primary/90">
             <Link to="/organizations/$organizationId/invitations" params={{ organizationId }}>
               Invite athlete
             </Link>
@@ -204,7 +215,7 @@ function EmptyOrganizationOverview({ organizationId }: { organizationId: string 
           <Button
             asChild
             variant="outline"
-            className="border-slate-600 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
+            className="border-border bg-card text-foreground hover:bg-muted hover:text-foreground"
           >
             <Link
               to="/organizations/$organizationId/assignments"
@@ -236,9 +247,9 @@ function MetricCard({
   search?: Record<string, string | undefined>;
 }) {
   return (
-    <Card className="gap-0 border-slate-700 bg-slate-900 py-0 text-slate-50">
+    <Card className="gap-0 border-border bg-card py-0 text-foreground">
       <CardHeader className="gap-2 p-4 sm:p-5">
-        <CardDescription className="text-xs uppercase tracking-[0.12em] text-slate-400">
+        <CardDescription className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
           {label}
         </CardDescription>
         <CardTitle
@@ -248,7 +259,9 @@ function MetricCard({
         >
           {value}
         </CardTitle>
-        {description ? <p className="text-xs leading-5 text-slate-400">{description}</p> : null}
+        {description ? (
+          <p className="text-xs leading-5 text-muted-foreground">{description}</p>
+        ) : null}
       </CardHeader>
       {to && organizationId && search ? (
         <CardContent className="px-4 pb-4 pt-0 sm:px-5 sm:pb-5">
@@ -256,7 +269,7 @@ function MetricCard({
             asChild
             size="sm"
             variant="ghost"
-            className="h-auto px-0 text-cyan-300 hover:bg-transparent hover:text-cyan-100"
+            className="h-auto px-0 text-primary hover:bg-transparent hover:text-primary"
           >
             <Link
               to={to}
@@ -275,12 +288,12 @@ function MetricCard({
 
 function UnavailableCard({ title, description }: { title: string; description: string }) {
   return (
-    <Card className="border-slate-700 bg-slate-900 text-slate-50">
+    <Card className="border-border bg-card text-foreground">
       <CardHeader>
         <CardTitle>
           <h2>{title}</h2>
         </CardTitle>
-        <CardDescription className="leading-6 text-slate-400">{description}</CardDescription>
+        <CardDescription className="leading-6 text-muted-foreground">{description}</CardDescription>
       </CardHeader>
     </Card>
   );

@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 
 import { CoachAccessDenied } from "../../../../components/coaching/coach-access-denied";
+import { OrganizationOverviewFrame } from "../../../../components/coaching/organization-overview-frame";
 import {
   PAGE_SIZE,
   StaffRoster,
@@ -29,7 +30,7 @@ export const Route = createFileRoute("/_coaching/organizations/$organizationId/s
         cursor: deps.cursor,
       },
     }),
-  pendingComponent: StaffRosterPending,
+  pendingComponent: StaffRoutePending,
   errorComponent: StaffRouteError,
   component: StaffPage,
 });
@@ -40,17 +41,32 @@ function StaffPage() {
   const { organizationId } = Route.useParams();
   if (result.status === "forbidden") return <CoachAccessDenied />;
   return (
-    <StaffRoster
-      organizationId={organizationId}
-      page={result.page}
-      status={status}
-      {...(cursor === undefined ? {} : { cursor })}
-    />
+    <OrganizationOverviewFrame activeTab="staff" organizationId={organizationId}>
+      <StaffRoster
+        organizationId={organizationId}
+        page={result.page}
+        status={status}
+        {...(cursor === undefined ? {} : { cursor })}
+      />
+    </OrganizationOverviewFrame>
+  );
+}
+
+function StaffRoutePending() {
+  const { organizationId } = Route.useParams();
+  return (
+    <OrganizationOverviewFrame activeTab="staff" organizationId={organizationId}>
+      <StaffRosterPending />
+    </OrganizationOverviewFrame>
   );
 }
 
 function StaffRouteError() {
   const { organizationId } = Route.useParams();
   const { status = "active" } = Route.useSearch();
-  return <StaffRosterError organizationId={organizationId} status={status} />;
+  return (
+    <OrganizationOverviewFrame activeTab="staff" organizationId={organizationId}>
+      <StaffRosterError organizationId={organizationId} status={status} />
+    </OrganizationOverviewFrame>
+  );
 }
