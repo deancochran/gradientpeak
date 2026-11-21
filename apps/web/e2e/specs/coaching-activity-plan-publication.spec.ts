@@ -193,14 +193,17 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
   await coachPage.goto(`/organizations/${organizationId}/athletes/${athleteActor.profileId}`);
   await waitForAppHydration(coachPage);
   await expect(coachPage.getByText("Publish an activity plan", { exact: true })).toBeVisible();
-  await coachPage.getByLabel("Athlete planning date", { exact: true }).fill(planningDate);
   await coachPage.getByRole("button", { name: "Next week", exact: true }).click();
-  await expect(
-    coachPage.getByText(/Scheduled work in .* \(exclusive\)\. This selected range/i),
-  ).toBeVisible();
+  // Do not wait for the new range loader. A date edit while it is pending must
+  // compose with the live range URL, then survive library navigation and Back.
+  await expect(coachPage).toHaveURL(/calendarStartDate=/);
+  await coachPage.getByLabel("Athlete planning date", { exact: true }).fill(planningDate);
   await expect(coachPage.getByLabel("Athlete planning date", { exact: true })).toHaveValue(
     planningDate,
   );
+  await expect(
+    coachPage.getByRole("link", { name: "Prepare activity plan", exact: true }),
+  ).toBeVisible();
   await coachPage.getByRole("link", { name: "Prepare activity plan", exact: true }).click();
   await expect(coachPage.getByText("Preparing for an athlete", { exact: true })).toBeVisible();
   await coachPage.goBack();

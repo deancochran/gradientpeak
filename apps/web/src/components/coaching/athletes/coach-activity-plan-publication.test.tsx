@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   refreshSelectedPlan: vi.fn(),
   linkSearch: undefined as unknown,
   navigate: vi.fn(),
+  routerSearch: {} as Record<string, unknown>,
   selectedPlanQueryState: "ready" as "error" | "loading" | "missing" | "not-editable" | "ready",
   selectedPlan: {
     activityPlanRevision: 3,
@@ -92,6 +93,11 @@ vi.mock("../../../lib/api/client", () => ({
 }));
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => mocks.navigate,
+  useRouterState: ({
+    select,
+  }: {
+    select: (state: { location: { search: Record<string, unknown> } }) => unknown;
+  }) => select({ location: { search: mocks.routerSearch } }),
   Link: ({ children, search }: { children: React.ReactNode; search?: unknown }) => {
     mocks.linkSearch = search;
     return <a href="/activity-plans">{children}</a>;
@@ -108,6 +114,7 @@ afterEach(() => {
   mocks.refreshSelectedPlan.mockReset();
   mocks.linkSearch = undefined;
   mocks.navigate.mockReset();
+  mocks.routerSearch = {};
   mocks.selectedPlanQueryState = "ready";
   mocks.selectedPlan = {
     activityPlanRevision: 3,
@@ -326,19 +333,46 @@ describe("CoachActivityPlanPublication", () => {
       target: { value: "2026-11-23" },
     });
 
-    expect(mocks.navigate).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        params: {
-          athleteId: "22222222-2222-4222-8222-222222222222",
-          organizationId: "11111111-1111-4111-8111-111111111111",
-        },
-        replace: true,
-        search: expect.objectContaining({
-          planningDate: "2026-11-23",
-          returnTo: "athlete-workspace",
-        }),
-      }),
+    const navigation = mocks.navigate.mock.calls.at(-1)?.[0] as {
+      params: Record<string, string>;
+      replace: boolean;
+      search: (previous: Record<string, unknown>) => Record<string, unknown>;
+    };
+    expect(navigation.params).toEqual({
+      athleteId: "22222222-2222-4222-8222-222222222222",
+      organizationId: "11111111-1111-4111-8111-111111111111",
+    });
+    expect(navigation.replace).toBe(true);
+    expect(navigation.search({})).toMatchObject({
+      planningDate: "2026-11-23",
+      returnTo: "athlete-workspace",
+    });
+  });
+
+  it("preserves a live pending calendar range in date changes and the prepare link", () => {
+    mocks.routerSearch = { calendarStartDate: "2026-11-28" };
+    render(
+      <CoachActivityPlanPublication
+        athleteId="22222222-2222-4222-8222-222222222222"
+        organizationId="11111111-1111-4111-8111-111111111111"
+      />,
     );
+
+    fireEvent.change(screen.getByLabelText("Athlete planning date"), {
+      target: { value: "2026-11-23" },
+    });
+
+    const navigation = mocks.navigate.mock.calls.at(-1)?.[0] as {
+      search: (previous: Record<string, unknown>) => Record<string, unknown>;
+    };
+    expect(navigation.search({ calendarStartDate: "2026-11-28" })).toMatchObject({
+      calendarStartDate: "2026-11-28",
+      planningDate: "2026-11-23",
+    });
+    expect(mocks.linkSearch).toMatchObject({
+      calendarStartDate: "2026-11-28",
+      planningDate: "2026-11-23",
+    });
   });
 
   it("retains a newer blank date draft when a delayed local plan-selection URL update arrives", () => {

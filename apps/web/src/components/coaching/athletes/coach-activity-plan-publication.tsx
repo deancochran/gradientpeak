@@ -7,7 +7,7 @@ import {
   CardTitle,
 } from "@repo/ui/components/card";
 import { Label } from "@repo/ui/components/label";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { api } from "../../../lib/api/client";
 import {
@@ -60,6 +60,12 @@ export function CoachActivityPlanPublication({
   preparation?: ActivityPlanPreparationSearch | null;
 }) {
   const navigate = useNavigate();
+  const liveCalendarStartDate = useRouterState({
+    select: (state) =>
+      typeof state.location.search.calendarStartDate === "string"
+        ? state.location.search.calendarStartDate
+        : undefined,
+  });
   const organizations = api.organizations.listMine.useQuery({ cursor: null, limit: 50 });
   const activityPlans = api.activityPlans.list.useQuery({ limit: 50, ownerScope: "own" });
   const publish = api.coachingPublication.publish.useMutation({ retry: false });
@@ -133,11 +139,15 @@ export function CoachActivityPlanPublication({
     operationId.current = crypto.randomUUID();
   }
 
+  // A week transition updates the router location before its loader settles.
+  // Use that live URL anchor for both the next replacement and the outbound
+  // library link; the loader-owned prop may still describe the previous week.
+  const currentCalendarStartDate = liveCalendarStartDate ?? calendarStartDate;
   // The workspace can remain mounted when a coach changes dates. Always derive outbound
   // preparation from the current form state rather than reusing the arrival URL's old date.
   const preparationContext = parseActivityPlanPreparationContext({
     athleteId,
-    ...(calendarStartDate ? { calendarStartDate } : {}),
+    ...(currentCalendarStartDate ? { calendarStartDate: currentCalendarStartDate } : {}),
     organizationId,
     planningDate,
     returnTo: "athlete-workspace",
@@ -147,7 +157,7 @@ export function CoachActivityPlanPublication({
   function retainWorkspaceContext(next: { activityPlanId?: string; planningDate: string }) {
     const context = parseActivityPlanPreparationContext({
       athleteId,
-      ...(calendarStartDate ? { calendarStartDate } : {}),
+      ...(currentCalendarStartDate ? { calendarStartDate: currentCalendarStartDate } : {}),
       organizationId,
       planningDate: next.planningDate,
       returnTo: "athlete-workspace",
@@ -158,7 +168,10 @@ export function CoachActivityPlanPublication({
     void navigate({
       to: "/organizations/$organizationId/athletes/$athleteId",
       params: { athleteId, organizationId },
-      search: activityPlanPreparationSearch(context, next.activityPlanId),
+      search: ((previous: Record<string, unknown>) => ({
+        ...previous,
+        ...activityPlanPreparationSearch(context, next.activityPlanId),
+      })) as never,
       replace: true,
     } as never);
   }
