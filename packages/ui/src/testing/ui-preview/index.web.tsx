@@ -21,6 +21,7 @@ import {
   FormTextareaField,
   FormTextField,
 } from "../../components/form/index.web";
+import { IdentitySummary } from "../../components/identity-summary/index.web";
 import { Input } from "../../components/input/index.web";
 import { Label } from "../../components/label/index.web";
 import { ChartSkeleton, ListSkeleton } from "../../components/loading-skeletons/index.web";
@@ -87,6 +88,16 @@ function UiPreviewSurface() {
       </header>
 
       <section className="grid gap-6 lg:grid-cols-[minmax(0,360px)_1fr]">
+        <section
+          className="space-y-4"
+          data-testid={uiPreviewContract.scenarios.identitySummary.testId}
+        >
+          <ScenarioHeader
+            description={uiPreviewContract.scenarios.identitySummary.description}
+            title={uiPreviewContract.scenarios.identitySummary.title}
+          />
+          <IdentitySummary {...uiPreviewFixtures.identitySummary} />
+        </section>
         <section
           className="space-y-4"
           data-testid={uiPreviewContract.scenarios.accountControls.testId}

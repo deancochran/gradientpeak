@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./components/identity-summary": {
+      "react-native": "./src/components/identity-summary/index.native.tsx",
+      "default": "./src/components/identity-summary/index.web.tsx"
+    },
     "./components/disclosure": {
       "react-native": "./src/components/disclosure/index.native.tsx",
       "default": "./src/components/disclosure/index.web.tsx"

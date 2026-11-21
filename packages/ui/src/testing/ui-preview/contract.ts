@@ -5,6 +5,11 @@ export const uiPreviewContract = {
   mobileTitle: "Fixture-driven mobile preview",
   rootTestId: "ui-preview-surface",
   scenarios: {
+    identitySummary: {
+      description: "Shared identity hierarchy with supporting context and status.",
+      testId: "ui-preview-scenario-identity-summary",
+      title: "Identity summary",
+    },
     accountControls: {
       description: "A shared card with input and save action fixtures.",
       testId: "ui-preview-scenario-account-controls",
@@ -36,6 +41,7 @@ export const uiPreviewContract = {
 } as const;
 
 export const uiPreviewScenarios = [
+  uiPreviewContract.scenarios.identitySummary,
   uiPreviewContract.scenarios.accountControls,
   uiPreviewContract.scenarios.planTabs,
   uiPreviewContract.scenarios.feedbackStates,
@@ -54,6 +60,7 @@ export const uiPreviewFormFields = {
 
 /** Canonical runtime selectors included in the generated preview manifest. */
 export const uiPreviewScenarioSelectors = {
+  identitySummary: [],
   accountControls: ["profile-card", "auth-email", "settings-save"],
   feedbackStates: [],
   formFields: [

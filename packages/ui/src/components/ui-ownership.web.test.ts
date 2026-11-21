@@ -117,6 +117,8 @@ describe("UI ownership guardrails", () => {
       "coaching/organization-create-form.tsx",
       "coaching/organization-group-athletes/organization-group-athletes.tsx",
       "coaching/organization-group-coaches/organization-group-coaches.tsx",
+      // Route-specific organization permission-loss and retry composition.
+      "coaching/organization-groups/organization-group-access.tsx",
       "coaching/organization-groups/organization-group-detail.tsx",
       "coaching/organization-groups/organization-group-list.tsx",
       // Invitation mutations and pagination compose app-owned server functions and route state.
