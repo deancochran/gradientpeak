@@ -23,3 +23,5 @@ export const Playground: Story = {};
 
 export const UnbrokenContent: Story = { args: emptyStateCardFixtures.unbrokenText };
 export const Unavailable: Story = { args: emptyStateCardFixtures.unavailable };
+export const RecoverableError: Story = { args: emptyStateCardFixtures.recoverableError };
+export const Denied: Story = { args: emptyStateCardFixtures.denied };

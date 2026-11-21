@@ -1,7 +1,7 @@
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Link, useRouter } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export function OrganizationOverviewFrame({
   organizationId,
@@ -100,6 +100,22 @@ function OrganizationAdministrationNavigation({
   organizationId: string;
   activeTab: OrganizationAdministrationTab;
 }) {
+  const navigationRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const navigation = navigationRef.current;
+    const destinationPath = `/organizations/${organizationId}/${activeTab === "overview" ? "dashboard" : activeTab}`;
+    const active = navigation?.querySelector<HTMLElement>(
+      `a[href^="${destinationPath}"][aria-current="page"]`,
+    );
+    if (!navigation || !active) return;
+    const container = navigation.getBoundingClientRect();
+    const destination = active.getBoundingClientRect();
+    if (destination.right > container.right) {
+      navigation.scrollLeft += destination.right - container.right + 16;
+    } else if (destination.left < container.left) {
+      navigation.scrollLeft -= container.left - destination.left + 16;
+    }
+  }, [activeTab, organizationId]);
   const navigationClassName =
     "inline-flex shrink-0 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-card hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2";
   const activeNavigationClassName =
@@ -111,6 +127,7 @@ function OrganizationAdministrationNavigation({
     <nav
       aria-label="Organization administration"
       className="-mx-4 flex gap-1 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0"
+      ref={navigationRef}
     >
       <Link
         to="/organizations/$organizationId/coaching"

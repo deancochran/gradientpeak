@@ -35,3 +35,11 @@ export const Unavailable: Story = {
   ...Playground,
   args: emptyStateCardFixtures.unavailable,
 };
+export const RecoverableError: Story = {
+  ...Playground,
+  args: emptyStateCardFixtures.recoverableError,
+};
+export const Denied: Story = {
+  ...Playground,
+  args: emptyStateCardFixtures.denied,
+};

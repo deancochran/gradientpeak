@@ -13,8 +13,9 @@ describe("TrainingStateChart native", () => {
   ] as const;
 
   it("renders only the selected series with their values, gaps, and shared accessibility summary", async () => {
-    const { getAllByTestId, getByLabelText, getByTestId } = await renderNative(
+    const { getAllByTestId, getByLabelText, getByTestId, getByText } = await renderNative(
       <TrainingStateChart
+        description="Only explicitly selected observations are displayed."
         emptyMessage="No training state"
         series={allSeries}
         testId="training-state-native-chart"
@@ -23,6 +24,7 @@ describe("TrainingStateChart native", () => {
     );
 
     expect(getByTestId("training-state-native-chart")).toBeTruthy();
+    expect(getByText("Only explicitly selected observations are displayed.")).toBeTruthy();
     expect(getByLabelText(/Planning timezone America\/Los_Angeles/)).toBeTruthy();
     const chart = getByTestId("victory-cartesian-chart");
     expect(chart.props.yKeys).toEqual([
@@ -39,6 +41,13 @@ describe("TrainingStateChart native", () => {
     ]);
     const lines = getAllByTestId("victory-line");
     expect(lines).toHaveLength(6);
+    const markers = getAllByTestId("victory-scatter");
+    expect(markers).toHaveLength(6);
+    expect(markers[0]?.props.points).toEqual([
+      expect.objectContaining({ y: 42 }),
+      expect.objectContaining({ y: null }),
+    ]);
+    expect(markers[0]?.props.radius).toBe(2.5);
     expect(lines.every((line) => line.props.connectMissingData === false)).toBe(true);
     expect(lines.map((line) => line.props.color)).toEqual([
       "#2563eb",
@@ -48,6 +57,32 @@ describe("TrainingStateChart native", () => {
       "#d97706",
       "#7c3aed",
     ]);
+  });
+
+  it.each([
+    "recorded",
+    "projected",
+  ] as const)("renders %s fatigue when fitness and the other source are unavailable", async (source) => {
+    const { getByTestId, queryByText } = await renderNative(
+      <TrainingStateChart
+        emptyMessage="No training state"
+        series={allSeries}
+        visual={{
+          ...trainingStateChartFixtures.mixedSeries,
+          points: [
+            {
+              date: "2026-04-13",
+              index: 0,
+              recorded: { fitness: null, fatigue: null, form: null },
+              projected: { fitness: null, fatigue: null, form: null },
+              [source]: { fitness: null, fatigue: 0, form: null },
+            },
+          ],
+        }}
+      />,
+    );
+    expect(queryByText("No training state")).toBeNull();
+    expect(getByTestId("victory-cartesian-chart").props.data[0][`${source}-fatigue`]).toBe(0);
   });
 
   it("uses the explicit empty state when every selected series is unavailable", async () => {

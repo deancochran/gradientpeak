@@ -36,6 +36,7 @@ import {
 } from "../../components/select/index.web";
 import { Switch } from "../../components/switch/index.web";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/tabs/index.web";
+import { TrainingStateChart } from "../../components/training-state-chart/index.web";
 import { uiPreviewContract, uiPreviewFixtures, uiPreviewFormFields } from "./shared";
 
 type UiPreviewFormValues = {
@@ -88,6 +89,16 @@ function UiPreviewSurface() {
       </header>
 
       <section className="grid gap-6 lg:grid-cols-[minmax(0,360px)_1fr]">
+        <section
+          className="space-y-4 lg:col-span-2"
+          data-testid={uiPreviewContract.scenarios.trainingState.testId}
+        >
+          <ScenarioHeader
+            description={uiPreviewContract.scenarios.trainingState.description}
+            title={uiPreviewContract.scenarios.trainingState.title}
+          />
+          <TrainingStateChart {...uiPreviewFixtures.trainingState} />
+        </section>
         <section
           className="space-y-4"
           data-testid={uiPreviewContract.scenarios.identitySummary.testId}

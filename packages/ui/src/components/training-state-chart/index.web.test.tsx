@@ -16,6 +16,31 @@ describe("TrainingStateLegend", () => {
 });
 
 describe("TrainingStateChart", () => {
+  it("renders every selected metric and source rather than treating multiple series as empty", () => {
+    render(
+      <TrainingStateChart
+        emptyMessage="No training state"
+        series={[
+          { metric: "fitness", source: "recorded" },
+          { metric: "fatigue", source: "recorded" },
+          { metric: "form", source: "recorded" },
+          { metric: "fitness", source: "projected" },
+          { metric: "fatigue", source: "projected" },
+          { metric: "form", source: "projected" },
+        ]}
+        visual={trainingStateChartFixtures.mixedSeries}
+      />,
+    );
+    const chart = screen.getByRole("img");
+    expect(chart).toHaveAccessibleName(/Fitness Recorded.*Fatigue Recorded.*Form Recorded/);
+    expect(chart).toHaveAccessibleName(/Fitness Projected.*Fatigue Projected.*Form Projected/);
+    expect(screen.queryByText("No training state")).toBeNull();
+    expect(document.querySelectorAll("polyline")).toHaveLength(6);
+    expect(document.querySelectorAll('polyline[stroke-dasharray="6 4"]')).toHaveLength(3);
+    expect(screen.getByLabelText("Chart legend")).toHaveTextContent("Form · Projected");
+    expect(screen.getAllByText("0.0 Common Load points")).toHaveLength(1);
+  });
+
   it("renders authorized recorded values with a semantic color and accessible units", () => {
     render(
       <TrainingStateChart

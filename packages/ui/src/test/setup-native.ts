@@ -62,6 +62,8 @@ jest.mock("victory-native", () => ({
   },
   Line: (props: HostProps) =>
     mockReact.createElement("VictoryLine", { ...props, testID: "victory-line" }),
+  Scatter: (props: HostProps) =>
+    mockReact.createElement("VictoryScatter", { ...props, testID: "victory-scatter" }),
 }));
 
 const mockCreateAnimationBuilder = () => ({

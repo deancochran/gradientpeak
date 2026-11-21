@@ -1,5 +1,6 @@
+import { Fragment } from "react";
 import { View } from "react-native";
-import { CartesianChart, Line } from "victory-native";
+import { CartesianChart, Line, Scatter } from "victory-native";
 import { Text } from "../text/index.native";
 import {
   getTrainingStateAccessibilityLabel,
@@ -61,6 +62,7 @@ function TrainingStateLegend({
 function TrainingStateChart({
   className,
   colors,
+  description,
   emptyMessage,
   series,
   testId,
@@ -93,6 +95,7 @@ function TrainingStateChart({
           {title}
         </Text>
       ) : null}
+      {description ? <Text className="text-xs text-muted-foreground">{description}</Text> : null}
       {hasValues ? (
         <View
           accessible
@@ -110,15 +113,22 @@ function TrainingStateChart({
             {({ points }) => (
               <>
                 {series.map(({ metric, source }) => (
-                  <Line
-                    color={colors?.[metric] ?? getTrainingStateMetric(metric).nativeColor}
-                    connectMissingData={false}
-                    curveType="natural"
-                    key={getNativeSeriesKey(metric, source)}
-                    {...(source === "projected" ? { opacity: 0.45 } : {})}
-                    points={points[getNativeSeriesKey(metric, source)]}
-                    strokeWidth={metric === "fitness" ? 3 : metric === "fatigue" ? 2.5 : 2}
-                  />
+                  <Fragment key={getNativeSeriesKey(metric, source)}>
+                    <Line
+                      color={colors?.[metric] ?? getTrainingStateMetric(metric).nativeColor}
+                      connectMissingData={false}
+                      curveType="natural"
+                      {...(source === "projected" ? { opacity: 0.45 } : {})}
+                      points={points[getNativeSeriesKey(metric, source)]}
+                      strokeWidth={metric === "fitness" ? 3 : metric === "fatigue" ? 2.5 : 2}
+                    />
+                    <Scatter
+                      color={colors?.[metric] ?? getTrainingStateMetric(metric).nativeColor}
+                      {...(source === "projected" ? { opacity: 0.45 } : {})}
+                      points={points[getNativeSeriesKey(metric, source)]}
+                      radius={2.5}
+                    />
+                  </Fragment>
                 ))}
               </>
             )}

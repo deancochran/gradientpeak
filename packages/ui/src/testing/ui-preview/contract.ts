@@ -5,6 +5,12 @@ export const uiPreviewContract = {
   mobileTitle: "Fixture-driven mobile preview",
   rootTestId: "ui-preview-surface",
   scenarios: {
+    trainingState: {
+      description:
+        "Recorded and projected training-state values retain gaps, zeroes, and negative form.",
+      testId: "ui-preview-scenario-training-state",
+      title: "Training state",
+    },
     identitySummary: {
       description: "Shared identity hierarchy with supporting context and status.",
       testId: "ui-preview-scenario-identity-summary",
@@ -41,6 +47,7 @@ export const uiPreviewContract = {
 } as const;
 
 export const uiPreviewScenarios = [
+  uiPreviewContract.scenarios.trainingState,
   uiPreviewContract.scenarios.identitySummary,
   uiPreviewContract.scenarios.accountControls,
   uiPreviewContract.scenarios.planTabs,
@@ -60,6 +67,7 @@ export const uiPreviewFormFields = {
 
 /** Canonical runtime selectors included in the generated preview manifest. */
 export const uiPreviewScenarioSelectors = {
+  trainingState: ["ui-preview-training-state-chart"],
   identitySummary: [],
   accountControls: ["profile-card", "auth-email", "settings-save"],
   feedbackStates: [],

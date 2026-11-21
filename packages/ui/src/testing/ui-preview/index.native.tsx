@@ -36,6 +36,10 @@ import {
 import { Switch } from "../../components/switch/index.native";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/tabs/index.native";
 import { Text } from "../../components/text/index.native";
+import {
+  TrainingStateChart,
+  TrainingStateLegend,
+} from "../../components/training-state-chart/index.native";
 import { uiPreviewContract, uiPreviewFixtures, uiPreviewFormFields } from "./shared";
 
 type UiPreviewFormValues = {
@@ -90,6 +94,15 @@ function UiPreviewSurface() {
         </Text>
         <Text className="text-3xl font-semibold">{uiPreviewContract.mobileTitle}</Text>
         <Text className="text-sm text-muted-foreground">{uiPreviewContract.description}</Text>
+      </View>
+
+      <View className="gap-4" testID={uiPreviewContract.scenarios.trainingState.testId}>
+        <ScenarioHeader
+          description={uiPreviewContract.scenarios.trainingState.description}
+          title={uiPreviewContract.scenarios.trainingState.title}
+        />
+        <TrainingStateChart {...uiPreviewFixtures.trainingState} />
+        <TrainingStateLegend sources={["recorded", "projected"]} />
       </View>
 
       <View className="gap-4" testID={uiPreviewContract.scenarios.identitySummary.testId}>

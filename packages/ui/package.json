@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./components/training-state-chart": {
+      "react-native": "./src/components/training-state-chart/index.native.tsx",
+      "default": "./src/components/training-state-chart/index.web.tsx"
+    },
+    "./lib/training-state": "./src/lib/training-state.ts",
     "./components/identity-summary": {
       "react-native": "./src/components/identity-summary/index.native.tsx",
       "default": "./src/components/identity-summary/index.web.tsx"

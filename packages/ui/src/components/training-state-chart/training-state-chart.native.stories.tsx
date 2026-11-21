@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
+import { View } from "react-native";
 import { trainingStateChartFixtures } from "./fixtures";
-import { TrainingStateChart } from "./index.native";
+import { TrainingStateChart, TrainingStateLegend } from "./index.native";
 
 const meta = {
   title: "Components/TrainingStateChart/Native",
@@ -25,5 +26,13 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const MixedRecordedAndProjected: Story = {
-  render: (args) => <TrainingStateChart {...args} />,
+  render: (args) => (
+    <View className="gap-3">
+      <TrainingStateChart {...args} />
+      <TrainingStateLegend
+        colors={trainingStateChartFixtures.mixedSeries.colors}
+        sources={trainingStateChartFixtures.mixedSeries.sources}
+      />
+    </View>
+  ),
 };

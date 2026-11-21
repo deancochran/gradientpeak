@@ -161,6 +161,17 @@ test("shared coaching presentation retains themes, search and navigation across 
         "page",
       );
       await expect(administration.locator('a[aria-current="page"]')).toHaveCount(1);
+      await expect
+        .poll(() =>
+          administration.evaluate((navigation) => {
+            const current = navigation.querySelector('[aria-current="page"]');
+            if (!current) return false;
+            const item = current.getBoundingClientRect();
+            const container = navigation.getBoundingClientRect();
+            return item.left >= container.left - 1 && item.right <= container.right + 1;
+          }),
+        )
+        .toBe(true);
       await inspectSurface(ownerPage, testInfo, `${theme}-administration-${destination}`);
     }
 

@@ -285,6 +285,7 @@ jest.mock("victory-native", () => {
         }),
       ),
     Line: (props: HostProps) => React.createElement("Line", props),
+    Scatter: (props: HostProps) => React.createElement("Scatter", props),
     Pie: { Chart: createHost("PieChart") },
     PolarChart: createHost("PolarChart"),
   };

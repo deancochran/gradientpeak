@@ -15,6 +15,18 @@ export const emptyStateCardFixtures = {
     actionLabel: "Try again",
     tone: "unavailable",
   } satisfies EmptyStateCardProps,
+  recoverableError: {
+    title: "The request could not be completed",
+    description: "Your changes are still available. Try the request again.",
+    actionLabel: "Try again",
+    tone: "error",
+  } satisfies EmptyStateCardProps,
+  denied: {
+    title: "This workspace is not available to you",
+    description: "Choose another workspace or return to your own account.",
+    actionLabel: "Choose workspace",
+    tone: "denied",
+  } satisfies EmptyStateCardProps,
   longText: {
     title: "No organization has assigned this unusually long athlete identity summary yet",
     description:

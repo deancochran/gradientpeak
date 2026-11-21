@@ -3,6 +3,15 @@
   "rootTestId": "ui-preview-surface",
   "scenarios": [
     {
+      "description": "Recorded and projected training-state values retain gaps, zeroes, and negative form.",
+      "testId": "ui-preview-scenario-training-state",
+      "title": "Training state",
+      "key": "trainingState",
+      "selectors": [
+        "ui-preview-training-state-chart"
+      ]
+    },
+    {
       "description": "Shared identity hierarchy with supporting context and status.",
       "testId": "ui-preview-scenario-identity-summary",
       "title": "Identity summary",

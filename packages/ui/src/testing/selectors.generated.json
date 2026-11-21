@@ -423,6 +423,38 @@
       ]
     }
   },
+  "training-state-chart": {
+    "mixedSeries": {
+      "points": [
+        {
+          "index": 0,
+          "projected": {
+            "fatigue": null,
+            "fitness": null,
+            "form": null
+          },
+          "recorded": {
+            "fatigue": 30,
+            "fitness": 42,
+            "form": -12
+          }
+        },
+        {
+          "index": 2,
+          "projected": {
+            "fatigue": 32,
+            "fitness": 44,
+            "form": -12
+          },
+          "recorded": {
+            "fatigue": 0,
+            "fitness": null,
+            "form": null
+          }
+        }
+      ]
+    }
+  },
   "weight-input-field": {
     "athlete": {
       "id": "athlete-weight",

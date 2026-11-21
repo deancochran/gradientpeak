@@ -52,14 +52,23 @@ function TrainingStateChart({
   visual,
 }: TrainingStateChartProps) {
   const selected = series.length === 1 ? series.at(0) : undefined;
-  const selection = selected ? [selected] : [];
   const definition = selected ? getTrainingStateMetric(selected.metric) : undefined;
   const chartTitle = title ?? definition?.label ?? "Training state";
-  const values = selected
-    ? visual.points.map((point) => point[selected.source][selected.metric])
-    : [];
+  const plottedSeries = series.map(({ metric, source }) => {
+    const metricDefinition = getTrainingStateMetric(metric);
+    const values = visual.points.map((point) => point[source][metric]);
+    return {
+      color: colors?.[metric] ?? metricDefinition.webColor,
+      id: `${metric}-${source}`,
+      label: `${metricDefinition.label} · ${getTrainingStateSourceLabel(source)}`,
+      source,
+      values,
+      summary: summarizeChartValues(values),
+    };
+  });
+  const values = plottedSeries.flatMap((item) => item.values);
   const summary = summarizeChartValues(values);
-  if (!selected || !summary || !definition) {
+  if (!summary) {
     return (
       <ChartCard
         {...(className ? { className } : {})}
@@ -72,20 +81,19 @@ function TrainingStateChart({
   }
 
   const domain = getPaddedChartDomain(values);
-  const chartPoints = visual.points.map((point) => ({
-    label: point.date,
-    x: Number.isFinite(Date.parse(`${point.date}T00:00:00Z`))
-      ? Date.parse(`${point.date}T00:00:00Z`)
-      : point.index,
-    y: point[selected.source][selected.metric],
+  const plots = plottedSeries.map((item) => ({
+    ...item,
+    segments: buildChartSegments(
+      visual.points.map((point, index) => ({
+        label: point.date,
+        x: Number.isFinite(Date.parse(`${point.date}T00:00:00Z`))
+          ? Date.parse(`${point.date}T00:00:00Z`)
+          : point.index,
+        y: item.values[index] ?? null,
+      })),
+      { bottom: 82, domain, left: 12, right: 98, top: 6 },
+    ),
   }));
-  const segments = buildChartSegments(chartPoints, {
-    bottom: 82,
-    domain,
-    left: 12,
-    right: 98,
-    top: 6,
-  });
   const firstDate = visual.points[0]?.date;
   const latestDate = visual.points.at(-1)?.date;
 
@@ -93,21 +101,24 @@ function TrainingStateChart({
     <ChartCard
       {...(className ? { className } : {})}
       {...(description ? { description } : {})}
-      legend={[
-        {
-          color: colors?.[selected.metric] ?? definition.webColor,
-          id: `${definition.id}-${selected.source}`,
-          label: `${definition.label} · ${getTrainingStateSourceLabel(selected.source)}`,
-        },
-      ]}
-      summary={[
-        { label: "Records", value: String(values.filter((value) => value !== null).length) },
-        { label: "Latest", value: `${summary.last.toFixed(1)} ${visual.unitLabel}` },
-      ]}
+      legend={plottedSeries.map(({ color, id, label }) => ({ color, id, label }))}
+      summary={
+        selected
+          ? [
+              { label: "Records", value: String(values.filter((value) => value !== null).length) },
+              { label: "Latest", value: `${summary.last.toFixed(1)} ${visual.unitLabel}` },
+            ]
+          : plottedSeries.map((item) => ({
+              label: `${item.label} · Latest`,
+              value: item.summary
+                ? `${item.summary.last.toFixed(1)} ${visual.unitLabel}`
+                : "Unavailable",
+            }))
+      }
       title={chartTitle}
     >
       <div
-        aria-label={`${chartTitle}. ${getTrainingStateAccessibilityLabel(visual, selection)}`}
+        aria-label={`${chartTitle}. ${getTrainingStateAccessibilityLabel(visual, series)}`}
         className="relative h-56 w-full"
         data-testid={testId}
         role="img"
@@ -120,30 +131,34 @@ function TrainingStateChart({
         >
           <line className="text-border" stroke="currentColor" x1="12" x2="12" y1="6" y2="82" />
           <line className="text-border" stroke="currentColor" x1="12" x2="98" y1="82" y2="82" />
-          {segments.map((segment) => (
-            <polyline
-              fill="none"
-              key={`${segment[0]?.label}-${segment.at(-1)?.label}`}
-              points={segment.map((point) => `${point.plotX},${point.plotY}`).join(" ")}
-              stroke={colors?.[selected.metric] ?? definition.webColor}
-              strokeDasharray={selected.source === "projected" ? "6 4" : undefined}
-              strokeWidth="3"
-              vectorEffect="non-scaling-stroke"
-            />
-          ))}
+          {plots.flatMap((plot) =>
+            plot.segments.map((segment) => (
+              <polyline
+                fill="none"
+                key={`${plot.id}-${segment[0]?.label}-${segment.at(-1)?.label}`}
+                points={segment.map((point) => `${point.plotX},${point.plotY}`).join(" ")}
+                stroke={plot.color}
+                strokeDasharray={plot.source === "projected" ? "6 4" : undefined}
+                strokeWidth="3"
+                vectorEffect="non-scaling-stroke"
+              />
+            )),
+          )}
         </svg>
-        {segments.flat().map((point) => (
-          <span
-            aria-hidden="true"
-            className="absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-background"
-            key={point.label ?? `${point.x}-${point.y}`}
-            style={{
-              borderColor: colors?.[selected.metric] ?? definition.webColor,
-              left: `${point.plotX}%`,
-              top: `${point.plotY}%`,
-            }}
-          />
-        ))}
+        {plots.flatMap((plot) =>
+          plot.segments.flat().map((point) => (
+            <span
+              aria-hidden="true"
+              className="absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-background"
+              key={`${plot.id}-${point.label ?? point.x}`}
+              style={{
+                borderColor: plot.color,
+                left: `${point.plotX}%`,
+                top: `${point.plotY}%`,
+              }}
+            />
+          )),
+        )}
         <span className="absolute bottom-0 left-[12%] text-[10px] text-muted-foreground">
           {firstDate ? formatTrainingStateDate(firstDate, visual.timeZone) : ""}
         </span>

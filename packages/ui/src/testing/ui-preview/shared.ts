@@ -10,11 +10,27 @@ import { radioGroupFixtures } from "../../components/radio-group/fixtures";
 import { selectFixtures } from "../../components/select/fixtures";
 import { switchFixtures } from "../../components/switch/fixtures";
 import { tabsFixtures } from "../../components/tabs/fixtures";
+import { trainingStateChartFixtures } from "../../components/training-state-chart/fixtures";
+import type { TrainingStateChartProps } from "../../components/training-state-chart/shared";
 import { uiPreviewContract, uiPreviewFormFields, uiPreviewScenarios } from "./contract";
 
 export { uiPreviewContract, uiPreviewFormFields, uiPreviewScenarios };
 
 export const uiPreviewFixtures = {
+  trainingState: {
+    emptyMessage: "Training state is unavailable for this period.",
+    series: [
+      { metric: "fitness", source: "recorded" },
+      { metric: "fatigue", source: "recorded" },
+      { metric: "form", source: "recorded" },
+      { metric: "fitness", source: "projected" },
+      { metric: "fatigue", source: "projected" },
+      { metric: "form", source: "projected" },
+    ],
+    testId: "ui-preview-training-state-chart",
+    title: "Recorded and projected training state",
+    visual: trainingStateChartFixtures.mixedSeries,
+  } satisfies TrainingStateChartProps,
   button: buttonFixtures.save,
   card: cardFixtures,
   checkbox: checkboxFixtures.terms,
