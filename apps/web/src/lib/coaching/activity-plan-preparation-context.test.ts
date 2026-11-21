@@ -25,4 +25,13 @@ describe("activity plan preparation URL context", () => {
       valid,
     );
   });
+
+  it("retains only a real calendar range anchor with the closed return context", () => {
+    expect(
+      parseActivityPlanPreparationContext({ ...valid, calendarStartDate: "2026-11-22" }),
+    ).toEqual({ ...valid, calendarStartDate: "2026-11-22" });
+    expect(
+      parseActivityPlanPreparationContext({ ...valid, calendarStartDate: "2026-02-30" }),
+    ).toEqual(valid);
+  });
 });

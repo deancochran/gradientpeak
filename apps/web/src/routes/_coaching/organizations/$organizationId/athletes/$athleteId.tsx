@@ -1,3 +1,4 @@
+import { addDaysDateOnlyUtc } from "@repo/core/calendar";
 import { Button } from "@repo/ui/components/button";
 import { createFileRoute, Link, useRouter, useRouterState } from "@tanstack/react-router";
 import { AthleteWorkspaceSwitcher } from "../../../../../components/coaching/athletes/athlete-workspace-switcher";
@@ -35,9 +36,21 @@ export const Route = createFileRoute(
     const preparation = parseActivityPlanPreparationSearch(search);
     return preparation ?? {};
   },
-  loader: async ({ context, params }) => {
+  loaderDeps: ({ search }) => ({
+    calendarStartDate:
+      "calendarStartDate" in search && typeof search.calendarStartDate === "string"
+        ? search.calendarStartDate
+        : undefined,
+  }),
+  loader: async ({ context, params, deps = {} }) => {
     const data = { organizationId: params.organizationId, athleteProfileId: params.athleteId };
-    const range = currentCalendarWeek();
+    const defaultRange = currentCalendarWeek();
+    const range = deps.calendarStartDate
+      ? {
+          startDate: deps.calendarStartDate,
+          endDateExclusive: addDaysDateOnlyUtc(deps.calendarStartDate, 7),
+        }
+      : defaultRange;
     const [overview, directory, identity, calendar, completedActivities, goals, zones] =
       await Promise.all([
         loadCoachAthleteOverview({ data }),
@@ -153,12 +166,13 @@ function AthleteWorkspacePage() {
         {identity ? (
           <CoachActivityPlanPublication
             athleteId={athleteId}
+            calendarStartDate={preparation?.calendarStartDate}
             key={`${organizationId}:${athleteId}:${preparation?.activityPlanId ?? ""}:${preparation?.planningDate ?? ""}`}
             organizationId={organizationId}
             preparation={preparation}
           />
         ) : null}
-        <div>
+        <div className="space-y-6">
           <CoachAthleteCompletedActivities
             actorProfileId={actorProfileId}
             athleteProfileId={athleteId}
@@ -169,17 +183,24 @@ function AthleteWorkspacePage() {
               identity ? (completedActivities ?? { status: "forbidden" }) : { status: "forbidden" }
             }
           />
+          <CoachAthleteCalendar
+            actorProfileId={actorProfileId}
+            athleteId={athleteId}
+            initialRange={
+              preparation?.calendarStartDate
+                ? {
+                    startDate: preparation.calendarStartDate,
+                    endDateExclusive: addDaysDateOnlyUtc(preparation.calendarStartDate, 7),
+                  }
+                : result.calendarRange
+            }
+            key={`${actorProfileId}:${organizationId}:${athleteId}`}
+            organizationId={organizationId}
+            result={identity ? calendar : forbiddenCalendar}
+          />
         </div>
-        <CoachAthleteCalendar
-          actorProfileId={actorProfileId}
-          athleteId={athleteId}
-          initialRange={result.calendarRange}
-          key={`${actorProfileId}:${organizationId}:${athleteId}`}
-          organizationId={organizationId}
-          result={identity ? calendar : forbiddenCalendar}
-        />
       </div>
-      <details className="group rounded-xl border border-border bg-muted/50" open>
+      <details className="group rounded-xl border border-border bg-muted/50">
         <summary className="cursor-pointer list-none px-5 py-4 font-medium text-foreground marker:hidden">
           <span className="flex items-center justify-between gap-4">
             Training context and shared data

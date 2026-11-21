@@ -7,8 +7,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
+import { Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useRef, useState } from "react";
+import { activityPlanPreparationSearch } from "../../../lib/coaching/activity-plan-preparation-context";
 import {
   loadCoachAthleteCalendar,
   shiftCalendarWeek,
@@ -94,6 +96,18 @@ export function CoachAthleteCalendar({
     cursor: Granted["nextCursor"];
     range: Range;
   } | null>(null);
+  const prepareFor = (planningDate: string) =>
+    activityPlanPreparationSearch(
+      // The selected date is navigation context only. Publication still checks
+      // current coach ownership and creates a separate immutable athlete copy.
+      {
+        athleteId,
+        calendarStartDate: displayedRange.startDate,
+        organizationId,
+        planningDate,
+        returnTo: "athlete-workspace",
+      },
+    );
 
   // Scope fences are advanced synchronously during render. Effects only hydrate
   // new input; no prior actor/org/athlete/range data is rendered in that gap.
@@ -217,11 +231,12 @@ export function CoachAthleteCalendar({
       <CardHeader>
         <p className="text-xs font-medium uppercase tracking-[0.18em] text-primary">Read-only</p>
         <CardTitle>
-          <h2>Planned sessions</h2>
+          <h2>Next scheduled work</h2>
         </CardTitle>
         <CardDescription className="text-muted-foreground">
-          {displayedRange.startDate} to {displayedRange.endDateExclusive} (exclusive). Date-only
-          planning records, not the athlete’s full personal calendar or availability.
+          Scheduled work in {displayedRange.startDate} to {displayedRange.endDateExclusive}{" "}
+          (exclusive). This selected range is not the athlete’s full personal calendar or
+          availability.
         </CardDescription>
         <div className="flex gap-2">
           <Button
@@ -282,6 +297,11 @@ export function CoachAthleteCalendar({
                 <Badge className="border-primary/30 bg-primary/10 text-primary">
                   {event.status}
                 </Badge>
+                <Button asChild size="sm" type="button" variant="outline">
+                  <Link to="/activity-plans" search={prepareFor(event.planningDate) as never}>
+                    Prepare a separate plan
+                  </Link>
+                </Button>
               </li>
             ))}
           </ul>

@@ -5,6 +5,7 @@ const returnToValues = ["athlete-workspace"] as const;
 
 export type ActivityPlanPreparationContext = {
   athleteId: string;
+  calendarStartDate?: string;
   organizationId: string;
   planningDate: string;
   returnTo: (typeof returnToValues)[number];
@@ -36,6 +37,10 @@ export function parseActivityPlanPreparationContext(
 ): ActivityPlanPreparationContext | null {
   const organizationId = uuid.safeParse(search.organizationId);
   const athleteId = uuid.safeParse(search.athleteId);
+  const calendarStartDate =
+    typeof search.calendarStartDate === "string" && isRealDate(search.calendarStartDate)
+      ? search.calendarStartDate
+      : undefined;
   const planningDate = typeof search.planningDate === "string" ? search.planningDate : null;
   const returnTo = search.returnTo;
   if (
@@ -46,7 +51,13 @@ export function parseActivityPlanPreparationContext(
     returnTo !== "athlete-workspace"
   )
     return null;
-  return { athleteId: athleteId.data, organizationId: organizationId.data, planningDate, returnTo };
+  return {
+    athleteId: athleteId.data,
+    ...(calendarStartDate ? { calendarStartDate } : {}),
+    organizationId: organizationId.data,
+    planningDate,
+    returnTo,
+  };
 }
 
 export function parseActivityPlanPreparationSearch(

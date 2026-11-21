@@ -7,6 +7,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ load: vi.fn() }));
 
 vi.mock("@tanstack/react-start", () => ({ useServerFn: () => mocks.load }));
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children }: { children: React.ReactNode }) => <a href="/activity-plans">{children}</a>,
+}));
 vi.mock("../../../lib/coaching/athlete-calendar-server-functions", () => ({
   loadCoachAthleteCalendar: {},
   shiftCalendarWeek: (
@@ -63,14 +66,15 @@ function calendar(overrides: Partial<React.ComponentProps<typeof CoachAthleteCal
 describe("CoachAthleteCalendar", () => {
   it("renders date-only records literally and never calls an empty range available", () => {
     render(calendar());
-    expect(screen.getByRole("heading", { name: "Planned sessions", level: 2 })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Next scheduled work", level: 2 })).toBeTruthy();
     expect(screen.getByText("2026-03-08")).toBeTruthy();
     expect(screen.queryByText(/available/i)).toBeNull();
+    expect(screen.getByRole("link", { name: "Prepare a separate plan" })).toBeTruthy();
   });
 
   it("uses semantic level-two titles for loaded, denied, and error calendar states", () => {
     const view = render(calendar());
-    expect(screen.getByRole("heading", { name: "Planned sessions", level: 2 })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Next scheduled work", level: 2 })).toBeTruthy();
     view.rerender(calendar({ result: { status: "forbidden" } }));
     expect(
       screen.getByRole("heading", { name: "Planned sessions unavailable", level: 2 }),

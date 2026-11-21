@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   publish: vi.fn(),
   refreshSelectedPlan: vi.fn(),
   linkSearch: undefined as unknown,
+  navigate: vi.fn(),
   selectedPlanQueryState: "ready" as "error" | "loading" | "missing" | "not-editable" | "ready",
   selectedPlan: {
     activityPlanRevision: 3,
@@ -90,6 +91,7 @@ vi.mock("../../../lib/api/client", () => ({
   },
 }));
 vi.mock("@tanstack/react-router", () => ({
+  useNavigate: () => mocks.navigate,
   Link: ({ children, search }: { children: React.ReactNode; search?: unknown }) => {
     mocks.linkSearch = search;
     return <a href="/activity-plans">{children}</a>;
@@ -105,6 +107,7 @@ afterEach(() => {
   mocks.publish.mockReset();
   mocks.refreshSelectedPlan.mockReset();
   mocks.linkSearch = undefined;
+  mocks.navigate.mockReset();
   mocks.selectedPlanQueryState = "ready";
   mocks.selectedPlan = {
     activityPlanRevision: 3,
@@ -309,6 +312,33 @@ describe("CoachActivityPlanPublication", () => {
       planningDate: "2026-11-13",
       returnTo: "athlete-workspace",
     });
+  });
+
+  it("replaces the workspace URL with the current authoring context before leaving to prepare", () => {
+    render(
+      <CoachActivityPlanPublication
+        athleteId="22222222-2222-4222-8222-222222222222"
+        organizationId="11111111-1111-4111-8111-111111111111"
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Athlete planning date"), {
+      target: { value: "2026-11-23" },
+    });
+
+    expect(mocks.navigate).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        params: {
+          athleteId: "22222222-2222-4222-8222-222222222222",
+          organizationId: "11111111-1111-4111-8111-111111111111",
+        },
+        replace: true,
+        search: expect.objectContaining({
+          planningDate: "2026-11-23",
+          returnTo: "athlete-workspace",
+        }),
+      }),
+    );
   });
 
   it("resolves a prepared owned plan outside the first library page", async () => {

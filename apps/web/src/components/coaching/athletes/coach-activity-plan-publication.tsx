@@ -7,7 +7,7 @@ import {
   CardTitle,
 } from "@repo/ui/components/card";
 import { Label } from "@repo/ui/components/label";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { api } from "../../../lib/api/client";
 import {
@@ -50,13 +50,16 @@ function errorMessage(error: unknown) {
  */
 export function CoachActivityPlanPublication({
   athleteId,
+  calendarStartDate,
   organizationId,
   preparation = null,
 }: {
   athleteId: string;
+  calendarStartDate?: string;
   organizationId: string;
   preparation?: ActivityPlanPreparationSearch | null;
 }) {
+  const navigate = useNavigate();
   const organizations = api.organizations.listMine.useQuery({ cursor: null, limit: 50 });
   const activityPlans = api.activityPlans.list.useQuery({ limit: 50, ownerScope: "own" });
   const publish = api.coachingPublication.publish.useMutation({ retry: false });
@@ -135,11 +138,37 @@ export function CoachActivityPlanPublication({
   // preparation from the current form state rather than reusing the arrival URL's old date.
   const preparationContext = parseActivityPlanPreparationContext({
     athleteId,
+    ...(calendarStartDate ? { calendarStartDate } : {}),
     organizationId,
     planningDate,
     returnTo: "athlete-workspace",
   });
   const selectedPlanIsInLibrary = plans.some((plan) => plan.id === selectedPlan?.id);
+
+  function retainWorkspaceContext(next: { activityPlanId?: string; planningDate: string }) {
+    const context = parseActivityPlanPreparationContext({
+      athleteId,
+      ...(calendarStartDate ? { calendarStartDate } : {}),
+      organizationId,
+      planningDate: next.planningDate,
+      returnTo: "athlete-workspace",
+    });
+    if (!context) {
+      void navigate({
+        to: "/organizations/$organizationId/athletes/$athleteId",
+        params: { athleteId, organizationId },
+        search: {},
+        replace: true,
+      } as never);
+      return;
+    }
+    void navigate({
+      to: "/organizations/$organizationId/athletes/$athleteId",
+      params: { athleteId, organizationId },
+      search: activityPlanPreparationSearch(context, next.activityPlanId),
+      replace: true,
+    } as never);
+  }
 
   async function requestPreview() {
     if (!input || !key) return;
@@ -254,7 +283,9 @@ export function CoachActivityPlanPublication({
               id="coach-activity-plan"
               onChange={(event) => {
                 invalidatePreviewIntent();
-                setActivityPlanId(event.target.value);
+                const nextActivityPlanId = event.target.value;
+                setActivityPlanId(nextActivityPlanId);
+                retainWorkspaceContext({ activityPlanId: nextActivityPlanId, planningDate });
               }}
               value={activityPlanId}
             >
@@ -284,7 +315,9 @@ export function CoachActivityPlanPublication({
               id="coach-planning-date"
               onChange={(event) => {
                 invalidatePreviewIntent();
-                setPlanningDate(event.target.value);
+                const nextPlanningDate = event.target.value;
+                setPlanningDate(nextPlanningDate);
+                retainWorkspaceContext({ activityPlanId, planningDate: nextPlanningDate });
               }}
               type="date"
               value={planningDate}
