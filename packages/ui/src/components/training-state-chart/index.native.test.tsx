@@ -1,4 +1,3 @@
-import { View } from "react-native";
 import { renderNative } from "../../test/render-native";
 import { trainingStateChartFixtures } from "./fixtures";
 import { TrainingStateChart } from "./index.native";
@@ -12,13 +11,10 @@ describe("TrainingStateChart native", () => {
         source="recorded"
         testId="training-state-native-chart"
         visual={trainingStateChartFixtures.mixedSeries}
-      >
-        <View testID="injected-native-plot" />
-      </TrainingStateChart>,
+      />,
     );
 
     expect(getByTestId("training-state-native-chart")).toBeTruthy();
-    expect(getByTestId("injected-native-plot")).toBeTruthy();
   });
 
   it("uses the explicit empty state rather than fabricating a zero plot", async () => {
@@ -35,12 +31,10 @@ describe("TrainingStateChart native", () => {
             projected: { ...point.projected, fatigue: null },
           })),
         }}
-      >
-        <View testID="injected-native-plot" />
-      </TrainingStateChart>,
+      />,
     );
 
     expect(getByText("No projected fatigue")).toBeTruthy();
-    expect(queryByTestId("injected-native-plot")).toBeNull();
+    expect(queryByTestId("training-state-native-chart")).toBeTruthy();
   });
 });

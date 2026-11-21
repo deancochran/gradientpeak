@@ -89,7 +89,13 @@ function TrainingStateChart({
     <ChartCard
       {...(className ? { className } : {})}
       {...(description ? { description } : {})}
-      legend={[{ color: definition.webColor, id: definition.id, label: definition.label }]}
+      legend={[
+        {
+          color: definition.webColor,
+          id: `${definition.id}-${source}`,
+          label: `${definition.label} · ${getTrainingStateSourceLabel(source)}`,
+        },
+      ]}
       summary={[
         { label: "Records", value: String(values.filter((value) => value !== null).length) },
         { label: "Latest", value: `${summary.last.toFixed(1)} ${visual.unitLabel}` },
@@ -116,6 +122,7 @@ function TrainingStateChart({
               key={`${segment[0]?.label}-${segment.at(-1)?.label}`}
               points={segment.map((point) => `${point.plotX},${point.plotY}`).join(" ")}
               stroke={definition.webColor}
+              strokeDasharray={source === "projected" ? "6 4" : undefined}
               strokeWidth="3"
               vectorEffect="non-scaling-stroke"
             />
@@ -140,10 +147,10 @@ function TrainingStateChart({
           {latestDate ? formatTrainingStateDate(latestDate, visual.timeZone) : ""}
         </span>
         <span className="absolute left-[1%] top-[3%] text-[10px] text-muted-foreground">
-          {summary.max.toFixed(1)}
+          {domain.max.toFixed(1)}
         </span>
         <span className="absolute bottom-[17%] left-[1%] text-[10px] text-muted-foreground">
-          {summary.min.toFixed(1)}
+          {domain.min.toFixed(1)}
         </span>
         <span className="absolute bottom-0 left-1/2 -translate-x-1/2 text-xs font-medium text-muted-foreground">
           Planning date

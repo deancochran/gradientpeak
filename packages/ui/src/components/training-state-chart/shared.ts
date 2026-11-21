@@ -17,7 +17,6 @@ export {
   trainingStateSourceLabels,
 } from "../../lib/training-state";
 
-import type React from "react";
 import type {
   TrainingStateMetricId,
   TrainingStateSource,
@@ -35,8 +34,8 @@ export type TrainingStateLegendProps = {
 export type TrainingStateVisualFixture = TrainingStateVisualContract & TrainingStateLegendProps;
 
 export type TrainingStateChartProps = {
-  children?: React.ReactNode;
   className?: string;
+  colors?: Partial<Record<TrainingStateMetricId, string>>;
   description?: string;
   emptyMessage: string;
   metric: TrainingStateMetricId;

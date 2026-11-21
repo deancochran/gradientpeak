@@ -4,31 +4,12 @@ import {
   TrainingStateChart,
   TrainingStateLegend,
   type TrainingStateVisualPoint,
-  trainingStateMetrics,
 } from "@repo/ui/components/training-state-chart";
 import { Minus, TrendingDown, TrendingUp } from "lucide-react-native";
 import { View } from "react-native";
-import { CartesianChart, Line } from "victory-native";
 import { useTheme } from "@/lib/stores/theme-store";
 import { getPlanChartTheme } from "../training-path/planChartTheme";
 import type { PlanningLedgerPresentation } from "./planningLedgerPresentation";
-
-type StateDatum = Record<string, unknown> & {
-  actualFatigue: number | null;
-  actualFitness: number | null;
-  actualForm: number | null;
-  index: number;
-  projectedFatigue: number | null;
-  projectedFitness: number | null;
-  projectedForm: number | null;
-};
-type StateKey =
-  | "actualFitness"
-  | "actualFatigue"
-  | "actualForm"
-  | "projectedFitness"
-  | "projectedFatigue"
-  | "projectedForm";
 
 function Metric({
   direction,
@@ -77,15 +58,6 @@ export function TrainingStateContextChart({
       form: point.actualForm,
     },
   }));
-  const chartData: StateDatum[] = visualPoints.map((point) => ({
-    actualFatigue: point.recorded.fatigue,
-    actualFitness: point.recorded.fitness,
-    actualForm: point.recorded.form,
-    index: point.index,
-    projectedFatigue: point.projected.fatigue,
-    projectedFitness: point.projected.fitness,
-    projectedForm: point.projected.form,
-  }));
   const visual = {
     points: visualPoints,
     sourceStatus: state.sourceStatus,
@@ -113,79 +85,16 @@ export function TrainingStateContextChart({
             : ""}
         </Text>
       </View>
-      {chartData.length ? (
+      {visualPoints.length ? (
         <TrainingStateChart
+          colors={colors.trainingState}
+          description={state.summary}
           emptyMessage="Training state is unavailable for this period."
           metric="fitness"
           source={sourceStatus === "projected" ? "projected" : "recorded"}
           testId="planning-ledger-state-chart"
           visual={visual}
-        >
-          <CartesianChart<StateDatum, "index", StateKey>
-            data={chartData}
-            domainPadding={{ bottom: 8, left: 8, right: 8, top: 8 }}
-            frame={{ lineColor: "transparent", lineWidth: 0 }}
-            xKey="index"
-            yKeys={[
-              "actualFitness",
-              "actualFatigue",
-              "actualForm",
-              "projectedFitness",
-              "projectedFatigue",
-              "projectedForm",
-            ]}
-          >
-            {({ points }) => (
-              <>
-                <Line
-                  color={colors.trainingState[trainingStateMetrics.fitness.id]}
-                  connectMissingData={false}
-                  curveType="natural"
-                  points={points.actualFitness}
-                  strokeWidth={3}
-                />
-                <Line
-                  color={colors.trainingState[trainingStateMetrics.fatigue.id]}
-                  connectMissingData={false}
-                  curveType="natural"
-                  points={points.actualFatigue}
-                  strokeWidth={2.5}
-                />
-                <Line
-                  color={colors.trainingState[trainingStateMetrics.form.id]}
-                  connectMissingData={false}
-                  curveType="natural"
-                  points={points.actualForm}
-                  strokeWidth={2}
-                />
-                <Line
-                  color={colors.trainingState[trainingStateMetrics.fitness.id]}
-                  connectMissingData={false}
-                  curveType="natural"
-                  opacity={0.45}
-                  points={points.projectedFitness}
-                  strokeWidth={3}
-                />
-                <Line
-                  color={colors.trainingState[trainingStateMetrics.fatigue.id]}
-                  connectMissingData={false}
-                  curveType="natural"
-                  opacity={0.45}
-                  points={points.projectedFatigue}
-                  strokeWidth={2.5}
-                />
-                <Line
-                  color={colors.trainingState[trainingStateMetrics.form.id]}
-                  connectMissingData={false}
-                  curveType="natural"
-                  opacity={0.45}
-                  points={points.projectedForm}
-                  strokeWidth={2}
-                />
-              </>
-            )}
-          </CartesianChart>
-        </TrainingStateChart>
+        />
       ) : (
         <Text className="rounded-xl bg-muted/20 px-3 py-3 text-sm text-muted-foreground">
           Training state is unavailable for this period.
