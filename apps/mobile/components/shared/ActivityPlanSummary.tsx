@@ -4,7 +4,10 @@ import type {
   SemanticMetric,
 } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
-import { formatActivityPlanHeadlineMetric } from "@repo/ui/lib/activity-plan-metric-presentation";
+import {
+  describeActivityPlanLoadAvailability,
+  formatActivityPlanHeadlineMetric,
+} from "@repo/ui/lib/activity-plan-metric-presentation";
 import type { ReactNode } from "react";
 import { View } from "react-native";
 import type { EntityOwner } from "./EntityOwnerRow";
@@ -52,7 +55,17 @@ export function ActivityPlanMetricsRow({
     tone: "primary",
   });
 
-  return <ResourceMetricsRow maxItems={4} metrics={metrics} testID="activity-plan-estimates" />;
+  const loadExplanation = describeActivityPlanLoadAvailability(byKey.get("common_load"));
+  return (
+    <View className="gap-2">
+      <ResourceMetricsRow maxItems={4} metrics={metrics} testID="activity-plan-estimates" />
+      {loadExplanation ? (
+        <Text className="text-xs text-muted-foreground" testID="activity-plan-load-explanation">
+          {loadExplanation}
+        </Text>
+      ) : null}
+    </View>
+  );
 }
 
 export function ActivityPlanSummary({

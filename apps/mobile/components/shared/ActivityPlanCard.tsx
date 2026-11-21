@@ -1,5 +1,6 @@
 import type {
   ActivityPlanDetail,
+  ActivityPlanMetric,
   ActivityPlanSummary as ActivityPlanSummaryProjection,
   ScheduledActivityPlanSummary,
 } from "@repo/core";
@@ -32,6 +33,7 @@ interface ActivityPlanCardProps {
   testID?: string;
   variant?: "default" | "compact";
   showScheduleInfo?: boolean; // Show date/time badge
+  projectionMetrics?: readonly ActivityPlanMetric[] | undefined;
 }
 
 // ============================================
@@ -45,6 +47,7 @@ export function ActivityPlanCard({
   testID,
   variant = "default",
   showScheduleInfo = false,
+  projectionMetrics,
 }: ActivityPlanCardProps) {
   const isCompact = variant === "compact";
   const entityCommentsSheet = useEntityCommentsSheet();
@@ -156,7 +159,7 @@ export function ActivityPlanCard({
             : null
         }
         presentation={presentation}
-        projectionMetrics={plan.metrics}
+        projectionMetrics={projectionMetrics ?? plan.metrics}
         structure={plan.structure}
         title={plan.name}
         variant="standalone"

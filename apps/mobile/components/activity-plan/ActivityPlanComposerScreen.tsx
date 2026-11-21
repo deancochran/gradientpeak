@@ -244,8 +244,8 @@ export function ActivityPlanComposerScreen(
           paddingBottom: Math.max(24, bottom + 16),
         }}
       >
-        <View className="gap-6" pointerEvents={isSubmitting ? "none" : "auto"}>
-          <View className="gap-4 rounded-3xl border border-border bg-card p-4">
+        <View className="gap-5" pointerEvents={isSubmitting ? "none" : "auto"}>
+          <View className="gap-3 rounded-2xl border border-border bg-card p-4">
             <ActivityPlanBasicsSection
               disabled={isSubmitting}
               activityCategory={activityCategory ?? ""}
@@ -259,8 +259,12 @@ export function ActivityPlanComposerScreen(
             />
             <ActivityPlanEstimatePresentation metrics={draftMetrics} />
           </View>
-          <View className="gap-2" testID="activity-plan-draft-timeline">
-            <ActivityPlanContentPreview plan={{ structure: form.structure }} size="medium" />
+          <View className="rounded-xl bg-secondary/50" testID="activity-plan-draft-timeline">
+            <ActivityPlanContentPreview
+              plan={{ structure: form.structure }}
+              size="medium"
+              timelineHeight={40}
+            />
           </View>
           {activityCategory ? (
             <StructureBuilderCard
@@ -291,7 +295,7 @@ export function ActivityPlanComposerScreen(
       >
         <Button
           disabled={!activityCategory || isSubmitting}
-          variant="ghost"
+          variant="default"
           onPress={() => addStep()}
           accessibilityLabel="Add step"
           testID="activity-plan-add-step"
@@ -300,7 +304,7 @@ export function ActivityPlanComposerScreen(
         </Button>
         <Button
           disabled={!activityCategory || isSubmitting}
-          variant="ghost"
+          variant="outline"
           onPress={() => insertItem({ type: "repeat", id: randomUUID(), count: 2, steps: [] })}
           accessibilityLabel="Add repeat"
           testID="activity-plan-add-repeat"

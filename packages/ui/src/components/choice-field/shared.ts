@@ -6,6 +6,8 @@ export type NativeChoicePresentation = "automatic" | "segmented" | "menu" | "sea
 export interface ChoiceOption<T extends ChoiceValue> {
   value: T;
   label: string;
+  /** Compact trigger copy; the full label remains available in the native choice list. */
+  selectedLabel?: string | undefined;
   description?: string | undefined;
   disabled?: boolean | undefined;
 }
@@ -31,6 +33,12 @@ export interface ChoiceFieldProps<T extends ChoiceValue> extends TestProps {
   resetKey?: string | number | undefined;
   formControl?: object | undefined;
   fieldName?: string | undefined;
+  /** Keeps semantic label/control pairing compact inside dense authoring panels. */
+  density?: "default" | "compact" | undefined;
+  /** Hide the visible label while retaining the control's accessible name. */
+  hideVisibleLabel?: boolean | undefined;
+  /** Render a persisted disabled value as the current selection so it can be repaired. */
+  retainDisabledValue?: boolean | undefined;
 }
 
 export function resolveChoice<T extends ChoiceValue>(
@@ -46,7 +54,14 @@ export function resolveChoice<T extends ChoiceValue>(
 
 export type ChoiceControlProps<T extends ChoiceValue> = Pick<
   ChoiceFieldProps<T>,
-  "label" | "value" | "options" | "onChange" | "disabled" | "testId" | "isCurrent"
+  | "label"
+  | "value"
+  | "options"
+  | "onChange"
+  | "disabled"
+  | "testId"
+  | "isCurrent"
+  | "retainDisabledValue"
 > & {
   mode: "segmented" | "menu" | "list";
   owner?: object | undefined;

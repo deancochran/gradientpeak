@@ -58,7 +58,7 @@ export function createBlankActivityPlanDraft(): ActivityPlanDraftStructure {
 }
 
 const createInitialState = () => ({
-  name: "",
+  name: "New plan",
   description: "",
   activityCategory: null,
   structure: createBlankActivityPlanDraft(),

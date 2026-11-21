@@ -6,6 +6,28 @@ import {
 
 const unavailableHeadline = "—";
 
+/** Explain calculation limits without claiming the athlete has not supplied data. */
+export function describeActivityPlanLoadAvailability(metric: unknown): string | null {
+  const parsed = activityPlanMetricSchema.safeParse(metric);
+  if (!parsed.success || parsed.data.key !== "common_load") {
+    return "Load estimate is not available yet.";
+  }
+  if (parsed.data.status === "available") return null;
+  switch (parsed.data.reason) {
+    case "threshold_missing":
+    case "category_calibration_required":
+      return "Load unavailable: usable activity-specific calibration was not supplied to this estimate.";
+    case "activity_data_missing":
+    case "no_objective_target":
+      return "Load unavailable: the estimator cannot calculate load from the current activity inputs.";
+    case "incomplete_members":
+    case "incomplete_contributors":
+      return "Load unavailable: only part of this activity can be estimated.";
+    default:
+      return "Load unavailable: the current calculation did not return a complete estimate.";
+  }
+}
+
 function formatDurationSeconds(seconds: number): string {
   const roundedSeconds = Math.max(0, Math.round(seconds));
   const hours = Math.floor(roundedSeconds / 3_600);

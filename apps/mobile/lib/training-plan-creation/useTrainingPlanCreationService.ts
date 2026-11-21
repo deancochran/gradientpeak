@@ -335,6 +335,8 @@ export function useTrainingPlanCreationService({
   const authoritativePreviewInput = useMemo(() => {
     try {
       const draft = buildCanonicalTrainingPlanDraft(state);
+      // Preview accepts unnamed drafts; commit readiness still requires a real name.
+      if (draft.name.length > 255) return null;
       const commonDraft = {
         ...draft,
         previewStartDate: state.scheduling.startDate,
@@ -595,6 +597,10 @@ export function useTrainingPlanCreationService({
       const existingPlanId = mode === "edit" ? planId : undefined;
       try {
         const draft = buildCanonicalTrainingPlanDraft(state);
+        if (!draft.name || draft.name.length > 255) {
+          setProjectionConflict("Enter a plan name of 1–255 characters before saving.");
+          return;
+        }
         const commonDraft = {
           ...draft,
           previewStartDate: state.scheduling.startDate,
@@ -707,10 +713,13 @@ export function useTrainingPlanCreationService({
   ]);
 
   const hasUncertainCommit = retainedCommitRequestRef.current !== null;
+  const validCommitName =
+    state.details.name.trim().length > 0 && state.details.name.trim().length <= 255;
   const savePlan = useMemo(() => {
     const canSave =
       completedOwner.current !== owner &&
-      (hasUncertainCommit || previewLifecycle.status === "backend_preview_ready");
+      (hasUncertainCommit ||
+        (validCommitName && previewLifecycle.status === "backend_preview_ready"));
     const readiness = canSave
       ? {
           detail: hasUncertainCommit
@@ -725,20 +734,26 @@ export function useTrainingPlanCreationService({
               : "Ready to create",
           status: "ready" as const,
         }
-      : previewLifecycle.status === "backend_preview_pending"
+      : !validCommitName
         ? {
-            detail: "The authoritative preview is updating.",
-            label: "Updating preview",
-            status: "pending" as const,
-          }
-        : {
-            detail:
-              "reason" in previewLifecycle
-                ? previewLifecycle.reason
-                : "The authoritative preview is unavailable.",
-            label: "Preview required",
+            detail: "Enter a plan name of 1–255 characters before saving.",
+            label: "Plan name required",
             status: "blocked" as const,
-          };
+          }
+        : previewLifecycle.status === "backend_preview_pending"
+          ? {
+              detail: "The authoritative preview is updating.",
+              label: "Updating preview",
+              status: "pending" as const,
+            }
+          : {
+              detail:
+                "reason" in previewLifecycle
+                  ? previewLifecycle.reason
+                  : "The authoritative preview is unavailable.",
+              label: "Preview required",
+              status: "blocked" as const,
+            };
     return {
       mode,
       label: hasUncertainCommit ? "Retry save" : mode === "edit" ? "Save" : "Create",
@@ -755,7 +770,15 @@ export function useTrainingPlanCreationService({
       route: "canonical" as const,
       execute: persistAndValidatePlan,
     };
-  }, [pendingOwner, owner, hasUncertainCommit, mode, persistAndValidatePlan, previewLifecycle]);
+  }, [
+    pendingOwner,
+    owner,
+    hasUncertainCommit,
+    mode,
+    persistAndValidatePlan,
+    previewLifecycle,
+    validCommitName,
+  ]);
   const summary = useMemo(() => selectBuilderSummary(state), [state]);
   const builderPresentation = useMemo(() => deriveBuilderPlanPresentation(state), [state]);
   const athleteContextFields = useMemo(

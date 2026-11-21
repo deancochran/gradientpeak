@@ -18,7 +18,7 @@ export function PaceInput(props: PaceInputProps) {
   const segments = paceTextSegments(props.value, policy.layout);
   return (
     <View className="gap-2">
-      {props.triggerVariant !== "row" ? (
+      {props.triggerVariant !== "row" && props.triggerVariant !== "value" ? (
         <View className="flex-row items-center justify-between">
           <Text className="text-sm font-medium text-foreground">
             {props.label}

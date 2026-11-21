@@ -112,14 +112,18 @@ const targetTypeStartingValues = {
 /** Starting values are editable suggestions, not conversions or athlete-specific prescriptions. */
 export function getActivityPlanTargetTypeDefault(
   type: "rest",
+  activityCategory?: ActivityTargetCategory,
 ): Extract<ActivityPlanTarget, { type: "rest" }>;
 export function getActivityPlanTargetTypeDefault(
   type: Exclude<ActivityPlanTarget["type"], "rest">,
+  activityCategory?: ActivityTargetCategory,
 ): Exclude<ActivityPlanTarget, { type: "rest" }>;
 export function getActivityPlanTargetTypeDefault(
   type: ActivityPlanTarget["type"],
+  activityCategory?: ActivityTargetCategory,
 ): ActivityPlanTarget {
   if (type === "rest") return { type };
+  if (type === "cadence" && activityCategory === "run") return { type, intensity: 160 };
   return { type, intensity: targetTypeStartingValues[type] };
 }
 

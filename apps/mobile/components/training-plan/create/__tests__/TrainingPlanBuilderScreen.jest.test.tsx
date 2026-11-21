@@ -17,7 +17,7 @@ jest.mock("@/lib/stores/auth-store", () => {
   };
 });
 
-import { Alert, Pressable, Text, TextInput, View } from "react-native";
+import { Alert, BackHandler, Pressable, Text, TextInput, View } from "react-native";
 import { publishTrainingPlanGoalCreation } from "@/lib/training-plan-creation/goalCreationHandoff";
 import { createActivityPlanSummary } from "../../../../test/activity-plan-projection-fixture";
 import { act, fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
@@ -30,13 +30,14 @@ const activityPlanCardProps: Array<{
 const trainingPathChartProps: unknown[] = [];
 const preventRemoveMock = jest.fn();
 const dispatchMock = jest.fn();
+const mockRouterBack = jest.fn();
 let mockPathname = "/training-plan-create";
 let mockFocused = true;
 let mockNestedGoal = false;
 // Keep the application sheet/frame/provider real; only replace the native presentation driver.
 jest.mock("@gorhom/bottom-sheet", () => {
   const React: typeof import("react") = require("react");
-  const { View, ScrollView, FlatList } = require("react-native");
+  const { View, ScrollView } = require("react-native");
   return {
     BottomSheetModal: React.forwardRef(
       (
@@ -59,7 +60,11 @@ jest.mock("@gorhom/bottom-sheet", () => {
       },
     ),
     BottomSheetScrollView: ScrollView,
-    BottomSheetFlatList: FlatList,
+    // A page must never mount Gorhom's list: it requires BottomSheet context.
+    // Do not alias this to FlatList, or this regression is masked in native tests.
+    BottomSheetFlatList: () => {
+      throw new Error("BottomSheetFlatList requires BottomSheet context");
+    },
     BottomSheetView: View,
     BottomSheetFooter: View,
     BottomSheetBackdrop: View,
@@ -102,6 +107,7 @@ const activityPlan = createActivityPlanSummary({
 
 let mockAuthoritativePreviewData: unknown;
 let mockAuthoritativePreviewError: Error | null;
+let mockAuthoritativePreviewFetching = false;
 let mockEditPlanError: Error | null;
 let mockPerformanceModelError: Error | null;
 let mockQueryRefresh = 0;
@@ -290,8 +296,9 @@ jest.mock("expo-router", () => ({
     getState: () => ({ index: 0, routes: [] }),
   }),
   usePathname: () => mockPathname,
+  useFocusEffect: (effect: () => undefined | (() => void)) => React.useEffect(effect, [effect]),
   useGlobalSearchParams: () => ({ returnToTrainingPlanCreate: mockNestedGoal ? "1" : undefined }),
-  useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
+  useRouter: () => ({ push: jest.fn(), replace: jest.fn(), back: mockRouterBack }),
 }));
 
 jest.mock("@repo/ui/components/button", () => ({
@@ -440,21 +447,37 @@ jest.mock("../BuilderScheduleEditor", () => ({
   BuilderScheduleEditor: ({
     onAddSessionAtOffset,
     onPressSession,
+    onDuplicateSession,
+    scheduleOnly,
+    onCopyWeek,
     viewModel,
   }: React.ComponentProps<typeof import("../BuilderScheduleEditor").BuilderScheduleEditor>) => (
     <View testID="builder-sessions-workspace">
-      <Pressable onPress={() => onAddSessionAtOffset(0)} testID="builder-sessions-workspace-add">
+      <Pressable
+        onPress={() => onAddSessionAtOffset(0)}
+        testID={scheduleOnly ? "builder-add-activity" : "builder-sessions-workspace-add"}
+      >
         <Text>Activity</Text>
+      </Pressable>
+      <Pressable testID="builder-copy-week" onPress={() => onCopyWeek(0, 1)}>
+        <Text>Copy week</Text>
       </Pressable>
       {viewModel.timelineWeeks.flatMap((week) =>
         week.sessions.map(({ session }) => (
-          <Pressable
-            key={session.localId}
-            testID={`builder-timeline-activity-${session.localId}`}
-            onPress={() => onPressSession(session.localId)}
-          >
-            <Text>{session.activityPlan?.name ?? "Session"}</Text>
-          </Pressable>
+          <View key={session.localId}>
+            <Pressable
+              testID={`builder-timeline-activity-${session.localId}`}
+              onPress={() => onPressSession(session.localId)}
+            >
+              <Text>{session.activityPlan?.name ?? "Session"}</Text>
+            </Pressable>
+            <Pressable
+              testID={`duplicate-${session.localId}`}
+              onPress={() => onDuplicateSession(session.localId)}
+            >
+              <Text>Duplicate</Text>
+            </Pressable>
+          </View>
         )),
       )}
     </View>
@@ -567,7 +590,7 @@ jest.mock("@/lib/api", () => ({
         useQuery: () => ({
           data: mockAuthoritativePreviewData,
           error: mockAuthoritativePreviewError,
-          isFetching: false,
+          isFetching: mockAuthoritativePreviewFetching,
           isLoading: false,
           refetch: jest.fn(),
         }),
@@ -640,14 +663,17 @@ async function selectBudget(label: string, hours: number, minutes: number) {
 
 describe("TrainingPlanBuilderScreen", () => {
   beforeEach(() => {
+    jest.spyOn(BackHandler, "addEventListener").mockImplementation(() => ({ remove: jest.fn() }));
     jest.useFakeTimers();
     jest.setSystemTime(FIXTURE_NOW);
     preventRemoveMock.mockClear();
     dispatchMock.mockClear();
+    mockRouterBack.mockClear();
     activityPlanCardProps.length = 0;
     trainingPathChartProps.length = 0;
     mockAuthoritativePreviewData = undefined;
     mockAuthoritativePreviewError = null;
+    mockAuthoritativePreviewFetching = false;
     mockEditPlanError = null;
     mockPerformanceModelError = null;
     mockQueryRefresh = 0;
@@ -697,7 +723,11 @@ describe("TrainingPlanBuilderScreen", () => {
   });
 
   it("single-flights a delayed preview but permits exit and fences its late result", async () => {
-    mockAuthoritativePreviewData = { status: "available", simulation: authoritativeSimulation };
+    mockAuthoritativePreviewData = {
+      status: "available",
+      simulation: authoritativeSimulation,
+      sessionResults: [],
+    };
     let resolvePreview!: (value: object) => void;
     mockCommitPreview.mockReturnValueOnce(
       new Promise((resolve) => {
@@ -716,7 +746,7 @@ describe("TrainingPlanBuilderScreen", () => {
     });
     expect(mockCommitPreview).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId("training-plan-save-button").props.disabled).toBe(true);
-    expect(preventRemoveMock).not.toHaveBeenCalled();
+    expect(preventRemoveMock).toHaveBeenLastCalledWith(true, expect.any(Function));
     mockPathname = "/profile";
     mockFocused = false;
     await view.rerender(<TrainingPlanBuilderScreen mode="edit" planId={editableTrainingPlan.id} />);
@@ -737,7 +767,11 @@ describe("TrainingPlanBuilderScreen", () => {
   });
 
   it("keeps the hydrated edit revision when refreshed server data advances", async () => {
-    mockAuthoritativePreviewData = { status: "available", simulation: authoritativeSimulation };
+    mockAuthoritativePreviewData = {
+      status: "available",
+      simulation: authoritativeSimulation,
+      sessionResults: [],
+    };
     mockMutations.update.mockResolvedValue({ status: "stale", reason: "plan_revision" });
     const view = await renderNative(
       <TrainingPlanBuilderScreen mode="edit" planId={editableTrainingPlan.id} />,
@@ -755,14 +789,13 @@ describe("TrainingPlanBuilderScreen", () => {
   });
 
   it.each([
-    "create",
     "edit",
   ] as const)("renders real %s athlete assumptions through refresh and reopening", async (mode) => {
     const surface = () => (
       <TrainingPlanBuilderScreen mode={mode} planId={editableTrainingPlan.id} />
     );
     const rendered = await renderNative(surface());
-    await fireEvent.press(screen.getByTestId("builder-configuration-athleteContext"));
+    await fireEvent.press(screen.getByText("Athlete"));
     if (!screen.queryByLabelText("Weight")) await fireEvent.press(screen.getByText("Weight"));
     await fireEvent.changeText(screen.getByLabelText("Weight"), "73.25");
     await fireEvent.changeText(screen.getByLabelText("Weight"), "invalid");
@@ -770,27 +803,25 @@ describe("TrainingPlanBuilderScreen", () => {
     await rendered.rerender(surface());
     expect(screen.getByLabelText("Weight").props.value).toBe("invalid");
     await fireEvent.press(screen.getByLabelText("Close Athlete"));
-    await fireEvent.press(screen.getByTestId("builder-configuration-athleteContext"));
+    await fireEvent.press(screen.getByText("Athlete"));
     expect(screen.getByLabelText("Weight").props.value).toBe("73.25");
     await fireEvent.changeText(screen.getByLabelText("Weight"), "73.25");
     await fireEvent.press(screen.getByLabelText("Close Athlete"));
-    await fireEvent.press(screen.getByTestId("builder-configuration-athleteContext"));
+    await fireEvent.press(screen.getByText("Athlete"));
     expect(screen.getByLabelText("Weight").props.value).toBe("73.25");
   });
 
   it.each([
-    "create",
     "edit",
   ] as const)("keeps real %s preference inputs through refresh, applies once, and cancels on close", async (mode) => {
     const surface = () => (
       <TrainingPlanBuilderScreen mode={mode} planId={editableTrainingPlan.id} />
     );
     const rendered = await renderNative(surface());
-    await fireEvent.press(screen.getByTestId("builder-configuration-planningConstraints"));
+    await fireEvent.press(screen.getByText("Preferences"));
     const initial = screen.getByLabelText("Sessions per week").props.accessibilityValue;
     await selectQuantity("Sessions per week", 4);
     await selectBudget("Weekly duration", 0, 0);
-    if (mode === "create") await fireEvent.press(screen.getByText("Add advanced preferences"));
     await fireEvent.press(screen.getByLabelText("preferred_weekdays-Mon"));
     for (let refresh = 0; refresh < 3; refresh += 1) {
       mockQueryRefresh += 1;
@@ -835,7 +866,7 @@ describe("TrainingPlanBuilderScreen", () => {
     expect(screen.getByTestId("training-plan-builder-sheet-save").props.disabled).toBe(false);
     await fireEvent.press(screen.getByTestId("training-plan-builder-sheet-save"));
     expect(screen.queryByTestId("training-plan-builder-sheet")).toBeNull();
-    await fireEvent.press(screen.getByTestId("builder-configuration-planningConstraints"));
+    await fireEvent.press(screen.getByText("Preferences"));
     expect(screen.getByLabelText("Sessions per week").props.accessibilityValue).toEqual({
       text: "4",
     });
@@ -854,7 +885,7 @@ describe("TrainingPlanBuilderScreen", () => {
     await selectQuantity("Sessions per week", 0);
     await fireEvent.press(screen.getByLabelText("Close Preferences"));
     expect(screen.queryByTestId("training-plan-builder-sheet")).toBeNull();
-    await fireEvent.press(screen.getByTestId("builder-configuration-planningConstraints"));
+    await fireEvent.press(screen.getByText("Preferences"));
     expect(screen.getByLabelText("Sessions per week").props.accessibilityValue).toEqual({
       text: "4",
     });
@@ -863,16 +894,16 @@ describe("TrainingPlanBuilderScreen", () => {
     expect(mockMutations.update).not.toHaveBeenCalled();
   });
 
-  it("discards unapplied metadata on Close without a confirmation or resume choice", async () => {
+  it("retains inline metadata through a cancelled activity picker without committing", async () => {
     const alert = jest.spyOn(Alert, "alert");
     await renderNative(<TrainingPlanBuilderScreen />);
-    await fireEvent.press(screen.getByText("Name your plan"));
     await fireEvent.changeText(screen.getByTestId("builder-plan-name-input"), "Unsaved metadata");
-    await fireEvent.press(screen.getByLabelText("Close Plan Settings"));
+    await fireEvent.press(screen.getByTestId("builder-add-activity"));
+    await fireEvent.press(screen.getByLabelText("Back"));
     expect(screen.queryByTestId("training-plan-builder-sheet")).toBeNull();
     expect(alert).not.toHaveBeenCalled();
-    await fireEvent.press(screen.getByText("Name your plan"));
-    expect(screen.getByTestId("builder-plan-name-input").props.value).toBe("");
+    expect(screen.getByTestId("builder-plan-name-input").props.value).toBe("Unsaved metadata");
+    expect(mockMutations.create).not.toHaveBeenCalled();
     alert.mockRestore();
   });
 
@@ -880,22 +911,36 @@ describe("TrainingPlanBuilderScreen", () => {
     await renderNative(<TrainingPlanBuilderScreen />);
 
     expect(screen.getByTestId("builder-strategy-composer")).toBeTruthy();
-    await fireEvent.press(screen.getByText("Name your plan"));
-
-    expect(
-      screen.getByPlaceholderText("Base builder, race prep, return to training..."),
-    ).toBeTruthy();
+    expect(screen.getByLabelText("Plan name")).toBeTruthy();
     expect(screen.getByPlaceholderText("What this plan is designed to do")).toBeTruthy();
+  });
+
+  it("asks before discarding an applied dirty draft from the root screen", async () => {
+    const alert = jest.spyOn(Alert, "alert");
+    await renderNative(<TrainingPlanBuilderScreen />);
+    await fireEvent.changeText(screen.getByTestId("builder-plan-name-input"), "Keep this draft");
+
+    const guard = [...preventRemoveMock.mock.calls]
+      .reverse()
+      .find(([enabled]) => enabled === true)?.[1] as
+      | ((event: { data: { action: Record<string, unknown> } }) => void)
+      | undefined;
+    expect(guard).toEqual(expect.any(Function));
+    guard?.({ data: { action: { type: "GO_BACK" } } });
+    expect(alert).toHaveBeenCalledWith(
+      "Discard changes?",
+      "Your edits will be lost.",
+      expect.any(Array),
+    );
+    alert.mockRestore();
   });
 
   it("keeps the open flow during an owned child picker and background-only rerender, but discards it on exit", async () => {
     const view = await renderNative(<TrainingPlanBuilderScreen />);
-    await fireEvent.press(screen.getByText("Name your plan"));
     await fireEvent.changeText(screen.getByTestId("builder-plan-name-input"), "In progress");
-    await fireEvent.press(screen.getByTestId("training-plan-builder-sheet-save"));
     mockQueryRefresh += 1;
     await view.rerender(<TrainingPlanBuilderScreen />);
-    expect(screen.getByText("In progress")).toBeTruthy();
+    expect(screen.getByTestId("builder-plan-name-input").props.value).toBe("In progress");
     mockPathname = "/goal-create";
     mockFocused = false;
     mockNestedGoal = true;
@@ -904,7 +949,7 @@ describe("TrainingPlanBuilderScreen", () => {
     mockFocused = true;
     mockNestedGoal = false;
     await view.rerender(<TrainingPlanBuilderScreen />);
-    expect(screen.getByText("In progress")).toBeTruthy();
+    expect(screen.getByTestId("builder-plan-name-input").props.value).toBe("In progress");
     mockPathname = "/profile";
     mockFocused = false;
     await view.rerender(<TrainingPlanBuilderScreen />);
@@ -912,8 +957,7 @@ describe("TrainingPlanBuilderScreen", () => {
     mockPathname = "/training-plan-create";
     mockFocused = true;
     await view.rerender(<TrainingPlanBuilderScreen />);
-    expect(screen.getByText("Name your plan")).toBeTruthy();
-    expect(screen.queryByText("In progress")).toBeNull();
+    expect(screen.getByTestId("builder-plan-name-input").props.value).toBe("");
     expect(mockMutations.create).not.toHaveBeenCalled();
   });
 
@@ -922,17 +966,14 @@ describe("TrainingPlanBuilderScreen", () => {
     const view = await renderNative(
       <TrainingPlanBuilderScreen mode="edit" planId={editableTrainingPlan.id} />,
     );
-    await fireEvent.press(screen.getByText("Existing builder plan"));
     await fireEvent.press(screen.getByLabelText("Followers training plan"));
-    await fireEvent.press(screen.getByTestId("training-plan-builder-sheet-save"));
-    expect(preventRemoveMock).not.toHaveBeenCalled();
+    expect(preventRemoveMock).toHaveBeenLastCalledWith(true, expect.any(Function));
     mockPathname = "/profile";
     mockFocused = false;
     await view.rerender(<TrainingPlanBuilderScreen mode="edit" planId={editableTrainingPlan.id} />);
     mockPathname = "/training-plan-edit";
     mockFocused = true;
     await view.rerender(<TrainingPlanBuilderScreen mode="edit" planId={editableTrainingPlan.id} />);
-    await fireEvent.press(screen.getByText("Existing builder plan"));
     expect(screen.getByLabelText("Private training plan").props.accessibilityState.checked).toBe(
       true,
     );
@@ -942,8 +983,8 @@ describe("TrainingPlanBuilderScreen", () => {
     alert.mockRestore();
   });
 
-  it("opens builder-local goals off the main composer", async () => {
-    await renderNative(<TrainingPlanBuilderScreen />);
+  it("keeps goal editing available from the edit plan", async () => {
+    await renderNative(<TrainingPlanBuilderScreen mode="edit" planId={editableTrainingPlan.id} />);
 
     await fireEvent.press(screen.getByText("Goals"));
 
@@ -953,16 +994,70 @@ describe("TrainingPlanBuilderScreen", () => {
     expect(screen.getByText("New profile goal")).toBeTruthy();
   });
 
-  it("renders the compact production configuration rows", async () => {
+  it("leads with plan details and the schedule without creation setup tiles", async () => {
     await renderNative(<TrainingPlanBuilderScreen />);
 
-    expect(screen.getByTestId("builder-configuration-grid")).toBeTruthy();
-    expect(screen.getByLabelText(/Goals: No goals selected/)).toBeTruthy();
-    expect(screen.getByLabelText(/Schedule:/)).toBeTruthy();
+    expect(screen.getByLabelText("Plan name")).toBeTruthy();
+    expect(screen.getByTestId("builder-sessions-workspace")).toBeTruthy();
+    expect(screen.queryByTestId("builder-configuration-grid")).toBeNull();
+    expect(screen.queryByText("Athlete")).toBeNull();
+    expect(screen.queryByText("Goals")).toBeNull();
+    expect(screen.queryByText("Preferences")).toBeNull();
+    expect(screen.queryByTestId("published-projection-card")).toBeNull();
+    expect(screen.queryByTestId("builder-readiness")).toBeNull();
+    expect(screen.getAllByTestId("builder-add-activity")).toHaveLength(1);
   });
 
-  it("creates a full plan-local goal without using profile goal creation", async () => {
-    await renderNative(<TrainingPlanBuilderScreen />);
+  it("explains a pending or unavailable plan check without showing fitness panels", async () => {
+    mockAuthoritativePreviewFetching = true;
+    const rendered = await renderNative(<TrainingPlanBuilderScreen />);
+    await fireEvent.changeText(screen.getByLabelText("Plan name"), "Draft plan");
+    await fireEvent.press(screen.getByTestId("builder-add-activity"));
+    await fireEvent.press(
+      screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`),
+    );
+    await fireEvent.press(screen.getByLabelText("Add to plan"));
+    expect(screen.getByText("Checking plan before creating…")).toBeTruthy();
+    expect(screen.getByTestId("training-plan-save-button").props.disabled).toBe(true);
+    mockAuthoritativePreviewFetching = false;
+    mockAuthoritativePreviewData = undefined;
+    await rendered.rerender(<TrainingPlanBuilderScreen />);
+    expect(screen.getByText("Plan check unavailable")).toBeTruthy();
+    expect(screen.getByLabelText("Retry plan check unavailable")).toBeTruthy();
+    expect(screen.getByTestId("training-plan-save-button").props.disabled).toBe(true);
+    expect(screen.queryByTestId("published-projection-card")).toBeNull();
+  });
+
+  it("copies a week on native without browser crypto and extends a one-week plan", async () => {
+    const nativeCrypto = jest.requireMock<typeof import("expo-crypto")>("expo-crypto");
+    let sequence = 0;
+    const uuid = jest
+      .spyOn(nativeCrypto, "randomUUID")
+      .mockImplementation(() => `00000000-0000-4000-8000-${String(++sequence).padStart(12, "0")}`);
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "crypto");
+    Object.defineProperty(globalThis, "crypto", { configurable: true, value: undefined });
+    try {
+      await renderNative(<TrainingPlanBuilderScreen />);
+      await fireEvent.press(screen.getByTestId("builder-add-activity"));
+      await fireEvent.press(
+        screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`),
+      );
+      await fireEvent.press(screen.getByLabelText("Add to plan"));
+      await fireEvent.press(screen.getByTestId("builder-copy-week"));
+      expect(screen.getAllByTestId(/builder-timeline-activity-/)).toHaveLength(2);
+      const copied = screen.getAllByTestId(/builder-timeline-activity-/)[1];
+      if (!copied) throw new Error("Expected copied activity");
+      await fireEvent.press(copied);
+      expect(screen.getByText("Week 2")).toBeTruthy();
+    } finally {
+      uuid.mockImplementation(() => "00000000-0000-4000-8000-000000000000");
+      if (descriptor) Object.defineProperty(globalThis, "crypto", descriptor);
+      else Reflect.deleteProperty(globalThis, "crypto");
+    }
+  });
+
+  it("creates a full plan-local goal without using profile goal creation in edit mode", async () => {
+    await renderNative(<TrainingPlanBuilderScreen mode="edit" planId={editableTrainingPlan.id} />);
 
     await fireEvent.press(screen.getByText("Goals"));
     await fireEvent.press(screen.getByTestId("builder-create-plan-goal"));
@@ -979,9 +1074,9 @@ describe("TrainingPlanBuilderScreen", () => {
     expect(screen.getAllByText("Finish a local 10K").length).toBeGreaterThan(0);
   });
 
-  it("discards an unfinished plan-local goal on Close, including invalid duration", async () => {
+  it("discards an unfinished plan-local goal on Close in edit mode", async () => {
     const alert = jest.spyOn(Alert, "alert");
-    await renderNative(<TrainingPlanBuilderScreen />);
+    await renderNative(<TrainingPlanBuilderScreen mode="edit" planId={editableTrainingPlan.id} />);
     await fireEvent.press(screen.getByText("Goals"));
     await fireEvent.press(screen.getByTestId("builder-create-plan-goal"));
     await fireEvent.changeText(screen.getByTestId("goal-editor-title-input"), "Retain goal");
@@ -1000,56 +1095,38 @@ describe("TrainingPlanBuilderScreen", () => {
     alert.mockRestore();
   });
 
-  it("discards invalid session text on close and reopens accepted values without stale errors", async () => {
+  it("schedules a prescription with week and day without exposing demand authoring", async () => {
     await renderNative(<TrainingPlanBuilderScreen />);
-    await fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
+    await fireEvent.press(screen.getByTestId("builder-add-activity"));
     await fireEvent.press(
       screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`),
     );
-    const initialSaveDisabled = screen.getByTestId("training-plan-save-button").props.disabled;
-    await selectBudget("Planned duration", 0, 45);
-    await selectQuantity("Target common load", 20);
-    await selectBudget("Planned duration", 0, 0);
-    await fireEvent.press(screen.getByLabelText("Target common load"));
-    await fireEvent(screen.getByLabelText("Target common load thousands"), "valueChange", 10);
-    await fireEvent(screen.getByLabelText("Target common load units"), "valueChange", 1);
-    await fireEvent.press(screen.getByLabelText("Done Target common load"));
-    await fireEvent.press(screen.getByLabelText("Planned duration"));
-    expect(screen.getByLabelText("Planned duration minutes").props.selectedValue).toBe(0);
-    await fireEvent.press(screen.getByLabelText("Done Planned duration"));
-    expect(screen.getByLabelText("Target common load").props.accessibilityValue).toEqual({
-      text: "10001",
-    });
-    expect(screen.getByTestId("training-plan-save-button").props.disabled).toBe(true);
-    await fireEvent.press(screen.getByLabelText("Close Activity"));
+    expect(screen.getByTestId("builder-simple-session")).toBeTruthy();
+    for (const label of [
+      "Session demand",
+      "Training intent",
+      "Planned duration",
+      "Target common load",
+      "Activity title",
+      "Duplicate",
+      "Remove",
+    ])
+      expect(screen.queryByText(label)).toBeNull();
+    expect(screen.queryByLabelText("Custom title")).toBeNull();
+    expect(screen.getAllByText(activityPlan.name)).toHaveLength(1);
+    await fireEvent.press(screen.getByLabelText("Next week"));
+    await fireEvent.press(screen.getByLabelText("Day 3"));
+    expect(screen.getByLabelText("Day 3").props.accessibilityState.checked).toBe(true);
+    expect(screen.queryByTestId("training-plan-save-button")).toBeNull();
+    await fireEvent.press(screen.getByLabelText("Add to plan"));
     await fireEvent.press(screen.getByTestId(/builder-timeline-activity-/));
-    await fireEvent.press(screen.getByLabelText("Planned duration"));
-    expect(screen.getByLabelText("Planned duration minutes").props.selectedValue).toBe(45);
-    await fireEvent.press(screen.getByLabelText("Done Planned duration"));
-    expect(screen.getByLabelText("Target common load").props.accessibilityValue).toEqual({
-      text: "20",
-    });
-    expect(screen.getByTestId("training-plan-save-button").props.disabled).toBe(
-      initialSaveDisabled,
-    );
-    await fireEvent.press(screen.getByLabelText("Planned duration"));
-    await fireEvent.press(screen.getByLabelText("Clear Planned duration"));
-    await fireEvent.press(screen.getByLabelText("Done Planned duration"));
-    await fireEvent.press(screen.getByLabelText("Target common load"));
-    await fireEvent.press(screen.getByLabelText("Clear Target common load"));
-    await fireEvent.press(screen.getByLabelText("Done Target common load"));
-    await fireEvent.press(screen.getByLabelText("Close Activity"));
-    await fireEvent.press(screen.getByTestId(/builder-timeline-activity-/));
-    expect(screen.getByLabelText("Planned duration").props.accessibilityValue).toEqual({
-      text: "Not set",
-    });
-    expect(screen.getByLabelText("Target common load").props.accessibilityValue).toEqual({
-      text: "Not set",
-    });
+    expect(screen.getByText("Week 2")).toBeTruthy();
+    expect(screen.getByLabelText("Day 3").props.accessibilityState.checked).toBe(true);
+    expect(screen.getByLabelText("Done")).toBeTruthy();
   });
 
-  it("opens profile, metrics, and efforts from one athlete context form", async () => {
-    await renderNative(<TrainingPlanBuilderScreen />);
+  it("keeps athlete context available from the edit plan", async () => {
+    await renderNative(<TrainingPlanBuilderScreen mode="edit" planId={editableTrainingPlan.id} />);
 
     expect(screen.getByText("Athlete")).toBeTruthy();
 
@@ -1058,8 +1135,8 @@ describe("TrainingPlanBuilderScreen", () => {
     expect(screen.getByText("Optional athlete details for this plan only.")).toBeTruthy();
   });
 
-  it("opens sparse planning constraints off the main composer", async () => {
-    await renderNative(<TrainingPlanBuilderScreen />);
+  it("keeps planning constraints available from the edit plan", async () => {
+    await renderNative(<TrainingPlanBuilderScreen mode="edit" planId={editableTrainingPlan.id} />);
 
     await fireEvent.press(screen.getByText("Preferences"));
 
@@ -1069,11 +1146,7 @@ describe("TrainingPlanBuilderScreen", () => {
   it("opens date-free plan settings from the strategy composer", async () => {
     await renderNative(<TrainingPlanBuilderScreen />);
 
-    await fireEvent.press(screen.getByText("Name your plan"));
-
-    expect(
-      screen.getByPlaceholderText("Base builder, race prep, return to training..."),
-    ).toBeTruthy();
+    expect(screen.getByLabelText("Plan name")).toBeTruthy();
     expect(screen.queryByPlaceholderText("YYYY-MM-DD")).toBeNull();
     expect(screen.queryByText("Start date")).toBeNull();
   });
@@ -1083,7 +1156,7 @@ describe("TrainingPlanBuilderScreen", () => {
 
     expect(screen.getByTestId("builder-sessions-workspace")).toBeTruthy();
 
-    await fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
+    await fireEvent.press(screen.getByTestId("builder-add-activity"));
 
     expect(screen.getByTestId("training-plan-builder-activity-picker-search")).toBeTruthy();
     expect(screen.getByTestId("training-plan-builder-activity-picker-filter")).toBeTruthy();
@@ -1092,37 +1165,39 @@ describe("TrainingPlanBuilderScreen", () => {
     ).toBeTruthy();
 
     await fireEvent.press(screen.getByTestId("training-plan-builder-activity-picker-filter"));
-    expect(screen.getByTestId("training-plan-builder-activity-filter-sheet")).toBeTruthy();
+    expect(screen.getByTestId("builder-activity-filter-screen")).toBeTruthy();
     await fireEvent.press(screen.getByTestId("training-plan-builder-activity-sort-name"));
-    await fireEvent.press(screen.getByTestId("training-plan-builder-sheet-save"));
+    await fireEvent.press(screen.getByLabelText("Back"));
     expect(screen.getByTestId("training-plan-builder-activity-picker-search")).toBeTruthy();
 
     await fireEvent.press(
       screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`),
     );
 
-    expect(screen.getByTestId("builder-session-editor-modal")).toBeTruthy();
+    expect(screen.getByTestId("builder-session-screen")).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText("Add to plan"));
+    expect(screen.getByTestId("builder-sessions-workspace")).toBeTruthy();
+    expect(screen.getByTestId(/builder-timeline-activity-/)).toBeTruthy();
   });
 
   it("cancels an unassigned activity picker draft before closing the full-screen picker", async () => {
-    mockAuthoritativePreviewData = { status: "available", simulation: authoritativeSimulation };
+    mockAuthoritativePreviewData = {
+      status: "available",
+      simulation: authoritativeSimulation,
+      sessionResults: [],
+    };
     await renderNative(<TrainingPlanBuilderScreen />);
 
-    await fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
-    await fireEvent.press(screen.getByLabelText("Close activity picker"));
+    await fireEvent.press(screen.getByTestId("builder-add-activity"));
+    await fireEvent.press(screen.getByLabelText("Back"));
     expect(screen.queryByTestId("builder-activity-picker-screen")).toBeNull();
 
-    await fireEvent.press(screen.getByText("Name your plan"));
-    await fireEvent.changeText(
-      screen.getByPlaceholderText("Base builder, race prep, return to training..."),
-      "No phantom session",
-    );
-    await fireEvent.press(screen.getByTestId("training-plan-builder-sheet-save"));
-    await fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
+    await fireEvent.changeText(screen.getByLabelText("Plan name"), "No phantom session");
+    await fireEvent.press(screen.getByTestId("builder-add-activity"));
     await fireEvent.press(
       screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`),
     );
-    await fireEvent.press(screen.getByLabelText("Close Activity"));
+    await fireEvent.press(screen.getByLabelText("Add to plan"));
     await fireEvent.press(screen.getByText("Create"));
 
     await waitFor(() => expect(mockMutations.create).toHaveBeenCalledTimes(1));
@@ -1137,10 +1212,127 @@ describe("TrainingPlanBuilderScreen", () => {
     );
   });
 
+  it("cancels a newly selected activity on Back until Add to plan is pressed", async () => {
+    await renderNative(<TrainingPlanBuilderScreen />);
+    await fireEvent.changeText(screen.getByLabelText("Plan name"), "Keep plan details");
+    await fireEvent.press(screen.getByTestId("builder-add-activity"));
+    await fireEvent.press(
+      screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`),
+    );
+    await fireEvent.press(screen.getByLabelText("Next week"));
+    await fireEvent.press(screen.getByLabelText("Back"));
+    expect(screen.queryByTestId(/builder-timeline-activity-/)).toBeNull();
+    expect(screen.getByLabelText("Plan name").props.value).toBe("Keep plan details");
+    expect(mockMutations.create).not.toHaveBeenCalled();
+  });
+
+  it("uses hardware Back for repeated picker/filter/session navigation without exiting the draft", async () => {
+    let hardwareBack: (() => boolean | null | undefined) | undefined;
+    const subscription = jest
+      .spyOn(BackHandler, "addEventListener")
+      .mockImplementation((_event, listener) => {
+        hardwareBack = () =>
+          listener({ type: "hardwareBackPress", timeStamp: FIXTURE_NOW.getTime() });
+        return {
+          remove: () => {
+            hardwareBack = undefined;
+          },
+        };
+      });
+    const alert = jest.spyOn(Alert, "alert");
+    await renderNative(<TrainingPlanBuilderScreen />);
+    await fireEvent.changeText(screen.getByLabelText("Plan name"), "Retained plan");
+    for (let index = 0; index < 2; index += 1) {
+      await fireEvent.press(screen.getByTestId("builder-add-activity"));
+      await act(() => {
+        expect(hardwareBack?.()).toBe(true);
+      });
+      expect(screen.getByLabelText("Plan name").props.value).toBe("Retained plan");
+    }
+    await fireEvent.press(screen.getByTestId("builder-add-activity"));
+    await fireEvent.press(screen.getByTestId("training-plan-builder-activity-picker-filter"));
+    await act(() => {
+      expect(hardwareBack?.()).toBe(true);
+    });
+    expect(screen.getByTestId("builder-activity-picker-screen")).toBeTruthy();
+    await fireEvent.press(
+      screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`),
+    );
+    await fireEvent.press(screen.getByLabelText("Change activity"));
+    await act(() => {
+      expect(hardwareBack?.()).toBe(true);
+    });
+    expect(screen.getByTestId("builder-session-screen")).toBeTruthy();
+    await act(() => {
+      expect(hardwareBack?.()).toBe(true);
+    });
+    expect(screen.getByTestId("builder-sessions-workspace")).toBeTruthy();
+    expect(screen.queryByTestId("builder-session-editor-modal")).toBeNull();
+    expect(alert).not.toHaveBeenCalled();
+    expect(dispatchMock).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByLabelText("Go back"));
+    expect(mockRouterBack).toHaveBeenCalledTimes(1);
+    subscription.mockRestore();
+    alert.mockRestore();
+  });
+
+  it("retains optional title and scheduling when changing activity is cancelled", async () => {
+    await renderNative(<TrainingPlanBuilderScreen />);
+    await fireEvent.press(screen.getByTestId("builder-add-activity"));
+    await fireEvent.press(
+      screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`),
+    );
+    await fireEvent.press(screen.getByLabelText("Day 4"));
+    await fireEvent.press(screen.getByText("Optional details"));
+    await fireEvent.changeText(screen.getByLabelText("Custom title"), "My easy day");
+    await fireEvent.press(screen.getByLabelText("Change activity"));
+    await fireEvent.press(screen.getByLabelText("Back"));
+    expect(screen.getByTestId("builder-session-screen")).toBeTruthy();
+    expect(screen.getByLabelText("Custom title").props.value).toBe("My easy day");
+    expect(screen.getByLabelText("Day 4").props.accessibilityState.checked).toBe(true);
+    await fireEvent.press(screen.getByLabelText("Add to plan"));
+    await fireEvent.press(screen.getByTestId(/builder-timeline-activity-/));
+    expect(screen.getByLabelText("Custom title").props.value).toBe("My easy day");
+    await fireEvent.changeText(screen.getByLabelText("Custom title"), "");
+    await fireEvent.press(screen.getByLabelText("Done"));
+    await fireEvent.press(screen.getByTestId(/builder-timeline-activity-/));
+    expect(screen.queryByLabelText("Custom title")).toBeNull();
+  });
+
+  it("keeps duplicate actions on the schedule and opens the simple scheduling page", async () => {
+    mockAuthoritativePreviewData = {
+      status: "available",
+      simulation: authoritativeSimulation,
+      sessionResults: [],
+    };
+    await renderNative(<TrainingPlanBuilderScreen mode="edit" planId={editableTrainingPlan.id} />);
+    await fireEvent.press(screen.getByTestId("duplicate-33333333-3333-4333-8333-333333333333"));
+    expect(screen.getByTestId("builder-session-screen")).toBeTruthy();
+    expect(screen.queryByLabelText("Target common load")).toBeNull();
+    expect(screen.queryByText("Duplicate")).toBeNull();
+    await fireEvent.press(screen.getByLabelText("Day 2"));
+    await fireEvent.press(screen.getByLabelText("Done"));
+    expect(screen.queryByTestId("builder-session-editor-modal")).toBeNull();
+    const duplicateRow = screen
+      .getAllByTestId(/builder-timeline-activity-/)
+      .find((row) => !row.props.testID.endsWith("33333333-3333-4333-8333-333333333333"));
+    expect(duplicateRow).toBeTruthy();
+    if (!duplicateRow) throw new Error("Duplicated activity is missing from the schedule");
+    await fireEvent.press(duplicateRow);
+    expect(screen.getByLabelText("Day 2").props.accessibilityState.checked).toBe(true);
+    await fireEvent.press(screen.getByLabelText("Done"));
+    expect(screen.queryByText(/Some activity or plan settings contain invalid values/)).toBeNull();
+    expect(screen.getAllByTestId(/builder-timeline-activity-/)).toHaveLength(2);
+    // Existing one-session weekly constraints still apply; correcting a raw field
+    // must not bypass the separate server/schedule readiness checks.
+    expect(mockMutations.update).not.toHaveBeenCalled();
+  });
+
   it("routes create through the canonical mutation and preserves the authored payload", async () => {
     mockAuthoritativePreviewData = {
       status: "available",
       simulation: authoritativeSimulation,
+      sessionResults: [],
     };
     await renderNative(<TrainingPlanBuilderScreen />);
 
@@ -1160,18 +1352,13 @@ describe("TrainingPlanBuilderScreen", () => {
         },
       }),
     );
-    await fireEvent.press(screen.getByText("Name your plan"));
-    await fireEvent.changeText(
-      screen.getByPlaceholderText("Base builder, race prep, return to training..."),
-      "FTP build",
-    );
+    await fireEvent.changeText(screen.getByLabelText("Plan name"), "FTP build");
     await fireEvent.press(screen.getByLabelText("Followers training plan"));
-    await fireEvent.press(screen.getByTestId("training-plan-builder-sheet-save"));
-    await fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
+    await fireEvent.press(screen.getByTestId("builder-add-activity"));
     await fireEvent.press(
       screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`),
     );
-    await fireEvent.press(screen.getByLabelText("Close Activity"));
+    await fireEvent.press(screen.getByLabelText("Add to plan"));
     await waitFor(() => {
       expect(screen.getByText("Create")).toBeTruthy();
     });
@@ -1192,6 +1379,11 @@ describe("TrainingPlanBuilderScreen", () => {
               expect.objectContaining({
                 activity_plan_id: activityPlan.id,
                 offset_days: 0,
+                demand: expect.objectContaining({
+                  activity_category: activityPlan.activityCategory,
+                  target_duration_minutes: null,
+                  target_common_load: null,
+                }),
               }),
             ],
           }),
@@ -1205,47 +1397,84 @@ describe("TrainingPlanBuilderScreen", () => {
     mockAuthoritativePreviewError = new Error("offline");
     await renderNative(<TrainingPlanBuilderScreen />);
 
-    await fireEvent.press(screen.getByText("Name your plan"));
-    await fireEvent.changeText(
-      screen.getByPlaceholderText("Base builder, race prep, return to training..."),
-      "FTP build",
-    );
-    await fireEvent.press(screen.getByTestId("training-plan-builder-sheet-save"));
-    await fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
+    await fireEvent.changeText(screen.getByLabelText("Plan name"), "FTP build");
+    await fireEvent.press(screen.getByTestId("builder-add-activity"));
     await fireEvent.press(
       screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`),
     );
-    await fireEvent.press(screen.getByLabelText("Close Activity"));
+    await fireEvent.press(screen.getByLabelText("Add to plan"));
     await waitFor(() => {
       expect(screen.getByText("Create")).toBeTruthy();
     });
     await fireEvent.press(screen.getByText("Create"));
 
     expect(mockMutations.create).not.toHaveBeenCalled();
-    expect(screen.getByText("Projection could not be loaded.")).toBeTruthy();
+    expect(screen.getByText("Couldn’t check this plan")).toBeTruthy();
+  });
+
+  it("retains inline details and sessions after a failed create and allows retry", async () => {
+    mockAuthoritativePreviewData = {
+      status: "available",
+      simulation: authoritativeSimulation,
+      sessionResults: [],
+    };
+    mockMutations.create.mockRejectedValueOnce(new Error("Connection interrupted"));
+    const alert = jest.spyOn(Alert, "alert");
+    await renderNative(<TrainingPlanBuilderScreen />);
+    await fireEvent.changeText(screen.getByLabelText("Plan name"), "Keep my plan");
+    await fireEvent.changeText(screen.getByLabelText("Description"), "Retain these details");
+    await fireEvent.press(screen.getByTestId("builder-add-activity"));
+    await fireEvent.press(
+      screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`),
+    );
+    await fireEvent.press(screen.getByLabelText("Add to plan"));
+    await fireEvent.press(screen.getByTestId("training-plan-save-button"));
+    await waitFor(() => expect(mockMutations.create).toHaveBeenCalledTimes(1));
+    // An uncertain commit intentionally locks editing until the same write is retried.
+    expect(
+      screen.getByTestId("builder-plan-name-input", { includeHiddenElements: true }).props.value,
+    ).toBe("Keep my plan");
+    expect(
+      screen.getByTestId("builder-plan-description-input", { includeHiddenElements: true }).props
+        .value,
+    ).toBe("Retain these details");
+    expect(
+      screen.getByTestId(/builder-timeline-activity-/, { includeHiddenElements: true }),
+    ).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("training-plan-save-button"));
+    await waitFor(() => expect(mockMutations.create).toHaveBeenCalledTimes(2));
+    expect(mockMutations.create.mock.calls[1]?.[0].draft).toEqual(
+      mockMutations.create.mock.calls[0]?.[0].draft,
+    );
+    alert.mockRestore();
   });
 
   it("surfaces performance-model context failures and retries its query", async () => {
     mockPerformanceModelError = new Error("Performance model unavailable");
     await renderNative(<TrainingPlanBuilderScreen />);
 
-    expect(screen.getByText("Athlete context unavailable")).toBeTruthy();
-    await fireEvent.press(screen.getByLabelText("Retry athlete context unavailable"));
+    expect(screen.getByText("Training history unavailable")).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText("Retry training history unavailable"));
 
     expect(mockProjectionRefetch.baseline).toHaveBeenCalledTimes(1);
   });
 
   it("hydrates edit mode into the new builder save flow", async () => {
-    mockAuthoritativePreviewData = { status: "available", simulation: authoritativeSimulation };
+    mockAuthoritativePreviewData = {
+      status: "available",
+      simulation: authoritativeSimulation,
+      sessionResults: [],
+    };
     await renderNative(
       <TrainingPlanBuilderScreen mode="edit" planId="22222222-2222-4222-8222-222222222222" />,
     );
 
     await waitFor(() => {
       expect(screen.getByText("Save")).toBeTruthy();
-      expect(screen.getByText("Existing builder plan")).toBeTruthy();
+      expect(screen.getByTestId("builder-plan-name-input").props.value).toBe(
+        "Existing builder plan",
+      );
     });
-    await fireEvent.press(screen.getByText("Existing builder plan"));
     expect(screen.getByLabelText("Private training plan").props.accessibilityState).toEqual({
       checked: true,
     });
@@ -1258,7 +1487,6 @@ describe("TrainingPlanBuilderScreen", () => {
       checked: true,
     });
     expect(mockMutations.update).not.toHaveBeenCalled();
-    await fireEvent.press(screen.getByTestId("training-plan-builder-sheet-save"));
     await fireEvent.press(screen.getByText("Save"));
     await waitFor(() => expect(mockMutations.update).toHaveBeenCalledTimes(1));
     expect(mockMutations.update.mock.calls[0]?.[0]).toMatchObject({

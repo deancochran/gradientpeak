@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { CanonicalActivityCategory } from "../schemas/activity-category";
 
 export const activityTargetTypes = [
   "%FTP",
@@ -152,6 +153,11 @@ export const activityTargetAuthoringUnitLabels: Record<ActivityTargetUnit, strin
   rest: "Rest",
   watts: "W",
 };
+
+/** Cadence values are steps per minute for running, and revolutions per minute otherwise. */
+export function getActivityTargetCadenceUnitLabel(category: CanonicalActivityCategory) {
+  return category === "run" ? "spm" : "rpm";
+}
 
 export function getActivityTargetTypesForAuthoringDomain(domain: ActivityTargetDomain) {
   return activityTargetAuthoringGroups.find((group) => group.domain === domain)?.types ?? [];

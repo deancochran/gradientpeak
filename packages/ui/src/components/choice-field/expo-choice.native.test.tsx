@@ -5,6 +5,30 @@ import { ExpoChoiceControl as AndroidChoice } from "./expo-choice.android";
 import { ExpoChoiceControl as IosChoice } from "./expo-choice.ios";
 import { ChoiceField } from "./index.native";
 
+it("retains disabled legacy Rest in the iOS menu while only permitting repair selections", async () => {
+  const change = jest.fn();
+  const view = await renderNative(
+    <IosChoice
+      label="Target type"
+      mode="menu"
+      value="rest"
+      retainDisabledValue
+      options={[
+        { value: "rest", label: "Rest", disabled: true },
+        { value: "RPE", label: "RPE" },
+      ]}
+      onChange={change}
+    />,
+  );
+  const picker = view.container.queryAll((node) => node.type === "SwiftPicker")[0];
+  if (!picker) throw new Error("Expected iOS picker");
+  expect(picker.props.selection).toBe(0);
+  await act(() => picker.props.onSelectionChange(0));
+  expect(change).not.toHaveBeenCalled();
+  await act(() => picker.props.onSelectionChange(1));
+  expect(change).toHaveBeenCalledWith("RPE");
+});
+
 // Exercise the shared field's real Android adapter, not the Node/RNPicker fallback.
 jest.mock("./expo-choice", () => jest.requireActual("./expo-choice.android"));
 

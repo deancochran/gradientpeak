@@ -6,7 +6,7 @@ const validStep: ActivityPlanDraftStep = {
   type: "step",
   id: "00000000-0000-4000-8000-000000000002",
   duration: { type: "time" as const, seconds: 60 },
-  targets: [],
+  targets: [{ type: "RPE", intensity: 5 }],
 };
 const validDraft = (step: ActivityPlanDraftStep = validStep, activity_category = "run") => ({
   version: 5 as const,
@@ -48,7 +48,11 @@ describe("activity plan authoring draft", () => {
     [
       "repetitions without exactly one RPE",
       validDraft(
-        { ...validStep, duration: { type: "repetitions", count: 8 }, targets: [] },
+        {
+          ...validStep,
+          duration: { type: "repetitions", count: 8 },
+          targets: [{ type: "cadence", intensity: 90 }],
+        },
         "strength",
       ),
     ],
@@ -70,8 +74,10 @@ describe("activity plan authoring draft", () => {
     expect(activityPlanAuthoringStructureSchema.safeParse(draft).success).toBe(false);
     expect(resolveActivityPlanDraft(draft)).toMatchObject({ status: "invalid" });
   });
-  it("keeps explicit targetless steps valid while unfinished fields remain incomplete", () => {
-    expect(resolveActivityPlanDraft(validDraft())).toMatchObject({ status: "valid" });
+  it("rejects targetless executable steps while retaining incomplete drafts for repair", () => {
+    expect(resolveActivityPlanDraft(validDraft({ ...validStep, targets: [] }))).toMatchObject({
+      status: "invalid",
+    });
     expect(
       resolveActivityPlanDraft(
         validDraft({ ...validStep, duration: null, targets: [{ type: "RPE", intensity: null }] }),

@@ -1,4 +1,4 @@
-import { createRef } from "react";
+import { Children, createRef, isValidElement } from "react";
 import { AccessibilityInfo, findNodeHandle } from "react-native";
 import { z } from "zod";
 import { useZodForm } from "../../hooks/use-zod-form";
@@ -111,6 +111,30 @@ describe("ChoiceField native ownership", () => {
     expect(change).not.toHaveBeenCalled();
     await fireEvent.press(view.getByLabelText("Clear Effort"));
     expect(clear).toHaveBeenCalledTimes(1);
+  });
+  it("uses compact selected copy in its iOS-safe trigger while retaining full picker labels", async () => {
+    const view = await renderNative(
+      <ChoiceField
+        label="Target type"
+        testId="target-type"
+        value="threshold"
+        nativePresentation="searchable"
+        options={[
+          {
+            value: "threshold",
+            label: "Heart rate · Threshold HR %",
+            selectedLabel: "Threshold HR",
+          },
+        ]}
+        onChange={jest.fn()}
+      />,
+    );
+    expect(view.getByTestId("target-type").props.accessibilityValue.text).toBe("Threshold HR");
+    await fireEvent.press(view.getByTestId("target-type"));
+    const labels = Children.toArray(view.getByTestId("target-type-picker").props.children)
+      .filter(isValidElement<{ label: string }>)
+      .map((child) => child.props.label);
+    expect(labels).toContain("Heart rate · Threshold HR %");
   });
   it("registers real RN accessibility focus and disables the actual trigger", async () => {
     const ref = createRef<{ focus: () => void }>();

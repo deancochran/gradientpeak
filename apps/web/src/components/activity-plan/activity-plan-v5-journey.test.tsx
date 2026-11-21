@@ -15,33 +15,43 @@ it("authors root and repeated steps, moves across boundaries, duplicates and ung
   fireEvent.change(screen.getByLabelText("Plan name"), { target: { value: "V5 journey" } });
   fireEvent.change(screen.getByLabelText("Activity category"), { target: { value: "run" } });
   fireEvent.click(screen.getByRole("button", { name: "Add step" }));
-  fireEvent.click(screen.getByRole("button", { name: "Add name" }));
   fireEvent.change(screen.getByLabelText("Name (optional)"), { target: { value: "Work" } });
   fireEvent.change(screen.getByLabelText("Completion"), { target: { value: "distance" } });
   fireEvent.change(screen.getByLabelText("Quantity"), { target: { value: "800" } });
   fireEvent.click(screen.getByRole("button", { name: "Add target" }));
   fireEvent.change(screen.getByLabelText("Target intensity 1"), { target: { value: "5" } });
   fireEvent.click(screen.getByRole("button", { name: "Add repeat" }));
-  const repeatId = screen.getByRole("option", { name: "Repeat 2" }).getAttribute("value");
-  if (!repeatId) throw new Error("Expected repeat destination");
-  fireEvent.change(screen.getByLabelText("Move Work to"), { target: { value: repeatId } });
+  fireEvent.pointerDown(screen.getByRole("button", { name: "More actions for step 1" }), {
+    button: 0,
+  });
+  fireEvent.click(screen.getByRole("menuitem", { name: "Move to repeat 2" }));
   fireEvent.change(screen.getByLabelText("Repeat count"), { target: { value: "3" } });
   fireEvent.click(
     within(screen.getByTestId("activity-plan-item-0")).getByRole("button", { name: "Add step" }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Add name" }));
   fireEvent.change(screen.getByLabelText("Name (optional)"), { target: { value: "Recovery" } });
   fireEvent.change(screen.getByLabelText("Completion"), { target: { value: "time" } });
   fireEvent.change(screen.getByLabelText("Quantity"), { target: { value: "60" } });
-  fireEvent.change(screen.getByLabelText("Move Work to"), { target: { value: "root" } });
+  fireEvent.click(screen.getByRole("button", { name: "Add target" }));
+  fireEvent.change(screen.getByLabelText("Target intensity 1"), { target: { value: "4" } });
+  fireEvent.pointerDown(screen.getByRole("button", { name: "More actions for step 1" }), {
+    button: 0,
+  });
+  fireEvent.click(screen.getByRole("menuitem", { name: "Move to end of activity plan" }));
   const dataTransfer = { effectAllowed: "", dropEffect: "", setData: vi.fn() };
   fireEvent.dragStart(screen.getByRole("button", { name: "Drag step 2" }), { dataTransfer });
   fireEvent.drop(screen.getByRole("button", { name: "Drop before item 1" }), { dataTransfer });
   expect(within(screen.getByTestId("activity-plan-item-0")).getByText("Work")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Duplicate item" }));
-  const firstUngroup = screen.getAllByRole("button", { name: "Ungroup repeat" })[0];
-  if (!firstUngroup) throw new Error("Expected repeat ungroup control");
-  fireEvent.click(firstUngroup);
+  const firstRepeatMenu = () =>
+    screen.getAllByRole("button", { name: /More actions for repeat/ })[0];
+  const repeatMenu = firstRepeatMenu();
+  if (!repeatMenu) throw new Error("Expected a repeat actions menu");
+  fireEvent.pointerDown(repeatMenu, { button: 0 });
+  fireEvent.click(screen.getByRole("menuitem", { name: "Duplicate" }));
+  const ungroupMenu = firstRepeatMenu();
+  if (!ungroupMenu) throw new Error("Expected a repeat actions menu");
+  fireEvent.pointerDown(ungroupMenu, { button: 0 });
+  fireEvent.click(screen.getByRole("menuitem", { name: "Ungroup" }));
   fireEvent.submit(screen.getByTestId("activity-plan-composer"));
   await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
   if (!saved) throw new Error("Expected saved V5 plan");

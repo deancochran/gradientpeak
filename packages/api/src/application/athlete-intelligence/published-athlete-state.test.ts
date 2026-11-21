@@ -281,7 +281,10 @@ describe("published athlete-state snapshot", () => {
     ).resolves.toMatchObject({ freshness: "fresh", rebuildStatus: "fresh" });
   });
 
-  it("treats threshold estimates as cache and overlays canonical threshold identity", async () => {
+  it.each([
+    true,
+    false,
+  ])("preserves canonical LTHR with max-HR cache present=%s", async (withCache) => {
     const facts = buildPerformanceTargetFactsFixture({
       asOf: "2026-07-01T23:30:00.000Z",
       athleteId: profileId,
@@ -317,6 +320,7 @@ describe("published athlete-state snapshot", () => {
       estimate("run_max_hr", "run", 194, "bpm", facts.heartRate.run.maxHr),
       estimate("swim_max_hr", "swim", 180, "bpm", facts.heartRate.swim.maxHr),
     ];
+    if (!withCache) read.current.estimates = [];
     vi.mocked(readPublishedAthleteStateSnapshotData).mockResolvedValue(read);
     getAthleteThresholdTargetFactsAsOf.mockResolvedValue(
       materializeAthletePerformanceTargetFacts({
@@ -339,6 +343,22 @@ describe("published athlete-state snapshot", () => {
             sourceEffortIds: ["canonical-effort"],
             sourceActivityIds: ["canonical-activity"],
           },
+          {
+            id: "canonical-run-lthr",
+            status: "available",
+            activityCategory: "run",
+            metric: "lthr",
+            unit: "bpm",
+            method: "lthr_30m_final_20m",
+            value: 178,
+            effectiveAt: "2026-06-30T00:00:00.000Z",
+            policyVersion: "threshold-policy-v1",
+            state: "confirmed",
+            confidence: 0.95,
+            sourceEvaluationIds: ["canonical-run-evaluation"],
+            sourceEffortIds: ["canonical-run-effort"],
+            sourceActivityIds: ["canonical-run-activity"],
+          },
         ],
       }),
     );
@@ -359,9 +379,26 @@ describe("published athlete-state snapshot", () => {
           }),
         },
         heartRate: {
+          run: {
+            lthr: expect.objectContaining({
+              status: "available",
+              valueBpm: 178,
+              calibrationId: "canonical-run-lthr",
+              freshness: "fresh",
+            }),
+            maxHr: expect.objectContaining(
+              withCache
+                ? { status: "available", valueBpm: 194 }
+                : { status: "unavailable", valueBpm: null },
+            ),
+          },
           bike: {
             lthr: expect.objectContaining({ status: "unavailable" }),
-            maxHr: expect.objectContaining({ status: "available", valueBpm: 190 }),
+            maxHr: expect.objectContaining(
+              withCache
+                ? { status: "available", valueBpm: 190 }
+                : { status: "unavailable", valueBpm: null },
+            ),
           },
         },
       },

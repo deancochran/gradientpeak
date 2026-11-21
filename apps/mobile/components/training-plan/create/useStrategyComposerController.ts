@@ -13,17 +13,25 @@ export function useStrategyComposerController(controller: TrainingPlanBuilderCon
       state: strategy.state,
       planningBriefRows: strategy.viewModel.planningBriefRows,
       onAddActivity: controller.actions.addSession,
-      onEditMetadata: () => openSheet("metadata"),
       onOpenAthleteContext: () => openSheet("athleteContext"),
-      onUpdateDetails: builder.actions.updateDetails,
+      onUpdateDetails: (details: { name: string; description: string }) =>
+        builder.actions.updateDetails({
+          ...details,
+          contentVisibility: builder.state.details.contentVisibility,
+        }),
       onOpenGoals: () => openSheet("goals"),
+      onUpdateVisibility: (contentVisibility: typeof builder.state.details.contentVisibility) =>
+        builder.actions.updateDetails({ ...builder.state.details, contentVisibility }),
       onOpenPlanningConstraints: () => openSheet("preferences"),
+      showEditConfiguration: controller.mode === "edit",
     }),
     [
       controller.chartReview,
+      controller.mode,
       builder.derived.savePlan.readiness,
       controller.actions.addSession,
       builder.actions.updateDetails,
+      builder.state.details,
       openSheet,
       strategy,
     ],

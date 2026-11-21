@@ -7,7 +7,7 @@ export function ExpoChoiceControl<T extends ChoiceValue>(props: ChoiceControlPro
     <NativePicker
       label={props.label}
       value={props.value ?? ""}
-      options={props.options.filter((option) => !option.disabled)}
+      options={props.options}
       {...(props.disabled === undefined ? {} : { disabled: props.disabled })}
       {...(props.testId === undefined ? {} : { testID: props.testId })}
       onChange={(value) => {

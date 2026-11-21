@@ -123,6 +123,8 @@ export type DailyTrainingAdjustmentChartProps = {
   onPreviewSelectedDateChange?: (date: string) => void;
   todayDate?: string | null;
   visibleTrends?: readonly PlanTrainingTrendLine[];
+  weekAnchorDate?: string | undefined;
+  todayLabel?: string | undefined;
 };
 
 export type PlanLoadGoalMarker = {
@@ -241,7 +243,9 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
   showSelectedTray = true,
   testID = "daily-training-adjustment-chart",
   todayDate,
+  todayLabel = "TODAY",
   visibleTrends,
+  weekAnchorDate,
 }: DailyTrainingAdjustmentChartProps) {
   const [viewportWidth, setViewportWidth] = useState(240);
   const [hasContentMeasurement, setHasContentMeasurement] = useState(false);
@@ -463,10 +467,12 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
     () => buildDailyTrainingAdjustmentCartesianContract(chartData),
     [chartData],
   );
-  const todayBucketDate = todayDate ? getPlanChartBucketDate(todayDate, range) : null;
+  const todayBucketDate = todayDate
+    ? getPlanChartBucketDate(todayDate, range, weekAnchorDate)
+    : null;
   const todayIndex = todayBucketDate
     ? visiblePoints.findIndex(
-        (point) => getPlanChartBucketDate(point.date, range) === todayBucketDate,
+        (point) => getPlanChartBucketDate(point.date, range, weekAnchorDate) === todayBucketDate,
       )
     : -1;
   const resolvedGoalMarkers = useMemo(
@@ -484,7 +490,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
   const goalGroups = useMemo(() => {
     const groups = new Map<string, PlanLoadGoalMarker[]>();
     for (const marker of resolvedGoalMarkers) {
-      const bucketDate = getPlanChartBucketDate(marker.targetDate, range);
+      const bucketDate = getPlanChartBucketDate(marker.targetDate, range, weekAnchorDate);
       const group = groups.get(bucketDate);
       if (group) group.push(marker);
       else groups.set(bucketDate, [marker]);
@@ -498,19 +504,19 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
           left.id.localeCompare(right.id),
       ),
     }));
-  }, [range, resolvedGoalMarkers]);
+  }, [range, resolvedGoalMarkers, weekAnchorDate]);
   const goalIndexes = goalGroups.flatMap((group) => {
     const index = visiblePoints.findIndex(
-      (point) => getPlanChartBucketDate(point.date, range) === group.date,
+      (point) => getPlanChartBucketDate(point.date, range, weekAnchorDate) === group.date,
     );
     return index >= 0 ? [{ ...group, index }] : [];
   });
   const visibleStart = visiblePoints[0]
-    ? getPlanChartBucketDate(visiblePoints[0].date, range)
+    ? getPlanChartBucketDate(visiblePoints[0].date, range, weekAnchorDate)
     : undefined;
   const lastVisiblePoint = visiblePoints.at(-1);
   const visibleEnd = lastVisiblePoint
-    ? getPlanChartBucketDate(lastVisiblePoint.date, range)
+    ? getPlanChartBucketDate(lastVisiblePoint.date, range, weekAnchorDate)
     : undefined;
   const goalsBefore = visibleStart
     ? goalGroups.filter((group) => group.date < visibleStart).flatMap((group) => group.markers)
@@ -986,7 +992,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                                           labelWidth: layout.markerLabelWidth,
                                         })}
                                         y={chartBounds.top + 10}
-                                        text="TODAY"
+                                        text={todayLabel}
                                         font={axisFont}
                                         color={colors.axisLabel}
                                       />

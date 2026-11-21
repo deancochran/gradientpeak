@@ -43,6 +43,8 @@ export function StepDurationField({
   form,
   activityCategory = "run",
   onExactEntryInvalidChange,
+  onSelectedTypeChange,
+  lockToTime = false,
   active = true,
   draft,
 }: {
@@ -50,6 +52,9 @@ export function StepDurationField({
   form: DurationFormAdapter;
   activityCategory?: CanonicalActivityCategory;
   onExactEntryInvalidChange?: (invalid: boolean) => void;
+  onSelectedTypeChange?: (type: EditableDurationType | null) => void;
+  /** A rest target is only meaningful for timed steps; old mismatches stay repairable. */
+  lockToTime?: boolean;
   /** Retained for compatibility with callers that previously rendered a compact editor. */
   compact?: boolean;
   active?: boolean;
@@ -72,6 +77,7 @@ export function StepDurationField({
   );
   const [distanceDraft, setDistanceDraft] = useState(() => draft?.exactByType?.distance);
   const [invalid, setLocalInvalid] = useState(draft?.invalid ?? false);
+  const [valueTouched, setValueTouched] = useState(false);
   const permitted = getPermissibleActivityPlanDurationTypes(activityCategory);
   const [selectedType, setSelectedType] = useState<EditableDurationType | null>(() =>
     duration && permitted.includes(duration.type as EditableDurationType)
@@ -92,10 +98,19 @@ export function StepDurationField({
     if (duration && permitted.includes(duration.type as EditableDurationType))
       setSelectedType(duration.type as EditableDurationType);
   }, [duration, permitted]);
+  useEffect(() => onSelectedTypeChange?.(selectedType), [onSelectedTypeChange, selectedType]);
   useImperativeHandle(ref, () => ({
     focus: () => valueRef.current?.focus?.(),
     settle: () => valueRef.current?.settle?.(),
     cancel: () => valueRef.current?.cancel?.(),
+    validate: () => {
+      if (selectedType !== null && duration === null) {
+        setValueTouched(true);
+        setInvalid(true);
+        return true;
+      }
+      return false;
+    },
   }));
   const usable = () => mounted.current && active;
   const setInvalid = (next: boolean) => {
@@ -107,6 +122,7 @@ export function StepDurationField({
   const setDuration = (next: StepDurationValue | null) => {
     if (!usable()) return;
     setInvalid(false);
+    setValueTouched(false);
     form.setValue("duration", next, { shouldDirty: true, shouldValidate: true });
   };
   const setUnit = (next: string) => {
@@ -123,7 +139,7 @@ export function StepDurationField({
   const chooseType = (nextType: string) => {
     if (!usable()) return;
     const type = permitted.find((candidate) => candidate === nextType);
-    if (!type || type === duration?.type) return;
+    if (!type || (lockToTime && type !== "time") || type === duration?.type) return;
     if (draft) {
       delete draft.segments;
       delete draft.exact;
@@ -153,164 +169,180 @@ export function StepDurationField({
     .map((option) => ({
       value: option.type,
       label: option.type === "distance" ? "Distance" : option.label,
+      ...(option.type === "repetitions" ? { selectedLabel: "Reps" } : {}),
+      disabled: lockToTime && option.type !== "time",
     }));
 
   return (
-    <View className="gap-3" testID="step-duration-field">
+    <View className="gap-2" testID="step-duration-field">
       {duration && !permitted.some((type) => type === duration.type) ? (
         <Text accessibilityRole="alert" className="text-destructive">
           {duration.type} is not permitted for new {activityCategory} activity plans. Choose a
           supported completion type; the existing value is retained.
         </Text>
       ) : null}
-      <View testID="completion-type-row">
-        <ChoiceField
-          required={false}
-          label="Duration type"
-          nativePresentation="menu"
-          value={selectedType ?? ""}
-          options={options}
-          disabled={!active}
-          onChange={chooseType}
-        />
+      <View className="flex-row items-center gap-2" testID="completion-type-row">
+        <View className="w-[112px] shrink-0">
+          <ChoiceField
+            density="compact"
+            required={false}
+            label="Duration type"
+            hideVisibleLabel
+            nativePresentation="searchable"
+            placeholder="Duration type"
+            value={selectedType ?? ""}
+            options={options}
+            disabled={!active}
+            onChange={chooseType}
+          />
+        </View>
+        {selectedType === null ? (
+          <Text className="min-h-12 flex-1 pt-3 text-sm text-muted-foreground">Choose a value</Text>
+        ) : selectedType === "time" ? (
+          <View className="min-w-[96px] flex-1">
+            <SegmentedDurationField
+              ref={valueRef}
+              label="Duration value"
+              presentation="native-overlay"
+              triggerVariant="value"
+              maxSeconds={ACTIVITY_PLAN_LIMITS.maxStepDurationSeconds}
+              required={false}
+              active={active}
+              {...(draft?.segments ? { segments: draft.segments } : {})}
+              valueSeconds={duration?.type === "time" ? duration.seconds : undefined}
+              onSegmentsChange={(segments) => {
+                if (draft && usable()) draft.segments = segments;
+              }}
+              onChangeSeconds={(seconds) => setDuration({ type: "time", seconds })}
+              onEmpty={() => {
+                setValueTouched(true);
+                setDuration(null);
+                setInvalid(true);
+              }}
+              onInvalidChange={setInvalid}
+            />
+          </View>
+        ) : selectedType === "repetitions" ? (
+          <View className="min-w-[96px] flex-1">
+            <NativeQuantityInput
+              required
+              showError={false}
+              ref={valueRef}
+              presentation="overlay"
+              id="step-duration-repetitions"
+              testId="step-duration-value"
+              label="Duration value"
+              unitLabel="reps"
+              triggerVariant="value"
+              min={1}
+              max={ACTIVITY_PLAN_LIMITS.maxStepRepetitionCount}
+              decimals={0}
+              clampProjection={false}
+              disabled={!active}
+              showAdjustmentButtons={false}
+              value={draft?.exact ?? draft?.exactByType?.repetitions ?? countDraft}
+              onChange={(raw) => {
+                if (!usable()) return;
+                setValueTouched(true);
+                setCountDraft(raw);
+                if (draft) {
+                  draft.exact = raw;
+                  draft.exactByType = { ...draft.exactByType, repetitions: raw };
+                }
+                setInvalid(
+                  !activityPlanDurationSchema.safeParse({
+                    type: "repetitions",
+                    count: parseNumberOrUndefined(raw),
+                  }).success,
+                );
+              }}
+              onNumberChange={(count) => {
+                if (
+                  count !== undefined &&
+                  activityPlanDurationSchema.safeParse({ type: "repetitions", count }).success
+                )
+                  setDuration({ type: "repetitions", count });
+              }}
+            />
+          </View>
+        ) : (
+          <>
+            <View className="min-w-[80px] flex-1" testID="distance-value-unit-row">
+              <NativeQuantityInput
+                ref={valueRef}
+                required
+                showError={false}
+                presentation="overlay"
+                label="Duration value"
+                unitLabel={unit === "km" ? "km" : "m"}
+                triggerVariant="value"
+                min={unit === "km" ? 0 : 1}
+                max={
+                  unit === "km"
+                    ? ACTIVITY_PLAN_LIMITS.maxStepDistanceMeters / 1000
+                    : ACTIVITY_PLAN_LIMITS.maxStepDistanceMeters
+                }
+                decimals={unit === "km" ? 3 : 0}
+                precision={unit === "km" ? "decimal" : "integer"}
+                disabled={!active}
+                testId="step-duration-value"
+                value={
+                  distanceDraft ??
+                  (duration?.type === "distance"
+                    ? String(unit === "km" ? duration.meters / 1000 : duration.meters)
+                    : "")
+                }
+                onChange={(raw) => {
+                  setValueTouched(true);
+                  setDistanceDraft(raw);
+                  if (draft) draft.exactByType = { ...draft.exactByType, distance: raw };
+                  const value = Number(raw);
+                  const meters = unit === "km" ? value * 1000 : value;
+                  setInvalid(
+                    !activityPlanDurationSchema.safeParse({ type: "distance", meters }).success,
+                  );
+                }}
+                onNumberChange={(value) => {
+                  if (value === undefined) return;
+                  const meters = unit === "km" ? value * 1000 : value;
+                  const next = { type: "distance" as const, meters };
+                  if (activityPlanDurationSchema.safeParse(next).success) {
+                    setDistanceDraft(undefined);
+                    if (draft) delete draft.exactByType?.distance;
+                    setDuration(next);
+                  } else setInvalid(true);
+                }}
+                onInvalidChange={(nextInvalid) => {
+                  // A zero kilometer picker selection is syntactically valid for the shared
+                  // numeric control but not a valid step distance. Its semantic invalidity
+                  // is set above and must not be cleared by that lower-level result.
+                  if (nextInvalid) setInvalid(true);
+                }}
+              />
+            </View>
+            <View className="w-[72px] shrink-0">
+              <ChoiceField
+                density="compact"
+                label="Distance unit"
+                hideVisibleLabel
+                nativePresentation="searchable"
+                value={unit === "km" ? "km" : "meters"}
+                options={[
+                  { label: "Kilometers", selectedLabel: "km", value: "km" },
+                  { label: "Meters", selectedLabel: "m", value: "meters" },
+                ]}
+                disabled={!active}
+                onChange={setUnit}
+              />
+            </View>
+          </>
+        )}
       </View>
-      {invalid ? (
+      {invalid && valueTouched ? (
         <Text accessibilityRole="alert" className="text-destructive">
           Correct the completion value before saving.
         </Text>
       ) : null}
-      {selectedType === null ? (
-        <Text className="text-sm text-muted-foreground">
-          Choose a completion type to enter its value.
-        </Text>
-      ) : selectedType === "time" ? (
-        <SegmentedDurationField
-          ref={valueRef}
-          label="Duration value"
-          presentation="native-overlay"
-          triggerVariant="row"
-          maxSeconds={ACTIVITY_PLAN_LIMITS.maxStepDurationSeconds}
-          required={false}
-          active={active}
-          {...(draft?.segments ? { segments: draft.segments } : {})}
-          valueSeconds={duration?.type === "time" ? duration.seconds : undefined}
-          onSegmentsChange={(segments) => {
-            if (draft && usable()) draft.segments = segments;
-          }}
-          onChangeSeconds={(seconds) => setDuration({ type: "time", seconds })}
-          onEmpty={() => {
-            setDuration(null);
-            setInvalid(true);
-          }}
-          onInvalidChange={setInvalid}
-        />
-      ) : selectedType === "repetitions" ? (
-        <NativeQuantityInput
-          required
-          ref={valueRef}
-          presentation="overlay"
-          id="step-duration-repetitions"
-          testId="step-duration-value"
-          label="Duration value"
-          unitLabel="reps"
-          triggerVariant="row"
-          min={1}
-          max={ACTIVITY_PLAN_LIMITS.maxStepRepetitionCount}
-          decimals={0}
-          clampProjection={false}
-          disabled={!active}
-          showAdjustmentButtons={false}
-          value={draft?.exact ?? draft?.exactByType?.repetitions ?? countDraft}
-          onChange={(raw) => {
-            if (!usable()) return;
-            setCountDraft(raw);
-            if (draft) {
-              draft.exact = raw;
-              draft.exactByType = { ...draft.exactByType, repetitions: raw };
-            }
-            setInvalid(
-              !activityPlanDurationSchema.safeParse({
-                type: "repetitions",
-                count: parseNumberOrUndefined(raw),
-              }).success,
-            );
-          }}
-          onNumberChange={(count) => {
-            if (
-              count !== undefined &&
-              activityPlanDurationSchema.safeParse({ type: "repetitions", count }).success
-            )
-              setDuration({ type: "repetitions", count });
-          }}
-        />
-      ) : (
-        <View className="flex-row flex-wrap items-end gap-3" testID="distance-value-unit-row">
-          <View className="min-w-[120px] flex-1">
-            <NativeQuantityInput
-              ref={valueRef}
-              required
-              presentation="overlay"
-              label="Duration value"
-              unitLabel={unit === "km" ? "km" : "m"}
-              triggerVariant="row"
-              min={unit === "km" ? 0 : 1}
-              max={
-                unit === "km"
-                  ? ACTIVITY_PLAN_LIMITS.maxStepDistanceMeters / 1000
-                  : ACTIVITY_PLAN_LIMITS.maxStepDistanceMeters
-              }
-              decimals={unit === "km" ? 3 : 0}
-              precision={unit === "km" ? "decimal" : "integer"}
-              disabled={!active}
-              testId="step-duration-value"
-              value={
-                distanceDraft ??
-                (duration?.type === "distance"
-                  ? String(unit === "km" ? duration.meters / 1000 : duration.meters)
-                  : "")
-              }
-              onChange={(raw) => {
-                setDistanceDraft(raw);
-                if (draft) draft.exactByType = { ...draft.exactByType, distance: raw };
-                const value = Number(raw);
-                const meters = unit === "km" ? value * 1000 : value;
-                setInvalid(
-                  !activityPlanDurationSchema.safeParse({ type: "distance", meters }).success,
-                );
-              }}
-              onNumberChange={(value) => {
-                if (value === undefined) return;
-                const meters = unit === "km" ? value * 1000 : value;
-                const next = { type: "distance" as const, meters };
-                if (activityPlanDurationSchema.safeParse(next).success) {
-                  setDistanceDraft(undefined);
-                  if (draft) delete draft.exactByType?.distance;
-                  setDuration(next);
-                } else setInvalid(true);
-              }}
-              onInvalidChange={(nextInvalid) => {
-                // A zero kilometer picker selection is syntactically valid for the shared
-                // numeric control but not a valid step distance. Its semantic invalidity
-                // is set above and must not be cleared by that lower-level result.
-                if (nextInvalid) setInvalid(true);
-              }}
-            />
-          </View>
-          <View className="min-w-[120px] flex-1">
-            <ChoiceField
-              label="Distance unit"
-              nativePresentation="menu"
-              value={unit === "km" ? "km" : "meters"}
-              options={[
-                { label: "Kilometers", value: "km" },
-                { label: "Meters", value: "meters" },
-              ]}
-              disabled={!active}
-              onChange={setUnit}
-            />
-          </View>
-        </View>
-      )}
     </View>
   );
 }

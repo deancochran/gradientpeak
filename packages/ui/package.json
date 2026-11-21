@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./components/disclosure": {
+      "react-native": "./src/components/disclosure/index.native.tsx",
+      "default": "./src/components/disclosure/index.web.tsx"
+    },
     "./components/choice-field": {
       "react-native": "./src/components/choice-field/index.native.tsx",
       "default": "./src/components/choice-field/index.web.tsx"

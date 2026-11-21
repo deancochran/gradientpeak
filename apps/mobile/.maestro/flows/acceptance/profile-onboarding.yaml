@@ -7,7 +7,10 @@ name: Synthetic athlete profile onboarding on the runner-provisioned current can
 - extendedWaitUntil:
     visible:
       id: sign-in-screen
-    timeout: 30000
+    # Cold debug JS initialization on the designated emulator can exceed 30s
+    # after Metro compilation. Keep this startup-only; interaction waits below
+    # retain their existing bounds and assertions.
+    timeout: 90000
 - assertVisible: ${MAESTRO_ACCEPTANCE_RUNTIME_SENTINEL}
 - tapOn:
     id: email-input

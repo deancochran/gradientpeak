@@ -38,7 +38,9 @@ export interface NativeQuantityInputProps extends BoundedNumberInputProps {
   /** Semantic name for the fractional column when this quantity deliberately permits fractions. */
   fractionLabel?: string;
   /** Compact, labelled summary row for a form that owns the surrounding section. */
-  triggerVariant?: "input" | "row";
+  triggerVariant?: "input" | "row" | "value";
+  /** Defaults to visible; owners with a consolidated validation message can opt out. */
+  showError?: boolean;
 }
 
 type PickerParts = { fraction: string; groups: number[]; sign: "+" | "-" };
@@ -226,6 +228,7 @@ export function NativeQuantityInput(props: NativeQuantityInputProps) {
   };
   const display = parsed.status === "empty" ? "Not set" : input.text;
   const rowTrigger = props.triggerVariant === "row";
+  const valueTrigger = props.triggerVariant === "value";
   const needsRepresentationRepair =
     parsed.status === "invalid" &&
     (parsed.reason !== "range" || (positiveOnly && input.text.trim().startsWith("-")));
@@ -335,7 +338,7 @@ export function NativeQuantityInput(props: NativeQuantityInputProps) {
           </View>
         ) : null}
       </View>
-      {error ? (
+      {props.showError !== false && error ? (
         <Text accessibilityRole="alert" className="mt-3 text-destructive" style={overlayStyle}>
           {error}
         </Text>
@@ -382,19 +385,21 @@ export function NativeQuantityInput(props: NativeQuantityInputProps) {
           testID={props.testId}
           onPress={open}
           className={
-            rowTrigger
+            rowTrigger || valueTrigger
               ? "min-h-12 flex-row items-center justify-between border-b border-border py-3"
               : "min-h-12 rounded-md border border-input p-3"
           }
         >
           {rowTrigger ? <Text className="text-sm font-medium">{props.label}</Text> : null}
-          <Text {...(rowTrigger ? { className: "text-sm text-muted-foreground" } : {})}>
+          <Text
+            {...(rowTrigger || valueTrigger ? { className: "text-sm text-muted-foreground" } : {})}
+          >
             {display}
             {props.unitLabel ? ` ${props.unitLabel}` : ""}
           </Text>
         </Pressable>
       ) : null}
-      {error && !active ? (
+      {props.showError !== false && error && !active ? (
         <Text accessibilityRole="alert" className="text-destructive">
           {error}
         </Text>
@@ -419,7 +424,7 @@ export function NativeQuantityInput(props: NativeQuantityInputProps) {
               className="overflow-hidden rounded-t-2xl"
               style={{ backgroundColor: theme.card, flexShrink: 1, maxHeight: "80%", minHeight: 0 }}
             >
-              <View className="flex-row items-center justify-between border-b border-border p-4">
+              <View className="flex-row items-center justify-between border-b border-border px-4 py-3">
                 <Button
                   variant="ghost"
                   accessibilityLabel={`Cancel ${props.label}`}
@@ -429,7 +434,7 @@ export function NativeQuantityInput(props: NativeQuantityInputProps) {
                 </Button>
                 <Text
                   accessibilityRole="header"
-                  className="text-xl font-semibold"
+                  className="text-base font-semibold"
                   style={{ color: theme.foreground }}
                 >
                   {props.label}

@@ -66,7 +66,6 @@ describe("RPE authoring exclusivity", () => {
     [rpe],
     [rpe, cadence],
     [cadence, rpe],
-    [],
     [{ type: "rest" }],
   ] satisfies ActivityTarget[][])("allows valid targets %j", (...targets) => {
     expect(activityPlanAuthoringStructureSchema.safeParse(plan(targets)).success).toBe(true);

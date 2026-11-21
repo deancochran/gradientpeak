@@ -74,8 +74,7 @@ function StepDialogSession(props: StepEditorDialogProps) {
   };
   return (
     <AppFormModal
-      presentationStyle="fullScreen"
-      actionPlacement="header"
+      presentationStyle="pageSheet"
       dismissDisabled={isSaving}
       onClose={requestClose}
       primaryAction={
@@ -83,13 +82,18 @@ function StepDialogSession(props: StepEditorDialogProps) {
           disabled={isSaving}
           testID="step-editor-save-button"
           onPress={() => void save()}
-          variant="ghost"
+          variant="default"
         >
-          <Text className="font-semibold">{isNew ? "Add" : "Save"}</Text>
+          <Text className="font-semibold">{isNew ? "Add step" : "Apply changes"}</Text>
+        </Button>
+      }
+      secondaryAction={
+        <Button disabled={isSaving} onPress={requestClose} variant="outline">
+          <Text>Cancel</Text>
         </Button>
       }
       testID="step-editor-modal"
-      title={isNew ? "Add Step" : "Edit Step"}
+      title={isNew ? "Add step" : "Edit step"}
     >
       <StepEditorFields
         ref={fields}

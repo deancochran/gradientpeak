@@ -11,6 +11,7 @@ import { readAthleteReadModel } from "../athlete-intelligence/athlete-read-model
 import {
   hasPublishedRevisionConflict,
   resolveAuthoritativePlanReadinessHorizon,
+  selectSimulatedSessionsForProjection,
   trainingPlanCommitInputSchema,
   trainingPlanPreviewInputSchema,
 } from "./projection-planning";
@@ -108,6 +109,87 @@ describe("projection planning", () => {
     ).toBe(true);
   });
 
+  it("includes an untimed session on the baseline planning date without backdating it", () => {
+    const sessions = selectSimulatedSessionsForProjection({
+      baselineAsOf: "2026-07-01T19:00:00.000Z",
+      planningTimezone: "America/Los_Angeles",
+      sessions: [
+        {
+          kind: "projected",
+          sourceId: "same-day-untimed",
+          planningDate: "2026-07-01",
+          isUntimed: true,
+          scheduledAt: "2026-07-01T07:00:00.000Z",
+          activityCategory: "run",
+          commonLoad: 50,
+        },
+        {
+          kind: "projected",
+          sourceId: "previous-day-untimed",
+          planningDate: "2026-06-30",
+          isUntimed: true,
+          scheduledAt: "2026-06-30T07:00:00.000Z",
+          activityCategory: "run",
+          commonLoad: 50,
+        },
+        {
+          kind: "projected",
+          sourceId: "future-day-untimed",
+          planningDate: "2026-07-02",
+          isUntimed: true,
+          scheduledAt: "2026-07-02T07:00:00.000Z",
+          activityCategory: "run",
+          commonLoad: 50,
+        },
+        {
+          kind: "projected",
+          sourceId: "past-explicit-time",
+          planningDate: "2026-07-01",
+          isUntimed: false,
+          scheduledAt: "2026-07-01T14:00:00.000Z",
+          activityCategory: "run",
+          commonLoad: 50,
+        },
+      ],
+    });
+
+    expect(sessions).toEqual([
+      expect.objectContaining({
+        sourceId: "same-day-untimed",
+        scheduledAt: "2026-07-01T19:00:00.000Z",
+      }),
+      expect.objectContaining({
+        sourceId: "future-day-untimed",
+        scheduledAt: "2026-07-02T07:00:00.000Z",
+      }),
+    ]);
+  });
+
+  it("uses the planning timezone rather than the UTC date for untimed sessions", () => {
+    const sessions = selectSimulatedSessionsForProjection({
+      baselineAsOf: "2026-07-01T01:00:00.000Z",
+      planningTimezone: "America/Los_Angeles",
+      sessions: [
+        {
+          kind: "projected",
+          sourceId: "local-same-day",
+          planningDate: "2026-06-30",
+          isUntimed: true,
+          scheduledAt: "2026-06-30T07:00:00.000Z",
+          activityCategory: "run",
+          commonLoad: 50,
+        },
+      ],
+    });
+
+    expect(sessions).toEqual([
+      expect.objectContaining({
+        sourceId: "local-same-day",
+        scheduledAt: "2026-07-01T01:00:00.000Z",
+      }),
+    ]);
+  });
+
   it("keeps preview feedback separate from commit authority", () => {
     const previewInput = {
       kind: "create" as const,
@@ -163,6 +245,89 @@ describe("projection planning", () => {
         draft: { ...commitInput.draft, id: "22222222-2222-4222-8222-222222222222" },
       }).success,
     ).toBe(false);
+  });
+
+  it("allows unnamed create and update drafts to preview, but requires a name to commit", () => {
+    const createPreview = {
+      kind: "create" as const,
+      draft: {
+        name: "",
+        previewStartDate: "2026-07-20",
+        structure: {
+          version: 1 as const,
+          plan_preferences: {
+            weekly_session_count: null,
+            target_weekly_duration_minutes: null,
+            maximum_session_duration_minutes: null,
+            preferred_weekdays: [],
+            rest_days: [],
+            progression_style: null,
+            recovery_priority: null,
+          },
+          sessions: [
+            {
+              id: "33333333-3333-4333-8333-333333333333",
+              offset_days: 0,
+              activity_plan_id: "44444444-4444-4444-8444-444444444444",
+              demand: {
+                activity_category: "run",
+                training_intent: "aerobic_base",
+                target_duration_minutes: null,
+                target_common_load: null,
+                importance: "normal",
+              },
+            },
+          ],
+        },
+      },
+    };
+    const updatePreview = {
+      kind: "update" as const,
+      draft: {
+        ...createPreview.draft,
+        name: "   ",
+        planId: "22222222-2222-4222-8222-222222222222",
+        expectedRevision: 1,
+        expectedStructureHash: `v1:sha256:${"a".repeat(64)}`,
+      },
+    };
+    const commitFields = {
+      operationId: "training_plan_commit_test_0000002",
+      basePublishedRevision: null,
+      previewFingerprint: `v1:sha256:${"b".repeat(64)}`,
+    };
+
+    expect(trainingPlanPreviewInputSchema.parse(createPreview)).toEqual(createPreview);
+    expect(trainingPlanPreviewInputSchema.parse(updatePreview)).toEqual({
+      ...updatePreview,
+      draft: { ...updatePreview.draft, name: "" },
+    });
+    expect(
+      trainingPlanCommitInputSchema.safeParse({ ...createPreview, ...commitFields }).success,
+    ).toBe(false);
+    expect(
+      trainingPlanCommitInputSchema.safeParse({ ...updatePreview, ...commitFields }).success,
+    ).toBe(false);
+    const namedUpdateCommit = {
+      ...updatePreview,
+      draft: { ...updatePreview.draft, name: "Base plan" },
+      ...commitFields,
+    };
+    expect(trainingPlanCommitInputSchema.parse(namedUpdateCommit)).toEqual(namedUpdateCommit);
+
+    const spacedNamePreview = {
+      ...createPreview,
+      draft: { ...createPreview.draft, name: "  Base plan  " },
+    };
+    const normalizedName = {
+      ...spacedNamePreview,
+      draft: { ...spacedNamePreview.draft, name: "Base plan" },
+    };
+    expect(trainingPlanPreviewInputSchema.parse(spacedNamePreview)).toEqual(normalizedName);
+    expect(trainingPlanCommitInputSchema.parse({ ...spacedNamePreview, ...commitFields })).toEqual({
+      ...normalizedName,
+      ...commitFields,
+    });
   });
 
   it("accepts duplicate drafts by source identity without client-authored persistence data", () => {

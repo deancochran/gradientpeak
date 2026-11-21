@@ -1,5 +1,6 @@
 import type { AthletePerformanceTargetFacts } from "../performance-model";
 import type { CanonicalActivityCategory } from "../schemas/activity-category";
+import { getActivityTargetCadenceUnitLabel } from "../targets";
 import { resolvePerformanceTargetValue } from "../utils/recording-plan-target-resolver";
 import { ACTIVITY_PLAN_SPEED_DECIMAL_PLACES } from "./authoring";
 import type { ActivityPlanTarget } from "./structure-schema";
@@ -47,7 +48,10 @@ function formatSpeed(value: number): string {
     .replace(/\.0+$/, "");
 }
 
-function abstractLabel(target: ActivityPlanTarget): string {
+function abstractLabel(
+  target: ActivityPlanTarget,
+  activityCategory: CanonicalActivityCategory,
+): string {
   switch (target.type) {
     case "rest":
       return "Rest";
@@ -64,7 +68,7 @@ function abstractLabel(target: ActivityPlanTarget): string {
     case "speed":
       return `${formatSpeed(target.intensity)} km/h`;
     case "cadence":
-      return `${formatNumber(target.intensity)} rpm`;
+      return `${formatNumber(target.intensity)} ${getActivityTargetCadenceUnitLabel(activityCategory)}`;
     case "RPE":
       return `${formatNumber(target.intensity)} RPE`;
   }
@@ -80,7 +84,7 @@ export function resolveActivityPlanTargetPresentation(input: {
   performanceTargets?: AthletePerformanceTargetFacts | null;
   asOf: string;
 }): ActivityPlanTargetPresentation {
-  const sourceLabel = abstractLabel(input.target);
+  const sourceLabel = abstractLabel(input.target, input.activityCategory);
   const { performanceTargets, target } = input;
 
   if (target.type === "%FTP" || target.type === "%ThresholdHR" || target.type === "%MaxHR") {

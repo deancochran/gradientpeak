@@ -35,23 +35,24 @@ const metrics: SemanticMetric[] = [
 ];
 
 describe("ActivityPlanEstimatePresentation", () => {
-  it("uses the canonical four-metric row, retaining true zero and unavailable values", async () => {
+  it("shows only available inline estimates, retaining a true zero", async () => {
     await renderNative(<ActivityPlanEstimatePresentation metrics={metrics} />);
 
-    expect(screen.getByTestId("activity-plan-estimates")).toBeTruthy();
-    expect(screen.getAllByText("Distance")).toHaveLength(1);
-    expect(screen.getAllByText("Duration")).toHaveLength(1);
-    expect(screen.getAllByText("Load")).toHaveLength(1);
-    expect(screen.getAllByText("Intensity")).toHaveLength(1);
-    expect(screen.getByText("0s")).toBeTruthy();
-    expect(screen.getAllByText("—")).toHaveLength(3);
+    expect(screen.getByLabelText("Plan estimates: Duration 0s")).toBeTruthy();
+    expect(screen.getByText("Duration 0s")).toBeTruthy();
+    expect(screen.queryByText("Load")).toBeNull();
+    expect(screen.queryByText("—")).toBeNull();
     expect(screen.queryByText("Steps")).toBeNull();
   });
 
-  it("does not render a second metric row for estimate details", async () => {
-    await renderNative(<ActivityPlanEstimatePresentation metrics={metrics} />);
+  it("renders nothing when every estimate is unavailable", async () => {
+    await renderNative(
+      <ActivityPlanEstimatePresentation
+        metrics={metrics.filter((metric) => metric.status === "unavailable")}
+      />,
+    );
 
-    expect(screen.queryByLabelText("Estimated details")).toBeNull();
-    expect(screen.queryByTestId("activity-plan-estimate-details")).toBeNull();
+    expect(screen.queryByLabelText(/Plan estimates/)).toBeNull();
+    expect(screen.queryByText("—")).toBeNull();
   });
 });

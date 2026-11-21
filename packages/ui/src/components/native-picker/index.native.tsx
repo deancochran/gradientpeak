@@ -4,7 +4,7 @@ import { type Ref, useEffect, useImperativeHandle, useMemo, useRef } from "react
 export interface NativePickerProps<T extends string | number> {
   label: string;
   value: T;
-  options: readonly { value: T; label: string }[];
+  options: readonly { value: T; label: string; disabled?: boolean | undefined }[];
   onChange: (value: T) => void;
   disabled?: boolean;
   isCurrent?: () => boolean;
@@ -32,9 +32,19 @@ export function NativePicker<T extends string | number>({
 }: NativePickerProps<T>) {
   const picker = useRef<Picker<T>>(null);
   const mounted = useRef(false);
-  const availability = useRef({ disabled, generation: 0 });
-  if (availability.current.disabled !== disabled) {
-    availability.current = { disabled, generation: availability.current.generation + 1 };
+  const optionAvailability = JSON.stringify(
+    options.map((option) => [option.value, Boolean(option.disabled)]),
+  );
+  const availability = useRef({ disabled, optionAvailability, generation: 0 });
+  if (
+    availability.current.disabled !== disabled ||
+    availability.current.optionAvailability !== optionAvailability
+  ) {
+    availability.current = {
+      disabled,
+      optionAvailability,
+      generation: availability.current.generation + 1,
+    };
   }
   // Re-enabling must not authorize a selection queued before the disabled period.
   const generation = availability.current.generation;
@@ -47,10 +57,20 @@ export function NativePicker<T extends string | number>({
   useImperativeHandle(ref, () => ({ focus: () => picker.current?.focus?.() }));
   const items = useMemo(
     () =>
-      options.map((option) => (
-        <Picker.Item key={option.value} label={option.label} value={option.value} />
-      )),
-    [options],
+      // iOS UIPickerView does not implement Picker.Item.enabled. Omit disabled
+      // alternatives rather than displaying choices that only fail on selection.
+      // Keep a disabled current value visible so legacy drafts can be repaired.
+      options
+        .filter((option) => !option.disabled || option.value === value)
+        .map((option) => (
+          <Picker.Item
+            key={option.value}
+            label={option.label}
+            value={option.value}
+            enabled={option.disabled !== true}
+          />
+        )),
+    [options, value],
   );
   return (
     <Picker
@@ -73,7 +93,8 @@ export function NativePicker<T extends string | number>({
           (isCurrent && !isCurrent())
         )
           return;
-        if (next !== value && options.some((option) => option.value === next)) onChange(next);
+        if (next !== value && options.some((option) => option.value === next && !option.disabled))
+          onChange(next);
       }}
     >
       {!options.some((option) => option.value === value) ? (

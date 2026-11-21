@@ -1,10 +1,17 @@
-import type { ActivityPlanPlanningEstimate, ActivityPlanSummary } from "@repo/core";
+import type {
+  ActivityPlanMetric,
+  ActivityPlanPlanningEstimate,
+  ActivityPlanSummary,
+} from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import { useCallback, useMemo } from "react";
 import { View } from "react-native";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { FilterChip, IndexSearchBar } from "@/components/shared/IndexSearchBar";
-import { SearchableBottomSheetList } from "@/components/shared/SearchableBottomSheetList";
+import {
+  SearchableList,
+  type SearchableListPresentation,
+} from "@/components/shared/SearchableBottomSheetList";
 import { omitUndefined } from "@/lib/omitUndefined";
 
 export type ActivityCategoryFilter = "run" | "bike" | "swim" | "strength" | "other" | null;
@@ -27,6 +34,7 @@ const ACTIVITY_CATEGORY_OPTIONS = [
 type BuilderActivityAssignmentSheetContentProps = {
   activityPlanEstimateById: Map<string, ActivityPlanPlanningEstimate>;
   activityPlanItems: ActivityPlanSummary[];
+  metricsById?: ReadonlyMap<string, readonly ActivityPlanMetric[]> | undefined;
   activityPlanSort: ActivityPlanSort;
   categoryFilter: ActivityCategoryFilter;
   hasNextPage?: boolean;
@@ -38,15 +46,18 @@ type BuilderActivityAssignmentSheetContentProps = {
   onSearchChange: (value: string) => void;
   onSelectActivityPlan: (activityPlan: ActivityPlanSummary) => void;
   searchQuery: string;
+  presentation?: SearchableListPresentation;
 };
 
 export function BuilderActivityAssignmentSheetContent({
   activityPlanItems,
+  metricsById,
   hasNextPage,
   isFetchingNextPage,
   isLoading,
   onFetchNextPage,
   onSelectActivityPlan,
+  presentation,
 }: BuilderActivityAssignmentSheetContentProps) {
   const activityPlanItemsWithEstimates = useMemo(() => activityPlanItems, [activityPlanItems]);
   const activityPlanById = useMemo(
@@ -59,18 +70,19 @@ export function BuilderActivityAssignmentSheetContent({
       <View className="pb-3">
         <ActivityPlanCard
           plan={item}
+          projectionMetrics={metricsById?.get(item.id)}
           onPress={() => onSelectActivityPlan(activityPlanById.get(item.id) ?? item)}
           testID={`training-plan-builder-activity-row-${item.id}`}
           variant="compact"
         />
       </View>
     ),
-    [activityPlanById, onSelectActivityPlan],
+    [activityPlanById, metricsById, onSelectActivityPlan],
   );
 
   return (
-    <SearchableBottomSheetList
-      {...omitUndefined({ hasNextPage })}
+    <SearchableList
+      {...omitUndefined({ hasNextPage, presentation })}
       data={activityPlanItemsWithEstimates}
       emptyMessage="No matching activities."
       headerInLayout

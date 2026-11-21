@@ -148,6 +148,7 @@ export function ChoiceField<T extends ChoiceValue>(props: ChoiceFieldProps<T>) {
               label={props.label}
               value={props.value}
               options={visibleOptions}
+              retainDisabledValue={props.retainDisabledValue}
               disabled={props.disabled}
               owner={props.formControl}
               isCurrent={() => choice.usable() && (!session || session.isCurrent())}
@@ -191,7 +192,10 @@ export function ChoiceField<T extends ChoiceValue>(props: ChoiceFieldProps<T>) {
     );
   const ownsSearchSheet = policy === "searchable" && !panel;
   return (
-    <View className="gap-2" onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
+    <View
+      className={props.density === "compact" ? "gap-1" : "gap-2"}
+      onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
+    >
       {ownsSearchSheet ? (
         <Pressable
           ref={trigger}
@@ -215,10 +219,12 @@ export function ChoiceField<T extends ChoiceValue>(props: ChoiceFieldProps<T>) {
           }}
           className="min-h-12 rounded-md border border-input p-3"
         >
-          <Text className="text-sm font-medium">
-            {props.label}
-            {props.required ? " *" : ""}
-          </Text>
+          {!props.hideVisibleLabel ? (
+            <Text className="text-sm font-medium">
+              {props.label}
+              {props.required ? " *" : ""}
+            </Text>
+          ) : null}
           <Text>{choice.display}</Text>
         </Pressable>
       ) : (
@@ -229,10 +235,12 @@ export function ChoiceField<T extends ChoiceValue>(props: ChoiceFieldProps<T>) {
           accessibilityState={{ disabled: Boolean(props.disabled) }}
           testID={props.testId}
         >
-          <Text className="font-medium">
-            {props.label}
-            {props.required ? " *" : ""}
-          </Text>
+          {!props.hideVisibleLabel ? (
+            <Text className={props.density === "compact" ? "text-xs font-medium" : "font-medium"}>
+              {props.label}
+              {props.required ? " *" : ""}
+            </Text>
+          ) : null}
           {choice.result.status === "invalid" ? <Text>{choice.display}</Text> : null}
         </View>
       )}

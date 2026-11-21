@@ -36,6 +36,7 @@ export const activityPlanAuthoringIssueCodes = {
   restRequiresTimeDuration: "ACTIVITY_PLAN_AUTHORING_REST_REQUIRES_TIME_DURATION",
   rpeMixedWithIntensity: "ACTIVITY_PLAN_AUTHORING_RPE_MIXED_WITH_INTENSITY",
   invalidStepNote: "ACTIVITY_PLAN_AUTHORING_INVALID_STEP_NOTE",
+  missingTarget: "ACTIVITY_PLAN_AUTHORING_MISSING_TARGET",
 } as const;
 export type ActivityPlanAuthoringIssueCode =
   (typeof activityPlanAuthoringIssueCodes)[keyof typeof activityPlanAuthoringIssueCodes];
@@ -148,6 +149,12 @@ export function getActivityPlanAuthoringIssues(
           `This completion type is not permitted for newly authored ${structure.activity_category} activity plans.`,
         );
       const hasRestTarget = step.targets.some((target) => target.type === "rest");
+      if (step.targets.length === 0)
+        add(
+          activityPlanAuthoringIssueCodes.missingTarget,
+          [...path, "targets"],
+          "Choose a target before saving this step.",
+        );
       if (
         step.targets.some((target) => target.type === "RPE") &&
         step.targets.some((target) => getActivityTargetRole(target) === "objective")

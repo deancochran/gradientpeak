@@ -36,6 +36,16 @@ describe("activity plan provider readiness labels", () => {
     target.intensity = -1;
     expect(getActivityPlanTargetTypeDefault(type)).toEqual({ type, intensity });
   });
+  it("uses a running cadence suggestion only for a new running selection", () => {
+    expect(getActivityPlanTargetTypeDefault("cadence", "run")).toEqual({
+      type: "cadence",
+      intensity: 160,
+    });
+    expect(getActivityPlanTargetTypeDefault("cadence", "bike")).toEqual({
+      type: "cadence",
+      intensity: 80,
+    });
+  });
   it("uses V5 item paths and does not invent retired boundary findings", () => {
     const projection = getActivityPlanProviderProjection({ provider: "strava", structure });
     expect(

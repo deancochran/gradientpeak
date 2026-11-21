@@ -97,7 +97,9 @@ describe("StructureBuilderCard V5 controls", () => {
       />,
     );
     expect(screen.getByLabelText("Move to repeat 2 Repeat 1, step 1")).toBeTruthy();
-    await fireEvent.press(screen.getByLabelText("Delete repeat 1"));
+    const [repeatDelete] = screen.getAllByText("Delete");
+    if (!repeatDelete) throw new Error("Expected a repeat delete action");
+    await fireEvent.press(repeatDelete);
     expect(alert).toHaveBeenCalledWith("Delete repeat?", expect.any(String), expect.any(Array));
     expect(remove).toHaveBeenCalledWith("a");
   });
@@ -120,11 +122,18 @@ describe("StructureBuilderCard V5 controls", () => {
       />,
     );
     expect(screen.getByTestId("repeat-header-repeat").props.className).toContain("flex-row");
-    expect(screen.getByText("Repeat 1 × 2")).toBeTruthy();
-    expect(screen.getByLabelText("Duplicate Repeat 1, step 1").props.className).toContain(
-      "min-h-12",
-    );
-    expect(screen.getByLabelText("Reorder repeat 1").props.className).toContain("min-w-12");
-    expect(screen.getByLabelText("Reorder Repeat 1, step 1").props.className).toContain("min-h-12");
+    expect(screen.getByText("2× repeat")).toBeTruthy();
+    expect(screen.getByLabelText("More actions for Repeat 1, step 1")).toBeTruthy();
+    expect(screen.getByLabelText("Reorder repeat 1").props.className).toContain("min-w-11");
+    expect(screen.getByLabelText("Reorder Repeat 1, step 1").props.className).toContain("min-h-11");
+    const collapse = screen.getByLabelText("Collapse repeat 1");
+    expect(collapse.props.accessibilityState.expanded).toBe(true);
+    await fireEvent.press(collapse);
+    expect(screen.queryByTestId("step-row-one")).toBeNull();
+    const expand = screen.getByLabelText("Expand repeat 1");
+    expect(expand.props.accessibilityState.expanded).toBe(false);
+    await fireEvent.press(expand);
+    expect(screen.getByTestId("step-row-one")).toBeTruthy();
+    expect(items).toEqual([repeat("repeat", [step("one")])]);
   });
 });

@@ -10,6 +10,7 @@ import {
   activityTargetDefinitionByType,
   activityTargetUnitLabels,
   getActivityPlanTargetTypeDefault,
+  getActivityTargetCadenceUnitLabel,
   getPermissibleTargetTypes,
   isTargetTypePermittedForActivity,
   kilometersPerHourToPaceSeconds,
@@ -20,18 +21,24 @@ import {
 } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { ChoiceField } from "@repo/ui/components/choice-field";
-import { Form, FormTextField } from "@repo/ui/components/form";
+import { Form } from "@repo/ui/components/form";
+import { Icon } from "@repo/ui/components/icon";
+import { Input } from "@repo/ui/components/input";
 import { NativeQuantityInput } from "@repo/ui/components/native-quantity-input";
 import { PaceInput } from "@repo/ui/components/pace-input";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm } from "@repo/ui/hooks";
 import * as Haptics from "expo-haptics";
-import { Plus, X } from "lucide-react-native";
+import { X } from "lucide-react-native";
 import { type Ref, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Controller, useFieldArray } from "react-hook-form";
 import { View } from "react-native";
 import { z } from "zod";
-import { type StepDurationDraft, StepDurationField } from "./StepDurationField";
+import {
+  type StepDurationDraft,
+  StepDurationField,
+  type StepDurationValue,
+} from "./StepDurationField";
 
 export interface StepEditorFieldsHandle {
   validate: () => ActivityPlanDraftStep | null | undefined;
@@ -60,7 +67,7 @@ const targetTypeLabel: Record<ActivityPlanDraftTarget["type"], string> = {
   "%MaxHR": "Heart rate · Max HR %",
   "%ThresholdHR": "Heart rate · Threshold HR %",
   speed: "Speed · km/h",
-  cadence: "Cadence · rpm",
+  cadence: "Cadence",
   RPE: "RPE",
   rest: "Rest",
 };
@@ -69,7 +76,20 @@ function targetTypePresentationLabel(
   type: ActivityPlanDraftTarget["type"],
   activityCategory: ActivityTargetCategory,
 ): string {
-  return type === "speed" && activityCategory === "run" ? "Pace" : targetTypeLabel[type];
+  if (type === "speed" && activityCategory === "run") return "Pace";
+  if (type === "cadence") return `Cadence · ${getActivityTargetCadenceUnitLabel(activityCategory)}`;
+  return targetTypeLabel[type];
+}
+
+function targetTypeSelectedLabel(
+  type: ActivityPlanDraftTarget["type"],
+  activityCategory: ActivityTargetCategory,
+): string {
+  if (type === "%ThresholdHR") return "Threshold HR";
+  if (type === "%MaxHR") return "Max HR";
+  if (type === "%FTP") return "FTP";
+  if (type === "cadence") return "Cadence";
+  return targetTypePresentationLabel(type, activityCategory);
 }
 
 const normalizeOptionalText = (value: string | undefined) => value?.trim() || undefined;
@@ -100,7 +120,12 @@ export function StepEditorFields({
   const invalidExactEntries = useRef(new Set<string>());
   const targetDrafts = useRef(new Map<string, string>());
   const durationDraft = useRef<StepDurationDraft>({});
-  const durationRef = useRef<{ focus: () => void; settle?: () => void; cancel?: () => void }>(null);
+  const durationRef = useRef<{
+    focus: () => void;
+    settle?: () => void;
+    cancel?: () => void;
+    validate?: () => boolean;
+  }>(null);
   const targetRefs = useRef(
     new Map<string, { focus: () => void; settle?: () => void; cancel?: () => void }>(),
   );
@@ -121,10 +146,33 @@ export function StepEditorFields({
   } = useFieldArray({ control: form.control, name: "targets" });
   const duration = form.watch("duration");
   const targets = form.watch("targets");
+  const [selectedDurationType, setSelectedDurationType] = useState<
+    StepDurationValue["type"] | null
+  >(step.duration?.type ?? null);
   const dirty = form.formState.isDirty || invalidExactEntries.current.size > 0;
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
   const permittedTargetTypes: readonly ActivityPlanDraftTarget["type"][] =
     duration?.type === "repetitions" ? ["RPE"] : getPermissibleTargetTypes(activityCategory);
+  const hasRestTarget = targets.some((target) => target.type === "rest");
+  const selectableTargetTypes = permittedTargetTypes.filter(
+    (type) => type !== "rest" || selectedDurationType === "time",
+  );
+  const targetTypeOptions = (currentType: ActivityPlanDraftTarget["type"]) => [
+    ...(currentType === "rest" && !selectableTargetTypes.includes("rest")
+      ? [
+          {
+            value: "rest" as const,
+            label: targetTypePresentationLabel("rest", activityCategory),
+            disabled: true,
+          },
+        ]
+      : []),
+    ...selectableTargetTypes.map((type) => ({
+      value: type,
+      label: targetTypePresentationLabel(type, activityCategory),
+      selectedLabel: targetTypeSelectedLabel(type, activityCategory),
+    })),
+  ];
   const maximumTargets = duration?.type === "repetitions" ? 1 : 3;
   const setExactEntryValidity = (key: string, invalid: boolean) => {
     if (invalid) invalidExactEntries.current.add(key);
@@ -143,6 +191,10 @@ export function StepEditorFields({
     const next = nextValue as ActivityPlanDraftTarget["type"];
     const current = targets[index];
     if (!current || next === current.type) return;
+    if (next === "rest" && selectedDurationType !== "time") {
+      setSaveError("Rest is available only for a timed step.");
+      return;
+    }
     if (!permittedTargetTypes.includes(next)) {
       setSaveError(`${next} is not supported for ${activityCategory}.`);
       return;
@@ -152,19 +204,13 @@ export function StepEditorFields({
       return;
     }
     const replacement =
-      next === "rest" ? { type: "rest" as const } : getActivityPlanTargetTypeDefault(next);
+      next === "rest"
+        ? { type: "rest" as const }
+        : getActivityPlanTargetTypeDefault(next, activityCategory);
     if (next === "rest") {
       form.setValue("targets", [replacement], { shouldDirty: true, shouldValidate: true });
-      if (duration?.type !== "time") {
-        form.setValue(
-          "duration",
-          { type: "time", seconds: 60 },
-          {
-            shouldDirty: true,
-            shouldValidate: true,
-          },
-        );
-      }
+      // Keep the author's chosen duration visible. Rest requires time at validation,
+      // but selecting it must not silently replace a distance/repetition prescription.
     } else {
       form.setValue(`targets.${index}` as never, replacement as never, {
         shouldDirty: true,
@@ -189,11 +235,15 @@ export function StepEditorFields({
   };
   const addTarget = () => {
     if (targetFields.length >= maximumTargets) return;
-    const available = permittedTargetTypes.find(
+    const available = selectableTargetTypes.find(
       (type) => !targets.some((target) => target.type === type),
     );
     if (!available) return;
-    append(available === "rest" ? { type: "rest" } : getActivityPlanTargetTypeDefault(available));
+    append(
+      available === "rest"
+        ? { type: "rest" }
+        : getActivityPlanTargetTypeDefault(available, activityCategory),
+    );
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
   };
   const validate = () => {
@@ -204,10 +254,6 @@ export function StepEditorFields({
       setSaveError(note.error.issues[0]?.message ?? "Correct the step note before saving.");
       return null;
     }
-    if (invalidExactEntries.current.size) {
-      setSaveError("Finish or correct the exact value before saving.");
-      return null;
-    }
     const result = formSchema.safeParse({
       ...values,
       name: normalizeOptionalText(values.name),
@@ -215,6 +261,15 @@ export function StepEditorFields({
     });
     if (!result.success) {
       setSaveError("Check the completion and target values before saving.");
+      return null;
+    }
+    if (!result.data.duration) {
+      if (!durationRef.current?.validate?.())
+        setSaveError("Choose a completion type and value before saving.");
+      return null;
+    }
+    if (invalidExactEntries.current.size) {
+      setSaveError("Finish or correct the exact value before saving.");
       return null;
     }
     for (const target of result.data.targets) {
@@ -256,10 +311,6 @@ export function StepEditorFields({
         return null;
       }
     }
-    if (!result.data.duration) {
-      setSaveError("Choose a completion type and value before saving.");
-      return null;
-    }
     if (
       result.data.duration.type === "distance" &&
       !Number.isInteger(result.data.duration.meters)
@@ -297,41 +348,89 @@ export function StepEditorFields({
 
   return (
     <View className="gap-4" testID="step-editor-fields">
-      <View className="gap-3" testID="step-duration-section">
-        <Text className="text-xs font-semibold tracking-wide text-muted-foreground">DURATION</Text>
+      <Form {...form}>
+        <View className="gap-2 border-b border-border pb-3" testID="step-details-section">
+          <View className="flex-row items-center gap-3">
+            <Text className="w-32 shrink-0 text-sm">Name (optional)</Text>
+            <Controller
+              control={form.control}
+              name="name"
+              render={({ field }) => (
+                <Input
+                  accessibilityLabel="Name (optional)"
+                  className="flex-1 rounded-lg bg-card dark:bg-card"
+                  style={{ minHeight: 44 }}
+                  onBlur={field.onBlur}
+                  onChangeText={field.onChange}
+                  value={field.value}
+                />
+              )}
+            />
+          </View>
+          <View className="flex-row items-center gap-3" testID="step-notes-section">
+            <Text className="w-32 shrink-0 text-sm">Cue (optional)</Text>
+            <Controller
+              control={form.control}
+              name="instructions"
+              render={({ field }) => (
+                <Input
+                  accessibilityLabel="Coaching cue (optional)"
+                  className="flex-1 rounded-lg bg-card dark:bg-card"
+                  style={{ minHeight: 44 }}
+                  onBlur={field.onBlur}
+                  onChangeText={field.onChange}
+                  testID="step-notes-input"
+                  value={field.value}
+                />
+              )}
+            />
+          </View>
+        </View>
+      </Form>
+      <View testID="step-duration-section">
         <Form {...form}>
           <StepDurationField
             ref={durationRef}
             form={form}
             draft={durationDraft.current}
             activityCategory={activityCategory}
+            lockToTime={hasRestTarget}
+            onSelectedTypeChange={setSelectedDurationType}
             onExactEntryInvalidChange={(invalid) => setExactEntryValidity("duration", invalid)}
           />
         </Form>
       </View>
-      <View className="gap-3 border-t border-border pt-4" testID="step-intensity-section">
-        <Text className="text-xs font-semibold tracking-wide text-muted-foreground">INTENSITY</Text>
+      <View className="gap-3" testID="step-intensity-section">
         {targetFields.map((targetField, index) => {
           const target = targets[index];
           if (!target) return null;
           if (target.type === "rest") {
             return (
-              <View
-                key={targetField.id}
-                testID={`target-row-${index}`}
-                className="gap-2 border-b border-border pb-3"
-              >
-                <ChoiceField
-                  required
-                  label="Target type"
-                  nativePresentation="menu"
-                  value="rest"
-                  options={[
-                    { value: "rest", label: targetTypePresentationLabel("rest", activityCategory) },
-                  ]}
-                  onChange={() => undefined}
-                />
-                <Text className="text-sm text-muted-foreground">Rest has no intensity target.</Text>
+              <View key={targetField.id} testID={`target-row-${index}`} className="gap-2 py-2">
+                <View className="flex-row items-center gap-2" testID={`target-controls-${index}`}>
+                  <View className="w-[132px] shrink-0">
+                    <ChoiceField
+                      density="compact"
+                      required
+                      label={targetFields.length === 1 ? "Target type" : `Target ${index + 1} type`}
+                      hideVisibleLabel
+                      nativePresentation="searchable"
+                      retainDisabledValue
+                      value="rest"
+                      options={targetTypeOptions("rest")}
+                      onChange={(value) => changeTargetType(index, value)}
+                    />
+                  </View>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="min-h-11 min-w-11"
+                    accessibilityLabel={`Remove target ${index + 1}`}
+                    onPress={() => removeTarget(index)}
+                  >
+                    <Icon as={X} size={18} className="text-foreground" />
+                  </Button>
+                </View>
               </View>
             );
           }
@@ -342,150 +441,150 @@ export function StepEditorFields({
               : definition.minimum;
           const key = `target-${targetField.id}`;
           return (
-            <View
-              key={targetField.id}
-              testID={`target-row-${index}`}
-              className="gap-2 border-b border-border pb-3"
-            >
-              <View>
-                <ChoiceField
-                  required
-                  label={targetFields.length === 1 ? "Target type" : `Target ${index + 1} type`}
-                  nativePresentation="menu"
-                  value={target.type}
-                  options={permittedTargetTypes.map((type) => ({
-                    value: type,
-                    label: targetTypePresentationLabel(type, activityCategory),
-                  }))}
-                  onChange={(value) => changeTargetType(index, value)}
-                />
-              </View>
-              <View>
-                <Controller
-                  control={form.control}
-                  name={`targets.${index}.intensity` as never}
-                  render={({ field }) =>
-                    target.type === "RPE" ? (
-                      <ChoiceField
-                        label={
-                          targetFields.length === 1
-                            ? "Target value"
-                            : `Target ${index + 1} value RPE`
-                        }
-                        nativePresentation="menu"
-                        value={target.intensity === null ? "" : String(target.intensity)}
-                        options={[
-                          { value: "", label: "Choose…" },
-                          ...Array.from({ length: 19 }, (_, optionIndex) => ({
-                            value: String(1 + optionIndex / 2),
-                            label: String(1 + optionIndex / 2),
-                          })),
-                        ]}
-                        onChange={(value) => {
-                          const intensity = Number(value);
-                          if (
-                            activityPlanTargetSchema.safeParse({ type: "RPE", intensity }).success
-                          )
-                            field.onChange(intensity);
-                        }}
-                      />
-                    ) : target.type === "speed" && activityCategory === "run" ? (
-                      <>
-                        <PaceInput
+            <View key={targetField.id} testID={`target-row-${index}`} className="gap-2 py-2">
+              <View className="flex-row items-center gap-2" testID={`target-controls-${index}`}>
+                <View className="w-[132px] shrink-0">
+                  <ChoiceField
+                    density="compact"
+                    required
+                    label={targetFields.length === 1 ? "Target type" : `Target ${index + 1} type`}
+                    hideVisibleLabel
+                    nativePresentation="searchable"
+                    value={target.type}
+                    options={targetTypeOptions(target.type)}
+                    onChange={(value) => changeTargetType(index, value)}
+                  />
+                </View>
+                <View className="min-w-[96px] flex-1">
+                  <Controller
+                    control={form.control}
+                    name={`targets.${index}.intensity` as never}
+                    render={({ field }) =>
+                      target.type === "RPE" ? (
+                        <ChoiceField
+                          density="compact"
+                          hideVisibleLabel
+                          label={
+                            targetFields.length === 1
+                              ? "Target value"
+                              : `Target ${index + 1} value RPE`
+                          }
+                          nativePresentation="menu"
+                          value={target.intensity === null ? "" : String(target.intensity)}
+                          options={[
+                            { value: "", label: "Choose…" },
+                            ...Array.from({ length: 19 }, (_, optionIndex) => ({
+                              value: String(1 + optionIndex / 2),
+                              label: String(1 + optionIndex / 2),
+                            })),
+                          ]}
+                          onChange={(value) => {
+                            const intensity = Number(value);
+                            if (
+                              activityPlanTargetSchema.safeParse({ type: "RPE", intensity }).success
+                            )
+                              field.onChange(intensity);
+                          }}
+                        />
+                      ) : target.type === "speed" && activityCategory === "run" ? (
+                        <>
+                          <PaceInput
+                            ref={(handle) => {
+                              if (handle) targetRefs.current.set(key, handle);
+                              else targetRefs.current.delete(key);
+                            }}
+                            label={
+                              targetFields.length === 1 ? "Target pace" : `Target ${index + 1} pace`
+                            }
+                            layout="ms"
+                            presentation="native-overlay"
+                            triggerVariant="value"
+                            required
+                            unitLabel="/km"
+                            value={paceTextForSpeed(field.value) ?? ""}
+                            onChange={(value) => {
+                              try {
+                                setExactEntryValidity(key, parsePace(value) <= 0);
+                              } catch {
+                                setExactEntryValidity(key, true);
+                              }
+                            }}
+                            onPaceSecondsChange={(seconds) => {
+                              const intensity =
+                                seconds === undefined || seconds <= 0
+                                  ? undefined
+                                  : paceSecondsPerKilometerToKilometersPerHour(seconds);
+                              if (
+                                intensity === undefined ||
+                                !activityPlanTargetSchema.safeParse({ type: "speed", intensity })
+                                  .success
+                              ) {
+                                setExactEntryValidity(key, true);
+                                return;
+                              }
+                              const normalized =
+                                normalizeActivityPlanSpeedTargetIntensity(intensity);
+                              if (normalized.success) {
+                                field.onChange(normalized.intensity);
+                                setExactEntryValidity(key, false);
+                              } else setExactEntryValidity(key, true);
+                            }}
+                          />
+                          {target.intensity !== null && target.intensity <= 0 ? (
+                            <Text accessibilityRole="alert" className="text-sm text-destructive">
+                              This saved zero speed cannot be shown as pace. Choose a positive pace
+                              or another target type before saving.
+                            </Text>
+                          ) : null}
+                        </>
+                      ) : (
+                        <NativeQuantityInput
+                          required
                           ref={(handle) => {
                             if (handle) targetRefs.current.set(key, handle);
                             else targetRefs.current.delete(key);
                           }}
+                          presentation="overlay"
+                          decimals={target.type === "speed" ? 2 : 0}
                           label={
-                            targetFields.length === 1 ? "Target pace" : `Target ${index + 1} pace`
+                            targetFields.length === 1 ? "Target value" : `Target ${index + 1} value`
                           }
-                          layout="ms"
-                          presentation="native-overlay"
-                          triggerVariant="row"
-                          required
-                          unitLabel="/km"
-                          value={paceTextForSpeed(field.value) ?? ""}
-                          helperText="Enter minutes and seconds per kilometer."
-                          onChange={(value) => {
-                            try {
-                              setExactEntryValidity(key, parsePace(value) <= 0);
-                            } catch {
-                              setExactEntryValidity(key, true);
-                            }
-                          }}
-                          onPaceSecondsChange={(seconds) => {
-                            const intensity =
-                              seconds === undefined || seconds <= 0
-                                ? undefined
-                                : paceSecondsPerKilometerToKilometersPerHour(seconds);
-                            if (
-                              intensity === undefined ||
-                              !activityPlanTargetSchema.safeParse({ type: "speed", intensity })
-                                .success
-                            ) {
-                              setExactEntryValidity(key, true);
-                              return;
-                            }
-                            const normalized = normalizeActivityPlanSpeedTargetIntensity(intensity);
-                            if (normalized.success) {
-                              field.onChange(normalized.intensity);
+                          unitLabel={
+                            target.type === "cadence"
+                              ? getActivityTargetCadenceUnitLabel(activityCategory)
+                              : activityTargetUnitLabels[target.type]
+                          }
+                          triggerVariant="value"
+                          min={minimum}
+                          max={target.type === "%MaxHR" ? 100 : definition.saveableMaximum}
+                          value={
+                            targetDrafts.current.get(targetField.id) ??
+                            (field.value === null ? "" : String(field.value))
+                          }
+                          onChange={(raw) => targetDrafts.current.set(targetField.id, raw)}
+                          onNumberChange={(value) => {
+                            if (value !== undefined) {
+                              field.onChange(value);
                               setExactEntryValidity(key, false);
-                            } else setExactEntryValidity(key, true);
+                            }
                           }}
-                        />
-                        {target.intensity !== null && target.intensity <= 0 ? (
-                          <Text accessibilityRole="alert" className="text-sm text-destructive">
-                            This saved zero speed cannot be shown as pace. Choose a positive pace or
-                            another target type before saving.
-                          </Text>
-                        ) : null}
-                      </>
-                    ) : (
-                      <NativeQuantityInput
-                        required
-                        ref={(handle) => {
-                          if (handle) targetRefs.current.set(key, handle);
-                          else targetRefs.current.delete(key);
-                        }}
-                        presentation="overlay"
-                        decimals={target.type === "speed" ? 2 : 0}
-                        label={
-                          targetFields.length === 1 ? "Target value" : `Target ${index + 1} value`
-                        }
-                        unitLabel={activityTargetUnitLabels[target.type]}
-                        triggerVariant="row"
-                        min={minimum}
-                        max={target.type === "%MaxHR" ? 100 : definition.saveableMaximum}
-                        value={
-                          targetDrafts.current.get(targetField.id) ??
-                          (field.value === null ? "" : String(field.value))
-                        }
-                        onChange={(raw) => targetDrafts.current.set(targetField.id, raw)}
-                        onNumberChange={(value) => {
-                          if (value !== undefined) {
-                            field.onChange(value);
-                            setExactEntryValidity(key, false);
+                          onInvalidChange={(invalid) =>
+                            setExactEntryValidity(key, target.intensity === null ? false : invalid)
                           }
-                        }}
-                        onInvalidChange={(invalid) =>
-                          setExactEntryValidity(key, target.intensity === null ? false : invalid)
-                        }
-                        testId={`target-value-${index}`}
-                      />
-                    )
-                  }
-                />
-              </View>
-              <View className="items-end">
+                          testId={`target-value-${index}`}
+                        />
+                      )
+                    }
+                  />
+                </View>
                 <Button
                   variant="ghost"
-                  size="sm"
-                  className="min-h-12"
+                  size="icon"
+                  className="min-h-11 min-w-11"
                   accessibilityLabel={`Remove target ${index + 1}`}
                   onPress={() => removeTarget(index)}
                 >
-                  <X size={18} />
-                  <Text>Remove</Text>
+                  <Icon as={X} size={18} className="text-foreground" />
                 </Button>
               </View>
             </View>
@@ -496,38 +595,14 @@ export function StepEditorFields({
           <Button
             variant="ghost"
             size="sm"
-            className="self-start"
+            className="min-h-11 self-start px-2"
             accessibilityLabel="Add target"
             onPress={addTarget}
           >
-            <Plus size={14} />
-            <Text>Add another target</Text>
+            <Text>{targetFields.length === 0 ? "Add target" : "Add another target"}</Text>
           </Button>
         ) : null}
       </View>
-      <Form {...form}>
-        <View className="gap-3 border-t border-border pt-4" testID="step-details-section">
-          <FormTextField
-            control={form.control}
-            label="Name (optional)"
-            name="name"
-            placeholder="Step name"
-          />
-        </View>
-        <View className="gap-3 border-t border-border pt-4" testID="step-notes-section">
-          <Text className="text-xs font-semibold tracking-wide text-muted-foreground">NOTES</Text>
-          <View testID="step-notes-field">
-            <FormTextField
-              control={form.control}
-              label="Notes (optional)"
-              name="instructions"
-              placeholder="One short cue, up to 160 characters"
-              testId="step-notes-input"
-              description="One line, up to 160 characters. Put details in the activity plan description."
-            />
-          </View>
-        </View>
-      </Form>
       {saveError ? (
         <Text accessibilityRole="alert" className="text-destructive">
           {saveError}

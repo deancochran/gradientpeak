@@ -20,6 +20,18 @@ describe("activityPlanCreation V5 structure operations", () => {
     cryptoMock.next = 99;
     useActivityPlanCreationStore.getState().reset();
   });
+  it("prefills new names once and preserves deliberate edits and clearing", () => {
+    const store = useActivityPlanCreationStore.getState();
+    expect(useActivityPlanCreationStore.getState().name).toBe("New plan");
+    store.setName("Lunch run");
+    store.setDescription("Easy");
+    expect(useActivityPlanCreationStore.getState().name).toBe("Lunch run");
+    store.setName("");
+    store.setActivityCategory("run");
+    expect(useActivityPlanCreationStore.getState().name).toBe("");
+    store.reset();
+    expect(useActivityPlanCreationStore.getState().name).toBe("New plan");
+  });
   it("starts with an invalid but recoverable V5 draft", () =>
     expect(createBlankActivityPlanDraft()).toEqual({
       version: 5,

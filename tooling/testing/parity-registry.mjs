@@ -42,7 +42,7 @@ const webTests = {
   },
   "activity-plan.manage": {
     identity:
-      "V5 authoring persists zero targets, recovers invalid drafts, and schedules its UI-edited RPE plan reference",
+      "V5 authoring persists zero intensity and timed rest, recovers invalid drafts, and schedules its UI-edited RPE plan reference",
     path: "apps/web/e2e/specs/activity-plans.spec.ts",
   },
   "auth.access": {

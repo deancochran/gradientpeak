@@ -6,6 +6,11 @@ import { BuilderScheduleEditor } from "../BuilderScheduleEditor";
 
 let mockScrollViewCount = 0;
 
+jest.mock("@/components/plan/training-path/PlanTrainingChart", () => ({
+  PlanTrainingChart: (props: HostProps) =>
+    React.createElement("View", { ...props, testID: "shared-plan-chart" }),
+}));
+
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
@@ -135,6 +140,64 @@ const renderEditor = async (
 };
 
 describe("BuilderScheduleEditor selected day planning", () => {
+  it("uses shared Plan chart selection for the activity and copy actions", async () => {
+    const selectDate = jest.fn();
+    const props = await renderEditor(0, {
+      creationChart: {
+        selectedDate: "2026-02-18",
+        selectedDayOffset: 16,
+        selectDate,
+        forecastAvailable: false,
+        chartProps: {
+          dailyPoints: [
+            { date: "2026-02-18", plannedLoad: null, plannedLoadStatus: "unavailable" },
+          ],
+        },
+      },
+      onCopyWeek: jest.fn(),
+      viewModel: {
+        timelineWeeks: [
+          { weekIndex: 2, sessions: [{ session: { localId: "s", offsetDays: 16 } }] },
+        ],
+      },
+    } as unknown as Partial<React.ComponentProps<typeof BuilderScheduleEditor>>);
+    expect(screen.getByTestId("shared-plan-chart")).toBeTruthy();
+    expect(screen.getByTestId("mock-event-card")).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
+    expect(props.onAddSessionAtOffset).toHaveBeenCalledWith(16);
+    await fireEvent.press(screen.getByTestId("builder-copy-week"));
+    expect(props.onCopyWeek).toHaveBeenCalledWith(2, 3);
+    await fireEvent.press(screen.getByLabelText("Next schedule day"));
+    expect(selectDate).toHaveBeenCalledWith("2026-02-19");
+  });
+  it("returns to the newly scheduled week instead of hiding it on week one", async () => {
+    await renderEditor(0, { scheduleOnly: true, focusOffsetDays: 15 });
+    expect(screen.getByText("Week 3")).toBeTruthy();
+  });
+  it("browses a sparse authored schedule without a server chart or fitness panels", async () => {
+    const props = await renderEditor(0, {
+      scheduleOnly: true,
+      chartReview: { chart: { weeks: [] }, selectedWeekIndex: 0 },
+      viewModel: {
+        timelineWeeks: [
+          { weekIndex: 2, sessions: [{ session: { localId: "session-1", offsetDays: 16 } }] },
+        ],
+      },
+    } as unknown as Partial<React.ComponentProps<typeof BuilderScheduleEditor>>);
+    expect(screen.queryByTestId("mock-chart-review")).toBeNull();
+    expect(screen.queryByTestId("builder-copy-week")).toBeNull();
+    expect(
+      screen.getByText("No activities this week. Add an activity to get started."),
+    ).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText("Next schedule week"));
+    await fireEvent.press(screen.getByLabelText("Next schedule week"));
+    expect(screen.getByText("Week 3")).toBeTruthy();
+    expect(screen.getByText("Day 3")).toBeTruthy();
+    expect(screen.getByTestId("mock-event-card")).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("builder-add-activity"));
+    expect(props.onAddSessionAtOffset).toHaveBeenCalledWith(14);
+    expect(screen.getByLabelText("Next schedule week").props.disabled).toBe(true);
+  });
   beforeEach(() => {
     mockScrollViewCount = 0;
   });
@@ -204,14 +267,8 @@ describe("BuilderScheduleEditor selected day planning", () => {
     expect(props.onRemoveSession).toHaveBeenCalledWith("session-1");
   });
 
-  it("keeps the selected activity editor inline with the weekly schedule", async () => {
-    await renderEditor(0, {
-      selectedSession: { localId: "session-inline", offsetDays: 0 },
-      onChangeSession: jest.fn(),
-      onOpenActivityPicker: jest.fn(),
-    } as unknown as Partial<React.ComponentProps<typeof BuilderScheduleEditor>>);
-
-    expect(screen.getByTestId("builder-inline-session-editor")).toBeTruthy();
-    expect(screen.getByTestId("inline-editor-session-inline")).toBeTruthy();
+  it("keeps editing out of the schedule so all entry points use the session page", async () => {
+    await renderEditor(0);
+    expect(screen.queryByTestId("builder-inline-session-editor")).toBeNull();
   });
 });

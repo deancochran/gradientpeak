@@ -11,8 +11,10 @@ import type {
 } from "@repo/core";
 import {
   activityPlanDraftMetrics,
+  activityPlanDraftStructureSchema,
   activityPlanStepNoteSchema,
   createUnavailableAthletePerformanceTargetFacts,
+  getActivityPlanTargetTypeDefault,
   normalizeActivityPlanAuthoringStructure,
   resolveActivityPlanDraft,
 } from "@repo/core";
@@ -20,14 +22,21 @@ import { getPermissibleActivityPlanDurationTypes } from "@repo/core/activity-pla
 import {
   activityTargetAuthoringUnitLabels,
   activityTargetDefinitionByType,
+  getActivityTargetCadenceUnitLabel,
   getPermissibleTargetTypes,
 } from "@repo/core/targets";
 import { parseNumericInput } from "@repo/core/utils/numeric-ux-policy";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@repo/ui/components/dropdown-menu";
 import { Input } from "@repo/ui/components/input";
 import { Textarea } from "@repo/ui/components/textarea";
-import { Copy, GripVertical, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, Ellipsis, GripVertical, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createActivityPlanRepeat,
@@ -156,6 +165,18 @@ function targetError(type: ActivityTargetType, raw: string) {
     : null;
 }
 
+function targetTypeLabel(type: ActivityTargetType, category: CanonicalActivityCategory | null) {
+  if (type === "cadence")
+    return `Cadence · ${getActivityTargetCadenceUnitLabel(category ?? "bike")}`;
+  if (type === "%ThresholdHR") return "Heart rate · Threshold HR %";
+  if (type === "%MaxHR") return "Heart rate · Max HR %";
+  if (type === "%FTP") return "Power · FTP %";
+  if (type === "watts") return "Power · watts";
+  if (type === "bpm") return "Heart rate · bpm";
+  if (type === "speed") return category === "run" ? "Pace" : "Speed · km/h";
+  return type;
+}
+
 /** Local draft state is permissive; only Core's resolver yields the strict saved V5 structure. */
 export function ActivityPlanComposer({
   initial,
@@ -165,14 +186,17 @@ export function ActivityPlanComposer({
   onSaved,
   pending = false,
 }: Props) {
-  const initialResolution = initial ? resolveActivityPlanDraft(initial.structure) : null;
-  const initialStructure =
-    initialResolution?.status === "valid" ? initialResolution.structure : null;
-  const [name, setName] = useState(initial?.name ?? "");
+  // Saved legacy structures can be structurally sound while failing current
+  // authoring requirements (for example, a targetless step). Load those into
+  // the repairable draft UI; the strict resolver remains the save boundary.
+  const initialDraft = initial
+    ? activityPlanDraftStructureSchema.safeParse(initial.structure)
+    : null;
+  const initialStructure = initialDraft?.success ? initialDraft.data : null;
+  const initialResolution = initialStructure ? resolveActivityPlanDraft(initialStructure) : null;
+  // The creation title is an editable default, never a display-only placeholder.
+  const [name, setName] = useState(initial?.name ?? "New plan");
   const [description, setDescription] = useState(initial?.description ?? initial?.notes ?? "");
-  const [descriptionOpen, setDescriptionOpen] = useState(
-    Boolean(initial?.description ?? initial?.notes),
-  );
   const [visibility, setVisibility] = useState<ActivityPlanAuthoringValues["content_visibility"]>(
     initial?.content_visibility === "public" || initial?.content_visibility === "followers"
       ? initial.content_visibility
@@ -235,7 +259,9 @@ export function ActivityPlanComposer({
     });
   };
   const [postSaveError, setPostSaveError] = useState<string | null>(null);
-  const [lastResolved, setLastResolved] = useState<ActivityPlanStructure | null>(initialStructure);
+  const [lastResolved, setLastResolved] = useState<ActivityPlanStructure | null>(
+    initialResolution?.status === "valid" ? initialResolution.structure : null,
+  );
   const inFlight = useRef(false);
   const persisted = useRef(false);
   const alive = useRef(true);
@@ -403,26 +429,7 @@ export function ActivityPlanComposer({
       }}
     >
       <fieldset className="space-y-5 border-0 p-0" disabled={busy || persisted.current}>
-        <section className="space-y-3" aria-label="Plan details">
-          <label className="block text-sm font-medium" htmlFor="activity-plan-category">
-            Activity category
-          </label>
-          <select
-            id="activity-plan-category"
-            className="h-10 w-full rounded-md border bg-background px-3"
-            value={structure.activity_category ?? ""}
-            onChange={(event) => {
-              if (event.target.value)
-                changeCategory(event.target.value as CanonicalActivityCategory);
-            }}
-          >
-            <option value="">Choose an activity</option>
-            {categories.map((category) => (
-              <option key={category} value={category}>
-                {category}
-              </option>
-            ))}
-          </select>
+        <section className="space-y-3 rounded-2xl border bg-card p-4" aria-label="Plan details">
           <label className="block text-sm font-medium" htmlFor="activity-plan-name">
             Plan name
           </label>
@@ -437,28 +444,37 @@ export function ActivityPlanComposer({
           {submitAttempted && !name.trim() ? (
             <p className="text-sm text-destructive">Enter a plan name before saving.</p>
           ) : null}
-          {descriptionOpen ? (
-            <>
-              <label className="block text-sm font-medium" htmlFor="activity-plan-description">
-                Description
-              </label>
-              <Textarea
-                id="activity-plan-description"
-                maxLength={3000}
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-              />
-            </>
-          ) : (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setDescriptionOpen(true)}
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="sr-only" htmlFor="activity-plan-category">
+              Activity category
+            </label>
+            <select
+              id="activity-plan-category"
+              className="h-9 rounded-full border bg-secondary px-3 text-sm font-medium"
+              value={structure.activity_category ?? ""}
+              onChange={(event) => {
+                if (event.target.value)
+                  changeCategory(event.target.value as CanonicalActivityCategory);
+              }}
             >
-              Add description
-            </Button>
-          )}
+              <option value="">Choose an activity</option>
+              {categories.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+          </div>
+          <label className="block text-sm font-medium" htmlFor="activity-plan-description">
+            Description (optional)
+          </label>
+          <Textarea
+            id="activity-plan-description"
+            maxLength={3000}
+            placeholder="Describe the activity plan"
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+          />
           <div className="flex flex-wrap items-center gap-3">
             <label className="text-sm" htmlFor="activity-plan-visibility">
               Visibility
@@ -518,6 +534,8 @@ export function ActivityPlanComposer({
           <ActivityPlanEstimateRow metrics={metrics} />
           {structure.activity_category ? (
             <ActivityPlanTimelineChart
+              compact
+              height={40}
               label="Plan timeline"
               presentation={null}
               structure={lastResolved ?? undefined}
@@ -674,12 +692,13 @@ function ItemEditor({
 }) {
   const isRepeat = item.type === "repeat";
   const itemSteps = isRepeat ? item.steps : [item];
+  const [expanded, setExpanded] = useState(true);
   const move = (id: string, repeatId: string | undefined, targetIndex: number) =>
     onStructureChange((current) =>
       moveDraftItem(current, id, { ...(repeatId ? { repeatId } : {}), index: targetIndex }),
     );
   return (
-    <li className="rounded-xl border p-4" data-testid={`activity-plan-item-${index}`}>
+    <li className="rounded-xl border bg-card p-3" data-testid={`activity-plan-item-${index}`}>
       {draggingId ? (
         <DropTarget
           label={`Drop before item ${index + 1}`}
@@ -687,15 +706,61 @@ function ItemEditor({
         />
       ) : null}
       {isRepeat ? (
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="font-semibold">
-            {isRepeat ? `Repeat ${index + 1}` : `Step ${index + 1}`}
-          </h3>
-          <div className="flex gap-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            aria-expanded={expanded}
+            aria-label={`${expanded ? "Collapse" : "Expand"} repeat ${index + 1}`}
+            className="h-11 w-11 shrink-0"
+            onClick={() => setExpanded((current) => !current)}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <ChevronDown
+              className={`h-4 w-4 transition-transform ${expanded ? "" : "-rotate-90"}`}
+            />
+          </Button>
+          <h3 className="min-w-0 flex-1 font-semibold">{item.count}× repeat</h3>
+          <label
+            className="flex min-h-11 items-center gap-2 text-sm"
+            htmlFor={`repeat-count-${item.id}`}
+          >
+            <span className="sr-only">Repeat count</span>
+            <Input
+              id={`repeat-count-${item.id}`}
+              aria-label="Repeat count"
+              className="h-11 w-16"
+              type="text"
+              inputMode="numeric"
+              value={drafts[`${item.id}:count`] ?? String(item.count)}
+              aria-invalid={
+                parseNumericInput(drafts[`${item.id}:count`] ?? String(item.count), {
+                  min: 2,
+                  max: 50,
+                  precision: "integer",
+                }).status !== "valid"
+              }
+              onChange={(event) => {
+                const raw = event.target.value;
+                setDrafts((current) => ({ ...current, [`${item.id}:count`]: raw }));
+                const parsed = parseNumericInput(raw, { min: 2, max: 50, precision: "integer" });
+                if (parsed.status === "valid")
+                  onStructureChange((current) =>
+                    updateActivityPlanRepeat(current, item.id, (repeat) => ({
+                      ...repeat,
+                      count: parsed.value,
+                    })),
+                  );
+              }}
+            />
+            <span aria-hidden="true">×</span>
+          </label>
+          <div className="flex items-center gap-1">
             <Button
               type="button"
               variant="ghost"
-              size="sm"
+              className="h-11 w-11 cursor-grab"
+              size="icon"
               draggable
               aria-label={`Drag repeat ${index + 1}`}
               onDragStart={(event) => {
@@ -707,121 +772,67 @@ function ItemEditor({
             >
               <GripVertical className="h-4 w-4" />
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              aria-label="Move item earlier"
-              onClick={() => move(item.id, undefined, index - 1)}
-            >
-              ↑
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              aria-label="Move item later"
-              onClick={() => move(item.id, undefined, index + 1)}
-            >
-              ↓
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              aria-label="Duplicate item"
-              disabled={!canDuplicate}
-              title={!canDuplicate ? "Correct incomplete fields before duplicating." : undefined}
-              onClick={() => onStructureChange((current) => duplicateDraftItem(current, item.id))}
-            >
-              <Copy className="h-4 w-4" />
-            </Button>
-            {isRepeat ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                aria-label="Ungroup repeat"
+            <OutlineOverflowMenu label={`repeat ${index + 1}`}>
+              <DropdownMenuItem onSelect={() => move(item.id, undefined, index - 1)}>
+                Move earlier
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => move(item.id, undefined, index + 1)}>
+                Move later
+              </DropdownMenuItem>
+              <DropdownMenuItem
                 disabled={!canDuplicate}
-                onClick={() => onStructureChange((current) => ungroupDraftRepeat(current, item.id))}
+                onSelect={() =>
+                  onStructureChange((current) => duplicateDraftItem(current, item.id))
+                }
+              >
+                Duplicate
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={!canDuplicate}
+                onSelect={() =>
+                  onStructureChange((current) => ungroupDraftRepeat(current, item.id))
+                }
               >
                 Ungroup
-              </Button>
-            ) : null}
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              aria-label="Delete item"
-              onClick={() => {
-                if (
-                  isRepeat &&
-                  item.steps.length > 0 &&
-                  !window.confirm(
-                    "Delete this repeat and all its steps? Use Ungroup to keep the full sequence.",
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-destructive"
+                onSelect={() => {
+                  if (
+                    item.steps.length > 0 &&
+                    !window.confirm(
+                      "Delete this repeat and all its steps? Use Ungroup to keep the full sequence.",
+                    )
                   )
-                )
-                  return;
-                setDrafts((current) => removeRepeatDrafts(current, item));
-                onStructureChange((current) => removeDraftItem(current, item.id));
-              }}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
+                    return;
+                  setDrafts((current) => removeRepeatDrafts(current, item));
+                  onStructureChange((current) => removeDraftItem(current, item.id));
+                }}
+              >
+                Delete
+              </DropdownMenuItem>
+            </OutlineOverflowMenu>
           </div>
         </div>
       ) : null}
-      {isRepeat ? (
-        <label className="mt-3 block text-sm" htmlFor={`repeat-count-${item.id}`}>
-          Repeat count
-          <Input
-            id={`repeat-count-${item.id}`}
-            className="mt-1 max-w-24"
-            type="text"
-            inputMode="numeric"
-            value={drafts[`${item.id}:count`] ?? String(item.count)}
-            aria-invalid={
-              parseNumericInput(drafts[`${item.id}:count`] ?? String(item.count), {
-                min: 2,
-                max: 50,
-                precision: "integer",
-              }).status !== "valid"
-            }
-            onChange={(event) => {
-              const raw = event.target.value;
-              setDrafts((current) => ({ ...current, [`${item.id}:count`]: raw }));
-              const parsed = parseNumericInput(event.target.value, {
-                min: 2,
-                max: 50,
-                precision: "integer",
-              });
-              if (parsed.status === "valid")
-                onStructureChange((current) =>
-                  updateActivityPlanRepeat(current, item.id, (repeat) => ({
-                    ...repeat,
-                    count: parsed.value,
-                  })),
-                );
-            }}
-          />
-          {parseNumericInput(drafts[`${item.id}:count`] ?? String(item.count), {
-            min: 2,
-            max: 50,
-            precision: "integer",
-          }).status !== "valid" ? (
-            <span role="alert">Enter a whole repeat count from 2 to 50.</span>
-          ) : null}
-        </label>
+      {isRepeat &&
+      parseNumericInput(drafts[`${item.id}:count`] ?? String(item.count), {
+        min: 2,
+        max: 50,
+        precision: "integer",
+      }).status !== "valid" ? (
+        <span role="alert">Enter a whole repeat count from 2 to 50.</span>
       ) : null}
       <ol
         aria-label={isRepeat ? `Repeat ${index + 1} steps` : `Step ${index + 1}`}
-        className="mt-3 space-y-2"
+        className={isRepeat ? "mt-3 space-y-2 border-l-2 border-border pl-3" : "space-y-2"}
+        hidden={isRepeat && !expanded}
       >
         {itemSteps.map((step, stepIndex) => (
           <li
             key={step.id}
             id={`activity-plan-step-${step.id}`}
-            className="rounded-lg bg-muted/30 p-3"
+            className="min-h-16 rounded-xl bg-secondary/50 px-3 py-2"
           >
             {draggingId && isRepeat ? (
               <DropTarget
@@ -829,21 +840,25 @@ function ItemEditor({
                 onDrop={() => onDropAt(item.id, stepIndex)}
               />
             ) : null}
-            <div className="flex items-center justify-between gap-2">
-              <div>
+            <div className="flex items-center gap-2">
+              <button
+                className="min-h-11 min-w-0 flex-1 text-left"
+                type="button"
+                aria-controls={`step-editor-${step.id}`}
+                aria-expanded={activeStepId === step.id}
+                aria-label={`${activeStepId === step.id ? "Close editor for" : "Edit"} ${step.name || `step ${isRepeat ? stepIndex + 1 : index + 1}`}`}
+                onClick={() => onActiveStepChange(activeStepId === step.id ? null : step.id)}
+              >
                 <span>{step.name || `Step ${isRepeat ? stepIndex + 1 : index + 1}`}</span>
                 <p className="text-sm text-muted-foreground">
                   {step.duration ? formatActivityPlanDuration(step.duration) : "Set duration"}
                   {step.targets.length
-                    ? ` · ${step.targets.map((target) => (target.type === "rest" ? "Rest" : `${target.intensity ?? "Set"} ${activityTargetAuthoringUnitLabels[activityTargetDefinitionByType[target.type].unit]}`)).join(", ")}`
+                    ? ` · ${step.targets.map((target) => (target.type === "rest" ? "Rest" : `${target.intensity ?? "Set"} ${target.type === "cadence" ? getActivityTargetCadenceUnitLabel(category ?? "bike") : activityTargetAuthoringUnitLabels[activityTargetDefinitionByType[target.type].unit]}`)).join(", ")}`
                     : ""}
                 </p>
-              </div>
+              </button>
               <StepActions
                 index={isRepeat ? stepIndex : index}
-                stepId={step.id}
-                editing={activeStepId === step.id}
-                onEdit={() => onActiveStepChange(activeStepId === step.id ? null : step.id)}
                 onDelete={() => {
                   setDrafts((current) => removeStepDrafts(current, step.id));
                   onStructureChange((current) => removeDraftItem(current, step.id));
@@ -859,6 +874,27 @@ function ItemEditor({
                     (isRepeat ? stepIndex : index) + offset,
                   )
                 }
+                destinations={[
+                  {
+                    label: "Move to end of activity plan",
+                    onSelect: () =>
+                      move(
+                        step.id,
+                        undefined,
+                        allItems.length - (isRepeat && item.steps.length > 1 ? 0 : 1),
+                      ),
+                  },
+                  ...allItems.flatMap((candidate, repeatIndex) =>
+                    candidate.type === "repeat" && (!isRepeat || candidate.id !== item.id)
+                      ? [
+                          {
+                            label: `Move to repeat ${repeatIndex + 1}`,
+                            onSelect: () => move(step.id, candidate.id, candidate.steps.length),
+                          },
+                        ]
+                      : [],
+                  ),
+                ]}
                 onDragStart={(event) => {
                   event.dataTransfer.setData("text/plain", step.id);
                   event.dataTransfer.effectAllowed = "move";
@@ -867,39 +903,6 @@ function ItemEditor({
                 onDragEnd={() => onDraggingChange(null)}
               />
             </div>
-            <label className="mt-2 block text-sm">
-              Move {step.name || `step ${isRepeat ? stepIndex + 1 : index + 1}`} to
-              <select
-                className="ml-2 rounded border bg-background p-1"
-                value=""
-                onChange={(event) => {
-                  const destination = event.target.value;
-                  if (!destination) return;
-                  if (destination === "root")
-                    move(
-                      step.id,
-                      undefined,
-                      allItems.length - (isRepeat && item.steps.length > 1 ? 0 : 1),
-                    );
-                  else {
-                    const repeat = allItems.find(
-                      (candidate) => candidate.type === "repeat" && candidate.id === destination,
-                    );
-                    if (repeat?.type === "repeat") move(step.id, repeat.id, repeat.steps.length);
-                  }
-                }}
-              >
-                <option value="">Choose destination</option>
-                <option value="root">End of activity plan</option>
-                {allItems.map((candidate, repeatIndex) =>
-                  candidate.type === "repeat" && (!isRepeat || candidate.id !== item.id) ? (
-                    <option key={candidate.id} value={candidate.id}>
-                      Repeat {repeatIndex + 1}
-                    </option>
-                  ) : null,
-                )}
-              </select>
-            </label>
             {activeStepId === step.id ? (
               <StepEditor
                 step={step}
@@ -941,43 +944,28 @@ function ItemEditor({
 
 function StepActions({
   index,
-  stepId,
-  editing,
-  onEdit,
   onDelete,
   onDuplicate,
   onMove,
   onDragStart,
   onDragEnd,
   canDuplicate,
+  destinations,
 }: {
   index: number;
-  stepId: string;
-  editing: boolean;
-  onEdit: () => void;
   onDelete: () => void;
   onDuplicate: () => void;
   onMove: (offset: -1 | 1) => void;
   onDragStart: (event: React.DragEvent<HTMLButtonElement>) => void;
   onDragEnd: () => void;
   canDuplicate: boolean;
+  destinations: { label: string; onSelect: () => void }[];
 }) {
   return (
-    <div className="flex items-center justify-center gap-1">
-      <Button
-        aria-label={`${editing ? "Close editor for" : "Edit"} step ${index + 1}`}
-        aria-controls={`step-editor-${stepId}`}
-        aria-expanded={editing}
-        onClick={onEdit}
-        size="sm"
-        type="button"
-        variant="ghost"
-      >
-        {editing ? "Close" : "Edit"}
-      </Button>
+    <div className="flex shrink-0 items-center gap-1">
       <Button
         aria-label={`Drag step ${index + 1}`}
-        className="cursor-grab"
+        className="h-11 w-11 cursor-grab"
         draggable
         onDragEnd={onDragEnd}
         onDragStart={onDragStart}
@@ -991,45 +979,47 @@ function StepActions({
             onMove(1);
           }
         }}
-        size="sm"
+        size="icon"
         type="button"
         variant="ghost"
       >
         <GripVertical className="h-4 w-4" />
       </Button>
-      <Button
-        aria-label={`Move step ${index + 1} earlier`}
-        onClick={() => onMove(-1)}
-        size="sm"
-        type="button"
-        variant="ghost"
-      >
-        ↑
-      </Button>
-      <Button
-        aria-label={`Move step ${index + 1} later`}
-        onClick={() => onMove(1)}
-        size="sm"
-        type="button"
-        variant="ghost"
-      >
-        ↓
-      </Button>
-      <Button
-        aria-label="Duplicate step"
-        disabled={!canDuplicate}
-        title={!canDuplicate ? "Correct incomplete fields before duplicating." : undefined}
-        onClick={onDuplicate}
-        size="sm"
-        type="button"
-        variant="ghost"
-      >
-        <Copy className="h-4 w-4" />
-      </Button>
-      <Button aria-label="Delete step" onClick={onDelete} size="sm" type="button" variant="ghost">
-        <Trash2 className="h-4 w-4" />
-      </Button>
+      <OutlineOverflowMenu label={`step ${index + 1}`}>
+        <DropdownMenuItem onSelect={() => onMove(-1)}>Move earlier</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onMove(1)}>Move later</DropdownMenuItem>
+        {destinations.map((destination) => (
+          <DropdownMenuItem key={destination.label} onSelect={destination.onSelect}>
+            {destination.label}
+          </DropdownMenuItem>
+        ))}
+        <DropdownMenuItem disabled={!canDuplicate} onSelect={onDuplicate}>
+          Duplicate
+        </DropdownMenuItem>
+        <DropdownMenuItem className="text-destructive" onSelect={onDelete}>
+          Delete
+        </DropdownMenuItem>
+      </OutlineOverflowMenu>
     </div>
+  );
+}
+
+function OutlineOverflowMenu({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          aria-label={`More actions for ${label}`}
+          className="h-11 w-11"
+          size="icon"
+          type="button"
+          variant="ghost"
+        >
+          <Ellipsis className="h-5 w-5" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">{children}</DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -1069,8 +1059,6 @@ function StepEditor({
   setDrafts: React.Dispatch<React.SetStateAction<RawDrafts>>;
   onChange: (update: (step: ActivityPlanDraftStep) => ActivityPlanDraftStep) => void;
 }) {
-  const [nameOpen, setNameOpen] = useState(Boolean(step.name));
-  const [instructionsOpen, setInstructionsOpen] = useState(Boolean(step.instructions));
   const [notePasteError, setNotePasteError] = useState<string | null>(null);
   const noteValidation = activityPlanStepNoteSchema.safeParse(step.instructions);
   const noteError =
@@ -1079,6 +1067,19 @@ function StepEditor({
   const targets = category ? getPermissibleTargetTypes(category) : [];
   const quantityKey = key(step.id);
   const selectedDurationType = step.duration?.type ?? drafts[completionTypeKey(step.id)] ?? "";
+  const hasRestTarget = step.targets.some((target) => target.type === "rest");
+  const restAvailable = selectedDurationType === "time";
+  const selectableTargets = targets.filter((type) => type !== "rest" || restAvailable);
+  const targetOptions = (currentType: ActivityTargetType) => [
+    ...(currentType === "rest" && !selectableTargets.includes("rest")
+      ? [{ value: "rest" as const, label: "rest (available for timed steps)", disabled: true }]
+      : []),
+    ...selectableTargets.map((type) => ({
+      value: type,
+      label: targetTypeLabel(type, category),
+      disabled: false,
+    })),
+  ];
   const durationUnavailable =
     selectedDurationType !== "" &&
     !durations.includes(
@@ -1091,121 +1092,116 @@ function StepEditor({
   return (
     <fieldset id={`step-editor-${step.id}`} className="mt-3 space-y-3 border-t pt-3">
       <legend className="sr-only">Edit step</legend>
-      {nameOpen ? (
-        <label className="block text-sm" htmlFor={`step-name-${step.id}`}>
-          Name (optional)
-          <Input
-            id={`step-name-${step.id}`}
-            value={step.name ?? ""}
-            onChange={(event) =>
-              onChange((item) => ({ ...item, name: event.target.value || undefined }))
-            }
-          />
-        </label>
-      ) : (
-        <Button type="button" variant="ghost" size="sm" onClick={() => setNameOpen(true)}>
-          Add name
-        </Button>
-      )}
-      {instructionsOpen ? (
-        <div className="block text-sm">
-          <label htmlFor={`step-instructions-${step.id}`}>Instructions (optional)</label>
-          <Input
-            id={`step-instructions-${step.id}`}
-            value={step.instructions ?? ""}
-            placeholder="One short cue, up to 160 characters"
-            aria-invalid={Boolean(noteError)}
-            aria-describedby={`step-instructions-help-${step.id}`}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") event.preventDefault();
-            }}
-            onPaste={(event) => {
-              const pasted = activityPlanStepNoteSchema.safeParse(
-                event.clipboardData.getData("text"),
-              );
-              if (!pasted.success) {
-                event.preventDefault();
-                setNotePasteError(
-                  pasted.error.issues[0]?.message ?? "Paste a short single-line cue.",
-                );
-              }
-            }}
-            onChange={(event) => {
-              setNotePasteError(null);
-              onChange((item) => ({ ...item, instructions: event.target.value || undefined }));
-            }}
-          />
-          <span id={`step-instructions-help-${step.id}`} role={noteError ? "alert" : undefined}>
-            {noteError ??
-              "One line, up to 160 characters. Put details in the activity plan description."}
-          </span>
-        </div>
-      ) : (
-        <Button type="button" variant="ghost" size="sm" onClick={() => setInstructionsOpen(true)}>
-          Add instructions
-        </Button>
-      )}
-      <label className="block text-sm" htmlFor={`step-completion-${step.id}`}>
-        Completion
-        <select
-          id={`step-completion-${step.id}`}
-          className="mt-1 h-10 w-full rounded border bg-background px-2"
-          aria-describedby={durationUnavailable ? durationErrorId : undefined}
-          aria-invalid={durationUnavailable}
-          value={selectedDurationType}
-          onChange={(event) => {
-            const type = event.target.value as ActivityPlanDuration["type"] | "";
-            setDrafts((current) => ({ ...current, [completionTypeKey(step.id)]: type }));
-            onChange((item) => ({
-              ...item,
-              duration: type === "untilFinished" ? durationFrom(type, 1) : null,
-            }));
-          }}
-        >
-          <option value="">Choose completion</option>
-          {durationUnavailable ? (
-            <option value={selectedDurationType}>
-              {selectedDurationType} (not available for {category})
-            </option>
-          ) : null}
-          {durations.map((type) => (
-            <option key={type} value={type}>
-              {type}
-            </option>
-          ))}
-        </select>
-        {durationUnavailable ? (
-          <p id={durationErrorId} className="mt-1 text-sm text-destructive">
-            This completion condition is not available for {category}. Choose an available
-            condition.
-          </p>
-        ) : null}
+      <label className="flex flex-wrap items-center gap-3 text-sm" htmlFor={`step-name-${step.id}`}>
+        <span className="min-w-24">Name (optional)</span>
+        <Input
+          id={`step-name-${step.id}`}
+          className="min-w-40 flex-1"
+          placeholder="Step name"
+          value={step.name ?? ""}
+          onChange={(event) =>
+            onChange((item) => ({ ...item, name: event.target.value || undefined }))
+          }
+        />
       </label>
-      {selectedDurationType && selectedDurationType !== "untilFinished" ? (
-        <label className="block text-sm" htmlFor={`step-quantity-${step.id}`}>
-          Quantity
-          <Input
-            id={`step-quantity-${step.id}`}
-            type="text"
-            inputMode="numeric"
-            value={quantityRaw}
-            aria-invalid={Boolean(numericError(quantityRaw))}
-            onChange={(event) => {
-              const raw = event.target.value;
-              setDrafts((current) => ({ ...current, [quantityKey]: raw }));
-              const parsed = parseNumericInput(raw, { min: 1, precision: "integer" });
-              if (parsed.status === "valid")
-                onChange((item) => ({
-                  ...item,
-                  duration: durationFrom(
-                    selectedDurationType as Exclude<ActivityPlanDuration["type"], "untilFinished">,
-                    parsed.value,
-                  ),
-                }));
-            }}
-          />
+      <div className="flex flex-wrap items-center gap-3 text-sm">
+        <label className="min-w-24" htmlFor={`step-instructions-${step.id}`}>
+          Instructions (optional)
         </label>
-      ) : null}
+        <Input
+          id={`step-instructions-${step.id}`}
+          className="min-w-40 flex-1"
+          value={step.instructions ?? ""}
+          placeholder="Cue"
+          aria-invalid={Boolean(noteError)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.preventDefault();
+          }}
+          onPaste={(event) => {
+            const pasted = activityPlanStepNoteSchema.safeParse(
+              event.clipboardData.getData("text"),
+            );
+            if (!pasted.success) {
+              event.preventDefault();
+              setNotePasteError(
+                pasted.error.issues[0]?.message ?? "Paste a short single-line cue.",
+              );
+            }
+          }}
+          onChange={(event) => {
+            setNotePasteError(null);
+            onChange((item) => ({ ...item, instructions: event.target.value || undefined }));
+          }}
+        />
+        {noteError ? <span role="alert">{noteError}</span> : null}
+      </div>
+      <div className="flex flex-wrap items-end gap-3" data-testid={`step-duration-row-${step.id}`}>
+        <label className="min-w-32 flex-1 text-sm" htmlFor={`step-completion-${step.id}`}>
+          <span className="sr-only">Completion</span>
+          <select
+            id={`step-completion-${step.id}`}
+            className="mt-1 h-10 w-full rounded border bg-background px-2"
+            aria-describedby={durationUnavailable ? durationErrorId : undefined}
+            aria-invalid={durationUnavailable}
+            value={selectedDurationType}
+            onChange={(event) => {
+              const type = event.target.value as ActivityPlanDuration["type"] | "";
+              if (hasRestTarget && type !== "time") return;
+              setDrafts((current) => ({ ...current, [completionTypeKey(step.id)]: type }));
+              onChange((item) => ({
+                ...item,
+                duration: type === "untilFinished" ? durationFrom(type, 1) : null,
+              }));
+            }}
+          >
+            <option value="">Choose completion</option>
+            {durationUnavailable ? (
+              <option value={selectedDurationType}>
+                {selectedDurationType} (not available for {category})
+              </option>
+            ) : null}
+            {durations.map((type) => (
+              <option key={type} value={type} disabled={hasRestTarget && type !== "time"}>
+                {type}
+              </option>
+            ))}
+          </select>
+          {durationUnavailable ? (
+            <p id={durationErrorId} className="mt-1 text-sm text-destructive">
+              This completion condition is not available for {category}. Choose an available
+              condition.
+            </p>
+          ) : null}
+        </label>
+        {selectedDurationType && selectedDurationType !== "untilFinished" ? (
+          <label className="min-w-28 flex-1 text-sm" htmlFor={`step-quantity-${step.id}`}>
+            <span className="sr-only">Quantity</span>
+            <Input
+              id={`step-quantity-${step.id}`}
+              type="text"
+              inputMode="numeric"
+              value={quantityRaw}
+              aria-invalid={Boolean(quantityRaw && numericError(quantityRaw))}
+              onChange={(event) => {
+                const raw = event.target.value;
+                setDrafts((current) => ({ ...current, [quantityKey]: raw }));
+                const parsed = parseNumericInput(raw, { min: 1, precision: "integer" });
+                if (parsed.status === "valid")
+                  onChange((item) => ({
+                    ...item,
+                    duration: durationFrom(
+                      selectedDurationType as Exclude<
+                        ActivityPlanDuration["type"],
+                        "untilFinished"
+                      >,
+                      parsed.value,
+                    ),
+                  }));
+              }}
+            />
+          </label>
+        ) : null}
+      </div>
       <div className="space-y-2">
         <span className="text-sm font-medium">Targets</span>
         {step.targets.map((target, index) => {
@@ -1222,20 +1218,21 @@ function StepEditor({
                 value={target.type}
                 onChange={(event) => {
                   const type = event.target.value as ActivityTargetType;
+                  if (type === "rest" && !restAvailable) return;
                   onChange((item) =>
                     type === "rest"
                       ? {
                           ...item,
-                          duration:
-                            item.duration?.type === "time"
-                              ? item.duration
-                              : { type: "time", seconds: 60 },
                           targets: [{ type: "rest" }],
                         }
                       : {
                           ...item,
                           targets: item.targets.map((value, itemIndex) =>
-                            itemIndex === index ? { type, intensity: null } : value,
+                            itemIndex === index
+                              ? type === "cadence"
+                                ? getActivityPlanTargetTypeDefault(type, category ?? undefined)
+                                : { type, intensity: null }
+                              : value,
                           ),
                         },
                   );
@@ -1246,9 +1243,9 @@ function StepEditor({
                     {target.type} (not available for {category})
                   </option>
                 ) : null}
-                {targets.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
+                {targetOptions(target.type).map((option) => (
+                  <option key={option.value} value={option.value} disabled={option.disabled}>
+                    {option.label}
                   </option>
                 ))}
               </select>
@@ -1259,7 +1256,7 @@ function StepEditor({
                   type="text"
                   inputMode="decimal"
                   value={raw}
-                  aria-invalid={Boolean(targetError(target.type, raw))}
+                  aria-invalid={Boolean(raw && targetError(target.type, raw))}
                   onChange={(event) => {
                     const next = event.target.value;
                     setDrafts((current) => ({ ...current, [targetKey]: next }));
@@ -1286,7 +1283,9 @@ function StepEditor({
               )}
               {target.type === "rest" ? null : (
                 <span className="text-sm text-muted-foreground">
-                  {activityTargetAuthoringUnitLabels[definition.unit]}
+                  {target.type === "cadence"
+                    ? getActivityTargetCadenceUnitLabel(category ?? "bike")
+                    : activityTargetAuthoringUnitLabels[definition.unit]}
                 </span>
               )}
               <Button
@@ -1313,7 +1312,7 @@ function StepEditor({
             variant="ghost"
             disabled={!category}
             onClick={() => {
-              const type = targets[0];
+              const type = selectableTargets[0];
               if (type)
                 onChange((item) => ({
                   ...item,
