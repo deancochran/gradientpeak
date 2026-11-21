@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
   resolveAuthSessionFromHeaders: vi.fn(),
   createApiContext: vi.fn(),
   listStaff: vi.fn(),
-  endMembership: vi.fn(),
+  offboardingImpact: vi.fn(),
   suspendMembership: vi.fn(),
   resumeMembership: vi.fn(),
   grantRole: vi.fn(),
@@ -34,8 +34,7 @@ vi.mock("@repo/api/server", () => ({
     createCaller: () => ({
       organizations: {
         lifecycle: {
-          staff: { list: mocks.listStaff },
-          endMembership: mocks.endMembership,
+          staff: { list: mocks.listStaff, offboardingImpact: mocks.offboardingImpact },
           suspendMembership: mocks.suspendMembership,
           resumeMembership: mocks.resumeMembership,
         },
@@ -46,9 +45,9 @@ vi.mock("@repo/api/server", () => ({
 }));
 
 import {
-  endOrganizationStaffMembership,
   grantOrganizationStaffRole,
   loadOrganizationStaff,
+  loadOrganizationStaffOffboardingImpact,
   revokeOrganizationStaffRole,
   suspendOrganizationStaffMembership,
 } from "./staff-server-functions";
@@ -63,7 +62,14 @@ describe("staff server functions", () => {
     mocks.resolveAuthSessionFromHeaders.mockResolvedValue({ user: { id: "profile-1" } });
     mocks.createApiContext.mockResolvedValue({ session: { user: { id: "profile-1" } } });
     mocks.listStaff.mockResolvedValue({ items: [], nextCursor: null, hasMore: false });
-    mocks.endMembership.mockResolvedValue({ membershipId: MEMBERSHIP_ID, status: "ended" });
+    mocks.offboardingImpact.mockResolvedValue({
+      target: { membershipId: MEMBERSHIP_ID },
+      assignedAthleteCount: 0,
+      assignedAthletes: [],
+      nextCursor: null,
+      hasMore: false,
+      resourceInventory: { status: "unavailable" },
+    });
     mocks.suspendMembership.mockResolvedValue({
       membershipId: MEMBERSHIP_ID,
       operationId: CORRELATION_ID,
@@ -118,53 +124,39 @@ describe("staff server functions", () => {
     ).resolves.toEqual({ status: "forbidden" });
   });
 
-  it("validates command payloads before building an authenticated context", async () => {
+  it("binds the read-only offboarding impact preview to the requested organization and membership", async () => {
     await expect(
-      endOrganizationStaffMembership({
+      loadOrganizationStaffOffboardingImpact({
         data: {
           organizationId: ORGANIZATION_ID,
           membershipId: MEMBERSHIP_ID,
-          reason: "other",
-          correlationId: CORRELATION_ID,
-        } as never,
-      }),
-    ).rejects.toThrow();
-    expect(mocks.createApiContext).not.toHaveBeenCalled();
-  });
-
-  it("passes the stable terminal-operation correlation id to the API authority", async () => {
-    await endOrganizationStaffMembership({
-      data: {
-        organizationId: ORGANIZATION_ID,
-        membershipId: MEMBERSHIP_ID,
-        reason: "staff_departure",
-        correlationId: CORRELATION_ID,
-      },
-    });
-    expect(mocks.endMembership).toHaveBeenCalledWith({
-      organizationId: ORGANIZATION_ID,
-      membershipId: MEMBERSHIP_ID,
-      reason: "staff_departure",
-      correlationId: CORRELATION_ID,
-    });
-    expect((loadOrganizationStaff as unknown as { method: string }).method).toBe("POST");
-    expect((endOrganizationStaffMembership as unknown as { method: string }).method).toBe("POST");
-  });
-
-  it("returns access-lost for an expired command session rather than an uncertain retry", async () => {
-    mocks.endMembership.mockRejectedValue(
-      Object.assign(new Error("expired"), { code: "UNAUTHORIZED" }),
-    );
-    await expect(
-      endOrganizationStaffMembership({
-        data: {
-          organizationId: ORGANIZATION_ID,
-          membershipId: MEMBERSHIP_ID,
-          reason: "staff_departure",
-          correlationId: CORRELATION_ID,
+          limit: 20,
+          cursor: null,
         },
       }),
-    ).resolves.toEqual({ status: "access_lost" });
+    ).resolves.toMatchObject({ status: "granted", impact: { assignedAthleteCount: 0 } });
+    expect(mocks.offboardingImpact).toHaveBeenCalledWith({
+      organizationId: ORGANIZATION_ID,
+      membershipId: MEMBERSHIP_ID,
+      limit: 20,
+      cursor: null,
+    });
+  });
+
+  it("fails closed when preview authorization changes", async () => {
+    mocks.offboardingImpact.mockRejectedValue(
+      Object.assign(new Error("revoked"), { code: "FORBIDDEN" }),
+    );
+    await expect(
+      loadOrganizationStaffOffboardingImpact({
+        data: {
+          organizationId: ORGANIZATION_ID,
+          membershipId: MEMBERSHIP_ID,
+          limit: 20,
+          cursor: null,
+        },
+      }),
+    ).resolves.toEqual({ status: "forbidden" });
   });
 
   it("forwards exact suspension and role commands to authoritative procedures", async () => {

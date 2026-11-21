@@ -10,7 +10,8 @@ export type OrganizationLifecycleCommandFailure =
   | "forbidden"
   | "not_found"
   | "invalid_cursor"
-  | "conflict";
+  | "conflict"
+  | "unavailable";
 
 export class OrganizationLifecycleError extends Error {
   constructor(readonly reason: OrganizationLifecycleCommandFailure) {
@@ -192,6 +193,69 @@ export async function listAdministrativeAthleteRoster(input: {
   );
 }
 
+/**
+ * Read-only offboarding preparation. Resource ownership is deliberately not
+ * inferred until the shared-library inventory has an authoritative adapter.
+ */
+export async function previewStaffOffboardingImpact(input: {
+  db: DrizzleDbClient;
+  actorProfileId: string;
+  organizationId: string;
+  membershipId: string;
+  limit: number;
+  cursor: string | null;
+}) {
+  const repository = createOrganizationLifecycleRepository(input.db);
+  const actor = await requireAdmin(repository, input.organizationId, input.actorProfileId);
+  const target = await repository.getCurrentStaffOffboardingTarget(
+    input.organizationId,
+    input.membershipId,
+  );
+  // The organization-scoped lookup makes unknown and foreign memberships
+  // indistinguishable to an authorized caller, and reveals nothing to others.
+  if (!target) throw new OrganizationLifecycleError("not_found");
+  if (
+    input.cursor !== null &&
+    !(await repository.offboardingAssignmentCursorBelongsToTarget(
+      input.organizationId,
+      input.membershipId,
+      input.cursor,
+    ))
+  )
+    throw new OrganizationLifecycleError("invalid_cursor");
+  const result = await repository.readCurrentOffboardingImpactPage(
+    input.organizationId,
+    input.membershipId,
+    input.limit,
+    input.cursor,
+  );
+  const assignedAthletes = page(result.items, input.limit);
+  const protectedReason: "self" | "root_owner" | "admin_target" | null =
+    target.membershipId === actor.membershipId
+      ? "self"
+      : target.isRootOwner
+        ? "root_owner"
+        : !actor.isRootOwner && target.hasAdminRole
+          ? "admin_target"
+          : null;
+  return {
+    target: {
+      membershipId: target.membershipId,
+      identity: {
+        profileId: target.profileId,
+        displayName: target.displayName,
+        username: target.username,
+      },
+      offboarding: { eligible: protectedReason === null, reason: protectedReason },
+    },
+    assignedAthleteCount: result.total,
+    assignedAthletes: assignedAthletes.items,
+    nextCursor: assignedAthletes.nextCursor,
+    hasMore: assignedAthletes.hasMore,
+    resourceInventory: { status: "unavailable" as const },
+  };
+}
+
 async function command(
   db: DrizzleDbClient,
   operation: (repository: OrganizationLifecycleRepository) => Promise<unknown>,
@@ -213,9 +277,23 @@ export async function endOrganizationMembership(input: {
   membershipId: string;
   reason: string;
   correlationId: string;
-}) {
-  await command(input.db, (repository) => repository.endMembership(input));
-  return { membershipId: input.membershipId, status: "ended" as const };
+}): Promise<never> {
+  const repository = createOrganizationLifecycleRepository(input.db);
+  const actor = await requireAdmin(repository, input.organizationId, input.actorProfileId);
+  const target = await repository.getCurrentStaffOffboardingTarget(
+    input.organizationId,
+    input.membershipId,
+  );
+  if (!target) throw new OrganizationLifecycleError("not_found");
+  if (
+    target.membershipId === actor.membershipId ||
+    target.isRootOwner ||
+    (!actor.isRootOwner && target.hasAdminRole)
+  )
+    throw new OrganizationLifecycleError("forbidden");
+  // Staff offboarding has no durable handover or resource-inventory authority
+  // yet. Do not issue a terminal command until those prerequisites exist.
+  throw new OrganizationLifecycleError("unavailable");
 }
 
 export async function endCoachingEngagement(input: {

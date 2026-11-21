@@ -1,4 +1,8 @@
-import { organizationMembershipRoleGrants, organizationMemberships } from "@repo/db/schema";
+import {
+  organizationMembershipRoleGrants,
+  organizationMemberships,
+  profiles,
+} from "@repo/db/schema";
 import { eq } from "drizzle-orm";
 import { expect, test } from "../fixtures";
 import { withLocalE2EDatabase } from "../support/database";
@@ -7,7 +11,8 @@ test.beforeEach(() => {
   expect(process.env.E2E_DISPOSABLE_DATABASE).toBe("1");
 });
 
-test("administrator confirms staff termination while owner identity remains protected", async ({
+test("administrator reviews staff offboarding impact while owner identity remains protected", async ({
+  athleteActor,
   athletePage,
   coachActor,
   e2eIdentity,
@@ -34,51 +39,76 @@ test("administrator confirms staff termination while owner identity remains prot
         membership_id: membershipId,
         role_key: "coach",
       });
+      await transaction
+        .update(profiles)
+        .set({ full_name: "Staff Workflow Owner" })
+        .where(eq(profiles.id, athleteActor.profileId));
+      await transaction
+        .update(profiles)
+        .set({ full_name: "Staff Workflow Coach" })
+        .where(eq(profiles.id, coachActor.profileId));
     });
   });
-  await athletePage.getByRole("link", { name: "Manage staff", exact: true }).click();
+  await athletePage
+    .getByRole("navigation", { name: "Organization administration", exact: true })
+    .getByRole("link", { name: "Staff", exact: true })
+    .click();
   await expect(
     athletePage.getByRole("heading", { name: "Staff roster", exact: true }),
   ).toBeVisible();
+  const roster = athletePage.getByRole("list", { name: "Active staff roster", exact: true });
+  const ownerRow = roster.getByRole("listitem").filter({ hasText: "Staff Workflow Owner" });
+  const coachRow = roster.getByRole("listitem").filter({ hasText: "Staff Workflow Coach" });
+  await expect(ownerRow).toHaveCount(1);
+  await expect(coachRow).toHaveCount(1);
+  await expect(ownerRow.getByRole("button", { name: /^End membership for/ })).toHaveCount(0);
+  await expect(coachRow.getByRole("button", { name: /^End membership for/ })).toHaveCount(0);
+  await ownerRow.getByRole("button", { name: "Review offboarding impact", exact: true }).click();
+  await expect(athletePage.getByRole("alertdialog")).toContainText(
+    "You cannot offboard your own membership.",
+  );
   await expect(
-    athletePage.getByText("You cannot end your own membership.", { exact: true }),
+    athletePage
+      .getByRole("alertdialog")
+      .getByRole("button", { name: /end membership|confirm offboarding/i }),
+  ).toHaveCount(0);
+  await athletePage.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(
+    coachRow.getByRole("button", { name: "Review offboarding impact", exact: true }),
   ).toBeVisible();
-  await expect(athletePage.getByRole("button", { name: /^End membership for/ })).toHaveCount(1);
-  await athletePage.getByRole("button", { name: /^End membership for/ }).click();
-  await expect(athletePage.getByRole("alertdialog")).toBeVisible();
-  await athletePage.getByRole("button", { name: "Cancel", exact: true }).click();
+  await coachRow.getByRole("button", { name: "Review offboarding impact", exact: true }).click();
+  await expect(athletePage.getByRole("alertdialog")).toContainText(
+    "Start a handover before any future offboarding workflow is completed.",
+  );
+  await expect(athletePage.getByRole("alertdialog")).toContainText(
+    "resources are unavailable and have not been assessed",
+  );
+  await expect(
+    athletePage
+      .getByRole("alertdialog")
+      .getByRole("button", { name: /end membership|confirm offboarding/i }),
+  ).toHaveCount(0);
+  await athletePage.getByRole("button", { name: "Close", exact: true }).click();
   await withLocalE2EDatabase(async (database) => {
     const [row] = await database.db
       .select()
       .from(organizationMemberships)
       .where(eq(organizationMemberships.id, membershipId));
     expect(row?.ended_at).toBeNull();
-  });
-  await athletePage.getByRole("button", { name: /^End membership for/ }).click();
-  await athletePage.getByRole("button", { name: "End membership", exact: true }).click();
-  // Modal accessibility hides background row actions before the write commits;
-  // their absence alone is not a completion signal.
-  await expect(
-    athletePage.getByRole("status").filter({ hasText: "membership ended." }),
-  ).toBeVisible();
-  await expect(athletePage.getByRole("alertdialog")).toHaveCount(0);
-  await expect(athletePage.getByRole("button", { name: /^End membership for/ })).toHaveCount(0);
-  await withLocalE2EDatabase(async (database) => {
-    const [row] = await database.db
-      .select()
-      .from(organizationMemberships)
-      .where(eq(organizationMemberships.id, membershipId));
-    expect(row?.ended_at).toBeInstanceOf(Date);
     const grants = await database.db
       .select()
       .from(organizationMembershipRoleGrants)
       .where(eq(organizationMembershipRoleGrants.membership_id, membershipId));
     expect(grants).toHaveLength(1);
-    expect(grants[0]?.revoked_at).toBeInstanceOf(Date);
+    expect(grants[0]?.revoked_at).toBeNull();
   });
   await athletePage.reload();
-  await expect(athletePage.getByRole("button", { name: /^End membership for/ })).toHaveCount(0);
+  await expect(ownerRow.getByRole("button", { name: /^End membership for/ })).toHaveCount(0);
+  await expect(coachRow.getByRole("button", { name: /^End membership for/ })).toHaveCount(0);
   await expect(
-    athletePage.getByText("You cannot end your own membership.", { exact: true }),
-  ).toBeVisible();
+    ownerRow.getByRole("button", { name: "Review offboarding impact", exact: true }),
+  ).toHaveCount(1);
+  await expect(
+    coachRow.getByRole("button", { name: "Review offboarding impact", exact: true }),
+  ).toHaveCount(1);
 });

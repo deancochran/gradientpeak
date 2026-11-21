@@ -2,15 +2,23 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type RepositoryMock = {
   getCurrentAdministrativeAuthority: ReturnType<typeof vi.fn>;
+  endMembership: ReturnType<typeof vi.fn>;
   staffCursorBelongsToOrganization: ReturnType<typeof vi.fn>;
   listCurrentStaff: ReturnType<typeof vi.fn>;
+  getCurrentStaffOffboardingTarget: ReturnType<typeof vi.fn>;
+  offboardingAssignmentCursorBelongsToTarget: ReturnType<typeof vi.fn>;
+  readCurrentOffboardingImpactPage: ReturnType<typeof vi.fn>;
 };
 const state = vi.hoisted(() => ({ repository: {} as RepositoryMock }));
 vi.mock("../../repositories/organization-lifecycle-repository", () => ({
   createOrganizationLifecycleRepository: () => state.repository,
 }));
 
-import { listOrganizationStaff } from "./manage-organization-lifecycle";
+import {
+  endOrganizationMembership,
+  listOrganizationStaff,
+  previewStaffOffboardingImpact,
+} from "./manage-organization-lifecycle";
 
 const ids = {
   actor: "00000000-0000-4000-8000-000000000001",
@@ -28,6 +36,7 @@ describe("organization staff discovery", () => {
         isRootOwner: true,
         rootMembershipId: ids.actor,
       }),
+      endMembership: vi.fn(),
       staffCursorBelongsToOrganization: vi.fn().mockResolvedValue(true),
       listCurrentStaff: vi.fn().mockResolvedValue([
         {
@@ -40,6 +49,34 @@ describe("organization staff discovery", () => {
           suspendedAt: new Date("2026-01-01T00:00:00.000Z"),
         },
       ]),
+      getCurrentStaffOffboardingTarget: vi.fn().mockResolvedValue({
+        membershipId: ids.coach,
+        profileId: ids.coach,
+        displayName: "Active coach",
+        username: "active-coach",
+        isRootOwner: false,
+        hasAdminRole: false,
+      }),
+      offboardingAssignmentCursorBelongsToTarget: vi.fn().mockResolvedValue(true),
+      readCurrentOffboardingImpactPage: vi.fn().mockResolvedValue({
+        total: 2,
+        items: [
+          {
+            engagementId: "00000000-0000-4000-8000-000000000006",
+            profileId: "00000000-0000-4000-8000-000000000007",
+            displayName: "Assigned athlete",
+            username: "assigned-athlete",
+            assignmentKinds: ["primary"],
+          },
+          {
+            engagementId: "00000000-0000-4000-8000-000000000008",
+            profileId: "00000000-0000-4000-8000-000000000009",
+            displayName: "Second athlete",
+            username: "second-athlete",
+            assignmentKinds: ["supporting"],
+          },
+        ],
+      }),
     };
   });
 
@@ -95,6 +132,138 @@ describe("organization staff discovery", () => {
         status: "suspended",
       }),
     ).rejects.toMatchObject({ reason: "forbidden" });
+  });
+
+  it("fails closed before issuing a staff terminal command until handover prerequisites exist", async () => {
+    await expect(
+      endOrganizationMembership({
+        db: {} as never,
+        actorProfileId: ids.actor,
+        organizationId: ids.organization,
+        membershipId: ids.coach,
+        reason: "administrative_end",
+        correlationId: "00000000-0000-4000-8000-000000000011",
+      }),
+    ).rejects.toMatchObject({ reason: "unavailable" });
+    expect(state.repository.endMembership).not.toHaveBeenCalled();
+  });
+
+  it("preserves staff terminal target denials before the unavailable gate", async () => {
+    const protectedTargets = [
+      {
+        membershipId: ids.actor,
+        isRootOwner: false,
+        hasAdminRole: true,
+      },
+      {
+        membershipId: ids.root,
+        isRootOwner: true,
+        hasAdminRole: true,
+      },
+    ];
+    for (const target of protectedTargets) {
+      state.repository.getCurrentStaffOffboardingTarget.mockResolvedValueOnce({
+        profileId: ids.coach,
+        displayName: "Protected staff",
+        username: "protected-staff",
+        ...target,
+      });
+      await expect(
+        endOrganizationMembership({
+          db: {} as never,
+          actorProfileId: ids.actor,
+          organizationId: ids.organization,
+          membershipId: target.membershipId,
+          reason: "administrative_end",
+          correlationId: "00000000-0000-4000-8000-000000000011",
+        }),
+      ).rejects.toMatchObject({ reason: "forbidden" });
+    }
+    expect(state.repository.endMembership).not.toHaveBeenCalled();
+  });
+
+  it("does not look up a target for an unauthorized terminal request", async () => {
+    state.repository.getCurrentAdministrativeAuthority.mockResolvedValue(null);
+    await expect(
+      endOrganizationMembership({
+        db: {} as never,
+        actorProfileId: ids.actor,
+        organizationId: ids.organization,
+        membershipId: ids.coach,
+        reason: "administrative_end",
+        correlationId: "00000000-0000-4000-8000-000000000011",
+      }),
+    ).rejects.toMatchObject({ reason: "forbidden" });
+    expect(state.repository.getCurrentStaffOffboardingTarget).not.toHaveBeenCalled();
+  });
+
+  it("returns only bounded assignment identities and effective kinds for an authorized impact preview", async () => {
+    const result = await previewStaffOffboardingImpact({
+      db: {} as never,
+      actorProfileId: ids.actor,
+      organizationId: ids.organization,
+      membershipId: ids.coach,
+      limit: 1,
+      cursor: null,
+    });
+    expect(result.assignedAthleteCount).toBe(2);
+    expect(result.assignedAthletes).toHaveLength(1);
+    expect(result.hasMore).toBe(true);
+    expect(result.nextCursor).toBe("00000000-0000-4000-8000-000000000006");
+    expect(result.resourceInventory).toEqual({ status: "unavailable" });
+    expect(state.repository.readCurrentOffboardingImpactPage).toHaveBeenCalledWith(
+      ids.organization,
+      ids.coach,
+      1,
+      null,
+    );
+  });
+
+  it("does not leak a foreign or unknown membership through the scoped target lookup", async () => {
+    state.repository.getCurrentStaffOffboardingTarget.mockResolvedValue(null);
+    for (const membershipId of [ids.coach, "00000000-0000-4000-8000-000000000010"]) {
+      await expect(
+        previewStaffOffboardingImpact({
+          db: {} as never,
+          actorProfileId: ids.actor,
+          organizationId: ids.organization,
+          membershipId,
+          limit: 1,
+          cursor: null,
+        }),
+      ).rejects.toMatchObject({ reason: "not_found" });
+    }
+  });
+
+  it("explains protected self, root-owner, and administrator target states", async () => {
+    const protectedCases = [
+      [{ membershipId: ids.actor, isRootOwner: false, hasAdminRole: true }, "self"],
+      [{ membershipId: ids.root, isRootOwner: true, hasAdminRole: true }, "root_owner"],
+      [{ membershipId: ids.coach, isRootOwner: false, hasAdminRole: true }, "admin_target"],
+    ] as const;
+    state.repository.getCurrentAdministrativeAuthority.mockResolvedValue({
+      membershipId: ids.actor,
+      isRootOwner: false,
+      rootMembershipId: ids.root,
+    });
+    for (const [target, reason] of protectedCases) {
+      state.repository.getCurrentStaffOffboardingTarget.mockResolvedValue({
+        profileId: ids.coach,
+        displayName: "Coach",
+        username: "coach",
+        ...target,
+      });
+      await expect(
+        previewStaffOffboardingImpact({
+          db: {} as never,
+          actorProfileId: ids.actor,
+          organizationId: ids.organization,
+          membershipId: target.membershipId,
+          limit: 1,
+          cursor: null,
+        }),
+      ).resolves.toMatchObject({ target: { offboarding: { eligible: false, reason } } });
+    }
   });
 
   it("exposes action eligibility from the role and suspension policies", async () => {

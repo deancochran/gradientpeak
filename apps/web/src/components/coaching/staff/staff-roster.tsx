@@ -25,16 +25,21 @@ import {
   SelectValue,
 } from "@repo/ui/components/select";
 import { Link, useRouter } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   grantOrganizationStaffRole,
+  loadOrganizationStaffOffboardingImpact,
   resumeOrganizationStaffMembership,
   revokeOrganizationStaffRole,
   suspendOrganizationStaffMembership,
 } from "../../../lib/coaching/staff-server-functions";
 
 const PAGE_SIZE = 20;
+const darkOutlineControl =
+  "border-slate-600 bg-slate-950 text-slate-100 hover:bg-slate-800 hover:text-white focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 disabled:border-slate-800 disabled:bg-slate-900 disabled:text-slate-500 disabled:hover:bg-slate-900 disabled:hover:text-slate-500";
+const selectedStatusControl =
+  "bg-cyan-500 text-slate-950 hover:bg-cyan-400 hover:text-slate-950 focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950";
 type StaffStatus = "active" | "suspended";
 type StaffAction =
   | "suspend"
@@ -56,6 +61,24 @@ type StaffMember = {
   >;
 };
 type StaffPage = { items: StaffMember[]; nextCursor: string | null; hasMore: boolean };
+type OffboardingImpact = {
+  target: {
+    membershipId: string;
+    identity: StaffMember["identity"];
+    offboarding: { eligible: boolean; reason: "self" | "root_owner" | "admin_target" | null };
+  };
+  assignedAthleteCount: number;
+  assignedAthletes: Array<{
+    engagementId: string;
+    profileId: string;
+    displayName: string | null;
+    username: string | null;
+    assignmentKinds: Array<"primary" | "supporting">;
+  }>;
+  nextCursor: string | null;
+  hasMore: boolean;
+  resourceInventory: { status: "unavailable" };
+};
 type Command = {
   membershipId: string;
   operationId: string;
@@ -109,6 +132,7 @@ function StaffRosterContents({
   const [notice, setNotice] = useState<string | null>(null);
   const [locked, setLocked] = useState(false);
   const [accessLost, setAccessLost] = useState(false);
+  const [offboardingMember, setOffboardingMember] = useState<StaffMember | null>(null);
 
   useEffect(() => {
     current.current = true;
@@ -297,6 +321,15 @@ function StaffRosterContents({
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className={darkOutlineControl}
+                        disabled={locked || inFlight.current}
+                        onClick={() => setOffboardingMember(member)}
+                      >
+                        Review offboarding impact
+                      </Button>
                       {(["admin", "coach"] as const).map((role) => {
                         const hasRole = member.roleKeys.includes(role);
                         const roleAction = `${hasRole ? "revoke" : "grant"}_${role}` as StaffAction;
@@ -305,6 +338,7 @@ function StaffRosterContents({
                             key={role}
                             type="button"
                             variant="outline"
+                            className={darkOutlineControl}
                             disabled={
                               locked ||
                               inFlight.current ||
@@ -423,7 +457,145 @@ function StaffRosterContents({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {offboardingMember ? (
+        <OffboardingImpactDialog
+          key={`${organizationId}:${offboardingMember.membershipId}`}
+          organizationId={organizationId}
+          member={offboardingMember}
+          onClose={() => setOffboardingMember(null)}
+        />
+      ) : null}
     </section>
+  );
+}
+
+function OffboardingImpactDialog({
+  organizationId,
+  member,
+  onClose,
+}: {
+  organizationId: string;
+  member: StaffMember;
+  onClose: () => void;
+}) {
+  const [state, setState] = useState<
+    | { status: "loading" }
+    | { status: "error" }
+    | { status: "forbidden" }
+    | { status: "ready"; impact: OffboardingImpact }
+  >({ status: "loading" });
+  const attempt = useRef(0);
+  const load = useCallback(async () => {
+    const request = ++attempt.current;
+    setState({ status: "loading" });
+    try {
+      const result = await loadOrganizationStaffOffboardingImpact({
+        data: { organizationId, membershipId: member.membershipId, limit: 20, cursor: null },
+      });
+      if (request !== attempt.current) return;
+      setState(
+        result.status === "granted"
+          ? { status: "ready", impact: result.impact }
+          : { status: "forbidden" },
+      );
+    } catch {
+      if (request === attempt.current) setState({ status: "error" });
+    }
+  }, [member.membershipId, organizationId]);
+  useEffect(() => {
+    void load();
+    return () => {
+      attempt.current += 1;
+    };
+  }, [load]);
+  return (
+    <AlertDialog open onOpenChange={(open) => !open && onClose()}>
+      <AlertDialogContent className="border-slate-700 bg-slate-900 text-slate-100">
+        <AlertDialogHeader>
+          <AlertDialogTitle className="text-slate-50">Review offboarding impact</AlertDialogTitle>
+          <AlertDialogDescription className="text-slate-300">
+            This is a read-only handover preparation. Ending membership is not available here.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        {state.status === "loading" ? (
+          <p role="status" className="text-sm text-slate-400">
+            Loading offboarding impact…
+          </p>
+        ) : null}
+        {state.status === "error" ? (
+          <p role="alert" className="text-sm text-red-300">
+            We could not load the offboarding impact. No offboarding action is available.
+          </p>
+        ) : null}
+        {state.status === "forbidden" ? (
+          <p role="alert" className="text-sm text-red-300">
+            Offboarding impact is no longer available for this staff membership.
+          </p>
+        ) : null}
+        {state.status === "ready" ? <OffboardingImpactDetails impact={state.impact} /> : null}
+        <AlertDialogFooter className="text-slate-100">
+          {state.status === "error" || state.status === "forbidden" ? (
+            <Button
+              type="button"
+              className="bg-cyan-500 text-slate-950 hover:bg-cyan-400"
+              onClick={() => void load()}
+            >
+              Retry
+            </Button>
+          ) : null}
+          <AlertDialogCancel
+            type="button"
+            className="border-slate-600 bg-slate-800 text-slate-100 hover:bg-slate-700 hover:text-slate-50"
+            onClick={onClose}
+          >
+            Close
+          </AlertDialogCancel>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+function OffboardingImpactDetails({ impact }: { impact: OffboardingImpact }) {
+  const reason = impact.target.offboarding.reason;
+  return (
+    <div className="space-y-4 text-sm text-slate-300">
+      <p>
+        <strong className="text-slate-100">{displayIdentity(impact.target.identity)}</strong> has{" "}
+        {impact.assignedAthleteCount} assigned{" "}
+        {impact.assignedAthleteCount === 1 ? "athlete" : "athletes"}.
+      </p>
+      {reason ? (
+        <p role="status">
+          {reason === "self"
+            ? "You cannot offboard your own membership."
+            : reason === "root_owner"
+              ? "The root-owner membership cannot be offboarded."
+              : "An administrator cannot offboard another administrator."}
+        </p>
+      ) : (
+        <p>Start a handover before any future offboarding workflow is completed.</p>
+      )}
+      {impact.assignedAthletes.length ? (
+        <ul aria-label="Assigned athletes" className="space-y-2">
+          {impact.assignedAthletes.map((athlete) => (
+            <li key={athlete.engagementId}>
+              {athlete.displayName ?? athlete.username ?? "Assigned athlete"} —{" "}
+              {athlete.assignmentKinds.join(", ")}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p>No active athlete assignments were found.</p>
+      )}
+      {impact.hasMore ? (
+        <p>More assigned athletes are available in the future handover workflow.</p>
+      ) : null}
+      <p>
+        Owned shared-library resources are unavailable and have not been assessed. Personal notes
+        are excluded.
+      </p>
+    </div>
   );
 }
 
@@ -437,7 +609,11 @@ function StatusLink({
   selected: boolean;
 }) {
   return (
-    <Button asChild variant={selected ? "default" : "outline"}>
+    <Button
+      asChild
+      variant={selected ? "default" : "outline"}
+      className={selected ? selectedStatusControl : darkOutlineControl}
+    >
       <Link
         to="/organizations/$organizationId/staff"
         params={{ organizationId }}
@@ -466,7 +642,7 @@ function StaffPagination({
   return (
     <nav aria-label="Staff roster pages" className="flex flex-wrap gap-3">
       {cursor ? (
-        <Button asChild variant="outline">
+        <Button asChild variant="outline" className={darkOutlineControl}>
           <Link
             to="/organizations/$organizationId/staff"
             params={{ organizationId }}
