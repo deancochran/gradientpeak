@@ -11,4 +11,14 @@ describe("IdentitySummary native", () => {
     expect(getByText(identitySummaryFixtures.longIdentity.title)).toBeTruthy();
     expect(getByText(identitySummaryFixtures.longIdentity.supporting)).toBeTruthy();
   });
+
+  it("maps semantic web heading requests to the native header role without faking a level", async () => {
+    const { getByText } = await renderNative(
+      <IdentitySummary title="Assigned athlete" titleAs="h3" />,
+    );
+
+    const title = getByText("Assigned athlete");
+    expect(title.props.accessibilityRole).toBe("header");
+    expect(title.props.accessibilityLevel).toBeUndefined();
+  });
 });

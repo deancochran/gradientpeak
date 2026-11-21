@@ -100,6 +100,7 @@ function OrganizationSelectorPage({
         </p>
       </div>
       <SearchField
+        aria-describedby="organization-filter-description"
         accessibilityLabel="Filter organizations on this page"
         maxLength={100}
         name="organizationFilter"

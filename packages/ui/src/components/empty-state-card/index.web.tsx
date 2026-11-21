@@ -37,13 +37,21 @@ function EmptyStateCard({
             </div>
           ) : null}
 
-          <div className="flex max-w-md flex-col items-center gap-2">
-            <p className="text-lg font-semibold text-foreground">{title}</p>
-            <p className="text-sm text-muted-foreground">{description}</p>
+          <div className="flex min-w-0 max-w-md flex-col items-center gap-2">
+            <p className="max-w-full [overflow-wrap:anywhere] text-lg font-semibold text-foreground">
+              {title}
+            </p>
+            <p className="max-w-full [overflow-wrap:anywhere] text-sm text-muted-foreground">
+              {description}
+            </p>
           </div>
 
           {actionLabel && onAction ? (
-            <Button className="mt-2" onClick={onAction} variant="outline">
+            <Button
+              className="mt-2 h-auto max-w-full whitespace-normal [overflow-wrap:anywhere]"
+              onClick={onAction}
+              variant="outline"
+            >
               {actionLabel}
             </Button>
           ) : null}

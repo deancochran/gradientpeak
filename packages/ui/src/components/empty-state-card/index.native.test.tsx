@@ -40,4 +40,20 @@ describe("EmptyStateCard native", () => {
     )[0];
     expect(announcedState).toBeTruthy();
   });
+
+  it("keeps unbroken content and its retry action constrained by the state card", async () => {
+    const { getByText } = await renderNative(
+      <EmptyStateCard {...emptyStateCardFixtures.unbrokenText} onAction={jest.fn()} />,
+    );
+
+    expect(getByText(emptyStateCardFixtures.unbrokenText.title).props.className).toContain(
+      "max-w-full",
+    );
+    expect(getByText(emptyStateCardFixtures.unbrokenText.description).props.className).toContain(
+      "max-w-full",
+    );
+    expect(getByText(emptyStateCardFixtures.unbrokenText.actionLabel).props.className).toContain(
+      "max-w-full",
+    );
+  });
 });

@@ -35,16 +35,18 @@ function EmptyStateCard({
             </View>
           ) : null}
 
-          <View className="items-center gap-2">
-            <Text className="text-center text-lg font-semibold text-foreground">{title}</Text>
-            <Text className="max-w-[280px] text-center text-sm text-muted-foreground">
+          <View className="min-w-0 max-w-full items-center gap-2">
+            <Text className="max-w-full text-center text-lg font-semibold text-foreground">
+              {title}
+            </Text>
+            <Text className="max-w-full text-center text-sm text-muted-foreground">
               {description}
             </Text>
           </View>
 
           {actionLabel && onAction ? (
-            <Button className="mt-2" onPress={onAction} variant="outline">
-              <Text>{actionLabel}</Text>
+            <Button className="mt-2 h-auto max-w-full" onPress={onAction} variant="outline">
+              <Text className="max-w-full text-center">{actionLabel}</Text>
             </Button>
           ) : null}
         </View>

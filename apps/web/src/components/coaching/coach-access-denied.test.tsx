@@ -26,4 +26,18 @@ describe("CoachAccessDenied", () => {
     ).toBe("/");
     expect(screen.queryByText(/membership|role/i)).toBeNull();
   });
+
+  it("remains a section when rendered inside the coaching shell main landmark", () => {
+    render(
+      <main>
+        <CoachAccessDenied />
+      </main>,
+    );
+
+    const deniedSection = screen.getByRole("region", { name: "Organization access unavailable" });
+    expect(deniedSection.tagName).toBe("SECTION");
+    expect(deniedSection.closest("main")?.tagName).toBe("MAIN");
+    expect(deniedSection.querySelector("main")).toBeNull();
+    expect(deniedSection.className).not.toContain("min-h-screen");
+  });
 });
