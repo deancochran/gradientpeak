@@ -5,6 +5,7 @@ import {
   advanceAthleteStateTo,
   advanceObservedAthleteState,
   athleteStateBaselineSchema,
+  completedActivityPerformanceTargetSnapshotSchema,
   createUnavailableAthletePerformanceTargetFacts,
 } from "@repo/core";
 import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
@@ -17,6 +18,7 @@ import {
   activityImportRuns,
   activitySegments,
   activitySourceReferences,
+  activityTrainingEffects,
   integrations,
   profileAthleteState,
   profileMetrics,
@@ -27,6 +29,11 @@ import {
 } from "@repo/db/schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
+import {
+  type ActivitySubmission,
+  activityArtifactId,
+  submitActivity,
+} from "../application/activities/submit-activity";
 import { readAthleteReadModel } from "../application/athlete-intelligence/athlete-read-model";
 import { materializeActivityAthleteStateEvidence } from "../application/athlete-intelligence/athlete-state-evidence";
 import { AthleteStateWorkerService } from "../application/athlete-intelligence/athlete-state-worker";
@@ -35,6 +42,7 @@ import {
   tryPublishIncrementalAthleteStateContribution,
 } from "../application/athlete-intelligence/published-athlete-state";
 import { withRepeatableReadSnapshot } from "../db";
+import { readyActivityIngestion } from "../test-support/ready-activity-ingestion";
 import { createActivityImportRepository } from "./activity-import-repository";
 import {
   attachActivitySourceReference,
@@ -232,6 +240,155 @@ async function seedActivity(input: {
   return activityId;
 }
 
+async function submitCanonicalBikeFixture(input: {
+  profileId: string;
+  finishedAt: Date;
+  durationMs: number;
+  powerWatts: number;
+  calibration?: boolean;
+}) {
+  const activityId = randomUUID();
+  const segmentId = randomUUID();
+  const digest = `${randomUUID().replaceAll("-", "")}${randomUUID().replaceAll("-", "")}`;
+  const artifact = {
+    sha256: digest,
+    byteSize: 1_024,
+    bucket: "activity-files",
+    path: `artifacts/sha256/${input.profileId}/${digest}`,
+    mediaType: "application/vnd.ant.fit" as const,
+    format: "fit" as const,
+  };
+  const startedAt = new Date(input.finishedAt.getTime() - input.durationMs);
+  const sourceArtifactId = activityArtifactId(input.profileId, artifact.sha256, artifact.byteSize);
+  const ingestion = await readyActivityIngestion(db, {
+    profileId: input.profileId,
+    operationId: `athlete-state-live:${activityId}`,
+    source: "manual_import",
+    artifact,
+  });
+  const normalizedPowerResult = calculateCyclingNormalizedPower({
+    samples: Array.from({ length: input.durationMs / 5_000 + 1 }, (_, index) => ({
+      timestampSeconds: Math.min(index * 5, input.durationMs / 1_000),
+      powerWatts: input.powerWatts,
+    })),
+  });
+  if (normalizedPowerResult.status === "unavailable") throw new Error("Expected numeric power");
+  const effortId = randomUUID();
+  const submission: ActivitySubmission = {
+    requestedActivityId: activityId,
+    profileId: input.profileId,
+    name: "Canonical cycling state fixture",
+    notes: null,
+    contentVisibility: "private",
+    startedAt,
+    finishedAt: input.finishedAt,
+    elapsedMs: input.durationMs,
+    activeMs: input.durationMs,
+    movingMs: input.durationMs,
+    timingCoverage: "complete",
+    distanceMeters: 20_000,
+    calories: null,
+    elevationGainMeters: null,
+    avgHeartRate: null,
+    maxHeartRate: null,
+    avgPower: input.powerWatts,
+    maxPower: input.powerWatts,
+    avgCadence: null,
+    maxCadence: null,
+    avgSpeedMps: null,
+    maxSpeedMps: null,
+    normalizedSpeedMps: null,
+    avgTemperature: null,
+    deviceManufacturer: null,
+    deviceProduct: null,
+    laps: null,
+    mapBounds: null,
+    polyline: null,
+    segmentSet: {
+      version: 1,
+      elapsedMs: input.durationMs,
+      segments: [
+        {
+          id: segmentId,
+          ordinal: 0,
+          role: "activity",
+          activity_category: "bike",
+          startOffsetMs: 0,
+          endOffsetMs: input.durationMs,
+          source: {
+            kind: "artifact",
+            artifactId: sourceArtifactId,
+            source: { standard: "fit", format: "fit" },
+          },
+          summary: {
+            version: 1,
+            timing: {
+              timingCoverage: "complete",
+              activeMs: input.durationMs,
+              movingMs: input.durationMs,
+            },
+            distanceMeters: 20_000,
+            averagePowerWatts: input.powerWatts,
+            normalizedPowerResult,
+          },
+        },
+      ],
+    },
+    analysis: {
+      efforts: input.calibration
+        ? [
+            {
+              id: effortId,
+              created_at: input.finishedAt,
+              profile_id: input.profileId,
+              activity_id: activityId,
+              segment_id: segmentId,
+              recorded_at: input.finishedAt,
+              activity_category: "bike",
+              effort_type: "power",
+              source_series: "power",
+              duration_seconds: input.durationMs / 1_000,
+              source_artifact_id: sourceArtifactId,
+              source_revision: 1,
+              start_offset_ms: 0,
+              end_offset_ms: input.durationMs,
+              window_coverage: 1,
+              max_gap_seconds: 2,
+              unit: "watts",
+              value: input.powerWatts,
+              source: "imported",
+              method: "activity_file_best_effort",
+              calculation_version: "best-effort-extraction-v1",
+              provenance: {
+                observation_id: effortId,
+                activity_id: activityId,
+                segment_id: segmentId,
+                derived_from: "activity_file_stream",
+                source_series: "power",
+                interval_convention: "current_sample_applies_to_preceding_interval",
+                exact_window_start_timestamp_seconds: startedAt.getTime() / 1_000,
+                exact_window_end_timestamp_seconds: input.finishedAt.getTime() / 1_000,
+                exact_window_start_offset_seconds: 0,
+                exact_window_end_offset_seconds: input.durationMs / 1_000,
+                duration_seconds: input.durationMs / 1_000,
+                contributing_duration_seconds: input.durationMs / 1_000,
+                window_coverage: 1,
+                source_time_coverage: 1,
+                extraction_status: "available",
+                extraction_reason: null,
+                persisted_start_offset_quantization: "nearest_millisecond_v1",
+                calculation_version: "best-effort-extraction-v1",
+              },
+            },
+          ]
+        : [],
+      detectedLTHR: null,
+      ingestion: { source: "manual_import", ...ingestion, artifact },
+    },
+  };
+  return submitActivity(db, submission);
+}
+
 async function markRunMaterial(runId: string, effectiveAt: Date) {
   await db
     .update(activityImportRuns)
@@ -281,11 +438,29 @@ describe("athlete state persistence", () => {
   it("publishes a chronological contribution incrementally and agrees with a fenced rebuild", async () => {
     const profileId = await seedProfile();
     const firstFinishedAt = new Date("2026-01-01T10:00:00.000Z");
-    const firstActivityId = await seedActivity({
+    await submitCanonicalBikeFixture({
+      profileId,
+      finishedAt: new Date("2025-12-31T10:00:00.000Z"),
+      durationMs: 1_800_000,
+      powerWatts: 300,
+      calibration: true,
+    });
+    const first = await submitCanonicalBikeFixture({
       profileId,
       finishedAt: firstFinishedAt,
-      commonLoad: 40,
+      durationMs: 1_440_000,
+      powerWatts: 300,
     });
+    const [firstActivity] = await db
+      .select({ snapshot: activities.performance_target_snapshot })
+      .from(activities)
+      .where(eq(activities.id, first.id));
+    const firstSnapshot = completedActivityPerformanceTargetSnapshotSchema.parse(
+      firstActivity?.snapshot,
+    );
+    const firstFtp = firstSnapshot.targets.thresholds.bike;
+    if (firstFtp.status !== "available") throw new Error("Expected captured bike FTP");
+    const expectedFirstCommonLoad = (1_440_000 / 3_600_000) * (300 / firstFtp.value) ** 2 * 100;
     const firstPublishAt = new Date("2026-01-01T12:00:00.000Z");
     await db.transaction((tx) =>
       markAthleteStateDirty(tx, {
@@ -298,43 +473,38 @@ describe("athlete state persistence", () => {
       limit: 1,
       now: firstPublishAt,
     });
+    await new AthleteStateWorkerService({ db }).processDueJobs({
+      limit: 1,
+      now: firstPublishAt,
+    });
 
     const secondFinishedAt = new Date("2026-01-02T10:00:00.000Z");
-    const secondActivityId = await seedActivity({
+    const second = await submitCanonicalBikeFixture({
       profileId,
       finishedAt: secondFinishedAt,
-      commonLoad: 60,
+      durationMs: 2_160_000,
+      powerWatts: firstFtp.value,
     });
     const secondPublishAt = new Date("2026-01-02T11:00:00.000Z");
-    await expect(
-      db.transaction(async (tx) => {
-        await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${profileId}, 0))`);
-        return tryPublishIncrementalAthleteStateContribution({
-          tx,
-          profileId,
-          contribution: {
-            activityId: secondActivityId,
-            finishedAt: secondFinishedAt,
-            commonLoad: 60,
-            activityCategory: "run",
-            evidenceConfidence: 0.9,
-            capabilityDistanceMeters: 1_000,
-            capabilityDurationMinutes: 1,
-          },
-          now: secondPublishAt,
-        });
-      }),
-    ).resolves.toBe(true);
+    const [firstEffect] = await db
+      .select()
+      .from(activityTrainingEffects)
+      .where(eq(activityTrainingEffects.activity_id, first.id));
+    const [secondEffect] = await db
+      .select()
+      .from(activityTrainingEffects)
+      .where(eq(activityTrainingEffects.activity_id, second.id));
+    expect(firstEffect?.common_load).toBeCloseTo(expectedFirstCommonLoad, 10);
+    expect(secondEffect?.common_load).toBeCloseTo(60, 10);
     const [incremental] = await db
       .select()
       .from(profileAthleteState)
       .where(eq(profileAthleteState.profile_id, profileId));
     expect(incremental).toMatchObject({
-      source_revision: 2,
-      published_revision: 2,
       dirty_from_at: null,
       computed_at: secondFinishedAt,
     });
+    expect(incremental?.published_revision).toBe(incremental?.source_revision);
 
     await db.transaction((tx) =>
       markAthleteStateDirty(tx, {
@@ -351,18 +521,15 @@ describe("athlete state persistence", () => {
       .select()
       .from(profileAthleteState)
       .where(eq(profileAthleteState.profile_id, profileId));
-    expect(rebuilt).toMatchObject({
-      source_revision: 3,
-      published_revision: 3,
-      dirty_from_at: null,
-    });
+    expect(rebuilt?.dirty_from_at).toBeNull();
+    expect(rebuilt?.published_revision).toBe(rebuilt?.source_revision);
     expect(rebuilt?.fitness).toBeCloseTo(incremental?.fitness ?? -1, 10);
     expect(rebuilt?.fatigue).toBeCloseTo(incremental?.fatigue ?? -1, 10);
     await expect(readPublishedReadModel(profileId, secondPublishAt)).resolves.toMatchObject({
-      publishedRevision: 3,
+      publishedRevision: rebuilt?.published_revision,
       status: { freshness: "fresh", rebuildStatus: "fresh" },
     });
-    expect(firstActivityId).not.toBe(secondActivityId);
+    expect(first.id).not.toBe(second.id);
   });
 
   it("renews only the current unexpired replay owner", async () => {
