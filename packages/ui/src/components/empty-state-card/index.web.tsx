@@ -27,7 +27,7 @@ function EmptyStateCard({
     <Card
       aria-live={isError ? "assertive" : undefined}
       className={toneClassName}
-      role={isError ? "alert" : undefined}
+      {...(isError ? { role: "alert" } : {})}
     >
       <CardContent className="py-12">
         <div className="flex flex-col items-center justify-center gap-4 text-center">

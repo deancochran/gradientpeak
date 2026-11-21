@@ -89,7 +89,7 @@ function TrainingStateChart({
     return datum;
   });
   return (
-    <View className={className} testID={testId}>
+    <View {...(className === undefined ? {} : { className })} testID={testId}>
       {title ? (
         <Text accessibilityRole="header" className="text-base font-semibold text-foreground">
           {title}

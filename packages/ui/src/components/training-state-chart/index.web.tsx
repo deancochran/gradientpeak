@@ -75,7 +75,7 @@ function TrainingStateChart({
         {...(description ? { description } : {})}
         title={chartTitle}
       >
-        <ChartEmptyState message={emptyMessage} testId={testId} />
+        <ChartEmptyState message={emptyMessage} {...(testId === undefined ? {} : { testId })} />
       </ChartCard>
     );
   }
