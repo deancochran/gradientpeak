@@ -1,4 +1,4 @@
-import { formatDuration } from "@repo/core";
+import { formatDuration } from "@repo/core/duration/time-format";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 

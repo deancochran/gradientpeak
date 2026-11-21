@@ -20,13 +20,13 @@ import {
 
 describe("Readiness Baseline - Single Isolated Goal", () => {
   it("should show high readiness for well-prepared single marathon", () => {
-    // 12-week scenario with good CTL progression
+    // 12-week scenario with good LongTermLoad progression
     const points = createTestScenario({
       startDate: "2026-03-01",
       durationDays: 84,
-      startingCtl: 40,
-      startingAtl: 38,
-      ctlProgression: "peak",
+      startingLongTermLoad: 40,
+      startingRecentLoad: 38,
+      longTermLoadProgression: "peak",
     });
 
     const marathonDate = "2026-05-23"; // Day 83
@@ -165,9 +165,9 @@ describe("Readiness Baseline - Different Event Types (Bug #3)", () => {
     const points = createTestScenario({
       startDate: "2026-03-01",
       durationDays: 30,
-      startingCtl: 50,
-      startingAtl: 48,
-      ctlProgression: "flat",
+      startingLongTermLoad: 50,
+      startingRecentLoad: 48,
+      longTermLoadProgression: "flat",
     });
 
     // 5K race
@@ -233,9 +233,9 @@ describe("Readiness Baseline - Determinism", () => {
     const points = createTestScenario({
       startDate: "2026-03-01",
       durationDays: 14,
-      startingCtl: 50,
-      startingAtl: 48,
-      ctlProgression: "flat",
+      startingLongTermLoad: 50,
+      startingRecentLoad: 48,
+      longTermLoadProgression: "flat",
     });
 
     const marathonTarget = createRaceTarget(
@@ -264,9 +264,9 @@ describe("Readiness Baseline - Determinism", () => {
     const points = createTestScenario({
       startDate: "2026-03-01",
       durationDays: 45,
-      startingCtl: 50,
-      startingAtl: 48,
-      ctlProgression: "peak",
+      startingLongTermLoad: 50,
+      startingRecentLoad: 48,
+      longTermLoadProgression: "peak",
     });
 
     const lowPriorityFiveK = createMockGoal("2026-03-28", [

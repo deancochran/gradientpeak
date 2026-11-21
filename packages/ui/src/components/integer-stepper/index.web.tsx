@@ -1,40 +1,33 @@
-import { useEffect, useState } from "react";
-import { clampInteger, parseBoundedInteger } from "../../lib/fitness-inputs";
+import { useImperativeHandle, useRef } from "react";
 import { Button } from "../button/index.web";
 import { Input } from "../input/index.web";
 import { Label } from "../label/index.web";
 import type { IntegerStepperProps } from "./shared";
+import { useIntegerStepper } from "./use-integer-stepper";
 
-function IntegerStepper({
-  accessibilityHint,
-  error,
-  helperText,
-  id,
-  label,
-  max = 20,
-  min = 0,
-  onChange,
-  step = 1,
-  value,
-}: IntegerStepperProps) {
+function IntegerStepper(props: IntegerStepperProps) {
+  const {
+    ref,
+    accessibilityHint,
+    disabled = false,
+    error: providedError,
+    helperText,
+    id,
+    label,
+    max = 20,
+    min = 0,
+    testId,
+  } = props;
   const labelText = label || "value";
-  const [draftValue, setDraftValue] = useState(String(value));
-
-  useEffect(() => {
-    setDraftValue(String(value));
-  }, [value]);
-
-  const commitDraft = (nextDraft: string) => {
-    const parsed = parseBoundedInteger(nextDraft, { min, max });
-    if (parsed === undefined) {
-      setDraftValue(String(value));
-      return;
-    }
-
-    const normalized = clampInteger(parsed, min, max);
-    setDraftValue(String(normalized));
-    onChange(normalized);
-  };
+  const input = useRef<HTMLInputElement>(null);
+  const focus = () => input.current?.focus();
+  useImperativeHandle(ref, () => ({ focus }));
+  const state = useIntegerStepper(props, focus);
+  const { text: draftValue, currentValue, decreaseDisabled, increaseDisabled } = state;
+  const error =
+    providedError ?? (state.invalid ? `Enter a whole number from ${min} to ${max}.` : undefined);
+  const descriptionId = `${id}-description`;
+  const errorId = `${id}-error`;
 
   return (
     <div className="grid gap-2">
@@ -43,31 +36,75 @@ function IntegerStepper({
         <Button
           type="button"
           variant="outline"
+          className="min-h-11 min-w-11"
           size="sm"
-          onClick={() => onChange(clampInteger(value - step, min, max))}
+          disabled={decreaseDisabled}
+          onClick={() => {
+            if (!decreaseDisabled) {
+              state.decrease();
+            }
+          }}
         >
           -
         </Button>
         <Input
+          ref={input}
           accessibilityLabel={labelText}
+          aria-description={accessibilityHint}
+          aria-describedby={
+            [helperText ? descriptionId : undefined, error ? errorId : undefined]
+              .filter(Boolean)
+              .join(" ") || undefined
+          }
+          aria-invalid={!!error}
           className="flex-1 text-center"
+          disabled={disabled}
           id={`${id}-field`}
-          onBlur={() => commitDraft(draftValue)}
-          onChange={(event) => setDraftValue(event.currentTarget.value)}
+          inputMode="numeric"
+          aria-valuemax={max}
+          aria-valuemin={min}
+          aria-valuenow={currentValue}
+          onBlur={state.blur}
+          onChange={(event) => state.change(event.currentTarget.value)}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowDown") {
+              event.preventDefault();
+              if (!decreaseDisabled) state.decrease();
+            } else if (event.key === "ArrowUp") {
+              event.preventDefault();
+              if (!increaseDisabled) state.increase();
+            }
+          }}
+          role="spinbutton"
+          {...(testId ? { testId } : {})}
           type="text"
           value={draftValue}
         />
         <Button
           type="button"
           variant="outline"
+          className="min-h-11 min-w-11"
           size="sm"
-          onClick={() => onChange(clampInteger(value + step, min, max))}
+          disabled={increaseDisabled}
+          onClick={() => {
+            if (!increaseDisabled) {
+              state.increase();
+            }
+          }}
         >
           +
         </Button>
       </div>
-      {helperText ? <p className="text-xs text-muted-foreground">{helperText}</p> : null}
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+      {helperText ? (
+        <p id={descriptionId} className="text-xs text-muted-foreground">
+          {helperText}
+        </p>
+      ) : null}
+      {error ? (
+        <p id={errorId} className="text-xs text-destructive">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }
