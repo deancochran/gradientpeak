@@ -18,6 +18,11 @@ node_modules/
 
 
 # Testing
+# Local exports and review evidence are not source files.
+/artifacts/catalog-downloads/
+/artifacts/catalog-fallback-alignment/
+/artifacts/core-acceptance-rehearsal/
+/lint-*-before.txt
 coverage/
 *.lcov
 coverage/**/*
