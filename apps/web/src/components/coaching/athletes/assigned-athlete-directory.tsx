@@ -6,8 +6,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
+import { IdentitySummary } from "@repo/ui/components/identity-summary";
+import { SearchField } from "@repo/ui/components/search-field";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Search } from "lucide-react";
 import { useEffect, useState } from "react";
 
 type Athlete = { profileId: string; displayName: string | null; username: string | null };
@@ -36,40 +37,37 @@ export function AssignedAthleteDirectory({
   return (
     <div className="space-y-6">
       <header className="space-y-2">
-        <p className="text-sm font-medium uppercase tracking-[0.18em] text-cyan-300">Coaching</p>
-        <h1 className="text-3xl font-semibold tracking-tight text-white">Assigned athletes</h1>
-        <p className="max-w-3xl text-sm leading-6 text-slate-400">
+        <p className="text-sm font-medium uppercase tracking-[0.18em] text-primary">Coaching</p>
+        <h1 className="text-3xl font-semibold tracking-tight text-foreground">Assigned athletes</h1>
+        <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
           Only athletes assigned directly to you or through one of your groups appear here.
           Selecting an athlete does not grant access to private data.
         </p>
       </header>
       <form onSubmit={applySearch} className="flex max-w-xl gap-2">
-        <label className="sr-only" htmlFor="athlete-search">
-          Search assigned athletes
-        </label>
-        <input
-          id="athlete-search"
+        <SearchField
+          accessibilityLabel="Search assigned athletes"
+          className="flex-1"
+          maxLength={100}
+          name="athlete-search"
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          onValueChange={setQuery}
           placeholder="Search name or username"
-          className="min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-500"
+          testId="athlete-search"
         />
-        <Button type="submit">
-          <Search className="mr-2 h-4 w-4" />
-          Search
-        </Button>
+        <Button type="submit">Search</Button>
       </form>
-      <Card className="border-slate-800 bg-slate-900 text-slate-50">
+      <Card>
         <CardHeader>
           <CardTitle>Athlete directory</CardTitle>
-          <CardDescription className="text-slate-400">
+          <CardDescription>
             Identity details are limited to the assignment directory. Data availability is checked
             after selection.
           </CardDescription>
         </CardHeader>
         <CardContent>
           {page.items.length === 0 ? (
-            <p className="text-sm text-slate-400">No assigned athletes match this search.</p>
+            <p className="text-sm text-muted-foreground">No assigned athletes match this search.</p>
           ) : (
             <ul aria-label="Assigned athletes" className="space-y-2">
               {page.items.map((athlete) => (
@@ -77,14 +75,12 @@ export function AssignedAthleteDirectory({
                   <Link
                     to="/organizations/$organizationId/athletes/$athleteId"
                     params={{ organizationId, athleteId: athlete.profileId }}
-                    className="block rounded-md border border-slate-800 px-4 py-3 hover:border-cyan-700 hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-cyan-300"
+                    className="block rounded-md border border-border px-4 py-3 hover:border-primary hover:bg-muted focus-visible:outline-2 focus-visible:outline-primary"
                   >
-                    <span className="block font-medium">
-                      {athlete.displayName ?? athlete.username ?? "Assigned athlete"}
-                    </span>
-                    {athlete.username ? (
-                      <span className="text-sm text-slate-400">@{athlete.username}</span>
-                    ) : null}
+                    <IdentitySummary
+                      supporting={athlete.username ? `@${athlete.username}` : undefined}
+                      title={athlete.displayName ?? athlete.username ?? "Assigned athlete"}
+                    />
                   </Link>
                 </li>
               ))}
@@ -96,7 +92,7 @@ export function AssignedAthleteDirectory({
                 to="/organizations/$organizationId/athletes"
                 params={{ organizationId }}
                 search={{ q: search ?? undefined, cursor: page.nextCursor }}
-                className="text-sm text-cyan-300 hover:text-cyan-100"
+                className="text-sm text-primary underline-offset-4 hover:underline"
               >
                 Next page of athletes
               </Link>

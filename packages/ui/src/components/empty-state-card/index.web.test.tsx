@@ -25,4 +25,26 @@ describe("EmptyStateCard web", () => {
     );
     expect(onAction).toHaveBeenCalled();
   });
+
+  it("keeps icon, content, and action in the native-aligned vertical order for long text", () => {
+    const { container } = renderWeb(
+      <EmptyStateCard
+        {...emptyStateCardFixtures.longText}
+        icon={CircleAlertIcon}
+        onAction={vi.fn()}
+      />,
+    );
+
+    const content = container.querySelector(".flex.flex-col.items-center");
+    expect(content?.className).toContain("flex-col");
+    expect(content?.textContent).toContain(emptyStateCardFixtures.longText.title);
+    expect(content?.textContent).toContain(emptyStateCardFixtures.longText.description);
+    expect(content?.textContent).toContain(emptyStateCardFixtures.longText.actionLabel);
+  });
+
+  it("announces recoverable unavailable errors without treating them as empty", () => {
+    renderWeb(<EmptyStateCard {...emptyStateCardFixtures.unavailable} onAction={vi.fn()} />);
+
+    expect(screen.getByRole("alert")).toHaveAttribute("aria-live", "assertive");
+  });
 });

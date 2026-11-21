@@ -13,9 +13,20 @@ function EmptyStateCard({
   iconSize = 48,
   onAction,
   title,
+  tone = "empty",
 }: EmptyStateCardProps) {
+  const isError = tone === "error" || tone === "unavailable";
+  const toneClassName =
+    tone === "error"
+      ? "border-destructive/50 bg-destructive/10"
+      : tone === "denied"
+        ? "border-warning/50 bg-warning/10"
+        : tone === "unavailable"
+          ? "border-warning/50 bg-card"
+          : "border-border bg-card";
+
   return (
-    <Card className="border-border bg-card">
+    <Card accessibilityLiveRegion={isError ? "assertive" : undefined} className={toneClassName}>
       <CardContent className="py-12">
         <View className="items-center justify-center gap-4">
           {Icon ? (
