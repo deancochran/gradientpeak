@@ -218,9 +218,7 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
   await coachPage.getByLabel("Activity category", { exact: true }).selectOption("bike");
   await coachPage.getByRole("button", { name: "Add step", exact: true }).click();
   const preparedStep = coachPage.getByTestId("activity-plan-item-0");
-  await preparedStep.getByRole("button", { name: "Add name", exact: true }).click();
   await preparedStep.getByLabel("Name (optional)", { exact: true }).fill("Tempo block");
-  await preparedStep.getByRole("button", { name: "Add instructions", exact: true }).click();
   await preparedStep
     .getByLabel("Instructions (optional)", { exact: true })
     .fill("Hold smooth pressure through the full interval.");
