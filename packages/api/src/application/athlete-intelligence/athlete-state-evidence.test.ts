@@ -1,8 +1,11 @@
+import { ATHLETE_DERIVED_STATE_PERSISTENCE_CONTRACT_VERSION } from "@repo/core/athlete-derived-state";
 import { activities, activityAnalysisRevisions, activitySegments } from "@repo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
+  hasEquivalentActivityTrainingEffectContent,
   materializeActivityAthleteStateEvidence,
   resolveAthleteStateMaterialEffectiveAt,
+  resolveAthleteStateMaterialEligibilityAt,
 } from "./athlete-state-evidence";
 
 describe("resolveAthleteStateMaterialEffectiveAt", () => {
@@ -40,6 +43,92 @@ describe("resolveAthleteStateMaterialEffectiveAt", () => {
         effortMaterialRecordedAt: new Date("2026-08-08T10:00:00.000Z"),
       }),
     ).toEqual(activityFinishedAt);
+  });
+
+  it("uses the later effort boundary only for claim eligibility, not replay start", () => {
+    const activityFinishedAt = new Date("2026-08-01T10:00:00.000Z");
+    const effortRecordedAt = new Date("2026-08-08T10:00:00.000Z");
+
+    expect(
+      resolveAthleteStateMaterialEffectiveAt({
+        activityFinishedAt,
+        activityMaterialChanged: true,
+        effortMaterialRecordedAt: effortRecordedAt,
+      }),
+    ).toEqual(activityFinishedAt);
+    expect(
+      resolveAthleteStateMaterialEligibilityAt({
+        activityFinishedAt,
+        activityMaterialChanged: true,
+        effortMaterialRecordedAt: effortRecordedAt,
+      }),
+    ).toEqual(effortRecordedAt);
+  });
+
+  it("uses an effort-only boundary for both replay and eligibility", () => {
+    const activityFinishedAt = new Date("2026-08-01T10:00:00.000Z");
+    const effortRecordedAt = new Date("2026-08-08T10:00:00.000Z");
+
+    expect(
+      resolveAthleteStateMaterialEffectiveAt({
+        activityFinishedAt,
+        activityMaterialChanged: false,
+        effortMaterialRecordedAt: effortRecordedAt,
+      }),
+    ).toEqual(effortRecordedAt);
+    expect(
+      resolveAthleteStateMaterialEligibilityAt({
+        activityFinishedAt,
+        activityMaterialChanged: false,
+        effortMaterialRecordedAt: effortRecordedAt,
+      }),
+    ).toEqual(effortRecordedAt);
+  });
+});
+
+describe("hasEquivalentActivityTrainingEffectContent", () => {
+  const effect = {
+    contractVersion: ATHLETE_DERIVED_STATE_PERSISTENCE_CONTRACT_VERSION,
+    profileId: "11111111-1111-4111-8111-111111111111",
+    activityId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    activityAnalysisRevision: 1,
+    effectiveAt: "2026-08-01T10:00:00.000Z",
+    planningDate: "2026-08-01",
+    sourceRevision: 1,
+    calculationVersion: "effect-v1",
+    inputFingerprint: "a".repeat(64),
+    stimulus: {
+      kind: "observed" as const,
+      sourceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      occurredAt: "2026-08-01T10:00:00.000Z",
+      activityCategory: "bike" as const,
+      commonLoad: 42,
+      evidenceConfidence: 0.9,
+      capabilityObservation: { distanceMeters: 10_000, durationMinutes: 60 },
+    },
+  };
+
+  it("accepts only a source-generation change for an immutable canonical effect", () => {
+    expect(
+      hasEquivalentActivityTrainingEffectContent(effect, {
+        ...effect,
+        sourceRevision: 2,
+        stimulus: {
+          ...effect.stimulus,
+          capabilityObservation: { durationMinutes: 60, distanceMeters: 10_000 },
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it("does not hide a changed canonical stimulus behind a source-generation change", () => {
+    expect(
+      hasEquivalentActivityTrainingEffectContent(effect, {
+        ...effect,
+        sourceRevision: 2,
+        stimulus: { ...effect.stimulus, commonLoad: 43 },
+      }),
+    ).toBe(false);
   });
 });
 

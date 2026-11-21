@@ -29,7 +29,7 @@ import {
   trainingPlans,
   users,
 } from "@repo/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { activityPlanStructureHash } from "../../application/activity-plans/structure-hash";
 import { createResolutionManifestFixture } from "../../test/builders/planned-session";
@@ -167,17 +167,35 @@ describeDisposable("Phase 1 Drizzle repositories against a guarded disposable da
     const futureLogicalClaimedAt = "2099-01-01T00:00:00.000Z";
     const claim = await repository.claimNextRecalculation({
       claimToken,
+      now: futureLogicalClaimedAt,
       claimedAt: futureLogicalClaimedAt,
       leaseExpiresAt: new Date(Date.now() + 60_000).toISOString(),
     });
     expect(claim).toMatchObject({ lifecycle: { state: "processing", claimToken } });
+    const unrelatedClaim = await repository.claimNextRecalculation({
+      claimToken: randomUUID(),
+      now: futureLogicalClaimedAt,
+      claimedAt: futureLogicalClaimedAt,
+      leaseExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+    expect(unrelatedClaim?.request.profileId).not.toBe(profileId);
     await expect(
-      repository.claimNextRecalculation({
-        claimToken: randomUUID(),
-        claimedAt: futureLogicalClaimedAt,
-        leaseExpiresAt: new Date(Date.now() + 60_000).toISOString(),
-      }),
-    ).resolves.toBeNull();
+      db
+        .select({ leaseToken: profileAthleteState.lease_token })
+        .from(profileAthleteState)
+        .where(eq(profileAthleteState.profile_id, profileId)),
+    ).resolves.toEqual([{ leaseToken: claimToken }]);
+    if (unrelatedClaim?.lifecycle.state === "processing") {
+      await db
+        .update(profileAthleteState)
+        .set({ lease_token: null, lease_expires_at: null })
+        .where(
+          and(
+            eq(profileAthleteState.profile_id, unrelatedClaim.request.profileId),
+            eq(profileAthleteState.lease_token, unrelatedClaim.lifecycle.claimToken),
+          ),
+        );
+    }
     await db
       .update(profileAthleteState)
       .set({ lease_expires_at: new Date("2000-01-01T00:00:00.000Z") })
@@ -186,10 +204,14 @@ describeDisposable("Phase 1 Drizzle repositories against a guarded disposable da
     await expect(
       repository.claimNextRecalculation({
         claimToken: recoveredToken,
+        now: claimedAt.toISOString(),
         claimedAt: claimedAt.toISOString(),
         leaseExpiresAt: new Date(Date.now() + 60_000).toISOString(),
       }),
-    ).resolves.toMatchObject({ lifecycle: { state: "processing", claimToken: recoveredToken } });
+    ).resolves.toMatchObject({
+      request: { profileId },
+      lifecycle: { state: "processing", claimToken: recoveredToken },
+    });
     const day = {
       contractVersion: ATHLETE_DERIVED_STATE_PERSISTENCE_CONTRACT_VERSION,
       profileId,

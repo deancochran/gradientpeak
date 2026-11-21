@@ -199,7 +199,9 @@ async function evaluate(
         .orderBy(asc(activities.started_at), asc(activities.id))
         .limit(ACTIVITY_ANALYSIS_REFRESH_BATCH_SIZE + 1)
     : await scopedQuery.orderBy(asc(activities.started_at), asc(activities.id));
-  const hasMore = scopedRowsWithLookahead.length > ACTIVITY_ANALYSIS_REFRESH_BATCH_SIZE;
+  const hasMore =
+    input.claimedAthleteState !== undefined &&
+    scopedRowsWithLookahead.length > ACTIVITY_ANALYSIS_REFRESH_BATCH_SIZE;
   const scopedRows = (
     hasMore
       ? scopedRowsWithLookahead.slice(0, ACTIVITY_ANALYSIS_REFRESH_BATCH_SIZE)
