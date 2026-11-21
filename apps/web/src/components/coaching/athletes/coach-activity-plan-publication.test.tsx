@@ -114,6 +114,15 @@ afterEach(() => {
 });
 
 describe("CoachActivityPlanPublication", () => {
+  it("uses the semantic date input surface without forcing a dark native control", () => {
+    render(<CoachActivityPlanPublication athleteId="athlete" organizationId="organization" />);
+
+    const planningDate = screen.getByLabelText("Athlete planning date");
+    expect(planningDate.className).toContain("border-input");
+    expect(planningDate.className).toContain("bg-background");
+    expect(planningDate.className).not.toContain("color-scheme:dark");
+  });
+
   it("requires a fresh successful preview before publishing the selected owned activity plan", async () => {
     mocks.preview.mockResolvedValue({
       data: {

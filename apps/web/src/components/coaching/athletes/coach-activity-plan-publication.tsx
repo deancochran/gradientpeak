@@ -279,7 +279,7 @@ export function CoachActivityPlanPublication({
           <div className="space-y-2">
             <Label htmlFor="coach-planning-date">Athlete planning date</Label>
             <input
-              className="min-h-10 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground [color-scheme:dark]"
+              className="min-h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
               disabled={!coachMembership || publish.isPending}
               id="coach-planning-date"
               onChange={(event) => {
