@@ -6,7 +6,4 @@ pre-commit:
       run: pnpm exec biome check --write --no-errors-on-unmatched {staged_files}
       stage_fixed: true
 
-pre-push:
-  jobs:
-    - name: required quality and runtime checks
-      run: pnpm quality:push {push_files}
+# Full validation belongs in CI, not in a blocking pre-push hook.

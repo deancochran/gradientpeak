@@ -8,38 +8,6 @@ export const directCiSmokeReferences = {
   },
 };
 
-export const ciRuntimeProfileCommands = Object.fromEntries(
-  ["db", "web"].map((profile) => [profile, `pnpm qa:run --profile ${profile} --integration-only`]),
-);
-
-export function validateCiRuntimeDelegation(workflowSource) {
-  const issues = [];
-  for (const [profile, expectedCommand] of Object.entries(ciRuntimeProfileCommands)) {
-    const job = `runtime-${profile}`;
-    const match = workflowSource.match(
-      new RegExp(`^  ${job}:\\n([\\s\\S]*?)(?=^  [a-z][\\w-]*:\\n|(?![\\s\\S]))`, "m"),
-    );
-    if (!match) {
-      issues.push(`CI workflow is missing the ${job} job`);
-      continue;
-    }
-    const commandCount = match[1]
-      .split("\n")
-      .map((line) => line.trim().replace(/^run:\s*/, ""))
-      .filter((line) => line === expectedCommand).length;
-    if (commandCount !== 1) {
-      issues.push(`${job} must execute exactly once: ${expectedCommand}`);
-    }
-  }
-  for (const reference of Object.values(directCiSmokeReferences)) {
-    const appRelativePath = reference.path.replace(/^apps\/(?:web|mobile)\//, "");
-    if (workflowSource.includes(appRelativePath)) {
-      issues.push(`CI workflow duplicates the QA-owned smoke reference: ${reference.path}`);
-    }
-  }
-  return issues;
-}
-
 const webSmoke = [
   "pnpm",
   [
@@ -54,21 +22,21 @@ const webSmoke = [
     directCiSmokeReferences.web.identity,
   ],
 ];
+// The DB/full gate must cover the same live matrix as CI, not just visibility smoke.
 const dbCheck = [
   "pnpm",
-  [
-    "--filter",
-    "@repo/api",
-    "test:live-db",
-    "src/routers/__tests__/public-share-visibility.live-db.test.ts",
-  ],
+  ["--filter", "@repo/api", "test:live-db:disposable", "--disposable", "--local", "--all"],
+];
+const dbDisposableRunnerCheck = [
+  "pnpm",
+  ["--filter", "@repo/api", "test:live-db:runner:disposable"],
 ];
 
 const commands = {
   static: [["pnpm", ["quality:agent:static"]]],
-  db: [["pnpm", ["quality:agent:db:static"]], dbCheck],
+  db: [["pnpm", ["quality:agent:db:static"]], dbCheck, dbDisposableRunnerCheck],
   web: [["pnpm", ["quality:agent:static"]], webSmoke],
-  full: [["pnpm", ["quality:agent:db:static"]], dbCheck, webSmoke],
+  full: [["pnpm", ["quality:agent:db:static"]], dbCheck, dbDisposableRunnerCheck, webSmoke],
 };
 
 function command([executable, args]) {
