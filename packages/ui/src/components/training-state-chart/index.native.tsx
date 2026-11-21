@@ -9,6 +9,22 @@ import {
   type TrainingStateLegendProps,
 } from "./shared";
 
+type NativeSeriesKey =
+  | "recorded-fitness"
+  | "recorded-fatigue"
+  | "recorded-form"
+  | "projected-fitness"
+  | "projected-fatigue"
+  | "projected-form";
+type NativeChartDatum = { index: number } & Record<NativeSeriesKey, number | null>;
+
+function getNativeSeriesKey(
+  metric: "fitness" | "fatigue" | "form",
+  source: "recorded" | "projected",
+): NativeSeriesKey {
+  return `${source}-${metric}` as NativeSeriesKey;
+}
+
 function TrainingStateLegend({
   colors,
   metrics = ["fitness", "fatigue", "form"],
@@ -27,7 +43,7 @@ function TrainingStateLegend({
           <View className="flex-row items-center gap-1" key={definition.id}>
             <View
               className="h-3 w-3 rounded-full"
-              style={{ backgroundColor: colors?.[metric] ?? "#6b7280" }}
+              style={{ backgroundColor: colors?.[metric] ?? definition.nativeColor }}
             />
             <Text className="text-xs text-muted-foreground">{definition.label}</Text>
           </View>
@@ -42,29 +58,34 @@ function TrainingStateLegend({
   );
 }
 
-/**
- * @repo/ui intentionally has no Victory dependency. This semantic shell keeps
- * accessibility and empty-state behavior shared while the app injects its
- * gesture/performance-sensitive native plot.
- */
 function TrainingStateChart({
   className,
   colors,
-  description,
   emptyMessage,
-  metric,
-  source,
+  series,
   testId,
   title,
   visual,
 }: TrainingStateChartProps) {
-  const hasValues = visual.points.some((point) =>
-    ["fitness", "fatigue", "form"].some(
-      (selectedMetric) =>
-        point.recorded[selectedMetric as typeof metric] !== null ||
-        point.projected[selectedMetric as typeof metric] !== null,
-    ),
+  const hasValues = series.some(({ metric, source }) =>
+    visual.points.some((point) => point[source][metric] !== null),
   );
+  const yKeys = series.map(({ metric, source }) => getNativeSeriesKey(metric, source));
+  const data: NativeChartDatum[] = visual.points.map((point) => {
+    const datum: NativeChartDatum = {
+      index: point.index,
+      "projected-fatigue": null,
+      "projected-fitness": null,
+      "projected-form": null,
+      "recorded-fatigue": null,
+      "recorded-fitness": null,
+      "recorded-form": null,
+    };
+    for (const { metric, source } of series) {
+      datum[getNativeSeriesKey(metric, source)] = point[source][metric];
+    }
+    return datum;
+  });
   return (
     <View className={className} testID={testId}>
       {title ? (
@@ -72,85 +93,33 @@ function TrainingStateChart({
           {title}
         </Text>
       ) : null}
-      {description ? <Text className="text-xs text-muted-foreground">{description}</Text> : null}
       {hasValues ? (
         <View
           accessible
-          accessibilityLabel={
-            description ?? getTrainingStateAccessibilityLabel(visual, metric, source)
-          }
+          accessibilityLabel={getTrainingStateAccessibilityLabel(visual, series)}
           accessibilityRole="image"
           className="h-40 overflow-hidden rounded-2xl border border-border bg-card p-2"
         >
           <CartesianChart
-            data={visual.points.map((point) => ({
-              actualFatigue: point.recorded.fatigue,
-              actualFitness: point.recorded.fitness,
-              actualForm: point.recorded.form,
-              index: point.index,
-              projectedFatigue: point.projected.fatigue,
-              projectedFitness: point.projected.fitness,
-              projectedForm: point.projected.form,
-            }))}
+            data={data}
             domainPadding={{ bottom: 8, left: 8, right: 8, top: 8 }}
             frame={{ lineColor: "transparent", lineWidth: 0 }}
             xKey="index"
-            yKeys={[
-              "actualFitness",
-              "actualFatigue",
-              "actualForm",
-              "projectedFitness",
-              "projectedFatigue",
-              "projectedForm",
-            ]}
+            yKeys={yKeys}
           >
             {({ points }) => (
               <>
-                <Line
-                  color={colors?.fitness ?? "#2563eb"}
-                  connectMissingData={false}
-                  curveType="natural"
-                  points={points.actualFitness}
-                  strokeWidth={3}
-                />
-                <Line
-                  color={colors?.fatigue ?? "#d97706"}
-                  connectMissingData={false}
-                  curveType="natural"
-                  points={points.actualFatigue}
-                  strokeWidth={2.5}
-                />
-                <Line
-                  color={colors?.form ?? "#7c3aed"}
-                  connectMissingData={false}
-                  curveType="natural"
-                  points={points.actualForm}
-                  strokeWidth={2}
-                />
-                <Line
-                  color={colors?.fitness ?? "#2563eb"}
-                  connectMissingData={false}
-                  curveType="natural"
-                  opacity={0.45}
-                  points={points.projectedFitness}
-                  strokeWidth={3}
-                />
-                <Line
-                  color={colors?.fatigue ?? "#d97706"}
-                  connectMissingData={false}
-                  curveType="natural"
-                  opacity={0.45}
-                  points={points.projectedFatigue}
-                  strokeWidth={2.5}
-                />
-                <Line
-                  color={colors?.form ?? "#7c3aed"}
-                  connectMissingData={false}
-                  curveType="natural"
-                  opacity={0.45}
-                  points={points.projectedForm}
-                  strokeWidth={2}
-                />
+                {series.map(({ metric, source }) => (
+                  <Line
+                    color={colors?.[metric] ?? getTrainingStateMetric(metric).nativeColor}
+                    connectMissingData={false}
+                    curveType="natural"
+                    key={getNativeSeriesKey(metric, source)}
+                    {...(source === "projected" ? { opacity: 0.45 } : {})}
+                    points={points[getNativeSeriesKey(metric, source)]}
+                    strokeWidth={metric === "fitness" ? 3 : metric === "fatigue" ? 2.5 : 2}
+                  />
+                ))}
               </>
             )}
           </CartesianChart>

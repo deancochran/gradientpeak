@@ -20,8 +20,7 @@ describe("TrainingStateChart", () => {
     render(
       <TrainingStateChart
         emptyMessage="No training state"
-        metric="form"
-        source="recorded"
+        series={[{ metric: "form", source: "recorded" }]}
         title="Historical Form"
         visual={trainingStateChartFixtures.mixedSeries}
       />,
@@ -38,8 +37,7 @@ describe("TrainingStateChart", () => {
     render(
       <TrainingStateChart
         emptyMessage="No projected fatigue"
-        metric="fatigue"
-        source="projected"
+        series={[{ metric: "fatigue", source: "projected" }]}
         title="Projected Fatigue"
         visual={{
           ...trainingStateChartFixtures.mixedSeries,
@@ -53,5 +51,54 @@ describe("TrainingStateChart", () => {
 
     expect(screen.getByText("No projected fatigue")).toBeTruthy();
     expect(screen.queryByRole("img")).toBeNull();
+  });
+
+  it("keeps sparse zero and negative recorded values separated by gaps", () => {
+    render(
+      <TrainingStateChart
+        emptyMessage="No recorded fatigue"
+        series={[{ metric: "fatigue", source: "recorded" }]}
+        title="Historical Fatigue"
+        visual={{
+          ...trainingStateChartFixtures.mixedSeries,
+          points: [
+            {
+              date: "2026-04-13",
+              index: 0,
+              projected: { fatigue: null, fitness: null, form: null },
+              recorded: { fatigue: 30, fitness: 42, form: -12 },
+            },
+            {
+              date: "2026-04-15",
+              index: 2,
+              projected: { fatigue: 32, fitness: 44, form: -12 },
+              recorded: { fatigue: null, fitness: null, form: null },
+            },
+            {
+              date: "2026-04-17",
+              index: 4,
+              projected: { fatigue: 32, fitness: 44, form: -12 },
+              recorded: { fatigue: -4, fitness: 0, form: null },
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("img", { name: /2 values.*-4.0 Common Load points/ })).toBeTruthy();
+    expect(document.querySelectorAll("polyline")).toHaveLength(2);
+  });
+
+  it("visually distinguishes the selected projected source", () => {
+    render(
+      <TrainingStateChart
+        emptyMessage="No projected fitness"
+        series={[{ metric: "fitness", source: "projected" }]}
+        visual={trainingStateChartFixtures.mixedSeries}
+      />,
+    );
+
+    expect(document.querySelector("polyline")?.getAttribute("stroke-dasharray")).toBe("6 4");
+    expect(screen.getByLabelText("Chart legend")).toHaveTextContent("Fitness · Projected");
   });
 });

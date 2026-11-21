@@ -8,6 +8,10 @@ export const trainingStateMetricIds = ["fitness", "fatigue", "form"] as const;
 export type TrainingStateMetricId = (typeof trainingStateMetricIds)[number];
 export type TrainingStateSource = "recorded" | "projected";
 export type TrainingStateSourceStatus = TrainingStateSource | "mixed" | "unavailable";
+export type TrainingStateSeriesSelection = {
+  metric: TrainingStateMetricId;
+  source: TrainingStateSource;
+};
 
 export type TrainingStateMetricValues = Record<TrainingStateMetricId, number | null>;
 
@@ -30,23 +34,32 @@ export const trainingStateMetrics = {
     colorToken: "chart-3",
     id: "fatigue",
     label: "Fatigue",
+    nativeColor: "#d97706",
     webColor: "var(--chart-3)",
   },
   fitness: {
     colorToken: "chart-1",
     id: "fitness",
     label: "Fitness",
+    nativeColor: "#2563eb",
     webColor: "var(--chart-1)",
   },
   form: {
     colorToken: "chart-5",
     id: "form",
     label: "Form",
+    nativeColor: "#7c3aed",
     webColor: "var(--chart-5)",
   },
 } as const satisfies Record<
   TrainingStateMetricId,
-  { colorToken: string; id: TrainingStateMetricId; label: string; webColor: string }
+  {
+    colorToken: string;
+    id: TrainingStateMetricId;
+    label: string;
+    nativeColor: string;
+    webColor: string;
+  }
 >;
 
 export const trainingStateSourceLabels = {
@@ -104,26 +117,28 @@ export function formatTrainingStateValue(value: number | null, unitLabel: string
 
 export function trainingStateHasValues(
   points: readonly TrainingStateVisualPoint[],
-  metric: TrainingStateMetricId,
-  source: TrainingStateSource,
+  series: readonly TrainingStateSeriesSelection[],
 ) {
-  return points.some((point) => point[source][metric] !== null);
+  return points.some((point) =>
+    series.some(({ metric, source }) => point[source][metric] !== null),
+  );
 }
 
 export function getTrainingStateAccessibilityLabel(
   visual: TrainingStateVisualContract,
-  metric: TrainingStateMetricId,
-  source: TrainingStateSource,
+  series: readonly TrainingStateSeriesSelection[],
 ) {
-  const definition = getTrainingStateMetric(metric);
-  const values = visual.points
-    .map((point) => point[source][metric])
-    .filter((value): value is number => value !== null);
-  const sourceLabel = getTrainingStateSourceLabel(source);
-  if (!values.length) {
-    return `${definition.label} ${sourceLabel} training state. No values are available.`;
-  }
-  const first = values[0];
-  const latest = values.at(-1);
-  return `${definition.label} ${sourceLabel} training state. ${values.length} values in ${visual.unitLabel}. First ${formatTrainingStateValue(first ?? null, visual.unitLabel)}. Latest ${formatTrainingStateValue(latest ?? null, visual.unitLabel)}.`;
+  const summaries = series.map(({ metric, source }) => {
+    const definition = getTrainingStateMetric(metric);
+    const values = visual.points
+      .map((point) => point[source][metric])
+      .filter((value): value is number => value !== null);
+    const sourceLabel = getTrainingStateSourceLabel(source);
+    if (!values.length) {
+      return `${definition.label} ${sourceLabel}: no values available`;
+    }
+    return `${definition.label} ${sourceLabel}: ${values.length} values; first ${formatTrainingStateValue(values[0] ?? null, visual.unitLabel)}; latest ${formatTrainingStateValue(values.at(-1) ?? null, visual.unitLabel)}`;
+  });
+
+  return `Training state in ${visual.unitLabel}. Planning timezone ${visual.timeZone}. ${summaries.join(". ")}.`;
 }

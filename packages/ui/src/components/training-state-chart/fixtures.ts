@@ -19,6 +19,7 @@ export const trainingStateChartFixtures = {
     sourceStatus: "mixed",
     timeZone: "America/Los_Angeles",
     unitLabel: "Common Load points",
+    colors: { fatigue: "#d97706", fitness: "#2563eb", form: "#7c3aed" },
     sources: ["recorded", "projected"],
   } satisfies TrainingStateVisualFixture,
 } as const;

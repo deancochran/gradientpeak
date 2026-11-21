@@ -7,8 +7,15 @@ const meta = {
   component: TrainingStateChart,
   args: {
     emptyMessage: "Training state is unavailable for this period.",
-    metric: "fitness",
-    source: "recorded",
+    colors: trainingStateChartFixtures.mixedSeries.colors,
+    series: [
+      { metric: "fitness", source: "recorded" },
+      { metric: "fatigue", source: "recorded" },
+      { metric: "form", source: "recorded" },
+      { metric: "fitness", source: "projected" },
+      { metric: "fatigue", source: "projected" },
+      { metric: "form", source: "projected" },
+    ],
     visual: trainingStateChartFixtures.mixedSeries,
   },
 } satisfies Meta<typeof TrainingStateChart>;

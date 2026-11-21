@@ -35,6 +35,35 @@ const mockCreateHost = (type: string) =>
     return mockReact.createElement(type, props, children);
   };
 
+// Canvas/Skia rendering is upstream behavior. Keep chart-data decisions visible to tests.
+jest.mock("victory-native", () => ({
+  CartesianChart: ({ children, data = [], xKey, yKeys }: HostProps) => {
+    const render = children as
+      | ((value: { points: Record<string, unknown> }) => mockReact.ReactNode)
+      | undefined;
+    return mockReact.createElement(
+      "CartesianChart",
+      { data, testID: "victory-cartesian-chart", xKey, yKeys },
+      render
+        ? render({
+            points: Object.fromEntries(
+              (yKeys as string[]).map((key) => [
+                key,
+                (data as Record<string, unknown>[]).map((datum, index) => ({
+                  x: index,
+                  y: typeof datum[key] === "number" ? datum[key] : null,
+                  yValue: typeof datum[key] === "number" ? datum[key] : null,
+                })),
+              ]),
+            ),
+          })
+        : children,
+    );
+  },
+  Line: (props: HostProps) =>
+    mockReact.createElement("VictoryLine", { ...props, testID: "victory-line" }),
+}));
+
 const mockCreateAnimationBuilder = () => ({
   delay: () => mockCreateAnimationBuilder(),
   duration: () => mockCreateAnimationBuilder(),

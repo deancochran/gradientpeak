@@ -3,6 +3,7 @@ import { Text } from "@repo/ui/components/text";
 import {
   TrainingStateChart,
   TrainingStateLegend,
+  type TrainingStateSeriesSelection,
   type TrainingStateVisualPoint,
 } from "@repo/ui/components/training-state-chart";
 import { Minus, TrendingDown, TrendingUp } from "lucide-react-native";
@@ -71,6 +72,14 @@ export function TrainingStateContextChart({
       : sourceStatus === "unavailable"
         ? []
         : [sourceStatus];
+  const series: readonly TrainingStateSeriesSelection[] = [
+    { metric: "fitness", source: "recorded" },
+    { metric: "fatigue", source: "recorded" },
+    { metric: "form", source: "recorded" },
+    { metric: "fitness", source: "projected" },
+    { metric: "fatigue", source: "projected" },
+    { metric: "form", source: "projected" },
+  ];
 
   return (
     <View className="gap-3" testID="planning-ledger-training-state">
@@ -88,10 +97,8 @@ export function TrainingStateContextChart({
       {visualPoints.length ? (
         <TrainingStateChart
           colors={colors.trainingState}
-          description={state.summary}
           emptyMessage="Training state is unavailable for this period."
-          metric="fitness"
-          source={sourceStatus === "projected" ? "projected" : "recorded"}
+          series={series}
           testId="planning-ledger-state-chart"
           visual={visual}
         />

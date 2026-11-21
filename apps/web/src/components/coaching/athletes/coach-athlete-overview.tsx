@@ -352,8 +352,7 @@ function HistoricalLoadChart({
     <TrainingStateChart
       description={description}
       emptyMessage={`No historical ${definition.label.toLowerCase()} values are available.`}
-      metric={metric}
-      source="recorded"
+      series={[{ metric, source: "recorded" }]}
       title={`Historical ${definition.label} (recorded)`}
       visual={visual}
     />

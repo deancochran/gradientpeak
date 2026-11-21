@@ -27,8 +27,8 @@ describe("training-state presentation", () => {
   ];
 
   it("keeps zero, negative values, gaps, and recorded/projected status distinct", () => {
-    expect(trainingStateHasValues(points, "fatigue", "recorded")).toBe(true);
-    expect(trainingStateHasValues(points, "form", "projected")).toBe(true);
+    expect(trainingStateHasValues(points, [{ metric: "fatigue", source: "recorded" }])).toBe(true);
+    expect(trainingStateHasValues(points, [{ metric: "form", source: "projected" }])).toBe(true);
     expect(getTrainingStateSourceStatus(points)).toBe("mixed");
     expect(formatTrainingStateValue(0, "Common Load points")).toBe("0.0 Common Load points");
     expect(formatTrainingStateValue(-12.5, "Common Load points")).toBe("-12.5 Common Load points");
@@ -47,7 +47,7 @@ describe("training-state presentation", () => {
     expect(trainingStateMetrics.form.colorToken).toBe("chart-5");
     expect(formatTrainingStateDate("2026-03-08", "America/Los_Angeles")).toMatch(/Mar 8/);
     expect(getTrainingStateSourceStatus([])).toBe("unavailable");
-    expect(trainingStateHasValues([], "fitness", "recorded")).toBe(false);
+    expect(trainingStateHasValues([], [{ metric: "fitness", source: "recorded" }])).toBe(false);
     expect(
       getTrainingStateSourceStatus([
         { date: "2026-03-09", index: 1, projected: empty, recorded: empty },

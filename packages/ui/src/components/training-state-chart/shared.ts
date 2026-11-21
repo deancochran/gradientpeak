@@ -7,6 +7,7 @@ export {
   getTrainingStateSourceStatus,
   type TrainingStateMetricId,
   type TrainingStateMetricValues,
+  type TrainingStateSeriesSelection,
   type TrainingStateSource,
   type TrainingStateSourceStatus,
   type TrainingStateVisualContract,
@@ -19,6 +20,7 @@ export {
 
 import type {
   TrainingStateMetricId,
+  TrainingStateSeriesSelection,
   TrainingStateSource,
   TrainingStateVisualContract,
 } from "../../lib/training-state";
@@ -38,8 +40,8 @@ export type TrainingStateChartProps = {
   colors?: Partial<Record<TrainingStateMetricId, string>>;
   description?: string;
   emptyMessage: string;
-  metric: TrainingStateMetricId;
-  source: TrainingStateSource;
+  /** Every visible line, legend entry, and announced series must be declared here. */
+  series: readonly TrainingStateSeriesSelection[];
   testId?: string;
   title?: string;
   visual: TrainingStateVisualContract;

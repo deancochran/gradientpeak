@@ -43,19 +43,23 @@ function TrainingStateLegend({
 
 function TrainingStateChart({
   className,
+  colors,
   description,
   emptyMessage,
-  metric,
-  source,
+  series,
   testId,
   title,
   visual,
 }: TrainingStateChartProps) {
-  const definition = getTrainingStateMetric(metric);
-  const chartTitle = title ?? definition.label;
-  const values = visual.points.map((point) => point[source][metric]);
+  const selected = series.length === 1 ? series.at(0) : undefined;
+  const selection = selected ? [selected] : [];
+  const definition = selected ? getTrainingStateMetric(selected.metric) : undefined;
+  const chartTitle = title ?? definition?.label ?? "Training state";
+  const values = selected
+    ? visual.points.map((point) => point[selected.source][selected.metric])
+    : [];
   const summary = summarizeChartValues(values);
-  if (!summary) {
+  if (!selected || !summary || !definition) {
     return (
       <ChartCard
         {...(className ? { className } : {})}
@@ -73,7 +77,7 @@ function TrainingStateChart({
     x: Number.isFinite(Date.parse(`${point.date}T00:00:00Z`))
       ? Date.parse(`${point.date}T00:00:00Z`)
       : point.index,
-    y: point[source][metric],
+    y: point[selected.source][selected.metric],
   }));
   const segments = buildChartSegments(chartPoints, {
     bottom: 82,
@@ -91,9 +95,9 @@ function TrainingStateChart({
       {...(description ? { description } : {})}
       legend={[
         {
-          color: definition.webColor,
-          id: `${definition.id}-${source}`,
-          label: `${definition.label} · ${getTrainingStateSourceLabel(source)}`,
+          color: colors?.[selected.metric] ?? definition.webColor,
+          id: `${definition.id}-${selected.source}`,
+          label: `${definition.label} · ${getTrainingStateSourceLabel(selected.source)}`,
         },
       ]}
       summary={[
@@ -103,7 +107,7 @@ function TrainingStateChart({
       title={chartTitle}
     >
       <div
-        aria-label={`${chartTitle}. ${getTrainingStateAccessibilityLabel(visual, metric, source)}`}
+        aria-label={`${chartTitle}. ${getTrainingStateAccessibilityLabel(visual, selection)}`}
         className="relative h-56 w-full"
         data-testid={testId}
         role="img"
@@ -121,8 +125,8 @@ function TrainingStateChart({
               fill="none"
               key={`${segment[0]?.label}-${segment.at(-1)?.label}`}
               points={segment.map((point) => `${point.plotX},${point.plotY}`).join(" ")}
-              stroke={definition.webColor}
-              strokeDasharray={source === "projected" ? "6 4" : undefined}
+              stroke={colors?.[selected.metric] ?? definition.webColor}
+              strokeDasharray={selected.source === "projected" ? "6 4" : undefined}
               strokeWidth="3"
               vectorEffect="non-scaling-stroke"
             />
@@ -134,7 +138,7 @@ function TrainingStateChart({
             className="absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-background"
             key={point.label ?? `${point.x}-${point.y}`}
             style={{
-              borderColor: definition.webColor,
+              borderColor: colors?.[selected.metric] ?? definition.webColor,
               left: `${point.plotX}%`,
               top: `${point.plotY}%`,
             }}
