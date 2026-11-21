@@ -83,7 +83,7 @@ export function OrganizationInvitationsPending() {
       <div className="space-y-1">
         <h1
           id="organization-invitations-pending-heading"
-          className="text-3xl font-semibold tracking-tight text-white"
+          className="text-3xl font-semibold tracking-tight text-foreground"
         >
           Organization invitations
         </h1>
@@ -91,14 +91,14 @@ export function OrganizationInvitationsPending() {
           role="status"
           aria-label="Loading organization invitations"
           aria-live="polite"
-          className="text-sm text-slate-400"
+          className="text-sm text-muted-foreground"
         >
           Loading organization invitations…
         </p>
       </div>
       <div aria-hidden="true" className="space-y-5">
-        <div className="h-56 animate-pulse rounded-lg border border-slate-800 bg-slate-900" />
-        <div className="h-40 animate-pulse rounded-lg border border-slate-800 bg-slate-900" />
+        <div className="h-56 animate-pulse rounded-lg border border-border bg-card" />
+        <div className="h-40 animate-pulse rounded-lg border border-border bg-card" />
       </div>
     </section>
   );
@@ -126,20 +126,20 @@ export function OrganizationInvitationsError() {
       <div className="space-y-1">
         <h1
           id="organization-invitations-error-heading"
-          className="text-3xl font-semibold tracking-tight text-white"
+          className="text-3xl font-semibold tracking-tight text-foreground"
         >
           Organization invitations
         </h1>
       </div>
-      <Card className="border-slate-800 bg-slate-900 text-slate-50">
+      <Card className="border-border bg-card text-foreground">
         <CardContent className="flex flex-wrap items-center gap-3 py-6">
-          <p role="alert" className="text-sm text-slate-400">
+          <p role="alert" className="text-sm text-muted-foreground">
             We could not load organization invitations. Retry the current organization invitation
             read.
           </p>
           <Button
             type="button"
-            className="bg-cyan-400 text-slate-950 hover:bg-cyan-300"
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
             disabled={retrying}
             onClick={() => void retry()}
           >
@@ -348,30 +348,30 @@ function OrganizationInvitationsContents({
       <div className="space-y-1">
         <h1
           id="organization-invitations-heading"
-          className="text-3xl font-semibold tracking-tight text-white"
+          className="text-3xl font-semibold tracking-tight text-foreground"
         >
           Organization invitations
         </h1>
-        <p className="max-w-3xl text-sm leading-6 text-slate-400">
+        <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
           Create a shareable invitation link. No email is sent, and recipient identity is not shown
           in this list.
         </p>
       </div>
       {notice ? (
-        <p role="status" className="text-sm text-emerald-300">
+        <p role="status" className="text-sm text-success">
           {notice}
         </p>
       ) : null}
       {error ? (
-        <p role="alert" className="text-sm text-red-300">
+        <p role="alert" className="text-sm text-destructive">
           {error}
         </p>
       ) : null}
       {invitationLink ? (
-        <Card className="border-amber-700 bg-slate-900 text-slate-50">
+        <Card className="border-warning/40 bg-card text-foreground">
           <CardHeader>
             <CardTitle>Copy invitation link</CardTitle>
-            <CardDescription className="text-slate-400">
+            <CardDescription className="text-muted-foreground">
               This link is displayed once. Share it through an approved channel. No email has been
               sent.
             </CardDescription>
@@ -379,7 +379,7 @@ function OrganizationInvitationsContents({
           <CardContent className="space-y-3">
             <input
               aria-label="Invitation link"
-              className="block w-full rounded bg-slate-950 p-3 text-sm"
+              className="block w-full rounded bg-background p-3 text-sm"
               data-ph-no-capture
               data-sentry-mask
               readOnly
@@ -400,37 +400,35 @@ function OrganizationInvitationsContents({
       ) : null}
       {locked || uncertainCreate ? (
         <div className="flex flex-wrap items-center gap-3" role="status">
-          <p className="text-sm text-amber-200">
-            Refresh invitations before making another change.
-          </p>
+          <p className="text-sm text-warning">Refresh invitations before making another change.</p>
           <Button type="button" onClick={() => void refresh()}>
             Refresh invitations
           </Button>
         </div>
       ) : null}
       {relationship ? (
-        <Card className="border-slate-800 bg-slate-900 text-slate-50">
+        <Card className="border-border bg-card text-foreground">
           <CardHeader>
             <CardTitle>Accepted invitation relationship</CardTitle>
-            <CardDescription className="text-slate-400">
+            <CardDescription className="text-muted-foreground">
               This is a read-only lifecycle check. Acceptance does not by itself mean current
               access.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <p className="text-sm text-slate-300">
+            <p className="text-sm text-muted-foreground">
               Current relationship: {relationship.relationshipState.replaceAll("_", " ")}.
             </p>
             {relationship.navigationTarget === "staff_roster" ? (
-              <p className="text-sm text-slate-400">
+              <p className="text-sm text-muted-foreground">
                 The staff roster does not yet support selecting this membership directly.
               </p>
             ) : relationship.relationshipState.startsWith("staff_") ? (
-              <p className="text-sm text-slate-400">
+              <p className="text-sm text-muted-foreground">
                 This staff membership is not currently available in the staff roster.
               </p>
             ) : (
-              <p className="text-sm text-slate-400">
+              <p className="text-sm text-muted-foreground">
                 No athlete relationship-management destination is available yet.
               </p>
             )}
@@ -438,7 +436,7 @@ function OrganizationInvitationsContents({
               <Button
                 asChild
                 variant="outline"
-                className="border-slate-600 bg-slate-950 text-cyan-200 hover:bg-slate-800 hover:text-cyan-100 focus-visible:ring-cyan-300"
+                className="border-border bg-background text-primary hover:bg-muted hover:text-primary focus-visible:ring-ring"
               >
                 <a
                   href={`/organizations/${organizationId}/staff${relationship.relationshipState === "staff_suspended" ? "?status=suspended" : ""}`}
@@ -450,10 +448,10 @@ function OrganizationInvitationsContents({
           </CardContent>
         </Card>
       ) : null}
-      <Card className="border-slate-800 bg-slate-900 text-slate-50">
+      <Card className="border-border bg-card text-foreground">
         <CardHeader>
           <CardTitle>Create invitation</CardTitle>
-          <CardDescription className="text-slate-400">
+          <CardDescription className="text-muted-foreground">
             Use a usable email address. The person receives no message from us.
           </CardDescription>
         </CardHeader>
@@ -466,7 +464,7 @@ function OrganizationInvitationsContents({
             <label className="grid gap-1 text-sm">
               Invitation type
               <select
-                className="rounded border border-slate-700 bg-slate-950 p-2"
+                className="rounded border border-border bg-background p-2"
                 {...form.register("kind")}
               >
                 <option value="staff">Staff</option>
@@ -477,7 +475,7 @@ function OrganizationInvitationsContents({
               <label className="grid gap-1 text-sm">
                 Staff role
                 <select
-                  className="rounded border border-slate-700 bg-slate-950 p-2"
+                  className="rounded border border-border bg-background p-2"
                   {...form.register("requestedRole")}
                 >
                   <option value="coach">Coach</option>
@@ -487,7 +485,7 @@ function OrganizationInvitationsContents({
                 </select>
               </label>
             ) : (
-              <p className="self-end text-sm text-slate-400">
+              <p className="self-end text-sm text-muted-foreground">
                 Athlete invitations do not include a staff role.
               </p>
             )}
@@ -496,7 +494,7 @@ function OrganizationInvitationsContents({
               <input
                 type="email"
                 autoComplete="email"
-                className="rounded border border-slate-700 bg-slate-950 p-2"
+                className="rounded border border-border bg-background p-2"
                 aria-invalid={form.formState.errors.recipientEmail ? true : undefined}
                 {...form.register("recipientEmail", {
                   required: "Enter an email address.",
@@ -508,22 +506,22 @@ function OrganizationInvitationsContents({
               Expires at
               <input
                 type="datetime-local"
-                className="rounded border border-slate-700 bg-slate-950 p-2"
+                className="rounded border border-border bg-background p-2"
                 {...form.register("expiresAt", { required: "Choose an expiration date and time." })}
               />
             </label>
             {form.formState.errors.expiresAt?.message ? (
-              <p role="alert" className="self-end text-sm text-red-300">
+              <p role="alert" className="self-end text-sm text-destructive">
                 {form.formState.errors.expiresAt.message}
               </p>
             ) : null}
             {form.formState.errors.recipientEmail?.message ? (
-              <p role="alert" className="self-end text-sm text-red-300">
+              <p role="alert" className="self-end text-sm text-destructive">
                 {form.formState.errors.recipientEmail.message}
               </p>
             ) : null}
             {form.formState.errors.requestedRole?.message ? (
-              <p role="alert" className="self-end text-sm text-red-300">
+              <p role="alert" className="self-end text-sm text-destructive">
                 {form.formState.errors.requestedRole.message}
               </p>
             ) : null}
@@ -538,10 +536,12 @@ function OrganizationInvitationsContents({
           </form>
         </CardContent>
       </Card>
-      <Card className="border-slate-800 bg-slate-900 text-slate-50">
+      <Card className="border-border bg-card text-foreground">
         <CardHeader>
           <CardTitle>Invitation history</CardTitle>
-          <CardDescription className="text-slate-400">{page.items.length} shown</CardDescription>
+          <CardDescription className="text-muted-foreground">
+            {page.items.length} shown
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {page.items.length ? (
@@ -551,18 +551,18 @@ function OrganizationInvitationsContents({
                 return (
                   <li
                     key={invitation.invitationId}
-                    className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3 last:border-0"
+                    className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3 last:border-0"
                   >
                     <div>
                       <p className="font-medium capitalize">
                         {invitation.kind} invitation
                         {invitation.requestedRole ? ` · ${invitation.requestedRole}` : ""}
                       </p>
-                      <p className="mt-1 text-sm text-slate-400">
+                      <p className="mt-1 text-sm text-muted-foreground">
                         Created {new Date(invitation.createdAt).toLocaleString()} · Expires{" "}
                         {new Date(invitation.expiresAt).toLocaleString()}
                       </p>
-                      <Badge className="mt-2 border-slate-700 bg-slate-800 capitalize text-slate-200">
+                      <Badge className="mt-2 border-border bg-muted capitalize text-foreground">
                         {status}
                       </Badge>
                     </div>
@@ -584,7 +584,7 @@ function OrganizationInvitationsContents({
                       <Button
                         type="button"
                         variant="outline"
-                        className="border-slate-600 bg-slate-950 text-cyan-200 hover:bg-slate-800 hover:text-cyan-100 focus-visible:ring-cyan-300"
+                        className="border-border bg-background text-primary hover:bg-muted hover:text-primary focus-visible:ring-ring"
                         disabled={locked}
                         onClick={() => void inspectAccepted(invitation)}
                       >
@@ -596,7 +596,7 @@ function OrganizationInvitationsContents({
               })}
             </ul>
           ) : (
-            <p className="text-sm text-slate-400">No invitations on this page.</p>
+            <p className="text-sm text-muted-foreground">No invitations on this page.</p>
           )}
         </CardContent>
       </Card>

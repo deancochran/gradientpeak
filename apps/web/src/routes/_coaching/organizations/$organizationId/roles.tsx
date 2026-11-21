@@ -16,7 +16,7 @@ export const Route = createFileRoute("/_coaching/organizations/$organizationId/r
     }),
   }),
   pendingComponent: () => (
-    <p role="status" className="text-sm text-slate-400">
+    <p role="status" className="text-sm text-muted-foreground">
       Loading organization roles…
     </p>
   ),
@@ -63,7 +63,7 @@ function RolesRouteError() {
   };
   return (
     <div className="space-y-3">
-      <p role="alert" className="text-sm text-red-300">
+      <p role="alert" className="text-sm text-destructive">
         Organization roles could not be loaded. Retry the current organization role read.
       </p>
       <Button type="button" disabled={retrying} onClick={() => void retry()}>

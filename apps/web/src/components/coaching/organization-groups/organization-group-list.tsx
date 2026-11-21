@@ -39,7 +39,11 @@ type ListResult = ({ status: "granted" } & Page) | { status: "forbidden" };
 
 export function OrganizationGroupsPending() {
   return (
-    <p aria-label="Loading organization groups" role="status" className="text-sm text-slate-400">
+    <p
+      aria-label="Loading organization groups"
+      role="status"
+      className="text-sm text-muted-foreground"
+    >
       Loading organization groups…
     </p>
   );
@@ -60,7 +64,7 @@ export function OrganizationGroupsError() {
   }
   return (
     <div className="space-y-3">
-      <p role="alert" className="text-sm text-red-300">
+      <p role="alert" className="text-sm text-destructive">
         Organization groups could not be loaded. Retry the current organization group read.
       </p>
       <Button disabled={retrying} onClick={() => void retry()} type="button">
@@ -227,19 +231,19 @@ export function OrganizationGroupList({
   return (
     <div className="space-y-6">
       <header>
-        <p className="text-sm font-medium uppercase tracking-[0.18em] text-cyan-300">
+        <p className="text-sm font-medium uppercase tracking-[0.18em] text-primary">
           Administration
         </p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white">
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
           Organization groups
         </h1>
-        <p className="mt-2 text-sm text-slate-400">
+        <p className="mt-2 text-sm text-muted-foreground">
           Groups are separate from community groups. Membership and coach assignment are managed
           separately.
         </p>
       </header>
       {notice ? (
-        <p role="status" className="text-sm text-emerald-300">
+        <p role="status" className="text-sm text-success">
           {notice}
         </p>
       ) : null}
@@ -248,10 +252,10 @@ export function OrganizationGroupList({
           {readError ?? writeError}
         </p>
       ) : null}
-      <Card className="border-slate-800 bg-slate-900 text-slate-50">
+      <Card className="border-border bg-card text-foreground">
         <CardHeader>
           <CardTitle>Create a group</CardTitle>
-          <CardDescription className="text-slate-400">
+          <CardDescription className="text-muted-foreground">
             A name is required. Description is optional.
           </CardDescription>
         </CardHeader>
@@ -277,7 +281,7 @@ export function OrganizationGroupList({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>
-                      Description <span className="text-slate-400">(optional)</span>
+                      Description <span className="text-muted-foreground">(optional)</span>
                     </FormLabel>
                     <FormControl>
                       <Textarea
@@ -297,25 +301,27 @@ export function OrganizationGroupList({
           </Form>
         </CardContent>
       </Card>
-      <Card className="border-slate-800 bg-slate-900 text-slate-50">
+      <Card className="border-border bg-card text-foreground">
         <CardHeader>
           <CardTitle>Active groups</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {page.items.length === 0 ? (
-            <p className="text-sm text-slate-400">No active organization groups yet.</p>
+            <p className="text-sm text-muted-foreground">No active organization groups yet.</p>
           ) : (
             <ul aria-label="Organization groups" className="space-y-3">
               {page.items.map((group) => (
                 <li key={group.id}>
                   <Link
-                    className="block rounded-md border border-slate-800 p-4 hover:border-cyan-700 hover:bg-slate-800"
+                    className="block rounded-md border border-border p-4 hover:border-primary/30 hover:bg-muted"
                     to="/organizations/$organizationId/groups/$groupId"
                     params={{ organizationId, groupId: group.id }}
                   >
                     <span className="block font-medium">{group.name}</span>
                     {group.description ? (
-                      <span className="mt-1 block text-sm text-slate-400">{group.description}</span>
+                      <span className="mt-1 block text-sm text-muted-foreground">
+                        {group.description}
+                      </span>
                     ) : null}
                   </Link>
                 </li>
@@ -340,8 +346,10 @@ export function OrganizationGroupList({
 function AccessLost() {
   return (
     <div>
-      <h1 className="text-3xl font-semibold tracking-tight text-white">Coaching access required</h1>
-      <p className="mt-2 text-sm text-slate-400">
+      <h1 className="text-3xl font-semibold tracking-tight text-foreground">
+        Coaching access required
+      </h1>
+      <p className="mt-2 text-sm text-muted-foreground">
         Your access changed. Organization groups are no longer shown.
       </p>
     </div>

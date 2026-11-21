@@ -101,13 +101,13 @@ describe("StaffRoster suspension", () => {
   it("keeps roster entry controls readable against the dark staff surface", () => {
     renderRoster();
     expect(screen.getByRole("button", { name: "Review offboarding impact" }).className).toContain(
-      "bg-slate-950",
+      "bg-background",
     );
     expect(screen.getByRole("button", { name: "Revoke admin" }).className).toContain(
-      "border-slate-600",
+      "border-border",
     );
-    expect(screen.getByRole("link", { name: "Suspended" }).className).toContain("bg-slate-950");
-    expect(screen.getByRole("link", { name: "Active" }).className).toContain("bg-cyan-500");
+    expect(screen.getByRole("link", { name: "Suspended" }).className).toContain("bg-background");
+    expect(screen.getByRole("link", { name: "Active" }).className).toContain("bg-primary");
   });
 
   it("shows protected offboarding reasoning and suppresses stale impact results after scope changes", async () => {

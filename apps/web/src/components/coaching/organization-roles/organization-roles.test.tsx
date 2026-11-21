@@ -67,11 +67,11 @@ describe("OrganizationRoles", () => {
   it("keeps selected and unselected fixed-role controls legible on the slate surface", () => {
     renderRoles();
 
-    expect(screen.getByRole("button", { name: "Coach" }).className).toContain("bg-cyan-400");
-    expect(screen.getByRole("button", { name: "Admin" }).className).toContain("bg-slate-900");
-    expect(screen.getByRole("button", { name: "Admin" }).className).toContain("text-slate-100");
-    expect(screen.getByRole("button", { name: "Grant" }).className).toContain("bg-cyan-400");
-    expect(screen.getByRole("button", { name: "Revoke" }).className).toContain("bg-slate-900");
+    expect(screen.getByRole("button", { name: "Coach" }).className).toContain("bg-primary");
+    expect(screen.getByRole("button", { name: "Admin" }).className).toContain("bg-card");
+    expect(screen.getByRole("button", { name: "Admin" }).className).toContain("text-foreground");
+    expect(screen.getByRole("button", { name: "Grant" }).className).toContain("bg-primary");
+    expect(screen.getByRole("button", { name: "Revoke" }).className).toContain("bg-card");
   });
 
   it("freezes the preview payload and retries exactly that operation after an unknown result", async () => {
@@ -117,9 +117,7 @@ describe("OrganizationRoles", () => {
       await screen.findByText(/ends existing direct and group coaching assignments/i),
     ).toBeTruthy();
     expect(screen.queryByText(/affected count/i)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Back to edit" }).className).toContain(
-      "bg-slate-900",
-    );
+    expect(screen.getByRole("button", { name: "Back to edit" }).className).toContain("bg-card");
   });
 
   it("invalidates a preview when the actor scope changes", async () => {

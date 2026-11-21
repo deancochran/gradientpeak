@@ -32,8 +32,8 @@ function date(value: string | null) {
     : "not available";
 }
 
-const cardTheme = "border-cyan-900 bg-slate-950 text-slate-50";
-const mutedText = "text-slate-300";
+const cardTheme = "border-primary/30 bg-background text-foreground";
+const mutedText = "text-muted-foreground";
 
 function ZoneGroup({
   title,
@@ -47,7 +47,7 @@ function ZoneGroup({
   const source = value.source;
   return (
     <section
-      className="rounded-xl border border-slate-700 bg-slate-900 p-4 text-slate-50"
+      className="rounded-xl border border-border bg-card p-4 text-foreground"
       aria-label={title}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -55,8 +55,8 @@ function ZoneGroup({
         <Badge
           className={
             value.zoneAvailability === "available"
-              ? "border-cyan-700 bg-cyan-950 text-cyan-100"
-              : "border-slate-600 bg-slate-800 text-slate-200"
+              ? "border-primary/30 bg-primary/10 text-primary"
+              : "border-border bg-muted text-foreground"
           }
           variant={value.zoneAvailability === "available" ? "secondary" : "outline"}
         >
@@ -120,7 +120,7 @@ export function CoachAthleteZonesCard({
               <p>Bike zones could not be loaded.</p>
               {onRetry ? (
                 <Button
-                  className="border-cyan-700 bg-slate-900 text-slate-50 hover:bg-slate-800"
+                  className="border-primary/30 bg-card text-foreground hover:bg-muted"
                   type="button"
                   variant="outline"
                   onClick={onRetry}
@@ -171,14 +171,14 @@ export function CoachAthleteZonesCard({
           <Badge
             className={
               zones.publication.status === "available"
-                ? "border-cyan-700 bg-cyan-950 text-cyan-100"
-                : "border-slate-600 bg-slate-800 text-slate-200"
+                ? "border-primary/30 bg-primary/10 text-primary"
+                : "border-border bg-muted text-foreground"
             }
             variant={zones.publication.status === "available" ? "secondary" : "outline"}
           >
             Publication status: {zones.publication.status}
           </Badge>
-          <Badge className="border-slate-600 bg-slate-800 text-slate-200" variant="outline">
+          <Badge className="border-border bg-muted text-foreground" variant="outline">
             {zones.publication.status === "unavailable" ||
             zones.publication.publishedRevision === null
               ? "Publication revision: not available"
