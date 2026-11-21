@@ -66,6 +66,7 @@ export interface AthleteDerivedStateRepositoryPort {
     profileId: string;
     fromEffectiveAt: string;
     throughSourceRevision: number;
+    throughEffectiveAt?: string;
     limit: number;
     after?: { effectiveAt: string; activityId: string; activityAnalysisRevision: number };
   }): Promise<{ items: ActivityTrainingEffect[]; hasMore: boolean }>;
