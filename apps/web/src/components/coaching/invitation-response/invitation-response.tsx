@@ -12,6 +12,7 @@ type InboxState =
   | { page?: InboxPage; status: "error"; cursor: string | null }
   | { page?: InboxPage; status: "loading"; cursor: string | null }
   | { page: InboxPage; status: "success"; cursor: string | null };
+type Receipt = { status: "accepted"; staffOrganizationId: string | null } | { status: "declined" };
 
 export function InvitationResponse({
   actorId,
@@ -31,8 +32,9 @@ export function InvitationResponse({
     token: string;
     invitationId: string | null;
     acknowledgement?: { accepted: true; digest: string; version: string };
+    staffInvitation: boolean;
   } | null>(null);
-  const [receipt, setReceipt] = useState<"accepted" | "declined" | null>(null);
+  const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [inbox, setInbox] = useState<InboxState>({ cursor: null, status: "loading" });
   const inboxGeneration = useRef(0);
   const tokenGeneration = useRef(0);
@@ -140,11 +142,16 @@ export function InvitationResponse({
     commandToken = token,
     retryAcknowledgement?: { accepted: true; digest: string; version: string },
     invitationId: string | null = selectedInvitationId,
+    retryStaffInvitation = false,
   ) => {
     if (responseInFlight.current || previewInFlight.current) return;
     const generationAtStart = ++tokenGeneration.current;
+    const actorIdAtStart = currentActorId.current;
     responseInFlight.current = true;
     setResponseFailure(null);
+    const acceptingStaffInvitation =
+      choice === "accept" &&
+      (retryStaffInvitation || (preview?.status === "ready" && preview.preview.kind === "staff"));
     const acknowledgement =
       retryAcknowledgement ??
       (preview?.status === "ready" &&
@@ -168,19 +175,37 @@ export function InvitationResponse({
           : await declineOrganizationInvitation({
               data: invitationId ? { invitationId } : { token: commandToken },
             });
-      if (generationAtStart !== tokenGeneration.current) return;
+      if (
+        generationAtStart !== tokenGeneration.current ||
+        currentActorId.current !== actorIdAtStart
+      )
+        return;
       if (result.status === "accepted" || result.status === "declined") {
-        setReceipt(result.status);
+        setReceipt(
+          result.status === "accepted"
+            ? {
+                status: "accepted",
+                // The navigation target comes only from the durable acceptance receipt.
+                staffOrganizationId: acceptingStaffInvitation
+                  ? result.receipt.organizationId
+                  : null,
+              }
+            : { status: "declined" },
+        );
         setPreview(null);
         loadInbox(null, inbox.status === "success" ? inbox.page : undefined, true);
       } else setPreview(result);
     } catch {
-      if (generationAtStart === tokenGeneration.current) {
+      if (
+        generationAtStart === tokenGeneration.current &&
+        currentActorId.current === actorIdAtStart
+      ) {
         setPreview(null);
         setResponseFailure({
           choice,
           token: commandToken,
           invitationId,
+          staffInvitation: acceptingStaffInvitation,
           ...(acknowledgement ? { acknowledgement } : {}),
         });
       }
@@ -326,6 +351,7 @@ export function InvitationResponse({
                 responseFailure.token,
                 responseFailure.acknowledgement,
                 responseFailure.invitationId,
+                responseFailure.staffInvitation,
               )
             }
           >
@@ -334,9 +360,17 @@ export function InvitationResponse({
         </div>
       )}
       {receipt && (
-        <p role="status">
-          Invitation {receipt}. Keep this confirmation if navigation or refresh is unavailable.
-        </p>
+        <div role="status" className="space-y-2">
+          <p>
+            Invitation {receipt.status}. Keep this confirmation if navigation or refresh is
+            unavailable.
+          </p>
+          {receipt.status === "accepted" && receipt.staffOrganizationId ? (
+            <Button asChild type="button">
+              <a href={`/organizations/${receipt.staffOrganizationId}`}>Open organization</a>
+            </Button>
+          ) : null}
+        </div>
       )}
     </section>
   );

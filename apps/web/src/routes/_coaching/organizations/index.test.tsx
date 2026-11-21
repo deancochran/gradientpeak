@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ loadMyOrganizations: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  loadMyOrganizations: vi.fn(),
+  loadMyPendingOrganizationInvitations: vi.fn(),
+}));
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: object) => ({ ...options, useLoaderData: () => ({}) }),
@@ -14,6 +17,7 @@ vi.mock("../../../components/coaching/organization-selector", () => ({
 
 vi.mock("../../../lib/coaching/server-functions", () => ({
   loadMyOrganizations: mocks.loadMyOrganizations,
+  loadMyPendingOrganizationInvitations: mocks.loadMyPendingOrganizationInvitations,
 }));
 
 import { Route } from "./index";
@@ -39,11 +43,29 @@ describe("coaching organizations route", () => {
 
   it("loads the requested URL-owned cursor page with the fixed page size", async () => {
     mocks.loadMyOrganizations.mockResolvedValue({ items: [], nextCursor: null, hasMore: false });
+    mocks.loadMyPendingOrganizationInvitations.mockResolvedValue({
+      invitations: [],
+      hasMore: false,
+    });
 
     await route.loader({ deps: { cursor: "page-2" } });
 
     expect(mocks.loadMyOrganizations).toHaveBeenCalledWith({
       data: { limit: 20, cursor: "page-2" },
+    });
+    expect(mocks.loadMyPendingOrganizationInvitations).toHaveBeenCalledWith({
+      data: { limit: 20 },
+    });
+  });
+
+  it("preserves accepted memberships when the separate invitation read fails", async () => {
+    const page = { items: [], nextCursor: null, hasMore: false };
+    mocks.loadMyOrganizations.mockResolvedValue(page);
+    mocks.loadMyPendingOrganizationInvitations.mockRejectedValue(new Error("offline"));
+
+    await expect(route.loader({ deps: { cursor: null } })).resolves.toEqual({
+      page,
+      invitations: { status: "unavailable" },
     });
   });
 });

@@ -6,7 +6,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   invalidate: vi.fn(),
-  links: [] as Array<{ params?: unknown; search?: unknown; to: string }>,
+  links: [] as Array<{
+    className?: string;
+    onClick?: () => void;
+    params?: unknown;
+    search?: unknown;
+    to: string;
+  }>,
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -15,12 +21,18 @@ vi.mock("@tanstack/react-router", () => ({
     ...props
   }: {
     children: ReactNode;
+    className?: string;
+    onClick?: () => void;
     params?: unknown;
     search?: unknown;
     to: string;
   }) => {
     mocks.links.push(props);
-    return <a href={props.to}>{children}</a>;
+    return (
+      <a href={props.to} onClick={props.onClick}>
+        {children}
+      </a>
+    );
   },
   useRouter: () => ({ invalidate: mocks.invalidate }),
 }));
@@ -35,10 +47,28 @@ import {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
   mocks.links.length = 0;
 });
 
 describe("OrganizationSelector", () => {
+  const pageWithOrganizations = {
+    items: [
+      {
+        organization: { organizationId: "organization-admin", name: "Summit Coaching" },
+        membership: { roles: ["admin"] },
+        isRootOwner: false,
+      },
+      {
+        organization: { organizationId: "organization-coach", name: "Peak Development" },
+        membership: { roles: ["coach"] },
+        isRootOwner: false,
+      },
+    ],
+    nextCursor: "next-page",
+    hasMore: true,
+  };
+
   it("keeps the administration overview as the default for an organization administrator", () => {
     render(
       <OrganizationSelectorFrame heading="Coaching organizations">
@@ -84,6 +114,12 @@ describe("OrganizationSelector", () => {
     expect(mocks.links).toContainEqual(
       expect.objectContaining({ to: "/organizations", search: { cursor: "next-page" } }),
     );
+    expect(mocks.links).toContainEqual(
+      expect.objectContaining({
+        className: expect.stringContaining("whitespace-normal"),
+        to: "/organizations/$organizationId/dashboard",
+      }),
+    );
   });
 
   it("sends a coach-only membership directly to assignment facts", () => {
@@ -112,6 +148,194 @@ describe("OrganizationSelector", () => {
         params: { organizationId: "organization-1" },
       }),
     );
+  });
+
+  it("keeps the current invitation page separate from accepted organization destinations", () => {
+    render(
+      <OrganizationSelector
+        page={{ items: [], nextCursor: null, hasMore: false }}
+        invitations={{
+          status: "available",
+          invitations: [
+            { invitationId: "pending-staff", kind: "staff" },
+            { invitationId: "pending-athlete", kind: "athlete" },
+          ],
+          hasMore: true,
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "No coaching organizations" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Membership pending" })).toBeTruthy();
+    expect(screen.getByText(/1 staff, 1 athlete/)).toBeTruthy();
+    expect(screen.getByText(/Review all invitation pages/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Review pending invitations" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /Open .* coaching/ })).toBeNull();
+    expect(mocks.links).toContainEqual(
+      expect.objectContaining({ to: "/organization-invitations" }),
+    );
+  });
+
+  it("does not intercept organization navigation outside existing draft guards", () => {
+    render(<OrganizationSelector page={pageWithOrganizations} />);
+
+    fireEvent.click(screen.getByRole("link", { name: "Open Summit Coaching coaching dashboard" }));
+
+    expect(mocks.invalidate).not.toHaveBeenCalled();
+  });
+
+  it("shows invitation recovery without hiding accepted memberships", () => {
+    render(
+      <OrganizationSelector page={pageWithOrganizations} invitations={{ status: "unavailable" }} />,
+    );
+
+    expect(screen.getByText("Summit Coaching")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Invitation status unavailable" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry invitation status" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Review organization invitations" })).toBeTruthy();
+  });
+
+  it("filters the loaded page by a trimmed, case-insensitive organization name", () => {
+    render(<OrganizationSelector page={pageWithOrganizations} />);
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Filter organizations on this page" }), {
+      target: { value: "  PEAK  " },
+    });
+
+    expect(screen.getByText("Peak Development")).toBeTruthy();
+    expect(screen.queryByText("Summit Coaching")).toBeNull();
+    expect(screen.getByText("Filters organizations shown on this page only.")).toBeTruthy();
+  });
+
+  it("preserves a valid unbroken organization name while allowing its heading and action to wrap", () => {
+    const organizationName = "x".repeat(120);
+    render(
+      <OrganizationSelector
+        page={{
+          items: [
+            {
+              organization: { organizationId: "organization-unbroken", name: organizationName },
+              membership: { roles: ["admin"] },
+              isRootOwner: false,
+            },
+          ],
+          nextCursor: null,
+          hasMore: false,
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: organizationName }).className).toContain(
+      "[overflow-wrap:anywhere]",
+    );
+    expect(
+      screen.getByRole("link", { name: `Open ${organizationName} coaching dashboard` }),
+    ).toBeTruthy();
+    expect(mocks.links).toContainEqual(
+      expect.objectContaining({
+        className: expect.stringContaining("[overflow-wrap:anywhere]"),
+        to: "/organizations/$organizationId/dashboard",
+      }),
+    );
+  });
+
+  it("shows a page-local no-match state without replacing pagination", () => {
+    render(<OrganizationSelector cursor="current-page" page={pageWithOrganizations} />);
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Filter organizations on this page" }), {
+      target: { value: "missing" },
+    });
+
+    expect(screen.getByText("No organizations on this page match this filter.")).toBeTruthy();
+    expect(screen.queryByRole("list", { name: "Coaching organizations" })).toBeNull();
+    expect(screen.getByRole("link", { name: "First page" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Next page" })).toBeTruthy();
+  });
+
+  it("clears the page-local filter without making an API request", () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    render(<OrganizationSelector page={pageWithOrganizations} />);
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Filter organizations on this page" }), {
+      target: { value: "peak" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Clear Filter organizations on this page" }),
+    );
+
+    expect(screen.getByText("Summit Coaching")).toBeTruthy();
+    expect(screen.getByText("Peak Development")).toBeTruthy();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("resets the filter for a new cursor page while retaining cursor navigation", () => {
+    const { rerender } = render(
+      <OrganizationSelector cursor="current-page" page={pageWithOrganizations} />,
+    );
+    fireEvent.change(screen.getByRole("searchbox", { name: "Filter organizations on this page" }), {
+      target: { value: "peak" },
+    });
+    expect(screen.queryByText("Summit Coaching")).toBeNull();
+    expect(mocks.links).toContainEqual(
+      expect.objectContaining({ to: "/organizations", search: { cursor: "next-page" } }),
+    );
+
+    rerender(
+      <OrganizationSelector
+        cursor="next-page"
+        page={{
+          items: [
+            {
+              organization: { organizationId: "organization-lakeside", name: "Lakeside Coaching" },
+              membership: { roles: ["coach"] },
+              isRootOwner: false,
+            },
+            {
+              organization: { organizationId: "organization-ridge", name: "Ridge Training" },
+              membership: { roles: ["admin"] },
+              isRootOwner: false,
+            },
+          ],
+          nextCursor: "third-page",
+          hasMore: true,
+        }}
+      />,
+    );
+
+    expect(
+      (
+        screen.getByRole("searchbox", {
+          name: "Filter organizations on this page",
+        }) as HTMLInputElement
+      ).value,
+    ).toBe("");
+    expect(screen.getByText("Lakeside Coaching")).toBeTruthy();
+    expect(screen.getByText("Ridge Training")).toBeTruthy();
+    expect(mocks.links).toContainEqual(
+      expect.objectContaining({ to: "/organizations", search: { cursor: "third-page" } }),
+    );
+  });
+
+  it("retains the filter when the same cursor page rerenders", () => {
+    const { rerender } = render(
+      <OrganizationSelector cursor="current-page" page={pageWithOrganizations} />,
+    );
+    fireEvent.change(screen.getByRole("searchbox", { name: "Filter organizations on this page" }), {
+      target: { value: "peak" },
+    });
+
+    rerender(<OrganizationSelector cursor="current-page" page={{ ...pageWithOrganizations }} />);
+
+    expect(
+      (
+        screen.getByRole("searchbox", {
+          name: "Filter organizations on this page",
+        }) as HTMLInputElement
+      ).value,
+    ).toBe("peak");
+    expect(screen.queryByText("Summit Coaching")).toBeNull();
+    expect(screen.getByText("Peak Development")).toBeTruthy();
   });
 
   it("distinguishes authorized empty and stale cursor pages", () => {

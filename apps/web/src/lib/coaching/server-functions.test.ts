@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   coachingAccess: vi.fn(),
+  listMyInvitations: vi.fn(),
   listMine: vi.fn(),
   create: vi.fn(),
   operationalOverview: vi.fn(),
@@ -34,6 +35,7 @@ vi.mock("@repo/api/server", () => ({
       organizations: {
         coachingAccess: mocks.coachingAccess,
         listMine: mocks.listMine,
+        invitations: { listMine: mocks.listMyInvitations },
         create: mocks.create,
         lifecycle: {
           operationalOverview: mocks.operationalOverview,
@@ -53,6 +55,7 @@ vi.mock("@repo/db/client", () => ({ db: mocks.db }));
 import {
   createCoachingOrganization,
   loadMyOrganizations,
+  loadMyPendingOrganizationInvitations,
   loadOrganizationCoachingAccess,
   loadOrganizationManagementOverview,
 } from "./server-functions";
@@ -66,6 +69,7 @@ describe("loadOrganizationCoachingAccess", () => {
     mocks.createApiContext.mockResolvedValue({ session: { user: { id: "profile-1" } } });
     mocks.coachingAccess.mockResolvedValue({ status: "forbidden" });
     mocks.listMine.mockResolvedValue({ items: [], nextCursor: null, hasMore: false });
+    mocks.listMyInvitations.mockResolvedValue({ items: [], nextCursor: null, hasMore: false });
     mocks.operationalOverview.mockResolvedValue({
       activeStaff: 0,
       activeEngagements: 0,
@@ -102,6 +106,9 @@ describe("loadOrganizationCoachingAccess", () => {
   it("uses POST transport for identity-scoped reads so a shared GET cache cannot replay them", () => {
     expect((loadOrganizationCoachingAccess as unknown as { method: string }).method).toBe("POST");
     expect((loadMyOrganizations as unknown as { method: string }).method).toBe("POST");
+    expect((loadMyPendingOrganizationInvitations as unknown as { method: string }).method).toBe(
+      "POST",
+    );
     expect((loadOrganizationManagementOverview as unknown as { method: string }).method).toBe(
       "POST",
     );
@@ -188,6 +195,7 @@ describe("loadMyOrganizations", () => {
     mocks.resolveAuthSessionFromHeaders.mockResolvedValue({ user: { id: "profile-1" } });
     mocks.createApiContext.mockResolvedValue({ session: { user: { id: "profile-1" } } });
     mocks.listMine.mockResolvedValue({ items: [], nextCursor: null, hasMore: false });
+    mocks.listMyInvitations.mockResolvedValue({ items: [], nextCursor: null, hasMore: false });
   });
 
   it("binds the request session and DB context before listing the requested page", async () => {
@@ -219,5 +227,59 @@ describe("loadMyOrganizations", () => {
 
     expect(mocks.createApiContext).not.toHaveBeenCalled();
     expect(mocks.listMine).not.toHaveBeenCalled();
+  });
+});
+
+describe("loadMyPendingOrganizationInvitations", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.resolveAuthSessionFromHeaders.mockResolvedValue({ user: { id: "profile-1" } });
+    mocks.createApiContext.mockResolvedValue({ session: { user: { id: "profile-1" } } });
+  });
+
+  it("keeps only pending recipient-safe invitations separate from organization memberships", async () => {
+    const pending = {
+      invitationId: "11111111-1111-4111-8111-111111111111",
+      organizationId: ORGANIZATION_ID,
+      kind: "staff",
+      requestedRole: "coach",
+      status: "pending",
+      expiresAt: new Date("2030-01-01"),
+      createdAt: new Date("2029-01-01"),
+    };
+    mocks.listMyInvitations.mockResolvedValue({
+      items: [
+        pending,
+        { ...pending, invitationId: "22222222-2222-4222-8222-222222222222", status: "accepted" },
+      ],
+      nextCursor: null,
+      hasMore: false,
+    });
+
+    await expect(loadMyPendingOrganizationInvitations({ data: { limit: 20 } })).resolves.toEqual({
+      invitations: [pending],
+      hasMore: false,
+    });
+    expect(mocks.listMyInvitations).toHaveBeenCalledWith({ limit: 20, cursor: null });
+  });
+
+  it("preserves first-page pagination truth when later invitations exist", async () => {
+    mocks.listMyInvitations.mockResolvedValue({
+      items: [],
+      nextCursor: "next-page",
+      hasMore: true,
+    });
+
+    await expect(loadMyPendingOrganizationInvitations({ data: { limit: 20 } })).resolves.toEqual({
+      invitations: [],
+      hasMore: true,
+    });
+  });
+
+  it("rejects malformed input before reading identity-scoped invitations", async () => {
+    await expect(
+      loadMyPendingOrganizationInvitations({ data: { limit: 51, cursor: "attacker" } as never }),
+    ).rejects.toThrow();
+    expect(mocks.createApiContext).not.toHaveBeenCalled();
   });
 });

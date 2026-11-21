@@ -13,12 +13,17 @@ import { CoachAccessDenied } from "./coach-access-denied";
 afterEach(cleanup);
 
 describe("CoachAccessDenied", () => {
-  it("uses neutral authorization wording and provides selector and standard-app escapes", () => {
+  it("uses neutral authorization wording and provides selector and Personal workspace escapes", () => {
     render(<CoachAccessDenied />);
 
     expect(screen.getByText(/not available for this coaching session/i)).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Choose an organization" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Return to the standard app" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Organization access unavailable" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Choose an organization" }).getAttribute("href")).toBe(
+      "/organizations",
+    );
+    expect(
+      screen.getByRole("link", { name: "Return to Personal workspace" }).getAttribute("href"),
+    ).toBe("/");
     expect(screen.queryByText(/membership|role/i)).toBeNull();
   });
 });

@@ -11,9 +11,12 @@ export function CoachAccessDenied() {
           <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-slate-800">
             <ShieldX className="h-5 w-5 text-slate-300" />
           </div>
-          <h1 className="font-semibold leading-none tracking-tight">Coaching access required</h1>
+          <h1 className="font-semibold leading-none tracking-tight">
+            Organization access unavailable
+          </h1>
           <CardDescription className="text-slate-400">
-            This organization is not available for this coaching session.
+            This organization is not available for this coaching session. Its access may have ended;
+            your Personal athlete records are not deleted.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-3">
@@ -25,7 +28,7 @@ export function CoachAccessDenied() {
             variant="outline"
             className="border-slate-700 bg-transparent text-slate-100"
           >
-            <Link to="/">Return to the standard app</Link>
+            <Link to="/">Return to Personal workspace</Link>
           </Button>
         </CardContent>
       </Card>

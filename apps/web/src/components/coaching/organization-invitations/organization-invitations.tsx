@@ -76,6 +76,80 @@ export function OrganizationInvitations({
   );
 }
 
+export function OrganizationInvitationsPending() {
+  return (
+    <section aria-labelledby="organization-invitations-pending-heading" className="space-y-5">
+      <div className="space-y-1">
+        <h1
+          id="organization-invitations-pending-heading"
+          className="text-3xl font-semibold tracking-tight text-white"
+        >
+          Organization invitations
+        </h1>
+        <p
+          role="status"
+          aria-label="Loading organization invitations"
+          aria-live="polite"
+          className="text-sm text-slate-400"
+        >
+          Loading organization invitations…
+        </p>
+      </div>
+      <div aria-hidden="true" className="space-y-5">
+        <div className="h-56 animate-pulse rounded-lg border border-slate-800 bg-slate-900" />
+        <div className="h-40 animate-pulse rounded-lg border border-slate-800 bg-slate-900" />
+      </div>
+    </section>
+  );
+}
+
+export function OrganizationInvitationsError() {
+  const router = useRouter();
+  const [retrying, setRetrying] = useState(false);
+
+  const retry = async () => {
+    setRetrying(true);
+    try {
+      // Keep this boundary in place until a fresh route read succeeds; it must
+      // not reveal a prior invitation page or its authorization-derived controls.
+      await router.invalidate({ sync: true });
+    } catch {
+      // The route error boundary remains visible for another explicit retry.
+    } finally {
+      setRetrying(false);
+    }
+  };
+
+  return (
+    <section aria-labelledby="organization-invitations-error-heading" className="space-y-5">
+      <div className="space-y-1">
+        <h1
+          id="organization-invitations-error-heading"
+          className="text-3xl font-semibold tracking-tight text-white"
+        >
+          Organization invitations
+        </h1>
+      </div>
+      <Card className="border-slate-800 bg-slate-900 text-slate-50">
+        <CardContent className="flex flex-wrap items-center gap-3 py-6">
+          <p role="alert" className="text-sm text-slate-400">
+            We could not load organization invitations. Retry the current organization invitation
+            read.
+          </p>
+          <Button
+            type="button"
+            className="bg-cyan-400 text-slate-950 hover:bg-cyan-300"
+            disabled={retrying}
+            onClick={() => void retry()}
+          >
+            {retrying ? "Retrying organization invitations…" : "Retry organization invitations"}
+          </Button>
+        </CardContent>
+      </Card>
+    </section>
+  );
+}
+
 function OrganizationInvitationsContents({
   organizationId,
   actorProfileId,
