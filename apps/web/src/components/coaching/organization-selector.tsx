@@ -320,10 +320,18 @@ function InvitationStatus({
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-3">
-            <Button onClick={() => void router.invalidate()} variant="outline">
+            <Button
+              onClick={() => void router.invalidate()}
+              variant="outline"
+              className="h-auto max-w-full whitespace-normal border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
+            >
               Retry invitation status
             </Button>
-            <Button asChild variant="outline">
+            <Button
+              asChild
+              variant="outline"
+              className="h-auto max-w-full whitespace-normal border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
+            >
               <Link to="/organization-invitations">Review organization invitations</Link>
             </Button>
           </CardContent>
