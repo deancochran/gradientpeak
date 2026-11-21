@@ -7,7 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useRef, useState } from "react";
 import { activityPlanPreparationSearch } from "../../../lib/coaching/activity-plan-preparation-context";
@@ -66,6 +66,7 @@ export function CoachAthleteCalendar({
   organizationId: string;
   result: Result;
 }) {
+  const navigate = useNavigate();
   const load = useServerFn(loadCoachAthleteCalendar);
   const sourceScope = requestKey(actorProfileId, organizationId, athleteId, initialRange);
   const initialStartDate = initialRange.startDate;
@@ -155,6 +156,13 @@ export function CoachAthleteCalendar({
         return;
       }
       setRange(nextRange);
+      void navigate({
+        search: ((previous: Record<string, unknown>) => ({
+          ...previous,
+          calendarStartDate: nextRange.startDate,
+        })) as never,
+        replace: true,
+      });
       setResult(
         append && result.status === "granted"
           ? {
@@ -288,20 +296,29 @@ export function CoachAthleteCalendar({
         {displayedResult.projection.events.length ? (
           <ul className="space-y-2" aria-label="Planned sessions">
             {displayedResult.projection.events.map((event) => (
-              <li
-                key={event.eventId}
-                className="flex items-center justify-between rounded border border-border p-3"
-              >
-                <span>{event.planningDate}</span>
-                <span className="capitalize text-muted-foreground">{event.activityCategory}</span>
-                <Badge className="border-primary/30 bg-primary/10 text-primary">
-                  {event.status}
-                </Badge>
-                <Button asChild size="sm" type="button" variant="outline">
-                  <Link to="/activity-plans" search={prepareFor(event.planningDate) as never}>
-                    Prepare a separate plan
-                  </Link>
-                </Button>
+              <li key={event.eventId} className="rounded border border-border p-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span>{event.planningDate}</span>
+                    <span className="capitalize text-muted-foreground">
+                      {event.activityCategory}
+                    </span>
+                    <Badge className="border-primary/30 bg-primary/10 text-primary">
+                      {event.status}
+                    </Badge>
+                  </div>
+                  <Button
+                    asChild
+                    className="w-full whitespace-normal sm:w-auto sm:shrink-0"
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    <Link to="/activity-plans" search={prepareFor(event.planningDate) as never}>
+                      Prepare a separate plan
+                    </Link>
+                  </Button>
+                </div>
               </li>
             ))}
           </ul>

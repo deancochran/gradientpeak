@@ -4,11 +4,12 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import type React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ load: vi.fn() }));
+const mocks = vi.hoisted(() => ({ load: vi.fn(), navigate: vi.fn() }));
 
 vi.mock("@tanstack/react-start", () => ({ useServerFn: () => mocks.load }));
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: React.ReactNode }) => <a href="/activity-plans">{children}</a>,
+  useNavigate: () => mocks.navigate,
 }));
 vi.mock("../../../lib/coaching/athlete-calendar-server-functions", () => ({
   loadCoachAthleteCalendar: {},
@@ -26,6 +27,7 @@ import { CoachAthleteCalendar } from "./coach-athlete-calendar";
 afterEach(() => {
   cleanup();
   mocks.load.mockReset();
+  mocks.navigate.mockReset();
 });
 
 const ids = {
@@ -113,6 +115,11 @@ describe("CoachAthleteCalendar", () => {
     });
     await screen.findByText("2026-03-09");
     expect(screen.getAllByText("2026-03-08")).toHaveLength(1);
+    expect(mocks.navigate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        replace: true,
+      }),
+    );
   });
 
   it("discards a deferred completion through an actor A-B-A scope transition", async () => {

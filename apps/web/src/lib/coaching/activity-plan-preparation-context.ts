@@ -15,6 +15,15 @@ export type ActivityPlanPreparationSearch = ActivityPlanPreparationContext & {
   activityPlanId?: string;
 };
 
+export type AthleteWorkspaceSearch = {
+  activityPlanId?: string;
+  athleteId?: string;
+  calendarStartDate?: string;
+  organizationId?: string;
+  planningDate?: string;
+  returnTo?: (typeof returnToValues)[number];
+};
+
 function isRealDate(value: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const [yearPart, monthPart, dayPart] = value.split("-");
@@ -67,6 +76,21 @@ export function parseActivityPlanPreparationSearch(
   if (!context) return null;
   const activityPlanId = uuid.safeParse(search.activityPlanId);
   return activityPlanId.success ? { ...context, activityPlanId: activityPlanId.data } : context;
+}
+
+/** Validates the route-owned context without treating an incomplete form draft as a return flow. */
+export function parseAthleteWorkspaceSearch(
+  search: Record<string, unknown>,
+): AthleteWorkspaceSearch {
+  const calendarStartDate =
+    typeof search.calendarStartDate === "string" && isRealDate(search.calendarStartDate)
+      ? search.calendarStartDate
+      : undefined;
+  const preparation = parseActivityPlanPreparationSearch(search);
+  return {
+    ...(calendarStartDate ? { calendarStartDate } : {}),
+    ...(preparation ?? {}),
+  };
 }
 
 export function activityPlanPreparationSearch(

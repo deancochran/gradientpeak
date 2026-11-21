@@ -169,6 +169,7 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
 
   await coachPage.goto(`/organizations/${organizationId}/athletes/${athleteActor.profileId}`);
   await waitForAppHydration(coachPage);
+  await coachPage.getByText("Training context and shared data", { exact: true }).click();
   await expect(coachPage.getByText("255 watts", { exact: true })).toBeVisible();
   await expect(coachPage.getByText("Published training state", { exact: true })).toBeVisible();
   await expect(coachPage.getByText(/Fitness \(Long-term load\)/)).toBeVisible();
@@ -176,6 +177,22 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
   await expect(coachPage.getByText(/Form \(Load balance\)/)).toBeVisible();
   await expect(coachPage.getByText("Publish an activity plan", { exact: true })).toBeVisible();
   await coachPage.getByLabel("Athlete planning date", { exact: true }).fill(planningDate);
+  await coachPage.getByRole("button", { name: "Next week", exact: true }).click();
+  await expect(
+    coachPage.getByText(/Scheduled work in .* \(exclusive\)\. This selected range/i),
+  ).toBeVisible();
+  await expect(coachPage.getByLabel("Athlete planning date", { exact: true })).toHaveValue(
+    planningDate,
+  );
+  await coachPage.getByRole("link", { name: "Prepare activity plan", exact: true }).click();
+  await expect(coachPage.getByText("Preparing for an athlete", { exact: true })).toBeVisible();
+  await coachPage.goBack();
+  await expect(coachPage.getByLabel("Athlete planning date", { exact: true })).toHaveValue(
+    planningDate,
+  );
+  await expect(
+    coachPage.getByText(/Scheduled work in .* \(exclusive\)\. This selected range/i),
+  ).toBeVisible();
   await coachPage.getByRole("link", { name: "Prepare activity plan", exact: true }).click();
   await expect(coachPage.getByText("Preparing for an athlete", { exact: true })).toBeVisible();
   await coachPage.getByRole("button", { name: "Create activity plan", exact: true }).click();

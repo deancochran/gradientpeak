@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   parseActivityPlanPreparationContext,
   parseActivityPlanPreparationSearch,
+  parseAthleteWorkspaceSearch,
 } from "./activity-plan-preparation-context";
 
 const valid = {
@@ -33,5 +34,14 @@ describe("activity plan preparation URL context", () => {
     expect(
       parseActivityPlanPreparationContext({ ...valid, calendarStartDate: "2026-02-30" }),
     ).toEqual(valid);
+  });
+
+  it("allows a calendar range without mistaking an incomplete publication draft for a return flow", () => {
+    expect(
+      parseAthleteWorkspaceSearch({
+        athleteId: valid.athleteId,
+        calendarStartDate: "2026-11-22",
+      }),
+    ).toEqual({ calendarStartDate: "2026-11-22" });
   });
 });

@@ -153,15 +153,9 @@ export function CoachActivityPlanPublication({
       planningDate: next.planningDate,
       returnTo: "athlete-workspace",
     });
-    if (!context) {
-      void navigate({
-        to: "/organizations/$organizationId/athletes/$athleteId",
-        params: { athleteId, organizationId },
-        search: {},
-        replace: true,
-      } as never);
-      return;
-    }
+    // A date control can temporarily be blank while the coach corrects it.
+    // Keep that in-memory draft and the last valid return URL intact.
+    if (!context) return;
     void navigate({
       to: "/organizations/$organizationId/athletes/$athleteId",
       params: { athleteId, organizationId },
@@ -216,9 +210,6 @@ export function CoachActivityPlanPublication({
   return (
     <Card className="border-primary/30 bg-background text-foreground shadow-[0_0_0_1px_rgba(34,211,238,0.04)]">
       <CardHeader className="space-y-2">
-        <p className="text-xs font-medium uppercase tracking-[0.18em] text-primary">
-          Primary action
-        </p>
         <CardTitle className="text-xl tracking-tight">Publish an activity plan</CardTitle>
         <CardDescription className="text-muted-foreground">
           Choose one of your activity plans and the athlete’s local planning date. Publishing

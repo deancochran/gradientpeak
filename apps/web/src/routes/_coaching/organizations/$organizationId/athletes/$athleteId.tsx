@@ -10,6 +10,7 @@ import { CoachAthleteOverview } from "../../../../../components/coaching/athlete
 import { CoachAthleteZonesSection } from "../../../../../components/coaching/athletes/coach-athlete-zones-section";
 import {
   parseActivityPlanPreparationSearch,
+  parseAthleteWorkspaceSearch,
   preparationMatchesWorkspace,
 } from "../../../../../lib/coaching/activity-plan-preparation-context";
 import {
@@ -33,15 +34,9 @@ export const Route = createFileRoute(
 )({
   pendingMs: 0,
   validateSearch: (search: Record<string, unknown>) => {
-    const preparation = parseActivityPlanPreparationSearch(search);
-    return preparation ?? {};
+    return parseAthleteWorkspaceSearch(search);
   },
-  loaderDeps: ({ search }) => ({
-    calendarStartDate:
-      "calendarStartDate" in search && typeof search.calendarStartDate === "string"
-        ? search.calendarStartDate
-        : undefined,
-  }),
+  loaderDeps: ({ search }) => ({ calendarStartDate: search.calendarStartDate }),
   loader: async ({ context, params, deps = {} }) => {
     const data = { organizationId: params.organizationId, athleteProfileId: params.athleteId };
     const defaultRange = currentCalendarWeek();
@@ -163,15 +158,6 @@ function AthleteWorkspacePage() {
         selectedAthlete={identity}
       />
       <div className="grid items-start gap-6 xl:grid-cols-2">
-        {identity ? (
-          <CoachActivityPlanPublication
-            athleteId={athleteId}
-            calendarStartDate={preparation?.calendarStartDate}
-            key={`${organizationId}:${athleteId}:${preparation?.activityPlanId ?? ""}:${preparation?.planningDate ?? ""}`}
-            organizationId={organizationId}
-            preparation={preparation}
-          />
-        ) : null}
         <div className="space-y-6">
           <CoachAthleteCompletedActivities
             actorProfileId={actorProfileId}
@@ -199,6 +185,17 @@ function AthleteWorkspacePage() {
             result={identity ? calendar : forbiddenCalendar}
           />
         </div>
+        {identity ? (
+          <CoachActivityPlanPublication
+            athleteId={athleteId}
+            {...(preparation?.calendarStartDate
+              ? { calendarStartDate: preparation.calendarStartDate }
+              : {})}
+            key={`${organizationId}:${athleteId}:${preparation?.activityPlanId ?? ""}:${preparation?.planningDate ?? ""}`}
+            organizationId={organizationId}
+            preparation={preparation}
+          />
+        ) : null}
       </div>
       <details className="group rounded-xl border border-border bg-muted/50">
         <summary className="cursor-pointer list-none px-5 py-4 font-medium text-foreground marker:hidden">
