@@ -163,8 +163,35 @@ acceptance, not inferred from preview. No preserved account/data/provider writes
 or external requests occurred. Earlier accepted chooser/directory walkthrough
 evidence remains in the same local artifact directory.
 
-Full quality/publication results are tracked by `gp-6sa` and the consolidated PR;
-they are not inferred from the preview checks above.
+### Publication-gate follow-ups
+
+- `41245887` fixes three exact-optional-prop assignments by omitting absent props
+  rather than passing explicit `undefined`. The strict UI compiler and the
+  repository strictness ratchet passed with **zero added diagnostics**. No
+  baseline was weakened; independent follow-up review is clear.
+- `fc7114e7` moves the chart canvas mock from shared native test setup into the
+  owning test file. Mobile imports that shared setup and needs its own richer
+  Victory mock for other charts. The broad run exposed this test isolation issue;
+  no product behavior or assertions changed. Independent follow-up review is clear.
+- After these follow-ups, the full shared-UI suite passed **222 web / 247 native**
+  tests. The affected mobile training-path/ledger suites passed **48 tests**.
+  Earlier browser and bundle evidence remains applicable after inspecting the
+  three prop-omission changes and test-only relocation; neither changes data,
+  geometry, dependencies or visual composition.
+
+The full `pnpm quality:agent --base 156df86bc50403e6b6ed774067cdf294df3f8a63`
+gate subsequently **passed** on `fc7114e7` (final log
+`.logs/coaching-shared-ui/quality-final-3.log`). It selected the full profile:
+generated artifacts, formatting/lint, architecture, guidance/current contracts,
+all workspace types and strictness, workspace/parity/architecture/security tests,
+dependency checks, guarded disposable DB verification and determinism, four
+live-DB API tests and the disposable browser recovery smoke. The workspace run
+included **1,516 web tests**, **1,459 native mobile tests with two existing skips**,
+and the **222 web / 247 native shared-UI tests** above. These are actual gate
+results, not inferred from preview health.
+
+Source publication and remote-check disposition are tracked by `gp-6sa` and the
+consolidated PR.
 Main/release prerequisite reconciliation remains separately owned by `gp-awt.42`;
 this presentation work does not authorize schema changes, preserved-data resets,
 provider activation, production deployment or bypassing required checks.
