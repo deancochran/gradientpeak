@@ -11,6 +11,7 @@ import {
 import { and, eq, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { afterAll, describe, expect, it } from "vitest";
+import { readOrganizationContext } from "../../application/organizations/read-coaching-access";
 import { createOrganizationAccessRepository } from "../../repositories/organization-access-repository";
 
 function hasExplicitDisposableLocalDatabase(): boolean {
@@ -47,7 +48,12 @@ describeDisposable("organization access against a disposable migrated PostgreSQL
       const rootMembershipId = randomUUID();
       const coachMembershipId = randomUUID();
       const otherRootMembershipId = randomUUID();
-      const now = new Date();
+      const { rows: transactionTimestampRows } = await connection.query<{
+        transactionTimestamp: Date;
+      }>('select transaction_timestamp() as "transactionTimestamp"');
+      const transactionTimestamp = transactionTimestampRows[0]?.transactionTimestamp;
+      if (!transactionTimestamp) throw new Error("Expected PostgreSQL transaction timestamp");
+      const now = new Date(transactionTimestamp);
       const future = new Date(now.getTime() + 60_000);
 
       for (const [id, label] of [
@@ -122,6 +128,11 @@ describeDisposable("organization access against a disposable migrated PostgreSQL
       );
       await expect(
         repository.findActiveMembershipContext({ organizationId, profileId: coachProfileId }),
+      ).resolves.toEqual(
+        expect.objectContaining({ membershipId: coachMembershipId, roleKeys: [] }),
+      );
+      await expect(
+        readOrganizationContext({ repository, organizationId, profileId: coachProfileId }),
       ).resolves.toBeNull();
       await db
         .update(organizationMembershipRoleGrants)
@@ -140,7 +151,15 @@ describeDisposable("organization access against a disposable migrated PostgreSQL
       });
       await expect(
         repository.findActiveMembershipContext({ organizationId, profileId: coachProfileId }),
-      ).resolves.toEqual(expect.objectContaining({ membershipId: coachMembershipId }));
+      ).resolves.toEqual(
+        expect.objectContaining({ membershipId: coachMembershipId, roleKeys: ["coach"] }),
+      );
+      await expect(
+        readOrganizationContext({ repository, organizationId, profileId: coachProfileId }),
+      ).resolves.toMatchObject({
+        membership: { membershipId: coachMembershipId, roles: ["coach"] },
+        isRootOwner: false,
+      });
       await expect(
         repository.findActiveMembershipContext({ organizationId, profileId: rootProfileId }),
       ).resolves.toEqual(
@@ -148,6 +167,13 @@ describeDisposable("organization access against a disposable migrated PostgreSQL
       );
       await expect(
         repository.findActiveMembershipContext({
+          organizationId: otherOrganizationId,
+          profileId: coachProfileId,
+        }),
+      ).resolves.toBeNull();
+      await expect(
+        readOrganizationContext({
+          repository,
           organizationId: otherOrganizationId,
           profileId: coachProfileId,
         }),
@@ -160,6 +186,9 @@ describeDisposable("organization access against a disposable migrated PostgreSQL
       await expect(
         repository.findActiveMembershipContext({ organizationId, profileId: coachProfileId }),
       ).resolves.toBeNull();
+      await expect(
+        readOrganizationContext({ repository, organizationId, profileId: coachProfileId }),
+      ).resolves.toBeNull();
       await db
         .update(organizations)
         .set({ suspended_at: null })
@@ -171,6 +200,9 @@ describeDisposable("organization access against a disposable migrated PostgreSQL
         .where(eq(organizationMemberships.id, coachMembershipId));
       await expect(
         repository.findActiveMembershipContext({ organizationId, profileId: coachProfileId }),
+      ).resolves.toBeNull();
+      await expect(
+        readOrganizationContext({ repository, organizationId, profileId: coachProfileId }),
       ).resolves.toBeNull();
 
       await db
@@ -190,6 +222,11 @@ describeDisposable("organization access against a disposable migrated PostgreSQL
         );
       await expect(
         repository.findActiveMembershipContext({ organizationId, profileId: coachProfileId }),
+      ).resolves.toEqual(
+        expect.objectContaining({ membershipId: coachMembershipId, roleKeys: [] }),
+      );
+      await expect(
+        readOrganizationContext({ repository, organizationId, profileId: coachProfileId }),
       ).resolves.toBeNull();
 
       await db
@@ -198,6 +235,9 @@ describeDisposable("organization access against a disposable migrated PostgreSQL
         .where(eq(organizationMemberships.id, coachMembershipId));
       await expect(
         repository.findActiveMembershipContext({ organizationId, profileId: coachProfileId }),
+      ).resolves.toBeNull();
+      await expect(
+        readOrganizationContext({ repository, organizationId, profileId: coachProfileId }),
       ).resolves.toBeNull();
 
       await connection.query("set constraints all immediate");
