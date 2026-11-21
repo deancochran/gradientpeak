@@ -1,28 +1,16 @@
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
+import {
+  TrainingStateChart,
+  TrainingStateLegend,
+  type TrainingStateSeriesSelection,
+  type TrainingStateVisualPoint,
+} from "@repo/ui/components/training-state-chart";
 import { Minus, TrendingDown, TrendingUp } from "lucide-react-native";
 import { View } from "react-native";
-import { CartesianChart, Line } from "victory-native";
 import { useTheme } from "@/lib/stores/theme-store";
 import { getPlanChartTheme } from "../training-path/planChartTheme";
 import type { PlanningLedgerPresentation } from "./planningLedgerPresentation";
-
-type StateDatum = Record<string, unknown> & {
-  actualFatigue: number | null;
-  actualFitness: number | null;
-  actualForm: number | null;
-  index: number;
-  projectedFatigue: number | null;
-  projectedFitness: number | null;
-  projectedForm: number | null;
-};
-type StateKey =
-  | "actualFitness"
-  | "actualFatigue"
-  | "actualForm"
-  | "projectedFitness"
-  | "projectedFatigue"
-  | "projectedForm";
 
 function Metric({
   direction,
@@ -57,15 +45,41 @@ export function TrainingStateContextChart({
 }) {
   const { resolvedTheme } = useTheme();
   const colors = getPlanChartTheme(resolvedTheme);
-  const chartData: StateDatum[] = state.points.map((point) => ({
-    actualFatigue: point.actualFatigue,
-    actualFitness: point.actualFitness,
-    actualForm: point.actualForm,
+  const visualPoints: TrainingStateVisualPoint[] = state.points.map((point) => ({
+    date: point.date,
     index: point.index,
-    projectedFatigue: point.projectedFatigue,
-    projectedFitness: point.projectedFitness,
-    projectedForm: point.projectedForm,
+    projected: {
+      fatigue: point.projectedFatigue,
+      fitness: point.projectedFitness,
+      form: point.projectedForm,
+    },
+    recorded: {
+      fatigue: point.actualFatigue,
+      fitness: point.actualFitness,
+      form: point.actualForm,
+    },
   }));
+  const visual = {
+    points: visualPoints,
+    sourceStatus: state.sourceStatus,
+    timeZone: state.timeZone,
+    unitLabel: state.unitLabel,
+  } as const;
+  const sourceStatus = state.sourceStatus;
+  const sources =
+    sourceStatus === "mixed"
+      ? (["recorded", "projected"] as const)
+      : sourceStatus === "unavailable"
+        ? []
+        : [sourceStatus];
+  const series: readonly TrainingStateSeriesSelection[] = [
+    { metric: "fitness", source: "recorded" },
+    { metric: "fatigue", source: "recorded" },
+    { metric: "form", source: "recorded" },
+    { metric: "fitness", source: "projected" },
+    { metric: "fatigue", source: "projected" },
+    { metric: "form", source: "projected" },
+  ];
 
   return (
     <View className="gap-3" testID="planning-ledger-training-state">
@@ -74,92 +88,30 @@ export function TrainingStateContextChart({
           Seven-day training state
         </Text>
         <Text className="text-xs text-muted-foreground">
-          Fitness, fatigue, and form in context
-          {state.latestSource ? ` · Latest values are ${state.latestSource.toLowerCase()}` : ""}
+          Fitness, fatigue, and form in {state.unitLabel.toLowerCase()} ({state.timeZone})
+          {sourceStatus !== "unavailable"
+            ? ` · ${sourceStatus === "mixed" ? "Recorded and projected values are shown separately" : `Values are ${sourceStatus}`}`
+            : ""}
         </Text>
       </View>
-      {chartData.length ? (
-        <View
-          accessible
-          accessibilityLabel={state.summary}
-          accessibilityRole="image"
-          className="h-40 overflow-hidden rounded-2xl border border-border bg-card p-2"
-          testID="planning-ledger-state-chart"
-        >
-          <CartesianChart<StateDatum, "index", StateKey>
-            data={chartData}
-            domainPadding={{ bottom: 8, left: 8, right: 8, top: 8 }}
-            frame={{ lineColor: "transparent", lineWidth: 0 }}
-            xKey="index"
-            yKeys={[
-              "actualFitness",
-              "actualFatigue",
-              "actualForm",
-              "projectedFitness",
-              "projectedFatigue",
-              "projectedForm",
-            ]}
-          >
-            {({ points }) => (
-              <>
-                <Line
-                  color={colors.fitness}
-                  connectMissingData={false}
-                  curveType="natural"
-                  points={points.actualFitness}
-                  strokeWidth={3}
-                />
-                <Line
-                  color={colors.fatigue}
-                  connectMissingData={false}
-                  curveType="natural"
-                  points={points.actualFatigue}
-                  strokeWidth={2.5}
-                />
-                <Line
-                  color={colors.form}
-                  connectMissingData={false}
-                  curveType="natural"
-                  points={points.actualForm}
-                  strokeWidth={2}
-                />
-                <Line
-                  color={colors.fitness}
-                  connectMissingData={false}
-                  curveType="natural"
-                  opacity={0.45}
-                  points={points.projectedFitness}
-                  strokeWidth={3}
-                />
-                <Line
-                  color={colors.fatigue}
-                  connectMissingData={false}
-                  curveType="natural"
-                  opacity={0.45}
-                  points={points.projectedFatigue}
-                  strokeWidth={2.5}
-                />
-                <Line
-                  color={colors.form}
-                  connectMissingData={false}
-                  curveType="natural"
-                  opacity={0.45}
-                  points={points.projectedForm}
-                  strokeWidth={2}
-                />
-              </>
-            )}
-          </CartesianChart>
-        </View>
+      {visualPoints.length ? (
+        <TrainingStateChart
+          colors={colors.trainingState}
+          emptyMessage="Training state is unavailable for this period."
+          series={series}
+          testId="planning-ledger-state-chart"
+          visual={visual}
+        />
       ) : (
         <Text className="rounded-xl bg-muted/20 px-3 py-3 text-sm text-muted-foreground">
           Training state is unavailable for this period.
         </Text>
       )}
-      <View className="flex-row gap-4">
-        <Text className="text-xs text-foreground">━ Recorded</Text>
-        <Text className="text-xs text-muted-foreground">━ Projected</Text>
-      </View>
+      <TrainingStateLegend
+        colors={colors.trainingState}
+        sources={sources}
+        testId="planning-ledger-state-legend"
+      />
       <View className="flex-row gap-4">
         <Metric
           direction={state.fitnessDirection}

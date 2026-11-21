@@ -52,7 +52,9 @@ describe("CoachAthleteOverview", () => {
     expect(screen.getByRole("img", { name: /Historical Fitness/ })).toBeTruthy();
     expect(screen.getByRole("img", { name: /Historical Fatigue/ })).toBeTruthy();
     expect(screen.getByRole("img", { name: /Historical Form.*-10.0/ })).toBeTruthy();
-    expect(screen.getByLabelText("Recent training load").className).toContain("dark");
+    expect(screen.getByLabelText("Training-state legend").textContent).toContain("Fitness");
+    expect(screen.getByLabelText("Training-state legend").textContent).toContain("Recorded");
+    expect(screen.getByLabelText("Recent training load").className).not.toContain("dark");
     expect(screen.getByRole("table").textContent).toContain("Modeled recent load");
     expect(screen.queryByText("Published load state")).toBeNull();
   });

@@ -1,3 +1,4 @@
+import type { TrainingStateMetricId } from "@repo/ui/components/training-state-chart";
 import { getResolvedThemeScale, type ResolvedThemeMode } from "@/lib/theme";
 
 /** Semantic colors shared by every Plan chart surface. Opacity remains a renderer concern. */
@@ -18,14 +19,19 @@ export function getPlanChartTheme(resolvedTheme: ResolvedThemeMode) {
     mutedForeground: scale.mutedForeground,
     selected: scale.muted,
   };
+  const trainingState: Record<TrainingStateMetricId, string> = {
+    fatigue: palette.chart3,
+    fitness: palette.chart1,
+    form: palette.chart5,
+  };
   return {
     ...palette,
     completed: palette.chart1,
     completedDimmed: palette.chart1,
     completedLoad: palette.mutedForeground,
-    fatigue: palette.chart3,
-    fitness: palette.chart1,
-    form: palette.chart5,
+    fatigue: trainingState.fatigue,
+    fitness: trainingState.fitness,
+    form: trainingState.form,
     intensity: {
       recovery: palette.mutedForeground,
       endurance: palette.chart1,
@@ -47,5 +53,6 @@ export function getPlanChartTheme(resolvedTheme: ResolvedThemeMode) {
     targetDimmed: palette.chart4,
     targetLoad: palette.muted,
     targetFitness: palette.foreground,
+    trainingState,
   };
 }
