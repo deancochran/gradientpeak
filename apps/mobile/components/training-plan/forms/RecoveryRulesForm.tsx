@@ -32,7 +32,7 @@ export function RecoveryRulesForm({ data, onChange, errors }: RecoveryRulesFormP
       <View className="gap-2">
         <Text className="text-2xl font-bold">Recovery Rules</Text>
         <Text className="text-muted-foreground">
-          Set guidelines for rest and recovery to prevent overtraining and maintain consistency.
+          Set rest-day and consecutive-day constraints for the generated schedule.
         </Text>
       </View>
 
@@ -49,7 +49,9 @@ export function RecoveryRulesForm({ data, onChange, errors }: RecoveryRulesFormP
           max={7}
           onChange={(nextValue) => onChange({ max_consecutive_days: nextValue })}
           helperText="Set max streak before a required rest day"
-          error={errors.max_consecutive_days}
+          {...(errors.max_consecutive_days === undefined
+            ? {}
+            : { error: errors.max_consecutive_days })}
         />
 
         {!errors.max_consecutive_days && data.max_consecutive_days > 0 && (
@@ -75,7 +77,7 @@ export function RecoveryRulesForm({ data, onChange, errors }: RecoveryRulesFormP
           max={7}
           onChange={(nextValue) => onChange({ min_rest_days_per_week: nextValue })}
           helperText="Set guaranteed complete rest days each week"
-          error={errors.min_rest_days}
+          {...(errors.min_rest_days === undefined ? {} : { error: errors.min_rest_days })}
         />
 
         {!errors.min_rest_days && data.min_rest_days_per_week >= 0 && (
@@ -135,32 +137,29 @@ export function RecoveryRulesForm({ data, onChange, errors }: RecoveryRulesFormP
         </Card>
       )}
 
-      {/* Tips Card */}
+      {/* Schedule notes */}
       <Card className="bg-muted/50">
         <CardContent className="p-4 gap-2">
-          <Text className="font-semibold mb-1">💡 Recovery Tips</Text>
+          <Text className="font-semibold mb-1">Schedule Notes</Text>
           <Text className="text-sm text-muted-foreground">
-            • Most athletes benefit from 1-2 complete rest days per week
+            • Rest-day settings reduce the days available for scheduled activities
           </Text>
           <Text className="text-sm text-muted-foreground">
-            • Training 3-4 consecutive days is common for serious athletes
+            • Consecutive-day settings determine when the schedule inserts a rest day
           </Text>
           <Text className="text-sm text-muted-foreground">
-            • Beginners should limit to 2-3 consecutive training days
-          </Text>
-          <Text className="text-sm text-muted-foreground">
-            • Rest days are when your body adapts and gets stronger
+            • Adjust either setting if the activity target does not fit the available days
           </Text>
         </CardContent>
       </Card>
 
-      {/* Warning for insufficient rest */}
+      {/* Notice for limited rest constraints */}
       {data.min_rest_days_per_week < 1 && data.max_consecutive_days > 5 && (
         <Alert icon={AlertCircle} iconClassName="text-amber-500">
-          <AlertTitle className="text-amber-500">Warning: High Risk of Overtraining</AlertTitle>
+          <AlertTitle className="text-amber-500">Few Rest Constraints</AlertTitle>
           <AlertDescription className="text-amber-500">
-            Your current settings allow very little rest. This significantly increases injury risk
-            and may lead to burnout. Consider adding more rest days.
+            These settings allow schedules with six or more consecutive activity days and no weekly
+            rest-day requirement. Review them to make sure they match the schedule you want.
           </AlertDescription>
         </Alert>
       )}
@@ -174,7 +173,7 @@ export function RecoveryRulesForm({ data, onChange, errors }: RecoveryRulesFormP
               <Text className="text-amber-500 font-semibold mb-1">Note: Limited Training Days</Text>
               <Text className="text-amber-500 text-sm">
                 With {data.min_rest_days_per_week} rest days, you only have {trainingDaysAvailable}{" "}
-                training days per week. This may limit your ability to build fitness effectively.
+                training days per week. This may limit how many activities can be scheduled.
               </Text>
             </View>
           </CardContent>

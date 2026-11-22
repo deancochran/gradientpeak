@@ -1,0 +1,4255 @@
+{
+  "version": 2,
+  "typescriptVersion": "6.0.3",
+  "projects": [
+    "apps/mobile/tsconfig.json",
+    "apps/web/tsconfig.json",
+    "packages/api/tsconfig.json",
+    "packages/auth/tsconfig.json",
+    "packages/core/tsconfig.json",
+    "packages/db/tsconfig.json",
+    "packages/ui/tsconfig.json",
+    "tooling/tailwindcss/tsconfig.json"
+  ],
+  "checks": [
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json"
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json"
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json"
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/auth/tsconfig.json"
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json"
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/db/tsconfig.json"
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json"
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "tooling/tailwindcss/tsconfig.json"
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json"
+    }
+  ],
+  "total": 1200,
+  "buckets": [
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app.config.ts",
+      "code": 2345,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app.config.ts",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app/(external)/__tests__/reset-password.jest.test.tsx",
+      "code": 2412,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app/(external)/callback.tsx",
+      "code": 2345,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app/(internal)/(standard)/activity-detail.tsx",
+      "code": 2322,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app/(internal)/(standard)/activity-detail.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app/(internal)/(standard)/activity-detail.tsx",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app/(internal)/(standard)/activity-plan-detail.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app/(internal)/(standard)/agenda-create.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app/(internal)/(standard)/agenda-create.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app/(internal)/(standard)/event-detail-update.tsx",
+      "code": 2345,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app/(internal)/(standard)/event-detail.tsx",
+      "code": 2322,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app/(internal)/(standard)/event-detail.tsx",
+      "code": 2345,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app/(internal)/(standard)/event-detail.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app/(internal)/(standard)/event-detail.tsx",
+      "code": 2379,
+      "count": 3
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app/(internal)/(standard)/goal-detail.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app/(internal)/(standard)/goals-list.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app/(internal)/(standard)/group-detail.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app/(internal)/(standard)/group-event-detail.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app/(internal)/(standard)/group-requests.tsx",
+      "code": 2322,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app/(internal)/(standard)/messages/index.tsx",
+      "code": 2322,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app/(internal)/(standard)/route-detail.tsx",
+      "code": 2345,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app/(internal)/(standard)/route-detail.tsx",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app/(internal)/(standard)/route-detail.tsx",
+      "code": 2412,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app/(internal)/(standard)/user/[userId].tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app/(internal)/(tabs)/discover.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app/(internal)/(tabs)/discover.tsx",
+      "code": 2769,
+      "count": 4
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app/(internal)/(tabs)/profile.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app/(internal)/record/sensors.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/activity-plan/ActivityPlanComposerScreen.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/activity-plan/ActivityPlanComposerScreen.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/activity-plan/ActivityPlanDetailScreen.tsx",
+      "code": 2345,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/activity-plan/ActivityPlanDetailScreen.tsx",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/activity-plan/useActivityPlanSocialController.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/activity/charts/ElevationProfileChart.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/activity/charts/StreamChart.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/activity/maps/ActivityRouteMap.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/activity/maps/RouteElevationCard.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/athlete-baseline/AthleteBaselineFields.tsx",
+      "code": 2375,
+      "count": 8
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/calendar/CalendarManualCreateModal.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/charts/ZoneDistributionOverTimeChart.tsx",
+      "code": 2322,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/discover/DiscoverFilterSheet.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/event/create/CreateEventFlow.tsx",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/event/EventEditorCard.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/event/EventEditorCard.tsx",
+      "code": 2769,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/groups/GroupActions.tsx",
+      "code": 2375,
+      "count": 5
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/groups/GroupEventList.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/groups/GroupList.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/onboarding/steps/GroupsAndPeopleStep.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/onboarding/steps/index.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/plan/GoalListItem.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/plan/GoalReadinessRing.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/plan/training-path/TrainingPathChart.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/plan/training-path/TrainingPathLoadChartSection.tsx",
+      "code": 2375,
+      "count": 3
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/plan/training-path/TrainingPathReviewChartSection.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/plan/training-path/trainingPathReviewItems.ts",
+      "code": 2322,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/plan/training-path/trainingPathReviewItems.ts",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/plan/training-path/trainingPathReviewItems.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/plan/training-path/TrainingPathSection.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/plan/training-path/trainingPathUtils.test.ts",
+      "code": 2322,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/plan/training-path/trainingPathUtils.ts",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/plan/training-path/TrainingPathWeekSummaryCard.tsx",
+      "code": 2375,
+      "count": 7
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/plan/training-path/useScrollableTrainingPathWindow.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/profile/ProfileCard.jest.test.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/profile/ProfileSummaryCard.tsx",
+      "code": 2375,
+      "count": 3
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/recording/cockpit/cards/MetricsInsightCard.tsx",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/recording/cockpit/RecordingControlSheet.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/recording/cockpit/RouteElevationBackdrop.tsx",
+      "code": 2769,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/settings/training-preferences/compactTrainingPreferences.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/settings/training-preferences/GlobalTrainingPreferenceCatalogSection.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/settings/training-preferences/sections/AvailabilitySection.tsx",
+      "code": 2375,
+      "count": 3
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/settings/training-preferences/sections/PlanLocalPreferencesSection.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/settings/training-preferences/TrainingPreferenceFieldRenderer.tsx",
+      "code": 2375,
+      "count": 5
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/settings/training-preferences/TrainingPreferencesBottomSheet.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/settings/training-preferences/TrainingPreferencesEditor.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/settings/training-preferences/TrainingPreferencesEditor.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/settings/training-preferences/TrainingPreferencesSurface.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/shared/ActivityCard.tsx",
+      "code": 2322,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/shared/ActivityCard.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/shared/ActivityPlanCard.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/shared/AppBottomSheet.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/shared/AppFormModal.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/shared/AppSelectionModal.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/shared/CompactInsightCard.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/shared/CompactInsightCard.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/shared/detail/DetailOverflowMenu.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/shared/detail/DetailScaffold.tsx",
+      "code": 2322,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/shared/detail/DetailScaffold.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/shared/EntityOwnerRow.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/shared/resource-picker/ResourcePickerModal.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/shared/resource-picker/ResourcePickerResultRow.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/shared/ResourceCardPrimitives.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/shared/RouteCard.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/shared/RouteCard.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/shared/ScreenState.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/shared/SearchField.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/social/EntityCommentsSection.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/training-plan/create/BuilderActivityAssignmentSheetContent.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/training-plan/create/BuilderAssumptionsPreferencesForms.tsx",
+      "code": 2322,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/training-plan/create/BuilderAssumptionsPreferencesForms.tsx",
+      "code": 2375,
+      "count": 11
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/training-plan/create/BuilderAssumptionsPreferencesForms.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/training-plan/create/BuilderFieldList.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/training-plan/create/BuilderFieldList.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/training-plan/create/BuilderSessionEditorSheetContent.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/training-plan/create/BuilderStrategyComposer.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/training-plan/create/BuilderTrainingPathReviewSection.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/training-plan/create/TrainingPlanBuilderScreen.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/training-plan/create/TrainingPlanBuilderSheetFrame.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/training-plan/create/TrainingPlanBuilderSheets.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/training-plan/create/useTrainingPlanBuilderController.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/training-plan/TrainingPlanStructureSection.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/training-plan/TrainingPlanTemplateSchedulingDialog.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/activity-efforts/curves.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/api.ts",
+      "code": 2322,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/hooks/forms/useActivityPlanForm.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/hooks/useActivitySubmission.ts",
+      "code": 2345,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/hooks/useActivitySubmission.ts",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/hooks/useActivitySubmission.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/hooks/useProfileGoals.ts",
+      "code": 2769,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/recording/recordingObjectActions.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/recording/useRecordScreenController.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/services/ActivityRecorder/fitRecordWriter.ts",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/services/ActivityRecorder/index.ts",
+      "code": 2345,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/services/ActivityRecorder/index.ts",
+      "code": 2375,
+      "count": 3
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/services/ActivityRecorder/index.ts",
+      "code": 2379,
+      "count": 10
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/services/ActivityRecorder/index.ts",
+      "code": 2412,
+      "count": 27
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/services/ActivityRecorder/KnownSensorRegistry.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/services/ActivityRecorder/LiveMetricsManager.ts",
+      "code": 2412,
+      "count": 14
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/services/ActivityRecorder/routeController.ts",
+      "code": 2322,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/services/ActivityRecorder/routeController.ts",
+      "code": 2345,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/services/ActivityRecorder/sensors.ts",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/services/ActivityRecorder/sensors.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/services/ActivityRecorder/sensors.ts",
+      "code": 2412,
+      "count": 11
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/services/ActivityRecorder/trainerControl.ts",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/services/ActivityRecorder/trainerControl.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/services/sentry.ts",
+      "code": 2345,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/services/sentry.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/stores/activitySelectionStore.ts",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/training-path/dailyTrainingPathModel.ts",
+      "code": 2322,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/training-path/trainingTimelineAdapters.ts",
+      "code": 2322,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/api/src/application/activities/submit-activity.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/api/src/application/activity-file-ingestion/analyze-parsed-activity-file.ts",
+      "code": 2322,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/api/src/application/activity-file-ingestion/analyze-parsed-activity-file.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/api/src/application/onboarding/complete-onboarding.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/api/src/application/training-plan/applyTemplateUseCase.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/api/src/application/training-plan/crudUseCases.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/api/src/application/training-plan/mutationUseCases.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/api/src/infrastructure/repositories/drizzle-training-plan-repository.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/api/src/infrastructure/repositories/drizzle-wahoo-sync-repository.ts",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/api/src/lib/errors/trpc.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/api/src/lib/integrations/wahoo/client.ts",
+      "code": 2412,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/api/src/lib/routes/route-file-helpers.ts",
+      "code": 2345,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/api/src/lib/routes/route-file-helpers.ts",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/api/src/lib/routes/route-file-helpers.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/api/src/lib/routes/route-parser.ts",
+      "code": 2375,
+      "count": 4
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/api/src/permissions/content-access.ts",
+      "code": 2379,
+      "count": 4
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/api/src/react.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/api/src/routers/activities.ts",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/api/src/routers/activity-plans.ts",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/api/src/routers/feed.ts",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/api/src/routers/goals.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/api/src/routers/onboarding.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/api/src/routers/planning/training-plans/base.ts",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/api/src/routers/profiles.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/api/src/utils/onboarding-helpers.ts",
+      "code": 2379,
+      "count": 3
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/core/activity-analysis/stress.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/core/activity-files/activity-file-parser.ts",
+      "code": 2345,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/core/activity-files/activity-file-parser.ts",
+      "code": 2375,
+      "count": 4
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/core/activity-files/activity-file-parser.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/core/calculations/duration.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/core/goals/validation.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/core/lib/fit-sdk-parser.ts",
+      "code": 2322,
+      "count": 5
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/core/lib/fit-sdk-parser.ts",
+      "code": 2345,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/core/lib/fit-sdk-parser.ts",
+      "code": 2375,
+      "count": 3
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/core/plan/buildProjectionEngineInput.ts",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/core/plan/computeLoadBootstrapState.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/core/plan/dailyFocusTemplates.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/core/plan/dailyLoadRecommendation.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/core/plan/deriveCreationContext.ts",
+      "code": 2345,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/core/plan/deriveCreationContext.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/core/plan/goalReadinessViewModel.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/core/plan/periodization/state/loadState.ts",
+      "code": 2379,
+      "count": 3
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/core/plan/projectionCalculations.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/core/plan/projectionTypes.ts",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/core/plan/readinessForecast.ts",
+      "code": 2322,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/core/plan/readinessForecast.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/core/plan/scoring/targetSatisfaction.ts",
+      "code": 2375,
+      "count": 4
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/core/plan/scoring/targetSatisfaction.ts",
+      "code": 2379,
+      "count": 4
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/core/plan/trainingPrescription.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/core/plan/verification/comparePlanLoadToHeuristic.ts",
+      "code": 2412,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/core/samples/activity-plan-builder.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/core/training-timeline/adapters.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/core/training-timeline/timeline.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/core/utils/dates.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/core/utils/recording-config-resolver.ts",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/core/utils/recording-source-resolver.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/components/avatar/index.native.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/components/badge/index.native.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/components/bounded-number-input/index.native.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/components/button/index.native.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/components/card/index.native.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/components/chart/index.native.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/components/date-input/index.native.tsx",
+      "code": 2375,
+      "count": 3
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/components/date-input/index.native.tsx",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/components/duration-input/index.native.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/components/file-input/index.native.tsx",
+      "code": 2345,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/components/file-input/index.native.tsx",
+      "code": 2375,
+      "count": 3
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/components/form-fields/index.native.tsx",
+      "code": 2375,
+      "count": 35
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/components/form/index.native.tsx",
+      "code": 2375,
+      "count": 3
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/components/input/index.native.tsx",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/components/integer-stepper/index.native.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/components/label/index.native.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/components/label/index.native.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/components/pace-input/index.native.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/components/percent-slider-input/index.native.tsx",
+      "code": 2375,
+      "count": 3
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/components/progress/index.native.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/components/search-field/index.native.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/components/select/index.native.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/components/separator/index.native.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/components/settings-group/index.native.tsx",
+      "code": 2375,
+      "count": 4
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/components/slider/index.native.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/components/switch/index.native.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/components/tabs/index.native.tsx",
+      "code": 2379,
+      "count": 4
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/components/text/index.native.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/components/textarea/index.native.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/components/time-input/index.native.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/components/time-input/index.native.tsx",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/components/weight-input-field/index.native.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/hooks/use-zod-form-submit.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/registry/native/dropdown-menu.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/registry/native/select.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/ui/src/registry/native/text.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "apps/web/src/components/charts/simple-trend-chart.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "apps/web/src/lib/activity-effort-presentation.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "apps/web/src/lib/activity-route-helpers.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "apps/web/src/lib/api/client.tsx",
+      "code": 2322,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "apps/web/src/lib/planning/server-actions.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "apps/web/src/lib/recording-web.ts",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "apps/web/src/lib/wahoo-sync-runtime.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "apps/web/src/lib/wahoo-webhook.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "apps/web/src/routes/_protected/activities/import.test.tsx",
+      "code": 2352,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "apps/web/src/routes/_protected/activities/import.test.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "apps/web/src/routes/_protected/activities/import.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "apps/web/src/routes/_protected/messages.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "apps/web/src/routes/_protected/notifications.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "apps/web/src/routes/_protected/plan.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "apps/web/src/routes/_protected/routes/$routeId/index.tsx",
+      "code": 2322,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "apps/web/src/routes/_protected/settings.tsx",
+      "code": 2375,
+      "count": 3
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "apps/web/src/routes/_protected/user/$userId/followers.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "apps/web/src/routes/_protected/user/$userId/following.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "apps/web/src/routes/_protected/user/$userId/index.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "apps/web/src/routes/auth/forgot-password.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "apps/web/src/routes/auth/login.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "apps/web/src/routes/auth/sign-up.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "apps/web/src/routes/auth/update-password.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "apps/web/src/routes/auth/verify.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "apps/web/vite.config.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/api/src/application/activities/submit-activity.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/api/src/application/activity-file-ingestion/analyze-parsed-activity-file.ts",
+      "code": 2322,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/api/src/application/activity-file-ingestion/analyze-parsed-activity-file.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/api/src/application/onboarding/complete-onboarding.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/api/src/application/training-plan/applyTemplateUseCase.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/api/src/application/training-plan/crudUseCases.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/api/src/application/training-plan/mutationUseCases.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/api/src/infrastructure/repositories/drizzle-training-plan-repository.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/api/src/infrastructure/repositories/drizzle-wahoo-sync-repository.ts",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/api/src/lib/errors/trpc.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/api/src/lib/integrations/wahoo/client.ts",
+      "code": 2412,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/api/src/lib/provider-sync/imported-activity.ts",
+      "code": 2345,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/api/src/lib/provider-sync/wahoo-activity-history-job-service.ts",
+      "code": 2379,
+      "count": 3
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/api/src/lib/provider-sync/wahoo-webhook-job-service.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/api/src/lib/routes/route-file-helpers.ts",
+      "code": 2345,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/api/src/lib/routes/route-file-helpers.ts",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/api/src/lib/routes/route-file-helpers.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/api/src/lib/routes/route-parser.ts",
+      "code": 2375,
+      "count": 4
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/api/src/permissions/content-access.ts",
+      "code": 2379,
+      "count": 4
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/api/src/react.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/api/src/routers/activities.ts",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/api/src/routers/activity-plans.ts",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/api/src/routers/feed.ts",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/api/src/routers/goals.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/api/src/routers/onboarding.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/api/src/routers/planning/training-plans/base.ts",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/api/src/routers/profiles.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/api/src/utils/onboarding-helpers.ts",
+      "code": 2379,
+      "count": 3
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/core/activity-analysis/stress.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/core/activity-files/activity-file-parser.ts",
+      "code": 2345,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/core/activity-files/activity-file-parser.ts",
+      "code": 2375,
+      "count": 4
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/core/activity-files/activity-file-parser.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/core/calculations/duration.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/core/goals/validation.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/core/lib/fit-sdk-parser.ts",
+      "code": 2322,
+      "count": 5
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/core/lib/fit-sdk-parser.ts",
+      "code": 2345,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/core/lib/fit-sdk-parser.ts",
+      "code": 2375,
+      "count": 3
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/core/plan/buildProjectionEngineInput.ts",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/core/plan/computeLoadBootstrapState.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/core/plan/dailyFocusTemplates.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/core/plan/dailyLoadRecommendation.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/core/plan/deriveCreationContext.ts",
+      "code": 2345,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/core/plan/deriveCreationContext.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/core/plan/goalReadinessViewModel.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/core/plan/periodization/state/loadState.ts",
+      "code": 2379,
+      "count": 3
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/core/plan/projectionCalculations.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/core/plan/projectionTypes.ts",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/core/plan/readinessForecast.ts",
+      "code": 2322,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/core/plan/readinessForecast.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/core/plan/scoring/targetSatisfaction.ts",
+      "code": 2375,
+      "count": 4
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/core/plan/scoring/targetSatisfaction.ts",
+      "code": 2379,
+      "count": 4
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/core/plan/trainingPrescription.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/core/plan/verification/comparePlanLoadToHeuristic.ts",
+      "code": 2412,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/core/samples/activity-plan-builder.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/core/training-timeline/adapters.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/core/training-timeline/timeline.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/core/utils/dates.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/core/utils/recording-config-resolver.ts",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/core/utils/recording-source-resolver.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/ui/src/components/alert-dialog/index.web.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/ui/src/components/avatar/index.web.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/ui/src/components/badge/index.web.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/ui/src/components/bounded-number-input/index.web.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/ui/src/components/button/index.web.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/ui/src/components/card/index.web.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/ui/src/components/chart/index.web.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/ui/src/components/date-input/index.web.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/ui/src/components/duration-input/index.web.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/ui/src/components/file-input/index.web.tsx",
+      "code": 2375,
+      "count": 4
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/ui/src/components/form-fields/index.web.tsx",
+      "code": 2375,
+      "count": 33
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/ui/src/components/input/index.web.tsx",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/ui/src/components/label/index.web.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/ui/src/components/pace-input/index.web.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/ui/src/components/percent-slider-input/index.web.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/ui/src/components/search-field/index.web.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/ui/src/components/select/index.web.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/ui/src/components/separator/index.web.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/ui/src/components/slider/index.web.tsx",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/ui/src/components/switch/index.web.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/ui/src/components/tabs/index.web.tsx",
+      "code": 2379,
+      "count": 4
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/ui/src/components/textarea/index.web.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/ui/src/components/time-input/index.web.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/ui/src/components/weight-input-field/index.web.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/ui/src/hooks/use-zod-form-submit.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/ui/src/registry/web/dropdown-menu.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/ui/src/registry/web/slider.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/ui/src/registry/web/sonner.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/api/src/application/activities/submit-activity.test.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/api/src/application/activities/submit-activity.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/api/src/application/activity-file-ingestion/analyze-parsed-activity-file.ts",
+      "code": 2322,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/api/src/application/activity-file-ingestion/analyze-parsed-activity-file.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/api/src/application/onboarding/complete-onboarding.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/api/src/application/training-plan/applyTemplateUseCase.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/api/src/application/training-plan/crudUseCases.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/api/src/application/training-plan/mutationUseCases.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/api/src/infrastructure/repositories/drizzle-training-plan-repository.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/api/src/infrastructure/repositories/drizzle-wahoo-sync-repository.ts",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/api/src/lib/errors/trpc.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/api/src/lib/integrations/wahoo/activity-importer.test.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/api/src/lib/integrations/wahoo/client.ts",
+      "code": 2412,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/api/src/lib/provider-sync/imported-activity.ts",
+      "code": 2345,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/api/src/lib/provider-sync/wahoo-activity-history-job-service.ts",
+      "code": 2379,
+      "count": 3
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/api/src/lib/provider-sync/wahoo-webhook-job-service.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/api/src/lib/routes/route-file-helpers.ts",
+      "code": 2345,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/api/src/lib/routes/route-file-helpers.ts",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/api/src/lib/routes/route-file-helpers.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/api/src/lib/routes/route-parser.ts",
+      "code": 2375,
+      "count": 4
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/api/src/permissions/content-access.ts",
+      "code": 2379,
+      "count": 4
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/api/src/react.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/api/src/routers/activities.ts",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/api/src/routers/activity-plans.ts",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/api/src/routers/feed.ts",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/api/src/routers/goals.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/api/src/routers/onboarding.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/api/src/routers/planning/training-plans/base.ts",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/api/src/routers/profiles.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/api/src/utils/onboarding-helpers.ts",
+      "code": 2379,
+      "count": 3
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/core/activity-analysis/stress.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/core/activity-files/activity-file-parser.ts",
+      "code": 2345,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/core/activity-files/activity-file-parser.ts",
+      "code": 2375,
+      "count": 4
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/core/activity-files/activity-file-parser.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/core/calculations/duration.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/core/goals/validation.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/core/lib/fit-sdk-parser.ts",
+      "code": 2322,
+      "count": 5
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/core/lib/fit-sdk-parser.ts",
+      "code": 2345,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/core/lib/fit-sdk-parser.ts",
+      "code": 2375,
+      "count": 3
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/core/plan/buildProjectionEngineInput.ts",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/core/plan/computeLoadBootstrapState.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/core/plan/dailyFocusTemplates.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/core/plan/dailyLoadRecommendation.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/core/plan/deriveCreationContext.ts",
+      "code": 2345,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/core/plan/deriveCreationContext.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/core/plan/goalReadinessViewModel.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/core/plan/periodization/state/loadState.ts",
+      "code": 2379,
+      "count": 3
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/core/plan/projectionCalculations.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/core/plan/projectionTypes.ts",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/core/plan/readinessForecast.ts",
+      "code": 2322,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/core/plan/readinessForecast.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/core/plan/scoring/targetSatisfaction.ts",
+      "code": 2375,
+      "count": 4
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/core/plan/scoring/targetSatisfaction.ts",
+      "code": 2379,
+      "count": 4
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/core/plan/trainingPrescription.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/core/plan/verification/comparePlanLoadToHeuristic.ts",
+      "code": 2412,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/core/samples/activity-plan-builder.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/core/training-timeline/adapters.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/core/training-timeline/timeline.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/core/utils/dates.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/core/utils/recording-config-resolver.ts",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/core/utils/recording-source-resolver.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/activity-analysis/stress.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/activity-files/activity-file-parser.ts",
+      "code": 2345,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/activity-files/activity-file-parser.ts",
+      "code": 2375,
+      "count": 4
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/activity-files/activity-file-parser.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/calculations/duration.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/goals/validation.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/lib/fit-sdk-parser.ts",
+      "code": 2322,
+      "count": 5
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/lib/fit-sdk-parser.ts",
+      "code": 2345,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/lib/fit-sdk-parser.ts",
+      "code": 2375,
+      "count": 3
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/load/__tests__/replay.baseline-override.test.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/plan/__tests__/projection-parity-fixtures.test.ts",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/plan/__tests__/system-training-plan-contract-test-utils.ts",
+      "code": 2322,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/plan/buildProjectionEngineInput.ts",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/plan/computeLoadBootstrapState.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/plan/dailyFocusTemplates.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/plan/dailyLoadRecommendation.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/plan/deriveCreationContext.ts",
+      "code": 2345,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/plan/deriveCreationContext.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/plan/goalReadinessViewModel.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/plan/periodization/state/loadState.ts",
+      "code": 2379,
+      "count": 3
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/plan/projection/__tests__/readiness.test-utils.ts",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/plan/projectionCalculations.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/plan/projectionTypes.ts",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/plan/readinessForecast.ts",
+      "code": 2322,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/plan/readinessForecast.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/plan/scoring/targetSatisfaction.ts",
+      "code": 2375,
+      "count": 4
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/plan/scoring/targetSatisfaction.ts",
+      "code": 2379,
+      "count": 4
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/plan/trainingPrescription.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/plan/verification/comparePlanLoadToHeuristic.ts",
+      "code": 2412,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/plan/verification/deriveFixtureBackedSystemPlanContracts.ts",
+      "code": 2322,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/plan/verification/fixtures/athlete-scenarios.ts",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/samples/activity-plan-builder.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/training-timeline/adapters.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/training-timeline/timeline.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/utils/dates.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/utils/recording-config-resolver.ts",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/core/tsconfig.json",
+      "path": "packages/core/utils/recording-source-resolver.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/db/tsconfig.json",
+      "path": "packages/core/activity-analysis/stress.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/db/tsconfig.json",
+      "path": "packages/core/calculations/duration.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/db/tsconfig.json",
+      "path": "packages/core/goals/validation.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/db/tsconfig.json",
+      "path": "packages/core/plan/buildProjectionEngineInput.ts",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/db/tsconfig.json",
+      "path": "packages/core/plan/computeLoadBootstrapState.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/db/tsconfig.json",
+      "path": "packages/core/plan/dailyFocusTemplates.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/db/tsconfig.json",
+      "path": "packages/core/plan/dailyLoadRecommendation.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/db/tsconfig.json",
+      "path": "packages/core/plan/deriveCreationContext.ts",
+      "code": 2345,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/db/tsconfig.json",
+      "path": "packages/core/plan/deriveCreationContext.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/db/tsconfig.json",
+      "path": "packages/core/plan/goalReadinessViewModel.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/db/tsconfig.json",
+      "path": "packages/core/plan/periodization/state/loadState.ts",
+      "code": 2379,
+      "count": 3
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/db/tsconfig.json",
+      "path": "packages/core/plan/projectionCalculations.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/db/tsconfig.json",
+      "path": "packages/core/plan/projectionTypes.ts",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/db/tsconfig.json",
+      "path": "packages/core/plan/readinessForecast.ts",
+      "code": 2322,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/db/tsconfig.json",
+      "path": "packages/core/plan/readinessForecast.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/db/tsconfig.json",
+      "path": "packages/core/plan/scoring/targetSatisfaction.ts",
+      "code": 2375,
+      "count": 4
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/db/tsconfig.json",
+      "path": "packages/core/plan/scoring/targetSatisfaction.ts",
+      "code": 2379,
+      "count": 4
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/db/tsconfig.json",
+      "path": "packages/core/plan/trainingPrescription.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/db/tsconfig.json",
+      "path": "packages/core/plan/verification/comparePlanLoadToHeuristic.ts",
+      "code": 2412,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/db/tsconfig.json",
+      "path": "packages/core/samples/activity-plan-builder.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/db/tsconfig.json",
+      "path": "packages/core/training-timeline/adapters.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/db/tsconfig.json",
+      "path": "packages/core/training-timeline/timeline.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/db/tsconfig.json",
+      "path": "packages/core/utils/dates.ts",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/db/tsconfig.json",
+      "path": "packages/core/utils/recording-config-resolver.ts",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/db/tsconfig.json",
+      "path": "packages/core/utils/recording-source-resolver.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/accordion/index.native.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/accordion/index.web.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/alert-dialog/index.native.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/alert-dialog/index.web.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/avatar/index.native.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/avatar/index.web.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/badge/index.native.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/badge/index.web.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/bounded-number-input/index.native.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/bounded-number-input/index.web.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/button/index.native.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/button/index.web.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/card/index.native.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/card/index.web.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/chart/index.native.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/chart/index.web.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/checkbox/index.web.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/date-input/date-input.native.stories.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/date-input/date-input.stories.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/date-input/index.native.tsx",
+      "code": 2375,
+      "count": 3
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/date-input/index.native.tsx",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/date-input/index.web.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/duration-input/index.native.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/duration-input/index.web.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/file-input/index.native.tsx",
+      "code": 2345,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/file-input/index.native.tsx",
+      "code": 2375,
+      "count": 3
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/file-input/index.web.tsx",
+      "code": 2375,
+      "count": 4
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/form-fields/index.native.tsx",
+      "code": 2375,
+      "count": 35
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/form-fields/index.web.tsx",
+      "code": 2375,
+      "count": 33
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/form/index.native.tsx",
+      "code": 2375,
+      "count": 3
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/input/index.native.tsx",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/input/index.web.tsx",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/integer-stepper/index.native.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/label/index.native.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/label/index.native.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/label/index.web.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/number-slider-input/index.native.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/number-slider-input/index.web.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/pace-input/index.native.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/pace-input/index.web.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/pace-seconds-field/index.native.test.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/pace-seconds-field/index.native.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/pace-seconds-field/index.native.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/pace-seconds-field/index.web.test.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/pace-seconds-field/index.web.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/pace-seconds-field/index.web.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/percent-slider-input/index.native.tsx",
+      "code": 2375,
+      "count": 3
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/percent-slider-input/index.web.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/progress/index.native.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/radio-group/index.web.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/search-field/index.native.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/search-field/index.web.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/select/index.native.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/select/index.web.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/separator/index.native.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/separator/index.web.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/settings-group/index.native.tsx",
+      "code": 2375,
+      "count": 4
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/slider/index.native.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/slider/index.web.tsx",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/switch/index.native.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/switch/index.web.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/tabs/index.native.tsx",
+      "code": 2379,
+      "count": 4
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/tabs/index.web.tsx",
+      "code": 2379,
+      "count": 4
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/text/index.native.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/textarea/index.native.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/textarea/index.web.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/time-input/index.native.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/time-input/index.native.tsx",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/time-input/index.web.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/time-input/time-input.native.stories.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/time-input/time-input.stories.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/toggle-group/index.native.tsx",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/toggle-group/index.web.tsx",
+      "code": 2379,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/toggle/index.native.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/toggle/index.web.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/weight-input-field/index.native.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/components/weight-input-field/index.web.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/hooks/use-zod-form-submit.ts",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/hooks/use-zod-form-submit.web.test.tsx",
+      "code": 2379,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/registry/native/accordion.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/registry/native/alert-dialog.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/registry/native/context-menu.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/registry/native/dialog.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/registry/native/dropdown-menu.tsx",
+      "code": 2375,
+      "count": 2
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/registry/native/menubar.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/registry/native/popover.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/registry/native/select.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/registry/native/text.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/registry/native/tooltip.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/registry/web/dropdown-menu.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/registry/web/slider.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/registry/web/sonner.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/ui/tsconfig.json",
+      "path": "packages/ui/src/storybook/catalog.native-controls.native.stories.tsx",
+      "code": 2375,
+      "count": 1
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app/(internal)/(standard)/activity-import.tsx",
+      "code": 18048,
+      "count": 6
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app/(internal)/(standard)/group-event-create.tsx",
+      "code": 18048,
+      "count": 1
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app/(internal)/(standard)/group-event-edit.tsx",
+      "code": 18048,
+      "count": 1
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/app/(internal)/(standard)/messages/new.tsx",
+      "code": 2532,
+      "count": 1
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/activity-plan/structure/StructureIntervalSheet.tsx",
+      "code": 18048,
+      "count": 2
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/activity-plan/structure/StructureIntervalSheet.tsx",
+      "code": 2345,
+      "count": 1
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/activity/charts/ElevationProfileChart.tsx",
+      "code": 2532,
+      "count": 2
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/activity/charts/MultiMetricChart.tsx",
+      "code": 18048,
+      "count": 1
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/activity/charts/StreamChart.tsx",
+      "code": 18048,
+      "count": 7
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/activity/charts/StreamChart.tsx",
+      "code": 2322,
+      "count": 2
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/activity/maps/ActivityRouteMap.tsx",
+      "code": 18048,
+      "count": 2
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/activity/maps/ActivityRouteMap.tsx",
+      "code": 2322,
+      "count": 3
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/activity/maps/ActivityRouteMap.tsx",
+      "code": 2532,
+      "count": 2
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/charts/ConsistencyHeatmap.tsx",
+      "code": 2532,
+      "count": 1
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/charts/PlanVsActualChart.tsx",
+      "code": 18048,
+      "count": 3
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/charts/PlanVsActualChart.tsx",
+      "code": 2345,
+      "count": 5
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/EditAvatar.tsx",
+      "code": 18048,
+      "count": 5
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/plan/calendar/ActivityStepChart.tsx",
+      "code": 18048,
+      "count": 10
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/plan/calendar/StepEditSheet.tsx",
+      "code": 18048,
+      "count": 2
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/plan/WeekStrip.tsx",
+      "code": 18048,
+      "count": 2
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/recording/ftms/EllipticalControlUI.tsx",
+      "code": 2532,
+      "count": 3
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/recording/ftms/RowerControlUI.tsx",
+      "code": 2532,
+      "count": 3
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/recording/ftms/TreadmillControlUI.tsx",
+      "code": 2532,
+      "count": 3
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/settings/training-preferences/sections/AvailabilitySection.jest.test.tsx",
+      "code": 2322,
+      "count": 2
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/shared/StaticRouteMapPreview.tsx",
+      "code": 18048,
+      "count": 8
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/components/shared/StaticRouteMapPreview.tsx",
+      "code": 2345,
+      "count": 4
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/services/ActivityRecorder/DataBuffer.ts",
+      "code": 18048,
+      "count": 4
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/services/ActivityRecorder/DataBuffer.ts",
+      "code": 2532,
+      "count": 1
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/services/ActivityRecorder/LiveMetricsManager.ts",
+      "code": 18048,
+      "count": 1
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/services/ActivityRecorder/LiveMetricsManager.ts",
+      "code": 2532,
+      "count": 17
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/services/ActivityRecorder/PredictiveResistanceCalculator.ts",
+      "code": 2532,
+      "count": 5
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/services/ActivityRecorder/RollingBuffer.ts",
+      "code": 2532,
+      "count": 1
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/services/ActivityRecorder/routeController.ts",
+      "code": 18048,
+      "count": 8
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/services/ActivityRecorder/routeController.ts",
+      "code": 2532,
+      "count": 2
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/services/ActivityRecorder/sensors.jest.test.ts",
+      "code": 2345,
+      "count": 1
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/services/ActivityRecorder/sensors.jest.test.ts",
+      "code": 2769,
+      "count": 1
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/services/ActivityRecorder/sensors.ts",
+      "code": 2345,
+      "count": 2
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/utils/formErrors.ts",
+      "code": 2322,
+      "count": 1
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/utils/formErrors.ts",
+      "code": 2532,
+      "count": 1
+    },
+    {
+      "flag": "noUncheckedIndexedAccess",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "apps/mobile/lib/utils/plan/colors.ts",
+      "code": 2322,
+      "count": 2
+    }
+  ]
+}

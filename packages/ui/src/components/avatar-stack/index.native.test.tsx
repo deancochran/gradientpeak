@@ -3,8 +3,8 @@ import { avatarStackFixtures } from "./fixtures";
 import { AvatarStack } from "./index.native";
 
 describe("AvatarStack native", () => {
-  it("renders initials and hidden count from fixtures", () => {
-    const { getByText } = renderNative(<AvatarStack {...avatarStackFixtures.team} />);
+  it("renders initials and hidden count from fixtures", async () => {
+    const { getByText } = await renderNative(<AvatarStack {...avatarStackFixtures.team} />);
 
     expect(getByText("AM")).toBeTruthy();
     expect(getByText("JL")).toBeTruthy();

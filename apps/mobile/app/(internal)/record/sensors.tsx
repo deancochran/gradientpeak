@@ -1,4 +1,5 @@
 import type { MetricFamily, MetricSourceCandidate, MetricSourceSelection } from "@repo/core";
+import { THEME } from "@repo/tailwindcss/native";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
@@ -11,29 +12,35 @@ import {
   Zap,
 } from "lucide-react-native";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, ScrollView, View } from "react-native";
+import { ActivityIndicator, Alert, AppState, Linking, ScrollView, View } from "react-native";
 import type { Device } from "react-native-ble-plx";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import {
   useBleState,
   useKnownSensors,
-  useRecorderActions,
-  useSensors,
+  useRecordingCommands,
   useSessionView,
 } from "@/lib/hooks/useActivityRecorder";
-import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
-import type { ConnectedSensor, PersistedSensor } from "@/lib/services/ActivityRecorder/sensors";
+import { omitUndefined } from "@/lib/omitUndefined";
+import { useActivityRecorderService } from "@/lib/providers/ActivityRecorderProvider";
+import {
+  type ConnectedSensor,
+  type PersistedSensor,
+  SENSOR_READING_STALE_AFTER_MS,
+} from "@/lib/services/ActivityRecorder/sensors";
 import {
   type AllPermissionsStatus,
   checkAllPermissions,
   requestPermission,
 } from "@/lib/services/permissions-check";
+import { useTheme } from "@/lib/stores/theme-store";
 
 function SensorsScreen() {
-  const service = useSharedActivityRecorder();
-  const { sensors: connectedSensors } = useSensors(service);
-  const knownSensors = useKnownSensors(service);
+  const { resolvedTheme } = useTheme();
+  const { service } = useActivityRecorderService();
   const sessionView = useSessionView(service);
+  const connectedSensors = service?.sensorsManager?.getConnectedSensors() ?? [];
+  const knownSensors = useKnownSensors(service);
   const bleState = useBleState(service);
   const {
     startScan,
@@ -44,16 +51,16 @@ function SensorsScreen() {
     forgetDevice,
     resetSensors,
     setPreferredMetricSource,
-    clearPreferredMetricSource,
     disableMetricSource,
     enableMetricSource,
-  } = useRecorderActions(service);
+  } = useRecordingCommands(service);
 
   const [permissions, setPermissions] = useState<AllPermissionsStatus | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [availableDevices, setAvailableDevices] = useState<Device[]>([]);
   const [connectingDevices, setConnectingDevices] = useState<Set<string>>(new Set());
   const [isRequestingPermission, setIsRequestingPermission] = useState(false);
+  const [isResettingSensors, setIsResettingSensors] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [connectErrors, setConnectErrors] = useState<Record<string, string>>({});
 
@@ -104,7 +111,7 @@ function SensorsScreen() {
       }
     };
 
-    loadPermissions();
+    void loadPermissions();
   }, []);
 
   const refreshPermissions = useCallback(async () => {
@@ -114,6 +121,15 @@ function SensorsScreen() {
       console.error("Failed to refresh permissions:", error);
     }
   }, []);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") {
+        void refreshPermissions();
+      }
+    });
+    return () => subscription.remove();
+  }, [refreshPermissions]);
 
   const requestBluetoothPermission = useCallback(async () => {
     if (isRequestingPermission) return;
@@ -130,6 +146,14 @@ function SensorsScreen() {
       setIsRequestingPermission(false);
     }
   }, [isRequestingPermission, refreshPermissions]);
+
+  const openBluetoothSettings = useCallback(async () => {
+    try {
+      await Linking.openSettings();
+    } catch {
+      setScanError("Unable to open system settings. Allow Bluetooth access, then return here.");
+    }
+  }, []);
 
   const bluetoothGranted = permissions?.bluetooth?.granted ?? false;
   const bluetoothCanAsk = permissions?.bluetooth?.canAskAgain ?? false;
@@ -174,9 +198,9 @@ function SensorsScreen() {
 
     try {
       await startScan();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Scan failed:", error);
-      const errorMsg = error?.message || String(error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
       if (errorMsg.toLowerCase().includes("powered off")) {
         setScanError("Bluetooth is off. Turn it on before scanning for sensors.");
       } else if (errorMsg.toLowerCase().includes("unauthorized")) {
@@ -195,26 +219,27 @@ function SensorsScreen() {
   }, [stopScan]);
 
   const handleConnectDevice = useCallback(
-    async (device: Device) => {
-      if (connectingDevices.has(device.id)) return;
+    async (deviceId: string) => {
+      if (connectingDevices.has(deviceId)) return;
 
-      setConnectingDevices((prev) => new Set(prev).add(device.id));
+      setConnectingDevices((prev) => new Set(prev).add(deviceId));
       setConnectErrors((prev) => {
         const next = { ...prev };
-        delete next[device.id];
+        delete next[deviceId];
         return next;
       });
 
       try {
-        await connectDevice(device.id);
-      } catch (error: any) {
+        await connectDevice(deviceId);
+      } catch (error: unknown) {
         console.error("Connection failed:", error);
-        const errorMessage = error?.message || "Connection failed. Move closer and try again.";
-        setConnectErrors((prev) => ({ ...prev, [device.id]: errorMessage || "Connection failed" }));
+        const errorMessage =
+          error instanceof Error ? error.message : "Connection failed. Move closer and try again.";
+        setConnectErrors((prev) => ({ ...prev, [deviceId]: errorMessage || "Connection failed" }));
       } finally {
         setConnectingDevices((prev) => {
           const next = new Set(prev);
-          next.delete(device.id);
+          next.delete(deviceId);
           return next;
         });
       }
@@ -245,14 +270,30 @@ function SensorsScreen() {
   );
 
   const handleResetSensors = useCallback(async () => {
+    if (isResettingSensors) return;
+    setIsResettingSensors(true);
     try {
       await resetSensors();
       setScanError(null);
       setConnectErrors({});
     } catch (error) {
       console.error("Failed to reset sensors:", error);
+      setScanError("Unable to reset sensor setup. Try again before connecting another sensor.");
+    } finally {
+      setIsResettingSensors(false);
     }
-  }, [resetSensors]);
+  }, [isResettingSensors, resetSensors]);
+
+  const confirmResetSensors = useCallback(() => {
+    Alert.alert(
+      "Reset sensor setup?",
+      "This disconnects all sensors and forgets saved devices. You will need to connect them again.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Reset sensors", style: "destructive", onPress: () => void handleResetSensors() },
+      ],
+    );
+  }, [handleResetSensors]);
 
   const trainerFailure = getTrainerFailure({
     scanError,
@@ -278,7 +319,7 @@ function SensorsScreen() {
         >
           <View className="flex-row items-center gap-2">
             {isScanning ? (
-              <ActivityIndicator size="small" color="white" />
+              <ActivityIndicator size="small" color={THEME[resolvedTheme].primaryForeground} />
             ) : (
               <Icon as={RefreshCw} size={16} className="text-primary-foreground" />
             )}
@@ -292,12 +333,22 @@ function SensorsScreen() {
       <ScrollView className="flex-1" contentContainerClassName="px-4 py-4 gap-4">
         {readinessIssue ? (
           <EmptyListState
+            {...omitUndefined({
+              actionLabel:
+                readinessIssue.action === "permission"
+                  ? "Grant access"
+                  : readinessIssue.action === "settings"
+                    ? "Open settings"
+                    : undefined,
+              onAction:
+                readinessIssue.action === "permission"
+                  ? requestBluetoothPermission
+                  : readinessIssue.action === "settings"
+                    ? openBluetoothSettings
+                    : undefined,
+            })}
             title={readinessIssue.title}
             description={readinessIssue.description}
-            actionLabel={readinessIssue.action === "permission" ? "Grant access" : undefined}
-            onAction={
-              readinessIssue.action === "permission" ? requestBluetoothPermission : undefined
-            }
           />
         ) : trainerFailure ? (
           <InlineIssueCard
@@ -323,7 +374,6 @@ function SensorsScreen() {
                   preferredSources={preferredSources}
                   disabledSources={disabledSources}
                   onSelect={setPreferredMetricSource}
-                  onClear={clearPreferredMetricSource}
                   onDisable={disableMetricSource}
                   onEnable={enableMetricSource}
                   onDisconnect={handleDisconnectDevice}
@@ -345,10 +395,11 @@ function SensorsScreen() {
               ) : (
                 disconnectedKnownSensors.map((sensor) => (
                   <KnownSensorRow
+                    {...omitUndefined({ error: connectErrors[sensor.id] })}
                     key={sensor.id}
                     sensor={sensor}
                     isConnecting={connectingDevices.has(sensor.id)}
-                    onConnect={connectDevice}
+                    onConnect={handleConnectDevice}
                     onForget={handleForgetDevice}
                   />
                 ))
@@ -394,12 +445,15 @@ function SensorsScreen() {
                         </View>
                         <Button
                           size="sm"
-                          onPress={() => handleConnectDevice(device)}
+                          onPress={() => handleConnectDevice(device.id)}
                           disabled={isConnecting}
                           className="h-8"
                         >
                           {isConnecting ? (
-                            <ActivityIndicator size="small" color="white" />
+                            <ActivityIndicator
+                              size="small"
+                              color={THEME[resolvedTheme].primaryForeground}
+                            />
                           ) : (
                             <Text className="text-xs text-primary-foreground">Connect</Text>
                           )}
@@ -414,14 +468,20 @@ function SensorsScreen() {
         )}
 
         {!readinessIssue && (connectedSensors.length > 0 || knownSensors.length > 0) && (
-          <TroubleshootingCard onReset={handleResetSensors} />
+          <TroubleshootingCard isResetting={isResettingSensors} onReset={confirmResetSensors} />
         )}
       </ScrollView>
     </View>
   );
 }
 
-function TroubleshootingCard({ onReset }: { onReset: () => void | Promise<void> }) {
+function TroubleshootingCard({
+  isResetting,
+  onReset,
+}: {
+  isResetting: boolean;
+  onReset: () => void;
+}) {
   return (
     <View className="rounded-2xl border border-red-500/20 bg-red-500/5 p-4">
       <View className="flex-row items-start gap-3">
@@ -432,8 +492,16 @@ function TroubleshootingCard({ onReset }: { onReset: () => void | Promise<void> 
             Reset sensor setup disconnects all sensors and forgets known devices. Use this only if
             connections are stuck or showing the wrong devices.
           </Text>
-          <Button size="sm" variant="ghost" onPress={onReset} className="mt-3 h-8 self-start px-0">
-            <Text className="text-xs font-medium text-red-700">Reset sensor setup</Text>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={isResetting}
+            onPress={onReset}
+            className="mt-3 min-h-11 self-start px-2"
+          >
+            <Text className="text-xs font-medium text-red-700">
+              {isResetting ? "Resetting sensor setup..." : "Reset sensor setup"}
+            </Text>
           </Button>
         </View>
       </View>
@@ -488,14 +556,18 @@ function getReadinessIssue({
 function KnownSensorRow({
   sensor,
   isConnecting,
+  error,
   onConnect,
   onForget,
 }: {
   sensor: PersistedSensor;
   isConnecting: boolean;
+  error?: string;
   onConnect: (deviceId: string) => Promise<void>;
   onForget: (deviceId: string) => Promise<void>;
 }) {
+  const { resolvedTheme } = useTheme();
+
   return (
     <View className="rounded-xl border border-border bg-background p-3">
       <View className="flex-row items-start justify-between gap-3">
@@ -504,6 +576,7 @@ function KnownSensorRow({
           <Text className="mt-1 text-xs text-muted-foreground">
             Last connected {formatLastConnected(sensor.lastConnected)}
           </Text>
+          {error ? <Text className="mt-2 text-xs text-red-700">{error}</Text> : null}
         </View>
         <View className="items-end gap-2">
           <Button
@@ -513,7 +586,7 @@ function KnownSensorRow({
             className="h-8"
           >
             {isConnecting ? (
-              <ActivityIndicator size="small" color="white" />
+              <ActivityIndicator size="small" color={THEME[resolvedTheme].primaryForeground} />
             ) : (
               <Text className="text-xs text-primary-foreground">Connect</Text>
             )}
@@ -534,7 +607,6 @@ function ConnectedSensorCard({
   preferredSources,
   disabledSources,
   onSelect,
-  onClear,
   onDisable,
   onEnable,
   onDisconnect,
@@ -545,7 +617,6 @@ function ConnectedSensorCard({
   preferredSources: Partial<Record<MetricFamily, string>>;
   disabledSources: Partial<Record<MetricFamily, string[]>>;
   onSelect: (metricFamily: MetricFamily, sourceId: string) => void;
-  onClear: (metricFamily: MetricFamily) => void;
   onDisable: (metricFamily: MetricFamily, sourceId: string) => void;
   onEnable: (metricFamily: MetricFamily, sourceId: string) => void;
   onDisconnect: (deviceId: string) => Promise<void>;
@@ -594,6 +665,8 @@ function ConnectedSensorCard({
         </View>
       </View>
 
+      <SensorStreamStatus sensor={sensor} />
+
       <MetricSourceRows
         sensor={sensor}
         candidates={candidates}
@@ -601,12 +674,109 @@ function ConnectedSensorCard({
         preferredSources={preferredSources}
         disabledSources={disabledSources}
         onSelect={onSelect}
-        onClear={onClear}
         onDisable={onDisable}
         onEnable={onEnable}
       />
     </View>
   );
+}
+
+function SensorStreamStatus({ sensor }: { sensor: ConnectedSensor }) {
+  const status = getSensorStreamStatus(sensor);
+  return (
+    <Text className={`mt-2 text-xs ${status.isError ? "text-red-700" : "text-muted-foreground"}`}>
+      {status.label}
+    </Text>
+  );
+}
+
+function getSensorStreamStatus(sensor: ConnectedSensor): { label: string; isError: boolean } {
+  const profiles = sensor.profiles ?? [];
+  const observedMetrics = [...(sensor.observedMetrics ?? new Set())];
+  const failedProfiles = profiles.filter(({ streamState }) => streamState === "failed");
+  const now = Date.now();
+  const receivingLabels = new Set<string>();
+
+  for (const profile of profiles) {
+    if (profile.streamState !== "flowing") continue;
+    for (const [metric, timestamp] of Object.entries(profile.metricLastDataTimestamps ?? {})) {
+      if (typeof timestamp === "number" && now - timestamp <= SENSOR_READING_STALE_AFTER_MS) {
+        receivingLabels.add(getStandardMetricLabel(metric));
+      }
+    }
+  }
+
+  if (sensor.ftmsMetricLastDataTimestamps) {
+    for (const [metric, timestamp] of Object.entries(sensor.ftmsMetricLastDataTimestamps ?? {})) {
+      if (typeof timestamp === "number" && now - timestamp <= SENSOR_READING_STALE_AFTER_MS) {
+        receivingLabels.add(getObservedMetricLabel(metric));
+      }
+    }
+  }
+
+  if (
+    profiles.length === 0 &&
+    sensor.ftmsStreamState === undefined &&
+    sensor.lastDataTimestamp &&
+    now - sensor.lastDataTimestamp <= SENSOR_READING_STALE_AFTER_MS
+  ) {
+    observedMetrics.forEach((metric) => {
+      receivingLabels.add(getObservedMetricLabel(metric));
+    });
+  }
+
+  if (failedProfiles.length > 0) {
+    const receiving =
+      receivingLabels.size > 0 ? ` Receiving ${[...receivingLabels].join(", ")}.` : "";
+    return {
+      label: `Reading setup failed for ${failedProfiles.map(({ name }) => name).join(", ")}.${receiving}`,
+      isError: true,
+    };
+  }
+
+  if (sensor.ftmsStreamState === "failed") {
+    const receiving =
+      receivingLabels.size > 0 ? ` Receiving ${[...receivingLabels].join(", ")}.` : "";
+    return { label: `Trainer reading stream failed.${receiving}`, isError: true };
+  }
+
+  if (receivingLabels.size > 0) {
+    return {
+      label: `Receiving ${[...receivingLabels].join(", ")}`,
+      isError: false,
+    };
+  }
+
+  if (profiles.length > 0 || sensor.isTrainer) {
+    return { label: "Connected, waiting for sensor data", isError: false };
+  }
+
+  return { label: "Connected, no supported sensor profile", isError: true };
+}
+
+function getStandardMetricLabel(metric: string): string {
+  return metric === "heart_rate" ? "heart rate" : metric;
+}
+
+function getObservedMetricLabel(metric: string): string {
+  switch (metric) {
+    case "heartrate":
+      return "heart rate";
+    case "power":
+      return "power";
+    case "cadence":
+      return "cadence";
+    case "speed":
+      return "speed";
+    case "distance":
+      return "distance";
+    case "altitude":
+      return "elevation";
+    case "latlng":
+      return "position";
+    default:
+      return metric;
+  }
 }
 
 function MetricSourceRows({
@@ -616,7 +786,6 @@ function MetricSourceRows({
   preferredSources,
   disabledSources,
   onSelect,
-  onClear,
   onDisable,
   onEnable,
 }: {
@@ -626,14 +795,11 @@ function MetricSourceRows({
   preferredSources: Partial<Record<MetricFamily, string>>;
   disabledSources: Partial<Record<MetricFamily, string[]>>;
   onSelect: (metricFamily: MetricFamily, sourceId: string) => void;
-  onClear: (metricFamily: MetricFamily) => void;
   onDisable: (metricFamily: MetricFamily, sourceId: string) => void;
   onEnable: (metricFamily: MetricFamily, sourceId: string) => void;
 }) {
   if (candidates.length === 0) {
-    return (
-      <Text className="mt-2 text-xs text-muted-foreground">Connected, no supported readings</Text>
-    );
+    return null;
   }
 
   return (
@@ -650,8 +816,12 @@ function MetricSourceRows({
             size="sm"
             variant={isAuthoritative ? "default" : "outline"}
             accessibilityRole="switch"
-            accessibilityState={{ checked: isAuthoritative && !isDisabled }}
+            accessibilityState={{
+              checked: isAuthoritative && !isDisabled,
+              disabled: !candidate.isAvailable && !isDisabled,
+            }}
             accessibilityLabel={`${getMetricLabel(candidate.metricFamily)} source for ${sensor.name}`}
+            disabled={!candidate.isAvailable && !isDisabled}
             onPress={() => {
               if (isDisabled) {
                 onEnable(candidate.metricFamily, sensor.id);
@@ -671,7 +841,11 @@ function MetricSourceRows({
               className={`text-xs ${isAuthoritative && !isDisabled ? "text-primary-foreground" : "text-foreground"}`}
             >
               {getShortMetricLabel(candidate.metricFamily)}{" "}
-              {isAuthoritative && !isDisabled ? "on" : "off"}
+              {!candidate.isAvailable && !isDisabled
+                ? "waiting"
+                : isAuthoritative && !isDisabled
+                  ? "on"
+                  : "off"}
             </Text>
           </Button>
         );
