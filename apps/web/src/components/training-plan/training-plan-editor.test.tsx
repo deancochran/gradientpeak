@@ -9,6 +9,19 @@ vi.mock("@tanstack/react-router", () => ({ useBlocker: vi.fn() }));
 vi.mock("../providers/auth-provider", () => ({
   useAuth: () => ({ user: mocks.accountId ? { id: mocks.accountId } : null, isLoading: false }),
 }));
+vi.mock("../activity-plan/activity-plan-card", () => ({
+  ActivityPlanCard: ({
+    plan,
+    selected,
+  }: {
+    plan: { id: string; name: string };
+    selected?: boolean;
+  }) => (
+    <div data-selected={selected} data-testid={`activity-plan-card-${plan.id}`}>
+      {plan.name}
+    </div>
+  ),
+}));
 async function renderReady(element: React.ReactElement) {
   const view = render(element);
   await act(async () => {});
@@ -410,6 +423,9 @@ describe("TrainingPlanEditor", () => {
       target: { value: "Another search" },
     });
     expect(screen.getByLabelText("Activity plan")).toHaveProperty("value", id);
+    expect(screen.getByTestId(`training-plan-selected-activity-${id}`).textContent).toContain(
+      "Unavailable in current results",
+    );
     fireEvent.click(screen.getByRole("button", { name: "Create plan" }));
     await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
     expect(mocks.create.mock.calls[0]?.[0].draft.structure.sessions[0].activity_plan_id).toBe(id);
@@ -552,6 +568,7 @@ describe("TrainingPlanEditor", () => {
 
     const category = screen.getByLabelText("Activity category") as HTMLSelectElement;
     expect(category.value).toBe("bike");
+    expect(screen.queryByTestId(/training-plan-selected-activity/)).toBeNull();
     fireEvent.change(category, { target: { value: "run" } });
     fireEvent.click(screen.getByRole("button", { name: "Create plan" }));
 

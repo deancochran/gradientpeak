@@ -213,12 +213,18 @@ describe("CoachActivityPlanPublication", () => {
     expect(
       screen.getByTestId("activity-plan-card-timeline-44444444-4444-4444-8444-444444444444"),
     ).toBeTruthy();
-    expect(card.getAttribute("href")).toContain("athleteId=22222222-2222-4222-8222-222222222222");
-    expect(card.getAttribute("href")).toContain("planningDate=2026-11-12");
-    expect(card.getAttribute("href")).toContain("calendarStartDate=2026-11-09");
-    expect(card.getAttribute("href")).toContain(
+    const inspect = screen.getByRole("link", {
+      name: "Inspect or edit selected activity plan Threshold",
+    });
+    expect(inspect.getAttribute("href")).toContain(
+      "athleteId=22222222-2222-4222-8222-222222222222",
+    );
+    expect(inspect.getAttribute("href")).toContain("planningDate=2026-11-12");
+    expect(inspect.getAttribute("href")).toContain("calendarStartDate=2026-11-09");
+    expect(inspect.getAttribute("href")).toContain(
       "activityPlanId=44444444-4444-4444-8444-444444444444",
     );
+    expect(screen.getByTestId("coach-selected-activity-plan").contains(card)).toBe(true);
   });
 
   it.each([

@@ -4,6 +4,7 @@ import { Icon } from "../icon/index.native";
 import { Text } from "../text/index.native";
 import type {
   ResourceActionRegionProps,
+  ResourceAssociationProps,
   ResourceCardHeaderProps,
   ResourceCardShellProps,
   ResourceMetricsRowProps,
@@ -12,6 +13,29 @@ import type {
 export function ResourceActionRegion({ children, className, testID }: ResourceActionRegionProps) {
   return (
     <View className={`flex-row items-center gap-2 ${className ?? ""}`} testID={testID}>
+      {children}
+    </View>
+  );
+}
+
+export function ResourceAssociation({
+  children,
+  description,
+  label,
+  status,
+  testID,
+}: ResourceAssociationProps) {
+  return (
+    <View className="gap-2" testID={testID}>
+      <View className="flex-row flex-wrap items-start justify-between gap-x-3 gap-y-1">
+        <View className="min-w-0 flex-1">
+          <Text className="text-sm font-medium text-foreground">{label}</Text>
+          {description ? (
+            <Text className="text-xs text-muted-foreground">{description}</Text>
+          ) : null}
+        </View>
+        {status ? <Text className="text-xs text-muted-foreground">{status}</Text> : null}
+      </View>
       {children}
     </View>
   );
@@ -165,6 +189,7 @@ export function ResourceMetricsRow({
 
 export type {
   ResourceActionRegionProps,
+  ResourceAssociationProps,
   ResourceCardHeaderProps,
   ResourceCardShellProps,
   ResourceMetric,

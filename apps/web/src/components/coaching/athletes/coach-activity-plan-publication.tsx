@@ -8,6 +8,7 @@ import {
   CardTitle,
 } from "@repo/ui/components/card";
 import { Label } from "@repo/ui/components/label";
+import { ResourceAssociation } from "@repo/ui/components/resource-presentation";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { api } from "../../../lib/api/client";
@@ -425,22 +426,25 @@ export function CoachActivityPlanPublication({
           </p>
         ) : null}
         {selectedPlanCard ? (
-          <div className="space-y-2">
-            <p className="text-sm font-medium text-foreground">Selected activity plan</p>
+          <ResourceAssociation
+            description={
+              selectedPlanHref
+                ? "Inspect or edit this plan before publishing. Your athlete, planning date, and selected week stay attached to the return link."
+                : publish.isPending
+                  ? "Plan inspection is unavailable while publication is pending."
+                  : "Choose a real athlete planning date before inspecting or editing this plan."
+            }
+            label="Selected activity plan"
+            testID="coach-selected-activity-plan"
+          >
             <ActivityPlanCard
               disabled={!selectedPlanHref}
+              onOpen={selectedPlanHref ? undefined : () => {}}
               openLabel={`Inspect or edit selected activity plan ${selectedPlanCard.name}`}
               plan={selectedPlanCard}
               {...(selectedPlanHref ? { href: selectedPlanHref } : {})}
             />
-            <p className="text-xs text-muted-foreground">
-              {selectedPlanHref
-                ? "Inspect or edit this plan before publishing. Your athlete, planning date, and selected week stay attached to the return link."
-                : publish.isPending
-                  ? "Plan inspection is unavailable while publication is pending."
-                  : "Choose a real athlete planning date before inspecting or editing this plan."}
-            </p>
-          </div>
+          </ResourceAssociation>
         ) : null}
         {error ? (
           <p role="alert" className="text-sm text-destructive">

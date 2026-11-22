@@ -3,6 +3,7 @@ import { Card, CardContent } from "../card/index.web";
 import { Icon } from "../icon/index.web";
 import type {
   ResourceActionRegionProps,
+  ResourceAssociationProps,
   ResourceCardHeaderProps,
   ResourceCardShellProps,
   ResourceMetricsRowProps,
@@ -13,6 +14,27 @@ export function ResourceActionRegion({ children, className, testID }: ResourceAc
     <div className={cn("flex items-center gap-2", className)} data-testid={testID}>
       {children}
     </div>
+  );
+}
+
+export function ResourceAssociation({
+  children,
+  description,
+  label,
+  status,
+  testID,
+}: ResourceAssociationProps) {
+  return (
+    <section className="space-y-2" data-testid={testID}>
+      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-foreground">{label}</p>
+          {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
+        </div>
+        {status ? <p className="text-xs text-muted-foreground">{status}</p> : null}
+      </div>
+      {children}
+    </section>
   );
 }
 
@@ -187,6 +209,7 @@ export function ResourceMetricsRow({
 
 export type {
   ResourceActionRegionProps,
+  ResourceAssociationProps,
   ResourceCardHeaderProps,
   ResourceCardShellProps,
   ResourceMetric,

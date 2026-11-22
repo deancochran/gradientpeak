@@ -60,3 +60,15 @@ export type ResourceActionRegionProps = {
   className?: string;
   testID?: string;
 };
+
+/**
+ * A non-interactive frame for an already-selected resource. Apps retain picker,
+ * query, and navigation behavior while the association stays visually distinct.
+ */
+export type ResourceAssociationProps = {
+  children?: ReactNode;
+  description?: string;
+  label: string;
+  status?: string;
+  testID?: string;
+};

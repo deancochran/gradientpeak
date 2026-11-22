@@ -8,6 +8,7 @@ import { formatLocalDateOnly } from "@repo/core/utils/fitness-inputs";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Input } from "@repo/ui/components/input";
+import { ResourceAssociation } from "@repo/ui/components/resource-presentation";
 import { Textarea } from "@repo/ui/components/textarea";
 import { skipToken } from "@tanstack/react-query";
 import type { inferRouterInputs } from "@trpc/server";
@@ -16,6 +17,7 @@ import { z } from "zod";
 
 import { api } from "../../lib/api/client";
 import { useFormLifetime } from "../../lib/use-form-lifetime";
+import { ActivityPlanCard } from "../activity-plan/activity-plan-card";
 import { useAuth } from "../providers/auth-provider";
 import {
   buildTrainingPlanStructure,
@@ -203,6 +205,24 @@ function TrainingPlanEditorSession({
   );
 
   const activityPlans = activityPlansQuery.data?.pages.flatMap((page) => page.items) ?? [];
+  const renderSelectedActivityPlanAssociation = (activityPlanId: string | null) => {
+    if (!activityPlanId) return null;
+    const selectedActivityPlan = activityPlans.find((plan) => plan.id === activityPlanId);
+    return (
+      <ResourceAssociation
+        description={
+          selectedActivityPlan
+            ? "This session uses the selected activity plan."
+            : "This selection is retained while it is outside the current search results."
+        }
+        label="Selected activity plan"
+        status={selectedActivityPlan ? undefined : "Unavailable in current results"}
+        testID={`training-plan-selected-activity-${activityPlanId}`}
+      >
+        {selectedActivityPlan ? <ActivityPlanCard plan={selectedActivityPlan} selected /> : null}
+      </ResourceAssociation>
+    );
+  };
   const authoritativeProjection =
     authoritativePreviewQuery.data?.status === "available"
       ? authoritativePreviewQuery.data.simulation
@@ -643,46 +663,52 @@ function TrainingPlanEditorSession({
                   }
                 >
                   <legend className="px-1 text-sm font-medium">Activity {index + 1}</legend>
-                  <label
-                    className="space-y-1"
-                    htmlFor={`training-plan-session-activity-${session.draftId}`}
-                  >
-                    <span className="text-xs">Activity plan</span>
-                    <select
-                      className="h-10 w-full rounded-md border bg-background px-3"
-                      id={`training-plan-session-activity-${session.draftId}`}
-                      onChange={(event) => {
-                        const plan = activityPlans.find((item) => item.id === event.target.value);
-                        setSessions((current) =>
-                          current.map((item, itemIndex) =>
-                            itemIndex === index
-                              ? {
-                                  ...item,
-                                  activityPlanId: event.target.value || null,
-                                  ...(plan
-                                    ? { activityCategory: plan.activityCategory, title: plan.name }
-                                    : {}),
-                                }
-                              : item,
-                          ),
-                        );
-                      }}
-                      value={session.activityPlanId ?? ""}
+                  <div className="space-y-2">
+                    <label
+                      className="block space-y-1"
+                      htmlFor={`training-plan-session-activity-${session.draftId}`}
                     >
-                      <option value="">Choose automatically</option>
-                      {session.activityPlanId &&
-                      !activityPlans.some((plan) => plan.id === session.activityPlanId) ? (
-                        <option value={session.activityPlanId}>
-                          {session.title || "Selected activity"}
-                        </option>
-                      ) : null}
-                      {activityPlans.map((plan) => (
-                        <option key={plan.id} value={plan.id}>
-                          {plan.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                      <span className="text-xs">Activity plan</span>
+                      <select
+                        className="h-10 w-full rounded-md border bg-background px-3"
+                        id={`training-plan-session-activity-${session.draftId}`}
+                        onChange={(event) => {
+                          const plan = activityPlans.find((item) => item.id === event.target.value);
+                          setSessions((current) =>
+                            current.map((item, itemIndex) =>
+                              itemIndex === index
+                                ? {
+                                    ...item,
+                                    activityPlanId: event.target.value || null,
+                                    ...(plan
+                                      ? {
+                                          activityCategory: plan.activityCategory,
+                                          title: plan.name,
+                                        }
+                                      : {}),
+                                  }
+                                : item,
+                            ),
+                          );
+                        }}
+                        value={session.activityPlanId ?? ""}
+                      >
+                        <option value="">Choose automatically</option>
+                        {session.activityPlanId &&
+                        !activityPlans.some((plan) => plan.id === session.activityPlanId) ? (
+                          <option value={session.activityPlanId}>
+                            {session.title || "Selected activity"}
+                          </option>
+                        ) : null}
+                        {activityPlans.map((plan) => (
+                          <option key={plan.id} value={plan.id}>
+                            {plan.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {renderSelectedActivityPlanAssociation(session.activityPlanId)}
+                  </div>
                   {session.activityPlanId === null ? (
                     <label
                       className="space-y-1"
