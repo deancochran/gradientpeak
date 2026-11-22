@@ -25,13 +25,6 @@ type Result =
       }>;
     };
 
-function details(item: Extract<Result, { status: "granted" }>["items"][number]) {
-  const parts = [item.activityCategory ?? "Activity category unavailable"];
-  if (item.elapsedMs !== null) parts.push(`${Math.round(item.elapsedMs / 60_000)} min`);
-  if (item.distanceMeters !== null) parts.push(`${(item.distanceMeters / 1000).toFixed(1)} km`);
-  return parts.join(" · ");
-}
-
 function persistNotice(key: string, message: string) {
   try {
     window.sessionStorage.setItem(key, JSON.stringify({ message, recordedAt: Date.now() }));
@@ -200,11 +193,31 @@ export function CoachAthleteCompletedActivities({
         {items.length ? (
           <ul className="space-y-3" aria-label="Completed activities">
             {items.map((item) => (
-              <li className="rounded border border-border p-3" key={item.sessionId}>
-                <p className="font-medium">Completed session</p>
-                <p className="text-sm text-muted-foreground">
-                  Planned {item.planningDate} · {details(item)}
-                </p>
+              <li
+                className="rounded-xl border border-border bg-background p-4"
+                key={item.sessionId}
+              >
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                  <p className="font-semibold">Completed session</p>
+                  <p className="text-xs text-muted-foreground">Planned {item.planningDate}</p>
+                </div>
+                <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {item.activityCategory ? (
+                    <CompletionMetric label="Sport" value={item.activityCategory} />
+                  ) : null}
+                  {item.elapsedMs !== null ? (
+                    <CompletionMetric
+                      label="Time"
+                      value={`${Math.round(item.elapsedMs / 60_000)} min`}
+                    />
+                  ) : null}
+                  {item.distanceMeters !== null ? (
+                    <CompletionMetric
+                      label="Distance"
+                      value={`${(item.distanceMeters / 1000).toFixed(1)} km`}
+                    />
+                  ) : null}
+                </dl>
                 <Button
                   className="mt-3"
                   disabled={pending === item.sessionId}
@@ -220,5 +233,14 @@ export function CoachAthleteCompletedActivities({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function CompletionMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dd className="mt-0.5 text-sm font-semibold text-foreground">{value}</dd>
+    </div>
   );
 }

@@ -198,6 +198,11 @@ function AthleteWorkspacePage() {
           />
         ) : null}
       </div>
+      <CoachAthleteOverview
+        athleteId={athleteId}
+        mode="summary"
+        result={identity ? overview : { status: "unavailable" }}
+      />
       <details className="group rounded-xl border border-border bg-muted/50">
         <summary className="cursor-pointer list-none px-5 py-4 font-medium text-foreground marker:hidden">
           <span className="flex items-center justify-between gap-4">

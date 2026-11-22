@@ -1,3 +1,4 @@
+import type { ActivityPlanSummary } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import {
   Card,
@@ -16,6 +17,7 @@ import {
   parseActivityPlanPreparationContext,
   parseAthleteWorkspaceSearch,
 } from "../../../lib/coaching/activity-plan-preparation-context";
+import { ActivityPlanCard } from "../../activity-plan/activity-plan-card";
 
 type PublicationInput = {
   activityPlanId: string;
@@ -98,6 +100,15 @@ export function CoachActivityPlanPublication({
     { enabled: Boolean(activityPlanId), retry: false },
   );
   const selectedPlanDetail = selectedPlanQuery.data?.detail;
+  const selectedPlanCard: ActivityPlanSummary | null =
+    selectedPlanDetail?.id === activityPlanId &&
+    selectedPlanDetail.capabilities.canEdit &&
+    selectedPlanDetail.structure
+      ? {
+          ...selectedPlanDetail,
+          contractVersion: "activity-plan-summary-v1",
+        }
+      : null;
   const selectedPlan =
     selectedPlanDetail?.id === activityPlanId && selectedPlanDetail.capabilities.canEdit
       ? {
@@ -382,6 +393,29 @@ export function CoachActivityPlanPublication({
               ? "The selected activity plan is not editable in your owned library."
               : "The selected activity plan is no longer available."}
           </p>
+        ) : null}
+        {selectedPlanCard ? (
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-foreground">Selected activity plan</p>
+            <ActivityPlanCard
+              onOpen={() => {
+                if (!preparationContext) return;
+                void navigate({
+                  to: "/activity-plans/$activityPlanId",
+                  params: { activityPlanId: selectedPlanCard.id },
+                  search: {
+                    ...activityPlanPreparationSearch(preparationContext, selectedPlanCard.id),
+                  },
+                } as never);
+              }}
+              openLabel={`Inspect or edit selected activity plan ${selectedPlanCard.name}`}
+              plan={selectedPlanCard}
+            />
+            <p className="text-xs text-muted-foreground">
+              Inspect or edit this plan before publishing. Your athlete, planning date, and selected
+              week stay attached to the return link.
+            </p>
+          </div>
         ) : null}
         {error ? (
           <p role="alert" className="text-sm text-destructive">

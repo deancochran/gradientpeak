@@ -472,7 +472,7 @@ describe("coach athlete workspace route", () => {
     const route = Route as unknown as { component: () => React.ReactNode };
     render(route.component());
 
-    expect(screen.getByText(`overview for ${state.params.athleteId}`)).toBeTruthy();
+    expect(screen.getAllByText(`overview for ${state.params.athleteId}`)).toHaveLength(2);
     expect(screen.getByTestId("calendar").textContent).toContain("calendar granted");
     expect(screen.getByRole("alert").textContent).toContain("Bike zones could not be loaded.");
     expect(screen.getByRole("button", { name: "Retry bike zones" })).toBeTruthy();

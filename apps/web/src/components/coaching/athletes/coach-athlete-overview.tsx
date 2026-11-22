@@ -7,15 +7,10 @@ import {
   CardTitle,
 } from "@repo/ui/components/card";
 import {
-  formatTrainingStateDate,
-  getTrainingStateMetric,
   TrainingStateChart,
   TrainingStateLegend,
-  type TrainingStateMetricId,
   type TrainingStateVisualContract,
-  type TrainingStateVisualPoint,
 } from "@repo/ui/components/training-state-chart";
-import { SimpleTrendChart } from "../../charts/simple-trend-chart";
 
 type LoadHistoryPoint = {
   date: string;
@@ -63,9 +58,11 @@ type OverviewModel = {
 
 export function CoachAthleteOverview({
   athleteId,
+  mode = "details",
   result,
 }: {
   athleteId: string;
+  mode?: "details" | "summary";
   result: { status: "granted"; model: OverviewModel } | { status: "unavailable" };
 }) {
   if (result.status === "unavailable")
@@ -79,6 +76,7 @@ export function CoachAthleteOverview({
       </section>
     );
   const { model } = result;
+  if (mode === "summary") return <TrainingStateSummary history={model.loadHistory} />;
   const metricsAvailable =
     model.metricsAvailable ?? (model.publishedState != null || model.status !== undefined);
   const baseline = model.publishedState?.baseline;
@@ -203,6 +201,61 @@ export function CoachAthleteOverview({
   );
 }
 
+function TrainingStateSummary({ history }: { history: OverviewModel["loadHistory"] }) {
+  if (!history || history.result.status === "unavailable") {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Historical training state</CardTitle>
+          <CardDescription>
+            {history?.result.status === "unavailable"
+              ? `Historical load is unavailable (${history.result.reason.replaceAll("_", " ")}). No values are inferred.`
+              : "Historical load is not available in the published projection."}
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
+  const points = history.result.points.slice(-28);
+  const timezone = history.result.identity.planningTimezone;
+  const visual: TrainingStateVisualContract = {
+    points: points.map((point, index) => ({
+      date: point.date,
+      index,
+      projected: { fatigue: null, fitness: null, form: null },
+      recorded: {
+        fatigue: point.recentLoad,
+        fitness: point.longTermLoad,
+        form: point.loadBalance,
+      },
+    })),
+    sourceStatus: "recorded",
+    timeZone: timezone,
+    unitLabel: "Common Load points",
+  };
+  return (
+    <section aria-label="Historical training state" className="space-y-3">
+      <TrainingStateChart
+        description={`Completed daily modeled load state for the latest ${points.length} complete planning days (${timezone}). Recorded history only; no future values or projections are shown.`}
+        emptyMessage="No complete daily load observations are available."
+        series={[
+          { metric: "fitness", source: "recorded" },
+          { metric: "fatigue", source: "recorded" },
+          { metric: "form", source: "recorded" },
+        ]}
+        title="Historical training state"
+        visual={visual}
+      />
+      <TrainingStateLegend sources={["recorded"]} />
+      {history.result.maturity.status === "establishing_baseline" ? (
+        <p className="text-xs text-warning">
+          Modeled baseline is still being established; treat long-term load with care.
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
 function TrainingLoadHistory({ history }: { history: OverviewModel["loadHistory"] }) {
   if (!history) {
     return (
@@ -232,79 +285,14 @@ function TrainingLoadHistory({ history }: { history: OverviewModel["loadHistory"
 
   const points = history.result.points.slice(-28);
   const timezone = history.result.identity.planningTimezone;
-  const trainingStatePoints: TrainingStateVisualPoint[] = points.map((point, index) => ({
-    date: point.date,
-    index,
-    projected: { fatigue: null, fitness: null, form: null },
-    recorded: {
-      fatigue: point.recentLoad,
-      fitness: point.longTermLoad,
-      form: point.loadBalance,
-    },
-  }));
-  const trainingStateVisual: TrainingStateVisualContract = {
-    points: trainingStatePoints,
-    sourceStatus: "recorded",
-    timeZone: timezone,
-    unitLabel: "Common Load points",
-  };
   return (
     <section aria-label="Recent training load" className="space-y-3">
-      <SimpleTrendChart
-        axisLabels={{ x: "Planning date", y: "Common Load points" }}
-        description={`Completed daily Common Load points for the latest ${points.length} complete planning days (${timezone}). This is derived load, not a performance estimate.`}
-        emptyMessage="No complete daily load observations are available."
-        formatX={(value) =>
-          formatTrainingStateDate(new Date(value).toISOString().slice(0, 10), timezone)
-        }
-        formatValue={(value) => value.toFixed(1)}
-        points={points.map((point) => ({
-          id: point.date,
-          label: point.date,
-          value: point.dailyLoad,
-          x: Date.parse(`${point.date}T00:00:00Z`),
-        }))}
-        summaryLabels={{
-          first: "First Common Load",
-          latest: "Latest Common Load",
-          trend: "Change",
-        }}
-        title="Recent completed daily Common Load"
-      />
-      <p className="text-xs text-muted-foreground">
-        Common Load points are derived from completed activity. Dates are planning dates in{" "}
-        {timezone}
-        through {history.result.identity.endDate}. Complete days only; no future values are shown.
-      </p>
-      {history.result.maturity.status === "establishing_baseline" ? (
-        <p className="text-xs text-warning">
-          Modeled baseline is still being established; treat long-term load with care.
-        </p>
-      ) : null}
       <div>
-        <h2 className="text-lg font-semibold text-foreground">Historical modeled load state</h2>
+        <h2 className="text-lg font-semibold text-foreground">Historical load details</h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          This series is shown only when completed activity history is shared. It does not predict
-          future load or availability.
+          Completed activity history for {timezone} through {history.result.identity.endDate}.
+          Values are recorded history only; no future load or availability is predicted.
         </p>
-      </div>
-      <TrainingStateLegend sources={["recorded"]} />
-      <div className="grid gap-3 lg:grid-cols-3">
-        <HistoricalLoadChart
-          metric="fitness"
-          visual={trainingStateVisual}
-          description="Historical modeled long-term load from the same completed daily Common Load observations."
-        />
-        <HistoricalLoadChart
-          metric="fatigue"
-          visual={trainingStateVisual}
-          description="Historical modeled recent load from the same completed daily Common Load observations."
-        />
-        <HistoricalLoadChart
-          metric="form"
-          visual={trainingStateVisual}
-          description="Historical modeled load balance from the same completed daily Common Load observations; negative values are shown as recorded."
-        />
       </div>
       <div className="overflow-x-auto rounded border border-border">
         <table className="w-full min-w-[38rem] text-left text-sm">
@@ -335,27 +323,6 @@ function TrainingLoadHistory({ history }: { history: OverviewModel["loadHistory"
         </table>
       </div>
     </section>
-  );
-}
-
-function HistoricalLoadChart({
-  description,
-  metric,
-  visual,
-}: {
-  description: string;
-  metric: TrainingStateMetricId;
-  visual: TrainingStateVisualContract;
-}) {
-  const definition = getTrainingStateMetric(metric);
-  return (
-    <TrainingStateChart
-      description={description}
-      emptyMessage={`No historical ${definition.label.toLowerCase()} values are available.`}
-      series={[{ metric, source: "recorded" }]}
-      title={`Historical ${definition.label} (recorded)`}
-      visual={visual}
-    />
   );
 }
 
