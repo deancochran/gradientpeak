@@ -9,13 +9,16 @@ import {
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Toaster as Sonner, type ToasterProps } from "sonner";
+import { omitUndefined } from "../../lib/omit-undefined";
 
-const Toaster = ({ ...props }: ToasterProps) => {
-  const { theme = "system" } = useTheme();
+const Toaster = ({ theme, ...props }: ToasterProps) => {
+  const { theme: systemTheme } = useTheme();
+  const resolvedTheme: NonNullable<ToasterProps["theme"]> =
+    systemTheme === "light" || systemTheme === "dark" ? systemTheme : "system";
 
   return (
     <Sonner
-      theme={theme as ToasterProps["theme"]}
+      theme={theme ?? resolvedTheme}
       className="toaster group"
       icons={{
         success: <CircleCheckIcon className="size-4" />,
@@ -32,7 +35,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
           "--border-radius": "var(--radius)",
         } as React.CSSProperties
       }
-      {...props}
+      {...omitUndefined(props)}
     />
   );
 };

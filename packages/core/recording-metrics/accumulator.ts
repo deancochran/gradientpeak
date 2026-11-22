@@ -1,10 +1,38 @@
-export type ActivityCategory = "run" | "bike" | "swim" | "strength" | "other";
-
-export type TrainingStressScoreMethod =
-  | "power"
-  | "heart_rate"
-  | "run_grade_adjusted_pace"
-  | "swim_critical_speed";
+import {
+  type AerobicAnalysisAccumulator,
+  type AerobicAnalysisInput,
+  createAerobicAnalysisAccumulator,
+} from "../calculations/efficiency";
+import {
+  createRunningGradeAdjustedSpeedProjector,
+  createRunningNormalizedGradedPaceAccumulator,
+  type RunningGradeAdjustedSpeedProjector,
+  type RunningNormalizedGradedPaceAccumulator,
+  selectRunningNormalizedGradedSpeedMetersPerSecond,
+} from "../calculations/normalized-graded-pace";
+import {
+  type CyclingNormalizedPowerAccumulator,
+  createCyclingNormalizedPowerAccumulator,
+  selectCyclingNormalizedPowerWatts,
+} from "../calculations/normalized-power";
+import {
+  type AthletePerformanceTargetFacts,
+  athletePerformanceTargetFactsSchema,
+} from "../performance-model";
+import {
+  calculateHeartRateZoneDuration,
+  createHeartRateDurationAccumulator,
+  type HeartRateDurationAccumulator,
+} from "../zones/heart-rate-duration";
+import {
+  type ProvisionalRecordingMetricsSnapshot,
+  provisionalRecordingMetricsSnapshotSchema,
+  type RecordingMetricsActivityCategory,
+} from "./contracts";
+import {
+  calculateProvisionalCommonLoad,
+  type ProvisionalCommonLoadMethod,
+} from "./provisional-common-load";
 
 export interface RecordingMetricSample {
   timestampMs: number;
@@ -18,93 +46,68 @@ export interface RecordingMetricSample {
 }
 
 export interface RecordingMetricsConfig {
-  activityCategory?: ActivityCategory;
-  ftpWatts?: number | null;
-  thresholdHeartRateBpm?: number | null;
-  restingHeartRateBpm?: number | null;
-  maxHeartRateBpm?: number | null;
-  heartRateTrimpExponentCoefficient?: number | null;
-  thresholdPaceSecondsPerKm?: number | null;
-  thresholdSwimPaceSecondsPer100m?: number | null;
-  preferredTrainingStressScoreMethods?: TrainingStressScoreMethod[];
+  activityCategory?: RecordingMetricsActivityCategory;
+  performanceTargets?: AthletePerformanceTargetFacts | null;
+  recordingSessionId?: string | null;
+  preferredCommonLoadMethods?: readonly ProvisionalCommonLoadMethod[];
   timeBasis?: "moving" | "elapsed";
-  npWindowSeconds?: number;
+  normalizedWindowSeconds?: number;
   maxGapSeconds?: number;
 }
 
-export interface RecordingMetricsSnapshot {
-  elapsedSeconds: number;
-  movingSeconds: number;
-
-  averagePowerWatts: number | null;
-  normalizedPowerWatts: number | null;
-  intensityFactor: number | null;
-  powerTrainingStressScore: number | null;
-  variabilityIndex: number | null;
-  workKilojoules: number | null;
-
-  averageHeartRateBpm: number | null;
-  efficiencyFactor: number | null;
-  heartRateTrainingStressScore: number | null;
-
-  runGradeAdjustedPaceTrainingStressScore: number | null;
-  swimCriticalSpeedTrainingStressScore: number | null;
-
-  trainingStressScore: number | null;
-  trainingStressScoreMethod: TrainingStressScoreMethod | null;
-
-  sampleCount: number;
-  powerSampleCount: number;
-  heartRateSampleCount: number;
-}
-
-export interface RecordingMetricsAccumulator {
+export interface ProvisionalRecordingMetricsAccumulator {
   addSample(sample: RecordingMetricSample): void;
-  getSnapshot(): RecordingMetricsSnapshot;
+  getSnapshot(): ProvisionalRecordingMetricsSnapshot;
+  restoreObservations(input: {
+    elapsedSeconds: number;
+    movingSeconds: number;
+    distanceMeters: number;
+    observedAtMs: number;
+  }): void;
   reset(): void;
 }
 
 interface ResolvedRecordingMetricsConfig {
-  activityCategory: ActivityCategory;
-  ftpWatts: number | null;
-  thresholdHeartRateBpm: number | null;
-  restingHeartRateBpm: number | null;
-  maxHeartRateBpm: number | null;
-  heartRateTrimpExponentCoefficient: number;
-  thresholdPaceSecondsPerKm: number | null;
-  thresholdSwimPaceSecondsPer100m: number | null;
-  preferredTrainingStressScoreMethods: TrainingStressScoreMethod[];
-  hasExplicitPreferredMethods: boolean;
+  activityCategory: RecordingMetricsActivityCategory;
+  performanceTargets: AthletePerformanceTargetFacts | null;
+  recordingSessionId: string | null;
+  preferredCommonLoadMethods?: readonly ProvisionalCommonLoadMethod[];
   timeBasis: "moving" | "elapsed";
-  npWindowSeconds: number;
+  normalizedWindowSeconds: number;
   maxGapSeconds: number;
 }
 
-interface TimedValue {
-  value: number;
-  seconds: number;
-}
+interface MetricsState {
+  previousSample: RecordingMetricSample | null;
+  previousAcceptedTimestampMs: number | null;
+  latestAcceptedTimestampMs: number | null;
+  sampleCount: number;
+  elapsedSeconds: number;
+  movingSeconds: number;
 
-interface RollingFourthRootState {
-  queue: TimedValue[];
-  queueSeconds: number;
-  queueWeightedSum: number;
-  fourthPowerSum: number;
-  fourthPowerSeconds: number;
-}
+  latestDistanceMeters: number | null;
+  distanceSourceIncomplete: boolean;
 
-const DEFAULT_METHOD_PRIORITY: Record<ActivityCategory, TrainingStressScoreMethod[]> = {
-  bike: ["power", "heart_rate"],
-  run: ["power", "run_grade_adjusted_pace", "heart_rate"],
-  swim: ["swim_critical_speed", "heart_rate"],
-  strength: ["heart_rate"],
-  other: ["power", "heart_rate"],
-};
+  powerSampleCount: number;
+  powerSeconds: number;
+  powerWeightedSum: number;
+  normalizedPower: CyclingNormalizedPowerAccumulator;
+  workJoules: number;
+
+  heartRateDuration: HeartRateDurationAccumulator;
+
+  normalizedGradedPace: RunningNormalizedGradedPaceAccumulator;
+  runningAerobicOutput: RunningGradeAdjustedSpeedProjector;
+  aerobicAnalysis: AerobicAnalysisAccumulator;
+
+  swimDistanceSeconds: number;
+  swimDistanceMeters: number;
+}
 
 const DEFAULT_MAX_GAP_SECONDS = 5;
-const DEFAULT_NP_WINDOW_SECONDS = 30;
-const DEFAULT_TRIMP_EXPONENT_COEFFICIENT = 1.92;
-const PRIMARY_COVERAGE_THRESHOLD = 0.8;
+const DEFAULT_NORMALIZED_WINDOW_SECONDS = 30;
+const FALLBACK_COMPUTED_AS_OF = "1970-01-01T00:00:00.000Z";
+const MAX_DATE_TIMESTAMP_MS = 8_640_000_000_000_000;
 
 function isFinitePositive(value: number | null | undefined): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
@@ -114,40 +117,26 @@ function finiteOrNull(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
+function isValidTimestamp(value: number): boolean {
+  return Number.isFinite(value) && Math.abs(value) <= MAX_DATE_TIMESTAMP_MS;
 }
 
 function resolveConfig(config: RecordingMetricsConfig = {}): ResolvedRecordingMetricsConfig {
-  const activityCategory = config.activityCategory ?? "other";
-  const preferredTrainingStressScoreMethods =
-    config.preferredTrainingStressScoreMethods ?? DEFAULT_METHOD_PRIORITY[activityCategory];
-
+  const recordingSessionId = config.recordingSessionId?.trim() || null;
   return {
-    activityCategory,
-    ftpWatts: isFinitePositive(config.ftpWatts) ? config.ftpWatts : null,
-    thresholdHeartRateBpm: isFinitePositive(config.thresholdHeartRateBpm)
-      ? config.thresholdHeartRateBpm
-      : null,
-    restingHeartRateBpm: isFinitePositive(config.restingHeartRateBpm)
-      ? config.restingHeartRateBpm
-      : null,
-    maxHeartRateBpm: isFinitePositive(config.maxHeartRateBpm) ? config.maxHeartRateBpm : null,
-    heartRateTrimpExponentCoefficient: isFinitePositive(config.heartRateTrimpExponentCoefficient)
-      ? config.heartRateTrimpExponentCoefficient
-      : DEFAULT_TRIMP_EXPONENT_COEFFICIENT,
-    thresholdPaceSecondsPerKm: isFinitePositive(config.thresholdPaceSecondsPerKm)
-      ? config.thresholdPaceSecondsPerKm
-      : null,
-    thresholdSwimPaceSecondsPer100m: isFinitePositive(config.thresholdSwimPaceSecondsPer100m)
-      ? config.thresholdSwimPaceSecondsPer100m
-      : null,
-    preferredTrainingStressScoreMethods,
-    hasExplicitPreferredMethods: config.preferredTrainingStressScoreMethods !== undefined,
+    activityCategory: config.activityCategory ?? "other",
+    performanceTargets:
+      config.performanceTargets == null
+        ? null
+        : athletePerformanceTargetFactsSchema.parse(config.performanceTargets),
+    recordingSessionId,
+    ...(config.preferredCommonLoadMethods === undefined
+      ? {}
+      : { preferredCommonLoadMethods: [...config.preferredCommonLoadMethods] }),
     timeBasis: config.timeBasis ?? "moving",
-    npWindowSeconds: isFinitePositive(config.npWindowSeconds)
-      ? config.npWindowSeconds
-      : DEFAULT_NP_WINDOW_SECONDS,
+    normalizedWindowSeconds: isFinitePositive(config.normalizedWindowSeconds)
+      ? config.normalizedWindowSeconds
+      : DEFAULT_NORMALIZED_WINDOW_SECONDS,
     maxGapSeconds: isFinitePositive(config.maxGapSeconds)
       ? config.maxGapSeconds
       : DEFAULT_MAX_GAP_SECONDS,
@@ -158,229 +147,95 @@ function getTimeBasisSeconds(config: ResolvedRecordingMetricsConfig, state: Metr
   return config.timeBasis === "elapsed" ? state.elapsedSeconds : state.movingSeconds;
 }
 
-function getCoverageDenominator(
-  config: ResolvedRecordingMetricsConfig,
-  state: MetricsState,
-): number {
-  return getTimeBasisSeconds(config, state);
-}
-
-function hasCoverage(seconds: number, denominatorSeconds: number): boolean {
-  if (denominatorSeconds <= 0) return false;
-  return seconds / denominatorSeconds >= PRIMARY_COVERAGE_THRESHOLD;
-}
-
-function createRollingFourthRootState(): RollingFourthRootState {
-  return {
-    queue: [],
-    queueSeconds: 0,
-    queueWeightedSum: 0,
-    fourthPowerSum: 0,
-    fourthPowerSeconds: 0,
-  };
-}
-
-function addRollingFourthRootValue(
-  state: RollingFourthRootState,
-  value: TimedValue,
-  windowSeconds: number,
-): void {
-  if (windowSeconds <= 0) return;
-
-  let remainingSeconds = value.seconds;
-
-  while (remainingSeconds > 0) {
-    const neededSeconds = windowSeconds - state.queueSeconds;
-    const sliceSeconds = Math.min(remainingSeconds, neededSeconds);
-
-    if (sliceSeconds <= 0) break;
-
-    state.queue.push({ value: value.value, seconds: sliceSeconds });
-    state.queueSeconds += sliceSeconds;
-    state.queueWeightedSum += value.value * sliceSeconds;
-    remainingSeconds -= sliceSeconds;
-
-    if (state.queueSeconds >= windowSeconds) {
-      const rollingAverage = state.queueWeightedSum / windowSeconds;
-      state.fourthPowerSum += rollingAverage ** 4 * sliceSeconds;
-      state.fourthPowerSeconds += sliceSeconds;
-
-      let secondsToRemove = sliceSeconds;
-      while (secondsToRemove > 0 && state.queue.length > 0) {
-        const first = state.queue[0];
-        if (!first) break;
-
-        const removedSeconds = Math.min(secondsToRemove, first.seconds);
-        first.seconds -= removedSeconds;
-        state.queueSeconds -= removedSeconds;
-        state.queueWeightedSum -= first.value * removedSeconds;
-        secondsToRemove -= removedSeconds;
-
-        if (first.seconds <= 0) state.queue.shift();
-      }
-    }
+function aerobicIdentityForActivityCategory(
+  activityCategory: RecordingMetricsActivityCategory,
+): Pick<AerobicAnalysisInput, "modality" | "outputUnit"> {
+  if (activityCategory === "bike") return { modality: "cycling", outputUnit: "watts" };
+  if (activityCategory === "run") {
+    return { modality: "running", outputUnit: "meters_per_second" };
   }
+  return { modality: "unsupported", outputUnit: "unsupported" };
 }
 
-function getRollingFourthRootResult(state: RollingFourthRootState): number | null {
-  if (state.fourthPowerSeconds <= 0) return null;
-  return (state.fourthPowerSum / state.fourthPowerSeconds) ** 0.25;
-}
-
-function minettiCost(grade: number): number {
-  return (
-    155.4 * grade ** 5 -
-    30.4 * grade ** 4 -
-    43.3 * grade ** 3 +
-    46.3 * grade ** 2 +
-    19.5 * grade +
-    3.6
-  );
-}
-
-function isMethodEligibleForActivity(
-  activityCategory: ActivityCategory,
-  method: TrainingStressScoreMethod,
-): boolean {
-  return DEFAULT_METHOD_PRIORITY[activityCategory].includes(method);
-}
-
-interface MetricsState {
-  previousSample: RecordingMetricSample | null;
-  previousAcceptedTimestampMs: number | null;
-  sampleCount: number;
-  elapsedSeconds: number;
-  movingSeconds: number;
-
-  powerSampleCount: number;
-  powerSeconds: number;
-  powerWeightedSum: number;
-  powerRolling: RollingFourthRootState;
-  workJoules: number;
-
-  heartRateSampleCount: number;
-  heartRateSeconds: number;
-  heartRateWeightedSum: number;
-  observedTrimp: number;
-
-  gapSeconds: number;
-  gapRolling: RollingFourthRootState;
-
-  swimDistanceSeconds: number;
-  swimDistanceMeters: number;
-}
-
-function createInitialState(): MetricsState {
+function createInitialState(config: ResolvedRecordingMetricsConfig): MetricsState {
   return {
     previousSample: null,
     previousAcceptedTimestampMs: null,
+    latestAcceptedTimestampMs: null,
     sampleCount: 0,
     elapsedSeconds: 0,
     movingSeconds: 0,
+    latestDistanceMeters: null,
+    distanceSourceIncomplete: false,
     powerSampleCount: 0,
     powerSeconds: 0,
     powerWeightedSum: 0,
-    powerRolling: createRollingFourthRootState(),
+    normalizedPower: createCyclingNormalizedPowerAccumulator({
+      windowSeconds: config.normalizedWindowSeconds,
+      maxGapSeconds: config.maxGapSeconds,
+    }),
     workJoules: 0,
-    heartRateSampleCount: 0,
-    heartRateSeconds: 0,
-    heartRateWeightedSum: 0,
-    observedTrimp: 0,
-    gapSeconds: 0,
-    gapRolling: createRollingFourthRootState(),
+    heartRateDuration: createHeartRateDurationAccumulator({ maxGapSeconds: config.maxGapSeconds }),
+    normalizedGradedPace: createRunningNormalizedGradedPaceAccumulator({
+      windowSeconds: config.normalizedWindowSeconds,
+      maxGapSeconds: config.maxGapSeconds,
+    }),
+    runningAerobicOutput: createRunningGradeAdjustedSpeedProjector(),
+    aerobicAnalysis: createAerobicAnalysisAccumulator(
+      aerobicIdentityForActivityCategory(config.activityCategory),
+    ),
     swimDistanceSeconds: 0,
     swimDistanceMeters: 0,
   };
 }
 
-function calculateTrimpPerMinute(
-  heartRateBpm: number,
-  config: ResolvedRecordingMetricsConfig,
-): number | null {
-  const { restingHeartRateBpm, maxHeartRateBpm } = config;
-  if (!restingHeartRateBpm || !maxHeartRateBpm || maxHeartRateBpm <= restingHeartRateBpm) {
-    return null;
-  }
-
-  const heartRateReserve =
-    (heartRateBpm - restingHeartRateBpm) / (maxHeartRateBpm - restingHeartRateBpm);
-  const clampedHeartRateReserve = clamp(heartRateReserve, 0, 1.2);
-
-  return (
-    clampedHeartRateReserve *
-    0.64 *
-    Math.exp(config.heartRateTrimpExponentCoefficient * clampedHeartRateReserve)
-  );
-}
-
-function calculateHeartRateTss(
-  state: MetricsState,
-  config: ResolvedRecordingMetricsConfig,
-): number | null {
-  const thresholdHeartRateBpm = config.thresholdHeartRateBpm;
-  if (!thresholdHeartRateBpm || state.heartRateSeconds <= 0) return null;
-
-  const thresholdTrimpPerMinute = calculateTrimpPerMinute(thresholdHeartRateBpm, config);
-  if (!thresholdTrimpPerMinute || thresholdTrimpPerMinute <= 0) return null;
-
-  return (state.observedTrimp / (thresholdTrimpPerMinute * 60)) * 100;
-}
-
-function selectTrainingStressScore(input: {
-  state: MetricsState;
-  config: ResolvedRecordingMetricsConfig;
-  powerTrainingStressScore: number | null;
-  heartRateTrainingStressScore: number | null;
-  runGradeAdjustedPaceTrainingStressScore: number | null;
-  swimCriticalSpeedTrainingStressScore: number | null;
-}): Pick<RecordingMetricsSnapshot, "trainingStressScore" | "trainingStressScoreMethod"> {
-  const { state, config } = input;
-  const denominatorSeconds = getCoverageDenominator(config, state);
-  const candidates: Record<
-    TrainingStressScoreMethod,
-    { value: number | null; coverageSeconds: number }
-  > = {
-    power: { value: input.powerTrainingStressScore, coverageSeconds: state.powerSeconds },
-    heart_rate: {
-      value: input.heartRateTrainingStressScore,
-      coverageSeconds: state.heartRateSeconds,
-    },
-    run_grade_adjusted_pace: {
-      value: input.runGradeAdjustedPaceTrainingStressScore,
-      coverageSeconds: state.gapSeconds,
-    },
-    swim_critical_speed: {
-      value: input.swimCriticalSpeedTrainingStressScore,
-      coverageSeconds: state.swimDistanceSeconds,
-    },
-  };
-
-  for (const method of config.preferredTrainingStressScoreMethods) {
-    if (!isMethodEligibleForActivity(config.activityCategory, method)) continue;
-
-    const candidate = candidates[method];
-    if (!candidate || candidate.value === null) continue;
-    if (!hasCoverage(candidate.coverageSeconds, denominatorSeconds)) continue;
-
-    return {
-      trainingStressScore: candidate.value,
-      trainingStressScoreMethod: method,
-    };
-  }
-
-  return { trainingStressScore: null, trainingStressScoreMethod: null };
-}
-
-class DefaultRecordingMetricsAccumulator implements RecordingMetricsAccumulator {
+class DefaultProvisionalRecordingMetricsAccumulator
+  implements ProvisionalRecordingMetricsAccumulator
+{
   private readonly config: ResolvedRecordingMetricsConfig;
-  private state: MetricsState = createInitialState();
+  private state: MetricsState;
 
   constructor(config?: RecordingMetricsConfig) {
     this.config = resolveConfig(config);
+    this.state = createInitialState(this.config);
   }
 
   addSample(sample: RecordingMetricSample): void {
-    if (!Number.isFinite(sample.timestampMs)) return;
+    if (!isValidTimestamp(sample.timestampMs)) return;
+    const isMoving = sample.moving !== false;
+    const contributesToLoad = this.config.timeBasis === "elapsed" || isMoving;
+    const timestampSeconds = sample.timestampMs / 1_000;
+    const heartRateBpm = finiteOrNull(sample.heartRateBpm);
+    this.state.heartRateDuration.addSample({
+      timestampSeconds,
+      heartRateBpm,
+      included: contributesToLoad,
+    });
+    const powerWatts = finiteOrNull(sample.powerWatts);
+    const normalizedPowerValue = powerWatts !== null && powerWatts >= 0 ? powerWatts : null;
+    this.state.normalizedPower.addSample({
+      timestampSeconds,
+      powerWatts: normalizedPowerValue,
+      included: contributesToLoad,
+    });
+    let aerobicOutput: number | null =
+      this.config.activityCategory === "bike" ? normalizedPowerValue : null;
+    if (this.config.activityCategory === "run") {
+      const runningSample = {
+        timestampSeconds,
+        speedMetersPerSecond: this.resolveAlignedRunSpeed(sample),
+        elevationMeters: finiteOrNull(sample.altitudeMeters),
+        included: contributesToLoad,
+      };
+      this.state.normalizedGradedPace.addSample(runningSample);
+      aerobicOutput = this.state.runningAerobicOutput.project(runningSample).value;
+    }
+    this.state.aerobicAnalysis.addSample({
+      timestampSeconds,
+      output: aerobicOutput,
+      heartRateBpm,
+      included: contributesToLoad,
+    });
     if (
       this.state.previousAcceptedTimestampMs !== null &&
       sample.timestampMs <= this.state.previousAcceptedTimestampMs
@@ -390,166 +245,263 @@ class DefaultRecordingMetricsAccumulator implements RecordingMetricsAccumulator 
 
     const previousSample = this.state.previousSample;
     const previousTimestampMs = this.state.previousAcceptedTimestampMs;
-
     this.state.previousSample = sample;
     this.state.previousAcceptedTimestampMs = sample.timestampMs;
+    this.state.latestAcceptedTimestampMs = sample.timestampMs;
     this.state.sampleCount += 1;
+    this.addDistanceObservation(sample.distanceMeters);
 
     if (previousSample === null || previousTimestampMs === null) return;
-
     const rawDtSeconds = (sample.timestampMs - previousTimestampMs) / 1000;
     if (!Number.isFinite(rawDtSeconds) || rawDtSeconds <= 0) return;
 
-    const metricSeconds = Math.min(rawDtSeconds, this.config.maxGapSeconds);
-    const isMoving = sample.moving !== false;
-    const contributesToLoad = this.config.timeBasis === "elapsed" || isMoving;
+    const metricSeconds = rawDtSeconds <= this.config.maxGapSeconds ? rawDtSeconds : 0;
 
     this.state.elapsedSeconds += rawDtSeconds;
-    if (isMoving) {
-      this.state.movingSeconds += rawDtSeconds;
-    }
-    if (!contributesToLoad) return;
+    if (isMoving) this.state.movingSeconds += rawDtSeconds;
+    if (!contributesToLoad || metricSeconds <= 0) return;
 
     this.addPower(sample, metricSeconds);
-    this.addHeartRate(sample, metricSeconds);
-    this.addRunGap(previousSample, sample, metricSeconds, rawDtSeconds);
     this.addSwimDistance(previousSample, sample, metricSeconds);
   }
 
-  getSnapshot(): RecordingMetricsSnapshot {
+  getSnapshot(): ProvisionalRecordingMetricsSnapshot {
     const averagePowerWatts =
       this.state.powerSeconds > 0 ? this.state.powerWeightedSum / this.state.powerSeconds : null;
-    const normalizedPowerWatts = getRollingFourthRootResult(this.state.powerRolling);
-    const intensityFactor =
-      normalizedPowerWatts !== null && this.config.ftpWatts
-        ? normalizedPowerWatts / this.config.ftpWatts
-        : null;
-    const powerTrainingStressScore =
-      normalizedPowerWatts !== null && intensityFactor !== null && this.config.ftpWatts
-        ? ((this.state.powerSeconds * normalizedPowerWatts * intensityFactor) /
-            (this.config.ftpWatts * 3600)) *
-          100
-        : null;
+    const normalizedPowerResult = this.state.normalizedPower.getResult();
+    const normalizedPowerWatts = selectCyclingNormalizedPowerWatts(normalizedPowerResult);
+    const normalizedGradedPaceResult =
+      this.config.activityCategory === "run" ? this.state.normalizedGradedPace.getResult() : null;
+    const normalizedGradedSpeedMetersPerSecond =
+      normalizedGradedPaceResult === null
+        ? null
+        : selectRunningNormalizedGradedSpeedMetersPerSecond(normalizedGradedPaceResult);
     const variabilityIndex =
       normalizedPowerWatts !== null && averagePowerWatts !== null && averagePowerWatts > 0
         ? normalizedPowerWatts / averagePowerWatts
         : null;
-    const averageHeartRateBpm =
-      this.state.heartRateSeconds > 0
-        ? this.state.heartRateWeightedSum / this.state.heartRateSeconds
-        : null;
-    const efficiencyFactor =
-      normalizedPowerWatts !== null && averageHeartRateBpm !== null && averageHeartRateBpm > 0
-        ? normalizedPowerWatts / averageHeartRateBpm
-        : null;
-    const heartRateTrainingStressScore = calculateHeartRateTss(this.state, this.config);
-    const runGradeAdjustedPaceTrainingStressScore = this.calculateRunGapTss();
-    const swimCriticalSpeedTrainingStressScore = this.calculateSwimCssTss();
-    const selected = selectTrainingStressScore({
-      state: this.state,
-      config: this.config,
-      powerTrainingStressScore,
-      heartRateTrainingStressScore,
-      runGradeAdjustedPaceTrainingStressScore,
-      swimCriticalSpeedTrainingStressScore,
+    const heartRateEvidence = this.state.heartRateDuration.getResult();
+    const averageHeartRateBpm = heartRateEvidence.timeWeightedAverageBpm;
+    const { efficiencyFactorResult, aerobicDecouplingResult } =
+      this.state.aerobicAnalysis.getResult();
+    const computedAsOf =
+      this.state.latestAcceptedTimestampMs === null
+        ? (this.config.performanceTargets?.asOf ?? FALLBACK_COMPUTED_AS_OF)
+        : new Date(this.state.latestAcceptedTimestampMs).toISOString();
+    const eligibleDurationSeconds = getTimeBasisSeconds(this.config, this.state);
+    const commonLoad = calculateProvisionalCommonLoad({
+      activityCategory: this.config.activityCategory,
+      performanceTargets: this.config.performanceTargets,
+      computedAsOf,
+      eligibleDurationSeconds,
+      recordingSessionId: this.config.recordingSessionId,
+      ...(this.config.preferredCommonLoadMethods === undefined
+        ? {}
+        : { preferredMethods: this.config.preferredCommonLoadMethods }),
+      power: {
+        normalizedWatts: normalizedPowerWatts,
+        contributingDurationSeconds: this.state.powerSeconds,
+      },
+      heartRate: {
+        evidence: heartRateEvidence,
+      },
+      run: {
+        normalizedGradeAdjustedSpeedMps: normalizedGradedSpeedMetersPerSecond,
+        contributingDurationSeconds:
+          normalizedGradedPaceResult?.diagnostics.contributingDurationSeconds ?? 0,
+      },
+      swim: {
+        distanceMeters: this.state.swimDistanceMeters,
+        contributingDurationSeconds: this.state.swimDistanceSeconds,
+      },
     });
 
-    return {
-      elapsedSeconds: this.state.elapsedSeconds,
-      movingSeconds: this.state.movingSeconds,
+    return provisionalRecordingMetricsSnapshotSchema.parse({
+      schemaVersion: 1,
+      stage: "provisional",
+      authority: "live_recording_only",
+      activity_category: this.config.activityCategory,
+      observations: {
+        duration: {
+          provenance: {
+            stage: "provisional",
+            evidenceRole: "measured",
+            source: "recording_sample_timestamps",
+          },
+          value: this.durationObservation(),
+        },
+        distance: {
+          provenance: {
+            stage: "provisional",
+            evidenceRole: "measured",
+            source: "recording_distance_accumulator",
+          },
+          value: this.distanceObservation(),
+        },
+      },
+      commonLoad,
       averagePowerWatts,
-      normalizedPowerWatts,
-      intensityFactor,
-      powerTrainingStressScore,
+      normalizedPowerResult,
+      normalizedGradedPaceResult,
       variabilityIndex,
       workKilojoules: this.state.powerSeconds > 0 ? this.state.workJoules / 1000 : null,
       averageHeartRateBpm,
-      efficiencyFactor,
-      heartRateTrainingStressScore,
-      runGradeAdjustedPaceTrainingStressScore,
-      swimCriticalSpeedTrainingStressScore,
-      ...selected,
+      heartRateEvidence,
+      heartRateZoneDuration: calculateHeartRateZoneDuration({
+        evidence: heartRateEvidence,
+        lthrBpm: this.resolveEligibleLthr(),
+      }),
+      efficiencyFactorResult,
+      aerobicDecouplingResult,
       sampleCount: this.state.sampleCount,
       powerSampleCount: this.state.powerSampleCount,
-      heartRateSampleCount: this.state.heartRateSampleCount,
+      heartRateSampleCount: heartRateEvidence.diagnostics.contributingIntervalCount,
+    });
+  }
+
+  restoreObservations(input: {
+    elapsedSeconds: number;
+    movingSeconds: number;
+    distanceMeters: number;
+    observedAtMs: number;
+  }): void {
+    if (this.state.sampleCount !== 0) {
+      throw new Error("Provisional recording observations can only be restored into empty state");
+    }
+    if (
+      !Number.isFinite(input.elapsedSeconds) ||
+      input.elapsedSeconds < 0 ||
+      !Number.isFinite(input.movingSeconds) ||
+      input.movingSeconds < 0 ||
+      input.movingSeconds > input.elapsedSeconds ||
+      !Number.isFinite(input.distanceMeters) ||
+      input.distanceMeters < 0 ||
+      !isValidTimestamp(input.observedAtMs)
+    ) {
+      throw new Error("Recovered provisional recording observations are invalid");
+    }
+    const sample = {
+      timestampMs: input.observedAtMs,
+      moving: false,
+      distanceMeters: input.distanceMeters,
     };
+    this.state.previousSample = sample;
+    this.state.previousAcceptedTimestampMs = input.observedAtMs;
+    this.state.latestAcceptedTimestampMs = input.observedAtMs;
+    this.state.sampleCount = 1;
+    this.state.elapsedSeconds = input.elapsedSeconds;
+    this.state.movingSeconds = input.movingSeconds;
+    this.state.latestDistanceMeters = input.distanceMeters;
   }
 
   reset(): void {
-    this.state = createInitialState();
+    this.state = createInitialState(this.config);
+  }
+
+  private durationObservation() {
+    if (this.state.sampleCount === 0) {
+      const unavailable = {
+        status: "unavailable",
+        evidenceRole: "measured",
+        value: null,
+        unit: "seconds",
+        reason: "not_observed",
+      };
+      return { elapsed: unavailable, active: unavailable, moving: unavailable };
+    }
+    return {
+      elapsed: {
+        status: "available",
+        evidenceRole: "measured",
+        value: this.state.elapsedSeconds,
+        unit: "seconds",
+      },
+      active: {
+        status: "available",
+        evidenceRole: "measured",
+        value: this.state.movingSeconds,
+        unit: "seconds",
+      },
+      moving: {
+        status: "available",
+        evidenceRole: "measured",
+        value: this.state.movingSeconds,
+        unit: "seconds",
+      },
+    };
+  }
+
+  private distanceObservation() {
+    if (this.state.latestDistanceMeters === null) {
+      return {
+        status: "unavailable",
+        evidenceRole: "measured",
+        value: null,
+        unit: "meters",
+        reason: this.state.distanceSourceIncomplete ? "invalid_data" : "not_observed",
+      };
+    }
+    return this.state.distanceSourceIncomplete
+      ? {
+          status: "partial",
+          evidenceRole: "measured",
+          value: this.state.latestDistanceMeters,
+          unit: "meters",
+          reason: "source_incomplete",
+        }
+      : {
+          status: "available",
+          evidenceRole: "measured",
+          value: this.state.latestDistanceMeters,
+          unit: "meters",
+        };
+  }
+
+  private addDistanceObservation(distanceMeters: number | null | undefined): void {
+    if (distanceMeters === undefined || distanceMeters === null) return;
+    if (!Number.isFinite(distanceMeters) || distanceMeters < 0) {
+      this.state.distanceSourceIncomplete = true;
+      return;
+    }
+    if (
+      this.state.latestDistanceMeters !== null &&
+      distanceMeters < this.state.latestDistanceMeters
+    ) {
+      this.state.distanceSourceIncomplete = true;
+      return;
+    }
+    this.state.latestDistanceMeters = distanceMeters;
   }
 
   private addPower(sample: RecordingMetricSample, seconds: number): void {
     const powerWatts = finiteOrNull(sample.powerWatts);
     if (powerWatts === null || powerWatts < 0 || seconds <= 0) return;
-
     this.state.powerSampleCount += 1;
     this.state.powerSeconds += seconds;
     this.state.powerWeightedSum += powerWatts * seconds;
     this.state.workJoules += powerWatts * seconds;
-    addRollingFourthRootValue(
-      this.state.powerRolling,
-      { value: powerWatts, seconds },
-      this.config.npWindowSeconds,
-    );
   }
 
-  private addHeartRate(sample: RecordingMetricSample, seconds: number): void {
-    const heartRateBpm = finiteOrNull(sample.heartRateBpm);
-    if (heartRateBpm === null || heartRateBpm <= 0 || seconds <= 0) return;
+  private resolveAlignedRunSpeed(sample: RecordingMetricSample): number | null {
+    const explicitSpeed = finiteOrNull(sample.speedMps);
+    if (explicitSpeed !== null) return explicitSpeed >= 0 ? explicitSpeed : null;
 
-    this.state.heartRateSampleCount += 1;
-    this.state.heartRateSeconds += seconds;
-    this.state.heartRateWeightedSum += heartRateBpm * seconds;
-
-    const trimpPerMinute = calculateTrimpPerMinute(heartRateBpm, this.config);
-    if (trimpPerMinute !== null) {
-      this.state.observedTrimp += trimpPerMinute * (seconds / 60);
-    }
-  }
-
-  private addRunGap(
-    previousSample: RecordingMetricSample,
-    sample: RecordingMetricSample,
-    metricSeconds: number,
-    rawDtSeconds: number,
-  ): void {
-    if (this.config.activityCategory !== "run" || metricSeconds <= 0 || rawDtSeconds <= 0) return;
-
-    const currentAltitude = finiteOrNull(sample.altitudeMeters);
-    const previousAltitude = finiteOrNull(previousSample.altitudeMeters);
-    if (currentAltitude === null || previousAltitude === null) return;
-
+    const previousSample = this.state.previousSample;
+    const previousTimestampMs = this.state.previousAcceptedTimestampMs;
+    if (previousSample === null || previousTimestampMs === null) return null;
+    const seconds = (sample.timestampMs - previousTimestampMs) / 1000;
     const currentDistance = finiteOrNull(sample.distanceMeters);
     const previousDistance = finiteOrNull(previousSample.distanceMeters);
-    let distanceDelta: number | null = null;
-
-    if (currentDistance !== null && previousDistance !== null) {
-      const delta = currentDistance - previousDistance;
-      if (delta > 0) distanceDelta = delta;
+    if (
+      !Number.isFinite(seconds) ||
+      seconds <= 0 ||
+      currentDistance === null ||
+      previousDistance === null
+    ) {
+      return null;
     }
-
-    if (distanceDelta === null) {
-      const speedMps = finiteOrNull(sample.speedMps);
-      if (speedMps === null || speedMps <= 0) return;
-      distanceDelta = speedMps * rawDtSeconds;
-    }
-
-    if (distanceDelta <= 0) return;
-
-    const speedMps = distanceDelta / rawDtSeconds;
-    if (!Number.isFinite(speedMps) || speedMps <= 0) return;
-
-    const grade = clamp((currentAltitude - previousAltitude) / distanceDelta, -0.3, 0.3);
-    const gradeAdjustedSpeed = speedMps * (minettiCost(grade) / minettiCost(0));
-    if (!Number.isFinite(gradeAdjustedSpeed) || gradeAdjustedSpeed <= 0) return;
-
-    this.state.gapSeconds += metricSeconds;
-    addRollingFourthRootValue(
-      this.state.gapRolling,
-      { value: gradeAdjustedSpeed, seconds: metricSeconds },
-      this.config.npWindowSeconds,
-    );
+    const distanceDelta = currentDistance - previousDistance;
+    return Number.isFinite(distanceDelta) && distanceDelta >= 0 ? distanceDelta / seconds : null;
   }
 
   private addSwimDistance(
@@ -558,63 +510,41 @@ class DefaultRecordingMetricsAccumulator implements RecordingMetricsAccumulator 
     seconds: number,
   ): void {
     if (this.config.activityCategory !== "swim" || seconds <= 0) return;
-
     const currentDistance = finiteOrNull(sample.distanceMeters);
     const previousDistance = finiteOrNull(previousSample.distanceMeters);
     if (currentDistance === null || previousDistance === null) return;
-
     const distanceDelta = currentDistance - previousDistance;
     if (!Number.isFinite(distanceDelta) || distanceDelta <= 0) return;
-
     this.state.swimDistanceSeconds += seconds;
     this.state.swimDistanceMeters += distanceDelta;
   }
 
-  private calculateRunGapTss(): number | null {
-    if (this.config.activityCategory !== "run" || !this.config.thresholdPaceSecondsPerKm) {
-      return null;
-    }
-
-    const normalizedGradeAdjustedSpeed = getRollingFourthRootResult(this.state.gapRolling);
-    if (normalizedGradeAdjustedSpeed === null) return null;
-
-    const thresholdSpeed = 1000 / this.config.thresholdPaceSecondsPerKm;
-    if (!Number.isFinite(thresholdSpeed) || thresholdSpeed <= 0) return null;
-
-    const intensityFactor = normalizedGradeAdjustedSpeed / thresholdSpeed;
-    return (this.state.gapSeconds / 3600) * intensityFactor ** 2 * 100;
-  }
-
-  private calculateSwimCssTss(): number | null {
-    if (this.config.activityCategory !== "swim" || !this.config.thresholdSwimPaceSecondsPer100m) {
-      return null;
-    }
-    const basisSeconds = getTimeBasisSeconds(this.config, this.state);
-    if (this.state.swimDistanceSeconds <= 0 || basisSeconds <= 0) return null;
-
-    const swimSpeed = this.state.swimDistanceMeters / basisSeconds;
-    const thresholdSwimSpeed = 100 / this.config.thresholdSwimPaceSecondsPer100m;
-    if (!Number.isFinite(swimSpeed) || !Number.isFinite(thresholdSwimSpeed)) return null;
-    if (swimSpeed <= 0 || thresholdSwimSpeed <= 0) return null;
-
-    const intensityFactor = swimSpeed / thresholdSwimSpeed;
-    return (basisSeconds / 3600) * intensityFactor ** 2 * 100;
+  private resolveEligibleLthr(): number | null {
+    const performanceTargets = this.config.performanceTargets;
+    if (performanceTargets === null) return null;
+    const fact =
+      this.config.activityCategory === "bike"
+        ? performanceTargets.heartRate.bike.lthr
+        : this.config.activityCategory === "run"
+          ? performanceTargets.heartRate.run.lthr
+          : this.config.activityCategory === "swim"
+            ? performanceTargets.heartRate.swim.lthr
+            : null;
+    return fact?.status === "available" ? fact.valueBpm : null;
   }
 }
 
-export function createRecordingMetricsAccumulator(
+export function createProvisionalRecordingMetricsAccumulator(
   config?: RecordingMetricsConfig,
-): RecordingMetricsAccumulator {
-  return new DefaultRecordingMetricsAccumulator(config);
+): ProvisionalRecordingMetricsAccumulator {
+  return new DefaultProvisionalRecordingMetricsAccumulator(config);
 }
 
-export function calculateRecordingMetrics(input: {
+export function calculateProvisionalRecordingMetrics(input: {
   config?: RecordingMetricsConfig;
-  samples: RecordingMetricSample[];
-}): RecordingMetricsSnapshot {
-  const accumulator = createRecordingMetricsAccumulator(input.config);
-  for (const sample of input.samples) {
-    accumulator.addSample(sample);
-  }
+  samples: readonly RecordingMetricSample[];
+}): ProvisionalRecordingMetricsSnapshot {
+  const accumulator = createProvisionalRecordingMetricsAccumulator(input.config);
+  for (const sample of input.samples) accumulator.addSample(sample);
   return accumulator.getSnapshot();
 }
