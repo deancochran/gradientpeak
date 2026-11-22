@@ -79,14 +79,17 @@ describe("Postgres API rate-limit store", () => {
   });
 
   it("admits distinct new keys only through the configured finite durable cap", async () => {
+    const now = Date.UTC(2026, 0, 1);
     const store = new PostgresApiRateLimitStore(await context(), {
       windowMs: 1_000,
       maxDurableWindows: (await durableWindowCount()) + 2,
     });
 
-    const results = await Promise.allSettled(
-      [identity("cap-a"), identity("cap-b"), identity("cap-c")].map((value) =>
-        store.increment(value, Date.now()),
+    const results = await withFrozenDate(now, () =>
+      Promise.allSettled(
+        [identity("cap-a"), identity("cap-b"), identity("cap-c")].map((value) =>
+          store.increment(value, now),
+        ),
       ),
     );
 
