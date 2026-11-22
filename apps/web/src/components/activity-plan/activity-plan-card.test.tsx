@@ -46,4 +46,33 @@ describe("ActivityPlanCard", () => {
     expect(screen.getByText("~0.70")).toBeTruthy();
     expect(screen.queryByText("0.55")).toBeNull();
   });
+
+  it("keeps compact unavailable-estimate feedback human-readable", () => {
+    const plan = {
+      id: "plan-unavailable-distance",
+      name: "Open ride",
+      description: null,
+      structure: {},
+      activityCategory: "bike",
+      isSystemTemplate: true,
+      owner: null,
+      engagement: { likes: 0, viewerHasLiked: false },
+      metrics: [
+        {
+          key: "distance",
+          label: "Distance",
+          status: "unavailable",
+          value: null,
+          unit: "meters",
+          reason: "not_prescribed",
+          provenance: null,
+        },
+      ],
+    } as unknown as ActivityPlanSummary;
+
+    render(<ActivityPlanCard plan={plan} />);
+
+    expect(screen.getByText("Some estimates are unavailable.")).toBeTruthy();
+    expect(screen.queryByText(/not_prescribed/)).toBeNull();
+  });
 });

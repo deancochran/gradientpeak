@@ -2,6 +2,7 @@ import type { ActivityPlanSummary, ScheduledActivityPlanSummary } from "@repo/co
 import { deriveActivityPlanPresentation } from "@repo/core/activity-plan";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Badge } from "@repo/ui/components/badge";
+import { ResourceCardHeader, ResourceCardShell } from "@repo/ui/components/resource-presentation";
 import { Heart } from "lucide-react";
 
 import { getActivityBadgeLabel } from "../../lib/activity-route-helpers";
@@ -51,12 +52,12 @@ export function ActivityPlanCard({
         </div>
       </div>
 
-      <div className="mt-4 min-w-0">
-        <h2 className="text-lg font-semibold">{plan.name}</h2>
-        <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
-          {plan.description || "No description provided."}
-        </p>
-      </div>
+      <ResourceCardHeader
+        description={plan.description}
+        descriptionFallback="No description provided."
+        title={plan.name}
+        titleClassName="text-lg"
+      />
 
       <div className="mt-4">
         <ActivityPlanEstimateRow compact metrics={plan.metrics} showUnavailableDetails={false} />
@@ -76,31 +77,35 @@ export function ActivityPlanCard({
     </>
   );
 
-  const className = `block w-full rounded-2xl border bg-card p-5 text-left transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selected ? "border-primary ring-1 ring-primary" : ""} ${disabled ? "cursor-not-allowed opacity-60" : ""}`;
+  const className =
+    "w-full rounded-2xl border bg-card p-0 text-left transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
   const accessibilityLabel = openLabel ?? `Open activity plan ${plan.name}`;
   if (href) {
     return (
-      <AppHrefLink
-        aria-label={accessibilityLabel}
-        className={className}
-        data-testid={`activity-plan-card-${plan.id}`}
-        href={href}
-      >
-        {content}
+      <AppHrefLink aria-label={accessibilityLabel} className="block" href={href}>
+        <ResourceCardShell
+          cardClassName={className}
+          contentClassName="space-y-4 p-5"
+          disabled={disabled}
+          highlighted={selected}
+          testID={`activity-plan-card-${plan.id}`}
+        >
+          {content}
+        </ResourceCardShell>
       </AppHrefLink>
     );
   }
   return (
-    <button
-      aria-label={accessibilityLabel}
-      aria-pressed={selected}
+    <ResourceCardShell
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ selected }}
+      cardClassName={className}
+      contentClassName="space-y-4 p-5"
       disabled={disabled}
-      className={className}
-      data-testid={`activity-plan-card-${plan.id}`}
-      onClick={onOpen}
-      type="button"
+      onPress={onOpen}
+      testID={`activity-plan-card-${plan.id}`}
     >
       {content}
-    </button>
+    </ResourceCardShell>
   );
 }

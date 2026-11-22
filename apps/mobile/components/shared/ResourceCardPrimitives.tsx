@@ -1,47 +1,23 @@
-import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
+import {
+  ResourceActionRegion,
+  ResourceCardHeader,
+  ResourceCardShell,
+  type ResourceMetric,
+  ResourceMetricsRow,
+} from "@repo/ui/components/resource-presentation";
 import { Text } from "@repo/ui/components/text";
 import { Heart } from "lucide-react-native";
 import type { ComponentType, ReactNode } from "react";
-import { type AccessibilityState, Pressable, TouchableOpacity, View } from "react-native";
+import { Pressable, View } from "react-native";
 import { formatSmartTimestamp, formatTimestamp } from "@/lib/display/formatters";
 import { omitUndefined } from "@/lib/omitUndefined";
 import { type EntityOwner, EntityOwnerRow } from "./EntityOwnerRow";
 
-type ResourceCardShellProps = {
-  accessibilityLabel?: string;
-  accessibilityState?: AccessibilityState;
-  actionRegion?: ReactNode;
-  children: ReactNode;
-  cardClassName?: string;
-  compact?: boolean;
-  contentClassName?: string;
-  disabledClassName?: string;
-  disabled?: boolean;
-  highlighted?: boolean;
-  navigationClassName?: string;
-  onPress?: () => void;
-  testID?: string;
-};
+export type { ResourceMetric };
+export { ResourceCardHeader, ResourceCardShell, ResourceMetricsRow };
 
 type IconComponent = ComponentType<{ className?: string; color?: string; size?: number }>;
-
-type ResourceCardHeaderProps = {
-  accessory?: ReactNode;
-  compact?: boolean;
-  description?: string | null;
-  descriptionFallback?: string | null;
-  descriptionNumberOfLines?: number;
-  detail?: boolean;
-  icon?: IconComponent;
-  iconClassName?: string;
-  iconContainerClassName?: string;
-  meta?: ReactNode;
-  title?: string | null;
-  titleFallback?: string;
-  titleClassName?: string;
-  titleNumberOfLines?: number;
-};
 
 type ResourceLikeButtonProps = {
   disabled?: boolean;
@@ -124,19 +100,6 @@ export function ResourceCategoryItems({
   );
 }
 
-export type ResourceMetric = {
-  label: string;
-  tone?: "default" | "primary" | "muted";
-  value: string;
-};
-
-type ResourceMetricsRowProps = {
-  compact?: boolean;
-  maxItems?: number;
-  metrics: ResourceMetric[];
-  testID?: string;
-};
-
 export type ResourceTag = {
   label: string;
   testID?: string;
@@ -213,148 +176,9 @@ export function ResourceOwnerActionRow({
         />
       </View>
 
-      {hasActions ? <View className="shrink-0 flex-row items-center gap-2">{actions}</View> : null}
-    </View>
-  );
-}
-
-export function ResourceCardShell({
-  accessibilityLabel,
-  accessibilityState,
-  actionRegion,
-  children,
-  cardClassName,
-  compact = false,
-  contentClassName,
-  disabledClassName,
-  disabled = false,
-  highlighted = false,
-  navigationClassName = "gap-3",
-  onPress,
-  testID,
-}: ResourceCardShellProps) {
-  const isNavigationControl = Boolean(onPress || accessibilityLabel);
-  const Wrapper = isNavigationControl ? TouchableOpacity : View;
-  const isDisabled = disabled || !onPress;
-  const hasActionRegion =
-    actionRegion !== undefined && actionRegion !== null && actionRegion !== false;
-
-  return (
-    <Card
-      className={`${compact ? "py-2" : "py-3"} ${highlighted ? "border-2 border-primary" : ""} ${disabledClassName ?? ""} ${cardClassName ?? ""}`}
-    >
-      <CardContent className={contentClassName ?? (compact ? "gap-3 px-2" : "gap-3 px-3")}>
-        {hasActionRegion ? (
-          <View testID={testID ? `${testID}-action-region` : "resource-card-action-region"}>
-            {actionRegion}
-          </View>
-        ) : null}
-        <Wrapper
-          accessibilityLabel={isNavigationControl ? accessibilityLabel : undefined}
-          accessibilityRole={isNavigationControl ? "button" : undefined}
-          accessibilityState={
-            isNavigationControl ? { ...accessibilityState, disabled: isDisabled } : undefined
-          }
-          activeOpacity={isNavigationControl ? 0.85 : 1}
-          className={navigationClassName}
-          disabled={isDisabled}
-          onPress={isDisabled ? undefined : onPress}
-          testID={testID}
-        >
-          {children}
-        </Wrapper>
-      </CardContent>
-    </Card>
-  );
-}
-
-export function ResourceCardHeader({
-  accessory,
-  compact = false,
-  description,
-  descriptionFallback,
-  descriptionNumberOfLines,
-  detail = false,
-  icon,
-  iconClassName = "text-primary",
-  iconContainerClassName = "bg-primary/10",
-  meta,
-  title,
-  titleClassName,
-  titleFallback,
-  titleNumberOfLines,
-}: ResourceCardHeaderProps) {
-  const resolvedDescription = description?.trim() || descriptionFallback?.trim() || null;
-  const resolvedTitle = title?.trim() || titleFallback?.trim() || null;
-  const IconComponent = icon;
-
-  return (
-    <View className="flex-row items-start gap-3">
-      {IconComponent ? (
-        <View className={`rounded-full p-2.5 ${iconContainerClassName}`}>
-          <Icon as={IconComponent} size={compact ? 16 : 18} className={iconClassName} />
-        </View>
+      {hasActions ? (
+        <ResourceActionRegion className="shrink-0">{actions}</ResourceActionRegion>
       ) : null}
-
-      <View className="min-w-0 flex-1 gap-1">
-        {resolvedTitle ? (
-          <Text
-            className={
-              titleClassName ??
-              `${detail ? "text-xl" : compact ? "text-lg" : "text-xl"} font-semibold text-foreground`
-            }
-            numberOfLines={titleNumberOfLines ?? (detail ? undefined : 2)}
-          >
-            {resolvedTitle}
-          </Text>
-        ) : null}
-        {resolvedDescription ? (
-          <Text
-            className="text-sm leading-5 text-muted-foreground"
-            numberOfLines={descriptionNumberOfLines ?? (detail ? undefined : 2)}
-          >
-            {resolvedDescription}
-          </Text>
-        ) : null}
-        {meta}
-      </View>
-
-      {accessory}
-    </View>
-  );
-}
-
-export function ResourceMetricsRow({
-  compact = false,
-  maxItems,
-  metrics,
-  testID,
-}: ResourceMetricsRowProps) {
-  const visibleMetrics = metrics.slice(0, maxItems ?? (compact ? 3 : metrics.length));
-
-  if (visibleMetrics.length === 0) {
-    return null;
-  }
-
-  return (
-    <View className="flex-row flex-wrap items-start gap-x-5 gap-y-2 px-1" testID={testID}>
-      {visibleMetrics.map((metric) => (
-        <View key={metric.label} className="items-start gap-0.5">
-          <Text className="text-[10px] text-muted-foreground">{metric.label}</Text>
-          <Text
-            className={`text-[11px] font-semibold ${
-              metric.tone === "primary"
-                ? "text-primary"
-                : metric.tone === "muted"
-                  ? "text-muted-foreground"
-                  : "text-foreground"
-            }`}
-            numberOfLines={1}
-          >
-            {metric.value}
-          </Text>
-        </View>
-      ))}
     </View>
   );
 }

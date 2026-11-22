@@ -1,7 +1,6 @@
 import { ACTIVITY_PLAN_METRIC_PROVENANCE_LABELS, type SemanticMetric } from "@repo/core";
+import { ResourceMetricsRow } from "@repo/ui/components/resource-presentation";
 import { formatActivityPlanHeadlineMetric } from "@repo/ui/lib/activity-plan-metric-presentation";
-
-import { CanonicalMetricsRow } from "../activity/canonical-metrics-row";
 
 const estimateOrder = ["distance", "elapsed_duration", "common_load"] as const;
 
@@ -75,13 +74,12 @@ export function ActivityPlanEstimateRow({
 
   return (
     <div className="space-y-2">
-      <CanonicalMetricsRow
+      <ResourceMetricsRow
         compact={compact}
-        items={estimates.map((estimate) => {
+        metrics={estimates.map((estimate) => {
           const accessibilityValue = estimate.value === "—" ? "Unavailable" : estimate.value;
           return {
             accessibilityLabel: `${estimate.label}, ${accessibilityValue}, ${estimate.provenanceLabel}`,
-            key: estimate.key,
             label: estimate.label,
             ...(estimate.key === "common_load" || estimate.label === "Intensity"
               ? { tone: "primary" as const }
@@ -103,10 +101,7 @@ export function ActivityPlanEstimateRow({
           </ul>
         </details>
       ) : unavailable.length ? (
-        <p className="text-xs text-muted-foreground">
-          Unavailable estimates —{" "}
-          {unavailable.map((metric) => `${metric.label}: ${metric.reason ?? "Unknown"}`).join("; ")}
-        </p>
+        <p className="text-xs text-muted-foreground">Some estimates are unavailable.</p>
       ) : null}
     </div>
   );
