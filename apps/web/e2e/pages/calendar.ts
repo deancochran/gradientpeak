@@ -39,6 +39,16 @@ export class CalendarPage {
       if (input.repeat) await this.page.getByLabel("Repeat weekly").selectOption("4");
       await this.page.getByRole("button", { name: /^create$/i }).press("Enter");
       await expect(this.page).toHaveURL(/\/calendar(?:\?.*)?$/);
+      const calendarUrl = new URL(this.page.url());
+      const month = calendarUrl.searchParams.get("month");
+      const view = calendarUrl.searchParams.get("view");
+      if (!month || !view)
+        throw new Error("Calendar redirect did not preserve its month and view.");
+      const dayHref = `/calendar/day/${input.date}?month=${month}&view=${view}`;
+      const dayLink = this.page.locator(`a[href="${dayHref}"]`);
+      await expect(dayLink).toHaveCount(1);
+      await dayLink.click();
+      await expect(this.page).toHaveURL(dayHref);
       const eventLink = this.page.getByRole("link", { name: input.title, exact: true });
       await expect(eventLink).toBeVisible();
       await eventLink.click();
