@@ -14,4 +14,14 @@ describe("Badge web", () => {
       badgeFixtures.featured.children,
     );
   });
+
+  it("uses the contrast-safe destructive surface token", () => {
+    renderWeb(
+      <Badge testId="destructive-badge" variant="destructive">
+        Failed
+      </Badge>,
+    );
+
+    expect(screen.getByTestId("destructive-badge")).toHaveClass("bg-destructive-surface");
+  });
 });
