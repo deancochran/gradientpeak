@@ -161,7 +161,7 @@ test("[variation:routes.event-attachment:keyboard] keyboard event selection pers
         fullPage: true,
         path: testInfo.outputPath("event-route-attached-before-reload.png"),
       });
-      const link = athletePage.getByRole("link", { name: routeName });
+      const link = athletePage.getByRole("link", { name: routeName, exact: true });
       await expect(link).toHaveAttribute("href", `/routes/${routeId}`);
       await athletePage.reload();
       await expect(link).toBeVisible();
@@ -201,11 +201,11 @@ test("[variation:routes.event-attachment:route-back] event route link opens map 
         fullPage: true,
         path: testInfo.outputPath("event-route-attached-before-open.png"),
       });
-      await athletePage.getByRole("link", { name: routeName }).click();
+      await athletePage.getByRole("link", { name: routeName, exact: true }).click();
       await expect(athletePage.getByText("Map preview", { exact: true })).toBeVisible();
       await athletePage.goBack();
       await expect(athletePage.getByRole("heading", { name: eventTitle })).toBeVisible();
-      await expect(athletePage.getByRole("link", { name: routeName })).toBeVisible();
+      await expect(athletePage.getByRole("link", { name: routeName, exact: true })).toBeVisible();
       await expect(routeCard.getByRole("img", { name: "Route preview" })).toBeVisible();
       await athletePage.screenshot({
         fullPage: true,
