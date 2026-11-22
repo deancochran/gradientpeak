@@ -1,93 +1,171 @@
-import { useRouter } from "expo-router";
-import { useCallback } from "react";
+import { Button } from "@repo/ui/components/button";
+import { Tabs, TabsList, TabsTrigger } from "@repo/ui/components/tabs";
+import { Text } from "@repo/ui/components/text";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { RefreshControl, ScrollView, View } from "react-native";
+import { CalendarTabView } from "@/components/calendar";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
-import { TrainingPathSection } from "@/components/plan/training-path/TrainingPathSection";
+import { PlanDashboardContent } from "@/components/plan/training-path/PlanDashboardContent";
 import { usePlanTrainingPathData } from "@/components/plan/training-path/usePlanTrainingPathData";
 import { AppHeader } from "@/components/shared";
 import { ROUTES } from "@/lib/constants/routes";
 import { usePerformanceScreenReady } from "@/lib/performance";
 
-function PlanDashboardScreen() {
+type PlanView = "overview" | "calendar";
+
+function PlanViewToggle({
+  activeView,
+  onChange,
+}: {
+  activeView: PlanView;
+  onChange: (view: PlanView) => void;
+}) {
+  return (
+    <Tabs onValueChange={(view) => onChange(view as PlanView)} value={activeView}>
+      <TabsList
+        className="mx-4 mt-3 flex-row rounded-2xl border border-border bg-muted/40 p-1"
+        testId="plan-view-toggle"
+      >
+        {(["overview", "calendar"] as const).map((view) => {
+          const selected = activeView === view;
+          return (
+            <TabsTrigger
+              accessibilityState={{ selected }}
+              className={
+                selected
+                  ? "flex-1 rounded-xl bg-background px-3 py-2 shadow-sm"
+                  : "flex-1 rounded-xl px-3 py-2"
+              }
+              key={view}
+              testId={`plan-view-${view}`}
+              value={view}
+            >
+              <Text
+                className={
+                  selected
+                    ? "text-center text-sm font-semibold text-foreground"
+                    : "text-center text-sm font-semibold text-muted-foreground"
+                }
+              >
+                {view === "overview" ? "Overview" : "Calendar"}
+              </Text>
+            </TabsTrigger>
+          );
+        })}
+      </TabsList>
+    </Tabs>
+  );
+}
+
+function PlanOverview({
+  trainingPath,
+}: {
+  trainingPath: ReturnType<typeof usePlanTrainingPathData>;
+}) {
   const router = useRouter();
   usePerformanceScreenReady("route-plan");
-  const trainingPath = usePlanTrainingPathData();
+  const hasBlockingFailure = trainingPath.queryFailureCount > 0 && !trainingPath.hasUsableData;
 
-  const navigateToActivity = useCallback(
-    (activityId: string) =>
-      router.navigate({ pathname: "/activity-detail", params: { id: activityId } } as never),
-    [router],
+  return (
+    <ScrollView
+      className="flex-1"
+      contentContainerClassName="gap-4 px-4 pb-8 pt-3"
+      refreshControl={
+        <RefreshControl
+          refreshing={trainingPath.refreshing}
+          onRefresh={trainingPath.handleRefresh}
+        />
+      }
+      testID="plan-scroll"
+    >
+      {trainingPath.queryFailureCount > 0 ? (
+        <View
+          accessibilityRole={hasBlockingFailure ? "alert" : undefined}
+          className="gap-2 rounded-2xl border border-destructive/40 bg-card p-4"
+          testID="plan-query-error"
+        >
+          <Text className="font-semibold text-foreground">
+            {trainingPath.hasUsableData
+              ? "Some plan details could not be refreshed"
+              : "Your plan could not be loaded"}
+          </Text>
+          <Text className="text-sm text-muted-foreground">
+            {trainingPath.hasUsableData
+              ? "Available schedule and training data is still shown below."
+              : "Check your connection and retry loading your plan."}
+          </Text>
+          <Button
+            className="self-start"
+            onPress={trainingPath.handleRefresh}
+            size="sm"
+            variant="outline"
+            testID="plan-query-retry"
+          >
+            <Text>Retry</Text>
+          </Button>
+        </View>
+      ) : null}
+      {!hasBlockingFailure ? (
+        <PlanDashboardContent
+          data={trainingPath}
+          onCreateGoal={() => router.navigate(ROUTES.GOALS.CREATE as never)}
+          onOpenGoal={(goalId) => router.navigate(ROUTES.GOALS.DETAIL(goalId) as never)}
+          onOpenGoals={() => router.navigate(ROUTES.GOALS.LIST as never)}
+          onOpenSourceActivity={(activityId) =>
+            router.navigate(ROUTES.ACTIVITIES.DETAIL(activityId) as never)
+          }
+          onViewDetails={(date, period) =>
+            router.navigate(ROUTES.PLAN.PLANNING_LEDGER({ anchorDate: date, period }) as never)
+          }
+        />
+      ) : null}
+    </ScrollView>
   );
-  const navigateToGoal = useCallback(
-    (goalId: string) =>
-      router.navigate({ pathname: "/goal-detail", params: { id: goalId } } as never),
-    [router],
-  );
-  const navigateToCreateGoal = useCallback(
-    () => router.navigate(ROUTES.GOALS.CREATE as never),
-    [router],
-  );
-  const navigateToGroup = useCallback(
-    (groupId: string) =>
-      router.navigate({ pathname: "/group-detail", params: { groupId } } as never),
-    [router],
-  );
-  const navigateToGroupEvent = useCallback(
-    (eventId: string) =>
-      router.navigate({
-        pathname: "/group-event-detail",
-        params: { groupEventId: eventId },
-      } as never),
-    [router],
-  );
-  const navigateToScheduledEvent = useCallback(
-    (eventId: string) =>
-      router.navigate({ pathname: "/event-detail", params: { id: eventId } } as never),
-    [router],
-  );
-  const navigateToTrainingPreferences = useCallback(
-    () => router.navigate(ROUTES.PLAN.TRAINING_PREFERENCES as never),
-    [router],
-  );
+}
+
+function PlanDashboardScreen() {
+  const router = useRouter();
+  const { view } = useLocalSearchParams<{ view?: string }>();
+  const activeView: PlanView = view === "calendar" ? "calendar" : "overview";
+  const trainingPath = usePlanTrainingPathData();
 
   return (
     <View className="flex-1 bg-background" testID="plan-screen">
       <AppHeader title="Plan" />
-      <ScrollView
-        className="flex-1"
-        refreshControl={
-          <RefreshControl
-            refreshing={trainingPath.refreshing}
-            onRefresh={trainingPath.handleRefresh}
-          />
+      <PlanViewToggle
+        activeView={activeView}
+        onChange={(nextView) =>
+          router.navigate({
+            pathname: "/(internal)/(tabs)/plan",
+            params: { view: nextView },
+          } as never)
         }
-      >
-        <View className="gap-5 px-2 pb-6 pt-3">
-          <TrainingPathSection
-            dailyPoints={trainingPath.dailyTrainingPathPoints}
-            chartLoading={trainingPath.chartLoading}
-            model={trainingPath.trainingPath}
-            selectedDate={trainingPath.selectedDate}
-            selectedWeekGoals={trainingPath.selectedWeekGoals}
-            selectedWeekEvents={trainingPath.selectedWeekEvents}
-            selectedWeekGroupEvents={trainingPath.selectedWeekGroupEvents}
-            selectedWeekCompletedActivities={trainingPath.selectedWeekCompletedActivities}
-            selectedWeekLoading={trainingPath.selectedWeekLoading}
-            onScrollNearEnd={trainingPath.extendTrainingPathWindowEnd}
-            onScrollNearStart={trainingPath.extendTrainingPathWindowStart}
-            onOpenActivity={navigateToActivity}
-            onCreateGoal={navigateToCreateGoal}
-            onOpenGoal={navigateToGoal}
-            onOpenGroup={navigateToGroup}
-            onOpenGroupEvent={navigateToGroupEvent}
-            onOpenScheduledEvent={navigateToScheduledEvent}
-            onOpenSettings={navigateToTrainingPreferences}
-            onWeekScrollStart={trainingPath.handleWeekScrollStart}
-            onSelectedDateChange={trainingPath.handleSelectedDateChange}
-            onSelectedWeekChange={trainingPath.handleSelectedWeekChange}
-          />
+      />
+      {trainingPath.planningTimezoneState !== "ready" ? (
+        <View className="gap-3 px-4 pt-6" testID="plan-initializing">
+          {trainingPath.timezoneSetupError ? (
+            <>
+              <Text accessibilityRole="alert" className="text-sm text-destructive">
+                {trainingPath.timezoneSetupError}
+              </Text>
+              <Button
+                onPress={() => void trainingPath.retryTimezoneInitialization()}
+                disabled={trainingPath.timezoneInitializing}
+                variant="outline"
+                testID="plan-setup-retry"
+              >
+                <Text>Retry</Text>
+              </Button>
+            </>
+          ) : (
+            <Text className="text-sm text-muted-foreground">Preparing your plan…</Text>
+          )}
         </View>
-      </ScrollView>
+      ) : activeView === "calendar" ? (
+        <CalendarTabView />
+      ) : (
+        <PlanOverview trainingPath={trainingPath} />
+      )}
     </View>
   );
 }
