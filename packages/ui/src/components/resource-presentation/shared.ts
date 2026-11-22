@@ -60,3 +60,36 @@ export type ResourceActionRegionProps = {
   className?: string;
   testID?: string;
 };
+
+/**
+ * A non-interactive frame for an already-selected resource. Apps retain picker,
+ * query, and navigation behavior while the association stays visually distinct.
+ */
+export type ResourceAssociationProps = {
+  children?: ReactNode;
+  description?: string;
+  label: string;
+  status?: string;
+  testID?: string;
+};
+
+export type ResourceSelectionOption<T extends string = string> = {
+  label: string;
+  value: T;
+};
+
+/**
+ * A native-select resource choice with an explicit automatic option and a
+ * retained fallback for selections outside the current result page.
+ */
+export type ResourceSelectionFieldProps<T extends string = string> = {
+  automaticLabel: string;
+  disabled?: boolean;
+  fallbackLabel?: string;
+  id: string;
+  label: string;
+  onChange: (value: T | null) => void;
+  options: readonly ResourceSelectionOption<T>[];
+  unavailableMessage?: string;
+  value: T | null;
+};

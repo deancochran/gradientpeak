@@ -2,7 +2,13 @@ import { fireEvent } from "@testing-library/react";
 import { MapPin } from "lucide-react";
 import { describe, expect, it, vi } from "vitest";
 import { renderWeb, screen } from "../../test/render-web";
-import { ResourceCardHeader, ResourceCardShell, ResourceMetricsRow } from "./index.web";
+import {
+  ResourceAssociation,
+  ResourceCardHeader,
+  ResourceCardShell,
+  ResourceMetricsRow,
+  ResourceSelectionField,
+} from "./index.web";
 
 describe("Resource presentation web", () => {
   it("keeps secondary actions outside the optional primary resource action", () => {
@@ -39,6 +45,44 @@ describe("Resource presentation web", () => {
 
     expect(screen.getByText("Distance")).toBeInTheDocument();
     expect(screen.getByText("—")).toBeInTheDocument();
+  });
+
+  it("frames a selected association without introducing another action", () => {
+    renderWeb(
+      <ResourceAssociation
+        description="This plan remains attached to the session."
+        label="Selected activity plan"
+        status="Unavailable in current results"
+        testID="selected-plan"
+      >
+        <div>Canonical plan card</div>
+      </ResourceAssociation>,
+    );
+
+    expect(screen.getByTestId("selected-plan")).toHaveTextContent("Selected activity plan");
+    expect(screen.getByText("Unavailable in current results")).toBeInTheDocument();
+    expect(screen.getByText("Canonical plan card")).toBeInTheDocument();
+    expect(screen.getByTestId("selected-plan").querySelector("button")).toBeNull();
+  });
+
+  it("retains an off-page resource selection in its native browser select", () => {
+    const onChange = vi.fn();
+    renderWeb(
+      <ResourceSelectionField
+        automaticLabel="Choose automatically"
+        fallbackLabel="Selected activity"
+        id="activity-plan"
+        label="Activity plan"
+        onChange={onChange}
+        options={[{ label: "Current activity", value: "current" }]}
+        value="off-page"
+      />,
+    );
+
+    expect(screen.getByLabelText("Activity plan")).toHaveValue("off-page");
+    expect(screen.getByRole("status")).toHaveTextContent("selection is retained");
+    fireEvent.change(screen.getByLabelText("Activity plan"), { target: { value: "" } });
+    expect(onChange).toHaveBeenCalledWith(null);
   });
 
   it("keeps all metrics in compact density unless the app asks for a limit", () => {

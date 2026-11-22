@@ -8,6 +8,10 @@ import {
   CardTitle,
 } from "@repo/ui/components/card";
 import { Label } from "@repo/ui/components/label";
+import {
+  ResourceAssociation,
+  ResourceSelectionField,
+} from "@repo/ui/components/resource-presentation";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { api } from "../../../lib/api/client";
@@ -175,7 +179,6 @@ export function CoachActivityPlanPublication({
           activityPlanPreparationSearch(preparationContext, selectedPlanCard.id),
         ).toString()}`
       : undefined;
-  const selectedPlanIsInLibrary = plans.some((plan) => plan.id === selectedPlan?.id);
 
   function retainWorkspaceContext(next: { activityPlanId?: string; planningDate: string }) {
     const nextContext = parseActivityPlanPreparationContext({
@@ -345,31 +348,28 @@ export function CoachActivityPlanPublication({
         ) : null}
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor="coach-activity-plan">Your activity plan</Label>
-            <select
-              className="min-h-10 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground"
+            <ResourceSelectionField
+              automaticLabel="Choose an activity plan"
               disabled={!coachMembership || publish.isPending}
+              fallbackLabel={
+                selectedPlan
+                  ? `${selectedPlan.name} · version ${selectedPlan.activityPlanRevision}`
+                  : "Selected activity plan"
+              }
               id="coach-activity-plan"
-              onChange={(event) => {
+              label="Your activity plan"
+              onChange={(nextActivityPlanId) => {
                 invalidatePreviewIntent();
-                const nextActivityPlanId = event.target.value;
-                setActivityPlanId(nextActivityPlanId);
-                retainWorkspaceContext({ activityPlanId: nextActivityPlanId, planningDate });
+                const nextId = nextActivityPlanId ?? "";
+                setActivityPlanId(nextId);
+                retainWorkspaceContext({ activityPlanId: nextId, planningDate });
               }}
-              value={activityPlanId}
-            >
-              <option value="">Choose an activity plan</option>
-              {selectedPlan && !selectedPlanIsInLibrary ? (
-                <option value={selectedPlan.id}>
-                  {selectedPlan.name} · version {selectedPlan.activityPlanRevision}
-                </option>
-              ) : null}
-              {plans.map((plan) => (
-                <option key={plan.id} value={plan.id}>
-                  {plan.name} · version {plan.activityPlanRevision}
-                </option>
-              ))}
-            </select>
+              options={plans.map((plan) => ({
+                label: `${plan.name} · version ${plan.activityPlanRevision}`,
+                value: plan.id,
+              }))}
+              value={activityPlanId || null}
+            />
             {!activityPlans.isLoading && plans.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 Create an activity plan in your library first.
@@ -425,22 +425,25 @@ export function CoachActivityPlanPublication({
           </p>
         ) : null}
         {selectedPlanCard ? (
-          <div className="space-y-2">
-            <p className="text-sm font-medium text-foreground">Selected activity plan</p>
+          <ResourceAssociation
+            description={
+              selectedPlanHref
+                ? "Inspect or edit this plan before publishing. Your athlete, planning date, and selected week stay attached to the return link."
+                : publish.isPending
+                  ? "Plan inspection is unavailable while publication is pending."
+                  : "Choose a real athlete planning date before inspecting or editing this plan."
+            }
+            label="Selected activity plan"
+            testID="coach-selected-activity-plan"
+          >
             <ActivityPlanCard
               disabled={!selectedPlanHref}
+              onOpen={selectedPlanHref ? undefined : () => {}}
               openLabel={`Inspect or edit selected activity plan ${selectedPlanCard.name}`}
               plan={selectedPlanCard}
               {...(selectedPlanHref ? { href: selectedPlanHref } : {})}
             />
-            <p className="text-xs text-muted-foreground">
-              {selectedPlanHref
-                ? "Inspect or edit this plan before publishing. Your athlete, planning date, and selected week stay attached to the return link."
-                : publish.isPending
-                  ? "Plan inspection is unavailable while publication is pending."
-                  : "Choose a real athlete planning date before inspecting or editing this plan."}
-            </p>
-          </div>
+          </ResourceAssociation>
         ) : null}
         {error ? (
           <p role="alert" className="text-sm text-destructive">
