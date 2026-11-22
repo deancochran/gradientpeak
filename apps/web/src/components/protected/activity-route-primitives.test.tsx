@@ -200,6 +200,38 @@ describe("resource card selectors", () => {
     expect(decode).toHaveBeenCalledWith("normal-encoded-route");
   });
 
+  it("keeps Open available when an encoded route preview exceeds the card budget", () => {
+    const onOpen = vi.fn();
+    render(
+      <RouteListCard
+        onOpen={onOpen}
+        route={{
+          created_at: "2026-07-17T10:00:00.000Z",
+          updated_at: "2026-07-17T10:00:00.000Z",
+          description: null,
+          id: "over-budget-route",
+          name: "Large route",
+          profile_id: null,
+          file_path: "routes/large-route.gpx",
+          storage_state: "ready",
+          total_distance: 1_000,
+          total_ascent: null,
+          total_descent: null,
+          elevation_polyline: null,
+          polyline: "a".repeat(COMPACT_ROUTE_PREVIEW_MAX_ENCODED_LENGTH + 1),
+          is_system_template: false,
+          is_public: false,
+          likes_count: 0,
+          has_liked: false,
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("route-preview-unavailable")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("route-card-over-budget-route-open"));
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+
   it("renders saved route geometry with lightweight metrics and an accessible open action", () => {
     const onOpen = vi.fn();
     render(

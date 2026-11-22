@@ -51,6 +51,19 @@ describe("RoutePreviewMap", () => {
     expect(screen.queryByRole("img", { name: "Route preview" })).toBeNull();
   });
 
+  it("keeps the default non-compact preview available above the card coordinate budget", () => {
+    render(
+      <RoutePreviewMap
+        coordinates={Array.from({ length: COMPACT_ROUTE_PREVIEW_MAX_COORDINATES + 1 }, () => ({
+          latitude: 40,
+          longitude: -74,
+        }))}
+      />,
+    );
+
+    expect(screen.getByRole("img", { name: "Route preview" })).toBeTruthy();
+  });
+
   const invalidGeometries = [
     [
       { latitude: Number.NaN, longitude: 0 },
