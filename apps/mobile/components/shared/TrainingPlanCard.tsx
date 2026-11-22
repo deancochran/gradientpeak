@@ -140,7 +140,6 @@ export function TrainingPlanCard({
           />
           <ResourceMetricsRow
             compact
-            maxItems={3}
             metrics={[
               { label: "Duration", value: summaryMetrics.durationLabel },
               { label: "Sessions", value: summaryMetrics.sessionsLabel },
