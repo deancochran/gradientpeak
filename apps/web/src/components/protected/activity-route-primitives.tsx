@@ -9,7 +9,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
-import { ResourceMetricsRow } from "@repo/ui/components/resource-presentation";
+import {
+  ResourceActionRegion,
+  ResourceCardHeader,
+  ResourceMetricsRow,
+} from "@repo/ui/components/resource-presentation";
 import { cn } from "@repo/ui/lib/cn";
 import { Heart, MapPin, MessageCircle, Share2 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
@@ -326,49 +330,56 @@ export function ActivityListCard({
       data-testid={`activity-card-${activity.id}`}
     >
       <CardContent className="space-y-4 p-4">
-        <div className="flex items-start gap-3">
-          <Avatar className="h-10 w-10 shrink-0">
-            {activity.owner.avatarUrl ? <AvatarImage src={activity.owner.avatarUrl} /> : null}
-            <AvatarFallback>
-              {(activity.owner.username ?? "GP").slice(0, 2).toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
-          <div className="min-w-0 flex-1 space-y-1">
-            <h3 className="font-semibold text-foreground">{activity.title}</h3>
-            <p className="text-sm font-medium text-foreground">
-              @{activity.owner.username ?? "athlete"}
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <ActivityCategoryBadges categories={activity.activityComposition.categories} />
-            </div>
-            <p className="text-sm text-muted-foreground">
-              {activity.time.startedAt ? formatDateTime(activity.time.startedAt) : "—"}
-            </p>
-            {activity.notes ? (
-              <p className="line-clamp-2 text-sm text-muted-foreground">{activity.notes}</p>
-            ) : null}
-          </div>
-          {href ? (
-            <Button asChild variant="ghost">
-              <AppHrefLink
-                aria-label={`Open activity ${activity.title}`}
+        <ResourceCardHeader
+          accessory={
+            href ? (
+              <Button asChild variant="ghost">
+                <AppHrefLink
+                  aria-label={`Open activity ${activity.title}`}
+                  data-testid={`activity-card-${activity.id}-open`}
+                  href={href}
+                >
+                  Open
+                </AppHrefLink>
+              </Button>
+            ) : onOpen ? (
+              <Button
                 data-testid={`activity-card-${activity.id}-open`}
-                href={href}
+                onClick={onOpen}
+                type="button"
+                variant="ghost"
               >
                 Open
-              </AppHrefLink>
-            </Button>
-          ) : onOpen ? (
-            <Button
-              data-testid={`activity-card-${activity.id}-open`}
-              onClick={onOpen}
-              type="button"
-              variant="ghost"
-            >
-              Open
-            </Button>
-          ) : null}
-        </div>
+              </Button>
+            ) : null
+          }
+          leading={
+            <Avatar className="h-10 w-10 shrink-0">
+              {activity.owner.avatarUrl ? <AvatarImage src={activity.owner.avatarUrl} /> : null}
+              <AvatarFallback>
+                {(activity.owner.username ?? "GP").slice(0, 2).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+          }
+          meta={
+            <>
+              <p className="text-sm font-medium text-foreground">
+                @{activity.owner.username ?? "athlete"}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <ActivityCategoryBadges categories={activity.activityComposition.categories} />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {activity.time.startedAt ? formatDateTime(activity.time.startedAt) : "—"}
+              </p>
+              {activity.notes ? (
+                <p className="line-clamp-2 text-sm text-muted-foreground">{activity.notes}</p>
+              ) : null}
+            </>
+          }
+          title={activity.title}
+          titleClassName="text-base"
+        />
         <ResourceMetricsRow
           metrics={activity.metrics.map((metric) => ({
             label: metric.label,
@@ -379,10 +390,7 @@ export function ActivityListCard({
           }))}
           testID="activity-card-metrics"
         />
-        <div
-          className="flex flex-wrap items-center gap-2"
-          data-testid="activity-card-social-actions"
-        >
+        <ResourceActionRegion className="flex-wrap" testID="activity-card-social-actions">
           <Button
             aria-label={`${liked ? "Unlike" : "Like"} activity ${activity.title}, ${likes} likes`}
             disabled={likeMutation.isPending || activity.capabilities.canLike === false}
@@ -413,7 +421,7 @@ export function ActivityListCard({
             <Share2 aria-hidden="true" className="mr-1 size-4" />
             Share
           </Button>
-        </div>
+        </ResourceActionRegion>
       </CardContent>
     </Card>
   );
@@ -437,62 +445,67 @@ export function RouteListCard({
       data-testid={`route-card-${route.id}`}
     >
       <CardContent className="space-y-4 p-4">
-        <div className="flex items-start gap-3">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary/10">
-            <MapPin className="h-5 w-5 text-primary" />
-          </div>
-          <div className="min-w-0 flex-1 space-y-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-lg font-semibold text-foreground">
-                {href ? (
-                  <AppHrefLink className="hover:underline" href={href}>
-                    {route.name}
-                  </AppHrefLink>
-                ) : (
-                  route.name
-                )}
-              </h3>
-            </div>
-            <p className="text-sm text-muted-foreground">Saved {formatDate(route.created_at)}</p>
-            {route.description ? (
-              <p className="line-clamp-2 text-sm text-muted-foreground">{route.description}</p>
-            ) : null}
-          </div>
-          {href ? (
-            <Button asChild variant="ghost">
-              <AppHrefLink
-                aria-label={`Open route ${route.name}`}
+        <ResourceCardHeader
+          accessory={
+            href ? (
+              <Button asChild variant="ghost">
+                <AppHrefLink
+                  aria-label={`Open route ${route.name}`}
+                  data-testid={`route-card-${route.id}-open`}
+                  href={href}
+                >
+                  Open
+                </AppHrefLink>
+              </Button>
+            ) : onOpen ? (
+              <Button
                 data-testid={`route-card-${route.id}-open`}
-                href={href}
+                onClick={onOpen}
+                type="button"
+                variant="ghost"
               >
                 Open
+              </Button>
+            ) : null
+          }
+          description={`Saved ${formatDate(route.created_at)}`}
+          leading={
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary/10">
+              <MapPin className="h-5 w-5 text-primary" />
+            </div>
+          }
+          meta={
+            route.description ? (
+              <p className="line-clamp-2 text-sm text-muted-foreground">{route.description}</p>
+            ) : null
+          }
+          titleContent={
+            href ? (
+              <AppHrefLink className="hover:underline" href={href}>
+                {route.name}
               </AppHrefLink>
-            </Button>
-          ) : onOpen ? (
-            <Button
-              data-testid={`route-card-${route.id}-open`}
-              onClick={onOpen}
-              type="button"
-              variant="ghost"
-            >
-              Open
-            </Button>
-          ) : null}
-        </div>
+            ) : (
+              route.name
+            )
+          }
+        />
         <div data-testid={`route-card-${route.id}-preview`}>
           <RoutePreviewMap compact coordinates={coordinates} />
         </div>
-        <div className="grid grid-cols-2 gap-2 text-sm text-muted-foreground">
-          <MetricPill
-            label="Distance"
-            value={
-              route.total_distance == null ? "—" : formatDistance(route.total_distance, unitSystem)
-            }
-          />
-          <MetricPill label="Ascent" value={formatElevation(route.total_ascent, unitSystem)} />
-          <MetricPill label="Descent" value={formatElevation(route.total_descent, unitSystem)} />
-          <MetricPill label="Visibility" value={route.is_public ? "Public" : "Private"} />
-        </div>
+        <ResourceMetricsRow
+          metrics={[
+            {
+              label: "Distance",
+              value:
+                route.total_distance == null
+                  ? "—"
+                  : formatDistance(route.total_distance, unitSystem),
+            },
+            { label: "Ascent", value: formatElevation(route.total_ascent, unitSystem) },
+            { label: "Descent", value: formatElevation(route.total_descent, unitSystem) },
+            { label: "Visibility", value: route.is_public ? "Public" : "Private" },
+          ]}
+        />
       </CardContent>
     </Card>
   );

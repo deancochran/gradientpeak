@@ -2,8 +2,12 @@
 
 import type { ActivityPlanSummary } from "@repo/core";
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ActivityPlanCard } from "./activity-plan-card";
+
+vi.mock("../app-href-link", () => ({
+  AppHrefLink: (props: React.ComponentProps<"a">) => <a {...props} />,
+}));
 
 afterEach(cleanup);
 
@@ -74,5 +78,27 @@ describe("ActivityPlanCard", () => {
 
     expect(screen.getByText("Some estimates are unavailable.")).toBeTruthy();
     expect(screen.queryByText(/not_prescribed/)).toBeNull();
+  });
+
+  it("keeps the focus treatment on the actual link and prevents disabled link navigation", () => {
+    const plan = {
+      id: "plan-focus",
+      name: "Focused plan",
+      description: null,
+      structure: {},
+      activityCategory: "run",
+      isSystemTemplate: true,
+      owner: null,
+      engagement: { likes: 0, viewerHasLiked: false },
+      metrics: [],
+    } as unknown as ActivityPlanSummary;
+
+    const { rerender } = render(<ActivityPlanCard href="/activity-plans/plan-focus" plan={plan} />);
+    const link = screen.getByRole("link", { name: "Open activity plan Focused plan" });
+    expect(link.className).toContain("focus-visible:ring-2");
+
+    rerender(<ActivityPlanCard disabled href="/activity-plans/plan-focus" plan={plan} />);
+    expect(screen.queryByRole("link", { name: "Open activity plan Focused plan" })).toBeNull();
+    expect(screen.getByTestId("activity-plan-card-plan-focus").className).toContain("opacity-60");
   });
 });

@@ -38,4 +38,21 @@ describe("Resource presentation native", () => {
     expect(getByText("Distance")).toBeTruthy();
     expect(getByText("—")).toBeTruthy();
   });
+
+  it("keeps all compact metrics unless the app asks for a limit", async () => {
+    const { getByText } = await renderNative(
+      <ResourceMetricsRow
+        compact
+        metrics={[
+          { label: "Distance", value: "10 km" },
+          { label: "Duration", value: "30m" },
+          { label: "Load", value: "72" },
+          { label: "Intensity", value: "0.80" },
+        ]}
+      />,
+    );
+
+    expect(getByText("Intensity")).toBeTruthy();
+    expect(getByText("0.80")).toBeTruthy();
+  });
 });

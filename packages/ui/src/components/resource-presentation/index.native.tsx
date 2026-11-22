@@ -57,6 +57,7 @@ export function ResourceCardShell({
           className={navigationClassName}
           disabled={isDisabled}
           onPress={isDisabled ? undefined : onPress}
+          style={({ pressed }) => (pressed && !isDisabled ? { opacity: 0.85 } : undefined)}
           testID={testID}
         >
           {children}
@@ -80,6 +81,7 @@ export function ResourceCardHeader({
   meta,
   title,
   titleClassName,
+  titleContent,
   titleFallback,
   titleNumberOfLines,
 }: ResourceCardHeaderProps) {
@@ -95,7 +97,7 @@ export function ResourceCardHeader({
           </View>
         ) : null)}
       <View className="min-w-0 flex-1 gap-1">
-        {resolvedTitle ? (
+        {(titleContent ?? resolvedTitle) ? (
           <Text
             className={
               titleClassName ??
@@ -103,7 +105,7 @@ export function ResourceCardHeader({
             }
             numberOfLines={titleNumberOfLines ?? (detail ? undefined : 2)}
           >
-            {resolvedTitle}
+            {titleContent ?? resolvedTitle}
           </Text>
         ) : null}
         {resolvedDescription ? (
@@ -127,11 +129,14 @@ export function ResourceMetricsRow({
   metrics,
   testID,
 }: ResourceMetricsRowProps) {
-  const visibleMetrics = metrics.slice(0, maxItems ?? (compact ? 3 : metrics.length));
+  const visibleMetrics = metrics.slice(0, maxItems ?? metrics.length);
   if (visibleMetrics.length === 0) return null;
 
   return (
-    <View className="flex-row flex-wrap items-start gap-x-5 gap-y-2 px-1" testID={testID}>
+    <View
+      className={`flex-row flex-wrap items-start gap-y-2 px-1 ${compact ? "gap-x-4" : "gap-x-5"}`}
+      testID={testID}
+    >
       {visibleMetrics.map((metric) => (
         <View key={metric.label} className="items-start gap-0.5">
           <Text className="text-[10px] text-muted-foreground">{metric.label}</Text>

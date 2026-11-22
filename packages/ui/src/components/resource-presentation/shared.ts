@@ -42,6 +42,7 @@ export type ResourceCardHeaderProps = {
   leading?: ReactNode;
   meta?: ReactNode;
   title?: string | null;
+  titleContent?: ReactNode;
   titleClassName?: string;
   titleFallback?: string;
   titleNumberOfLines?: number;

@@ -1,5 +1,6 @@
 import { cn } from "../../lib/cn";
 import { Card, CardContent } from "../card/index.web";
+import { Icon } from "../icon/index.web";
 import type {
   ResourceActionRegionProps,
   ResourceCardHeaderProps,
@@ -58,7 +59,10 @@ export function ResourceCardShell({
           <button
             aria-label={accessibilityLabel}
             aria-pressed={accessibilityState?.selected}
-            className={cn("w-full text-left", navigationClassName)}
+            className={cn(
+              "w-full rounded-2xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              navigationClassName,
+            )}
             disabled={disabled}
             onClick={onPress}
             type="button"
@@ -78,37 +82,60 @@ export function ResourceCardHeader({
   compact = false,
   description,
   descriptionFallback,
+  descriptionNumberOfLines,
   detail = false,
-  icon: _icon,
-  iconClassName: _iconClassName,
-  iconContainerClassName: _iconContainerClassName,
+  icon,
+  iconClassName = "text-primary",
+  iconContainerClassName = "bg-primary/10",
   leading,
   meta,
   title,
   titleClassName,
+  titleContent,
   titleFallback,
+  titleNumberOfLines,
 }: ResourceCardHeaderProps) {
   const resolvedDescription = description?.trim() || descriptionFallback?.trim() || null;
   const resolvedTitle = title?.trim() || titleFallback?.trim() || null;
   const Title = detail ? "h2" : "h3";
+  const titleLines = titleNumberOfLines ?? (detail ? undefined : 2);
+  const descriptionLines = descriptionNumberOfLines ?? (detail ? undefined : 2);
+  const lineClampStyle = (lines: number | undefined) =>
+    lines === undefined
+      ? undefined
+      : {
+          WebkitBoxOrient: "vertical" as const,
+          WebkitLineClamp: lines,
+          display: "-webkit-box",
+          overflow: "hidden",
+        };
 
   return (
     <div className="flex items-start gap-3">
-      {leading}
+      {leading ??
+        (icon ? (
+          <div className={cn("rounded-full p-2.5", iconContainerClassName)}>
+            <Icon as={icon} className={iconClassName} size={compact ? 16 : 18} />
+          </div>
+        ) : null)}
       <div className="min-w-0 flex-1 space-y-1">
-        {resolvedTitle ? (
+        {(titleContent ?? resolvedTitle) ? (
           <Title
             className={cn(
               detail ? "text-xl" : compact ? "text-lg" : "text-xl",
               "font-semibold text-foreground",
               titleClassName,
             )}
+            style={lineClampStyle(titleLines)}
           >
-            {resolvedTitle}
+            {titleContent ?? resolvedTitle}
           </Title>
         ) : null}
         {resolvedDescription ? (
-          <p className="line-clamp-2 text-sm leading-5 text-muted-foreground">
+          <p
+            className="text-sm leading-5 text-muted-foreground"
+            style={lineClampStyle(descriptionLines)}
+          >
             {resolvedDescription}
           </p>
         ) : null}
@@ -125,11 +152,14 @@ export function ResourceMetricsRow({
   metrics,
   testID,
 }: ResourceMetricsRowProps) {
-  const visibleMetrics = metrics.slice(0, maxItems ?? (compact ? 3 : metrics.length));
+  const visibleMetrics = metrics.slice(0, maxItems ?? metrics.length);
   if (visibleMetrics.length === 0) return null;
 
   return (
-    <div className="flex flex-wrap items-start gap-x-5 gap-y-2 px-1" data-testid={testID}>
+    <div
+      className={cn("flex flex-wrap items-start gap-y-2 px-1", compact ? "gap-x-4" : "gap-x-5")}
+      data-testid={testID}
+    >
       {visibleMetrics.map((metric) => (
         <fieldset
           aria-label={metric.accessibilityLabel ?? `${metric.label}, ${metric.value}`}
@@ -139,7 +169,7 @@ export function ResourceMetricsRow({
           <p className="text-[10px] text-muted-foreground">{metric.label}</p>
           <p
             className={cn(
-              "text-[11px] font-semibold",
+              "text-sm font-semibold",
               metric.tone === "primary"
                 ? "text-primary"
                 : metric.tone === "muted"

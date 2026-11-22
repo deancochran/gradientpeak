@@ -80,32 +80,31 @@ export function ActivityPlanCard({
   const className =
     "w-full rounded-2xl border bg-card p-0 text-left transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
   const accessibilityLabel = openLabel ?? `Open activity plan ${plan.name}`;
-  if (href) {
-    return (
-      <AppHrefLink aria-label={accessibilityLabel} className="block" href={href}>
-        <ResourceCardShell
-          cardClassName={className}
-          contentClassName="space-y-4 p-5"
-          disabled={disabled}
-          highlighted={selected}
-          testID={`activity-plan-card-${plan.id}`}
-        >
-          {content}
-        </ResourceCardShell>
-      </AppHrefLink>
-    );
-  }
-  return (
+  const card = (
     <ResourceCardShell
       accessibilityLabel={accessibilityLabel}
       accessibilityState={{ selected }}
       cardClassName={className}
       contentClassName="space-y-4 p-5"
       disabled={disabled}
-      onPress={onOpen}
+      highlighted={selected}
+      onPress={href ? undefined : onOpen}
       testID={`activity-plan-card-${plan.id}`}
     >
       {content}
     </ResourceCardShell>
   );
+
+  if (href && !disabled) {
+    return (
+      <AppHrefLink
+        aria-label={accessibilityLabel}
+        className="block rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        href={href}
+      >
+        {card}
+      </AppHrefLink>
+    );
+  }
+  return card;
 }
