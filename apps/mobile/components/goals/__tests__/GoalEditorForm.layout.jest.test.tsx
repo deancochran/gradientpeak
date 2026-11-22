@@ -218,6 +218,36 @@ describe("GoalEditorForm canonical submission", () => {
 });
 
 describe("GoalEditorForm layout", () => {
+  it.each([
+    {
+      goalType: "race_performance" as const,
+      field: "Race distance",
+      draft: { raceDistanceKm: null },
+    },
+    {
+      goalType: "power_threshold" as const,
+      field: "Watts",
+      draft: { targetWatts: null },
+    },
+    {
+      goalType: "hr_threshold" as const,
+      field: "Target bpm",
+      draft: { targetBpm: null },
+    },
+  ])("blocks an empty required $field target for $goalType", async ({ goalType, field, draft }) => {
+    await renderNative(
+      <GoalEditorForm
+        initialValue={{ ...createEmptyGoalDraft(), goalType, ...draft }}
+        onSubmit={jest.fn()}
+        showSubmitAction={false}
+      />,
+    );
+
+    await fireEvent.press(screen.getByLabelText(field));
+    await fireEvent.press(screen.getByLabelText(`Done ${field}`));
+    expect(screen.getByRole("alert")).toBeTruthy();
+  });
+
   it("fills its host by default for backwards compatibility", async () => {
     await renderNative(
       <GoalEditorForm

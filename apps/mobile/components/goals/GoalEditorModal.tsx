@@ -7,11 +7,13 @@ import {
   type GoalEditorGoalType,
   type GoalEditorRaceTargetMode,
   getGoalDraftQualityFeedback,
+  getGoalEditorTargetFields,
   goalFocusChoices,
   goalPriorityChoices,
   goalPriorityHelpText,
   goalRaceMeasureChoices,
   profileGoalSchema,
+  resetGoalEditorDraftForType,
 } from "@repo/core";
 import { numericUxPolicies } from "@repo/core/utils/numeric-ux-policy";
 import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
@@ -320,6 +322,16 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
       return () => subscription.unsubscribe();
     }, [form, shouldObserveDraft]);
 
+    const targetFields = useMemo(
+      () =>
+        getGoalEditorTargetFields({
+          goalType: draft.goalType,
+          raceTargetMode: draft.raceTargetMode,
+        }),
+      [draft.goalType, draft.raceTargetMode],
+    );
+    const hasTargetField = (name: string) => targetFields.some((field) => field.name === name);
+    const targetField = (name: string) => targetFields.find((field) => field.name === name);
     const distancePresets = useMemo(
       () => DISTANCE_PRESETS_BY_ACTIVITY[draft.activityCategory] ?? [],
       [draft.activityCategory],
@@ -422,26 +434,10 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
       if (goalType === draft.goalType) return;
       confirmReplacement(() => {
         setInvalidNumericFields({});
-        const base = createEmptyGoalDraft();
         const current = form.getValues() as GoalEditorDraft;
-
-        form.reset(
-          {
-            ...base,
-            title: current.title,
-            targetDate: current.targetDate,
-            importance: current.importance,
-            goalType,
-            thresholdTestDuration: goalType === "hr_threshold" ? "" : base.thresholdTestDuration,
-            activityCategory:
-              goalType === "pace_threshold"
-                ? "run"
-                : goalType === "power_threshold"
-                  ? "bike"
-                  : current.activityCategory,
-          },
-          { keepDefaultValues: true },
-        );
+        form.reset(resetGoalEditorDraftForType({ draft: current, goalType }), {
+          keepDefaultValues: true,
+        });
       });
     };
 
@@ -576,7 +572,7 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
             </View>
           </GoalSection>
 
-          {draft.goalType === "race_performance" || draft.goalType === "completion" ? (
+          {hasTargetField("raceDistanceKm") ? (
             <GoalSection
               icon={Target}
               title={draft.goalType === "race_performance" ? "Race target" : "Completion target"}
@@ -620,6 +616,7 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
                     clampProjection={false}
                     id="goal-distance"
                     label={getDistanceLabel(draft.goalType)}
+                    required={targetField("raceDistanceKm")?.required ?? false}
                     value={draft.raceDistanceKm == null ? "" : String(draft.raceDistanceKm)}
                     onChange={() => undefined}
                     onInvalidChange={(invalid) =>
@@ -637,13 +634,12 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
                 </View>
 
                 <View>
-                  {draft.goalType === "completion" ||
-                  (draft.raceTargetMode ?? "time") === "time" ? (
+                  {hasTargetField("targetDuration") ? (
                     <DurationInput
                       layout="hms"
                       formControl={form.control}
                       fieldName="targetDuration"
-                      required={draft.goalType === "race_performance"}
+                      required={targetField("targetDuration")?.required ?? false}
                       disabled={busy}
                       id="goal-duration"
                       testId="goal-duration"
@@ -655,13 +651,12 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
                     />
                   ) : null}
 
-                  {draft.goalType === "race_performance" &&
-                  (draft.raceTargetMode ?? "time") === "pace" ? (
+                  {hasTargetField("targetPace") ? (
                     <PaceInput
                       layout="ms"
                       formControl={form.control}
                       fieldName="targetPace"
-                      required
+                      required={targetField("targetPace")?.required ?? false}
                       disabled={busy}
                       id="goal-race-pace"
                       label="Goal pace"
@@ -675,7 +670,7 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
             </GoalSection>
           ) : null}
 
-          {draft.goalType === "pace_threshold" ? (
+          {hasTargetField("targetPace") && !hasTargetField("raceDistanceKm") ? (
             <GoalSection icon={Gauge} title="Pace target">
               <View className="gap-3">
                 <View>
@@ -710,7 +705,7 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
             </GoalSection>
           ) : null}
 
-          {draft.goalType === "power_threshold" ? (
+          {hasTargetField("targetWatts") ? (
             <GoalSection icon={Dumbbell} title="Power target">
               <View className="gap-3">
                 <View>
@@ -720,6 +715,7 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
                     clampProjection={false}
                     id="goal-power"
                     label="Watts"
+                    required={targetField("targetWatts")?.required ?? false}
                     value={draft.targetWatts == null ? "" : String(draft.targetWatts)}
                     onChange={() => undefined}
                     onInvalidChange={(invalid) =>
@@ -753,7 +749,7 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
             </GoalSection>
           ) : null}
 
-          {draft.goalType === "hr_threshold" ? (
+          {hasTargetField("targetBpm") ? (
             <GoalSection icon={Gauge} title="Heart rate target">
               <BoundedNumberInput
                 disabled={busy}
@@ -761,6 +757,7 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
                 clampProjection={false}
                 id="goal-heart-rate"
                 label="Target bpm"
+                required={targetField("targetBpm")?.required ?? false}
                 value={draft.targetBpm == null ? "" : String(draft.targetBpm)}
                 onChange={() => undefined}
                 onInvalidChange={(invalid) =>
@@ -789,7 +786,7 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
             </GoalSection>
           ) : null}
 
-          {draft.goalType === "consistency" ? (
+          {hasTargetField("consistencySessionsPerWeek") ? (
             <GoalSection icon={CalendarDays} title="Consistency target">
               <View className="gap-3">
                 <View>
