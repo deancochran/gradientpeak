@@ -52,7 +52,7 @@ describe("CoachAthleteCompletedActivities", () => {
 
     expect(screen.getByText("Completed session")).toBeTruthy();
     expect(screen.getByText(/planned 2026-11-10/i)).toBeTruthy();
-    expect(screen.getByText("Sport")).toBeTruthy();
+    expect(screen.getByText("Activity")).toBeTruthy();
     expect(screen.getByText("Time")).toBeTruthy();
     expect(screen.getByText("Distance")).toBeTruthy();
     expect(screen.getByText("run")).toBeTruthy();

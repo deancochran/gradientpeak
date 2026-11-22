@@ -203,7 +203,7 @@ export function CoachAthleteCompletedActivities({
                 </div>
                 <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-3">
                   <CompletionMetric
-                    label="Sport"
+                    label="Activity"
                     value={item.activityCategory ?? "Activity category unavailable"}
                   />
                   {item.elapsedMs !== null ? (
