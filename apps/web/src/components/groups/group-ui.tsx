@@ -1,9 +1,13 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { ErrorStateCard } from "@repo/ui/components/error-state-card";
 import { InlineLoadingStatus } from "@repo/ui/components/loading";
+import {
+  ResourceCardHeader,
+  ResourceCardShell,
+  ResourceMetricsRow,
+} from "@repo/ui/components/resource-presentation";
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
@@ -162,7 +166,12 @@ function relationshipLabel(group: WebGroupSummary) {
 export function GroupCard({ group, onOpen }: { group: WebGroupSummary; onOpen: () => void }) {
   const relationship = relationshipLabel(group);
   return (
-    <Card data-testid={`group-card-${group.id}`}>
+    <ResourceCardShell
+      accessibilityLabel={`Open group ${group.name}`}
+      contentClassName="space-y-4 p-5"
+      onPress={onOpen}
+      testID={`group-card-${group.id}`}
+    >
       {group.cover_url ? (
         <img
           alt={`${group.name} cover`}
@@ -170,47 +179,45 @@ export function GroupCard({ group, onOpen }: { group: WebGroupSummary; onOpen: (
           src={group.cover_url}
         />
       ) : null}
-      <CardHeader className="flex-row items-start gap-3 space-y-0">
-        <Avatar>
-          {group.avatar_url ? <AvatarImage src={group.avatar_url} /> : null}
-          <AvatarFallback>{initials(group.name)}</AvatarFallback>
-        </Avatar>
-        <div className="min-w-0 flex-1">
-          <CardTitle className="truncate">{group.name}</CardTitle>
-          <p className="text-sm text-muted-foreground">@{group.slug}</p>
-        </div>
-        {relationship ? (
-          <Badge variant="secondary" className="capitalize">
-            {relationship}
-          </Badge>
-        ) : null}
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {group.description ? (
-          <p className="line-clamp-3 text-sm text-muted-foreground">{group.description}</p>
-        ) : null}
-        <div className="flex flex-wrap gap-2">
-          <Badge variant="outline">
-            {group.access_level === "public" ? "Public" : "Members only"}
-          </Badge>
-          <Badge variant="outline">
-            {group.join_policy === "open"
-              ? "Open join"
-              : group.join_policy === "request_to_join"
-                ? "Request to join"
-                : "Invite only"}
-          </Badge>
-        </div>
-        <Button
-          data-testid={`group-card-${group.id}-open`}
-          onClick={onOpen}
-          type="button"
-          variant="outline"
-        >
-          View group
-        </Button>
-      </CardContent>
-    </Card>
+      <ResourceCardHeader
+        accessory={
+          relationship ? (
+            <Badge variant="secondary" className="capitalize">
+              {relationship}
+            </Badge>
+          ) : null
+        }
+        description={`@${group.slug}`}
+        leading={
+          <Avatar>
+            {group.avatar_url ? <AvatarImage src={group.avatar_url} /> : null}
+            <AvatarFallback>{initials(group.name)}</AvatarFallback>
+          </Avatar>
+        }
+        title={group.name}
+        titleClassName="truncate text-lg"
+      />
+      {group.description ? (
+        <p className="line-clamp-3 text-sm text-muted-foreground">{group.description}</p>
+      ) : null}
+      <ResourceMetricsRow
+        metrics={[
+          {
+            label: "Visibility",
+            value: group.access_level === "public" ? "Public" : "Members only",
+          },
+          {
+            label: "Join",
+            value:
+              group.join_policy === "open"
+                ? "Open join"
+                : group.join_policy === "request_to_join"
+                  ? "Request to join"
+                  : "Invite only",
+          },
+        ]}
+      />
+    </ResourceCardShell>
   );
 }
 
@@ -223,36 +230,29 @@ export function GroupEventCard({
 }) {
   const startsAt = new Date(event.starts_at);
   return (
-    <Card data-testid={`group-event-card-${event.id}`}>
-      <CardHeader>
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            {event.group ? (
-              <p className="text-sm text-muted-foreground">{event.group.name}</p>
-            ) : null}
-            <CardTitle>{event.title}</CardTitle>
-          </div>
-          {event.cancelled_at ? <Badge variant="destructive">Cancelled</Badge> : null}
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <p className="text-sm font-medium">
-          {Number.isNaN(startsAt.getTime()) ? event.starts_at : startsAt.toLocaleString()}
-        </p>
-        {event.location_name ? (
-          <p className="text-sm text-muted-foreground">{event.location_name}</p>
-        ) : null}
-        <p className="text-sm text-muted-foreground">{event.acceptedRsvpCount} going</p>
-        <Button
-          data-testid={`group-event-card-${event.id}-open`}
-          onClick={onOpen}
-          type="button"
-          variant="outline"
-        >
-          View event
-        </Button>
-      </CardContent>
-    </Card>
+    <ResourceCardShell
+      accessibilityLabel={`Open group event ${event.title}`}
+      contentClassName="space-y-3 p-5"
+      onPress={onOpen}
+      testID={`group-event-card-${event.id}`}
+    >
+      <ResourceCardHeader
+        accessory={event.cancelled_at ? <Badge variant="destructive">Cancelled</Badge> : null}
+        description={event.group?.name}
+        title={event.title}
+        titleClassName="text-lg"
+      />
+      <ResourceMetricsRow
+        metrics={[
+          {
+            label: "Starts",
+            value: Number.isNaN(startsAt.getTime()) ? event.starts_at : startsAt.toLocaleString(),
+          },
+          ...(event.location_name ? [{ label: "Location", value: event.location_name }] : []),
+          { label: "RSVP", value: `${event.acceptedRsvpCount} going` },
+        ]}
+      />
+    </ResourceCardShell>
   );
 }
 
