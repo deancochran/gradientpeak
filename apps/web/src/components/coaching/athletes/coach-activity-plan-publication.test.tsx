@@ -310,6 +310,11 @@ describe("CoachActivityPlanPublication", () => {
         .getByRole("button", { name: "Inspect or edit selected activity plan Threshold" })
         .hasAttribute("disabled"),
     ).toBe(true);
+    expect(
+      screen
+        .getByRole("button", { name: "Inspect or edit selected activity plan Threshold" })
+        .getAttribute("href"),
+    ).toBeNull();
     expect(screen.queryByRole("link", { name: "Prepare activity plan" })).toBeNull();
   });
 

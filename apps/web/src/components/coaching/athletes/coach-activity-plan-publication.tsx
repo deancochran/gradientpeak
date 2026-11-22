@@ -429,9 +429,9 @@ export function CoachActivityPlanPublication({
             <p className="text-sm font-medium text-foreground">Selected activity plan</p>
             <ActivityPlanCard
               disabled={!selectedPlanHref}
-              href={selectedPlanHref}
               openLabel={`Inspect or edit selected activity plan ${selectedPlanCard.name}`}
               plan={selectedPlanCard}
+              {...(selectedPlanHref ? { href: selectedPlanHref } : {})}
             />
             <p className="text-xs text-muted-foreground">
               {selectedPlanHref
