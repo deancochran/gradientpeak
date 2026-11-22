@@ -1,7 +1,8 @@
 import { deriveRouteNameFromFileName, ROUTE_FILE_NATIVE_MIME_TYPES } from "@repo/core/route-files";
 import { Alert, AlertDescription } from "@repo/ui/components/alert";
 import { Card, CardContent } from "@repo/ui/components/card";
-import { Form, FormFileField, FormTextareaField, FormTextField } from "@repo/ui/components/form";
+import { Form, FormFileField } from "@repo/ui/components/form";
+import { RouteMetadataFields } from "@repo/ui/components/route-metadata-fields";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { Stack, useRouter } from "expo-router";
@@ -12,6 +13,7 @@ import { FormScreen } from "@/components/shared/FormScreen";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useDirtyNavigationGuard } from "@/lib/hooks/useDirtyNavigationGuard";
+import { useEditLifetime } from "@/lib/hooks/useEditLifetime";
 import {
   getRouteFileReadErrorMessage,
   nativeRouteFileMetadataSchema,
@@ -30,6 +32,7 @@ export default function UploadRouteScreen() {
   const router = useRouter();
   const utils = api.useUtils();
   const { user } = useAuth();
+  const lifetime = useEditLifetime(user?.id ?? "");
   const [uploadPhase, setUploadPhase] = useState<UploadPhase>("idle");
   const uploadInFlightRef = useRef(false);
   const terminalSuccessRef = useRef(false);
@@ -164,9 +167,11 @@ export default function UploadRouteScreen() {
           return;
         }
 
+        if (!lifetime.isCurrent()) return;
         terminalSuccessRef.current = true;
         setUploadPhase("success");
         await Promise.allSettled([Promise.resolve().then(() => utils.routes.invalidate())]);
+        if (!lifetime.isCurrent()) return;
 
         try {
           allowNavigationAfterSuccess();
@@ -177,7 +182,9 @@ export default function UploadRouteScreen() {
           });
         }
       } catch (error) {
-        handleSubmitFormError(form, error, { preferRootError: true });
+        if (lifetime.isCurrent()) {
+          handleSubmitFormError(form, error, { preferRootError: true });
+        }
       } finally {
         if (!terminalSuccessRef.current) {
           uploadInFlightRef.current = false;
@@ -243,24 +250,15 @@ export default function UploadRouteScreen() {
 
             <Card>
               <CardContent className="gap-4 p-4">
-                <FormTextField
+                <RouteMetadataFields
                   control={form.control}
-                  label="Route Name"
-                  name="name"
-                  placeholder="e.g., Morning Hill Climb"
-                  required
                   disabled={isFormDisabled}
-                  testId="route-upload-name-input"
-                />
-
-                <FormTextareaField
-                  control={form.control}
-                  label="Description"
-                  name="description"
-                  placeholder="Add notes about this route..."
-                  description="Optional"
-                  className="min-h-[80px]"
-                  disabled={isFormDisabled}
+                  descriptionClassName="min-h-[80px]"
+                  descriptionHint="Optional"
+                  descriptionPlaceholder="Add notes about this route..."
+                  nameLabel="Route Name"
+                  namePlaceholder="e.g., Morning Hill Climb"
+                  nameTestId="route-upload-name-input"
                 />
 
                 {form.formState.errors.root?.message ? (

@@ -1,7 +1,8 @@
 import { routeEditFormSchema } from "@repo/core/route-files";
 import { Button } from "@repo/ui/components/button";
-import { Form, FormTextareaField, FormTextField } from "@repo/ui/components/form";
+import { Form } from "@repo/ui/components/form";
 import { LoadingButton } from "@repo/ui/components/loading";
+import { RouteMetadataFields } from "@repo/ui/components/route-metadata-fields";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
@@ -12,6 +13,7 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/shared/Screen
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useDirtyNavigationGuard } from "@/lib/hooks/useDirtyNavigationGuard";
+import { useEditLifetime } from "@/lib/hooks/useEditLifetime";
 import { handleSubmitFormError } from "@/lib/utils/formErrors";
 
 export default function RouteEditScreen() {
@@ -21,8 +23,7 @@ export default function RouteEditScreen() {
   const utils = api.useUtils();
   const { user } = useAuth();
   const ownerKey = JSON.stringify([user?.id, routeId]);
-  const ownerRef = useRef(ownerKey);
-  ownerRef.current = ownerKey;
+  const lifetime = useEditLifetime(ownerKey);
   const hydratedOwner = useRef<string | null>(null);
   const routeQuery = api.routes.get.useQuery({ id: routeId }, { enabled: routeId.length > 0 });
   const updateMutation = api.routes.update.useMutation();
@@ -71,13 +72,13 @@ export default function RouteEditScreen() {
       try {
         await updateMutation.mutateAsync({ id: routeId, ...values });
         saved = true;
-        if (ownerRef.current !== ownerKey) return;
+        if (!lifetime.isCurrent()) return;
         await Promise.allSettled([Promise.resolve().then(() => utils.routes.invalidate())]);
-        if (ownerRef.current !== ownerKey) return;
+        if (!lifetime.isCurrent()) return;
         allowNavigationAfterSuccess();
         router.back();
       } catch (error) {
-        if (ownerRef.current !== ownerKey) return;
+        if (!lifetime.isCurrent()) return;
         if (saved)
           form.setError("root", {
             message: "Route saved, but this screen could not close. Use Back to continue.",
@@ -180,23 +181,13 @@ export default function RouteEditScreen() {
               </Button>
             </View>
           ) : null}
-          <FormTextField
+          <RouteMetadataFields
             control={form.control}
             disabled={isSaving}
-            label="Route Name"
-            name="name"
-            required
-            selectTextOnFocus={process.env.EXPO_PUBLIC_MAESTRO_E2E === "1"}
-            testId="route-edit-name-input"
-          />
-          <FormTextareaField
-            className="min-h-[120px]"
-            control={form.control}
-            description="Optional notes about terrain, access, or intended use."
-            disabled={isSaving}
-            label="Description"
-            name="description"
-            testId="route-edit-description-input"
+            descriptionTestId="route-edit-description-input"
+            nameLabel="Route Name"
+            nameTestId="route-edit-name-input"
+            selectNameTextOnFocus={process.env.EXPO_PUBLIC_MAESTRO_E2E === "1"}
           />
           {form.formState.errors.root?.message ? (
             <Text

@@ -10,6 +10,13 @@ const authState = { user: { id: "profile-1" } };
 const dispatchMock = jest.fn();
 const preventRemoveMock = jest.fn();
 const refetchMock = jest.fn();
+const mockHandleSubmitFormError = jest.fn(
+  (form: { setError: (name: "root", error: { message: string }) => void }, error: unknown) => {
+    form.setError("root", {
+      message: error instanceof Error ? error.message : "Unable to update route",
+    });
+  },
+);
 let routeId = "route-1";
 let routeData:
   | { id: string; profile_id: string; name: string; description: string | null }
@@ -55,6 +62,11 @@ jest.mock("@/lib/hooks/useAuth", () => ({
   __esModule: true,
   useAuth: () => authState,
 }));
+jest.mock("@/lib/utils/formErrors", () => ({
+  __esModule: true,
+  handleSubmitFormError: (...args: Parameters<typeof mockHandleSubmitFormError>) =>
+    mockHandleSubmitFormError(...args),
+}));
 
 describe("route edit screen", () => {
   const RouteEditScreen = require("../route-edit").default;
@@ -75,6 +87,7 @@ describe("route edit screen", () => {
     dispatchMock.mockReset();
     preventRemoveMock.mockReset();
     refetchMock.mockReset();
+    mockHandleSubmitFormError.mockClear();
     jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
   });
   afterEach(() => jest.restoreAllMocks());
@@ -188,6 +201,112 @@ describe("route edit screen", () => {
     expect(backMock).not.toHaveBeenCalled();
     expect(screen.queryByText("Old save failed")).toBeNull();
     expect(screen.getByTestId("route-edit-name-input").props.value).toBe("Second route");
+  });
+
+  it("ignores a previous owner's late save completion", async () => {
+    let resolve!: (value: { id: string }) => void;
+    updateRouteMock.mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const view = await renderScreen();
+    await fireEvent.changeText(screen.getByTestId("route-edit-name-input"), "Old owner's draft");
+    const submit = screen.getByTestId("route-edit-submit-button").props.onPress;
+    await act(async () => {
+      void submit();
+    });
+    expect(updateRouteMock).toHaveBeenCalledTimes(1);
+
+    authState.user.id = "profile-2";
+    routeData = {
+      id: routeId,
+      profile_id: "profile-2",
+      name: "New owner's route",
+      description: null,
+    };
+    await view.rerender(<RouteEditScreen />);
+    expect(screen.getByTestId("route-edit-name-input").props.value).toBe("New owner's route");
+
+    await act(async () => {
+      resolve({ id: routeId });
+    });
+    expect(backMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId("route-edit-name-input").props.value).toBe("New owner's route");
+  });
+
+  it("does not revive an old owner completion after switching from A to B and back to A", async () => {
+    let resolve!: (value: { id: string }) => void;
+    updateRouteMock.mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const view = await renderScreen();
+    await fireEvent.changeText(screen.getByTestId("route-edit-name-input"), "First owner's draft");
+    const submit = screen.getByTestId("route-edit-submit-button").props.onPress;
+    await act(async () => {
+      void submit();
+    });
+
+    authState.user.id = "profile-2";
+    routeData = {
+      id: routeId,
+      profile_id: "profile-2",
+      name: "Second owner's route",
+      description: null,
+    };
+    await view.rerender(<RouteEditScreen />);
+    authState.user.id = "profile-1";
+    routeData = {
+      id: routeId,
+      profile_id: "profile-1",
+      name: "First owner's refreshed route",
+      description: null,
+    };
+    await view.rerender(<RouteEditScreen />);
+
+    await act(async () => {
+      resolve({ id: routeId });
+    });
+    expect(invalidateRoutesMock).not.toHaveBeenCalled();
+    expect(backMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId("route-edit-name-input").props.value).toBe(
+      "First owner's refreshed route",
+    );
+  });
+
+  it.each([
+    "success",
+    "failure",
+  ])("does not affect navigation, cache, or form errors after an unmounted late %s", async (outcome) => {
+    let resolve!: (value: { id: string }) => void;
+    let reject!: (error: Error) => void;
+    updateRouteMock.mockReturnValueOnce(
+      new Promise((done, fail) => {
+        resolve = done;
+        reject = fail;
+      }),
+    );
+    const view = await renderScreen();
+    await fireEvent.changeText(screen.getByTestId("route-edit-name-input"), "Pending route");
+    const submit = screen.getByTestId("route-edit-submit-button").props.onPress;
+    await act(async () => {
+      void submit();
+    });
+    expect(updateRouteMock).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      view.unmount();
+    });
+
+    await act(async () => {
+      if (outcome === "success") resolve({ id: routeId });
+      else reject(new Error("Late route failure"));
+    });
+
+    expect(invalidateRoutesMock).not.toHaveBeenCalled();
+    expect(backMock).not.toHaveBeenCalled();
+    expect(mockHandleSubmitFormError).not.toHaveBeenCalled();
   });
 
   it("retains a rejected draft and keeps owner Back cancellation behind the existing guard", async () => {
