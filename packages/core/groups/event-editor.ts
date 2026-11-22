@@ -15,6 +15,7 @@ export const groupEventRecurrenceFrequencySchema = z.enum(["none", "daily", "wee
 export const groupEventEditorDraftSchema = z.object({
   date: z.string(),
   description: z.string(),
+  endDate: z.string().nullable(),
   endsTime: z.string().nullable(),
   locationName: z.string(),
   recurrenceEndDate: z.string().nullable(),
@@ -24,7 +25,10 @@ export const groupEventEditorDraftSchema = z.object({
   title: z.string(),
   timezone: z.string().nullable(),
 });
-export type GroupEventEditorDraft = z.infer<typeof groupEventEditorDraftSchema>;
+export type GroupEventEditorDraft = z.infer<typeof groupEventEditorDraftSchema> & {
+  /** A persisted seed could not be rendered safely; do not submit it unchanged. */
+  initializationError?: string;
+};
 export type GroupEventRecurrenceFrequency = z.infer<typeof groupEventRecurrenceFrequencySchema>;
 
 export type GroupEventEditorSeed = {
@@ -83,11 +87,20 @@ export function createGroupEventEditorDraft(
   fallbackTimezone = "UTC",
 ): GroupEventEditorDraft {
   const timezone = seed?.timezone ?? fallbackTimezone;
-  const startsAt = seed?.startsAt ? formatIsoInstantInIanaZone(seed.startsAt, timezone) : "";
-  const endsAt = seed?.endsAt ? formatIsoInstantInIanaZone(seed.endsAt, timezone) : null;
+  let startsAt = "";
+  let endsAt: string | null = null;
+  let initializationError: string | undefined;
+  try {
+    startsAt = seed?.startsAt ? formatIsoInstantInIanaZone(seed.startsAt, timezone) : "";
+    endsAt = seed?.endsAt ? formatIsoInstantInIanaZone(seed.endsAt, timezone) : null;
+  } catch (error) {
+    initializationError =
+      error instanceof Error ? error.message : "The saved event schedule could not be displayed.";
+  }
   return {
     date: startsAt.slice(0, 10),
     description: seed?.description ?? "",
+    endDate: endsAt?.slice(0, 10) ?? null,
     endsTime: endsAt?.slice(11, 16) ?? null,
     locationName: seed?.locationName ?? "",
     recurrenceEndDate: recurrenceEndDate(seed?.recurrenceRule, timezone),
@@ -96,6 +109,7 @@ export function createGroupEventEditorDraft(
     startsTime: startsAt.slice(11, 16),
     title: seed?.title ?? "",
     timezone: seed?.timezone ?? null,
+    ...(initializationError ? { initializationError } : {}),
   };
 }
 
@@ -133,7 +147,7 @@ export function prepareGroupEventEditorPayload(
     });
     endsAt = draft.endsTime
       ? scheduledDateTimeToIsoInstant({
-          scheduledDate: draft.date,
+          scheduledDate: draft.endDate ?? draft.date,
           time: draft.endsTime,
           timeZone: draft.timezone,
         })
@@ -148,6 +162,17 @@ export function prepareGroupEventEditorPayload(
   if (endsAt && Date.parse(endsAt) <= Date.parse(startsAt)) {
     return { success: false, field: "endsTime", message: "End time must be after start time." };
   }
+
+  const commonPayload = {
+    activityPlanId: options.activityPlanId,
+    description: draft.description.trim() || null,
+    endsAt,
+    locationName: draft.locationName.trim() || null,
+    routeId: draft.routeId,
+    startsAt,
+    timezone: draft.timezone,
+    title,
+  };
 
   if (options.isRecurringCreate) {
     if (!draft.recurrenceEndDate || draft.recurrenceEndDate < draft.date) {
@@ -175,16 +200,9 @@ export function prepareGroupEventEditorPayload(
       return {
         success: true,
         data: {
-          activityPlanId: options.activityPlanId,
-          description: draft.description.trim() || null,
-          endsAt,
-          locationName: draft.locationName.trim() || null,
+          ...commonPayload,
           recurrenceRule: `FREQ=${draft.recurrenceFrequency.toUpperCase()};UNTIL=${until}`,
           recurrenceTimezone: draft.timezone,
-          routeId: draft.routeId,
-          startsAt,
-          timezone: draft.timezone,
-          title,
         },
       };
     } catch (error) {
@@ -198,15 +216,6 @@ export function prepareGroupEventEditorPayload(
 
   return {
     success: true,
-    data: {
-      activityPlanId: options.activityPlanId,
-      description: draft.description.trim() || null,
-      endsAt,
-      locationName: draft.locationName.trim() || null,
-      routeId: draft.routeId,
-      startsAt,
-      timezone: draft.timezone,
-      title,
-    },
+    data: commonPayload,
   };
 }

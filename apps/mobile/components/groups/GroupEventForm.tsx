@@ -110,14 +110,17 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
     ref,
   ) {
     const displayTimezone = event?.timezone ?? "UTC";
+    const initialDraft = toFormValues(event, displayTimezone);
     const form = useZodForm({
       schema: groupEventEditorDraftSchema,
-      defaultValues: toFormValues(event, displayTimezone),
+      defaultValues: initialDraft,
     });
     const [recurrenceFrequency, routeId] = form.watch(["recurrenceFrequency", "routeId"]);
     const [selectedActivityPlan, setSelectedActivityPlan] =
       useState<SelectedActivityPlanOption | null>(() => toSelectedActivityPlan(event));
-    const [errorMessage, setErrorMessage] = useState<string | null>(null);
+    const [errorMessage, setErrorMessage] = useState<string | null>(
+      initialDraft.initializationError ?? null,
+    );
     const [isRecurringCreate, setIsRecurringCreate] = useState(false);
     const [pickerScope, setPickerScope] = useState<"route" | "activityPlans" | null>(null);
     const [isLocallySubmitting, setIsLocallySubmitting] = useState(false);
@@ -133,8 +136,10 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
     const selectedActivityPlanDetail = selectedActivityPlanQuery.data?.items[0] ?? null;
 
     useEffect(() => {
-      form.reset(toFormValues(event, displayTimezone));
+      const nextDraft = toFormValues(event, displayTimezone);
+      form.reset(nextDraft);
       setSelectedActivityPlan(toSelectedActivityPlan(event));
+      setErrorMessage(nextDraft.initializationError ?? null);
     }, [displayTimezone, event, form]);
     const isDirty =
       form.formState.isDirty ||

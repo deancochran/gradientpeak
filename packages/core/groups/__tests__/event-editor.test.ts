@@ -8,7 +8,29 @@ describe("group event editor", () => {
         startsAt: "2026-06-01T10:30:00.000Z",
         timezone: "Pacific/Kiritimati",
       }),
-    ).toMatchObject({ date: "2026-06-02", endsTime: null, startsTime: "00:30" });
+    ).toMatchObject({ date: "2026-06-02", endDate: null, endsTime: null, startsTime: "00:30" });
+  });
+
+  it("round-trips a multi-day end independently from its start date", () => {
+    const draft = createGroupEventEditorDraft({
+      endsAt: "2026-11-23T01:00:00.000Z",
+      startsAt: "2026-11-22T23:00:00.000Z",
+      timezone: "UTC",
+      title: "Overnight relay",
+    });
+    expect(draft).toMatchObject({
+      date: "2026-11-22",
+      endDate: "2026-11-23",
+      endsTime: "01:00",
+      startsTime: "23:00",
+    });
+    expect(prepareGroupEventEditorPayload(draft, { isRecurringCreate: false })).toMatchObject({
+      success: true,
+      data: {
+        endsAt: "2026-11-23T01:00:00.000Z",
+        startsAt: "2026-11-22T23:00:00.000Z",
+      },
+    });
   });
 
   it("rejects an end before start without mutating the draft", () => {
@@ -69,6 +91,18 @@ describe("group event editor", () => {
       success: false,
       field: "date",
       message: "The local wall time does not exist in this time zone",
+    });
+  });
+
+  it("makes an unreadable persisted schedule observable without throwing or rewriting it", () => {
+    const draft = createGroupEventEditorDraft({
+      startsAt: "not-an-instant",
+      timezone: "UTC",
+    });
+    expect(draft).toMatchObject({
+      date: "",
+      initializationError: "isoInstant must include an explicit UTC offset",
+      startsTime: "",
     });
   });
 });

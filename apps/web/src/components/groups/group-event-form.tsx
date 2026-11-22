@@ -79,8 +79,8 @@ export function GroupEventForm({
       : "",
   );
   const [endsAt, setEndsAt] = useState(
-    initialDraft.date && initialDraft.endsTime
-      ? `${initialDraft.date}T${initialDraft.endsTime}`
+    initialDraft.endDate && initialDraft.endsTime
+      ? `${initialDraft.endDate}T${initialDraft.endsTime}`
       : "",
   );
   const [locationName, setLocationName] = useState(initialDraft.locationName);
@@ -89,14 +89,16 @@ export function GroupEventForm({
   const [recurrence, setRecurrence] = useState<"none" | "daily" | "weekly" | "monthly">("none");
   const [recurrenceUntil, setRecurrenceUntil] = useState("");
   const [error, setError] = useState<unknown>(null);
-  const [scheduleError, setScheduleError] = useState<string | null>(null);
+  const [scheduleError, setScheduleError] = useState<string | null>(
+    initialDraft.initializationError ?? null,
+  );
   const submittingRef = useRef(false);
   const initialValues = useRef({
     activityPlanId: event?.activity_plan_id ?? "",
     description: initialDraft.description,
     endsAt:
-      initialDraft.date && initialDraft.endsTime
-        ? `${initialDraft.date}T${initialDraft.endsTime}`
+      initialDraft.endDate && initialDraft.endsTime
+        ? `${initialDraft.endDate}T${initialDraft.endsTime}`
         : "",
     locationName: initialDraft.locationName,
     routeId: initialDraft.routeId ?? "",
@@ -139,11 +141,12 @@ export function GroupEventForm({
           const isTimezoneValid = await timezoneForm.trigger("timezone");
           if (!isTimezoneValid || !timezone) return;
           const [date = "", startsTime = ""] = startsAt.split("T");
-          const [, endsTime = ""] = endsAt.split("T");
+          const [endDate = "", endsTime = ""] = endsAt.split("T");
           const prepared = prepareGroupEventEditorPayload(
             {
               date,
               description,
+              endDate: endsAt ? endDate : null,
               endsTime: endsAt ? endsTime : null,
               locationName,
               recurrenceEndDate: recurrenceUntil || null,
