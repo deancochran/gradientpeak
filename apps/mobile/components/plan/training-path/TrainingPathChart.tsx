@@ -2,7 +2,6 @@ import { Text } from "@repo/ui/components/text";
 import {
   DashPathEffect,
   interpolateColors,
-  Circle as SkiaCircle,
   Line as SkiaLine,
   Rect as SkiaRect,
   Text as SkiaText,
@@ -11,9 +10,11 @@ import {
 } from "@shopify/react-native-skia";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  type AccessibilityActionEvent,
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  useWindowDimensions,
   View,
 } from "react-native";
 import Animated, {
@@ -27,19 +28,20 @@ import Animated, {
   useSharedValue,
 } from "react-native-reanimated";
 import { CartesianChart, Line, useChartPressState } from "victory-native";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { useTheme } from "@/lib/stores/theme-store";
+import { getPlanChartTheme } from "./planChartTheme";
 import {
   getCenteredWeekIndex,
   getChartSideInset,
   getWeekScrollOffset,
 } from "./trainingPathScrollSnap";
-import type { TrainingPathRange, TrainingPathViewModel } from "./trainingPathTypes";
+import type { TrainingPathViewModel } from "./trainingPathTypes";
 
 type ChartDatum = Record<string, unknown> & {
   index: number;
   completedLoad: number | null;
   plannedLoad: number | null;
-  plannedLoadWithTentative: number | null;
   targetLoad: number | null;
   fitness: number | null;
   scheduledFitness: number | null;
@@ -49,7 +51,6 @@ type ChartDatum = Record<string, unknown> & {
 type ChartYKey =
   | "completedLoad"
   | "plannedLoad"
-  | "plannedLoadWithTentative"
   | "targetLoad"
   | "fitness"
   | "scheduledFitness"
@@ -57,17 +58,11 @@ type ChartYKey =
 
 type TrainingPathChartProps = {
   model: TrainingPathViewModel;
-  range: TrainingPathRange;
   onSelectedWeekChange?: (weekStart: string) => void;
   height?: number;
-  domains?: TrainingPathViewModel["domains"];
+  fillHeight?: boolean;
   scrollX?: boolean;
   reviewWeeks?: boolean;
-  showCompletedLoad?: boolean;
-  showPlannedLoad?: boolean;
-  showScheduledFitness?: boolean;
-  onScrollNearStart?: () => void;
-  onScrollNearEnd?: () => void;
   onScrollInteractionStart?: () => void;
   onScrollInteractionSettled?: () => void;
   onDisplayedWeekChange?: (weekStart: string) => void;
@@ -76,18 +71,12 @@ type TrainingPathChartProps = {
 const yKeys: ChartYKey[] = [
   "completedLoad",
   "plannedLoad",
-  "plannedLoadWithTentative",
   "targetLoad",
   "fitness",
   "scheduledFitness",
   "targetFitness",
 ];
-const loadKeys: ChartYKey[] = [
-  "completedLoad",
-  "plannedLoad",
-  "plannedLoadWithTentative",
-  "targetLoad",
-];
+const loadKeys: ChartYKey[] = ["completedLoad", "plannedLoad", "targetLoad"];
 const fitnessKeys: ChartYKey[] = ["fitness", "scheduledFitness", "targetFitness"];
 const initialChartPressState: { x: number; y: Record<ChartYKey, number> } = {
   x: 0,
@@ -95,7 +84,6 @@ const initialChartPressState: { x: number; y: Record<ChartYKey, number> } = {
     completedLoad: 0,
     fitness: 0,
     plannedLoad: 0,
-    plannedLoadWithTentative: 0,
     scheduledFitness: 0,
     targetFitness: 0,
     targetLoad: 0,
@@ -105,6 +93,16 @@ const chartPadding = { left: 8, right: 8, top: 20, bottom: 26 };
 const fixedAxisWidth = 34;
 const scrollWeekWidth = 38;
 const scrollBarWidth = 28;
+
+const formatAccessibleMetric = (
+  label: string,
+  value: number | null,
+  unit = "",
+  approximate = false,
+) =>
+  typeof value === "number" && Number.isFinite(value)
+    ? `${label} ${approximate ? "~" : ""}${Math.round(value)}${unit}`
+    : `${label} unavailable`;
 
 const getAxisFontSource = (): Parameters<typeof useFont>[0] => {
   try {
@@ -162,7 +160,6 @@ function getLoadBarGeometry(
   return (
     getBarGeometry(pointsByKey.completedLoad ?? [], index, chartLeft, chartRight) ??
     getBarGeometry(pointsByKey.plannedLoad ?? [], index, chartLeft, chartRight) ??
-    getBarGeometry(pointsByKey.plannedLoadWithTentative ?? [], index, chartLeft, chartRight) ??
     getBarGeometry(pointsByKey.targetLoad ?? [], index, chartLeft, chartRight)
   );
 }
@@ -222,108 +219,7 @@ function AnimatedFocusedRect({
       height={height}
       color={color}
       opacity={opacity}
-      style={style}
-      strokeWidth={strokeWidth}
-    />
-  );
-}
-
-const tentativePatternSpacing = 5;
-const tentativePatternRadius = 1.1;
-type SkiaCircleProps = Parameters<typeof SkiaCircle>[0];
-
-function TentativePatternFill({
-  color,
-  height,
-  opacity = 0.82,
-  width,
-  x,
-  y,
-}: {
-  color: SkiaCircleProps["color"];
-  height: number;
-  opacity?: SkiaCircleProps["opacity"];
-  width: number;
-  x: number;
-  y: number;
-}) {
-  if (width <= 0 || height <= 0) return null;
-
-  const dots = [];
-  const left = x + Math.min(3, width / 2);
-  const top = y + Math.min(3, height / 2);
-  const right = x + width - 2;
-  const bottom = y + height - 2;
-
-  for (let cy = top; cy <= bottom; cy += tentativePatternSpacing) {
-    for (let cx = left; cx <= right; cx += tentativePatternSpacing) {
-      dots.push(
-        <SkiaCircle
-          key={`tentative-dot-${dots.length}`}
-          cx={cx}
-          cy={cy}
-          r={tentativePatternRadius}
-          color={color}
-          opacity={opacity}
-        />,
-      );
-    }
-  }
-
-  if (dots.length === 0) {
-    dots.push(
-      <SkiaCircle
-        key="tentative-dot-center"
-        cx={x + width / 2}
-        cy={y + height / 2}
-        r={tentativePatternRadius}
-        color={color}
-        opacity={opacity}
-      />,
-    );
-  }
-
-  return <Fragment>{dots}</Fragment>;
-}
-
-function AnimatedTentativePatternFill({
-  activeColor,
-  chartScrollX,
-  dimColor,
-  height,
-  index,
-  scrollSlotWidth,
-  width,
-  x,
-  y,
-}: {
-  activeColor: string;
-  chartScrollX: SharedValue<number>;
-  dimColor: string;
-  height: number;
-  index: number;
-  scrollSlotWidth: number;
-  width: number;
-  x: number;
-  y: number;
-}) {
-  const focus = useDerivedValue(() => {
-    const distance = Math.abs(chartScrollX.value - index * scrollSlotWidth);
-    return Math.max(0, Math.min(1, 1 - distance / scrollSlotWidth));
-  });
-  const color = useDerivedValue(() =>
-    interpolateColors(focus.value, [0, 1], [dimColor, activeColor]),
-  );
-  const opacity = useDerivedValue(() => 0.58 + focus.value * 0.34);
-
-  return (
-    <TentativePatternFill
-      x={x}
-      y={y}
-      width={width}
-      height={height}
-      color={color}
-      opacity={opacity}
+      {...omitUndefined({ style, strokeWidth })}
     />
   );
 }
@@ -357,27 +253,17 @@ function expandDomainToValues(
 function getRenderedLoadDomain({
   baseDomain,
   chartData,
-  range,
-  showCompletedLoad,
-  showPlannedLoad,
 }: {
   baseDomain: [number, number];
   chartData: ChartDatum[];
-  range: TrainingPathRange;
-  showCompletedLoad: boolean;
-  showPlannedLoad: boolean;
 }) {
   const values: number[] = [];
-  const showPlanningLayers = range !== "all";
 
   for (const datum of chartData) {
-    if (showCompletedLoad && isFiniteNumber(datum.completedLoad)) values.push(datum.completedLoad);
-    if (showPlanningLayers && isFiniteNumber(datum.targetLoad)) values.push(datum.targetLoad);
-    if (showPlanningLayers && showPlannedLoad && isFiniteNumber(datum.plannedLoad)) {
+    if (isFiniteNumber(datum.completedLoad)) values.push(datum.completedLoad);
+    if (isFiniteNumber(datum.targetLoad)) values.push(datum.targetLoad);
+    if (isFiniteNumber(datum.plannedLoad)) {
       values.push(datum.plannedLoad);
-    }
-    if (showPlanningLayers && showPlannedLoad && isFiniteNumber(datum.plannedLoadWithTentative)) {
-      values.push(datum.plannedLoadWithTentative);
     }
   }
 
@@ -387,18 +273,16 @@ function getRenderedLoadDomain({
 function getRenderedFitnessDomain({
   baseDomain,
   chartData,
-  showScheduledFitness,
 }: {
   baseDomain: [number, number];
   chartData: ChartDatum[];
-  showScheduledFitness: boolean;
 }) {
   const values: number[] = [];
 
   for (const datum of chartData) {
     if (isFiniteNumber(datum.fitness)) values.push(datum.fitness);
     if (isFiniteNumber(datum.targetFitness)) values.push(datum.targetFitness);
-    if (showScheduledFitness && isFiniteNumber(datum.scheduledFitness)) {
+    if (isFiniteNumber(datum.scheduledFitness)) {
       values.push(datum.scheduledFitness);
     }
   }
@@ -409,15 +293,20 @@ function getRenderedFitnessDomain({
 function FixedYAxisLabels({
   align = "right",
   domain,
+  fontScale,
 }: {
   align?: "left" | "right";
   domain: [number, number];
+  fontScale: number;
 }) {
+  const resolvedAxisWidth = Math.ceil(fixedAxisWidth * Math.min(Math.max(fontScale, 1), 1.6));
   return (
     <View
+      accessible={false}
       className="relative"
+      importantForAccessibility="no-hide-descendants"
       style={{
-        width: fixedAxisWidth,
+        width: resolvedAxisWidth,
         paddingTop: chartPadding.top,
         paddingBottom: chartPadding.bottom,
       }}
@@ -432,6 +321,8 @@ function FixedYAxisLabels({
                 ? "text-left text-[9px] text-muted-foreground"
                 : "text-right text-[9px] text-muted-foreground"
             }
+            adjustsFontSizeToFit
+            minimumFontScale={0.75}
             numberOfLines={1}
           >
             {Math.round(value)}
@@ -444,93 +335,90 @@ function FixedYAxisLabels({
 
 export function TrainingPathChart({
   model,
-  range,
   onSelectedWeekChange,
   height = 430,
-  domains = model.domains,
+  fillHeight = false,
   scrollX = false,
   reviewWeeks = true,
-  showCompletedLoad = true,
-  showPlannedLoad = true,
-  showScheduledFitness = true,
-  onScrollNearStart,
-  onScrollNearEnd,
   onScrollInteractionStart,
   onScrollInteractionSettled,
   onDisplayedWeekChange,
 }: TrainingPathChartProps) {
   const [chartWidth, setChartWidth] = useState(320);
   const [scrollViewportWidth, setScrollViewportWidth] = useState(240);
+  const [measuredHeight, setMeasuredHeight] = useState<number | null>(null);
   const scrollViewRef = useAnimatedRef<Animated.ScrollView>();
   const centeredWeekIndexRef = useRef<number | null>(null);
   const latestScrollOffsetRef = useRef(0);
   const deferredCommitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userInteractingRef = useRef(false);
   const displayedWeekIndexRef = useRef<number | null>(null);
-  const pendingStartExpansionRef = useRef(false);
-  const pendingEndExpansionRef = useRef(false);
   const chartScrollX = useSharedValue(0);
   const { state: chartPressState } = useChartPressState(initialChartPressState);
   const animatedScrollHandler = useAnimatedScrollHandler((event) => {
     chartScrollX.value = event.contentOffset.x;
   });
+  const { fontScale = 1 } = useWindowDimensions();
+  const cappedFontScale = Math.min(Math.max(fontScale, 1), 1.6);
+  const resolvedScrollWeekWidth = Math.ceil(scrollWeekWidth * cappedFontScale);
   const { resolvedTheme } = useTheme();
-  const isDark = resolvedTheme === "dark";
-  const chartColors = {
-    axisLabel: isDark ? "rgba(226, 232, 240, 0.82)" : "rgba(15, 23, 42, 0.72)",
-    completed: isDark ? "rgba(34, 197, 94, 0.88)" : "rgba(22, 163, 74, 0.86)",
-    completedDimmed: isDark ? "rgba(34, 197, 94, 0.38)" : "rgba(22, 163, 74, 0.3)",
-    fitness: isDark ? "rgba(74, 222, 128, 0.95)" : "rgba(22, 163, 74, 0.95)",
-    frame: isDark ? "rgba(248, 250, 252, 0.24)" : "rgba(15, 23, 42, 0.24)",
-    grid: isDark ? "rgba(248, 250, 252, 0.12)" : "rgba(15, 23, 42, 0.12)",
-    marker: isDark ? "#f8fafc" : "#020617",
-    planned: isDark ? "rgba(59, 130, 246, 0.74)" : "rgba(37, 99, 235, 0.68)",
-    plannedDimmed: isDark ? "rgba(59, 130, 246, 0.32)" : "rgba(37, 99, 235, 0.24)",
-    plannedOutline: isDark ? "rgba(96, 165, 250, 0.9)" : "rgba(37, 99, 235, 0.88)",
-    selected: isDark ? "rgba(248, 250, 252, 0.12)" : "rgba(15, 23, 42, 0.08)",
-    scheduledFitness: isDark ? "rgba(96, 165, 250, 0.95)" : "rgba(37, 99, 235, 0.95)",
-    target: isDark ? "rgba(148, 163, 184, 0.34)" : "rgba(100, 116, 139, 0.24)",
-    targetDimmed: isDark ? "rgba(148, 163, 184, 0.16)" : "rgba(100, 116, 139, 0.1)",
-    targetFitness: isDark ? "rgba(248, 250, 252, 0.5)" : "rgba(15, 23, 42, 0.42)",
-  };
-  const axisFont = useFont(getAxisFontSource(), 9);
+  const chartColors = useMemo(() => getPlanChartTheme(resolvedTheme), [resolvedTheme]);
+  const axisFont = useFont(getAxisFontSource(), 9 * cappedFontScale);
+  const hasGoalBackedRecommendation =
+    model.goalMarkers.length > 0 &&
+    model.weeks.some(
+      (week) =>
+        week.recommendedLoadStatus === "complete" || week.recommendedLoadStatus === "known_zero",
+    );
   const labels = useMemo(() => model.weeks.map((week) => week.label), [model.weeks]);
   const chartData: ChartDatum[] = useMemo(
     () =>
-      model.weeks.map((week, index) => ({
-        index,
-        completedLoad: week.completedLoad,
-        plannedLoad: week.plannedLoad,
-        plannedLoadWithTentative:
-          typeof week.plannedLoad === "number" || typeof week.tentativePlannedLoad === "number"
-            ? (week.plannedLoad ?? 0) + (week.tentativePlannedLoad ?? 0)
-            : null,
-        targetLoad: week.targetLoad,
-        fitness: week.fitness,
-        scheduledFitness: week.scheduledFitness,
-        targetFitness: week.targetFitness,
-      })),
-    [model.weeks],
+      model.weeks.map((week, index) => {
+        const completedLoadStatus = week.completedLoadStatus ?? week.effectiveLoadStatus;
+        const completedLoad = week.effectiveCompletedLoad ?? week.completedLoad;
+        const effectiveRemainingLoad = week.effectiveRemainingLoad ?? week.plannedLoad;
+        const plannedLoadStatus =
+          week.effectiveRemainingLoad == null
+            ? (week.plannedLoadStatus ?? week.effectiveLoadStatus)
+            : (week.effectiveRemainingLoadStatus ?? week.effectiveLoadStatus);
+        return {
+          index,
+          completedLoad: completedLoadStatus === "unavailable" ? null : completedLoad,
+          plannedLoad: plannedLoadStatus === "unavailable" ? null : effectiveRemainingLoad,
+          // Only the explicit versioned common-Load recommendation may share this axis.
+          targetLoad:
+            hasGoalBackedRecommendation &&
+            (week.recommendedLoadStatus === "complete" ||
+              week.recommendedLoadStatus === "known_zero")
+              ? (week.recommendedLoad ?? null)
+              : null,
+          fitness: week.fitness,
+          scheduledFitness: week.scheduledFitness,
+          targetFitness:
+            hasGoalBackedRecommendation &&
+            (week.recommendedLoadStatus === "complete" ||
+              week.recommendedLoadStatus === "known_zero")
+              ? week.targetFitness
+              : null,
+        };
+      }),
+    [hasGoalBackedRecommendation, model.weeks],
   );
   const effectiveLoadDomain = useMemo(
     () =>
       getRenderedLoadDomain({
-        baseDomain: domains.load,
+        baseDomain: model.domains.load,
         chartData,
-        range,
-        showCompletedLoad,
-        showPlannedLoad,
       }),
-    [chartData, domains.load, range, showCompletedLoad, showPlannedLoad],
+    [chartData, model.domains.load],
   );
   const effectiveFitnessDomain = useMemo(
     () =>
       getRenderedFitnessDomain({
-        baseDomain: domains.fitness,
+        baseDomain: model.domains.fitness,
         chartData,
-        showScheduledFitness,
       }),
-    [chartData, domains.fitness, showScheduledFitness],
+    [chartData, model.domains.fitness],
   );
   const xTickIndexes = useMemo(
     () =>
@@ -545,20 +433,24 @@ export function TrainingPathChart({
     ? Math.max(
         chartPadding.left +
           chartPadding.right +
-          Math.max(0, model.weeks.length - 1) * scrollWeekWidth,
+          Math.max(0, model.weeks.length - 1) * resolvedScrollWeekWidth,
         1,
       )
     : chartWidth;
   const scrollSideInset = scrollX ? getChartSideInset(scrollViewportWidth, chartPadding.left) : 0;
   const xLabelSpacing = scrollX
-    ? scrollWeekWidth
+    ? resolvedScrollWeekWidth
     : model.weeks.length > 1
       ? (scrollableChartWidth - chartPadding.left - chartPadding.right) / (model.weeks.length - 1)
       : 0;
-  const chartAreaHeight = Math.max(120, height - 22);
+  const chartAreaHeight = fillHeight
+    ? Math.max(1, (measuredHeight ?? 23) - 22)
+    : Math.max(120, height - 22);
   const onChartLayout = (event: LayoutChangeEvent) => {
     const measuredWidth = Math.floor(event.nativeEvent.layout.width);
+    const nextMeasuredHeight = Math.floor(event.nativeEvent.layout.height);
     if (measuredWidth >= 220) setChartWidth(measuredWidth);
+    if (fillHeight && nextMeasuredHeight > 0) setMeasuredHeight(nextMeasuredHeight);
   };
   const onScrollViewportLayout = (event: LayoutChangeEvent) => {
     const measuredWidth = Math.floor(event.nativeEvent.layout.width);
@@ -568,26 +460,34 @@ export function TrainingPathChart({
     (offsetX: number) => {
       if (!reviewWeeks || !onSelectedWeekChange) return;
       if (model.weeks.length === 0) return;
-      const centeredIndex = getCenteredWeekIndex(offsetX, scrollWeekWidth, model.weeks.length);
+      const centeredIndex = getCenteredWeekIndex(
+        offsetX,
+        resolvedScrollWeekWidth,
+        model.weeks.length,
+      );
       centeredWeekIndexRef.current = centeredIndex;
       const centeredWeek = model.weeks[centeredIndex];
       if (centeredWeek && !centeredWeek.isSelected) {
         onSelectedWeekChange(centeredWeek.weekStart);
       }
     },
-    [model.weeks, onSelectedWeekChange, reviewWeeks],
+    [model.weeks, onSelectedWeekChange, resolvedScrollWeekWidth, reviewWeeks],
   );
   const publishDisplayedWeek = useCallback(
     (offsetX: number) => {
       if (!reviewWeeks) return;
       if (model.weeks.length === 0) return;
-      const centeredIndex = getCenteredWeekIndex(offsetX, scrollWeekWidth, model.weeks.length);
+      const centeredIndex = getCenteredWeekIndex(
+        offsetX,
+        resolvedScrollWeekWidth,
+        model.weeks.length,
+      );
       if (displayedWeekIndexRef.current === centeredIndex) return;
       displayedWeekIndexRef.current = centeredIndex;
       const displayedWeek = model.weeks[centeredIndex];
       if (displayedWeek) onDisplayedWeekChange?.(displayedWeek.weekStart);
     },
-    [model.weeks, onDisplayedWeekChange, reviewWeeks],
+    [model.weeks, onDisplayedWeekChange, resolvedScrollWeekWidth, reviewWeeks],
   );
   const clearDeferredCommit = useCallback(() => {
     if (!deferredCommitTimeoutRef.current) return;
@@ -604,31 +504,14 @@ export function TrainingPathChart({
     onScrollInteractionSettled?.();
   }, [onScrollInteractionSettled]);
   const onHorizontalScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const { contentOffset } = event.nativeEvent;
     latestScrollOffsetRef.current = contentOffset.x;
-    if (contentOffset.x <= scrollWeekWidth * 2) {
-      pendingStartExpansionRef.current = true;
-    }
-    if (contentOffset.x + layoutMeasurement.width >= contentSize.width - scrollWeekWidth * 2) {
-      pendingEndExpansionRef.current = true;
-    }
   };
-  const flushPendingEdgeExpansion = useCallback(() => {
-    if (pendingStartExpansionRef.current) {
-      pendingStartExpansionRef.current = false;
-      onScrollNearStart?.();
-    }
-    if (pendingEndExpansionRef.current) {
-      pendingEndExpansionRef.current = false;
-      onScrollNearEnd?.();
-    }
-  }, [onScrollNearEnd, onScrollNearStart]);
   const onHorizontalScrollSettled = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     clearDeferredCommit();
     publishDisplayedWeek(event.nativeEvent.contentOffset.x);
     commitCenteredWeek(event.nativeEvent.contentOffset.x);
     onHorizontalScroll(event);
-    flushPendingEdgeExpansion();
     settleScrollInteraction();
   };
   const onHorizontalMomentumBegin = () => {
@@ -644,17 +527,16 @@ export function TrainingPathChart({
       deferredCommitTimeoutRef.current = null;
       publishDisplayedWeek(latestScrollOffsetRef.current);
       commitCenteredWeek(latestScrollOffsetRef.current);
-      flushPendingEdgeExpansion();
       settleScrollInteraction();
     }, 180);
   };
   const scrollToWeekIndex = useCallback(
     (index: number, animated: boolean) => {
-      const offset = getWeekScrollOffset(index, scrollWeekWidth);
+      const offset = getWeekScrollOffset(index, resolvedScrollWeekWidth);
       centeredWeekIndexRef.current = index;
       scrollTo(scrollViewRef, offset, 0, animated);
     },
-    [scrollViewRef],
+    [resolvedScrollWeekWidth, scrollViewRef],
   );
   const selectWeekAtIndex = useCallback(
     (index: number) => {
@@ -665,7 +547,7 @@ export function TrainingPathChart({
       if (scrollX) {
         scrollToWeekIndex(boundedIndex, true);
         beginScrollInteraction();
-        publishDisplayedWeek(getWeekScrollOffset(boundedIndex, scrollWeekWidth));
+        publishDisplayedWeek(getWeekScrollOffset(boundedIndex, resolvedScrollWeekWidth));
         if (!week.isSelected) {
           onSelectedWeekChange(week.weekStart);
         }
@@ -686,19 +568,94 @@ export function TrainingPathChart({
       onSelectedWeekChange,
       publishDisplayedWeek,
       reviewWeeks,
+      resolvedScrollWeekWidth,
       scrollToWeekIndex,
       scrollX,
       settleScrollInteraction,
     ],
   );
+  const accessibilityIndex =
+    selectedIndex >= 0
+      ? selectedIndex
+      : Math.max(
+          0,
+          model.weeks.findIndex((week) => week.isCurrent),
+        );
+  const accessibilityWeek = model.weeks[accessibilityIndex] ?? model.weeks[0];
+  const accessibilityPlannedLoad =
+    accessibilityWeek?.effectiveRemainingLoad == null
+      ? (accessibilityWeek?.plannedLoad ?? null)
+      : accessibilityWeek.effectiveRemainingLoad;
+  const accessibilityPlannedLoadStatus =
+    accessibilityWeek?.effectiveRemainingLoad == null
+      ? (accessibilityWeek?.plannedLoadStatus ?? accessibilityWeek?.effectiveLoadStatus)
+      : (accessibilityWeek?.effectiveRemainingLoadStatus ?? accessibilityWeek?.effectiveLoadStatus);
+  const accessibilityCompletedLoad =
+    accessibilityWeek?.effectiveCompletedLoad ?? accessibilityWeek?.completedLoad ?? null;
+  const accessibilityValue = accessibilityWeek
+    ? [
+        `Selected week ${accessibilityWeek.label}, ${accessibilityWeek.weekStart} to ${accessibilityWeek.weekEnd}`,
+        accessibilityWeek.effectiveLoadStatus === "unavailable" &&
+        accessibilityWeek.effectiveLoad == null
+          ? "Common Load unavailable"
+          : formatAccessibleMetric("Common Load", accessibilityWeek.effectiveLoad ?? null),
+        accessibilityWeek.effectiveLoadStatus === "known_zero"
+          ? "Normalized intensity not applicable"
+          : accessibilityWeek.effectiveIntensity == null
+            ? "Normalized intensity unavailable"
+            : `Normalized intensity ${accessibilityWeek.effectiveIntensity.toFixed(2)}`,
+        accessibilityCompletedLoad == null
+          ? null
+          : formatAccessibleMetric("Completed Common Load", accessibilityCompletedLoad),
+        accessibilityWeek.completedLoadUnavailable &&
+        accessibilityWeek.effectiveCompletedLoad == null
+          ? "Completed activity Common Load unavailable"
+          : null,
+        accessibilityPlannedLoadStatus === "known_zero"
+          ? "Planned Common Load 0, no planned load"
+          : accessibilityPlannedLoadStatus === "unavailable" && accessibilityPlannedLoad == null
+            ? "Planned Common Load unavailable"
+            : formatAccessibleMetric("Planned Common Load", accessibilityPlannedLoad),
+        !hasGoalBackedRecommendation || !accessibilityWeek.recommendedLoadStatus
+          ? null
+          : formatAccessibleMetric(
+              "Recommended Common Load",
+              accessibilityWeek.recommendedLoadStatus === "known_zero"
+                ? 0
+                : (accessibilityWeek.recommendedLoad ?? null),
+            ),
+        formatAccessibleMetric("Current fitness", accessibilityWeek.fitness),
+        formatAccessibleMetric("Planned projection", accessibilityWeek.scheduledFitness),
+        hasGoalBackedRecommendation &&
+        (accessibilityWeek.recommendedLoadStatus === "complete" ||
+          accessibilityWeek.recommendedLoadStatus === "known_zero")
+          ? formatAccessibleMetric("Recommended projection", accessibilityWeek.targetFitness)
+          : null,
+      ]
+        .filter((value): value is string => value !== null)
+        .join(". ")
+    : "No week selected";
+  const handleAccessibilityAction = useCallback(
+    (event: AccessibilityActionEvent) => {
+      if (event.nativeEvent.actionName === "increment") {
+        selectWeekAtIndex(accessibilityIndex + 1);
+      }
+      if (event.nativeEvent.actionName === "decrement") {
+        selectWeekAtIndex(accessibilityIndex - 1);
+      }
+    },
+    [accessibilityIndex, selectWeekAtIndex],
+  );
 
   useAnimatedReaction(
     () => {
+      "worklet";
       if (!chartPressState.isActive.value) return null;
       const activeIndex = Number(chartPressState.x.value.value);
       return Number.isFinite(activeIndex) ? Math.round(activeIndex) : null;
     },
     (activeIndex, previousIndex) => {
+      "worklet";
       if (activeIndex == null || activeIndex === previousIndex) return;
       runOnJS(selectWeekAtIndex)(activeIndex);
     },
@@ -780,7 +737,9 @@ export function TrainingPathChart({
           lineColor: chartColors.frame,
           lineWidth: { bottom: 1, left: scrollX ? 0 : 1, right: 0, top: 0 },
         }}
-        chartPressState={reviewWeeks ? chartPressState : undefined}
+        {...omitUndefined({
+          chartPressState: reviewWeeks && !scrollX ? chartPressState : undefined,
+        })}
       >
         {({ points, chartBounds }) => (
           <>
@@ -824,7 +783,6 @@ export function TrainingPathChart({
               );
               const completedPoint = points.completedLoad[index];
               const plannedPoint = points.plannedLoad[index];
-              const plannedWithTentativePoint = points.plannedLoadWithTentative[index];
               const targetPoint = points.targetLoad[index];
               if (!geometry) return null;
               const barWidth = getSleeveBarWidth(
@@ -838,15 +796,12 @@ export function TrainingPathChart({
                 chartBounds.left,
                 chartBounds.right,
               );
-              const isDimmed =
-                reviewWeeks && !scrollX && selectedIndex >= 0 && index !== selectedIndex;
-              const showPlanningLayers = range !== "all";
               const shouldFocusScrolledBars = scrollX && reviewWeeks;
               return (
                 <Fragment key={`load-bars-${week.weekStart}`}>
-                  {showPlanningLayers &&
-                  typeof targetPoint?.yValue === "number" &&
-                  typeof targetPoint.y === "number" ? (
+                  {isFiniteNumber(targetPoint?.yValue) &&
+                  targetPoint.yValue > 0 &&
+                  isFiniteNumber(targetPoint.y) ? (
                     shouldFocusScrolledBars ? (
                       <AnimatedFocusedRect
                         key={`target-${week.weekStart}`}
@@ -854,10 +809,10 @@ export function TrainingPathChart({
                         y={targetPoint.y}
                         width={barWidth}
                         height={chartBounds.bottom - targetPoint.y}
-                        activeColor={chartColors.target}
-                        dimColor={chartColors.targetDimmed}
+                        activeColor={chartColors.targetLoad}
+                        dimColor={chartColors.targetLoad}
                         index={index}
-                        scrollSlotWidth={scrollWeekWidth}
+                        scrollSlotWidth={resolvedScrollWeekWidth}
                         chartScrollX={chartScrollX}
                       />
                     ) : (
@@ -867,14 +822,13 @@ export function TrainingPathChart({
                         y={targetPoint.y}
                         width={barWidth}
                         height={chartBounds.bottom - targetPoint.y}
-                        color={isDimmed ? chartColors.targetDimmed : chartColors.target}
+                        color={chartColors.targetLoad}
                       />
                     )
                   ) : null}
-                  {showPlanningLayers &&
-                  showPlannedLoad &&
-                  typeof plannedPoint?.yValue === "number" &&
-                  typeof plannedPoint.y === "number" ? (
+                  {isFiniteNumber(plannedPoint?.yValue) &&
+                  plannedPoint.yValue > 0 &&
+                  isFiniteNumber(plannedPoint.y) ? (
                     shouldFocusScrolledBars ? (
                       <AnimatedFocusedRect
                         key={`planned-${week.weekStart}`}
@@ -882,10 +836,10 @@ export function TrainingPathChart({
                         y={plannedPoint.y}
                         width={barWidth}
                         height={chartBounds.bottom - plannedPoint.y}
-                        activeColor={chartColors.planned}
-                        dimColor={chartColors.plannedDimmed}
+                        activeColor={chartColors.plannedLoad}
+                        dimColor={chartColors.plannedLoad}
                         index={index}
-                        scrollSlotWidth={scrollWeekWidth}
+                        scrollSlotWidth={resolvedScrollWeekWidth}
                         chartScrollX={chartScrollX}
                       />
                     ) : (
@@ -895,46 +849,13 @@ export function TrainingPathChart({
                         y={plannedPoint.y}
                         width={barWidth}
                         height={chartBounds.bottom - plannedPoint.y}
-                        color={isDimmed ? chartColors.plannedDimmed : chartColors.planned}
+                        color={chartColors.plannedLoad}
                       />
                     )
                   ) : null}
-                  {showPlanningLayers &&
-                  showPlannedLoad &&
-                  typeof plannedWithTentativePoint?.yValue === "number" &&
-                  typeof plannedWithTentativePoint.y === "number" &&
-                  plannedWithTentativePoint.yValue > (plannedPoint?.yValue ?? 0) ? (
-                    shouldFocusScrolledBars ? (
-                      <AnimatedTentativePatternFill
-                        key={`tentative-planned-${week.weekStart}`}
-                        x={barLeft}
-                        y={plannedWithTentativePoint.y}
-                        width={barWidth}
-                        height={
-                          (plannedPoint?.y ?? chartBounds.bottom) - plannedWithTentativePoint.y
-                        }
-                        activeColor={chartColors.plannedOutline}
-                        dimColor={chartColors.plannedDimmed}
-                        index={index}
-                        scrollSlotWidth={scrollWeekWidth}
-                        chartScrollX={chartScrollX}
-                      />
-                    ) : (
-                      <TentativePatternFill
-                        key={`tentative-planned-${week.weekStart}`}
-                        x={barLeft}
-                        y={plannedWithTentativePoint.y}
-                        width={barWidth}
-                        height={
-                          (plannedPoint?.y ?? chartBounds.bottom) - plannedWithTentativePoint.y
-                        }
-                        color={isDimmed ? chartColors.plannedDimmed : chartColors.plannedOutline}
-                      />
-                    )
-                  ) : null}
-                  {showCompletedLoad &&
-                  typeof completedPoint?.yValue === "number" &&
-                  typeof completedPoint.y === "number" ? (
+                  {isFiniteNumber(completedPoint?.yValue) &&
+                  completedPoint.yValue > 0 &&
+                  isFiniteNumber(completedPoint.y) ? (
                     shouldFocusScrolledBars ? (
                       <AnimatedFocusedRect
                         key={`completed-${week.weekStart}`}
@@ -942,10 +863,10 @@ export function TrainingPathChart({
                         y={completedPoint.y}
                         width={barWidth}
                         height={chartBounds.bottom - completedPoint.y}
-                        activeColor={chartColors.completed}
-                        dimColor={chartColors.completedDimmed}
+                        activeColor={chartColors.completedLoad}
+                        dimColor={chartColors.completedLoad}
                         index={index}
-                        scrollSlotWidth={scrollWeekWidth}
+                        scrollSlotWidth={resolvedScrollWeekWidth}
                         chartScrollX={chartScrollX}
                       />
                     ) : (
@@ -955,33 +876,34 @@ export function TrainingPathChart({
                         y={completedPoint.y}
                         width={barWidth}
                         height={chartBounds.bottom - completedPoint.y}
-                        color={isDimmed ? chartColors.completedDimmed : chartColors.completed}
+                        color={chartColors.completedLoad}
                       />
                     )
                   ) : null}
                 </Fragment>
               );
             })}
-            <Line
-              points={points.targetFitness.filter((point) => point.yValue != null)}
-              color={chartColors.targetFitness}
-              strokeWidth={2}
-              curveType="natural"
-            >
-              <DashPathEffect intervals={[4, 4]} />
-            </Line>
-            {showScheduledFitness ? (
+            {hasGoalBackedRecommendation ? (
               <Line
-                points={points.scheduledFitness.filter((point) => point.yValue != null)}
-                color={chartColors.scheduledFitness}
-                strokeWidth={3}
+                connectMissingData={false}
+                points={points.targetFitness}
+                color={chartColors.targetFitness}
+                strokeWidth={2}
                 curveType="natural"
               >
-                <DashPathEffect intervals={[2, 5]} />
+                <DashPathEffect intervals={[4, 4]} />
               </Line>
             ) : null}
             <Line
-              points={points.fitness.filter((point) => point.yValue != null)}
+              connectMissingData={false}
+              points={points.scheduledFitness}
+              color={chartColors.scheduledFitness}
+              strokeWidth={3}
+              curveType="natural"
+            />
+            <Line
+              connectMissingData={false}
+              points={points.fitness}
               color={chartColors.fitness}
               strokeWidth={2.5}
               curveType="natural"
@@ -991,35 +913,45 @@ export function TrainingPathChart({
                   const index = model.weeks.findIndex(
                     (week) => week.weekStart === todayWeekStart.weekStart,
                   );
-                  const actualMarkerPoint = points.fitness[index];
-                  const scheduledMarkerPoint = points.scheduledFitness[index];
                   const markerPoint =
-                    actualMarkerPoint?.yValue != null ? actualMarkerPoint : scheduledMarkerPoint;
-                  if (
-                    !markerPoint ||
-                    markerPoint.yValue == null ||
-                    typeof markerPoint.y !== "number"
-                  )
-                    return null;
+                    points.fitness[index] ??
+                    points.scheduledFitness[index] ??
+                    points.completedLoad[index];
+                  if (!markerPoint || typeof markerPoint.x !== "number") return null;
                   return (
-                    <SkiaCircle
-                      cx={markerPoint.x}
-                      cy={markerPoint.y}
-                      r={4}
-                      color={chartColors.marker}
-                    />
+                    <>
+                      <SkiaLine
+                        p1={vec(markerPoint.x, chartBounds.top + 12)}
+                        p2={vec(markerPoint.x, chartBounds.bottom)}
+                        color={chartColors.marker}
+                        strokeWidth={1.5}
+                      >
+                        <DashPathEffect intervals={[3, 3]} />
+                      </SkiaLine>
+                      {axisFont ? (
+                        <SkiaText
+                          x={Math.max(chartBounds.left, markerPoint.x - 12)}
+                          y={chartBounds.top + 10}
+                          text="TODAY"
+                          font={axisFont}
+                          color={chartColors.marker}
+                        />
+                      ) : null}
+                    </>
                   );
                 })()
               : null}
             {model.goalMarkers.map((marker) => {
               const index = model.weeks.findIndex((week) => week.weekStart === marker.weekStart);
-              const markerPoint = points.completedLoad[index];
+              const markerPoint =
+                points.completedLoad[index] ?? points.plannedLoad[index] ?? points.fitness[index];
               if (!markerPoint) return null;
+              const markerX = markerPoint.x;
               return (
                 <Fragment key={`goal-marker-${marker.id}`}>
                   <SkiaLine
-                    p1={vec(markerPoint.x, chartBounds.bottom)}
-                    p2={vec(markerPoint.x, chartBounds.top)}
+                    p1={vec(markerX, chartBounds.bottom)}
+                    p2={vec(markerX, chartBounds.top + 12)}
                     color={chartColors.marker}
                     strokeWidth={2}
                   >
@@ -1027,7 +959,7 @@ export function TrainingPathChart({
                   </SkiaLine>
                   {axisFont ? (
                     <SkiaText
-                      x={Math.max(chartBounds.left, markerPoint.x - 12)}
+                      x={Math.max(chartBounds.left, markerX - 12)}
                       y={chartBounds.top + 10}
                       text="GOAL"
                       font={axisFont}
@@ -1055,12 +987,17 @@ export function TrainingPathChart({
               key={`x-label-${week.weekStart}`}
               className="items-center"
               style={{
-                left: index * xLabelSpacing - scrollWeekWidth / 2,
+                left: index * xLabelSpacing - resolvedScrollWeekWidth / 2,
                 position: "absolute",
-                width: scrollWeekWidth,
+                width: resolvedScrollWeekWidth,
               }}
             >
-              <Text className="text-center text-[8px] text-muted-foreground" numberOfLines={1}>
+              <Text
+                adjustsFontSizeToFit
+                className="text-center text-[8px] text-muted-foreground"
+                minimumFontScale={0.75}
+                numberOfLines={1}
+              >
                 {week.label}
               </Text>
             </View>
@@ -1071,21 +1008,55 @@ export function TrainingPathChart({
   );
 
   return (
-    <View style={{ height }} onLayout={onChartLayout} testID="training-path-chart">
+    <View
+      style={fillHeight ? { flex: 1, minHeight: 0 } : { height }}
+      onLayout={onChartLayout}
+      testID="training-path-chart"
+    >
       <View className="flex-row items-center justify-between px-2 pb-1">
-        <Text className="text-[10px] font-medium text-muted-foreground">Load (TSS)</Text>
-        <Text className="text-[10px] font-medium text-muted-foreground">Fitness</Text>
+        <View accessibilityLabel="Left axis: Load, Common Load">
+          <Text className="text-[10px] font-medium text-muted-foreground">Load</Text>
+          <Text className="text-[8px] text-muted-foreground">Common Load</Text>
+        </View>
+        <View accessibilityLabel="Right axis: Fitness">
+          <Text className="text-[10px] font-medium text-muted-foreground">Fitness</Text>
+        </View>
       </View>
+      {todayWeekStart ? (
+        <View
+          accessible={false}
+          importantForAccessibility="no-hide-descendants"
+          style={{ height: 0, width: 0 }}
+          testID="training-path-today-boundary"
+        />
+      ) : null}
+      {reviewWeeks && onSelectedWeekChange ? (
+        <View
+          accessible
+          accessibilityActions={[
+            { name: "increment", label: "Select next week" },
+            { name: "decrement", label: "Select previous week" },
+          ]}
+          accessibilityHint="Adjust to select the next or previous week"
+          accessibilityLabel="Weekly training path chart"
+          accessibilityRole="adjustable"
+          accessibilityValue={{ text: accessibilityValue }}
+          className="absolute inset-0"
+          onAccessibilityAction={handleAccessibilityAction}
+          pointerEvents="none"
+          testID="training-path-chart-accessibility"
+        />
+      ) : null}
       {scrollX ? (
         <View className="flex-1 flex-row">
-          <FixedYAxisLabels domain={effectiveLoadDomain} />
+          <FixedYAxisLabels domain={effectiveLoadDomain} fontScale={fontScale} />
           <View className="flex-1" onLayout={onScrollViewportLayout}>
             <Animated.ScrollView
               ref={scrollViewRef}
               className="flex-1"
               contentContainerStyle={{ paddingHorizontal: scrollSideInset }}
               decelerationRate="fast"
-              disableIntervalMomentum={reviewWeeks}
+              disableIntervalMomentum={false}
               horizontal
               nestedScrollEnabled
               onScrollBeginDrag={onHorizontalDragBegin}
@@ -1094,14 +1065,15 @@ export function TrainingPathChart({
               onScroll={animatedScrollHandler}
               onScrollEndDrag={onHorizontalDragEnd}
               scrollEventThrottle={16}
-              showsHorizontalScrollIndicator={false}
+              persistentScrollbar
+              showsHorizontalScrollIndicator
               snapToAlignment={reviewWeeks ? "start" : undefined}
-              snapToInterval={reviewWeeks ? scrollWeekWidth : undefined}
+              snapToInterval={reviewWeeks ? resolvedScrollWeekWidth : undefined}
             >
               {chartContent}
             </Animated.ScrollView>
           </View>
-          <FixedYAxisLabels align="left" domain={effectiveFitnessDomain} />
+          <FixedYAxisLabels align="left" domain={effectiveFitnessDomain} fontScale={fontScale} />
         </View>
       ) : (
         chartContent

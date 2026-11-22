@@ -1,12 +1,57 @@
+import { authRequiredPasswordSchema, authStrongPasswordSchema } from "@repo/auth/forms";
+import type { ContentVisibility, ProfilePatchInput } from "@repo/core";
+import { contentVisibilitySchema, profilePatchInputSchema } from "@repo/core";
+import {
+  defaultPreferredUnitSystem,
+  preferredUnitSystemSchema,
+  resolvePreferredUnitSystem,
+} from "@repo/core/units";
 import { z } from "zod";
+
+export const changePasswordFormSchema = z
+  .object({
+    currentPassword: authRequiredPasswordSchema,
+    newPassword: authStrongPasswordSchema,
+    confirmPassword: authRequiredPasswordSchema,
+  })
+  .superRefine(({ confirmPassword, currentPassword, newPassword }, context) => {
+    if (newPassword !== confirmPassword) {
+      context.addIssue({
+        code: "custom",
+        message: "Passwords do not match",
+        path: ["confirmPassword"],
+      });
+    }
+    if (currentPassword === newPassword) {
+      context.addIssue({
+        code: "custom",
+        message: "New password must be different from current password",
+        path: ["newPassword"],
+      });
+    }
+  });
 
 export const settingsProfileFormSchema = z.object({
   bio: z.string().trim().max(500, "Bio must be 500 characters or fewer").optional(),
+  default_content_visibility: contentVisibilitySchema.optional(),
+  dob: z
+    .preprocess(
+      (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+      profilePatchInputSchema.shape.dob.unwrap(),
+    )
+    .optional(),
   is_public: z
     .union([z.boolean(), z.enum(["true", "false"]).transform((value) => value === "true")])
     .optional(),
   language: z.string().trim().max(10, "Language must be 10 characters or fewer").optional(),
-  preferred_units: z.enum(["metric", "imperial"]).optional(),
+  full_name: z.string().trim().min(1, "Full name is required").max(100),
+  planning_timezone: z
+    .preprocess(
+      (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+      profilePatchInputSchema.shape.planning_timezone.unwrap(),
+    )
+    .optional(),
+  preferred_units: preferredUnitSystemSchema.optional(),
   username: z
     .string()
     .trim()
@@ -20,3 +65,44 @@ export const settingsProfileFormSchema = z.object({
 
 export type SettingsProfileFormInput = z.input<typeof settingsProfileFormSchema>;
 export type SettingsProfileFormValues = z.infer<typeof settingsProfileFormSchema>;
+
+/** Maps web form values to the canonical API patch without changing web form semantics. */
+export function toProfilePatchInput(values: SettingsProfileFormValues): ProfilePatchInput {
+  return {
+    bio: values.bio?.trim() ? values.bio.trim() : null,
+    full_name: values.full_name.trim(),
+    default_content_visibility: values.default_content_visibility,
+    dob: values.dob,
+    is_public: values.is_public,
+    language: values.language?.trim() ? values.language.trim() : null,
+    planning_timezone: values.planning_timezone,
+    preferred_units: values.preferred_units,
+    username: values.username.trim() === "" ? null : values.username.trim(),
+  };
+}
+
+export function getSettingsProfileFormDefaults(profile?: {
+  bio?: string | null;
+  full_name?: string | null;
+  default_content_visibility?: ContentVisibility | null;
+  dob?: string | null;
+  is_public?: boolean | null;
+  language?: string | null;
+  planning_timezone?: string | null;
+  preferred_units?: unknown;
+  username?: string | null;
+}): SettingsProfileFormValues {
+  return {
+    bio: profile?.bio ?? "",
+    full_name: profile?.full_name ?? "",
+    default_content_visibility: profile?.default_content_visibility ?? "private",
+    dob: profile?.dob ?? null,
+    is_public: profile?.is_public ?? false,
+    language: profile?.language ?? "",
+    planning_timezone: profile?.planning_timezone ?? null,
+    preferred_units: profile
+      ? resolvePreferredUnitSystem(profile.preferred_units)
+      : defaultPreferredUnitSystem,
+    username: profile?.username ?? "",
+  };
+}

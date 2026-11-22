@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from "@storybook/react";
+import type { Meta, StoryObj } from "@storybook/react-vite";
 import { CircleAlertIcon } from "lucide-react";
 
 import { emptyStateCardFixtures } from "./fixtures";
@@ -20,3 +20,8 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Playground: Story = {};
+
+export const UnbrokenContent: Story = { args: emptyStateCardFixtures.unbrokenText };
+export const Unavailable: Story = { args: emptyStateCardFixtures.unavailable };
+export const RecoverableError: Story = { args: emptyStateCardFixtures.recoverableError };
+export const Denied: Story = { args: emptyStateCardFixtures.denied };
