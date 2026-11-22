@@ -1,0 +1,472 @@
+import {
+  ATHLETE_STATE_PROJECTION_ALGORITHM_VERSION,
+  type AthleteStateBaseline,
+  PLAN_READINESS_HORIZON_FALLBACK,
+  resolvePlanReadinessHorizon,
+  simulateTrainingPlan,
+} from "@repo/core";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readPublishedAthleteStateSnapshotData } from "../../repositories/athlete-state-repository";
+import { readAthleteReadModel } from "../athlete-intelligence/athlete-read-model";
+import {
+  hasPublishedRevisionConflict,
+  resolveAuthoritativePlanReadinessHorizon,
+  selectSimulatedSessionsForProjection,
+  trainingPlanCommitInputSchema,
+  trainingPlanPreviewInputSchema,
+} from "./projection-planning";
+
+vi.mock("../../repositories/athlete-state-repository", () => ({
+  readPublishedAthleteStateSnapshotData: vi.fn(),
+}));
+
+const profileId = "11111111-1111-4111-8111-111111111111";
+
+function dbWithProfile(planningTimezone: string | null = "UTC") {
+  const snapshotExecutor = {
+    execute: vi.fn(async () => ({ rows: [] })),
+    select: () => {
+      const builder = {
+        from: () => builder,
+        leftJoin: () => builder,
+        where: () => builder,
+        orderBy: async () => [],
+        limit: async () => [{ planningTimezone }],
+      };
+      return builder;
+    },
+  };
+  return {
+    ...snapshotExecutor,
+    $client: {},
+    transaction: async (read: (executor: typeof snapshotExecutor) => Promise<unknown>) =>
+      read(snapshotExecutor),
+  } as never;
+}
+
+function currentState(sourceRevision = 4, publishedRevision = 4) {
+  return {
+    state: {
+      profile_id: profileId,
+      source_revision: sourceRevision,
+      published_revision: publishedRevision,
+      dirty_from_at:
+        sourceRevision === publishedRevision ? null : new Date("2026-06-01T00:00:00.000Z"),
+      fitness: 40,
+      fatigue: 35,
+      evidence_confidence: 0.75,
+      coverage_start_at: new Date("2026-06-01T00:00:00.000Z"),
+      coverage_end_at: new Date("2026-07-01T12:00:00.000Z"),
+      last_activity_at: new Date("2026-07-01T12:00:00.000Z"),
+      algorithm_version: ATHLETE_STATE_PROJECTION_ALGORITHM_VERSION,
+      computed_at: new Date("2026-07-01T12:00:00.000Z"),
+      lease_token: null,
+      lease_expires_at: null,
+      retry_after: null,
+      consecutive_failures: 0,
+      last_failure_code: null,
+      updated_at: new Date("2026-07-01T12:00:00.000Z"),
+    },
+    estimates: [],
+  };
+}
+
+function mockSnapshot(
+  current: ReturnType<typeof currentState> | null,
+  blockingImport: "active" | "failed" | null = null,
+) {
+  vi.mocked(readPublishedAthleteStateSnapshotData).mockResolvedValue({
+    planningTimezone: "UTC",
+    current,
+    blockingImport,
+  });
+}
+
+function readProjectionReadModel(now: Date) {
+  return readAthleteReadModel({
+    db: dbWithProfile(),
+    profileId,
+    now,
+    sections: {
+      publishedState: true,
+      status: true,
+      currentBaseline: { includePlanningContext: false },
+    },
+  });
+}
+
+beforeEach(() => {
+  vi.mocked(readPublishedAthleteStateSnapshotData).mockReset();
+});
+
+describe("projection planning", () => {
+  it("allows a stale context with the previewed revision and rejects a published revision change", () => {
+    expect(
+      hasPublishedRevisionConflict({ currentPublishedRevision: 4, expectedPublishedRevision: 4 }),
+    ).toBe(false);
+    expect(
+      hasPublishedRevisionConflict({ currentPublishedRevision: 5, expectedPublishedRevision: 4 }),
+    ).toBe(true);
+  });
+
+  it("includes an untimed session on the baseline planning date without backdating it", () => {
+    const sessions = selectSimulatedSessionsForProjection({
+      baselineAsOf: "2026-07-01T19:00:00.000Z",
+      planningTimezone: "America/Los_Angeles",
+      sessions: [
+        {
+          kind: "projected",
+          sourceId: "same-day-untimed",
+          planningDate: "2026-07-01",
+          isUntimed: true,
+          scheduledAt: "2026-07-01T07:00:00.000Z",
+          activityCategory: "run",
+          commonLoad: 50,
+        },
+        {
+          kind: "projected",
+          sourceId: "previous-day-untimed",
+          planningDate: "2026-06-30",
+          isUntimed: true,
+          scheduledAt: "2026-06-30T07:00:00.000Z",
+          activityCategory: "run",
+          commonLoad: 50,
+        },
+        {
+          kind: "projected",
+          sourceId: "future-day-untimed",
+          planningDate: "2026-07-02",
+          isUntimed: true,
+          scheduledAt: "2026-07-02T07:00:00.000Z",
+          activityCategory: "run",
+          commonLoad: 50,
+        },
+        {
+          kind: "projected",
+          sourceId: "past-explicit-time",
+          planningDate: "2026-07-01",
+          isUntimed: false,
+          scheduledAt: "2026-07-01T14:00:00.000Z",
+          activityCategory: "run",
+          commonLoad: 50,
+        },
+      ],
+    });
+
+    expect(sessions).toEqual([
+      expect.objectContaining({
+        sourceId: "same-day-untimed",
+        scheduledAt: "2026-07-01T19:00:00.000Z",
+      }),
+      expect.objectContaining({
+        sourceId: "future-day-untimed",
+        scheduledAt: "2026-07-02T07:00:00.000Z",
+      }),
+    ]);
+  });
+
+  it("uses the planning timezone rather than the UTC date for untimed sessions", () => {
+    const sessions = selectSimulatedSessionsForProjection({
+      baselineAsOf: "2026-07-01T01:00:00.000Z",
+      planningTimezone: "America/Los_Angeles",
+      sessions: [
+        {
+          kind: "projected",
+          sourceId: "local-same-day",
+          planningDate: "2026-06-30",
+          isUntimed: true,
+          scheduledAt: "2026-06-30T07:00:00.000Z",
+          activityCategory: "run",
+          commonLoad: 50,
+        },
+      ],
+    });
+
+    expect(sessions).toEqual([
+      expect.objectContaining({
+        sourceId: "local-same-day",
+        scheduledAt: "2026-07-01T01:00:00.000Z",
+      }),
+    ]);
+  });
+
+  it("keeps preview feedback separate from commit authority", () => {
+    const previewInput = {
+      kind: "create" as const,
+      draft: {
+        name: "Base plan",
+        previewStartDate: "2026-07-20",
+        structure: {
+          version: 1 as const,
+          plan_preferences: {
+            weekly_session_count: null,
+            target_weekly_duration_minutes: null,
+            maximum_session_duration_minutes: null,
+            preferred_weekdays: [],
+            rest_days: [],
+            progression_style: null,
+            recovery_priority: null,
+          },
+          sessions: [
+            {
+              id: "22222222-2222-4222-8222-222222222222",
+              offset_days: 0,
+              activity_plan_id: "33333333-3333-4333-8333-333333333333",
+              demand: {
+                activity_category: "run",
+                training_intent: "aerobic_base",
+                target_duration_minutes: null,
+                target_common_load: null,
+                importance: "normal",
+              },
+            },
+          ],
+        },
+      },
+    };
+    expect(trainingPlanPreviewInputSchema.parse(previewInput)).toEqual(previewInput);
+    expect(
+      trainingPlanPreviewInputSchema.safeParse({
+        ...previewInput,
+        basePublishedRevision: 4,
+      }).success,
+    ).toBe(false);
+
+    const commitInput = {
+      ...previewInput,
+      operationId: "training_plan_commit_test_0000001",
+      basePublishedRevision: 4,
+      previewFingerprint: `v1:sha256:${"a".repeat(64)}`,
+    };
+    expect(trainingPlanCommitInputSchema.parse(commitInput)).toEqual(commitInput);
+    expect(
+      trainingPlanCommitInputSchema.safeParse({
+        ...commitInput,
+        draft: { ...commitInput.draft, id: "22222222-2222-4222-8222-222222222222" },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("allows unnamed create and update drafts to preview, but requires a name to commit", () => {
+    const createPreview = {
+      kind: "create" as const,
+      draft: {
+        name: "",
+        previewStartDate: "2026-07-20",
+        structure: {
+          version: 1 as const,
+          plan_preferences: {
+            weekly_session_count: null,
+            target_weekly_duration_minutes: null,
+            maximum_session_duration_minutes: null,
+            preferred_weekdays: [],
+            rest_days: [],
+            progression_style: null,
+            recovery_priority: null,
+          },
+          sessions: [
+            {
+              id: "33333333-3333-4333-8333-333333333333",
+              offset_days: 0,
+              activity_plan_id: "44444444-4444-4444-8444-444444444444",
+              demand: {
+                activity_category: "run",
+                training_intent: "aerobic_base",
+                target_duration_minutes: null,
+                target_common_load: null,
+                importance: "normal",
+              },
+            },
+          ],
+        },
+      },
+    };
+    const updatePreview = {
+      kind: "update" as const,
+      draft: {
+        ...createPreview.draft,
+        name: "   ",
+        planId: "22222222-2222-4222-8222-222222222222",
+        expectedRevision: 1,
+        expectedStructureHash: `v1:sha256:${"a".repeat(64)}`,
+      },
+    };
+    const commitFields = {
+      operationId: "training_plan_commit_test_0000002",
+      basePublishedRevision: null,
+      previewFingerprint: `v1:sha256:${"b".repeat(64)}`,
+    };
+
+    expect(trainingPlanPreviewInputSchema.parse(createPreview)).toEqual(createPreview);
+    expect(trainingPlanPreviewInputSchema.parse(updatePreview)).toEqual({
+      ...updatePreview,
+      draft: { ...updatePreview.draft, name: "" },
+    });
+    expect(
+      trainingPlanCommitInputSchema.safeParse({ ...createPreview, ...commitFields }).success,
+    ).toBe(false);
+    expect(
+      trainingPlanCommitInputSchema.safeParse({ ...updatePreview, ...commitFields }).success,
+    ).toBe(false);
+    const namedUpdateCommit = {
+      ...updatePreview,
+      draft: { ...updatePreview.draft, name: "Base plan" },
+      ...commitFields,
+    };
+    expect(trainingPlanCommitInputSchema.parse(namedUpdateCommit)).toEqual(namedUpdateCommit);
+
+    const spacedNamePreview = {
+      ...createPreview,
+      draft: { ...createPreview.draft, name: "  Base plan  " },
+    };
+    const normalizedName = {
+      ...spacedNamePreview,
+      draft: { ...spacedNamePreview.draft, name: "Base plan" },
+    };
+    expect(trainingPlanPreviewInputSchema.parse(spacedNamePreview)).toEqual(normalizedName);
+    expect(trainingPlanCommitInputSchema.parse({ ...spacedNamePreview, ...commitFields })).toEqual({
+      ...normalizedName,
+      ...commitFields,
+    });
+  });
+
+  it("accepts duplicate drafts by source identity without client-authored persistence data", () => {
+    const duplicate = {
+      kind: "duplicate" as const,
+      draft: {
+        sourcePlanId: "22222222-2222-4222-8222-222222222222",
+        name: "Copy",
+        previewStartDate: "2026-07-20",
+      },
+    };
+    expect(trainingPlanPreviewInputSchema.parse(duplicate)).toEqual(duplicate);
+    expect(
+      trainingPlanPreviewInputSchema.safeParse({
+        ...duplicate,
+        draft: { ...duplicate.draft, id: "33333333-3333-4333-8333-333333333333" },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("uses the identical named goal-date horizon for client display and server validation", () => {
+    const baseline = {
+      contractVersion: ATHLETE_STATE_PROJECTION_ALGORITHM_VERSION,
+      athleteId: profileId,
+      stateRevision: 4,
+      asOf: "2026-07-01T00:00:00.000Z",
+      longTermLoad: 40,
+      recentLoad: 35,
+      loadBalance: 5,
+      evidenceConfidence: 0.75,
+      capabilities: [],
+      athleteAgeYears: null,
+    } satisfies AthleteStateBaseline;
+    const plannedSessions = [
+      {
+        kind: "projected" as const,
+        sourceId: "session-1",
+        scheduledAt: "2026-07-05T00:00:00.000Z",
+        activityCategory: "run" as const,
+        commonLoad: 80,
+      },
+    ];
+    const goal = {
+      goalId: "goal-1",
+      activityCategory: "run" as const,
+      targetAt: "2026-08-01T23:59:59.999Z",
+      targetDistanceMeters: 10_000,
+      targetDurationMinutes: 50,
+    };
+    const horizonInput = { baselineAsOf: baseline.asOf, plannedSessions, goal };
+    const clientHorizon = resolvePlanReadinessHorizon(horizonInput);
+    const serverHorizon = resolveAuthoritativePlanReadinessHorizon(horizonInput);
+
+    expect(serverHorizon).toBe(clientHorizon);
+    expect(serverHorizon).toBe(goal.targetAt);
+    expect(PLAN_READINESS_HORIZON_FALLBACK).toBe("latest_planned_session_or_baseline");
+    expect(resolveAuthoritativePlanReadinessHorizon({ ...horizonInput, goal: null })).toBe(
+      "2026-07-05T00:00:00.000Z",
+    );
+    expect(
+      simulateTrainingPlan({
+        baseline,
+        plannedSessions,
+        simulationAt: serverHorizon,
+        planningTimezone: "UTC",
+        goal,
+      }),
+    ).toEqual(
+      simulateTrainingPlan({
+        baseline,
+        plannedSessions,
+        simulationAt: clientHorizon,
+        planningTimezone: "UTC",
+        goal,
+      }),
+    );
+  });
+
+  it("returns an explicit unavailable projection baseline", async () => {
+    mockSnapshot(null);
+
+    await expect(
+      readProjectionReadModel(new Date("2026-08-01T12:00:00.000Z")),
+    ).resolves.toMatchObject({
+      publishedRevision: null,
+      publishedState: null,
+      status: {
+        freshness: "unavailable",
+        rebuildStatus: "unavailable",
+        importStatus: "complete",
+      },
+      currentBaseline: { baseline: null },
+    });
+  });
+
+  it("reports a failed deferred import before any source revision exists", async () => {
+    mockSnapshot(null, "failed");
+
+    await expect(
+      readProjectionReadModel(new Date("2026-08-01T12:00:00.000Z")),
+    ).resolves.toMatchObject({
+      publishedRevision: null,
+      publishedState: null,
+      status: {
+        freshness: "unavailable",
+        rebuildStatus: "failed",
+        importStatus: "failed",
+      },
+      currentBaseline: { baseline: null },
+    });
+  });
+
+  it("advances the published baseline for a cheap stale read", async () => {
+    mockSnapshot(currentState(5, 4));
+
+    const result = await readProjectionReadModel(new Date("2026-07-03T12:00:00.000Z"));
+
+    expect(result).toMatchObject({
+      publishedRevision: 4,
+      publishedState: { publishedAt: "2026-07-01T12:00:00.000Z" },
+      status: { freshness: "stale", rebuildStatus: "pending", importStatus: "complete" },
+      currentBaseline: {
+        baseline: { stateRevision: 4, asOf: "2026-07-03T12:00:00.000Z" },
+      },
+    });
+    expect(result.currentBaseline?.baseline?.longTermLoad).toBeLessThan(40);
+  });
+
+  it.each([
+    ["active", "pending"],
+    ["failed", "failed"],
+  ] as const)("marks the projection stale for a %s deferred bulk import", async (status, expected) => {
+    mockSnapshot(currentState(), status);
+
+    await expect(
+      readProjectionReadModel(new Date("2026-07-03T12:00:00.000Z")),
+    ).resolves.toMatchObject({
+      publishedState: { publishedAt: "2026-07-01T12:00:00.000Z" },
+      status: { freshness: "stale", rebuildStatus: expected, importStatus: status },
+    });
+  });
+});

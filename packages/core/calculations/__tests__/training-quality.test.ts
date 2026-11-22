@@ -1,9 +1,43 @@
 import { describe, expect, it } from "vitest";
+import { calculateAvailableCommonLoad } from "../../load/common-relative-load";
 import {
   analyzeActivityIntensity,
   calculateRollingTrainingQuality,
-  getIntensityAdjustedATLTimeConstant,
+  getIntensityAdjustedRecentLoadTimeConstant,
 } from "../training-quality";
+
+function availableCommonLoad(intensity: number) {
+  return calculateAvailableCommonLoad({
+    activity_category: "bike",
+    method: "power_threshold",
+    intensity,
+    contributingDurationSeconds: 3600,
+    quality: {
+      source: "validated_test",
+      observed_at: "2026-02-25T00:00:00Z",
+      valid_at: "2026-02-25T00:00:00Z",
+      confidence: "high",
+      stale: false,
+      estimate: false,
+      calculation_version: "test-v1",
+      evidence_fingerprint: "test-evidence",
+    },
+    thresholdEvidence: {
+      type: "ftp_watts",
+      value: 250,
+      unit: "watts",
+      source: "validated_test",
+      observedAt: "2026-02-25T00:00:00Z",
+      validAt: "2026-02-25T00:00:00Z",
+      freshness: "current",
+      calculationVersion: "test-v1",
+      sourceFingerprint: "test-evidence",
+    },
+    evidenceFingerprint: "test-evidence",
+    computedAsOf: "2026-02-25T00:00:00Z",
+    estimated: false,
+  });
+}
 
 describe("training quality", () => {
   it("uses power zones when available", () => {
@@ -48,9 +82,9 @@ describe("training quality", () => {
     expect(profile.high_intensity_ratio).toBe(0.1);
   });
 
-  it("uses intensity factor when zone data is unavailable", () => {
+  it("uses available Common Load intensity when zone data is unavailable", () => {
     const profile = analyzeActivityIntensity({
-      intensity_factor: 0.92,
+      common_load: availableCommonLoad(0.92),
     });
 
     expect(profile.source).toBe("neutral");
@@ -68,13 +102,13 @@ describe("training quality", () => {
     expect(profile.source).toBe("neutral");
   });
 
-  it("computes rolling quality weighted by tss", () => {
+  it("computes rolling quality weighted by Common Load", () => {
     const asOf = new Date("2026-03-01T00:00:00Z");
     const profile = calculateRollingTrainingQuality(
       [
         {
           started_at: "2026-02-25T00:00:00Z",
-          tss: 200,
+          common_load: availableCommonLoad(1.1),
           zones: {
             power: [
               { zone: 1, seconds: 100, label: "Zone 1" },
@@ -88,7 +122,7 @@ describe("training quality", () => {
         },
         {
           started_at: "2026-02-20T00:00:00Z",
-          tss: 20,
+          common_load: availableCommonLoad(0.6),
           zones: {
             power: [
               { zone: 1, seconds: 300, label: "Zone 1" },
@@ -103,14 +137,14 @@ describe("training quality", () => {
 
     expect(profile.source).toBe("power");
     expect(profile.high_intensity_ratio).toBeGreaterThan(0.2);
-    expect(profile.atl_extension_days).toBe(2);
+    expect(profile.recent_load_extension_days).toBe(2);
   });
 
   it("ignores invalid date rows safely", () => {
     const profile = calculateRollingTrainingQuality([
       {
         started_at: "not-a-date",
-        tss: 100,
+        common_load: availableCommonLoad(1),
         zones: { hr: [{ zone: 5, seconds: 100, label: "Zone 5" }] },
       },
     ]);
@@ -118,11 +152,17 @@ describe("training quality", () => {
     expect(profile.source).toBe("neutral");
   });
 
-  it("computes rolling quality from intensity factor fallback", () => {
+  it("computes rolling quality from Common Load intensity fallback", () => {
     const profile = calculateRollingTrainingQuality(
       [
-        { started_at: "2026-02-25T00:00:00Z", tss: 90, intensity_factor: 0.9 },
-        { started_at: "2026-02-20T00:00:00Z", tss: 40, intensity_factor: 0.68 },
+        {
+          started_at: "2026-02-25T00:00:00Z",
+          common_load: availableCommonLoad(0.9),
+        },
+        {
+          started_at: "2026-02-20T00:00:00Z",
+          common_load: availableCommonLoad(0.68),
+        },
       ],
       28,
       new Date("2026-03-01T00:00:00Z"),
@@ -131,15 +171,15 @@ describe("training quality", () => {
     expect(profile.high_intensity_ratio).toBeGreaterThan(0.3);
   });
 
-  it("adjusts atl time constant by intensity extension", () => {
-    const neutral = getIntensityAdjustedATLTimeConstant(7);
-    const stressed = getIntensityAdjustedATLTimeConstant(7, {
+  it("adjusts recentLoad time constant by intensity extension", () => {
+    const neutral = getIntensityAdjustedRecentLoadTimeConstant(7);
+    const stressed = getIntensityAdjustedRecentLoadTimeConstant(7, {
       source: "power",
       low_intensity_ratio: 0.4,
       moderate_intensity_ratio: 0.3,
       high_intensity_ratio: 0.3,
       load_factor: 1.5,
-      atl_extension_days: 2,
+      recent_load_extension_days: 2,
     });
 
     expect(neutral).toBe(7);

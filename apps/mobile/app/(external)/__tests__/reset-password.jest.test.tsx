@@ -1,6 +1,5 @@
 import React from "react";
-import type { ZodFormSubmitProps } from "../../../test/mock-components";
-import { renderNative, screen } from "../../../test/render-native";
+import { act, fireEvent, renderNative, screen } from "../../../test/render-native";
 
 const replaceMock = jest.fn();
 const resetPasswordMock = jest.fn();
@@ -83,52 +82,9 @@ jest.mock("@repo/ui/components/card", () => {
   };
 });
 
-jest.mock("@repo/ui/components/form", () => {
-  const { createFormTextField } = require("../../../test/mock-components");
-  return {
-    __esModule: true,
-    Form: ({ children }: { children?: React.ReactNode }) => children,
-    FormTextField: createFormTextField(),
-  };
-});
-
 jest.mock("@repo/ui/components/text", () => {
   const { createHostComponent } = require("../../../test/mock-components");
   return { __esModule: true, Text: createHostComponent("Text") };
-});
-
-jest.mock("@repo/ui/hooks", () => {
-  const React = require("react");
-  return {
-    __esModule: true,
-    useZodForm: () => {
-      const [values, setValues] = React.useState({ password: "", confirmPassword: "" });
-      const [errors, setErrors] = React.useState({} as Record<string, { message: string }>);
-      return {
-        control: {
-          errors,
-          values,
-          setValue: (name: string, value: string) =>
-            setValues((current: typeof values) => ({ ...current, [name]: value })),
-        },
-        formState: { errors },
-        setError: (name: string, error: { message: string }) => {
-          setErrors((current: Record<string, { message: string }>) => ({
-            ...current,
-            [name]: error,
-          }));
-        },
-        handleSubmit: (onSubmit: (data: typeof values) => unknown) => () => onSubmit(values),
-      };
-    },
-    useZodFormSubmit: ({
-      form,
-      onSubmit,
-    }: ZodFormSubmitProps<{ confirmPassword: string; password: string }>) => ({
-      handleSubmit: form.handleSubmit(onSubmit),
-      isSubmitting: false,
-    }),
-  };
 });
 
 jest.mock("lucide-react-native", () => ({
@@ -145,11 +101,72 @@ describe("reset-password screen", () => {
     resetPasswordMock.mockResolvedValue({ error: null });
   });
 
-  it("shows an invalid-link alert when the reset token is missing", async () => {
-    paramsState.token = undefined;
+  it("explains a missing token inline and offers recovery with Save disabled", async () => {
+    delete paramsState.token;
 
-    renderNative(<ResetPasswordScreen />);
+    await renderNative(<ResetPasswordScreen />);
 
     expect(screen.getByTestId("update-password-button").props.disabled).toBe(true);
+    expect(
+      screen.getByText(/This password reset link is missing or invalid/).props.accessibilityRole,
+    ).toBe("alert");
+    await fireEvent.press(screen.getByTestId("request-reset-link-button"));
+    expect(replaceMock).toHaveBeenCalledWith("/(external)/forgot-password");
+    expect(resetPasswordMock).not.toHaveBeenCalled();
+  });
+
+  it("ignores an old token completion after a new reset link opens", async () => {
+    let finish!: (value: unknown) => void;
+    resetPasswordMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const view = await renderNative(<ResetPasswordScreen />);
+    await fireEvent.changeText(screen.getByTestId("password-input"), "Password123");
+    await fireEvent.changeText(screen.getByTestId("confirm-password-input"), "Password123");
+    const press = screen.getByTestId("update-password-button").props.onPress;
+    await act(async () => {
+      void press();
+      void press();
+    });
+    expect(resetPasswordMock).toHaveBeenCalledTimes(1);
+    paramsState.token = "next-token";
+    await view.rerender(<ResetPasswordScreen />);
+    expect(screen.getByTestId("password-input").props.value).toBe("");
+    await act(async () => finish({ error: null }));
+    expect(signOutMobileAuthMock).not.toHaveBeenCalled();
+    expect(alertMock).not.toHaveBeenCalled();
+    expect(replaceMock).not.toHaveBeenCalled();
+  });
+
+  it("marks new password fields for credential-manager generation", async () => {
+    await renderNative(<ResetPasswordScreen />);
+
+    expect(screen.getByTestId("password-input").props.autoComplete).toBe("new-password");
+    expect(screen.getByTestId("confirm-password-input").props.autoComplete).toBe("new-password");
+  });
+
+  it("retains rejected credentials and explains an expired token with disabled Save", async () => {
+    resetPasswordMock.mockResolvedValueOnce({ error: { message: "Invalid token" } });
+    await renderNative(<ResetPasswordScreen />);
+    await fireEvent.changeText(screen.getByTestId("password-input"), "Password123");
+    await fireEvent.changeText(screen.getByTestId("confirm-password-input"), "Password123");
+    await fireEvent.press(screen.getByTestId("update-password-button"));
+    expect(screen.getByTestId("password-input").props.value).toBe("Password123");
+    expect(screen.getByTestId("update-password-button").props.disabled).toBe(true);
+    expect(screen.getByTestId("request-reset-link-button")).toBeTruthy();
+    expect(signOutMobileAuthMock).not.toHaveBeenCalled();
+  });
+
+  it("clears credentials only after confirmed success", async () => {
+    await renderNative(<ResetPasswordScreen />);
+    await fireEvent.changeText(screen.getByTestId("password-input"), "Password123");
+    await fireEvent.changeText(screen.getByTestId("confirm-password-input"), "Password123");
+    await fireEvent.press(screen.getByTestId("update-password-button"));
+    expect(screen.getByTestId("password-input").props.value).toBe("");
+    expect(screen.getByTestId("confirm-password-input").props.value).toBe("");
+    expect(signOutMobileAuthMock).toHaveBeenCalledTimes(1);
   });
 });
