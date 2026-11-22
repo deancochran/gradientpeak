@@ -1,33 +1,33 @@
 import { View } from "react-native";
 
+import { cn } from "../../lib/cn";
 import { Button } from "../button/index.native";
 import { Card, CardContent } from "../card/index.native";
 import { Text } from "../text/index.native";
-import type { EmptyStateCardProps } from "./shared";
+import { type EmptyStateCardProps, emptyStateToneClassNames } from "./shared";
 
 function EmptyStateCard({
   actionLabel,
+  children,
+  compact = false,
   description,
   icon: Icon,
   iconColor = "text-muted-foreground",
   iconSize = 48,
   onAction,
   title,
+  testID,
   tone = "empty",
 }: EmptyStateCardProps) {
   const isError = tone === "error" || tone === "unavailable";
-  const toneClassName =
-    tone === "error"
-      ? "border-destructive/50 bg-destructive/10"
-      : tone === "denied"
-        ? "border-warning/50 bg-warning/10"
-        : tone === "unavailable"
-          ? "border-warning/50 bg-card"
-          : "border-border bg-card";
 
   return (
-    <Card accessibilityLiveRegion={isError ? "assertive" : undefined} className={toneClassName}>
-      <CardContent className="py-12">
+    <Card
+      accessibilityLiveRegion={isError ? "assertive" : undefined}
+      className={cn(emptyStateToneClassNames[tone], compact && "py-0")}
+      testID={testID}
+    >
+      <CardContent className={compact ? "py-6" : "py-12"}>
         <View className="items-center justify-center gap-4">
           {Icon ? (
             <View className="items-center justify-center">
@@ -36,13 +36,21 @@ function EmptyStateCard({
           ) : null}
 
           <View className="min-w-0 max-w-full items-center gap-2">
-            <Text className="max-w-full text-center text-lg font-semibold text-foreground">
+            <Text
+              className={cn(
+                "max-w-full text-center font-semibold text-foreground",
+                compact ? "text-base" : "text-lg",
+              )}
+            >
               {title}
             </Text>
-            <Text className="max-w-full text-center text-sm text-muted-foreground">
-              {description}
-            </Text>
+            {description ? (
+              <Text className="max-w-full text-center text-sm text-muted-foreground">
+                {description}
+              </Text>
+            ) : null}
           </View>
+          {children}
 
           {actionLabel && onAction ? (
             <Button className="mt-2 h-auto max-w-full" onPress={onAction} variant="outline">

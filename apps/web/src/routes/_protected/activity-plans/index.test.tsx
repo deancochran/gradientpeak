@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Route } from "./index";
 
 const navigation = vi.hoisted(() => ({ navigate: vi.fn(), search: {} as Record<string, unknown> }));
+const queryOverrides = vi.hoisted(() => ({ current: {} as Record<string, unknown> }));
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: object) => ({
     ...options,
@@ -108,6 +109,7 @@ vi.mock("../../../lib/api/client", () => ({
           isFetchingNextPage: false,
           isLoading: false,
           refetch: vi.fn(),
+          ...queryOverrides.current,
         }),
       },
     },
@@ -115,8 +117,34 @@ vi.mock("../../../lib/api/client", () => ({
   },
 }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  queryOverrides.current = {};
+});
 describe("ActivityPlansPage cards", () => {
+  it("keeps a failed query distinct from an empty library and offers retry", () => {
+    const refetch = vi.fn();
+    queryOverrides.current = {
+      data: undefined,
+      isError: true,
+      error: new Error("Network unavailable"),
+      refetch,
+    };
+    const Page = (Route as unknown as { component: React.ComponentType }).component;
+    render(<Page />);
+    expect(screen.getByRole("alert").textContent).toContain("Unable to load activity plans");
+    expect(screen.queryByText("No activity plans found")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(refetch).toHaveBeenCalledOnce();
+  });
+
+  it("announces loading without showing an empty result", () => {
+    queryOverrides.current = { data: undefined, isLoading: true };
+    const Page = (Route as unknown as { component: React.ComponentType }).component;
+    render(<Page />);
+    expect(screen.getByRole("status").textContent).toContain("Loading activity plans");
+    expect(screen.queryByText("No activity plans found")).toBeNull();
+  });
   it("does not restore a stale category when search follows an All selection", () => {
     navigation.search = { activity_category: "run" };
     navigation.navigate.mockImplementation(({ search }) => {
