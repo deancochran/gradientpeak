@@ -171,6 +171,9 @@ async function evaluate(
       and(
         eq(activities.profile_id, input.profileId),
         isNotNull(activities.started_at),
+        // Durable state invalidations use completion/effective time. An activity
+        // can start before that boundary and still be the very record to refresh.
+        // Explicit reprocessing date filters retain their start-time contract.
         input.from
           ? input.claimedAthleteState
             ? gte(sql`coalesce(${activities.finished_at}, ${activities.started_at})`, input.from)

@@ -168,7 +168,10 @@ function createFakeDb(
   const select = vi.fn(() => {
     let table: unknown;
     let activityCursor: { startedAt: Date; activityId: string } | null = null;
-    let activityRange: { column: "finished_at" | "started_at"; from: Date } | null = null;
+    let activityRange: {
+      column: "effective_at" | "finished_at" | "started_at";
+      from: Date;
+    } | null = null;
     const rows = (limit?: number) => {
       if (table === profiles) {
         return input.profileExists === false ? [] : [{ id: PROFILE_ID }];
@@ -178,7 +181,10 @@ function createFakeDb(
           .filter(
             (activityRow) =>
               (activityRange === null ||
-                activityRow[activityRange.column].getTime() >= activityRange.from.getTime()) &&
+                (activityRange.column === "effective_at"
+                  ? (activityRow.finished_at ?? activityRow.started_at)
+                  : activityRow[activityRange.column]
+                ).getTime() >= activityRange.from.getTime()) &&
               (activityCursor === null ||
                 activityRow.started_at > activityCursor.startedAt ||
                 (activityRow.started_at.getTime() === activityCursor.startedAt.getTime() &&
@@ -213,9 +219,16 @@ function createFakeDb(
         if (table === activities && isSQLWrapper(condition)) {
           const query = dialect.sqlToQuery(condition.getSQL());
           activityWhereQueries.push({ params: query.params, sql: query.sql });
-          const rangeMatch = query.sql.match(/"activities"\."(finished_at|started_at)" >= \$(\d+)/);
-          if (rangeMatch) {
-            const parameter = query.params[Number(rangeMatch[2]) - 1];
+          const effectiveRangeMatch = query.sql.match(
+            /coalesce\("activities"\."finished_at", "activities"\."started_at"\) >= \$(\d+)/,
+          );
+          const columnRangeMatch = query.sql.match(
+            /"activities"\."(finished_at|started_at)" >= \$(\d+)/,
+          );
+          const rangeColumn = effectiveRangeMatch ? "effective_at" : columnRangeMatch?.[1];
+          const rangeParameter = effectiveRangeMatch?.[1] ?? columnRangeMatch?.[2];
+          if (rangeParameter) {
+            const parameter = query.params[Number(rangeParameter) - 1];
             const from =
               parameter instanceof Date
                 ? parameter
@@ -223,11 +236,13 @@ function createFakeDb(
                   ? new Date(parameter)
                   : null;
             if (
-              (rangeMatch[1] === "finished_at" || rangeMatch[1] === "started_at") &&
+              (rangeColumn === "effective_at" ||
+                rangeColumn === "finished_at" ||
+                rangeColumn === "started_at") &&
               from !== null &&
               Number.isFinite(from.getTime())
             ) {
-              activityRange = { column: rangeMatch[1], from };
+              activityRange = { column: rangeColumn, from };
             }
           }
           const candidateActivityId = query.params.at(-1);
@@ -507,8 +522,35 @@ describe("manual profile activity analysis reprocessing", () => {
     expect(mocks.rebuild).not.toHaveBeenCalled();
   });
 
-  it("does not truncate an unclaimed dry run at the claimed batch boundary", async () => {
-    const activityCount = ACTIVITY_ANALYSIS_REFRESH_BATCH_SIZE + 1;
+  it.each([false, true])("keeps manual from filters on start time (apply=%s)", async (apply) => {
+    const fixture = createFakeDb({
+      activityTimings: [
+        { startedAt: new Date(startedAt.getTime() - 60_000), finishedAt },
+        { startedAt, finishedAt },
+      ],
+    });
+    const included = fixture.activityRows[1];
+    if (!included) throw new Error("Expected start-boundary activity");
+
+    const result = await reprocessProfileActivityAnalysis(fixture.db, {
+      profileId: PROFILE_ID,
+      apply,
+      ...(apply ? { confirmProfileId: PROFILE_ID } : {}),
+      from: startedAt,
+      now: new Date("2026-03-01T00:00:00.000Z"),
+    });
+
+    expect(result.scopedActivities).toBe(1);
+    expect(getPerformanceTargetsForRequests).toHaveBeenCalledWith({
+      requests: [{ profileId: PROFILE_ID, asOf: startedAt, activityIdToExclude: included.id }],
+    });
+    expect(fixture.activityWhereQueries).toHaveLength(1);
+    expect(fixture.activityWhereQueries[0]?.sql).toContain('"activities"."started_at" >=');
+    expect(fixture.activityWhereQueries[0]?.sql).not.toContain("coalesce(");
+  });
+
+  it("does not truncate an unclaimed dry run beyond 500 activities", async () => {
+    const activityCount = 501;
     const { activityRows, db, segmentRows } = createFakeDb({ activityCount });
     mocks.buildSummaries.mockResolvedValueOnce(
       activityRows.map((activityRow, index) => {
@@ -907,7 +949,9 @@ describe("manual profile activity analysis reprocessing", () => {
       ...fixture.activityWhereQueries,
       ...continuationFixture.activityWhereQueries,
     ]) {
-      expect(query.sql).toContain('"activities"."finished_at" >=');
+      expect(query.sql).toContain(
+        'coalesce("activities"."finished_at", "activities"."started_at") >=',
+      );
       expect(query.sql).not.toContain('"activities"."started_at" >=');
     }
   });
