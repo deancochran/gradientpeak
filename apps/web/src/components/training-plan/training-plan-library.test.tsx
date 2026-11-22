@@ -80,8 +80,10 @@ vi.mock("../../lib/api/client", () => ({
 
 afterEach(cleanup);
 const initialData = mocks.owned.data;
+const initialTemplateData = mocks.templates.data;
 beforeEach(() => {
   mocks.owned.data = initialData;
+  mocks.templates.data = initialTemplateData;
   mocks.owned.error = null;
   mocks.owned.isLoading = false;
   mocks.owned.hasNextPage = false;
@@ -159,5 +161,54 @@ describe("TrainingPlanLibrary", () => {
     expect(screen.getByTestId("training-plan-card-plan-1")).toBeTruthy();
     expect(onCreate).toHaveBeenCalledOnce();
     expect(onOpen).toHaveBeenCalledWith("plan-1");
+  });
+
+  it("uses the flat template-list projection rather than inventing owned-plan defaults", () => {
+    mocks.templates.data = {
+      pages: [
+        {
+          items: [
+            {
+              id: "template-1",
+              name: "System template",
+              description: "Canonical template projection",
+              version: 1,
+              plan_preferences: {
+                weekly_session_count: 3,
+                target_weekly_duration_minutes: 180,
+                maximum_session_duration_minutes: 90,
+                preferred_weekdays: [1, 3, 6],
+                rest_days: [0],
+                progression_style: "balanced",
+                recovery_priority: "balanced",
+              },
+              sessions: [
+                {
+                  id: "11111111-1111-4111-8111-111111111111",
+                  offset_days: 0,
+                  activity_plan_id: "22222222-2222-4222-8222-222222222222",
+                  demand: {
+                    activity_category: "bike",
+                    training_intent: "general_maintenance",
+                    target_duration_minutes: null,
+                    target_common_load: null,
+                    importance: "normal",
+                  },
+                  event_overrides: { title: "Template tempo" },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    } as never;
+
+    render(<TrainingPlanLibrary onCreate={vi.fn()} onOpen={vi.fn()} tab="templates" />);
+
+    expect(screen.getByText("Template", { exact: true })).toBeTruthy();
+    expect(screen.queryByText("private", { exact: true })).toBeNull();
+    expect(screen.getByText("Schedule")).toBeTruthy();
+    expect(screen.getByText("1 activities · 1 weeks")).toBeTruthy();
+    expect(screen.queryByText(/Flexible sessions\/week/)).toBeNull();
   });
 });

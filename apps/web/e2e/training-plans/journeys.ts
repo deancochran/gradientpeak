@@ -29,8 +29,11 @@ export async function expectTrainingPlanLibraries(
   await search.fill(names.templateName);
   const templateCard = plans.card(names.templateName);
   await expect(templateCard).toHaveCount(1);
-  await expect(templateCard.getByText("Template")).toBeVisible();
-  const open = templateCard.getByRole("button", { name: "View plan" });
+  await expect(templateCard.getByText("Template", { exact: true })).toBeVisible();
+  const open = templateCard.getByRole("button", {
+    name: `Open training plan ${names.templateName}`,
+    exact: true,
+  });
   await open.focus();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("heading", { name: names.templateName })).toBeVisible();

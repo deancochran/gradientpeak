@@ -238,7 +238,7 @@ export function GroupEventCard({
     >
       <ResourceCardHeader
         accessory={event.cancelled_at ? <Badge variant="destructive">Cancelled</Badge> : null}
-        description={event.group?.name}
+        {...(event.group?.name !== undefined ? { description: event.group.name } : {})}
         title={event.title}
         titleClassName="text-lg"
       />
