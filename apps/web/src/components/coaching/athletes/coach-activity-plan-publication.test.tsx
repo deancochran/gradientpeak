@@ -13,9 +13,32 @@ const mocks = vi.hoisted(() => ({
   routerSearch: {} as Record<string, unknown>,
   selectedPlanQueryState: "ready" as "error" | "loading" | "missing" | "not-editable" | "ready",
   selectedPlan: {
+    activityCategory: "bike",
     activityPlanRevision: 3,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    description: "Threshold work with a real prescription.",
+    engagement: { likes: 0, viewerHasLiked: false },
+    href: "/activity-plans/44444444-4444-4444-8444-444444444444",
     id: "44444444-4444-4444-8444-444444444444",
+    isSystemTemplate: false,
+    metrics: [],
     name: "Threshold",
+    owner: null,
+    structure: {
+      activity_category: "bike",
+      items: [
+        {
+          duration: { seconds: 600, type: "time" },
+          id: "00000000-0000-4000-8000-000000000003",
+          name: "Tempo block",
+          targets: [{ intensity: 4, type: "RPE" }],
+          type: "step",
+        },
+      ],
+      version: 5,
+    },
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    visibility: "private" as const,
   },
 }));
 
@@ -92,15 +115,32 @@ vi.mock("../../../lib/api/client", () => ({
   },
 }));
 vi.mock("@tanstack/react-router", () => ({
+  defaultParseSearch: (search: string) => Object.fromEntries(new URLSearchParams(search)),
   useNavigate: () => mocks.navigate,
   useRouterState: ({
     select,
   }: {
     select: (state: { location: { search: Record<string, unknown> } }) => unknown;
   }) => select({ location: { search: mocks.routerSearch } }),
-  Link: ({ children, search }: { children: React.ReactNode; search?: unknown }) => {
+  Link: ({
+    children,
+    search,
+    ...props
+  }: {
+    children: React.ReactNode;
+    search?: unknown;
+    [key: string]: unknown;
+  }) => {
     mocks.linkSearch = search;
-    return <a href="/activity-plans">{children}</a>;
+    const query =
+      search && typeof search === "object"
+        ? new URLSearchParams(search as Record<string, string>).toString()
+        : "";
+    return (
+      <a {...props} href={`/activity-plans${query ? `?${query}` : ""}`}>
+        {children}
+      </a>
+    );
   },
 }));
 
@@ -117,13 +157,113 @@ afterEach(() => {
   mocks.routerSearch = {};
   mocks.selectedPlanQueryState = "ready";
   mocks.selectedPlan = {
+    activityCategory: "bike",
     activityPlanRevision: 3,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    description: "Threshold work with a real prescription.",
+    engagement: { likes: 0, viewerHasLiked: false },
+    href: "/activity-plans/44444444-4444-4444-8444-444444444444",
     id: "44444444-4444-4444-8444-444444444444",
+    isSystemTemplate: false,
+    metrics: [],
     name: "Threshold",
+    owner: null,
+    structure: {
+      activity_category: "bike",
+      items: [
+        {
+          duration: { seconds: 600, type: "time" },
+          id: "00000000-0000-4000-8000-000000000003",
+          name: "Tempo block",
+          targets: [{ intensity: 4, type: "RPE" }],
+          type: "step",
+        },
+      ],
+      version: 5,
+    },
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    visibility: "private" as const,
   };
 });
 
 describe("CoachActivityPlanPublication", () => {
+  it("renders the selected owned plan with its canonical timeline and contextual inspect link", () => {
+    mocks.routerSearch = { calendarStartDate: "2026-11-09" };
+    render(
+      <CoachActivityPlanPublication
+        athleteId="22222222-2222-4222-8222-222222222222"
+        organizationId="11111111-1111-4111-8111-111111111111"
+        preparation={{
+          activityPlanId: "44444444-4444-4444-8444-444444444444",
+          athleteId: "22222222-2222-4222-8222-222222222222",
+          calendarStartDate: "2026-11-09",
+          organizationId: "11111111-1111-4111-8111-111111111111",
+          planningDate: "2026-11-12",
+          returnTo: "athlete-workspace",
+        }}
+      />,
+    );
+
+    const card = screen.getByTestId("activity-plan-card-44444444-4444-4444-8444-444444444444");
+    expect(card).toBeTruthy();
+    expect(
+      screen.getByTestId("activity-plan-card-timeline-44444444-4444-4444-8444-444444444444"),
+    ).toBeTruthy();
+    expect(card.getAttribute("href")).toContain("athleteId=22222222-2222-4222-8222-222222222222");
+    expect(card.getAttribute("href")).toContain("planningDate=2026-11-12");
+    expect(card.getAttribute("href")).toContain("calendarStartDate=2026-11-09");
+    expect(card.getAttribute("href")).toContain(
+      "activityPlanId=44444444-4444-4444-8444-444444444444",
+    );
+  });
+
+  it.each([
+    "loading",
+    "error",
+    "not-editable",
+  ] as const)("hides the selected visual while the owned-plan detail is %s", (selectedPlanQueryState) => {
+    mocks.selectedPlanQueryState = selectedPlanQueryState;
+    render(
+      <CoachActivityPlanPublication
+        athleteId="22222222-2222-4222-8222-222222222222"
+        organizationId="11111111-1111-4111-8111-111111111111"
+        preparation={{
+          activityPlanId: "44444444-4444-4444-8444-444444444444",
+          athleteId: "22222222-2222-4222-8222-222222222222",
+          organizationId: "11111111-1111-4111-8111-111111111111",
+          planningDate: "2026-11-12",
+          returnTo: "athlete-workspace",
+        }}
+      />,
+    );
+
+    expect(
+      screen.queryByTestId("activity-plan-card-44444444-4444-4444-8444-444444444444"),
+    ).toBeNull();
+  });
+
+  it("resets the selected visual when the coach clears the plan choice", () => {
+    render(
+      <CoachActivityPlanPublication
+        athleteId="22222222-2222-4222-8222-222222222222"
+        organizationId="11111111-1111-4111-8111-111111111111"
+        preparation={{
+          activityPlanId: "44444444-4444-4444-8444-444444444444",
+          athleteId: "22222222-2222-4222-8222-222222222222",
+          organizationId: "11111111-1111-4111-8111-111111111111",
+          planningDate: "2026-11-12",
+          returnTo: "athlete-workspace",
+        }}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Your activity plan"), { target: { value: "" } });
+
+    expect(
+      screen.queryByTestId("activity-plan-card-44444444-4444-4444-8444-444444444444"),
+    ).toBeNull();
+  });
+
   it("uses the semantic date input surface without forcing a dark native control", () => {
     render(<CoachActivityPlanPublication athleteId="athlete" organizationId="organization" />);
 
@@ -131,6 +271,15 @@ describe("CoachActivityPlanPublication", () => {
     expect(planningDate.className).toContain("border-input");
     expect(planningDate.className).toContain("bg-background");
     expect(planningDate.className).not.toContain("color-scheme:dark");
+  });
+
+  it("uses a real disabled button rather than a disabled-looking link until the date is valid", () => {
+    render(<CoachActivityPlanPublication athleteId="athlete" organizationId="organization" />);
+
+    const prepare = screen.getByRole("button", { name: "Prepare activity plan" });
+    expect(prepare.hasAttribute("disabled")).toBe(true);
+    expect(prepare.tagName).toBe("BUTTON");
+    expect(screen.queryByRole("link", { name: "Prepare activity plan" })).toBeNull();
   });
 
   it("requires a fresh successful preview before publishing the selected owned activity plan", async () => {
@@ -437,6 +586,7 @@ describe("CoachActivityPlanPublication", () => {
 
   it("resolves a prepared owned plan outside the first library page", async () => {
     mocks.selectedPlan = {
+      ...mocks.selectedPlan,
       activityPlanRevision: 7,
       id: "55555555-5555-4555-8555-555555555555",
       name: "Later plan",

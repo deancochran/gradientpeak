@@ -63,9 +63,11 @@ export function getActivityPlanEstimateItems(metrics: readonly SemanticMetric[])
 
 export function ActivityPlanEstimateRow({
   metrics,
+  showUnavailableDetails = true,
 }: {
   metrics: readonly SemanticMetric[];
   compact?: boolean;
+  showUnavailableDetails?: boolean;
 }) {
   const estimates = getActivityPlanEstimateItems(metrics);
   const unavailable = metrics.filter((metric) => metric.status !== "available");
@@ -87,7 +89,7 @@ export function ActivityPlanEstimateRow({
         })}
         testID="activity-plan-estimates"
       />
-      {unavailable.length ? (
+      {showUnavailableDetails && unavailable.length ? (
         <details className="text-sm text-muted-foreground">
           <summary>Estimate details</summary>
           <ul className="mt-1 list-disc pl-5">

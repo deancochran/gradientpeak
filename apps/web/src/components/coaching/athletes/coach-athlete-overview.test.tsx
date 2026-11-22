@@ -45,9 +45,10 @@ describe("CoachAthleteOverview", () => {
       />,
     );
 
-    expect(screen.getByText("Historical load details")).toBeTruthy();
+    expect(screen.getByText("Recent completed daily Common Load")).toBeTruthy();
     expect(screen.getByRole("cell", { name: "0.0" })).toBeTruthy();
-    expect(screen.getByText(/Completed activity history for America\/Chicago/)).toBeTruthy();
+    expect(screen.getByText(/Common Load points are derived/)).toBeTruthy();
+    expect(screen.getByText(/Dates are planning dates in America\/Chicago/)).toBeTruthy();
     expect(screen.getByLabelText("Recent training load").className).not.toContain("dark");
     expect(screen.getByRole("table").textContent).toContain("Modeled recent load");
     expect(screen.queryByText("Published load state")).toBeNull();
@@ -107,7 +108,7 @@ describe("CoachAthleteOverview", () => {
       />,
     );
 
-    expect(screen.getByText("Historical load details")).toBeTruthy();
+    expect(screen.getByText("Recent completed daily Common Load")).toBeTruthy();
     expect(screen.queryByText("Published load state")).toBeNull();
     expect(screen.queryByText("Published performance estimates")).toBeNull();
     expect(screen.queryByText("Projection status")).toBeNull();
@@ -137,7 +138,7 @@ describe("CoachAthleteOverview", () => {
     );
 
     expect(screen.getByRole("img", { name: /Historical training state/ })).toBeTruthy();
-    expect(screen.getByLabelText("Training-state legend").textContent).toContain("Recorded");
+    expect(screen.getByLabelText("Chart legend").textContent).toContain("Fitness · Recorded");
     expect(screen.queryByRole("table")).toBeNull();
   });
 

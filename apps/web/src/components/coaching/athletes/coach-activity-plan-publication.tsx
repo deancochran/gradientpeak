@@ -103,6 +103,8 @@ export function CoachActivityPlanPublication({
   const selectedPlanCard: ActivityPlanSummary | null =
     selectedPlanDetail?.id === activityPlanId &&
     selectedPlanDetail.capabilities.canEdit &&
+    !selectedPlanQuery.isError &&
+    !selectedPlanQuery.isLoading &&
     selectedPlanDetail.structure
       ? {
           ...selectedPlanDetail,
@@ -164,6 +166,12 @@ export function CoachActivityPlanPublication({
     planningDate,
     returnTo: "athlete-workspace",
   });
+  const selectedPlanHref =
+    selectedPlanCard && preparationContext && !publish.isPending
+      ? `/activity-plans/${selectedPlanCard.id}?${new URLSearchParams(
+          activityPlanPreparationSearch(preparationContext, selectedPlanCard.id),
+        ).toString()}`
+      : undefined;
   const selectedPlanIsInLibrary = plans.some((plan) => plan.id === selectedPlan?.id);
 
   function retainWorkspaceContext(next: { activityPlanId?: string; planningDate: string }) {
@@ -265,27 +273,35 @@ export function CoachActivityPlanPublication({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <Button
-          asChild
-          className="border-border bg-card text-foreground hover:bg-muted hover:text-foreground"
-          disabled={!preparationContext}
-          type="button"
-          variant="outline"
-        >
-          <Link
-            to="/activity-plans"
-            search={
-              preparationContext
-                ? (activityPlanPreparationSearch(
-                    preparationContext,
-                    activityPlanId || undefined,
-                  ) as never)
-                : { activity_category: undefined, q: undefined }
-            }
+        {preparationContext ? (
+          <Button
+            asChild
+            className="border-border bg-card text-foreground hover:bg-muted hover:text-foreground"
+            type="button"
+            variant="outline"
+          >
+            <Link
+              to="/activity-plans"
+              search={
+                activityPlanPreparationSearch(
+                  preparationContext,
+                  activityPlanId || undefined,
+                ) as never
+              }
+            >
+              Prepare activity plan
+            </Link>
+          </Button>
+        ) : (
+          <Button
+            className="border-border bg-card text-foreground hover:bg-muted hover:text-foreground"
+            disabled
+            type="button"
+            variant="outline"
           >
             Prepare activity plan
-          </Link>
-        </Button>
+          </Button>
+        )}
         {!preparationContext ? (
           <p className="text-sm text-muted-foreground">
             Choose a real athlete planning date before preparing an activity plan.
@@ -398,22 +414,17 @@ export function CoachActivityPlanPublication({
           <div className="space-y-2">
             <p className="text-sm font-medium text-foreground">Selected activity plan</p>
             <ActivityPlanCard
-              onOpen={() => {
-                if (!preparationContext) return;
-                void navigate({
-                  to: "/activity-plans/$activityPlanId",
-                  params: { activityPlanId: selectedPlanCard.id },
-                  search: {
-                    ...activityPlanPreparationSearch(preparationContext, selectedPlanCard.id),
-                  },
-                } as never);
-              }}
+              disabled={!selectedPlanHref}
+              href={selectedPlanHref}
               openLabel={`Inspect or edit selected activity plan ${selectedPlanCard.name}`}
               plan={selectedPlanCard}
             />
             <p className="text-xs text-muted-foreground">
-              Inspect or edit this plan before publishing. Your athlete, planning date, and selected
-              week stay attached to the return link.
+              {selectedPlanHref
+                ? "Inspect or edit this plan before publishing. Your athlete, planning date, and selected week stay attached to the return link."
+                : publish.isPending
+                  ? "Plan inspection is unavailable while publication is pending."
+                  : "Choose a real athlete planning date before inspecting or editing this plan."}
             </p>
           </div>
         ) : null}

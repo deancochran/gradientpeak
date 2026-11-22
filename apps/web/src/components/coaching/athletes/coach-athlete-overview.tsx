@@ -7,10 +7,11 @@ import {
   CardTitle,
 } from "@repo/ui/components/card";
 import {
+  formatTrainingStateDate,
   TrainingStateChart,
-  TrainingStateLegend,
   type TrainingStateVisualContract,
 } from "@repo/ui/components/training-state-chart";
+import { SimpleTrendChart } from "../../charts/simple-trend-chart";
 
 type LoadHistoryPoint = {
   date: string;
@@ -204,16 +205,17 @@ export function CoachAthleteOverview({
 function TrainingStateSummary({ history }: { history: OverviewModel["loadHistory"] }) {
   if (!history || history.result.status === "unavailable") {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Historical training state</CardTitle>
-          <CardDescription>
-            {history?.result.status === "unavailable"
-              ? `Historical load is unavailable (${history.result.reason.replaceAll("_", " ")}). No values are inferred.`
-              : "Historical load is not available in the published projection."}
-          </CardDescription>
-        </CardHeader>
-      </Card>
+      <section
+        aria-label="Historical training state"
+        className="rounded-xl border border-border bg-muted/50 px-4 py-3"
+      >
+        <h2 className="font-semibold text-foreground">Historical training state</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {history?.result.status === "unavailable"
+            ? `Historical load is unavailable (${history.result.reason.replaceAll("_", " ")}). No values are inferred.`
+            : "Historical load is not available in the published projection."}
+        </p>
+      </section>
     );
   }
   const points = history.result.points.slice(-28);
@@ -246,7 +248,6 @@ function TrainingStateSummary({ history }: { history: OverviewModel["loadHistory
         title="Historical training state"
         visual={visual}
       />
-      <TrainingStateLegend sources={["recorded"]} />
       {history.result.maturity.status === "establishing_baseline" ? (
         <p className="text-xs text-warning">
           Modeled baseline is still being established; treat long-term load with care.
@@ -287,6 +288,32 @@ function TrainingLoadHistory({ history }: { history: OverviewModel["loadHistory"
   const timezone = history.result.identity.planningTimezone;
   return (
     <section aria-label="Recent training load" className="space-y-3">
+      <SimpleTrendChart
+        axisLabels={{ x: "Planning date", y: "Common Load points" }}
+        description={`Completed daily Common Load points for the latest ${points.length} complete planning days (${timezone}). This is derived load, not a performance estimate.`}
+        emptyMessage="No complete daily load observations are available."
+        formatX={(value) =>
+          formatTrainingStateDate(new Date(value).toISOString().slice(0, 10), timezone)
+        }
+        formatValue={(value) => value.toFixed(1)}
+        points={points.map((point) => ({
+          id: point.date,
+          label: point.date,
+          value: point.dailyLoad,
+          x: Date.parse(`${point.date}T00:00:00Z`),
+        }))}
+        summaryLabels={{
+          first: "First Common Load",
+          latest: "Latest Common Load",
+          trend: "Change",
+        }}
+        title="Recent completed daily Common Load"
+      />
+      <p className="text-xs text-muted-foreground">
+        Common Load points are derived from completed activity. Dates are planning dates in{" "}
+        {timezone}
+        through {history.result.identity.endDate}. Complete days only; no future values are shown.
+      </p>
       <div>
         <h2 className="text-lg font-semibold text-foreground">Historical load details</h2>
         <p className="mt-1 text-xs text-muted-foreground">

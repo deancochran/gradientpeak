@@ -202,9 +202,10 @@ export function CoachAthleteCompletedActivities({
                   <p className="text-xs text-muted-foreground">Planned {item.planningDate}</p>
                 </div>
                 <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  {item.activityCategory ? (
-                    <CompletionMetric label="Sport" value={item.activityCategory} />
-                  ) : null}
+                  <CompletionMetric
+                    label="Sport"
+                    value={item.activityCategory ?? "Activity category unavailable"}
+                  />
                   {item.elapsedMs !== null ? (
                     <CompletionMetric
                       label="Time"

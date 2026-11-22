@@ -331,13 +331,14 @@ test("non-admin coach sees consent-scoped historical load assessment without rec
   await waitForAppHydration(page);
   await page.setViewportSize({ width: 1440, height: 1000 });
   await expect(page.getByText("322 watts", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Historical training state" })).toBeVisible();
+  await expect(page.getByRole("img", { name: /Historical training state/ })).toBeVisible();
+  await expect(page.getByLabel("Chart legend")).toContainText("Fitness · Recorded");
+  await expect(page.getByRole("img", { name: /Historical Fitness/ })).toHaveCount(0);
+  await page.locator("summary").filter({ hasText: "Training context and shared data" }).click();
   await expect(page.getByText("Recent completed daily Common Load", { exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Historical modeled load state" })).toBeVisible();
-  await expect(page.getByRole("img", { name: /Historical Fitness/ })).toBeVisible();
-  await expect(page.getByRole("img", { name: /Historical Fatigue/ })).toBeVisible();
-  await expect(page.getByRole("img", { name: /Historical Form.*-\d/ })).toBeVisible();
   await expect(page.getByText("-8.0", { exact: true })).toBeVisible();
-  await expect(page.getByText(/It does not predict future load or availability/)).toBeVisible();
+  await expect(page.getByText(/Values are recorded history only/)).toBeVisible();
   await expect(page.getByRole("table")).toBeVisible();
   await expect(
     page.getByRole("cell", {
@@ -345,13 +346,23 @@ test("non-admin coach sees consent-scoped historical load assessment without rec
       exact: true,
     }),
   ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+    ),
+  ).toBe(true);
   await page.screenshot({
     fullPage: true,
     path: testInfo.outputPath("coach-athlete-assessment-desktop.png"),
     scale: "css",
   });
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByRole("img", { name: /Historical Fitness/ })).toBeVisible();
+  await expect(page.getByRole("img", { name: /Historical training state/ })).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+    ),
+  ).toBe(true);
   expect(
     await page
       .getByRole("table")
@@ -375,7 +386,9 @@ test("non-admin coach sees consent-scoped historical load assessment without rec
   await expect(page.getByText("Recent completed daily Common Load", { exact: true })).toHaveCount(
     0,
   );
-  await expect(page.getByRole("heading", { name: "Historical modeled load state" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Historical training state" })).toBeVisible();
+  await expect(page.getByText(/Historical load is unavailable/)).toBeVisible();
+  await expect(page.getByRole("img", { name: /Historical training state/ })).toHaveCount(0);
   await expect(page.getByRole("table")).toHaveCount(0);
   await page.screenshot({
     fullPage: true,
