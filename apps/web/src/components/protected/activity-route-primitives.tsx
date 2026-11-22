@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
+import { ResourceMetricsRow } from "@repo/ui/components/resource-presentation";
 import { cn } from "@repo/ui/lib/cn";
 import { Heart, MapPin, MessageCircle, Share2 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
@@ -26,7 +27,6 @@ import {
   type RouteCoordinate,
 } from "../../lib/activity-route-helpers";
 import { api } from "../../lib/api/client";
-import { CanonicalMetricsRow } from "../activity/canonical-metrics-row";
 import { ActivityCategoryBadges } from "../activity-category-presentation";
 import { AppHrefLink } from "../app-href-link";
 import {
@@ -369,9 +369,8 @@ export function ActivityListCard({
             </Button>
           ) : null}
         </div>
-        <CanonicalMetricsRow
-          items={activity.metrics.map((metric) => ({
-            key: metric.key,
+        <ResourceMetricsRow
+          metrics={activity.metrics.map((metric) => ({
             label: metric.label,
             ...(metric.key === "common_load" || metric.key === "normalized_intensity"
               ? { tone: "primary" as const }
