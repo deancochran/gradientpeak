@@ -3,6 +3,7 @@ import { expect, test } from "../fixtures";
 import { GoalsPage, withTrpcFailure } from "../pages";
 import { chooseAuthoringOption } from "../pages/authoring";
 import { type GoalFixture, withGoalFixture } from "../planning/data";
+import { waitForAppHydration } from "../support/hydration";
 import { createE2EExecutionIdentity } from "../support/identity";
 
 async function createGoal(page: Page, fixture: GoalFixture, suffix: string) {
@@ -84,14 +85,17 @@ test("[variation:goals.lifecycle:cancel-edit] browser back abandons unsaved goal
     const goal = await createGoal(athletePage, fixture, "cancel edit");
     await athletePage.getByTestId(`goal-card-${goal.id}`).click();
     await athletePage.getByTestId(`goal-edit-${goal.id}`).click();
+    await waitForAppHydration(athletePage);
     await athletePage.getByLabel("Title").fill("Unsaved goal variation");
     const priority = athletePage.getByRole("combobox", { name: "Priority", exact: true });
-    await priority.press("ArrowDown");
-    await priority.press("Home");
-    await priority.press("ArrowDown");
-    await priority.press("Enter");
+    await priority.click();
+    const priorityListbox = athletePage.getByRole("listbox");
+    await expect(priorityListbox).toBeVisible();
+    const priorityOne = priorityListbox.getByRole("option", { name: "1", exact: true });
+    await priorityOne.scrollIntoViewIfNeeded();
+    await priorityOne.click();
     await expect(priority).toHaveText("1");
-    await expect(athletePage.getByRole("listbox")).toHaveCount(0);
+    await expect(priorityListbox).toHaveCount(0);
     await athletePage.goBack();
     await expect(athletePage.getByRole("heading", { name: goal.title })).toBeVisible();
     await athletePage.screenshot({
