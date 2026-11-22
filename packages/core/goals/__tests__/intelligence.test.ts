@@ -17,19 +17,17 @@ const raceGoal = {
 };
 
 describe("goal intelligence", () => {
-  it("interprets readiness as athlete-facing states", () => {
+  it("abstains from trajectory classification at every readiness value", () => {
     expect(interpretGoalReadiness(null)).toEqual({
       status: "uncertain",
-      label: "Projection needs more data",
+      label: "Outcome projection unavailable",
     });
-    expect(interpretGoalReadiness(78).status).toBe("behind");
-    expect(interpretGoalReadiness(88).status).toBe("slightly_behind");
-    expect(interpretGoalReadiness(100).status).toBe("on_track");
-    expect(interpretGoalReadiness(110).status).toBe("ahead");
-    expect(interpretGoalReadiness(125).status).toBe("exceeding");
+    for (const score of [78, 88, 100, 110, 125]) {
+      expect(interpretGoalReadiness(score).status).toBe("uncertain");
+    }
   });
 
-  it("projects race finish time from readiness", () => {
+  it("provides heuristic readiness context without predicting a race finish time", () => {
     const intelligence = buildGoalIntelligence({
       goal: raceGoal,
       readinessScore: 108,
@@ -37,12 +35,24 @@ describe("goal intelligence", () => {
       updatedAt: "2026-05-01T00:00:00.000Z",
     });
 
-    expect(intelligence.status).toBe("ahead");
-    expect(intelligence.projectedOutcome).toMatchObject({
+    expect(intelligence.status).toBe("uncertain");
+    expect(intelligence.state).toBe("heuristic_context");
+    expect(intelligence.reasonCodes).toEqual(["heuristic_readiness_not_predictive"]);
+    expect(intelligence.projectedOutcome).toEqual({
       type: "finish_time",
-      displayValue: "23:09",
+      value: null,
+      unit: "unknown",
+      displayValue: "Projection unavailable",
+      confidenceLow: null,
+      confidenceHigh: null,
+      confidenceDisplay: null,
     });
-    expect(intelligence.summary).toContain("projecting 23:09");
+    expect(intelligence.summary).toBe(
+      "No validated outcome projection is available for Spring 5K; the target remains 25:00.",
+    );
+    expect(JSON.stringify(intelligence)).not.toMatch(
+      /23:09|completion confidence|projected completion rate|on track|ahead|behind/i,
+    );
     expect(intelligence.keyDrivers).toHaveLength(3);
   });
 
@@ -54,7 +64,15 @@ describe("goal intelligence", () => {
     });
 
     expect(intelligence.status).toBe("uncertain");
+    expect(intelligence.state).toBe("unavailable");
+    expect(intelligence.reasonCodes).toEqual(["readiness_unavailable"]);
     expect(intelligence.projectedOutcome.displayValue).toBe("Projection unavailable");
-    expect(intelligence.summary).toContain("More training data is needed");
+    expect(intelligence.projectedOutcome.value).toBeNull();
+    expect(intelligence.projectedOutcome.confidenceLow).toBeNull();
+    expect(intelligence.projectedOutcome.confidenceHigh).toBeNull();
+    expect(intelligence.projectedOutcome.confidenceDisplay).toBeNull();
+    expect(intelligence.summary).toBe(
+      "No validated outcome projection is available for Spring 5K; the target remains 25:00.",
+    );
   });
 });

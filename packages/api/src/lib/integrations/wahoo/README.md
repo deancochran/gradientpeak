@@ -344,9 +344,8 @@ Fixed missing required fields in workout creation that were preventing workouts 
 - **Added `minutes`**: Calculates total workout duration from plan structure
 
 ### Improved Error Reporting
-- Automatic sync now **awaits** the Wahoo sync operation and returns sync status in the response
-- Users receive `wahooSync` field with `success` and `error` details when creating/updating planned activities
-- Errors are no longer silent - sync failures are now visible to the client
+- Planned activity writes report their durable queue result through `plannedActivitySync`
+- Errors are no longer silent - sync queue failures are visible to the client
 
 ### Duration Calculation
 Added `calculateWorkoutDuration()` function that:

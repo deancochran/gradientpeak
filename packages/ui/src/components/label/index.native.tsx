@@ -1,4 +1,5 @@
 import type * as React from "react";
+import { omitUndefined } from "../../lib/omit-undefined";
 import { getNativeTestProps } from "../../lib/test-props";
 import { Label as RegistryLabel } from "../../registry/native/label";
 import type { LabelTestProps } from "./shared";
@@ -22,8 +23,10 @@ function Label({
   return (
     <RegistryLabel
       {...nativeTestProps}
-      nativeID={nativeID ?? nativeTestProps.nativeID}
-      testID={testID ?? nativeTestProps.testID}
+      {...omitUndefined({
+        nativeID: nativeID ?? nativeTestProps.nativeID,
+        testID: testID ?? nativeTestProps.testID,
+      })}
       {...props}
     />
   );
