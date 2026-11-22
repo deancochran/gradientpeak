@@ -463,6 +463,149 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
       });
     };
 
+    const renderTargetField = (
+      name:
+        | "raceDistanceKm"
+        | "targetDuration"
+        | "targetPace"
+        | "targetWatts"
+        | "targetBpm"
+        | "thresholdTestDuration"
+        | "consistencySessionsPerWeek"
+        | "consistencyWeeks",
+    ) => {
+      const required = targetField(name)?.required ?? false;
+      if (name === "targetDuration" || name === "thresholdTestDuration") {
+        const targetDuration = name === "targetDuration";
+        const durationId = targetDuration
+          ? "goal-duration"
+          : draft.goalType === "pace_threshold"
+            ? "goal-threshold-pace-duration"
+            : draft.goalType === "power_threshold"
+              ? "goal-power-duration"
+              : "goal-heart-rate-duration";
+        return (
+          <DurationInput
+            layout={targetDuration ? "hms" : "ms"}
+            formControl={form.control}
+            fieldName={name}
+            required={required}
+            disabled={busy}
+            id={durationId}
+            testId={durationId}
+            label={
+              targetDuration
+                ? draft.goalType === "completion"
+                  ? "Duration"
+                  : "Goal time"
+                : "Test time"
+            }
+            value={draft[name] ?? ""}
+            onChange={(value) => updateDraft({ [name]: value })}
+            {...(targetDuration
+              ? { placeholder: draft.goalType === "completion" ? "2:30:00" : "0:25:00" }
+              : {})}
+            {...(draft.goalType === "hr_threshold" ? {} : { helperText: "" })}
+          />
+        );
+      }
+      if (name === "targetPace") {
+        const race = hasTargetField("raceDistanceKm");
+        return (
+          <PaceInput
+            layout="ms"
+            formControl={form.control}
+            fieldName={name}
+            required={required}
+            disabled={busy}
+            id={race ? "goal-race-pace" : "goal-threshold-pace"}
+            label={race ? "Goal pace" : "Target pace"}
+            value={draft.targetPace ?? ""}
+            onChange={(value) => updateDraft({ targetPace: value })}
+            helperText=""
+          />
+        );
+      }
+      if (name === "consistencySessionsPerWeek" || name === "consistencyWeeks") {
+        const sessions = name === "consistencySessionsPerWeek";
+        return (
+          <FormIntegerStepperField
+            disabled={busy}
+            control={form.control}
+            label={sessions ? "Sessions / week" : "Weeks"}
+            name={name}
+            emptyValue={null}
+            min={0}
+            max={sessions ? 14 : 52}
+            testId={sessions ? "goal-consistency-sessions" : "goal-consistency-weeks"}
+          />
+        );
+      }
+
+      const numeric =
+        name === "raceDistanceKm"
+          ? {
+              adjustmentStep: numericUxPolicies.distanceKilometers.adjustmentStep,
+              id: "goal-distance",
+              label: getDistanceLabel(draft.goalType),
+              invalidKey: "distance",
+              min: 0,
+              max: 1000,
+              decimals: 3,
+              unitLabel: "km",
+              placeholder: "21.1",
+              accessibilityHint: "Enter distance in kilometers",
+            }
+          : name === "targetWatts"
+            ? {
+                adjustmentStep: numericUxPolicies.plannedPowerWatts.adjustmentStep,
+                id: "goal-power",
+                label: "Watts",
+                invalidKey: "power",
+                min: 1,
+                max: 2000,
+                decimals: 0,
+                unitLabel: "W",
+                placeholder: "285",
+                accessibilityHint: "Enter target power in watts",
+              }
+            : {
+                adjustmentStep: numericUxPolicies.plannedBpm.adjustmentStep,
+                id: "goal-heart-rate",
+                label: "Target bpm",
+                invalidKey: "heartRate",
+                min: 1,
+                max: 260,
+                decimals: 0,
+                unitLabel: "bpm",
+                placeholder: "168",
+                accessibilityHint: "Enter target threshold heart rate in beats per minute",
+              };
+      return (
+        <BoundedNumberInput
+          disabled={busy}
+          adjustmentStep={numeric.adjustmentStep}
+          clampProjection={false}
+          id={numeric.id}
+          label={numeric.label}
+          required={required}
+          value={draft[name] == null ? "" : String(draft[name])}
+          onChange={() => undefined}
+          onInvalidChange={(invalid) =>
+            setInvalidNumericFields((current) => ({ ...current, [numeric.invalidKey]: invalid }))
+          }
+          onNumberChange={(value) => updateDraft({ [name]: value ?? null })}
+          min={numeric.min}
+          max={numeric.max}
+          decimals={numeric.decimals}
+          unitLabel={numeric.unitLabel}
+          placeholder={numeric.placeholder}
+          showAdjustmentButtons
+          accessibilityHint={numeric.accessibilityHint}
+        />
+      );
+    };
+
     return (
       <Form {...form}>
         <View
@@ -609,62 +752,12 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
               </View>
 
               <View className="gap-3">
-                <View>
-                  <BoundedNumberInput
-                    disabled={busy}
-                    adjustmentStep={numericUxPolicies.distanceKilometers.adjustmentStep}
-                    clampProjection={false}
-                    id="goal-distance"
-                    label={getDistanceLabel(draft.goalType)}
-                    required={targetField("raceDistanceKm")?.required ?? false}
-                    value={draft.raceDistanceKm == null ? "" : String(draft.raceDistanceKm)}
-                    onChange={() => undefined}
-                    onInvalidChange={(invalid) =>
-                      setInvalidNumericFields((current) => ({ ...current, distance: invalid }))
-                    }
-                    onNumberChange={(value) => updateDraft({ raceDistanceKm: value ?? null })}
-                    min={0}
-                    max={1000}
-                    decimals={3}
-                    unitLabel="km"
-                    placeholder="21.1"
-                    showAdjustmentButtons
-                    accessibilityHint="Enter distance in kilometers"
-                  />
-                </View>
+                <View>{renderTargetField("raceDistanceKm")}</View>
 
                 <View>
-                  {hasTargetField("targetDuration") ? (
-                    <DurationInput
-                      layout="hms"
-                      formControl={form.control}
-                      fieldName="targetDuration"
-                      required={targetField("targetDuration")?.required ?? false}
-                      disabled={busy}
-                      id="goal-duration"
-                      testId="goal-duration"
-                      label={draft.goalType === "completion" ? "Duration" : "Goal time"}
-                      value={draft.targetDuration ?? ""}
-                      onChange={(value) => updateDraft({ targetDuration: value })}
-                      placeholder={draft.goalType === "completion" ? "2:30:00" : "0:25:00"}
-                      helperText=""
-                    />
-                  ) : null}
+                  {hasTargetField("targetDuration") ? renderTargetField("targetDuration") : null}
 
-                  {hasTargetField("targetPace") ? (
-                    <PaceInput
-                      layout="ms"
-                      formControl={form.control}
-                      fieldName="targetPace"
-                      required={targetField("targetPace")?.required ?? false}
-                      disabled={busy}
-                      id="goal-race-pace"
-                      label="Goal pace"
-                      value={draft.targetPace ?? ""}
-                      onChange={(value) => updateDraft({ targetPace: value })}
-                      helperText=""
-                    />
-                  ) : null}
+                  {hasTargetField("targetPace") ? renderTargetField("targetPace") : null}
                 </View>
               </View>
             </GoalSection>
@@ -673,34 +766,8 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
           {hasTargetField("targetPace") && !hasTargetField("raceDistanceKm") ? (
             <GoalSection icon={Gauge} title="Pace target">
               <View className="gap-3">
-                <View>
-                  <PaceInput
-                    layout="ms"
-                    formControl={form.control}
-                    fieldName="targetPace"
-                    required
-                    disabled={busy}
-                    id="goal-threshold-pace"
-                    label="Target pace"
-                    value={draft.targetPace ?? ""}
-                    onChange={(value) => updateDraft({ targetPace: value })}
-                    helperText=""
-                  />
-                </View>
-                <View>
-                  <DurationInput
-                    layout="ms"
-                    formControl={form.control}
-                    fieldName="thresholdTestDuration"
-                    disabled={busy}
-                    id="goal-threshold-pace-duration"
-                    testId="goal-threshold-pace-duration"
-                    label="Test time"
-                    value={draft.thresholdTestDuration ?? ""}
-                    onChange={(value) => updateDraft({ thresholdTestDuration: value })}
-                    helperText=""
-                  />
-                </View>
+                <View>{renderTargetField("targetPace")}</View>
+                <View>{renderTargetField("thresholdTestDuration")}</View>
               </View>
             </GoalSection>
           ) : null}
@@ -708,111 +775,24 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
           {hasTargetField("targetWatts") ? (
             <GoalSection icon={Dumbbell} title="Power target">
               <View className="gap-3">
-                <View>
-                  <BoundedNumberInput
-                    disabled={busy}
-                    adjustmentStep={numericUxPolicies.plannedPowerWatts.adjustmentStep}
-                    clampProjection={false}
-                    id="goal-power"
-                    label="Watts"
-                    required={targetField("targetWatts")?.required ?? false}
-                    value={draft.targetWatts == null ? "" : String(draft.targetWatts)}
-                    onChange={() => undefined}
-                    onInvalidChange={(invalid) =>
-                      setInvalidNumericFields((current) => ({ ...current, power: invalid }))
-                    }
-                    onNumberChange={(value) => updateDraft({ targetWatts: value ?? null })}
-                    min={1}
-                    max={2000}
-                    decimals={0}
-                    unitLabel="W"
-                    placeholder="285"
-                    showAdjustmentButtons
-                    accessibilityHint="Enter target power in watts"
-                  />
-                </View>
-                <View>
-                  <DurationInput
-                    layout="ms"
-                    formControl={form.control}
-                    fieldName="thresholdTestDuration"
-                    disabled={busy}
-                    id="goal-power-duration"
-                    testId="goal-power-duration"
-                    label="Test time"
-                    value={draft.thresholdTestDuration ?? ""}
-                    onChange={(value) => updateDraft({ thresholdTestDuration: value })}
-                    helperText=""
-                  />
-                </View>
+                <View>{renderTargetField("targetWatts")}</View>
+                <View>{renderTargetField("thresholdTestDuration")}</View>
               </View>
             </GoalSection>
           ) : null}
 
           {hasTargetField("targetBpm") ? (
             <GoalSection icon={Gauge} title="Heart rate target">
-              <BoundedNumberInput
-                disabled={busy}
-                adjustmentStep={numericUxPolicies.plannedBpm.adjustmentStep}
-                clampProjection={false}
-                id="goal-heart-rate"
-                label="Target bpm"
-                required={targetField("targetBpm")?.required ?? false}
-                value={draft.targetBpm == null ? "" : String(draft.targetBpm)}
-                onChange={() => undefined}
-                onInvalidChange={(invalid) =>
-                  setInvalidNumericFields((current) => ({ ...current, heartRate: invalid }))
-                }
-                onNumberChange={(value) => updateDraft({ targetBpm: value ?? null })}
-                min={1}
-                max={260}
-                decimals={0}
-                unitLabel="bpm"
-                placeholder="168"
-                showAdjustmentButtons
-                accessibilityHint="Enter target threshold heart rate in beats per minute"
-              />
-              <DurationInput
-                layout="ms"
-                formControl={form.control}
-                fieldName="thresholdTestDuration"
-                disabled={busy}
-                id="goal-heart-rate-duration"
-                testId="goal-heart-rate-duration"
-                label="Test time"
-                value={draft.thresholdTestDuration ?? ""}
-                onChange={(value) => updateDraft({ thresholdTestDuration: value })}
-              />
+              {renderTargetField("targetBpm")}
+              {renderTargetField("thresholdTestDuration")}
             </GoalSection>
           ) : null}
 
           {hasTargetField("consistencySessionsPerWeek") ? (
             <GoalSection icon={CalendarDays} title="Consistency target">
               <View className="gap-3">
-                <View>
-                  <FormIntegerStepperField
-                    disabled={busy}
-                    control={form.control}
-                    label="Sessions / week"
-                    name="consistencySessionsPerWeek"
-                    emptyValue={null}
-                    min={0}
-                    max={14}
-                    testId="goal-consistency-sessions"
-                  />
-                </View>
-                <View>
-                  <FormIntegerStepperField
-                    disabled={busy}
-                    control={form.control}
-                    label="Weeks"
-                    name="consistencyWeeks"
-                    emptyValue={null}
-                    min={0}
-                    max={52}
-                    testId="goal-consistency-weeks"
-                  />
-                </View>
+                <View>{renderTargetField("consistencySessionsPerWeek")}</View>
+                <View>{renderTargetField("consistencyWeeks")}</View>
               </View>
             </GoalSection>
           ) : null}
