@@ -56,7 +56,7 @@ export class CalendarPage {
       const eventHref = await eventLink.getAttribute("href");
       if (!eventHref) throw new Error("Created event agenda link did not include an event URL.");
       await eventLink.click();
-      await expect(this.page).toHaveURL(eventHref);
+      await expect(this.page).toHaveURL((url) => url.pathname === eventHref);
       await expect(this.page.getByRole("heading", { name: input.title })).toBeVisible();
       const eventId = await this.eventId();
       expect(eventHref).toBe(`/calendar/events/${eventId}`);
