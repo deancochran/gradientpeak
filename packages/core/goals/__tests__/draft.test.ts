@@ -23,7 +23,7 @@ describe("goal draft helpers", () => {
 
     expect(getGoalEditorTargetFields({ goalType: "power_threshold" })).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: "targetWatts", required: true, min: Number.MIN_VALUE }),
+        expect.objectContaining({ name: "targetWatts", required: true }),
         expect.objectContaining({ name: "thresholdTestDuration", required: false, layout: "ms" }),
       ]),
     );

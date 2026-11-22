@@ -5,6 +5,7 @@ import {
   canonicalActivityCategorySchema,
   createEmptyGoalDraft,
   type GoalEditorDraft,
+  type GoalEditorTargetField,
   getGoalEditorTargetFields,
   goalFocusChoices,
   goalPriorityChoices,
@@ -132,6 +133,54 @@ function PlanGoalFormSession({
     );
   }
 
+  const targetFields = getGoalEditorTargetFields(draft);
+  function renderTargetField(field: GoalEditorTargetField) {
+    switch (field.name) {
+      case "raceDistanceKm":
+        return numberField(field.name, "Distance (km)", field.required);
+      case "targetDuration":
+        return (
+          <FormDurationField
+            key={`${draft.goalType}:${field.name}`}
+            control={form.control}
+            name={field.name}
+            label={draft.goalType === "completion" ? "Duration" : "Goal time"}
+            required={field.required}
+            disabled={isSubmitting}
+          />
+        );
+      case "targetPace":
+        return (
+          <FormPaceField
+            key={`${draft.goalType}:${field.name}`}
+            control={form.control}
+            name={field.name}
+            label={draft.goalType === "race_performance" ? "Goal pace" : "Target pace"}
+            required={field.required}
+            disabled={isSubmitting}
+          />
+        );
+      case "targetWatts":
+        return numberField(field.name, "Watts", field.required);
+      case "targetBpm":
+        return numberField(field.name, "Target bpm", field.required);
+      case "thresholdTestDuration":
+        return (
+          <FormDurationField
+            key={`${draft.goalType}:${field.name}`}
+            control={form.control}
+            name={field.name}
+            label="Test duration"
+            disabled={isSubmitting}
+          />
+        );
+      case "consistencySessionsPerWeek":
+        return numberField(field.name, "Sessions / week", false, true);
+      case "consistencyWeeks":
+        return numberField(field.name, "Weeks", false, true);
+    }
+  }
+
   async function saveDraft(values: GoalEditorDraft) {
     if (!mounted.current || !isCurrent() || submittingRef.current) return;
     const owner = goal?.profile_id ?? profileId;
@@ -175,12 +224,6 @@ function PlanGoalFormSession({
     },
   });
 
-  const race = draft.goalType === "race_performance";
-  const completion = draft.goalType === "completion";
-  const threshold =
-    draft.goalType === "pace_threshold" ||
-    draft.goalType === "power_threshold" ||
-    draft.goalType === "hr_threshold";
   return (
     <Form {...form}>
       <form noValidate className="space-y-4" data-testid="goal-form" onSubmit={submit.handleSubmit}>
@@ -249,12 +292,10 @@ function PlanGoalFormSession({
             if (category.success) update("activityCategory", category.data);
           }}
         />
-        {race || completion ? (
+        {targetFields.some((field) => field.name === "raceDistanceKm") ? (
           <>
-            {getGoalEditorTargetFields(draft)
-              .filter((field) => field.name === "raceDistanceKm")
-              .map((field) => numberField("raceDistanceKm", field.label, field.required, false))}
-            {race ? (
+            {targetFields.filter((field) => field.name === "raceDistanceKm").map(renderTargetField)}
+            {draft.goalType === "race_performance" ? (
               <Choice
                 label="Race target"
                 isCurrent={isCurrent}
@@ -267,52 +308,12 @@ function PlanGoalFormSession({
                 }}
               />
             ) : null}
-            {completion || draft.raceTargetMode !== "pace" ? (
-              <FormDurationField
-                control={form.control}
-                name="targetDuration"
-                label={completion ? "Duration" : "Goal time"}
-                required={race}
-                disabled={isSubmitting}
-              />
-            ) : (
-              <FormPaceField
-                key={`${draft.goalType}:targetPace`}
-                control={form.control}
-                name="targetPace"
-                label="Goal pace"
-                required
-                disabled={isSubmitting}
-              />
-            )}
+            {targetFields.filter((field) => field.name !== "raceDistanceKm").map(renderTargetField)}
           </>
         ) : null}
-        {draft.goalType === "pace_threshold" ? (
-          <FormPaceField
-            key={`${draft.goalType}:targetPace`}
-            control={form.control}
-            name="targetPace"
-            label="Target pace"
-            required
-            disabled={isSubmitting}
-          />
-        ) : null}
-        {draft.goalType === "power_threshold" ? numberField("targetWatts", "Watts", true) : null}
-        {draft.goalType === "hr_threshold" ? numberField("targetBpm", "Target bpm", true) : null}
-        {threshold ? (
-          <FormDurationField
-            control={form.control}
-            name="thresholdTestDuration"
-            label="Test duration"
-            disabled={isSubmitting}
-          />
-        ) : null}
-        {draft.goalType === "consistency" ? (
-          <>
-            {numberField("consistencySessionsPerWeek", "Sessions / week", false, true)}
-            {numberField("consistencyWeeks", "Weeks", false, true)}
-          </>
-        ) : null}
+        {!targetFields.some((field) => field.name === "raceDistanceKm")
+          ? targetFields.map(renderTargetField)
+          : null}
         {submitError ? (
           <p role="alert" aria-live="polite" className="text-sm text-destructive">
             {submitError}
