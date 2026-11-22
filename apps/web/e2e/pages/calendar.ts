@@ -39,7 +39,6 @@ export class CalendarPage {
       if (input.repeat) await this.page.getByLabel("Repeat weekly").selectOption("4");
       await this.page.getByRole("button", { name: /^create$/i }).press("Enter");
       await expect(this.page).toHaveURL(/\/calendar(?:\?.*)?$/);
-      await this.page.reload();
       const eventLink = this.page.getByRole("link", { name: input.title, exact: true });
       await expect(eventLink).toBeVisible();
       await eventLink.click();

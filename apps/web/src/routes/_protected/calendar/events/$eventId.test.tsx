@@ -347,7 +347,7 @@ describe("EventDetailPage", () => {
     expect(refetch).toHaveBeenCalledTimes(1);
   });
 
-  it("does not render mismatched cached geometry and keeps a loading attachment truthful", () => {
+  it("does not render mismatched successful cached geometry", () => {
     mocks.event = {
       all_day: true,
       event_type: "custom",
@@ -362,6 +362,33 @@ describe("EventDetailPage", () => {
     mocks.routeQuery = {
       data: { id: "another-route", name: "Wrong route" },
       isError: false,
+      isLoading: false,
+      isSuccess: true,
+      refetch: vi.fn(),
+    };
+    const EventDetailPage = (Route as unknown as { component: React.ComponentType }).component;
+
+    render(<EventDetailPage />);
+
+    expect(screen.queryByTestId("route-card-another-route")).toBeNull();
+    expect(screen.getByText("Route preview unavailable.")).toBeTruthy();
+  });
+
+  it("keeps a loading attached route truthful instead of rendering cached geometry", () => {
+    mocks.event = {
+      all_day: true,
+      event_type: "custom",
+      id: "event-1",
+      scheduled_date: "2026-07-28",
+      status: "scheduled",
+      title: "Route event",
+      activityPlanSummary: null,
+      notes: null,
+      route_id: "route-1",
+    };
+    mocks.routeQuery = {
+      data: { id: "route-1", name: "Cached route" },
+      isError: false,
       isLoading: true,
       isSuccess: false,
       refetch: vi.fn(),
@@ -370,7 +397,7 @@ describe("EventDetailPage", () => {
 
     render(<EventDetailPage />);
 
-    expect(screen.queryByTestId("route-card-another-route")).toBeNull();
+    expect(screen.queryByTestId("route-card-route-1")).toBeNull();
     expect(screen.getByText("Loading route preview...")).toBeTruthy();
   });
 
