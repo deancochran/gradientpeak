@@ -147,8 +147,17 @@ describe("ActivityPlansPage cards", () => {
     expect(screen.getByRole("status").textContent).toContain("Loading activity plans");
     expect(screen.queryByText("No activity plans found")).toBeNull();
   });
-  it("does not restore a stale category when search follows an All selection", () => {
-    navigation.search = { activity_category: "run" };
+  it.each([
+    {},
+    {
+      organizationId: "11111111-1111-4111-8111-111111111111",
+      athleteId: "22222222-2222-4222-8222-222222222222",
+      planningDate: "2026-11-22",
+      calendarStartDate: "2026-11-16",
+      returnTo: "athlete-workspace",
+    },
+  ])("clears library filters without losing preparation context: %j", (context) => {
+    navigation.search = { ...context, activity_category: "run" };
     navigation.navigate.mockImplementation(({ search }) => {
       navigation.search = typeof search === "function" ? search(navigation.search) : search;
     });
@@ -160,10 +169,10 @@ describe("ActivityPlansPage cards", () => {
     const view = render(<Page />);
     fireEvent.click(screen.getByRole("button", { name: "All" }));
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "Tempo" } });
-    expect(navigation.search).toStrictEqual({ q: "Tempo" });
+    expect(navigation.search).toStrictEqual({ ...context, q: "Tempo" });
     view.rerender(<Page />);
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "" } });
-    expect(navigation.search).toStrictEqual({});
+    expect(navigation.search).toStrictEqual(context);
   });
   it("renders authored duration and calculated headline metrics on plan cards", () => {
     const ActivityPlansPage = (
