@@ -1,5 +1,5 @@
 export type DisposableLiveDbCommand = Readonly<{
-  testFile: string;
+  testFile: string | null;
 }>;
 
 const requiredFlags = new Set(["--disposable", "--local"]);
@@ -89,8 +89,9 @@ export function parseDisposableLiveDbCommand(args: readonly string[]): Disposabl
   }
 
   const remaining = args.filter((arg) => arg !== "--" && !requiredFlags.has(arg));
+  if (remaining.length === 1 && remaining[0] === "--all") return { testFile: null };
   if (remaining.length !== 1) {
-    throw new Error("provide exactly one package-relative src/**/*.live-db.test.ts file");
+    throw new Error("provide --all or exactly one package-relative src/**/*.live-db.test.ts file");
   }
   const [testFile] = remaining;
   if (
@@ -104,5 +105,12 @@ export function parseDisposableLiveDbCommand(args: readonly string[]): Disposabl
 }
 
 export function buildDisposableLiveDbVitestCommand(input: DisposableLiveDbCommand) {
-  return ["exec", "vitest", "run", input.testFile, "--config", "vitest.live-db.config.ts"];
+  return [
+    "exec",
+    "vitest",
+    "run",
+    ...(input.testFile ? [input.testFile] : []),
+    "--config",
+    "vitest.live-db.config.ts",
+  ];
 }

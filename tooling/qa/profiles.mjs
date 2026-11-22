@@ -22,14 +22,10 @@ const webSmoke = [
     directCiSmokeReferences.web.identity,
   ],
 ];
+// The DB/full gate must cover the same live matrix as CI, not just visibility smoke.
 const dbCheck = [
   "pnpm",
-  [
-    "--filter",
-    "@repo/api",
-    "test:live-db",
-    "src/routers/__tests__/public-share-visibility.live-db.test.ts",
-  ],
+  ["--filter", "@repo/api", "test:live-db:disposable", "--disposable", "--local", "--all"],
 ];
 const dbDisposableRunnerCheck = [
   "pnpm",
