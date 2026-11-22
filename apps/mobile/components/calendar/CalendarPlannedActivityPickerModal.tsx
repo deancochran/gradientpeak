@@ -1,18 +1,18 @@
-import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { format } from "date-fns";
-import { Heart, Sparkles } from "lucide-react-native";
 import { useState } from "react";
 import { ScrollView, TouchableOpacity, View } from "react-native";
-import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
-import { type ResourcePickerItem, ResourcePickerModal } from "@/components/shared/resource-picker";
+import {
+  type ResourcePickerItem,
+  ResourcePickerModal,
+  ResourcePickerResultRow,
+} from "@/components/shared/resource-picker";
 
 type PlanSection = {
   key: string;
   title: string;
   subtitle: string;
   plans: ResourcePickerItem[];
-  accent: "default" | "suggested" | "favorites";
 };
 
 interface CalendarPlannedActivityPickerModalProps {
@@ -125,28 +125,24 @@ function buildBrowseSections(plans: ResourcePickerItem[]): PlanSection[] {
       title: "Suggested",
       subtitle: "Best next picks with enough structure to schedule quickly.",
       plans: suggestedPlans,
-      accent: "suggested" as const,
     },
     {
       key: "recent",
       title: "Recent",
       subtitle: "Plans you touched most recently.",
       plans: recentPlans,
-      accent: "default" as const,
     },
     {
       key: "favorites",
       title: "Favorites",
       subtitle: "Saved standbys that are easy to reach again.",
       plans: favoritePlans,
-      accent: "favorites" as const,
     },
     {
       key: "all",
       title: "All Plans",
       subtitle: "Everything that matches the current filter.",
       plans: allPlans,
-      accent: "default" as const,
     },
   ].filter((section) => section.plans.length > 0);
 }
@@ -178,32 +174,6 @@ export function CalendarPlannedActivityPickerModal({
 
       return haystacks.some((value) => value.includes(normalizedQuery));
     });
-  };
-
-  const renderPlanCard = (plan: ResourcePickerItem, sectionKey: string) => {
-    const recommendationLabel =
-      sectionKey === "suggested"
-        ? "Good next pick"
-        : sectionKey === "favorites"
-          ? "Easy repeat"
-          : null;
-
-    if (!("activityPlan" in plan)) return null;
-    return (
-      <View key={plan.id} className="gap-1">
-        {recommendationLabel ? (
-          <Text className="self-start rounded-full bg-primary/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-primary">
-            {recommendationLabel}
-          </Text>
-        ) : null}
-        <ActivityPlanCard
-          plan={plan.activityPlan}
-          onPress={() => onSelectPlan(plan.id)}
-          testID={`calendar-planned-activity-option-${plan.id}`}
-          variant="compact"
-        />
-      </View>
-    );
   };
 
   return (
@@ -239,7 +209,6 @@ export function CalendarPlannedActivityPickerModal({
                   title: "Search Results",
                   subtitle: `Matching plans for ${searchQuery.trim()}.`,
                   plans: items,
-                  accent: "default" as const,
                 },
               ]
             : buildBrowseSections(items);
@@ -249,33 +218,28 @@ export function CalendarPlannedActivityPickerModal({
             {browseSections.map((section) => (
               <View
                 key={section.key}
-                className={`gap-3 rounded-2xl border px-4 py-4 ${
-                  section.accent === "suggested"
-                    ? "border-primary/20 bg-primary/5"
-                    : section.accent === "favorites"
-                      ? "border-border bg-muted/30"
-                      : "border-border bg-background"
-                }`}
+                className="gap-2"
                 testID={`calendar-planned-activity-section-${section.key}`}
               >
-                <View className="flex-row items-start gap-3">
+                <View className="flex-row items-start justify-between gap-3 px-1">
                   <View className="flex-1 gap-1">
-                    <View className="flex-row items-center gap-2">
-                      {section.key === "suggested" ? (
-                        <Icon as={Sparkles} size={14} className="text-primary" />
-                      ) : null}
-                      {section.key === "favorites" ? (
-                        <Icon as={Heart} size={14} className="text-muted-foreground" />
-                      ) : null}
-                      <Text className="text-sm font-semibold text-foreground">{section.title}</Text>
-                    </View>
+                    <Text className="text-sm font-semibold text-foreground">{section.title}</Text>
                     <Text className="text-xs text-muted-foreground">{section.subtitle}</Text>
                   </View>
                   <Text className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                     {section.plans.length} {section.plans.length === 1 ? "plan" : "plans"}
                   </Text>
                 </View>
-                {section.plans.map((plan) => renderPlanCard(plan, section.key))}
+                {section.plans.map((plan) => (
+                  <ResourcePickerResultRow
+                    isSelected={false}
+                    item={plan}
+                    key={plan.id}
+                    onPress={() => onSelectPlan(plan.id)}
+                    scope="activityPlans"
+                    testID={`calendar-planned-activity-option-${plan.id}`}
+                  />
+                ))}
               </View>
             ))}
           </View>
@@ -308,9 +272,11 @@ function CategoryFilters({
         const isSelected = selectedCategory === activity_category;
         return (
           <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityState={{ selected: isSelected }}
             key={activity_category}
             activeOpacity={0.8}
-            className={`rounded-full border px-3 py-2 ${
+            className={`min-h-11 justify-center rounded-full border px-3 py-2 ${
               isSelected ? "border-primary bg-primary/10" : "border-border bg-background"
             }`}
             onPress={() => onSelectCategory(activity_category)}

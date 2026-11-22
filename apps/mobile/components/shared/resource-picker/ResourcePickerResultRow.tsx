@@ -39,6 +39,7 @@ type ResourcePickerResultRowProps = {
   item: ResourcePickerItem;
   onPress: () => void;
   scope: ResourcePickerScope;
+  testID?: string;
 };
 
 export function ResourcePickerResultRow({
@@ -47,10 +48,12 @@ export function ResourcePickerResultRow({
   item,
   onPress,
   scope,
+  testID,
 }: ResourcePickerResultRowProps) {
   const preferredUnitSystem = usePreferredUnitSystem();
   const isActivityPlan = scope === "activityPlans";
-  const selectionTestID = `resource-picker-select-${isActivityPlan ? "activity-plan" : "route"}`;
+  const selectionTestID =
+    testID ?? `resource-picker-select-${isActivityPlan ? "activity-plan" : "route"}`;
   const card =
     item.presentation === "canonical" && isActivityPlan && "activityPlan" in item ? (
       <ActivityPlanCard plan={item.activityPlan} variant="compact" />
