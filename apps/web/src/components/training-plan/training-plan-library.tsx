@@ -1,4 +1,4 @@
-import type { TrainingPlanPlannedSchedulePreview } from "@repo/core";
+import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import { Input } from "@repo/ui/components/input";
@@ -64,19 +64,37 @@ function QueryState({
   );
 }
 
-type LibraryPlan = {
-  content_visibility?: string | null;
-  description?: string | null;
-  duration_hours?: number | null;
-  id: string;
-  is_system_template?: boolean | null;
-  name: string;
-  sessions_per_week_target?: number | null;
-  structure?: unknown;
-  plannedSchedulePreview?: TrainingPlanPlannedSchedulePreview | null;
-};
+type RouterOutputs = inferRouterOutputs<AppRouter>;
+type OwnedLibraryPlan = RouterOutputs["trainingPlans"]["list"]["items"][number];
+type TemplateLibraryPlan = RouterOutputs["trainingPlans"]["listTemplates"]["items"][number];
+type LibraryPlan = OwnedLibraryPlan | TemplateLibraryPlan;
 
-function PlanGrid({ plans, onOpen }: { plans: LibraryPlan[]; onOpen: (id: string) => void }) {
+function templateStructure(plan: TemplateLibraryPlan) {
+  const {
+    id: _id,
+    name: _name,
+    description: _description,
+    sessions_per_week_target: _sessionsPerWeekTarget,
+    duration_hours: _durationHours,
+    likes_count: _likesCount,
+    has_liked: _hasLiked,
+    created_at: _createdAt,
+    updated_at: _updatedAt,
+    plannedSchedulePreview: _plannedSchedulePreview,
+    ...structure
+  } = plan;
+  return structure;
+}
+
+function PlanGrid({
+  kind,
+  plans,
+  onOpen,
+}: {
+  kind: "owned" | "templates";
+  plans: readonly LibraryPlan[];
+  onOpen: (id: string) => void;
+}) {
   if (plans.length === 0) {
     return (
       <p className="rounded-lg border border-dashed p-8 text-center">No training plans found.</p>
@@ -85,7 +103,18 @@ function PlanGrid({ plans, onOpen }: { plans: LibraryPlan[]; onOpen: (id: string
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       {plans.map((plan) => {
-        const summary = summarizeTrainingPlan(plan.structure);
+        const isTemplate = kind === "templates";
+        const structure = isTemplate
+          ? templateStructure(plan as TemplateLibraryPlan)
+          : "structure" in plan
+            ? plan.structure
+            : null;
+        const summary = summarizeTrainingPlan(structure);
+        const plannedSchedulePreview =
+          "plannedSchedulePreview" in plan ? plan.plannedSchedulePreview : undefined;
+        const visibility =
+          !isTemplate && "content_visibility" in plan ? plan.content_visibility : null;
+        const description = typeof plan.description === "string" ? plan.description : null;
         return (
           <ResourceCardShell
             accessibilityLabel={`Open training plan ${plan.name}`}
@@ -98,10 +127,10 @@ function PlanGrid({ plans, onOpen }: { plans: LibraryPlan[]; onOpen: (id: string
             <ResourceCardHeader
               accessory={
                 <Badge variant="outline">
-                  {plan.is_system_template ? "Template" : (plan.content_visibility ?? "private")}
+                  {isTemplate ? "Template" : (visibility ?? "Visibility unavailable")}
                 </Badge>
               }
-              description={plan.description}
+              description={description}
               descriptionFallback="No description"
               title={plan.name}
               titleClassName="text-lg"
@@ -109,20 +138,18 @@ function PlanGrid({ plans, onOpen }: { plans: LibraryPlan[]; onOpen: (id: string
             <ResourceMetricsRow
               metrics={[
                 {
-                  label: plan.structure ? "Schedule" : "Availability",
-                  value: plan.structure
+                  label: structure ? "Schedule" : "Availability",
+                  value: structure
                     ? `${summary.sessionCount} activities · ${summary.weekCount} weeks`
-                    : `${plan.sessions_per_week_target ?? "Flexible"} sessions/week · ${plan.duration_hours ?? "Flexible"} hours`,
+                    : "Schedule unavailable",
                 },
               ]}
             />
             <TrainingPlanPlannedPreview
               compact
               planId={plan.id}
-              {...(plan.plannedSchedulePreview !== undefined
-                ? { preview: plan.plannedSchedulePreview }
-                : {})}
-              structure={plan.structure}
+              {...(plannedSchedulePreview !== undefined ? { preview: plannedSchedulePreview } : {})}
+              structure={structure}
             />
           </ResourceCardShell>
         );
@@ -230,7 +257,7 @@ export function TrainingPlanLibrary({
           />
           {ownedPage?.error ? <p role="alert">{ownedPage.error}</p> : null}
           {!owned.isLoading && (!owned.error || ownedPlans.length > 0) ? (
-            <PlanGrid onOpen={onOpen} plans={ownedPlans} />
+            <PlanGrid kind="owned" onOpen={onOpen} plans={ownedPlans} />
           ) : null}
           {owned.hasNextPage ? (
             <Button
@@ -251,7 +278,7 @@ export function TrainingPlanLibrary({
           />
           {templatePage?.error ? <p role="alert">{templatePage.error}</p> : null}
           {!templates.isLoading && (!templates.error || templatePlans.length > 0) ? (
-            <PlanGrid onOpen={onOpen} plans={templatePlans} />
+            <PlanGrid kind="templates" onOpen={onOpen} plans={templatePlans} />
           ) : null}
           {templates.hasNextPage ? (
             <Button
