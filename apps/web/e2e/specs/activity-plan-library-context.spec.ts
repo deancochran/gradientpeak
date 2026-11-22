@@ -27,6 +27,10 @@ test("activity-plan library filters survive detail navigation and explicit back"
   await expect(plans.searchInput()).toHaveValue("Tempo Builder");
 
   await planCard.press("Enter");
+  await athletePage.getByRole("button", { name: "Duplicate" }).click();
+  await expect(
+    athletePage.getByRole("heading", { name: /playwright tempo builder \(copy\)/i }),
+  ).toBeVisible();
   await athletePage.getByRole("link", { name: "Back to activity plans" }).click();
   await expect(athletePage).toHaveURL(/\/activity-plans\?activity_category=bike&q=Tempo\+Builder$/);
   await expect(plans.searchInput()).toHaveValue("Tempo Builder");

@@ -164,6 +164,7 @@ function ActivityPlanDetailPage() {
       void navigate({
         to: "/activity-plans/$activityPlanId",
         params: { activityPlanId: duplicated.id },
+        search: librarySearch,
       } as never);
     },
     onError: (error) => toast.error(error.message || "Activity plan could not be duplicated"),
