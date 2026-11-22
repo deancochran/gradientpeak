@@ -59,13 +59,30 @@ test("protected routes preserve a local return path and reject hostile login red
   expect(new URL(page.url()).origin).not.toBe("https://evil.example");
 });
 
+test("legacy sign-up success links forward email and source to canonical verification", async ({
+  page,
+}) => {
+  await navigateThroughClientRedirect(
+    page,
+    "/auth/sign-up-success?email=legacy%40example.test&source=legacy-campaign",
+  );
+
+  const url = new URL(page.url());
+  expect(url.pathname).toBe("/auth/verify");
+  expect(url.searchParams.get("email")).toBe("legacy@example.test");
+  expect(url.searchParams.get("source")).toBe("legacy-campaign");
+});
+
 test("sign-up verification rejects expiry and replay while preserving responsive onboarding", async ({
   laneServer,
   page,
 }) => {
   const actor = uniqueAuthActor("verify");
   const mail = await signUp(page, actor);
-  await expect(page).toHaveURL(/\/auth\/sign-up-success/);
+  await expect(page).toHaveURL(/\/auth\/verify/);
+  const verificationUrl = new URL(page.url());
+  expect(verificationUrl.searchParams.get("email")).toBe(actor.email);
+  expect(verificationUrl.searchParams.get("source")).toBe("sign-up");
 
   const expired = await page.request.get(expiredVerificationUrl(mail.actionUrl), {
     headers: authLaneRequestHeaders(laneServer),
@@ -88,6 +105,22 @@ test("sign-up verification rejects expiry and replay while preserving responsive
   const viewport = page.viewportSize();
   await expectNoHorizontalOverflow(page);
   expect(viewport?.width).toBeGreaterThan(0);
+});
+
+test("login form does not leave the application origin for encoded control redirects", async ({
+  page,
+}) => {
+  const actor = uniqueAuthActor("redirect-control");
+  const mail = await signUp(page, actor);
+  await page.goto(mail.actionUrl, { waitUntil: "commit" });
+  await expect(page).toHaveURL(/\/auth\/verification-success/);
+  const appOrigin = new URL(page.url()).origin;
+
+  await navigateThroughClientRedirect(page, "/auth/login?redirect=%2F%2509%2Fattacker.example");
+  await expect(page).toHaveURL(/\/auth\/login\?redirect=%2F$/);
+  await login(page, actor);
+  await expect(page).toHaveURL(/\/onboarding/);
+  expect(new URL(page.url()).origin).toBe(appOrigin);
 });
 
 test("real password reset changes the credential and revokes a second session", async ({
