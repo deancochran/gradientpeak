@@ -2204,21 +2204,9 @@ describe("athlete state persistence", () => {
     const lockClient = await pool.connect();
     let lockHeld = false;
     let creationReleased = false;
+    let creation: Promise<void> | undefined;
     let publication: Promise<boolean> | undefined;
     let latePublication: Promise<boolean> | undefined;
-    const creation = db.transaction(async (tx) => {
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${profileId}, 0))`);
-      await tx.insert(activityImportRuns).values({
-        profile_id: profileId,
-        integration_id: integrationId,
-        integration_generation: 1,
-        kind: "history_sync",
-        status: "queued",
-      });
-      insertionGate.markInserted();
-      await creationGate;
-    });
-    void creation.catch(insertionGate.rejectInserted);
     try {
       await pool.query(`
         create function public."${functionName}"() returns trigger
@@ -2238,6 +2226,19 @@ describe("athlete state persistence", () => {
       `);
       await lockClient.query("select pg_advisory_lock($1)", [advisoryKey]);
       lockHeld = true;
+      creation = db.transaction(async (tx) => {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${profileId}, 0))`);
+        await tx.insert(activityImportRuns).values({
+          profile_id: profileId,
+          integration_id: integrationId,
+          integration_generation: 1,
+          kind: "history_sync",
+          status: "queued",
+        });
+        insertionGate.markInserted();
+        await creationGate;
+      });
+      void creation.catch(insertionGate.rejectInserted);
       await insertionGate.inserted;
       publication = publishAthleteState(db, {
         claim,
@@ -2288,7 +2289,7 @@ describe("athlete state persistence", () => {
     } finally {
       if (lockHeld) await lockClient.query("select pg_advisory_unlock($1)", [advisoryKey]);
       if (!creationReleased) releaseCreation?.();
-      await creation.catch(() => undefined);
+      await creation?.catch(() => undefined);
       await publication?.catch(() => undefined);
       await latePublication?.catch(() => undefined);
       await pool.query(`drop trigger if exists "${triggerName}" on public.profile_athlete_state`);
@@ -2377,12 +2378,21 @@ describe("athlete state persistence", () => {
     }
 
     const [advisoryLock] = (
-      await pool.query<{ acquired: boolean }>("select pg_try_advisory_lock($1) as acquired", [
-        advisoryKey,
-      ])
+      await pool.query<{ held: boolean }>(
+        `select exists (
+           select 1
+           from pg_locks
+           where database = (select oid from pg_database where datname = current_database())
+             and locktype = 'advisory'
+             and granted = true
+             and classid = 0
+             and objid = $1
+             and objsubid = 1
+         ) as held`,
+        [advisoryKey],
+      )
     ).rows;
-    expect(advisoryLock?.acquired).toBe(true);
-    await pool.query("select pg_advisory_unlock($1)", [advisoryKey]);
+    expect(advisoryLock?.held).toBe(false);
     await expect(
       pool.query("select to_regprocedure($1) as procedure", [
         `public."${publicationFunctionName}"()`,
