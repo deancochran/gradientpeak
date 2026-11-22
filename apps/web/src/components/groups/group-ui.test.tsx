@@ -36,8 +36,7 @@ describe("group web presentation", () => {
     expect(screen.getByText("Invite only")).toBeTruthy();
     expect(screen.getByText("owner")).toBeTruthy();
     expect(screen.getByTestId(`group-card-${group.id}`)).toBeTruthy();
-    expect(screen.getByTestId(`group-card-${group.id}-open`)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "View group" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open group Sunday Riders" }));
     expect(onOpen).toHaveBeenCalledOnce();
   });
 
@@ -62,13 +61,15 @@ describe("group web presentation", () => {
       viewerRsvp: null,
       viewerSeriesRsvp: null,
     };
-    render(<GroupEventCard event={event} onOpen={vi.fn()} />);
+    const onOpen = vi.fn();
+    render(<GroupEventCard event={event} onOpen={onOpen} />);
 
     expect(screen.getByText("Cancelled")).toBeTruthy();
     expect(screen.getByText("4 going")).toBeTruthy();
     expect(screen.getByText("Clubhouse")).toBeTruthy();
     expect(screen.getByTestId(`group-event-card-${event.id}`)).toBeTruthy();
-    expect(screen.getByTestId(`group-event-card-${event.id}-open`)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Open group event Long ride" }));
+    expect(onOpen).toHaveBeenCalledOnce();
   });
 
   it("does not collapse query errors into empty content", () => {

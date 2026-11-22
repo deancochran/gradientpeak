@@ -1,8 +1,12 @@
 import type { TrainingPlanPlannedSchedulePreview } from "@repo/core";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Input } from "@repo/ui/components/input";
+import {
+  ResourceCardHeader,
+  ResourceCardShell,
+  ResourceMetricsRow,
+} from "@repo/ui/components/resource-presentation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@repo/ui/components/tabs";
 import { useRef, useState } from "react";
 
@@ -83,42 +87,44 @@ function PlanGrid({ plans, onOpen }: { plans: LibraryPlan[]; onOpen: (id: string
       {plans.map((plan) => {
         const summary = summarizeTrainingPlan(plan.structure);
         return (
-          <Card data-testid={`training-plan-card-${plan.id}`} key={plan.id}>
-            <CardHeader>
-              <div className="flex items-start justify-between gap-3">
-                <CardTitle>{plan.name}</CardTitle>
+          <ResourceCardShell
+            accessibilityLabel={`Open training plan ${plan.name}`}
+            cardClassName="transition-colors hover:border-primary/40"
+            contentClassName="space-y-4 p-5"
+            key={plan.id}
+            onPress={() => onOpen(plan.id)}
+            testID={`training-plan-card-${plan.id}`}
+          >
+            <ResourceCardHeader
+              accessory={
                 <Badge variant="outline">
                   {plan.is_system_template ? "Template" : (plan.content_visibility ?? "private")}
                 </Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="line-clamp-2 text-sm text-muted-foreground">
-                {plan.description || "No description"}
-              </p>
-              <p className="text-sm">
-                {plan.structure
-                  ? `${summary.sessionCount} activities · ${summary.weekCount} weeks`
-                  : `${plan.sessions_per_week_target ?? "Flexible"} sessions/week · ${plan.duration_hours ?? "Flexible"} hours`}
-              </p>
-              <TrainingPlanPlannedPreview
-                compact
-                planId={plan.id}
-                {...(plan.plannedSchedulePreview !== undefined
-                  ? { preview: plan.plannedSchedulePreview }
-                  : {})}
-                structure={plan.structure}
-              />
-              <Button
-                data-testid={`training-plan-card-${plan.id}-open`}
-                onClick={() => onOpen(plan.id)}
-                type="button"
-                variant="outline"
-              >
-                View plan
-              </Button>
-            </CardContent>
-          </Card>
+              }
+              description={plan.description}
+              descriptionFallback="No description"
+              title={plan.name}
+              titleClassName="text-lg"
+            />
+            <ResourceMetricsRow
+              metrics={[
+                {
+                  label: plan.structure ? "Schedule" : "Availability",
+                  value: plan.structure
+                    ? `${summary.sessionCount} activities · ${summary.weekCount} weeks`
+                    : `${plan.sessions_per_week_target ?? "Flexible"} sessions/week · ${plan.duration_hours ?? "Flexible"} hours`,
+                },
+              ]}
+            />
+            <TrainingPlanPlannedPreview
+              compact
+              planId={plan.id}
+              {...(plan.plannedSchedulePreview !== undefined
+                ? { preview: plan.plannedSchedulePreview }
+                : {})}
+              structure={plan.structure}
+            />
+          </ResourceCardShell>
         );
       })}
     </div>

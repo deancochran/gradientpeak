@@ -154,7 +154,7 @@ describe("TrainingPlanLibrary", () => {
     render(<TrainingPlanLibrary onCreate={onCreate} onOpen={onOpen} />);
 
     fireEvent.click(screen.getByTestId("training-plan-create"));
-    fireEvent.click(screen.getByTestId("training-plan-card-plan-1-open"));
+    fireEvent.click(screen.getByRole("button", { name: "Open training plan Base builder" }));
 
     expect(screen.getByTestId("training-plan-card-plan-1")).toBeTruthy();
     expect(onCreate).toHaveBeenCalledOnce();
