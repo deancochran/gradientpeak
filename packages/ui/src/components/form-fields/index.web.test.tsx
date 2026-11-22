@@ -402,13 +402,16 @@ describe("Form fields web", () => {
   });
 
   it("searches timezone choices and persists canonical values and explicit clearing", () => {
+    const enumerate = vi.spyOn(Intl, "supportedValuesOf");
     renderWeb(<TimezoneHarness />);
+    const initialEnumerations = enumerate.mock.calls.length;
     const form = screen.getByTestId("timezone-form") as HTMLFormElement;
     expect(new FormData(form).get("timezone")).toBe("Pacific/Kiritimati");
     fireEvent.click(screen.getByRole("button", { name: "Planning timezone" }));
     fireEvent.change(screen.getByRole("combobox", { name: "Search timezones" }), {
       target: { value: "kathmandu" },
     });
+    expect(enumerate.mock.calls.length).toBe(initialEnumerations);
     fireEvent.click(screen.getByRole("option", { name: "Asia / Kathmandu" }));
     expect(screen.getByTestId("timezone-values")).toHaveTextContent('"timezone":"Asia/Kathmandu"');
     expect(new FormData(form).get("timezone")).toBe("Asia/Kathmandu");
@@ -419,6 +422,50 @@ describe("Form fields web", () => {
     fireEvent.click(screen.getByRole("option", { name: "Not set" }));
     expect(screen.getByTestId("timezone-values")).toHaveTextContent('"timezone":null');
     expect(new FormData(form).get("timezone")).toBe("");
+  });
+
+  it("refreshes timezone choices for changed device and saved values without caching across forms", () => {
+    function ChangingTimezone({ deviceTimeZone }: { deviceTimeZone: string }) {
+      const form = useZodForm({
+        schema: z.object({ timezone: z.string().nullable() }),
+        defaultValues: { timezone: null },
+      });
+      return (
+        <Form {...form}>
+          <FormTimezoneField
+            control={form.control}
+            deviceTimeZone={deviceTimeZone}
+            label="Planning timezone"
+            name="timezone"
+          />
+          <button type="button" onClick={() => form.setValue("timezone", "europe/london")}>
+            Load saved timezone
+          </button>
+        </Form>
+      );
+    }
+
+    const { rerender, unmount } = renderWeb(<ChangingTimezone deviceTimeZone="asia/tokyo" />);
+    const search = (value: string) =>
+      fireEvent.change(screen.getByLabelText("Search timezones"), { target: { value } });
+    fireEvent.click(screen.getByRole("button", { name: "Planning timezone" }));
+    search("tokyo");
+    expect(screen.getByRole("option", { name: "asia / tokyo" })).toBeVisible();
+    rerender(<ChangingTimezone deviceTimeZone="pacific/auckland" />);
+    expect(screen.queryByRole("option", { name: "asia / tokyo" })).toBeNull();
+    search("auckland");
+    expect(screen.getByRole("option", { name: "pacific / auckland" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Load saved timezone" }));
+    search("london");
+    expect(screen.getByRole("option", { name: "europe / london ✓" })).toBeVisible();
+    unmount();
+
+    renderWeb(<ChangingTimezone deviceTimeZone="asia/tokyo" />);
+    fireEvent.click(screen.getByRole("button", { name: "Planning timezone" }));
+    search("london");
+    expect(screen.queryByRole("option", { name: /^europe \/ london/ })).toBeNull();
+    search("tokyo");
+    expect(screen.getByRole("option", { name: "asia / tokyo" })).toBeVisible();
   });
   it("discards same-value bounded and weight drafts on form reset", () => {
     function ResetForm() {
@@ -448,7 +495,10 @@ describe("Form fields web", () => {
     expect(weight).toHaveValue("70");
   });
 
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
 
   it("binds shared controlled wrappers to react-hook-form", () => {
     renderWeb(<FormFieldsHarness />);
