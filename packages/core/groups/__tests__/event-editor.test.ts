@@ -105,4 +105,25 @@ describe("group event editor", () => {
       startsTime: "",
     });
   });
+
+  it("contains invalid persisted timezone and recurrence UNTIL values in the draft boundary", () => {
+    expect(
+      createGroupEventEditorDraft({
+        recurrenceRule: "FREQ=WEEKLY;UNTIL=20261123T010000Z",
+        timezone: "Not/A_Timezone",
+      }),
+    ).toMatchObject({
+      initializationError: "timeZone must be a valid IANA zone",
+      recurrenceEndDate: null,
+    });
+    expect(
+      createGroupEventEditorDraft({
+        recurrenceRule: "FREQ=WEEKLY;UNTIL=not-a-date",
+        timezone: "UTC",
+      }),
+    ).toMatchObject({
+      initializationError: "recurrence UNTIL must be a valid UTC date or datetime",
+      recurrenceEndDate: null,
+    });
+  });
 });

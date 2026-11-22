@@ -115,7 +115,13 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
       schema: groupEventEditorDraftSchema,
       defaultValues: initialDraft,
     });
-    const [recurrenceFrequency, routeId] = form.watch(["recurrenceFrequency", "routeId"]);
+    const [date, endDate, endsTime, recurrenceFrequency, routeId] = form.watch([
+      "date",
+      "endDate",
+      "endsTime",
+      "recurrenceFrequency",
+      "routeId",
+    ]);
     const [selectedActivityPlan, setSelectedActivityPlan] =
       useState<SelectedActivityPlanOption | null>(() => toSelectedActivityPlan(event));
     const [errorMessage, setErrorMessage] = useState<string | null>(
@@ -125,6 +131,7 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
     const [pickerScope, setPickerScope] = useState<"route" | "activityPlans" | null>(null);
     const [isLocallySubmitting, setIsLocallySubmitting] = useState(false);
     const submitInFlightRef = useRef(false);
+    const previousStartDateRef = useRef(date);
     const { data: selectedRoute } = api.routes.get.useQuery(
       { id: routeId ?? "" },
       { enabled: Boolean(routeId) },
@@ -141,6 +148,17 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
       setSelectedActivityPlan(toSelectedActivityPlan(event));
       setErrorMessage(nextDraft.initializationError ?? null);
     }, [displayTimezone, event, form]);
+    useEffect(() => {
+      if (!endsTime) {
+        if (endDate) form.setValue("endDate", null, { shouldDirty: true });
+      } else if (
+        !endDate ||
+        (date !== previousStartDateRef.current && endDate === previousStartDateRef.current)
+      ) {
+        form.setValue("endDate", date, { shouldDirty: true });
+      }
+      previousStartDateRef.current = date;
+    }, [date, endDate, endsTime, form]);
     const isDirty =
       form.formState.isDirty ||
       (selectedActivityPlan?.activityPlanId ?? null) !== (event?.activity_plan_id ?? null) ||
@@ -379,6 +397,16 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
                 />
               </View>
             </View>
+            {endsTime ? (
+              <FormDateInputField
+                accessibilityHint="Choose the event end date when it differs from the start date"
+                control={form.control}
+                label="End date"
+                name="endDate"
+                pickerPresentation="modal"
+                testId="group-event-end-date-button"
+              />
+            ) : null}
             <FormTextField
               control={form.control}
               label="Location"

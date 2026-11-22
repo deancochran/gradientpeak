@@ -61,10 +61,10 @@ export type GroupEventEditorPreparation =
   | { success: false; field: keyof GroupEventEditorDraft; message: string };
 
 function recurrenceEndDate(rule: string | null | undefined, timezone: string): string | null {
-  const match = rule
-    ?.toUpperCase()
-    .match(/(?:^|;)UNTIL=(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})Z)?(?:;|$)/);
-  if (!match) return null;
+  const until = rule?.toUpperCase().match(/(?:^|;)UNTIL=([^;]+)/)?.[1];
+  if (!until) return null;
+  const match = until.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})Z)?$/);
+  if (!match) throw new RangeError("recurrence UNTIL must be a valid UTC date or datetime");
   const date = `${match[1]}-${match[2]}-${match[3]}`;
   if (!match[4]) return date;
   return formatIsoInstantInIanaZone(`${date}T${match[4]}:${match[5]}:${match[6]}Z`, timezone).slice(
@@ -89,10 +89,12 @@ export function createGroupEventEditorDraft(
   const timezone = seed?.timezone ?? fallbackTimezone;
   let startsAt = "";
   let endsAt: string | null = null;
+  let recurrenceEnd: string | null = null;
   let initializationError: string | undefined;
   try {
     startsAt = seed?.startsAt ? formatIsoInstantInIanaZone(seed.startsAt, timezone) : "";
     endsAt = seed?.endsAt ? formatIsoInstantInIanaZone(seed.endsAt, timezone) : null;
+    recurrenceEnd = recurrenceEndDate(seed?.recurrenceRule, timezone);
   } catch (error) {
     initializationError =
       error instanceof Error ? error.message : "The saved event schedule could not be displayed.";
@@ -103,7 +105,7 @@ export function createGroupEventEditorDraft(
     endDate: endsAt?.slice(0, 10) ?? null,
     endsTime: endsAt?.slice(11, 16) ?? null,
     locationName: seed?.locationName ?? "",
-    recurrenceEndDate: recurrenceEndDate(seed?.recurrenceRule, timezone),
+    recurrenceEndDate: recurrenceEnd,
     recurrenceFrequency: recurrenceFrequency(seed?.recurrenceRule),
     routeId: seed?.routeId ?? null,
     startsTime: startsAt.slice(11, 16),
