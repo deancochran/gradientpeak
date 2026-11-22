@@ -11,17 +11,18 @@ function createDbMock(rows: unknown[][]) {
 
   return {
     select: () => {
-      const builder: any = {
-        from: () => builder,
-        where: () => builder,
-        limit: () => builder,
-        then: (onFulfilled: (value: unknown[]) => unknown) =>
-          Promise.resolve(queues.shift() ?? []).then(onFulfilled),
-      };
+      const builder = Object.assign(
+        Promise.resolve().then(() => queues.shift() ?? []),
+        {
+          from: () => builder,
+          where: () => builder,
+          limit: () => builder,
+        },
+      );
 
       return builder;
     },
-  } as any;
+  } as never;
 }
 
 describe("group access helpers", () => {
