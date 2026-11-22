@@ -21,6 +21,7 @@ import {
   FormTextareaField,
   FormTextField,
 } from "../../components/form/index.web";
+import { IdentitySummary } from "../../components/identity-summary/index.web";
 import { Input } from "../../components/input/index.web";
 import { Label } from "../../components/label/index.web";
 import { ChartSkeleton, ListSkeleton } from "../../components/loading-skeletons/index.web";
@@ -35,12 +36,13 @@ import {
 } from "../../components/select/index.web";
 import { Switch } from "../../components/switch/index.web";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/tabs/index.web";
+import { TrainingStateChart } from "../../components/training-state-chart/index.web";
 import { uiPreviewContract, uiPreviewFixtures, uiPreviewFormFields } from "./shared";
 
 type UiPreviewFormValues = {
   bio: string;
   is_public: boolean;
-  sport: string;
+  activityCategory: string;
   username: string;
 };
 
@@ -58,14 +60,16 @@ function UiPreviewSurface() {
     defaultValues: {
       bio: "Prefers steady aerobic progression with one hard session each week.",
       is_public: true,
-      sport: uiPreviewFixtures.radioGroup.value,
+      activityCategory: uiPreviewFixtures.radioGroup.value,
       username: "dean_peak",
     },
   });
   const [isChecked, setIsChecked] = useState(true);
   const [isSwitchEnabled, setIsSwitchEnabled] = useState(true);
-  const [selectedSport, setSelectedSport] = useState<string>(uiPreviewFixtures.radioGroup.value);
-  const [selectedWorkoutType, setSelectedWorkoutType] = useState<string>(
+  const [selectedActivityCategory, setSelectedActivityCategory] = useState<string>(
+    uiPreviewFixtures.radioGroup.value,
+  );
+  const [selectedSessionFocus, setSelectedSessionFocus] = useState<string>(
     uiPreviewFixtures.select.value,
   );
   const [tabValue, setTabValue] = useState<string>(uiPreviewFixtures.tabs.values.overview);
@@ -85,6 +89,26 @@ function UiPreviewSurface() {
       </header>
 
       <section className="grid gap-6 lg:grid-cols-[minmax(0,360px)_1fr]">
+        <section
+          className="space-y-4 lg:col-span-2"
+          data-testid={uiPreviewContract.scenarios.trainingState.testId}
+        >
+          <ScenarioHeader
+            description={uiPreviewContract.scenarios.trainingState.description}
+            title={uiPreviewContract.scenarios.trainingState.title}
+          />
+          <TrainingStateChart {...uiPreviewFixtures.trainingState} />
+        </section>
+        <section
+          className="space-y-4"
+          data-testid={uiPreviewContract.scenarios.identitySummary.testId}
+        >
+          <ScenarioHeader
+            description={uiPreviewContract.scenarios.identitySummary.description}
+            title={uiPreviewContract.scenarios.identitySummary.title}
+          />
+          <IdentitySummary {...uiPreviewFixtures.identitySummary} />
+        </section>
         <section
           className="space-y-4"
           data-testid={uiPreviewContract.scenarios.accountControls.testId}
@@ -224,10 +248,10 @@ function UiPreviewSurface() {
             </div>
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor={uiPreviewFixtures.select.id}>Activity type</Label>
+                <Label htmlFor={uiPreviewFixtures.select.id}>Session focus</Label>
                 <Select
-                  onValueChange={(nextValue) => setSelectedWorkoutType(nextValue)}
-                  value={selectedWorkoutType}
+                  onValueChange={(nextValue) => setSelectedSessionFocus(nextValue)}
+                  value={selectedSessionFocus}
                 >
                   <SelectTrigger
                     id={uiPreviewFixtures.select.id}
@@ -247,12 +271,12 @@ function UiPreviewSurface() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor={uiPreviewFixtures.radioGroup.id}>Preferred sport</Label>
+                <Label htmlFor={uiPreviewFixtures.radioGroup.id}>Preferred activity category</Label>
                 <RadioGroup
                   id={uiPreviewFixtures.radioGroup.id}
-                  onValueChange={(nextValue) => setSelectedSport(nextValue)}
+                  onValueChange={(nextValue) => setSelectedActivityCategory(nextValue)}
                   testId={uiPreviewFixtures.radioGroup.testId}
-                  value={selectedSport}
+                  value={selectedActivityCategory}
                 >
                   {uiPreviewFixtures.radioGroup.options.map((option) => (
                     <div key={option.value} className="flex items-center gap-2">
@@ -295,13 +319,13 @@ function UiPreviewSurface() {
                   />
                   <FormSelectField
                     control={form.control}
-                    label="Preferred sport"
-                    name="sport"
+                    label="Preferred activity category"
+                    name="activityCategory"
                     options={uiPreviewFixtures.radioGroup.options.map((option) => ({
                       label: option.label,
                       value: option.value,
                     }))}
-                    testId={uiPreviewFormFields.sportTestId}
+                    testId={uiPreviewFormFields.activityCategoryTestId}
                   />
                   <div className="md:col-span-2">
                     <FormTextareaField

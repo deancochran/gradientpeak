@@ -1,0 +1,4 @@
+<TrainingCenterDatabase><Activities><Activity Sport="Biking"><Lap><Track>
+      <Trackpoint><Time>2026-09-20T10:00:00Z</Time><HeartRateBpm><Value>140</Value></HeartRateBpm><Position><LatitudeDegrees>40</LatitudeDegrees><LongitudeDegrees>-74</LongitudeDegrees></Position><Extensions><TPX><Speed>5</Speed></TPX></Extensions></Trackpoint>
+      <Trackpoint><Time>2026-09-20T10:00:10Z</Time><HeartRateBpm><Value>160</Value></HeartRateBpm><Position><LatitudeDegrees>40.1</LatitudeDegrees><LongitudeDegrees>-74.1</LongitudeDegrees></Position><Extensions><TPX><Speed>6</Speed></TPX></Extensions></Trackpoint>
+    </Track></Lap></Activity></Activities></TrainingCenterDatabase>

@@ -1,16 +1,31 @@
+import type { ActivityPlanDetail, ActivityPlanSummary } from "@repo/core";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { Check, MapPin } from "lucide-react-native";
 import { Pressable, View } from "react-native";
-import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
+import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
+import { RouteCard } from "@/components/shared/RouteCard";
+import { getActivityPlanQuantitySummary } from "@/lib/activityPlanMetrics";
 import { getActivityCategoryConfig } from "@/lib/constants/activities";
-import { formatEstimatedDurationSeconds, formatEstimatedTss } from "@/lib/estimatedMetrics";
+import { formatDistanceMeters, formatElevationMeters } from "@/lib/display/formatters";
+import { formatEstimatedDurationSeconds } from "@/lib/estimatedMetrics";
+import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
+import { omitUndefined } from "@/lib/omitUndefined";
 import type { ResourcePickerItem, ResourcePickerScope } from "./resourcePickerTypes";
 
-function formatDistance(meters?: number | null) {
-  if (!meters || meters <= 0) return null;
-  return `${(meters / 1000).toFixed(1)} km`;
-}
+type RoutePickerSource = {
+  activity_category?: string | null;
+  description?: string | null;
+  has_liked?: boolean | null;
+  id: string;
+  is_public?: boolean | null;
+  is_system_template?: boolean | null;
+  likes_count?: number | null;
+  name: string;
+  total_ascent?: number | null;
+  total_descent?: number | null;
+  total_distance?: number | null;
+};
 
 function getVisibilityLabel(item: ResourcePickerItem) {
   if (item.isSystem) return "System";
@@ -19,6 +34,7 @@ function getVisibilityLabel(item: ResourcePickerItem) {
 }
 
 type ResourcePickerResultRowProps = {
+  disabled?: boolean;
   isSelected: boolean;
   item: ResourcePickerItem;
   onPress: () => void;
@@ -26,33 +42,82 @@ type ResourcePickerResultRowProps = {
 };
 
 export function ResourcePickerResultRow({
+  disabled = false,
   isSelected,
   item,
   onPress,
   scope,
 }: ResourcePickerResultRowProps) {
+  const preferredUnitSystem = usePreferredUnitSystem();
+  const isActivityPlan = scope === "activityPlans";
+  const selectionTestID = `resource-picker-select-${isActivityPlan ? "activity-plan" : "route"}`;
+  const card =
+    item.presentation === "canonical" && isActivityPlan && "activityPlan" in item ? (
+      <ActivityPlanCard plan={item.activityPlan} variant="compact" />
+    ) : item.presentation === "canonical" && scope === "routes" && "routeCardData" in item ? (
+      <RouteCard
+        route={item.routeCardData}
+        showAttribution={false}
+        showLike={false}
+        variant="list"
+      />
+    ) : null;
+
+  if (card) {
+    return (
+      <Pressable
+        accessibilityLabel={`Select ${item.name || "resource"}`}
+        accessibilityRole="button"
+        accessibilityState={{ disabled, selected: isSelected }}
+        className="relative min-h-11 rounded-xl"
+        disabled={disabled}
+        onPress={onPress}
+        testID={selectionTestID}
+      >
+        {card}
+        {isSelected ? (
+          <View
+            className="absolute right-3 top-3 rounded-full bg-primary p-1"
+            pointerEvents="none"
+            testID={`${selectionTestID}-selected`}
+          >
+            <Icon as={Check} size={14} className="text-primary-foreground" />
+          </View>
+        ) : null}
+      </Pressable>
+    );
+  }
+
+  if (item.presentation !== "external") return null;
+
+  // This is intentionally limited to imported/external results that cannot provide
+  // canonical card data. All in-app activity-plan and route query mappers use cards.
   const activityConfig = getActivityCategoryConfig(item.activityCategory || "other");
   const metadata =
     scope === "routes"
       ? [
           getVisibilityLabel(item),
-          formatDistance(item.totalDistance),
-          item.totalAscent ? `${item.totalAscent}m climb` : null,
+          formatDistanceMeters(item.totalDistance, { fallback: "", preferredUnitSystem }),
+          item.totalAscent
+            ? `${formatElevationMeters(item.totalAscent, { preferredUnitSystem })} climb`
+            : null,
         ]
-      : [
-          activityConfig.name,
-          formatEstimatedDurationSeconds(item.estimatedDuration),
-          formatEstimatedTss(item.estimatedTss),
-        ];
+      : [activityConfig.name, formatEstimatedDurationSeconds(item.estimatedDuration)];
+  const accessibilityLabel = ["Select", item.name || "resource", ...metadata]
+    .filter(Boolean)
+    .join(", ");
 
   return (
     <Pressable
+      accessibilityLabel={accessibilityLabel}
       accessibilityRole="button"
-      accessibilityState={{ selected: isSelected }}
-      className={`rounded-2xl border p-3 ${
+      accessibilityState={{ disabled, selected: isSelected }}
+      className={`min-h-11 rounded-2xl border p-3 ${
         isSelected ? "border-primary bg-primary/10" : "border-border bg-card"
       }`}
+      disabled={disabled}
       onPress={onPress}
+      testID={selectionTestID}
     >
       <View className="flex-row items-start gap-3">
         <View
@@ -83,29 +148,49 @@ export function ResourcePickerResultRow({
   );
 }
 
-export function mapActivityPlanToResourcePickerItem(plan: any): ResourcePickerItem {
-  const metrics = getAuthoritativeActivityPlanMetrics(plan);
+export function mapActivityPlanToResourcePickerItem(
+  plan: ActivityPlanSummary | ActivityPlanDetail,
+): ResourcePickerItem {
+  const quantitySummary = getActivityPlanQuantitySummary(plan);
+  const activity_category = plan.activityCategory;
   return {
-    activityCategory: plan.activity_category,
+    activityCategory: activity_category,
+    activityPlan: plan,
+    createdAt: plan.createdAt,
     description: plan.description,
-    estimatedDuration: metrics.estimated_duration,
-    estimatedTss: metrics.estimated_tss,
+    estimatedDuration: quantitySummary.durationSeconds,
     id: plan.id,
-    isPublic: plan.template_visibility === "public" || plan.is_public,
-    isSystem: plan.is_system_template,
+    hasLiked: plan.engagement.viewerHasLiked,
+    isPublic: plan.visibility === "public",
+    isSystem: plan.isSystemTemplate,
+    likesCount: plan.engagement.likes,
     name: plan.name,
+    presentation: "canonical",
+    updatedAt: plan.updatedAt,
   };
 }
 
-export function mapRouteToResourcePickerItem(route: any): ResourcePickerItem {
-  return {
+export function mapRouteToResourcePickerItem(route: RoutePickerSource): ResourcePickerItem {
+  return omitUndefined({
     activityCategory: route.activity_category,
     description: route.description,
     id: route.id,
     isPublic: route.is_public,
     isSystem: route.is_system_template,
     name: route.name,
+    presentation: "canonical",
+    routeCardData: omitUndefined({
+      activity_category: route.activity_category,
+      description: route.description,
+      has_liked: route.has_liked,
+      id: route.id,
+      likes_count: route.likes_count,
+      name: route.name,
+      total_ascent: route.total_ascent,
+      total_descent: route.total_descent,
+      total_distance: route.total_distance,
+    }),
     totalAscent: route.total_ascent,
     totalDistance: route.total_distance,
-  };
+  });
 }
