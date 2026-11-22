@@ -424,6 +424,28 @@ function parentDerivedSummary(
     observationQuantification: observationBundle,
   };
 }
+function lazyCanonicalParentDerivedSummary(
+  id: string,
+  commonLoad: CommonLoadResult,
+  computedAsOf = "2026-01-10T09:00:00.000Z",
+) {
+  let summary: ReturnType<typeof parentDerivedSummary> | undefined;
+  const materialize = () => (summary ??= parentDerivedSummary(id, commonLoad, computedAsOf));
+  const commonLoadAggregate = aggregateCommonLoad([commonLoad]);
+  return new Proxy(
+    {},
+    {
+      get: (_target, property, receiver) =>
+        property === "common_load"
+          ? commonLoadAggregate
+          : Reflect.get(materialize(), property, receiver),
+      getOwnPropertyDescriptor: (_target, property) =>
+        Reflect.getOwnPropertyDescriptor(materialize(), property),
+      has: (_target, property) => Reflect.has(materialize(), property),
+      ownKeys: () => Reflect.ownKeys(materialize()),
+    },
+  );
+}
 function segmentDerivedSummary(input: {
   activityId: string;
   segmentId: string;
@@ -1396,17 +1418,26 @@ describe("activitiesRouter", () => {
         ];
       }),
     );
-    // Keep the benchmark focused on bounded scan/sort behavior. Canonical quantification
-    // parsing is covered separately and must not be repeated 15,000 times inside the timer.
+    // The scan only reads common_load for ordering. Materialize the complete canonical
+    // fixture only if a consumer reads beyond that sort metric.
     const derivedSummaryById = new Map(
       rows.map((row) => [
         row.id,
-        parentDerivedSummary(
+        lazyCanonicalParentDerivedSummary(
           row.id,
           commonLoadResultById.get(row.id) ?? unavailableCommonLoad("threshold_missing"),
           "2026-01-01T00:00:00.000Z",
         ),
       ]),
+    );
+    const firstRow = rows[0];
+    if (!firstRow) throw new Error("Expected a deep-page fixture row");
+    expect(derivedSummaryById.get(firstRow.id)).toEqual(
+      parentDerivedSummary(
+        firstRow.id,
+        commonLoadResultById.get(firstRow.id) ?? unavailableCommonLoad("threshold_missing"),
+        "2026-01-01T00:00:00.000Z",
+      ),
     );
     mockActivityAnalysis.buildActivityDerivedSummaryMap.mockImplementation(
       async ({
