@@ -151,6 +151,7 @@ test("[variation:routes.event-attachment:keyboard] keyboard event selection pers
       fixture.rememberSeries(eventId);
       await routes.openDetail(routeId);
       await routes.attachToEvent(eventId, "keyboard");
+      await expect(athletePage.getByText("Route attached to event", { exact: true })).toBeVisible();
       await calendar.openDetail(eventId);
       const routeCard = athletePage.getByTestId(`route-card-${routeId}`);
       await expect(routeCard.getByRole("img", { name: "Route preview" })).toBeVisible();
@@ -193,6 +194,7 @@ test("[variation:routes.event-attachment:route-back] event route link opens map 
       fixture.rememberSeries(eventId);
       await routes.openDetail(routeId);
       await routes.attachToEvent(eventId);
+      await expect(athletePage.getByText("Route attached to event", { exact: true })).toBeVisible();
       await calendar.openDetail(eventId);
       const routeCard = athletePage.getByTestId(`route-card-${routeId}`);
       await expect(routeCard.getByRole("img", { name: "Route preview" })).toBeVisible();
