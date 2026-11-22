@@ -1,5 +1,16 @@
 # Form UX standards and remediation coverage
 
+## Cross-platform editing and selection consolidation — 2026-11-22
+
+- Goal editors share Core target-field visibility, requiredness and type-reset rules. Platform renderers retain their own semantic controls, numeric draft validation, duration layouts and presets. Empty required numeric targets remain invalid; optional values remain clearable.
+- Group event editors share wall-time draft initialization and payload preparation. Start and end dates are independent, so overnight events round-trip in the event zone. Invalid schedules remain editable, optional end times clear to null, and omitted activity-plan associations remain distinct from explicit null clearing.
+- Route edit/upload forms share the name and optional-description field pair. Native async completion is fenced by the initiating owner and lifetime, including unmount, A→B→A, file-read failure and delayed mutation completion. An old owner's pending request cannot disable or unlock the new owner's form.
+- Activity-step editors share duration and target-input policy, not raw-input or picker lifecycles. Web type changes retain blank intensity drafts; documented native starting values above remain unchanged. Repetition steps permit one RPE target, while legacy over-limit drafts remain visible for repair.
+- Web training/coaching selection uses one browser-native select contract with an explicit automatic choice and retained off-page IDs. Canonical selected cards remain separate from selection, loading/error feedback and inspect navigation. Narrow training grids shrink without clipping controls or resource content.
+- Activity-plan library filters and validated athlete preparation context survive edit, duplication and return navigation. Clearing filters removes only the filter keys, not athlete, organization, planning date or calendar range.
+- Focused evidence includes goal native binding/required-value tests, event draft/timezone tests, deferred native route lifetime tests, shared selector/field tests, and desktop/390px browser journeys for goal cancellation, overnight event save/clear, route invalid/cancel/save, duplicate/Back, coaching publication and training creation. Training acceptance explicitly checks overflow before and during a delayed preview; hydration waits use the existing protected-shell helper.
+- Native-host tests and Metro bundle checks do not establish physical-device layout, gestures or screen-reader acceptance. Repository gates, exact checkpoints, preview delivery and the still-modest application-code reduction are tracked separately in `gp-gdh` and the shared-preview activation record; this coverage entry does not declare release acceptance.
+
 ## Mobile training-plan creation runtime recovery — 2026-11-03
 
 - Creation uses an authored week-by-week schedule, independent of server fitness charts. Plan details remain first; readiness panels and fitness projections remain edit-only. One Add activity action belongs to the schedule. Compact checking/unavailable messages explain disabled creation without hiding server validation.
