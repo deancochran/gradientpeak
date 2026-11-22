@@ -1,9 +1,12 @@
+import { cleanup } from "@testing-library/react";
 import { CircleAlertIcon } from "lucide-react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { fireEvent, renderWeb, screen } from "../../test/render-web";
 import { emptyStateCardFixtures } from "./fixtures";
 import { EmptyStateCard } from "./index.web";
+
+afterEach(cleanup);
 
 describe("EmptyStateCard web", () => {
   it("renders content and action from fixtures", () => {
@@ -46,6 +49,30 @@ describe("EmptyStateCard web", () => {
     renderWeb(<EmptyStateCard {...emptyStateCardFixtures.unavailable} onAction={vi.fn()} />);
 
     expect(screen.getByRole("alert")).toHaveAttribute("aria-live", "assertive");
+  });
+
+  it("keeps compact feedback content and its action separate from a surrounding form", () => {
+    const onAction = vi.fn();
+    const onSubmit = vi.fn((event) => event.preventDefault());
+    renderWeb(
+      <form onSubmit={onSubmit}>
+        <EmptyStateCard
+          compact
+          title="Access unavailable"
+          tone="denied"
+          actionLabel="Choose another"
+          onAction={onAction}
+          testID="access-state"
+        >
+          <p>Your unsaved draft is retained.</p>
+        </EmptyStateCard>
+      </form>,
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByTestId("access-state")).toHaveTextContent("Your unsaved draft is retained.");
+    fireEvent.click(screen.getByRole("button", { name: "Choose another" }));
+    expect(onAction).toHaveBeenCalledOnce();
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 
   it("contains unbroken title, description, and action labels at compact widths", () => {

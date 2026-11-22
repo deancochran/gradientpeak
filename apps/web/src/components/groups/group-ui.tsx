@@ -2,6 +2,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar"
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
+import { ErrorStateCard } from "@repo/ui/components/error-state-card";
+import { InlineLoadingStatus } from "@repo/ui/components/loading";
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
@@ -265,25 +267,15 @@ export function QueryState({
   onRetry?: () => void;
   children: ReactNode;
 }) {
-  if (isLoading)
-    return (
-      <p aria-live="polite" role="status">
-        Loading…
-      </p>
-    );
+  if (isLoading) return <InlineLoadingStatus label="Loading…" />;
   if (error) {
     return (
-      <div
-        className="space-y-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4"
-        role="alert"
-      >
-        <p>Unable to load this group information.</p>
-        {onRetry ? (
-          <Button onClick={onRetry} type="button" variant="outline">
-            Try again
-          </Button>
-        ) : null}
-      </div>
+      <ErrorStateCard
+        compact
+        title="Unable to load this group information."
+        retryLabel="Try again"
+        {...(onRetry ? { onRetry } : {})}
+      />
     );
   }
   return children;
