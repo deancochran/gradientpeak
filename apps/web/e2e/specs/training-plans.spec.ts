@@ -6,6 +6,7 @@ import { CalendarPage, TrainingPlansPage } from "../pages";
 import { captureAuthoring, createLocalAuthoringPage } from "../pages/authoring";
 import { isTrpcProcedure, trpcProcedureCount } from "../pages/network";
 import { withLocalE2EDatabase } from "../support/database";
+import { waitForAppHydration } from "../support/hydration";
 import { registerTrainingPlanCleanup } from "../training-plans/cleanup";
 import {
   expectPlanOwnedPreferences,
@@ -69,7 +70,12 @@ test("[authoring-final] current training creation exits fresh and single-flights
     await expect(athletePage.getByLabel("Name", { exact: true })).toHaveValue("");
     await athletePage.getByLabel("Name", { exact: true }).fill("Discard on Back");
     await athletePage.goBack();
-    await expect(athletePage).toHaveURL(/\/training-plans\/?$/);
+    await expect
+      .poll(() => {
+        const url = new URL(athletePage.url());
+        return `${url.pathname}${url.search}`;
+      })
+      .toBe("/training-plans?tab=owned");
     await expect(athletePage.getByTestId("training-plan-create")).toBeVisible();
     await plans.openLibrary();
     await plans.startCreate();
@@ -114,6 +120,7 @@ test("[authoring-final] current training creation exits fresh and single-flights
     await expect.poll(async () => (await matching()).length).toBe(1);
     await expect(athletePage.getByRole("heading", { name, exact: true })).toBeVisible();
     await athletePage.reload();
+    await waitForAppHydration(athletePage);
     await expect(athletePage.getByRole("heading", { name, exact: true })).toBeVisible();
     await athletePage.getByRole("button", { name: "Edit plan", exact: true }).click();
     await expect(
