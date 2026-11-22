@@ -75,6 +75,18 @@ describe("ActivityPlanComposer draft boundary", () => {
       ).disabled,
     ).toBe(true);
   });
+  it("allows the first RPE target for repetitions and hides add target at its shared limit", () => {
+    renderCreate();
+    fireEvent.change(screen.getByLabelText("Activity category"), { target: { value: "strength" } });
+    fireEvent.change(screen.getByLabelText("Plan name"), { target: { value: "Reps" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add step" }));
+    fireEvent.change(screen.getByLabelText("Completion"), { target: { value: "repetitions" } });
+    fireEvent.change(screen.getByLabelText("Quantity"), { target: { value: "8" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add target" }));
+
+    expect((screen.getByLabelText("Target type 1") as HTMLSelectElement).value).toBe("RPE");
+    expect(screen.queryByRole("button", { name: "Add target" })).toBeNull();
+  });
   it("starts intentionally blank without a silent category, name, block, step, duration, or target", () => {
     const onSave = renderCreate();
     expect((screen.getByLabelText("Activity category") as HTMLSelectElement).value).toBe("");

@@ -1276,7 +1276,8 @@ function StepEditor({
             </div>
           );
         })}
-        {step.targets.length < 3 && !step.targets.some((target) => target.type === "rest") ? (
+        {step.targets.length < targetPolicy.maximumTargets &&
+        !step.targets.some((target) => target.type === "rest") ? (
           <Button
             type="button"
             size="sm"
@@ -1287,10 +1288,13 @@ function StepEditor({
               if (type)
                 onChange((item) => ({
                   ...item,
-                  targets: [
-                    ...item.targets,
-                    type === "rest" ? { type: "rest" as const } : { type, intensity: null },
-                  ],
+                  targets:
+                    item.targets.length >= targetPolicy.maximumTargets
+                      ? item.targets
+                      : [
+                          ...item.targets,
+                          type === "rest" ? { type: "rest" as const } : { type, intensity: null },
+                        ],
                 }));
             }}
           >
