@@ -1,14 +1,11 @@
 import { Button } from "@repo/ui/components/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@repo/ui/components/card";
+import { Card, CardDescription, CardHeader, CardTitle } from "@repo/ui/components/card";
+import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
+import { ErrorStateCard } from "@repo/ui/components/error-state-card";
+import { InlineLoadingStatus } from "@repo/ui/components/loading";
 import { SearchField } from "@repo/ui/components/search-field";
 import { createFileRoute } from "@tanstack/react-router";
-import { ClipboardList, Loader2, Plus } from "lucide-react";
+import { ClipboardList, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -173,8 +170,7 @@ function ActivityPlansPage() {
             Create activity plan
           </Button>
         }
-        description="Search and review your reusable structured activities before scheduling or recording them."
-        eyebrow="Training library"
+        description="Reusable activities for scheduling or recording."
         title="Activity plans"
       />
       {preparation ? (
@@ -189,124 +185,103 @@ function ActivityPlansPage() {
         </Card>
       ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Find a plan</CardTitle>
-          <CardDescription>Filter your own plans by name and primary activity.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <SearchField
-            accessibilityLabel="Search activity plans"
-            loading={plansQuery.isFetching}
-            loadingLabel="Searching activity plans"
-            maxLength={100}
-            name="activityPlanSearch"
-            onValueChange={(q) =>
-              void navigate({
-                search: (previous) => ({ ...previous, q: q || undefined }),
-                replace: true,
-              })
-            }
-            placeholder="Search activity plans"
-            testId="activity-plan-search"
-            value={search}
-          />
-          <fieldset className="flex flex-wrap gap-2">
-            <legend className="sr-only">Activity category</legend>
-            {categoryOptions.map((option) => (
-              <Button
-                aria-pressed={activity_category === option.value}
-                key={option.value}
-                onClick={() =>
-                  void navigate({
-                    search: (previous) => ({
-                      ...previous,
-                      activity_category: option.value === "all" ? undefined : option.value,
-                    }),
-                    replace: true,
-                  })
-                }
-                size="sm"
-                type="button"
-                variant={activity_category === option.value ? "default" : "outline"}
-              >
-                {option.label}
-              </Button>
-            ))}
-          </fieldset>
-        </CardContent>
-      </Card>
+      <section aria-label="Find a plan" className="space-y-3">
+        <SearchField
+          accessibilityLabel="Search activity plans"
+          loading={plansQuery.isFetching}
+          loadingLabel="Searching activity plans"
+          maxLength={100}
+          name="activityPlanSearch"
+          onValueChange={(q) =>
+            void navigate({
+              search: (previous) => ({ ...previous, q: q || undefined }),
+              replace: true,
+            })
+          }
+          placeholder="Search activity plans"
+          testId="activity-plan-search"
+          value={search}
+        />
+        <fieldset className="flex flex-wrap gap-2">
+          <legend className="sr-only">Activity category</legend>
+          {categoryOptions.map((option) => (
+            <Button
+              aria-pressed={activity_category === option.value}
+              key={option.value}
+              onClick={() =>
+                void navigate({
+                  search: (previous) => ({
+                    ...previous,
+                    activity_category: option.value === "all" ? undefined : option.value,
+                  }),
+                  replace: true,
+                })
+              }
+              size="sm"
+              type="button"
+              variant={activity_category === option.value ? "default" : "outline"}
+            >
+              {option.label}
+            </Button>
+          ))}
+        </fieldset>
+      </section>
 
       {plansQuery.isLoading ? (
-        <div className="flex min-h-64 items-center justify-center rounded-2xl border">
-          <Loader2 aria-label="Loading activity plans" className="h-8 w-8 animate-spin" />
-        </div>
+        <InlineLoadingStatus label="Loading activity plans" />
       ) : plansQuery.isError ? (
-        <Card className="border-destructive/30" role="alert">
-          <CardHeader>
-            <CardTitle>Unable to load activity plans</CardTitle>
-            <CardDescription aria-live="assertive">
-              {plansQuery.error.message || "Try again to load your activity plans."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button onClick={() => void plansQuery.refetch()} type="button" variant="outline">
-              Retry
-            </Button>
-          </CardContent>
-        </Card>
+        <ErrorStateCard
+          compact
+          title="Unable to load activity plans"
+          message={plansQuery.error.message || "Try again to load your activity plans."}
+          onRetry={() => void plansQuery.refetch()}
+          retryLabel="Retry"
+        />
       ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              {plans.length}
-              {plansQuery.hasNextPage ? "+" : ""} activity plans loaded
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {plans.length === 0 ? (
-              <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed px-6 py-12 text-center">
-                <ClipboardList className="h-8 w-8 text-muted-foreground" />
-                <div>
-                  <p className="font-medium">No activity plans found</p>
-                  <p className="text-sm text-muted-foreground">
-                    {search.trim() || activity_category !== "all"
-                      ? "Try a different search or activity category."
-                      : "Your reusable activities will appear here."}
-                  </p>
-                </div>
-              </div>
-            ) : (
-              plans.map((plan) => (
-                <ActivityPlanCard
-                  key={plan.id}
-                  onOpen={() =>
-                    void navigate({
-                      to: "/activity-plans/$activityPlanId",
-                      params: { activityPlanId: plan.id },
-                      ...(preparation
-                        ? { search: activityPlanPreparationSearch(preparation) }
-                        : {}),
-                    } as never)
-                  }
-                  plan={plan}
-                />
-              ))
-            )}
-            {plansQuery.hasNextPage ? (
-              <div className="flex justify-center">
-                <Button
-                  disabled={plansQuery.isFetchingNextPage}
-                  onClick={() => void plansQuery.fetchNextPage()}
-                  type="button"
-                  variant="outline"
-                >
-                  {plansQuery.isFetchingNextPage ? "Loading more..." : "Load more activity plans"}
-                </Button>
-              </div>
-            ) : null}
-          </CardContent>
-        </Card>
+        <section aria-label="Activity plan results" className="space-y-4">
+          <p className="text-sm text-muted-foreground" role="status">
+            {plans.length}
+            {plansQuery.hasNextPage ? "+" : ""} activity plans loaded
+          </p>
+          {plans.length === 0 ? (
+            <EmptyStateCard
+              compact
+              icon={ClipboardList}
+              title="No activity plans found"
+              description={
+                search.trim() || activity_category !== "all"
+                  ? "Try a different search or activity category."
+                  : "Your reusable activities will appear here."
+              }
+            />
+          ) : (
+            plans.map((plan) => (
+              <ActivityPlanCard
+                key={plan.id}
+                onOpen={() =>
+                  void navigate({
+                    to: "/activity-plans/$activityPlanId",
+                    params: { activityPlanId: plan.id },
+                    ...(preparation ? { search: activityPlanPreparationSearch(preparation) } : {}),
+                  } as never)
+                }
+                plan={plan}
+              />
+            ))
+          )}
+          {plansQuery.hasNextPage ? (
+            <div className="flex justify-center">
+              <Button
+                disabled={plansQuery.isFetchingNextPage}
+                onClick={() => void plansQuery.fetchNextPage()}
+                type="button"
+                variant="outline"
+              >
+                {plansQuery.isFetchingNextPage ? "Loading more..." : "Load more activity plans"}
+              </Button>
+            </div>
+          ) : null}
+        </section>
       )}
     </div>
   );

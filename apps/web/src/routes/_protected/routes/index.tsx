@@ -1,6 +1,8 @@
 import { MAX_ROUTE_LIST_OFFSET } from "@repo/core/route-files";
 import { Button } from "@repo/ui/components/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
+import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
+import { ErrorStateCard } from "@repo/ui/components/error-state-card";
+import { InlineLoadingStatus } from "@repo/ui/components/loading";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Upload } from "lucide-react";
 import {
@@ -118,7 +120,6 @@ function RoutesLibraryPage() {
           </Button>
         }
         description="Manage routes in your library. Use Discover to search routes shared by the wider community."
-        eyebrow="Route library"
         title="Routes"
       />
 
@@ -130,94 +131,77 @@ function RoutesLibraryPage() {
         Discover shared routes
       </Link>
 
-      <Card>
-        <CardHeader>
-          <CardTitle aria-level={2} role="heading">
-            Find a route
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <RouteLibraryControls
-            filters={filters}
-            onChange={replaceFilters}
-            onClear={() =>
-              replaceFilters({
-                search: "",
-                ownerScope: "own",
-                sort: "newest",
-                minDistanceKm: "",
-                maxDistanceKm: "",
-                minAscentM: "",
-                maxAscentM: "",
-              })
-            }
-          />
-        </CardContent>
-      </Card>
+      <section aria-label="Find a route">
+        <h2 className="mb-3 text-sm font-medium">Find a route</h2>
+        <RouteLibraryControls
+          filters={filters}
+          onChange={replaceFilters}
+          onClear={() =>
+            replaceFilters({
+              search: "",
+              ownerScope: "own",
+              sort: "newest",
+              minDistanceKm: "",
+              maxDistanceKm: "",
+              minAscentM: "",
+              maxAscentM: "",
+            })
+          }
+        />
+      </section>
 
-      <Card>
-        <CardHeader>
-          <CardTitle aria-level={2} role="heading">
-            Page {routeSearch.page}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {routesQuery.isLoading ? (
-            <p className="py-10 text-center text-muted-foreground" role="status">
-              Loading routes...
-            </p>
-          ) : routesQuery.isError ? (
-            <div className="space-y-3 py-10 text-center" role="alert">
-              <p className="text-destructive">Routes could not be loaded.</p>
-              <Button onClick={() => void routesQuery.refetch()} type="button" variant="outline">
-                Try again
-              </Button>
-            </div>
-          ) : routes.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-border px-6 py-12 text-center text-muted-foreground">
-              No routes match these filters.
-            </div>
-          ) : (
-            routes.map((route) => (
-              <RouteListCard
-                key={route.id}
-                onOpen={() =>
-                  void navigate({
-                    to: "/routes/$routeId",
-                    params: { routeId: route.id },
-                  })
-                }
-                route={route}
-              />
-            ))
-          )}
-          {!routesQuery.isLoading && !routesQuery.isError ? (
-            <nav aria-label="Route pages" className="flex items-center justify-between gap-3">
-              <Button
-                disabled={routeSearch.page === 1}
-                onClick={() =>
-                  void navigate({ search: { ...routeSearch, page: routeSearch.page - 1 } })
-                }
-                type="button"
-                variant="outline"
-              >
-                Previous page
-              </Button>
-              <span className="text-sm text-muted-foreground">Page {routeSearch.page}</span>
-              <Button
-                disabled={!routesQuery.data?.nextCursor}
-                onClick={() =>
-                  void navigate({ search: { ...routeSearch, page: routeSearch.page + 1 } })
-                }
-                type="button"
-                variant="outline"
-              >
-                Next page
-              </Button>
-            </nav>
-          ) : null}
-        </CardContent>
-      </Card>
+      <section aria-label="Route results" className="space-y-4">
+        {routesQuery.isLoading ? (
+          <InlineLoadingStatus label="Loading routes..." />
+        ) : routesQuery.isError ? (
+          <ErrorStateCard
+            compact
+            title="Routes could not be loaded."
+            onRetry={() => void routesQuery.refetch()}
+            retryLabel="Try again"
+          />
+        ) : routes.length === 0 ? (
+          <EmptyStateCard compact title="No routes match these filters." />
+        ) : (
+          routes.map((route) => (
+            <RouteListCard
+              key={route.id}
+              onOpen={() =>
+                void navigate({
+                  to: "/routes/$routeId",
+                  params: { routeId: route.id },
+                })
+              }
+              route={route}
+            />
+          ))
+        )}
+        {!routesQuery.isLoading && !routesQuery.isError ? (
+          <nav aria-label="Route pages" className="flex items-center justify-between gap-3">
+            <Button
+              disabled={routeSearch.page === 1}
+              onClick={() =>
+                void navigate({ search: { ...routeSearch, page: routeSearch.page - 1 } })
+              }
+              type="button"
+              variant="outline"
+            >
+              Previous page
+            </Button>
+            <span className="text-sm text-muted-foreground">Page {routeSearch.page}</span>
+            <Button
+              disabled={!routesQuery.data?.nextCursor}
+              onClick={() =>
+                void navigate({ search: { ...routeSearch, page: routeSearch.page + 1 } })
+              }
+              type="button"
+              variant="outline"
+            >
+              Next page
+            </Button>
+          </nav>
+        ) : null}
+      </section>
     </div>
   );
 }

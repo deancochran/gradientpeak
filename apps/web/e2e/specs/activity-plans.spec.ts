@@ -12,7 +12,7 @@ import {
 test("athlete can discover and open the canonical V5 activity plan library", async ({
   athleteActor,
   athletePage,
-}) => {
+}, testInfo) => {
   const shell = new ShellPage(athletePage);
   const plans = new ActivityPlansPage(athletePage);
   await shell.openAccountMenu();
@@ -24,6 +24,10 @@ test("athlete can discover and open the canonical V5 activity plan library", asy
   await plans.search("Tempo Builder");
   const planCard = plans.card(/playwright tempo builder/i);
   await expect(planCard).toBeVisible();
+  await expect(
+    planCard.getByRole("heading", { name: /playwright tempo builder/i }),
+  ).toBeInViewport();
+  await captureAuthoring(athletePage, testInfo, "resource-library");
   await planCard.press("Enter");
   await expect(athletePage).toHaveURL(`/activity-plans/${athleteActor.activityPlanId}`);
   await expect(
@@ -38,6 +42,7 @@ test("athlete can discover and open the canonical V5 activity plan library", asy
   await expect(athletePage.getByTestId("activity-plan-estimates")).toBeVisible();
   await expect(sessionFlow).not.toContainText(/segment|adapt/i);
   await expectNoHorizontalOverflow(athletePage);
+  await captureAuthoring(athletePage, testInfo, "resource-detail");
 });
 test("V5 authoring persists zero intensity and timed rest, recovers invalid drafts, and schedules its UI-edited RPE plan reference", async ({
   athleteActor,
