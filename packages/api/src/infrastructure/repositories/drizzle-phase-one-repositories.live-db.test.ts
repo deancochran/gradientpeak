@@ -164,18 +164,21 @@ describeDisposable("Phase 1 Drizzle repositories against a guarded disposable da
     });
     const claimedAt = new Date();
     const claimToken = randomUUID();
-    const futureLogicalClaimedAt = "2099-01-01T00:00:00.000Z";
+    const futureLogicalNow = "2099-01-01T00:00:00.000Z";
     const claim = await repository.claimNextRecalculation({
       claimToken,
-      now: futureLogicalClaimedAt,
-      claimedAt: futureLogicalClaimedAt,
+      now: futureLogicalNow,
+      claimedAt: claimedAt.toISOString(),
       leaseExpiresAt: new Date(Date.now() + 60_000).toISOString(),
     });
-    expect(claim).toMatchObject({ lifecycle: { state: "processing", claimToken } });
+    expect(claim).toMatchObject({
+      request: { profileId },
+      lifecycle: { state: "processing", claimToken },
+    });
     const unrelatedClaim = await repository.claimNextRecalculation({
       claimToken: randomUUID(),
-      now: futureLogicalClaimedAt,
-      claimedAt: futureLogicalClaimedAt,
+      now: futureLogicalNow,
+      claimedAt: claimedAt.toISOString(),
       leaseExpiresAt: new Date(Date.now() + 60_000).toISOString(),
     });
     expect(unrelatedClaim?.request.profileId).not.toBe(profileId);
