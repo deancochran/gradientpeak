@@ -137,10 +137,31 @@ describe("ActivityPlanComposer draft boundary", () => {
     );
     expect(screen.getByText(`60 sec · ${intensity} ${unit}`)).toBeTruthy();
   });
+  it("preserves a blank supplemental target draft when its type changes to cadence", () => {
+    renderCreate();
+    fireEvent.change(screen.getByLabelText("Activity category"), { target: { value: "bike" } });
+    fireEvent.change(screen.getByLabelText("Plan name"), { target: { value: "Draft continuity" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add step" }));
+    fireEvent.change(screen.getByLabelText("Completion"), { target: { value: "time" } });
+    fireEvent.change(screen.getByLabelText("Quantity"), { target: { value: "60" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add target" }));
+    fireEvent.change(screen.getByLabelText("Target type 1"), { target: { value: "watts" } });
+    fireEvent.change(screen.getByLabelText("Target intensity 1"), { target: { value: "0" } });
+    expect(
+      (screen.getByRole("button", { name: "Create plan" }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Add target" }));
+    expect((screen.getByLabelText("Target intensity 2") as HTMLInputElement).value).toBe("");
+    fireEvent.change(screen.getByLabelText("Target type 2"), { target: { value: "cadence" } });
+    expect((screen.getByLabelText("Target intensity 2") as HTMLInputElement).value).toBe("");
+    expect(
+      (screen.getByRole("button", { name: "Create plan" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
   it.each([
-    ["run", "160", "spm"],
-    ["bike", "80", "rpm"],
-  ] as const)("uses the %s default when cadence is newly selected", (activityCategory, intensity, unit) => {
+    ["run", "spm"],
+    ["bike", "rpm"],
+  ] as const)("shows the %s cadence unit for a blank newly selected target", (activityCategory, unit) => {
     renderCreate();
     fireEvent.change(screen.getByLabelText("Activity category"), {
       target: { value: activityCategory },
@@ -149,7 +170,7 @@ describe("ActivityPlanComposer draft boundary", () => {
     fireEvent.change(screen.getByLabelText("Completion"), { target: { value: "time" } });
     fireEvent.click(screen.getByRole("button", { name: "Add target" }));
     fireEvent.change(screen.getByLabelText("Target type 1"), { target: { value: "cadence" } });
-    expect((screen.getByLabelText("Target intensity 1") as HTMLInputElement).value).toBe(intensity);
+    expect((screen.getByLabelText("Target intensity 1") as HTMLInputElement).value).toBe("");
     expect(screen.getByText(unit)).toBeTruthy();
   });
   it("rejects a completed targetless step until a semantic target is added", () => {
