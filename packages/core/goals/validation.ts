@@ -1,11 +1,12 @@
 import { z } from "zod";
+import { goalTargetActivityCategorySchema } from "../schemas/activity-category";
 import { parseMmSsToSeconds } from "../utils/fitness-inputs";
 import { parseDateOnly, parseDistanceKmToMeters, parseGoalDurationSeconds } from "./parsers";
 import type { GoalTargetForValidation, TrainingPlanFormForValidation } from "./types";
 
 export const MIN_PREP_DAYS_BETWEEN_GOALS = 21;
-export const MAX_SAFE_WEEKLY_TSS_RAMP_PCT = 20;
-export const MAX_SAFE_CTL_RAMP_PER_WEEK = 8;
+export const MAX_SAFE_WEEKLY_COMMON_LOAD_RAMP_PCT = 20;
+export const MAX_SAFE_LongTermLoad_RAMP_PER_WEEK = 8;
 
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -13,7 +14,7 @@ export const goalTargetValidationSchema = z
   .object({
     id: z.string().min(1),
     targetType: z.enum(["race_performance", "pace_threshold", "power_threshold", "hr_threshold"]),
-    activityCategory: z.enum(["run", "bike", "swim", "other"]).optional(),
+    activityCategory: goalTargetActivityCategorySchema.optional(),
     distanceKm: z.string().optional(),
     completionTimeHms: z.string().optional(),
     paceMmSs: z.string().optional(),

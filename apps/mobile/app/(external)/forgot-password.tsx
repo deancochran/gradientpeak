@@ -1,3 +1,4 @@
+import { passwordRecoveryAcknowledgement } from "@repo/auth/forms";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Form, FormTextField } from "@repo/ui/components/form";
@@ -9,13 +10,8 @@ import React from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { ServerUrlOverride } from "@/components/auth/ServerUrlOverride";
 import { authClient, getPasswordResetCallbackUrl } from "@/lib/auth/client";
-import {
-  applyPendingAuthServerOverride,
-  getAuthFormUnexpectedErrorMessage,
-  mapForgotPasswordError,
-  setAuthFormError,
-} from "@/lib/auth/form-helpers";
-import { type ForgotPasswordFields, forgotPasswordSchema } from "@/lib/auth/form-schemas";
+import { applyPendingAuthServerOverride } from "@/lib/auth/form-helpers";
+import { type ForgotPasswordFormValues, forgotPasswordFormSchema } from "@/lib/auth/form-schemas";
 import { withAuthRequestTimeout } from "@/lib/auth/request-timeout";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { logMobileAction } from "@/lib/logging/mobile-action-log";
@@ -23,7 +19,18 @@ import { isServerUrlOverrideEnabled, useServerConfig } from "@/lib/server-config
 
 export default function ForgotPasswordScreen() {
   const router = useRouter();
-  const { loading: authLoading } = useAuth();
+  const { loading: authLoading, user } = useAuth();
+  const owner = React.useRef({ id: user?.id, active: true });
+  if (owner.current.id !== user?.id) owner.current = { id: user?.id, active: true };
+  const pending = React.useRef(false);
+  const renderOwner = owner.current;
+  React.useEffect(() => {
+    const current = renderOwner;
+    current.active = true;
+    return () => {
+      current.active = false;
+    };
+  }, [renderOwner]);
   const [emailSent, setEmailSent] = React.useState(false);
   const [isServerConfigExpanded, setIsServerConfigExpanded] = React.useState(false);
   const serverOverrideEnabled = isServerUrlOverrideEnabled();
@@ -37,18 +44,26 @@ export default function ForgotPasswordScreen() {
   }, [serverConfig.overrideUrl, serverConfig.apiUrl]);
 
   const form = useZodForm({
-    schema: forgotPasswordSchema,
+    schema: forgotPasswordFormSchema,
     defaultValues: {
       email: "",
     },
   });
 
-  const onSendResetEmail = async (data: ForgotPasswordFields) => {
+  const onSendResetEmail = async (data: ForgotPasswordFormValues) => {
+    if (owner.current !== renderOwner || !renderOwner.active) return;
+    const current = owner.current;
+    const email = form.getValues("email");
+    const isCurrent = () =>
+      current.active && owner.current === current && form.getValues("email") === email;
+    pending.current = true;
     try {
       await applyPendingAuthServerOverride({
         expanded: isServerConfigExpanded,
         serverUrlInput,
       });
+
+      if (!isCurrent()) return;
 
       logMobileAction("auth.resetPasswordForEmail", "attempt", { email: data.email });
 
@@ -62,27 +77,28 @@ export default function ForgotPasswordScreen() {
 
       if (error) {
         logMobileAction("auth.resetPasswordForEmail", "failure", {
-          email: data.email,
-          error: error.message,
+          error: "recovery request rejected",
         });
-        setAuthFormError(form, mapForgotPasswordError(error.message));
       } else {
-        logMobileAction("auth.resetPasswordForEmail", "success", { email: data.email });
-        setEmailSent(true);
+        logMobileAction("auth.resetPasswordForEmail", "success");
       }
-    } catch (err) {
+      // Better Auth may reject unknown identities. The visible acknowledgement is
+      // deliberately identical so recovery cannot enumerate accounts.
+      if (isCurrent()) setEmailSent(true);
+    } catch {
       logMobileAction("auth.resetPasswordForEmail", "failure", {
-        email: data.email,
-        error: err instanceof Error ? err.message : String(err),
+        error: "recovery request unavailable",
       });
-      setAuthFormError(form, {
-        name: "email",
-        message: `${getAuthFormUnexpectedErrorMessage(err)}. Please try again.`,
-      });
+      // Transport/provider failures must be indistinguishable from success
+      // and unknown identities at this account-enumeration boundary.
+      if (isCurrent()) setEmailSent(true);
+    } finally {
+      pending.current = false;
     }
   };
 
   const handleBackToSignIn = () => {
+    if (pending.current) return;
     router.replace("/(external)/sign-in");
   };
 
@@ -94,7 +110,7 @@ export default function ForgotPasswordScreen() {
     form,
     onSubmit: onSendResetEmail,
   });
-  const isLoading = authLoading || submitForm.isSubmitting;
+  const isLoading = authLoading || submitForm.isSubmitting || form.formState.isSubmitting;
 
   if (emailSent) {
     return (
@@ -114,11 +130,13 @@ export default function ForgotPasswordScreen() {
                 <Text variant="h3" className="text-center mb-2">
                   Check your email
                 </Text>
-                <Text variant="muted" className="text-center">
-                  We have sent password reset instructions to{"\n"}
-                  <Text variant="default" className="font-semibold">
-                    {form.getValues("email")}
-                  </Text>
+                <Text
+                  variant="muted"
+                  className="text-center"
+                  accessibilityRole="alert"
+                  accessibilityLiveRegion="polite"
+                >
+                  {passwordRecoveryAcknowledgement}
                 </Text>
               </View>
 
@@ -181,6 +199,7 @@ export default function ForgotPasswordScreen() {
                   keyboardType="email-address"
                   label="Email"
                   name="email"
+                  disabled={isLoading}
                   placeholder="Email address"
                   testId="email-input"
                 />
@@ -190,7 +209,13 @@ export default function ForgotPasswordScreen() {
             <LoadingButton
               variant="default"
               size="lg"
-              onPress={submitForm.handleSubmit}
+              onPress={() => {
+                if (pending.current) return;
+                pending.current = true;
+                return submitForm.handleSubmit().finally(() => {
+                  pending.current = false;
+                });
+              }}
               disabled={isLoading}
               loading={isLoading}
               loadingLabel="Sending..."
@@ -214,6 +239,7 @@ export default function ForgotPasswordScreen() {
               <Button
                 variant="outline"
                 onPress={handleBackToSignIn}
+                disabled={isLoading}
                 testID="back-to-signin-link-button"
                 className="w-full"
               >
