@@ -123,9 +123,13 @@ export function projectRoutePreview(coordinates: RouteCoordinate[]): ProjectedRo
     (width - padding * 2) / Math.max(maxLng - minLng, 0.00001),
     (height - padding * 2) / Math.max(maxLat - minLat, 0.00001),
   );
+  const projectedWidth = (maxLng - minLng) * scale;
+  const projectedHeight = (maxLat - minLat) * scale;
+  const offsetX = (width - projectedWidth) / 2;
+  const offsetY = (height - projectedHeight) / 2;
   const points = coordinates.map((coordinate) => ({
-    x: padding + (coordinate.longitude - minLng) * scale,
-    y: height - padding - (coordinate.latitude - minLat) * scale,
+    x: offsetX + (coordinate.longitude - minLng) * scale,
+    y: offsetY + (maxLat - coordinate.latitude) * scale,
   }));
   const start = points[0];
   const finish = points.at(-1);
