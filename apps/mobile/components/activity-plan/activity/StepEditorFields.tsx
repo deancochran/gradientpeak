@@ -7,8 +7,9 @@ import {
   activityPlanDurationSchema,
   activityPlanStepNoteSchema,
   activityPlanTargetSchema,
-  activityTargetDefinitionByType,
   activityTargetUnitLabels,
+  getActivityPlanStepTargetEditorPolicy,
+  getActivityPlanStepTargetInputPolicy,
   getActivityPlanTargetTypeDefault,
   getActivityTargetCadenceUnitLabel,
   getPermissibleTargetTypes,
@@ -151,12 +152,21 @@ export function StepEditorFields({
   >(step.duration?.type ?? null);
   const dirty = form.formState.isDirty || invalidExactEntries.current.size > 0;
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
+  const targetSelectionPolicy = getActivityPlanStepTargetEditorPolicy({
+    activityCategory,
+    durationType: selectedDurationType,
+  });
+  const targetValuePolicy = getActivityPlanStepTargetEditorPolicy({
+    activityCategory,
+    durationType: duration?.type,
+  });
   const permittedTargetTypes: readonly ActivityPlanDraftTarget["type"][] =
     duration?.type === "repetitions" ? ["RPE"] : getPermissibleTargetTypes(activityCategory);
   const hasRestTarget = targets.some((target) => target.type === "rest");
-  const selectableTargetTypes = permittedTargetTypes.filter(
-    (type) => type !== "rest" || selectedDurationType === "time",
-  );
+  const selectableTargetTypes =
+    duration?.type === "repetitions"
+      ? targetValuePolicy.selectableTargetTypes
+      : targetSelectionPolicy.selectableTargetTypes;
   const targetTypeOptions = (currentType: ActivityPlanDraftTarget["type"]) => [
     ...(currentType === "rest" && !selectableTargetTypes.includes("rest")
       ? [
@@ -173,7 +183,7 @@ export function StepEditorFields({
       selectedLabel: targetTypeSelectedLabel(type, activityCategory),
     })),
   ];
-  const maximumTargets = duration?.type === "repetitions" ? 1 : 3;
+  const maximumTargets = targetValuePolicy.maximumTargets;
   const setExactEntryValidity = (key: string, invalid: boolean) => {
     if (invalid) invalidExactEntries.current.add(key);
     else invalidExactEntries.current.delete(key);
@@ -191,7 +201,7 @@ export function StepEditorFields({
     const next = nextValue as ActivityPlanDraftTarget["type"];
     const current = targets[index];
     if (!current || next === current.type) return;
-    if (next === "rest" && selectedDurationType !== "time") {
+    if (next === "rest" && !targetSelectionPolicy.restAllowed) {
       setSaveError("Rest is available only for a timed step.");
       return;
     }
@@ -434,11 +444,7 @@ export function StepEditorFields({
               </View>
             );
           }
-          const definition = activityTargetDefinitionByType[target.type];
-          const minimum =
-            "exclusiveMinimum" in definition && definition.exclusiveMinimum
-              ? definition.minimum + 1
-              : definition.minimum;
+          const targetInputPolicy = getActivityPlanStepTargetInputPolicy(target.type);
           const key = `target-${targetField.id}`;
           return (
             <View key={targetField.id} testID={`target-row-${index}`} className="gap-2 py-2">
@@ -545,7 +551,11 @@ export function StepEditorFields({
                             else targetRefs.current.delete(key);
                           }}
                           presentation="overlay"
-                          decimals={target.type === "speed" ? 2 : 0}
+                          decimals={
+                            typeof targetInputPolicy.precision === "object"
+                              ? targetInputPolicy.precision.maxDecimalPlaces
+                              : 0
+                          }
                           label={
                             targetFields.length === 1 ? "Target value" : `Target ${index + 1} value`
                           }
@@ -555,8 +565,8 @@ export function StepEditorFields({
                               : activityTargetUnitLabels[target.type]
                           }
                           triggerVariant="value"
-                          min={minimum}
-                          max={target.type === "%MaxHR" ? 100 : definition.saveableMaximum}
+                          min={targetInputPolicy.pickerMinimum}
+                          max={target.type === "%MaxHR" ? 100 : targetInputPolicy.maximum}
                           value={
                             targetDrafts.current.get(targetField.id) ??
                             (field.value === null ? "" : String(field.value))

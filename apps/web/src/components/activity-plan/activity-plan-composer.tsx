@@ -13,7 +13,11 @@ import {
   activityPlanDraftMetrics,
   activityPlanDraftStructureSchema,
   activityPlanStepNoteSchema,
+  createActivityPlanStepDuration,
   createUnavailableAthletePerformanceTargetFacts,
+  getActivityPlanStepDurationAmount,
+  getActivityPlanStepTargetEditorPolicy,
+  getActivityPlanStepTargetInputPolicy,
   normalizeActivityPlanAuthoringStructure,
   resolveActivityPlanDraft,
 } from "@repo/core";
@@ -115,21 +119,6 @@ function removeStepDrafts(drafts: RawDrafts, stepId: string) {
 function removeRepeatDrafts(drafts: RawDrafts, repeat: ActivityPlanDraftRepeat) {
   return repeat.steps.reduce((next, step) => removeStepDrafts(next, step.id), drafts);
 }
-function durationAmount(duration: NonNullable<ActivityPlanDraftStep["duration"]>) {
-  return duration.type === "time"
-    ? duration.seconds
-    : duration.type === "distance"
-      ? duration.meters
-      : duration.type === "repetitions"
-        ? duration.count
-        : 1;
-}
-function durationFrom(type: ActivityPlanDuration["type"], value: number): ActivityPlanDuration {
-  if (type === "time") return { type, seconds: value };
-  if (type === "distance") return { type, meters: value };
-  if (type === "repetitions") return { type, count: value };
-  return { type: "untilFinished" };
-}
 function numericError(raw: string) {
   const value = parseNumericInput(raw, {
     min: 1,
@@ -144,19 +133,7 @@ function numericError(raw: string) {
 }
 function targetError(type: ActivityTargetType, raw: string) {
   if (type === "rest") return null;
-  const definition = activityTargetDefinitionByType[type];
-  const result = parseNumericInput(raw, {
-    min:
-      definition.minimum +
-      ("exclusiveMinimum" in definition && definition.exclusiveMinimum ? Number.EPSILON : 0),
-    max: definition.saveableMaximum,
-    precision:
-      type === "speed"
-        ? { maxDecimalPlaces: 2 }
-        : type === "RPE"
-          ? { maxDecimalPlaces: 1 }
-          : "integer",
-  });
+  const result = parseNumericInput(raw, getActivityPlanStepTargetInputPolicy(type));
   if (result.status !== "valid")
     return result.status === "empty" ? "A value is required." : "Enter a valid target value.";
   return type === "RPE" && !Number.isInteger(result.value * 2)
@@ -307,7 +284,9 @@ export function ActivityPlanComposer({
         ...(step.duration === null
           ? ["Choose a completion condition."]
           : step.duration.type !== "untilFinished" &&
-              numericError(drafts[key(step.id)] ?? String(durationAmount(step.duration)))
+              numericError(
+                drafts[key(step.id)] ?? String(getActivityPlanStepDurationAmount(step.duration)),
+              )
             ? ["Completion quantity needs repair."]
             : []),
         ...step.targets.flatMap((target, index) =>
@@ -1067,8 +1046,11 @@ function StepEditor({
   const quantityKey = key(step.id);
   const selectedDurationType = step.duration?.type ?? drafts[completionTypeKey(step.id)] ?? "";
   const hasRestTarget = step.targets.some((target) => target.type === "rest");
-  const restAvailable = selectedDurationType === "time";
-  const selectableTargets = targets.filter((type) => type !== "rest" || restAvailable);
+  const targetPolicy = getActivityPlanStepTargetEditorPolicy({
+    activityCategory: category,
+    durationType: (selectedDurationType as ActivityPlanDuration["type"] | "") || null,
+  });
+  const { restAllowed: restAvailable, selectableTargetTypes: selectableTargets } = targetPolicy;
   const targetOptions = (currentType: ActivityTargetType) => [
     ...(currentType === "rest" && !selectableTargets.includes("rest")
       ? [{ value: "rest" as const, label: "rest (available for timed steps)", disabled: true }]
@@ -1086,7 +1068,7 @@ function StepEditor({
     );
   const durationErrorId = `step-completion-error-${step.id}`;
   const quantityRaw = step.duration
-    ? (drafts[quantityKey] ?? String(durationAmount(step.duration)))
+    ? (drafts[quantityKey] ?? String(getActivityPlanStepDurationAmount(step.duration)))
     : "";
   return (
     <fieldset id={`step-editor-${step.id}`} className="mt-3 space-y-3 border-t pt-3">
@@ -1149,7 +1131,7 @@ function StepEditor({
               setDrafts((current) => ({ ...current, [completionTypeKey(step.id)]: type }));
               onChange((item) => ({
                 ...item,
-                duration: type === "untilFinished" ? durationFrom(type, 1) : null,
+                duration: type === "untilFinished" ? createActivityPlanStepDuration(type, 1) : null,
               }));
             }}
           >
@@ -1188,7 +1170,7 @@ function StepEditor({
                 if (parsed.status === "valid")
                   onChange((item) => ({
                     ...item,
-                    duration: durationFrom(
+                    duration: createActivityPlanStepDuration(
                       selectedDurationType as Exclude<
                         ActivityPlanDuration["type"],
                         "untilFinished"
@@ -1255,16 +1237,10 @@ function StepEditor({
                   onChange={(event) => {
                     const next = event.target.value;
                     setDrafts((current) => ({ ...current, [targetKey]: next }));
-                    const activeDefinition = activityTargetDefinitionByType[target.type];
+                    const inputPolicy = getActivityPlanStepTargetInputPolicy(target.type);
                     const parsed = parseNumericInput(next, {
-                      min: activeDefinition.minimum,
-                      max: activeDefinition.saveableMaximum,
-                      precision:
-                        target.type === "speed"
-                          ? { maxDecimalPlaces: 2 }
-                          : target.type === "RPE"
-                            ? { maxDecimalPlaces: 1 }
-                            : "integer",
+                      ...inputPolicy,
+                      min: inputPolicy.commitMinimum,
                     });
                     if (parsed.status === "valid")
                       onChange((item) => ({

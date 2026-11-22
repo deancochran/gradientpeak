@@ -3,6 +3,7 @@ import {
   activityPlanDurationSchema,
   type CanonicalActivityCategory,
   completionTypeChoices,
+  createActivityPlanStepDuration,
   getPermissibleActivityPlanDurationTypes,
 } from "@repo/core";
 import { parseNumberOrUndefined } from "@repo/core/utils/fitness-inputs";
@@ -150,7 +151,7 @@ export function StepDurationField({
     if (type === "repetitions") {
       const count = 1;
       setCountDraft(String(count));
-      setDuration({ type, count });
+      setDuration(createActivityPlanStepDuration(type, count));
     } else {
       // A changed numeric prescription must be explicitly entered; do not carry the old unit/value.
       form.setValue("duration", null, { shouldDirty: true, shouldValidate: true });
@@ -213,7 +214,9 @@ export function StepDurationField({
               onSegmentsChange={(segments) => {
                 if (draft && usable()) draft.segments = segments;
               }}
-              onChangeSeconds={(seconds) => setDuration({ type: "time", seconds })}
+              onChangeSeconds={(seconds) =>
+                setDuration(createActivityPlanStepDuration("time", seconds))
+              }
               onEmpty={() => {
                 setValueTouched(true);
                 setDuration(null);
@@ -261,7 +264,7 @@ export function StepDurationField({
                   count !== undefined &&
                   activityPlanDurationSchema.safeParse({ type: "repetitions", count }).success
                 )
-                  setDuration({ type: "repetitions", count });
+                  setDuration(createActivityPlanStepDuration("repetitions", count));
               }}
             />
           </View>
@@ -305,7 +308,7 @@ export function StepDurationField({
                 onNumberChange={(value) => {
                   if (value === undefined) return;
                   const meters = unit === "km" ? value * 1000 : value;
-                  const next = { type: "distance" as const, meters };
+                  const next = createActivityPlanStepDuration("distance", meters);
                   if (activityPlanDurationSchema.safeParse(next).success) {
                     setDistanceDraft(undefined);
                     if (draft) delete draft.exactByType?.distance;

@@ -8,6 +8,7 @@ export * from "./presentation";
 export * from "./print";
 export * from "./semantic-hash";
 export * from "./session-flow-personalization";
+export * from "./step-editor-policy";
 export * from "./structure-operations";
 export * from "./structure-schema";
 export * from "./structure-validation";
