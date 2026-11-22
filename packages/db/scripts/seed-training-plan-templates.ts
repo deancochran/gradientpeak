@@ -1,44 +1,67 @@
 #!/usr/bin/env tsx
 
+import { getSystemTrainingPlanDefinitions } from "@repo/core";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-
-import { ALL_SAMPLE_PLANS } from "../../core/samples";
 import { trainingPlans } from "../src/schema/tables";
 import { deepEqual, prepareDbEnv } from "./_helpers";
+import { structureHash } from "./canonical-json";
+import {
+  materializeSystemTrainingPlanSeedValues,
+  persistedTrainingPlanStructure,
+  type SystemTrainingPlanDefinition,
+} from "./system-content-seed-values";
 
 const args = process.argv.slice(2);
 const isDryRun = args.includes("--dry-run");
+const isValidateOnly = args.includes("--validate-only");
 const noDelete = args.includes("--no-delete") || args.includes("--no-clear");
 
-const databaseUrl = prepareDbEnv();
-const pool = new Pool({ connectionString: databaseUrl });
-const db = drizzle({ client: pool, casing: "snake_case" });
-
-const templates = ALL_SAMPLE_PLANS;
+let pool: Pool | undefined;
 
 type ExistingTrainingPlanTemplate = typeof trainingPlans.$inferSelect;
 
 function hasChanges(
-  local: (typeof ALL_SAMPLE_PLANS)[number],
+  definition: SystemTrainingPlanDefinition,
   remote: ExistingTrainingPlanTemplate,
 ): boolean {
+  const local = definition.content;
   if (local.name !== remote.name) return true;
   if ((local.description ?? null) !== (remote.description ?? null)) return true;
   if (local.sessions_per_week_target !== remote.sessions_per_week_target) return true;
   if (`${local.duration_hours}` !== `${remote.duration_hours ?? ""}`) return true;
+  if (remote.profile_id !== null) return true;
+  if (remote.is_system_template !== true) return true;
+  if (remote.content_visibility !== "public") return true;
+  if (remote.system_content_key !== definition.key) return true;
+  if (remote.system_content_version !== definition.version) return true;
+  if (remote.system_content_hash !== definition.contentHash) return true;
 
-  const localStructure = JSON.parse(JSON.stringify(local.structure));
+  const localStructure = persistedTrainingPlanStructure(local);
 
-  return !deepEqual(localStructure, remote.structure);
+  return (
+    structureHash(localStructure) !== remote.structure_hash ||
+    !deepEqual(localStructure, remote.structure)
+  );
 }
 
 async function seedTrainingPlanTemplates() {
+  const definitions = await getSystemTrainingPlanDefinitions();
+  for (const definition of definitions) persistedTrainingPlanStructure(definition.content);
+  if (isValidateOnly) {
+    console.log(`Validated ${definitions.length} strict canonical V1 system training templates.`);
+    return;
+  }
+
+  const databaseUrl = prepareDbEnv();
+  pool = new Pool({ connectionString: databaseUrl });
+  const db = drizzle({ client: pool, casing: "snake_case" });
+
   console.log("🌱 Starting training plan template sync...");
   console.log(`   Mode: ${isDryRun ? "DRY RUN" : "LIVE"}`);
   console.log("   Filter: all");
-  console.log(`   Local Templates: ${templates.length}\n`);
+  console.log(`   Local Templates: ${definitions.length}\n`);
 
   const existingTemplates = await db
     .select()
@@ -65,7 +88,8 @@ async function seedTrainingPlanTemplates() {
   let deletedCount = 0;
   let errorCount = 0;
 
-  for (const template of templates) {
+  for (const definition of definitions) {
+    const template = definition.content;
     if (!template.id) {
       console.error(`❌ Template "${template.name}" is missing a static ID. Skipping.`);
       errorCount += 1;
@@ -76,21 +100,16 @@ async function seedTrainingPlanTemplates() {
     const existing = existingMap.get(template.id);
 
     try {
+      const { id: _id, ...seedValues } = materializeSystemTrainingPlanSeedValues(definition);
       if (existing) {
-        if (hasChanges(template, existing)) {
+        if (hasChanges(definition, existing)) {
           console.log(`📝 Updating "${template.name}" (${template.id})...`);
 
           if (!isDryRun) {
             await db
               .update(trainingPlans)
               .set({
-                name: template.name,
-                description: template.description ?? null,
-                structure: template.structure,
-                sessions_per_week_target: template.sessions_per_week_target,
-                duration_hours: template.duration_hours ?? null,
-                is_public: true,
-                template_visibility: "public",
+                ...seedValues,
                 updated_at: new Date(),
               })
               .where(eq(trainingPlans.id, existing.id));
@@ -107,16 +126,7 @@ async function seedTrainingPlanTemplates() {
           const now = new Date();
 
           await db.insert(trainingPlans).values({
-            id: template.id,
-            profile_id: null,
-            is_system_template: true,
-            template_visibility: "public",
-            is_public: true,
-            name: template.name,
-            description: template.description ?? null,
-            structure: template.structure,
-            sessions_per_week_target: template.sessions_per_week_target,
-            duration_hours: template.duration_hours ?? null,
+            ...materializeSystemTrainingPlanSeedValues(definition),
             created_at: now,
             updated_at: now,
           });
@@ -175,5 +185,5 @@ try {
   console.error("\n💥 Sync failed:", error);
   process.exitCode = 1;
 } finally {
-  await pool.end();
+  await pool?.end();
 }
