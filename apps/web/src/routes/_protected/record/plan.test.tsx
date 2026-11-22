@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { activityPlanSummarySchema } from "@repo/core";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RecordPlanPage } from "./plan";
 
@@ -233,7 +233,9 @@ describe("RecordPlanPage", () => {
   });
   it("uses the canonical selectable card and preserves selection while retrying detail", () => {
     const view = render(<RecordPlanPage />);
-    const card = screen.getByTestId(`activity-plan-card-${PLAN_ID}`);
+    const card = within(screen.getByTestId(`activity-plan-card-${PLAN_ID}`)).getByRole("button", {
+      name: "Select Tempo run",
+    });
     fireEvent.click(card);
     expect(card.getAttribute("aria-pressed")).toBe("true");
     expect(card.getAttribute("aria-label")).toBe("Select Tempo run");

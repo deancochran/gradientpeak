@@ -101,7 +101,10 @@ export function ActivityPlanEstimateRow({
           </ul>
         </details>
       ) : unavailable.length ? (
-        <p className="text-xs text-muted-foreground">Some estimates are unavailable.</p>
+        <p className="text-xs text-muted-foreground">
+          Unavailable estimates —{" "}
+          {unavailable.map((metric) => `${metric.label}: ${metric.reason ?? "Unknown"}`).join("; ")}
+        </p>
       ) : null}
     </div>
   );

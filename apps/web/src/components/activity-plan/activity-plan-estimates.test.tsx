@@ -36,6 +36,30 @@ describe("ActivityPlanEstimateRow", () => {
     );
     expect(screen.getByText(/Unavailable estimates/).textContent).toContain("Load: no_load_data");
     expect(screen.queryByText("Estimate details")).toBeNull();
+    expect(screen.queryByTestId("activity-plan-estimates")).toBeNull();
+  });
+
+  it("renders available zero estimates in the shared wrapping metric row", () => {
+    render(
+      <ActivityPlanEstimateRow
+        compact
+        metrics={[
+          {
+            key: "elapsed_duration",
+            label: "Duration",
+            status: "available",
+            value: 0,
+            unit: "seconds",
+            reason: null,
+            provenance: "estimated",
+          },
+        ]}
+        showUnavailableDetails={false}
+      />,
+    );
     expect(screen.getByTestId("activity-plan-estimates").className).toContain("flex");
+    expect(screen.getByText("~0s")).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Duration, ~0s, Estimated" })).toBeTruthy();
+    expect(screen.queryByText(/Unavailable estimates/)).toBeNull();
   });
 });

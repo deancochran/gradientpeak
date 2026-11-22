@@ -162,7 +162,7 @@ describe("goal edit route with its real form and Core adapters", () => {
     fireEvent.change(screen.getByLabelText(label), { target: { value: "1:bad" } });
     fireEvent.blur(screen.getByLabelText(label));
     fireEvent.submit(screen.getByTestId("goal-form"));
-    expect((await screen.findByRole("alert")).textContent).toMatch(/valid.*duration/);
+    expect((await screen.findByRole("alert")).textContent).toMatch(/valid.*duration/i);
     expect(mocks.action).not.toHaveBeenCalled();
     expect(screen.getByLabelText(label)).toHaveProperty("value", "1:bad");
     fireEvent.change(screen.getByLabelText(label), { target: { value: "" } });
