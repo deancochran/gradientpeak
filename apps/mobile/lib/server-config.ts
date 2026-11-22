@@ -7,13 +7,13 @@ const appEnvironment = process.env.APP_ENV ?? "development";
 
 const hostedApiUrl = useLocalE2EHost
   ? requireUrl(
-      process.env.EXPO_PUBLIC_MAESTRO_E2E_API_URL ?? "http://127.0.0.1:3000",
+      process.env.EXPO_PUBLIC_MAESTRO_E2E_API_URL ?? "http://127.0.0.1:3001",
       "EXPO_PUBLIC_MAESTRO_E2E_API_URL",
     )
   : requireUrl(process.env.EXPO_PUBLIC_API_URL, "EXPO_PUBLIC_API_URL");
 const hostedSupabaseUrl = useLocalE2EHost
   ? requireUrl(
-      process.env.EXPO_PUBLIC_MAESTRO_E2E_SUPABASE_URL ?? "http://127.0.0.1:54321",
+      process.env.EXPO_PUBLIC_MAESTRO_E2E_SUPABASE_URL ?? "http://127.0.0.1:55321",
       "EXPO_PUBLIC_MAESTRO_E2E_SUPABASE_URL",
     )
   : requireUrl(process.env.EXPO_PUBLIC_SUPABASE_URL, "EXPO_PUBLIC_SUPABASE_URL");
@@ -38,11 +38,16 @@ const listeners = new Set<() => void>();
 let initializePromise: Promise<void> | null = null;
 
 export function isServerUrlOverrideEnabled() {
-  return appEnvironment !== "production" || process.env.EXPO_PUBLIC_ENABLE_SERVER_OVERRIDE === "1";
+  return (
+    !useLocalE2EHost &&
+    (appEnvironment !== "production" || process.env.EXPO_PUBLIC_ENABLE_SERVER_OVERRIDE === "1")
+  );
 }
 
 function emit() {
-  listeners.forEach((listener) => listener());
+  listeners.forEach((listener) => {
+    listener();
+  });
 }
 
 function normalizeBaseUrl(url: string | undefined | null): string | null {
@@ -82,8 +87,8 @@ function deriveSupabaseUrl(apiUrl: string): string {
   try {
     const parsed = new URL(apiUrl);
     const isLocalHost = ["127.0.0.1", "localhost", "10.0.2.2"].includes(parsed.hostname);
-    if (isLocalHost && ["3000", "3100"].includes(parsed.port)) {
-      parsed.port = "54321";
+    if (isLocalHost && ["3000", "3001"].includes(parsed.port)) {
+      parsed.port = parsed.port === "3001" ? "55321" : "54321";
       parsed.pathname = "";
       return parsed.origin;
     }
@@ -114,7 +119,7 @@ export async function initializeServerConfig() {
     return;
   }
 
-  if (initializePromise) {
+  if (initializePromise !== null) {
     return initializePromise;
   }
 
@@ -163,6 +168,12 @@ export function getServerConfig() {
   return state;
 }
 
+export function getE2ERuntimeSentinel() {
+  if (!useLocalE2EHost) return null;
+
+  return `lane=e2e api=${new URL(state.apiUrl).host} supabase=${new URL(state.supabaseUrl).host}`;
+}
+
 export function getReachableSupabaseStorageUrl(rawUrl: string) {
   try {
     const parsedRawUrl = new URL(rawUrl);
@@ -186,7 +197,23 @@ export function getReachableSupabaseStorageUrl(rawUrl: string) {
 
     return parsedRawUrl.toString();
   } catch {
-    return rawUrl;
+    const segments = rawUrl.split("/");
+    if (
+      segments.length < 2 ||
+      segments.some(
+        (segment) =>
+          segment.length === 0 ||
+          segment === "." ||
+          segment === ".." ||
+          segment.includes("\\") ||
+          segment.includes("%"),
+      )
+    ) {
+      return rawUrl;
+    }
+
+    const encodedPath = segments.map(encodeURIComponent).join("/");
+    return `${state.supabaseUrl}/storage/v1/object/public/profile-avatars/${encodedPath}`;
   }
 }
 

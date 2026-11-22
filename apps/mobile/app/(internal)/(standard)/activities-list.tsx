@@ -1,69 +1,75 @@
+import { Button } from "@repo/ui/components/button";
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
+import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { Stack } from "expo-router";
-import { Activity } from "lucide-react-native";
+import { Stack, useLocalSearchParams } from "expo-router";
+import { Activity, SlidersHorizontal } from "lucide-react-native";
 import { useState } from "react";
-import { TouchableOpacity, View } from "react-native";
+import { View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { ActivityCard } from "@/components/shared/ActivityCard";
+import { HeaderTextAction } from "@/components/shared/HeaderAction";
 import { IndexFilterSheet } from "@/components/shared/IndexFilterSheet";
-import {
-  FilterChip,
-  FilterSection,
-  IndexResultsSummary,
-  IndexSearchBar,
-} from "@/components/shared/IndexSearchBar";
+import { FilterChip, FilterSection, IndexResultsSummary } from "@/components/shared/IndexSearchBar";
 import { ResourceList } from "@/components/shared/ResourceList";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
-import { useAuth } from "@/lib/hooks/useAuth";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 function ActivitiesScreen() {
+  const params = useLocalSearchParams<{ importRunId?: string | string[] }>();
+  const rawImportRunId = Array.isArray(params.importRunId)
+    ? params.importRunId[0]
+    : params.importRunId;
+  const importRunId =
+    rawImportRunId &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      rawImportRunId,
+    )
+      ? rawImportRunId
+      : undefined;
   const navigateTo = useAppNavigate();
-  const { profile, user } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<
     "run" | "bike" | "swim" | "strength" | "other" | null
   >(null);
   const [draftCategoryFilter, setDraftCategoryFilter] = useState<typeof categoryFilter>(null);
-  const [sortBy, setSortBy] = useState<"date" | "distance" | "duration" | "tss">("date");
+  const [sortBy, setSortBy] = useState<"date" | "distance" | "duration">("date");
   const [draftSortBy, setDraftSortBy] = useState<typeof sortBy>("date");
+  const [includeMultisport, setIncludeMultisport] = useState(true);
+  const [draftIncludeMultisport, setDraftIncludeMultisport] = useState(true);
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
   const limit = 20;
 
   // Query paginated activities
   const {
     data: activitiesData,
+    error,
+    isError,
+    isFetching,
     isLoading,
     isFetchingNextPage,
-    hasNextPage,
     fetchNextPage,
     refetch,
   } = api.activities.listPaginated.useInfiniteQuery(
     {
       limit,
-      search: searchQuery.trim() || undefined,
+      importRunId,
       activity_category: categoryFilter ?? undefined,
+      composition_mode: includeMultisport ? "include_multisport" : "single_only",
       sort_by: sortBy,
       sort_order: "desc",
     },
     {
-      getNextPageParam: (lastPage: any) => lastPage.nextCursor,
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
     },
   );
 
   const activities = activitiesData?.pages.flatMap((page) => page.items) || [];
-  const activityOwner = user?.id
-    ? {
-        avatar_url: profile?.avatar_url ?? null,
-        id: user.id,
-        username: profile?.username ?? user.email?.split("@")[0] ?? "You",
-      }
-    : null;
   const hasMore = activitiesData?.pages[activitiesData.pages.length - 1]?.hasMore || false;
   const total = activitiesData?.pages[0]?.total || 0;
+  const hasActiveFilter = categoryFilter !== null || !includeMultisport || Boolean(importRunId);
+  const hasActiveSheetFilters = categoryFilter !== null || sortBy !== "date" || !includeMultisport;
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -72,7 +78,7 @@ function ActivitiesScreen() {
   };
 
   const handleActivityPress = (activityId: string) => {
-    navigateTo(`/activity-detail?id=${activityId}` as any);
+    navigateTo(`/activity-detail?id=${activityId}`);
   };
 
   const handleLoadMore = () => {
@@ -86,29 +92,43 @@ function ActivitiesScreen() {
       <Stack.Screen
         options={{
           headerRight: () => (
-            <TouchableOpacity
-              onPress={() => navigateTo(ROUTES.ACTIVITIES.IMPORT as any)}
-              className="mr-2 rounded-full px-2 py-1"
+            <HeaderTextAction
+              accessibilityLabel="Import activity"
+              label="Import"
+              onPress={() => navigateTo(ROUTES.ACTIVITIES.IMPORT)}
               testID="activities-list-import-trigger"
-            >
-              <Text className="text-sm font-medium text-primary">Import</Text>
-            </TouchableOpacity>
+            />
           ),
         }}
       />
-      <IndexSearchBar
-        value={searchQuery}
-        placeholder="Search activities"
-        hasActiveFilters={categoryFilter !== null || sortBy !== "date"}
-        onChangeText={setSearchQuery}
-        onClear={() => setSearchQuery("")}
-        onFilterPress={() => {
-          setDraftCategoryFilter(categoryFilter);
-          setDraftSortBy(sortBy);
-          setIsFilterSheetOpen(true);
-        }}
-        testIDPrefix="activities-list"
-      />
+      <View className="items-end border-b border-border bg-background px-4 py-3">
+        <Button
+          accessibilityLabel="Open activity filters"
+          accessibilityState={{ selected: hasActiveSheetFilters }}
+          onPress={() => {
+            setDraftCategoryFilter(categoryFilter);
+            setDraftSortBy(sortBy);
+            setDraftIncludeMultisport(includeMultisport);
+            setIsFilterSheetOpen(true);
+          }}
+          testId="activities-list-filter-button"
+          variant="outline"
+        >
+          <Icon as={SlidersHorizontal} className="text-foreground" size={16} />
+          <Text>Filters</Text>
+          {hasActiveSheetFilters ? (
+            <View
+              className="h-1.5 w-1.5 rounded-full bg-primary"
+              testID="activities-list-filter-button-dot"
+            />
+          ) : null}
+        </Button>
+      </View>
+      {importRunId ? (
+        <View className="border-b border-border/50 px-4 py-2">
+          <Text className="text-sm font-medium text-foreground">Imported activity batch</Text>
+        </View>
+      ) : null}
       <ResourceList
         testID="activities-list-content"
         contentContainerClassName="gap-4 p-4 pb-6"
@@ -128,44 +148,54 @@ function ActivitiesScreen() {
           </View>
         }
         hasNextPage={hasMore}
+        errorDescription={error?.message ?? "Please try again."}
+        errorTitle="Unable to load activities"
+        isError={isError}
         isFetchingNextPage={isFetchingNextPage}
         isLoading={isLoading}
+        isEmptyFiltered={hasActiveFilter}
+        isRetrying={isFetching}
         keyExtractor={(activity) => activity.id}
         ListHeaderComponent={<IndexResultsSummary count={total} singularLabel="activity" />}
         loadingSkeletonCount={8}
         onLoadMore={handleLoadMore}
         onRefresh={handleRefresh}
+        onRetry={refetch}
         refreshing={refreshing}
-        renderItem={(activity) => (
-          <ActivityCard
-            activity={activity as any}
-            dateMode="absolute"
-            onPress={() => handleActivityPress(activity.id)}
-            owner={activityOwner}
-            showLike
-            testID={`activities-list-item-${activity.id}`}
-            variant="list"
-          />
-        )}
+        renderItem={(activity) => {
+          return (
+            <ActivityCard
+              activity={activity}
+              dateMode="absolute"
+              onCommentPress={() => handleActivityPress(activity.id)}
+              onPress={() => handleActivityPress(activity.id)}
+              testID={`activities-list-item-${activity.id}`}
+            />
+          );
+        }}
       />
       <IndexFilterSheet
         visible={isFilterSheetOpen}
         title="Activity Filters"
         description="Refine your activities list."
-        isResetDisabled={draftCategoryFilter === null && draftSortBy === "date"}
+        isResetDisabled={
+          draftCategoryFilter === null && draftSortBy === "date" && draftIncludeMultisport
+        }
         onReset={() => {
           setDraftCategoryFilter(null);
           setDraftSortBy("date");
+          setDraftIncludeMultisport(true);
         }}
         onApply={() => {
           setCategoryFilter(draftCategoryFilter);
           setSortBy(draftSortBy);
+          setIncludeMultisport(draftIncludeMultisport);
           setIsFilterSheetOpen(false);
         }}
         onClose={() => setIsFilterSheetOpen(false)}
         testID="activities-list-filter-sheet"
       >
-        <FilterSection title="Activity type">
+        <FilterSection title="Activity category">
           <View className="flex-row flex-wrap gap-2">
             {[
               { id: "run", label: "Running" },
@@ -188,13 +218,22 @@ function ActivitiesScreen() {
             ))}
           </View>
         </FilterSection>
+        <FilterSection title="Composition">
+          <View className="flex-row flex-wrap gap-2">
+            <FilterChip
+              label="Include multisport"
+              isActive={draftIncludeMultisport}
+              onPress={() => setDraftIncludeMultisport((current) => !current)}
+              testID="activities-list-filter-include-multisport"
+            />
+          </View>
+        </FilterSection>
         <FilterSection title="Sort">
           <View className="flex-row flex-wrap gap-2">
             {[
               { id: "date", label: "Date" },
               { id: "distance", label: "Distance" },
               { id: "duration", label: "Duration" },
-              { id: "tss", label: "TSS" },
             ].map((option) => (
               <FilterChip
                 key={option.id}

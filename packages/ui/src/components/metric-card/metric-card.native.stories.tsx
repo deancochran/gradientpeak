@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from "@storybook/react";
+import type { Meta, StoryObj } from "@storybook/react-native";
 import { Activity } from "lucide-react-native";
 import { View } from "react-native";
 

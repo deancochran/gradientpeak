@@ -1,68 +1,185 @@
-import { expect, test } from "../fixtures";
+import {
+  authLaneContextOptions,
+  authLaneRequestHeaders,
+  expect,
+  test,
+} from "../lane-support/auth/lane-test";
+import {
+  expiredVerificationUrl,
+  login,
+  signUp,
+  uniqueAuthActor,
+  waitForAuthMail,
+} from "../lane-support/auth/mailbox";
+import { AuthPage, expectNoHorizontalOverflow } from "../pages";
+import { currentContractEpochHeaders } from "../utils/contractEpoch";
 
-const requiresSeededUsers =
-  Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY) ||
-  Boolean(process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY);
+async function navigateThroughClientRedirect(page: Parameters<typeof login>[0], url: string) {
+  try {
+    await page.goto(url);
+  } catch (error) {
+    // Firefox reports a binding abort when TanStack Router replaces an SSR
+    // redirect during navigation. The destination assertion remains required.
+    if (
+      !(error instanceof Error) ||
+      !/(?:NS_BINDING_ABORTED|NS_ERROR_FAILURE|ERR_ABORTED)/.test(error.message)
+    ) {
+      throw error;
+    }
+  }
+}
 
-const authUserTest = requiresSeededUsers ? test : test.skip;
+function authContextForClientSlot(
+  laneServer: Parameters<typeof authLaneContextOptions>[0],
+  slot: number,
+) {
+  const octets = laneServer.clientIp.split(".").map(Number);
+  const lastOctet = octets.at(-1);
+  if (octets.length !== 4 || lastOctet === undefined || !Number.isInteger(lastOctet)) {
+    throw new Error(`Auth lane client IP is not IPv4: ${laneServer.clientIp}`);
+  }
+  octets[3] = ((lastOctet - 1 + slot) % 254) + 1;
+  return authLaneContextOptions(
+    { ...laneServer, clientIp: octets.join(".") },
+    { viewport: { width: 1280, height: 720 } },
+  );
+}
 
-authUserTest(
-  "protected routes redirect through login and return after authentication",
-  async ({ page }) => {
+test("protected routes preserve a local return path and reject hostile login redirects", async ({
+  page,
+}) => {
+  await navigateThroughClientRedirect(page, "/settings");
+  await expect(page).toHaveURL(/\/auth\/login\?redirect=%2Fsettings/);
+
+  await navigateThroughClientRedirect(
+    page,
+    "/auth/login?redirect=https%3A%2F%2Fevil.example%2Fcallback",
+  );
+  await expect(page).toHaveURL(/\/auth\/login\?redirect=%2F(?:settings)?$/);
+  expect(new URL(page.url()).origin).not.toBe("https://evil.example");
+});
+
+test("sign-up verification rejects expiry and replay while preserving responsive onboarding", async ({
+  laneServer,
+  page,
+}) => {
+  const actor = uniqueAuthActor("verify");
+  const mail = await signUp(page, actor);
+  await expect(page).toHaveURL(/\/auth\/sign-up-success/);
+
+  const expired = await page.request.get(expiredVerificationUrl(mail.actionUrl), {
+    headers: authLaneRequestHeaders(laneServer),
+    maxRedirects: 0,
+  });
+  expect(expired.status()).toBe(302);
+  expect(expired.headers().location).toContain("TOKEN_EXPIRED");
+
+  await page.goto(mail.actionUrl, { waitUntil: "commit" });
+  await expect(page).toHaveURL(/\/auth\/verification-success/);
+
+  const replay = await page.request.get(mail.actionUrl, {
+    headers: authLaneRequestHeaders(laneServer),
+    maxRedirects: 0,
+  });
+  expect(replay.status()).toBeGreaterThanOrEqual(400);
+
+  await login(page, actor);
+  await expect(page).toHaveURL(/\/onboarding/);
+  const viewport = page.viewportSize();
+  await expectNoHorizontalOverflow(page);
+  expect(viewport?.width).toBeGreaterThan(0);
+});
+
+test("real password reset changes the credential and revokes a second session", async ({
+  browser,
+  laneServer,
+  page,
+}) => {
+  const actor = uniqueAuthActor("recovery");
+  const verification = await signUp(page, actor);
+  const verificationResponse = await page.request.get(verification.actionUrl, {
+    headers: authLaneRequestHeaders(laneServer),
+  });
+  expect(verificationResponse.status()).toBe(200);
+
+  const secondContext = await browser.newContext(authContextForClientSlot(laneServer, 1));
+  const recoveryContext = await browser.newContext(authContextForClientSlot(laneServer, 2));
+  let renewedContext: Awaited<ReturnType<typeof browser.newContext>> | undefined;
+  const secondSession = await secondContext.newPage();
+  const recoveryPage = await recoveryContext.newPage();
+  let primaryError: unknown;
+  try {
+    await login(page, actor);
+    await expect(page).toHaveURL(/\/onboarding/);
+    const secondLogin = await secondSession.request.post("/api/auth/sign-in/email", {
+      data: actor,
+      headers: authLaneRequestHeaders(laneServer, currentContractEpochHeaders),
+    });
+    expect(secondLogin.status()).toBe(200);
+    expect((await secondContext.cookies()).some((cookie) => cookie.name.includes("session"))).toBe(
+      true,
+    );
+
+    const after = Date.now();
+    // Password recovery is public-only; use the original unauthenticated
+    // context so the public route's authenticated-user guard cannot redirect it.
+    const recoveryAuth = new AuthPage(recoveryPage);
+    await recoveryAuth.requestPasswordReset(actor.email);
+    const resetMail = await waitForAuthMail({ to: actor.email, kind: "reset-password", after });
+
+    const nextPassword = "ChangedPass456!";
+    await recoveryAuth.resetPassword(resetMail.actionUrl, nextPassword);
+    await expect(recoveryPage).toHaveURL(/\/auth\/login/);
+
+    await secondSession.goto("/settings");
+    await expect(secondSession).toHaveURL(/\/auth\/login\?redirect=/);
+
     await page.goto("/settings");
-
     await expect(page).toHaveURL(/\/auth\/login\?redirect=/);
 
-    await page.getByLabel("Email *").fill("athlete@test.com");
-    await page.getByLabel("Password *").fill("TestPass123!");
-    await page.getByRole("button", { name: /^login$/i }).click();
+    await recoveryAuth.signIn(actor);
+    await expect(recoveryPage.getByText(/invalid email or password/i)).toBeVisible();
 
-    await expect(page).toHaveURL(/\/settings$/);
-    await expect(page.getByRole("heading", { name: /^settings$/i })).toBeVisible();
-  },
-);
+    // The login form journey is covered above. Exercise the actual Better Auth
+    // endpoint in a fresh browser context here so this assertion isolates the
+    // changed credential from the form's navigation behavior.
+    renewedContext = await browser.newContext(authContextForClientSlot(laneServer, 3));
+    const renewedSession = await renewedContext.newPage();
+    const renewedLogin = await renewedSession.request.post("/api/auth/sign-in/email", {
+      data: { email: actor.email, password: nextPassword },
+      headers: authLaneRequestHeaders(laneServer, currentContractEpochHeaders),
+    });
+    expect(renewedLogin.status()).toBe(200);
+    expect((await renewedContext.cookies()).some((cookie) => cookie.name.includes("session"))).toBe(
+      true,
+    );
+    await renewedSession.goto("/onboarding");
+    await expect(renewedSession).toHaveURL(/\/onboarding/);
 
-test("forgot password submits without leaking email into the URL", async ({ page }) => {
-  await page.goto("/auth/forgot-password");
+    const resetToken = new URL(resetMail.actionUrl).pathname.split("/").at(-1);
+    expect(resetToken).toBeTruthy();
+    const replay = await recoveryPage.request.post("/api/auth/reset-password", {
+      data: { newPassword: "ReplayPass789!", token: resetToken },
+      headers: authLaneRequestHeaders(laneServer, currentContractEpochHeaders),
+    });
+    expect(replay.status()).toBeGreaterThanOrEqual(400);
+  } catch (error) {
+    primaryError = error;
+  }
 
-  const email = "athlete@test.com";
-  await page.getByLabel("Email *").fill(email);
-  await page.getByRole("button", { name: /send reset email/i }).click();
+  const cleanupErrors: unknown[] = [];
+  for (const context of [secondContext, recoveryContext, renewedContext]) {
+    if (!context) continue;
+    try {
+      await context.close();
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+  }
 
-  await expect(page).not.toHaveURL(new RegExp(encodeURIComponent(email)));
-  await expect(page).toHaveURL(/(\/auth\/forgot-password(\?submitted=true)?$)|(_serverFn\/)/);
+  if (cleanupErrors.length > 0) {
+    const errors = primaryError === undefined ? cleanupErrors : [primaryError, ...cleanupErrors];
+    throw new AggregateError(errors, "Failed during auth test journey or context cleanup");
+  }
+  if (primaryError !== undefined) throw primaryError;
 });
-
-test("reset password submit does not leak password values into the URL", async ({ page }) => {
-  await page.goto("/auth/update-password?token=test-reset-token");
-
-  const password = "SafePass123!";
-  await page.getByLabel("New password *").fill(password);
-  await page.getByLabel("Confirm password *").fill(password);
-  await page.getByRole("button", { name: /save new password/i }).click();
-
-  await expect(page).not.toHaveURL(new RegExp(encodeURIComponent(password)));
-  await expect(page).toHaveURL(/(\/auth\/update-password\?token=test-reset-token$)|(_serverFn\/)/);
-});
-
-authUserTest("authenticated user can sign out and return to login", async ({ athletePage }) => {
-  await athletePage.getByRole("button", { name: /open user menu/i }).click();
-  await athletePage.getByRole("menuitem", { name: /log out/i }).click();
-
-  await expect(athletePage).toHaveURL(/\/auth\/login$/);
-  await expect(athletePage.getByRole("heading", { name: /^login$/i })).toBeVisible();
-});
-
-authUserTest(
-  "settings profile form redirects back to settings after update",
-  async ({ athletePage }) => {
-    await athletePage.goto("/settings");
-
-    const usernameInput = athletePage.getByLabel("Username");
-    await usernameInput.fill("athlete_user");
-    await athletePage.getByRole("button", { name: /update profile/i }).click();
-
-    await expect(athletePage).toHaveURL(/\/settings\?updated=profile$/);
-    await expect(athletePage.getByText(/profile updated successfully/i)).toBeVisible();
-  },
-);
