@@ -78,7 +78,7 @@ describe("GroupEventForm organizer timezone", () => {
 
     await waitFor(() => expect(onSubmit).not.toHaveBeenCalled());
     expect(document.getElementById("group-event-schedule-error")?.textContent).toContain(
-      "scheduledDate",
+      "Choose a start date and time.",
     );
   });
 
