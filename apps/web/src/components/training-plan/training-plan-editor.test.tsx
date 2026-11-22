@@ -423,9 +423,11 @@ describe("TrainingPlanEditor", () => {
       target: { value: "Another search" },
     });
     expect(screen.getByLabelText("Activity plan")).toHaveProperty("value", id);
-    expect(screen.getByTestId(`training-plan-selected-activity-${id}`).textContent).toContain(
-      "Unavailable in current results",
-    );
+    expect(
+      screen
+        .getAllByRole("status")
+        .some((status) => status.textContent?.includes("selection is retained")),
+    ).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Create plan" }));
     await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
     expect(mocks.create.mock.calls[0]?.[0].draft.structure.sessions[0].activity_plan_id).toBe(id);

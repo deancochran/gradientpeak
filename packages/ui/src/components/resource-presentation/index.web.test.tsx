@@ -7,6 +7,7 @@ import {
   ResourceCardHeader,
   ResourceCardShell,
   ResourceMetricsRow,
+  ResourceSelectionField,
 } from "./index.web";
 
 describe("Resource presentation web", () => {
@@ -62,6 +63,26 @@ describe("Resource presentation web", () => {
     expect(screen.getByText("Unavailable in current results")).toBeInTheDocument();
     expect(screen.getByText("Canonical plan card")).toBeInTheDocument();
     expect(screen.getByTestId("selected-plan").querySelector("button")).toBeNull();
+  });
+
+  it("retains an off-page resource selection in its native browser select", () => {
+    const onChange = vi.fn();
+    renderWeb(
+      <ResourceSelectionField
+        automaticLabel="Choose automatically"
+        fallbackLabel="Selected activity"
+        id="activity-plan"
+        label="Activity plan"
+        onChange={onChange}
+        options={[{ label: "Current activity", value: "current" }]}
+        value="off-page"
+      />,
+    );
+
+    expect(screen.getByLabelText("Activity plan")).toHaveValue("off-page");
+    expect(screen.getByRole("status")).toHaveTextContent("selection is retained");
+    fireEvent.change(screen.getByLabelText("Activity plan"), { target: { value: "" } });
+    expect(onChange).toHaveBeenCalledWith(null);
   });
 
   it("keeps all metrics in compact density unless the app asks for a limit", () => {

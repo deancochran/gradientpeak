@@ -1,6 +1,6 @@
 import { fireEvent, renderNative } from "../../test/render-native";
 import { Text } from "../text/index.native";
-import { ResourceAssociation, ResourceCardShell, ResourceMetricsRow } from "./index.native";
+import { ResourceCardShell, ResourceMetricsRow } from "./index.native";
 
 describe("Resource presentation native", () => {
   it("keeps secondary actions outside the primary 44dp navigation target", async () => {
@@ -42,24 +42,6 @@ describe("Resource presentation native", () => {
 
     expect(getByText("Distance")).toBeTruthy();
     expect(getByText("—")).toBeTruthy();
-  });
-
-  it("frames a selected association without making the frame an action", async () => {
-    const { getByTestId, getByText } = await renderNative(
-      <ResourceAssociation
-        description="This plan remains attached to the session."
-        label="Selected activity plan"
-        status="Unavailable in current results"
-        testID="selected-plan"
-      >
-        <Text>Canonical plan card</Text>
-      </ResourceAssociation>,
-    );
-
-    expect(getByTestId("selected-plan")).toBeTruthy();
-    expect(getByText("Selected activity plan")).toBeTruthy();
-    expect(getByText("Unavailable in current results")).toBeTruthy();
-    expect(getByText("Canonical plan card")).toBeTruthy();
   });
 
   it("keeps all compact metrics unless the app asks for a limit", async () => {

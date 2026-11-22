@@ -8,7 +8,10 @@ import { formatLocalDateOnly } from "@repo/core/utils/fitness-inputs";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Input } from "@repo/ui/components/input";
-import { ResourceAssociation } from "@repo/ui/components/resource-presentation";
+import {
+  ResourceAssociation,
+  ResourceSelectionField,
+} from "@repo/ui/components/resource-presentation";
 import { Textarea } from "@repo/ui/components/textarea";
 import { skipToken } from "@tanstack/react-query";
 import type { inferRouterInputs } from "@trpc/server";
@@ -208,18 +211,14 @@ function TrainingPlanEditorSession({
   const renderSelectedActivityPlanAssociation = (activityPlanId: string | null) => {
     if (!activityPlanId) return null;
     const selectedActivityPlan = activityPlans.find((plan) => plan.id === activityPlanId);
+    if (!selectedActivityPlan) return null;
     return (
       <ResourceAssociation
-        description={
-          selectedActivityPlan
-            ? "This session uses the selected activity plan."
-            : "This selection is retained while it is outside the current search results."
-        }
+        description="This session uses the selected activity plan."
         label="Selected activity plan"
-        status={selectedActivityPlan ? undefined : "Unavailable in current results"}
         testID={`training-plan-selected-activity-${activityPlanId}`}
       >
-        {selectedActivityPlan ? <ActivityPlanCard plan={selectedActivityPlan} selected /> : null}
+        <ActivityPlanCard plan={selectedActivityPlan} selected />
       </ResourceAssociation>
     );
   };
@@ -664,49 +663,31 @@ function TrainingPlanEditorSession({
                 >
                   <legend className="px-1 text-sm font-medium">Activity {index + 1}</legend>
                   <div className="space-y-2">
-                    <label
-                      className="block space-y-1"
-                      htmlFor={`training-plan-session-activity-${session.draftId}`}
-                    >
-                      <span className="text-xs">Activity plan</span>
-                      <select
-                        className="h-10 w-full rounded-md border bg-background px-3"
-                        id={`training-plan-session-activity-${session.draftId}`}
-                        onChange={(event) => {
-                          const plan = activityPlans.find((item) => item.id === event.target.value);
-                          setSessions((current) =>
-                            current.map((item, itemIndex) =>
-                              itemIndex === index
-                                ? {
-                                    ...item,
-                                    activityPlanId: event.target.value || null,
-                                    ...(plan
-                                      ? {
-                                          activityCategory: plan.activityCategory,
-                                          title: plan.name,
-                                        }
-                                      : {}),
-                                  }
-                                : item,
-                            ),
-                          );
-                        }}
-                        value={session.activityPlanId ?? ""}
-                      >
-                        <option value="">Choose automatically</option>
-                        {session.activityPlanId &&
-                        !activityPlans.some((plan) => plan.id === session.activityPlanId) ? (
-                          <option value={session.activityPlanId}>
-                            {session.title || "Selected activity"}
-                          </option>
-                        ) : null}
-                        {activityPlans.map((plan) => (
-                          <option key={plan.id} value={plan.id}>
-                            {plan.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                    <ResourceSelectionField
+                      automaticLabel="Choose automatically"
+                      disabled={hasUncertainCommit}
+                      fallbackLabel={session.title || "Selected activity"}
+                      id={`training-plan-session-activity-${session.draftId}`}
+                      label="Activity plan"
+                      onChange={(activityPlanId) => {
+                        const plan = activityPlans.find((item) => item.id === activityPlanId);
+                        setSessions((current) =>
+                          current.map((item, itemIndex) =>
+                            itemIndex === index
+                              ? {
+                                  ...item,
+                                  activityPlanId,
+                                  ...(plan
+                                    ? { activityCategory: plan.activityCategory, title: plan.name }
+                                    : {}),
+                                }
+                              : item,
+                          ),
+                        );
+                      }}
+                      options={activityPlans.map((plan) => ({ label: plan.name, value: plan.id }))}
+                      value={session.activityPlanId}
+                    />
                     {renderSelectedActivityPlanAssociation(session.activityPlanId)}
                   </div>
                   {session.activityPlanId === null ? (

@@ -1,12 +1,14 @@
 import { cn } from "../../lib/cn";
 import { Card, CardContent } from "../card/index.web";
 import { Icon } from "../icon/index.web";
+import { Label } from "../label/index.web";
 import type {
   ResourceActionRegionProps,
   ResourceAssociationProps,
   ResourceCardHeaderProps,
   ResourceCardShellProps,
   ResourceMetricsRowProps,
+  ResourceSelectionFieldProps,
 } from "./shared";
 
 export function ResourceActionRegion({ children, className, testID }: ResourceActionRegionProps) {
@@ -35,6 +37,47 @@ export function ResourceAssociation({
       </div>
       {children}
     </section>
+  );
+}
+
+export function ResourceSelectionField<T extends string>({
+  automaticLabel,
+  disabled = false,
+  fallbackLabel,
+  id,
+  label,
+  onChange,
+  options,
+  unavailableMessage = "Selected resource is outside the current results. Its selection is retained.",
+  value,
+}: ResourceSelectionFieldProps<T>) {
+  const isCurrentResult = value === null || options.some((option) => option.value === value);
+  return (
+    <div className="space-y-1">
+      <Label htmlFor={id}>{label}</Label>
+      <select
+        className="h-10 w-full rounded-md border bg-background px-3"
+        disabled={disabled}
+        id={id}
+        onChange={(event) => onChange((event.target.value || null) as T | null)}
+        value={value ?? ""}
+      >
+        <option value="">{automaticLabel}</option>
+        {value !== null && !isCurrentResult ? (
+          <option value={value}>{fallbackLabel ?? "Selected resource"}</option>
+        ) : null}
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      {value !== null && !isCurrentResult ? (
+        <p className="text-xs text-muted-foreground" role="status">
+          {unavailableMessage}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -214,4 +257,6 @@ export type {
   ResourceCardShellProps,
   ResourceMetric,
   ResourceMetricsRowProps,
+  ResourceSelectionFieldProps,
+  ResourceSelectionOption,
 } from "./shared";

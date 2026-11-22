@@ -72,3 +72,24 @@ export type ResourceAssociationProps = {
   status?: string;
   testID?: string;
 };
+
+export type ResourceSelectionOption<T extends string = string> = {
+  label: string;
+  value: T;
+};
+
+/**
+ * A native-select resource choice with an explicit automatic option and a
+ * retained fallback for selections outside the current result page.
+ */
+export type ResourceSelectionFieldProps<T extends string = string> = {
+  automaticLabel: string;
+  disabled?: boolean;
+  fallbackLabel?: string;
+  id: string;
+  label: string;
+  onChange: (value: T | null) => void;
+  options: readonly ResourceSelectionOption<T>[];
+  unavailableMessage?: string;
+  value: T | null;
+};
