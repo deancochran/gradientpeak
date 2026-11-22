@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./components/route-metadata-fields": {
+      "react-native": "./src/components/route-metadata-fields/index.native.tsx",
+      "default": "./src/components/route-metadata-fields/index.web.tsx"
+    },
     "./components/training-state-chart": {
       "react-native": "./src/components/training-state-chart/index.native.tsx",
       "default": "./src/components/training-state-chart/index.web.tsx"
