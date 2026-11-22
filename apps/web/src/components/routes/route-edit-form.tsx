@@ -4,8 +4,9 @@ import {
   routeEditFormSchema,
 } from "@repo/core/route-files";
 import { Button } from "@repo/ui/components/button";
-import { Form, FormTextareaField, FormTextField } from "@repo/ui/components/form";
+import { Form } from "@repo/ui/components/form";
 import { LoadingButton } from "@repo/ui/components/loading";
+import { RouteMetadataFields } from "@repo/ui/components/route-metadata-fields";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 
 import { useUnsavedChangesGuard } from "../../lib/use-unsaved-changes-guard";
@@ -44,22 +45,11 @@ export function RouteEditForm({
   return (
     <Form {...form}>
       <form className="space-y-4" data-testid="route-edit-form" onSubmit={submit.handleSubmit}>
-        <FormTextField
+        <RouteMetadataFields
           control={form.control}
           disabled={isPending}
-          label="Route name"
-          name="name"
-          required
-          testId="route-edit-name-input"
-        />
-        <FormTextareaField
-          className="min-h-28"
-          control={form.control}
-          description="Optional notes about terrain, access, or intended use."
-          disabled={isPending}
-          label="Description"
-          name="description"
-          testId="route-edit-description-input"
+          descriptionTestId="route-edit-description-input"
+          nameTestId="route-edit-name-input"
         />
         {submitError ? (
           <p className="text-sm text-destructive" role="alert">

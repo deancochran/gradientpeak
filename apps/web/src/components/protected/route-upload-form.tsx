@@ -6,8 +6,9 @@ import {
   routeUploadFormSchema,
 } from "@repo/core/route-files";
 import { Button } from "@repo/ui/components/button";
-import { Form, FormFileField, FormTextareaField, FormTextField } from "@repo/ui/components/form";
+import { Form, FormFileField } from "@repo/ui/components/form";
 import { LoadingButton } from "@repo/ui/components/loading";
+import { RouteMetadataFields } from "@repo/ui/components/route-metadata-fields";
 import { useZodForm } from "@repo/ui/hooks";
 import { Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -228,22 +229,13 @@ export function RouteUploadForm<TResult = unknown>({
           required
           testId="route-upload-file-input"
         />
-        <FormTextField
+        <RouteMetadataFields
           control={form.control}
           disabled={disabled}
-          label="Route name"
-          name="name"
-          required
-          testId="route-upload-name-input"
-        />
-        <FormTextareaField
-          className="min-h-28"
-          control={form.control}
-          disabled={disabled}
-          label="Description"
-          name="description"
-          placeholder="Add notes about this route"
-          testId="route-upload-description-input"
+          descriptionHint=""
+          descriptionPlaceholder="Add notes about this route"
+          descriptionTestId="route-upload-description-input"
+          nameTestId="route-upload-name-input"
         />
         {phase !== "idle" ? (
           <p aria-live="polite" className="text-sm text-muted-foreground" role="status">

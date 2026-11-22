@@ -190,6 +190,38 @@ describe("route edit screen", () => {
     expect(screen.getByTestId("route-edit-name-input").props.value).toBe("Second route");
   });
 
+  it("ignores a previous owner's late save completion", async () => {
+    let resolve!: (value: { id: string }) => void;
+    updateRouteMock.mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const view = await renderScreen();
+    await fireEvent.changeText(screen.getByTestId("route-edit-name-input"), "Old owner's draft");
+    const submit = screen.getByTestId("route-edit-submit-button").props.onPress;
+    await act(async () => {
+      void submit();
+    });
+    expect(updateRouteMock).toHaveBeenCalledTimes(1);
+
+    authState.user.id = "profile-2";
+    routeData = {
+      id: routeId,
+      profile_id: "profile-2",
+      name: "New owner's route",
+      description: null,
+    };
+    await view.rerender(<RouteEditScreen />);
+    expect(screen.getByTestId("route-edit-name-input").props.value).toBe("New owner's route");
+
+    await act(async () => {
+      resolve({ id: routeId });
+    });
+    expect(backMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId("route-edit-name-input").props.value).toBe("New owner's route");
+  });
+
   it("retains a rejected draft and keeps owner Back cancellation behind the existing guard", async () => {
     updateRouteMock.mockRejectedValueOnce(new Error("Save unavailable"));
     await renderScreen();
