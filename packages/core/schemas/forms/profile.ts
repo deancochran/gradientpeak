@@ -1,4 +1,9 @@
 import { z } from "zod";
+import { ianaTimezoneSchema } from "../../athlete-intelligence/planning-context";
+import { calculateDateOfBirthAge, isValidDateOfBirth } from "../../profile/date-of-birth";
+import { preferredUnitSystemSchema } from "../../units";
+import { contentVisibilitySchema } from "../content_visibility";
+import { onboardingStep1Schema } from "../onboarding";
 import {
   emptyStringToNull,
   optionalUrlSchema,
@@ -31,66 +36,6 @@ export const optionalWeightKgSchema = z.preprocess(
     .min(30, "Weight must be at least 30kg")
     .max(300, "Weight must be less than 300kg")
     .positive("Weight must be positive")
-    .nullable(),
-);
-
-/**
- * FTP (Functional Threshold Power) validation in watts
- * Range: 50W - 1000W (covers beginners to elite cyclists)
- */
-export const ftpSchema = z.preprocess(
-  stringToNumber,
-  z
-    .number({
-      message: "FTP must be a number",
-    })
-    .int("FTP must be a whole number")
-    .min(50, "FTP must be at least 50 watts")
-    .max(1000, "FTP must be less than 1000 watts")
-    .positive("FTP must be positive"),
-);
-
-/**
- * Optional FTP
- */
-export const optionalFtpSchema = z.preprocess(
-  (val) => stringToNumber(emptyStringToNull(val)),
-  z
-    .number()
-    .int("FTP must be a whole number")
-    .min(50, "FTP must be at least 50 watts")
-    .max(1000, "FTP must be less than 1000 watts")
-    .positive("FTP must be positive")
-    .nullable(),
-);
-
-/**
- * Threshold Heart Rate validation in BPM
- * Range: 100 - 220 BPM (covers all age groups)
- */
-export const thresholdHrSchema = z.preprocess(
-  stringToNumber,
-  z
-    .number({
-      message: "Threshold heart rate must be a number",
-    })
-    .int("Threshold heart rate must be a whole number")
-    .min(100, "Threshold heart rate must be at least 100 bpm")
-    .max(220, "Threshold heart rate must be less than 220 bpm")
-    .positive("Threshold heart rate must be positive"),
-);
-
-/**
- * Optional threshold heart rate
- */
-export const optionalThresholdHrSchema = z.preprocess(
-  (val) => stringToNumber(emptyStringToNull(val)),
-  z
-    .number()
-    .int("Threshold heart rate must be a whole number")
-    .min(100, "Threshold heart rate must be at least 100 bpm")
-    .max(220, "Threshold heart rate must be less than 220 bpm")
-    .positive("Threshold heart rate must be positive")
     .nullable(),
 );
 
@@ -200,16 +145,14 @@ export const optionalGenderSchema = z.preprocess(emptyStringToNull, genderSchema
  */
 export const dobSchema = z
   .string()
-  .refine((val) => !Number.isNaN(Date.parse(val)), "Invalid date of birth")
+  .refine(isValidDateOfBirth, "Invalid date of birth")
   .refine((val) => {
-    const dob = new Date(val);
-    const age = Math.floor((Date.now() - dob.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
-    return age >= 13;
+    const age = calculateDateOfBirthAge(val);
+    return age !== null && age >= 13;
   }, "You must be at least 13 years old")
   .refine((val) => {
-    const dob = new Date(val);
-    const age = Math.floor((Date.now() - dob.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
-    return age <= 120;
+    const age = calculateDateOfBirthAge(val);
+    return age !== null && age <= 120;
   }, "Invalid date of birth");
 
 /**
@@ -231,37 +174,19 @@ export const optionalBioSchema = z.preprocess(emptyStringToNull, bioSchema.nulla
 /**
  * Profile Settings Form Schema
  * Matches the actual database schema (public.profiles table)
- * Fields: username, bio, weight_kg, ftp, threshold_hr, dob, avatar_url, cover_url, preferred_units, language, onboarded
+ * Performance thresholds are intentionally excluded and are calculated from activity evidence.
  */
-export const profileSettingsFormSchema = z
-  .object({
-    username: optionalUsernameSchema,
-    bio: optionalBioSchema,
-    weight_kg: optionalWeightKgSchema,
-    ftp: optionalFtpSchema,
-    threshold_hr: optionalThresholdHrSchema,
-    dob: optionalDobSchema,
-    avatar_url: optionalUrlSchema,
-    cover_url: optionalUrlSchema,
-    preferred_units: z.enum(["metric", "imperial"]).optional().nullable(),
-    language: z.string().max(10).optional().nullable(),
-    onboarded: z.boolean().optional().nullable(),
-  })
-  .refine(
-    (data) => {
-      // Power-to-weight ratio sanity check (if both provided)
-      if (data.ftp && data.weight_kg) {
-        const powerToWeight = data.ftp / data.weight_kg;
-        // Reasonable range: 1.0 - 7.0 W/kg
-        return powerToWeight >= 1.0 && powerToWeight <= 7.0;
-      }
-      return true;
-    },
-    {
-      message: "Power-to-weight ratio seems unrealistic. Please verify FTP and weight.",
-      path: ["ftp"],
-    },
-  );
+export const profileSettingsFormSchema = z.object({
+  username: optionalUsernameSchema,
+  bio: optionalBioSchema,
+  weight_kg: optionalWeightKgSchema,
+  dob: optionalDobSchema,
+  avatar_url: optionalUrlSchema,
+  cover_url: optionalUrlSchema,
+  preferred_units: preferredUnitSystemSchema.optional().nullable(),
+  language: z.string().max(10).optional().nullable(),
+  onboarding_status: z.enum(["provider_selection", "processing", "review", "completed"]).optional(),
+});
 
 export type ProfileSettingsFormData = z.infer<typeof profileSettingsFormSchema>;
 
@@ -271,12 +196,36 @@ export type ProfileSettingsFormData = z.infer<typeof profileSettingsFormSchema>;
 export const profileQuickUpdateSchema = z.object({
   username: optionalUsernameSchema,
   weight_kg: optionalWeightKgSchema,
-  ftp: optionalFtpSchema,
-  threshold_hr: optionalThresholdHrSchema,
   is_public: z.boolean().optional(),
 });
 
 export type ProfileQuickUpdateData = z.infer<typeof profileQuickUpdateSchema>;
+
+/**
+ * Canonical transport input for `profiles.update`.
+ *
+ * Performance thresholds are managed by the canonical calibration projection,
+ * not generic profile updates.
+ */
+export const profilePatchInputSchema = z
+  .object({
+    username: optionalUsernameSchema.optional(),
+    full_name: onboardingStep1Schema.shape.full_name.optional(),
+    weight_kg: optionalWeightKgSchema.optional(),
+    avatar_url: z.string().nullable().optional(),
+    cover_url: z.string().nullable().optional(),
+    bio: z.string().max(500).nullable().optional(),
+    dob: z.string().refine(isValidDateOfBirth, "Invalid date of birth").nullable().optional(),
+    preferred_units: preferredUnitSystemSchema.nullable().optional(),
+    planning_timezone: ianaTimezoneSchema.nullable().optional(),
+    language: z.string().max(10).nullable().optional(),
+    is_public: z.boolean().optional(),
+    default_content_visibility: contentVisibilitySchema.optional(),
+  })
+  .strict();
+
+export type ProfilePatchInput = z.input<typeof profilePatchInputSchema>;
+export type ProfilePatch = z.output<typeof profilePatchInputSchema>;
 
 /**
  * Avatar update schema (avatar only)
