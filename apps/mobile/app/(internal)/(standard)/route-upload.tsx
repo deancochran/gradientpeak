@@ -32,10 +32,18 @@ export default function UploadRouteScreen() {
   const router = useRouter();
   const utils = api.useUtils();
   const { user } = useAuth();
-  const lifetime = useEditLifetime(user?.id ?? "");
-  const [uploadPhase, setUploadPhase] = useState<UploadPhase>("idle");
-  const uploadInFlightRef = useRef(false);
-  const terminalSuccessRef = useRef(false);
+  const ownerKey = user?.id ?? "";
+  const lifetime = useEditLifetime(ownerKey);
+  const [uploadPhaseState, setUploadPhaseState] = useState({
+    ownerKey,
+    phase: "idle" as UploadPhase,
+  });
+  const operationRef = useRef({ inFlight: false, ownerKey, terminalSuccess: false });
+  if (operationRef.current.ownerKey !== ownerKey) {
+    operationRef.current = { inFlight: false, ownerKey, terminalSuccess: false };
+  }
+  const operation = operationRef.current;
+  const uploadPhase = uploadPhaseState.ownerKey === ownerKey ? uploadPhaseState.phase : "idle";
   const previousFileKeyRef = useRef<string | null>(null);
   const previousAutoNameRef = useRef<string | null>(null);
   const form = useZodForm({
@@ -54,7 +62,7 @@ export default function UploadRouteScreen() {
   const files = form.watch("files");
   const selectedFile = files[0] ?? null;
   const isFormDisabled =
-    uploadPhase !== "idle" || uploadMutation.isPending || terminalSuccessRef.current;
+    uploadPhase !== "idle" || uploadMutation.isPending || operation.terminalSuccess;
 
   useEffect(() => {
     const fileKey = selectedFile
@@ -95,21 +103,26 @@ export default function UploadRouteScreen() {
 
   useEffect(() => {
     const subscription = form.watch(() => {
-      if (!terminalSuccessRef.current) {
+      if (!operation.terminalSuccess) {
         form.clearErrors("root");
       }
     });
     return () => subscription.unsubscribe();
-  }, [form]);
+  }, [form, operation]);
 
   const submitForm = useZodFormSubmit({
     form,
+    resetKey: ownerKey,
     shouldRethrow: false,
     onSubmit: async (values) => {
-      if (uploadInFlightRef.current || terminalSuccessRef.current) {
+      if (operation.inFlight || operation.terminalSuccess) {
         return;
       }
-      uploadInFlightRef.current = true;
+      const isCurrent = lifetime.capture();
+      const setUploadPhase = (phase: UploadPhase) => {
+        if (isCurrent()) setUploadPhaseState({ ownerKey, phase });
+      };
+      operation.inFlight = true;
       form.clearErrors("root");
       const file = values.files[0];
       if (!file) {
@@ -117,7 +130,7 @@ export default function UploadRouteScreen() {
           type: "missing-file",
           message: "Choose a route file to upload.",
         });
-        uploadInFlightRef.current = false;
+        operation.inFlight = false;
         return;
       }
       const fileUri = file.uri;
@@ -127,7 +140,7 @@ export default function UploadRouteScreen() {
           type: "missing-uri",
           message: "The selected route file is unavailable. Choose it again.",
         });
-        uploadInFlightRef.current = false;
+        operation.inFlight = false;
         return;
       }
 
@@ -138,12 +151,15 @@ export default function UploadRouteScreen() {
           try {
             fileContent = await readRouteFileText(fileUri);
           } catch (error) {
-            form.setError("root", {
-              message: getRouteFileReadErrorMessage(error),
-            });
+            if (isCurrent()) {
+              form.setError("root", {
+                message: getRouteFileReadErrorMessage(error),
+              });
+            }
             return false;
           }
 
+          if (!isCurrent()) return false;
           setUploadPhase("uploading");
           if (!user?.id) throw new Error("Authenticated profile is unavailable");
           const operation = await claimRouteUploadOperation({
@@ -153,6 +169,7 @@ export default function UploadRouteScreen() {
             name: values.name,
             profileId: user.id,
           });
+          if (!isCurrent()) return false;
           await uploadMutation.mutateAsync({
             name: values.name,
             description: values.description ?? undefined,
@@ -167,27 +184,29 @@ export default function UploadRouteScreen() {
           return;
         }
 
-        if (!lifetime.isCurrent()) return;
-        terminalSuccessRef.current = true;
+        if (!isCurrent()) return;
+        operation.terminalSuccess = true;
         setUploadPhase("success");
         await Promise.allSettled([Promise.resolve().then(() => utils.routes.invalidate())]);
-        if (!lifetime.isCurrent()) return;
+        if (!isCurrent()) return;
 
         try {
           allowNavigationAfterSuccess();
           router.back();
         } catch {
-          form.setError("root", {
-            message: "Route uploaded, but this screen could not close. Use Back to continue.",
-          });
+          if (isCurrent()) {
+            form.setError("root", {
+              message: "Route uploaded, but this screen could not close. Use Back to continue.",
+            });
+          }
         }
       } catch (error) {
-        if (lifetime.isCurrent()) {
+        if (isCurrent()) {
           handleSubmitFormError(form, error, { preferRootError: true });
         }
       } finally {
-        if (!terminalSuccessRef.current) {
-          uploadInFlightRef.current = false;
+        if (isCurrent() && !operation.terminalSuccess) {
+          operation.inFlight = false;
           setUploadPhase("idle");
         }
       }

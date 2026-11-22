@@ -18,6 +18,7 @@ const randomUuidMock = jest.fn();
 const mockRouteOperationStorage = new Map<string, string>();
 const preventRemoveMock = jest.fn();
 const dispatchMock = jest.fn();
+const authState = { user: { id: "11111111-1111-4111-8111-111111111111" } };
 const mockHandleSubmitFormError = jest.fn(
   (form: { setError: (name: "root", error: { message: string }) => void }, error: unknown) => {
     form.setError("root", {
@@ -74,7 +75,7 @@ jest.mock("@react-native-async-storage/async-storage", () => ({
 
 jest.mock("@/lib/hooks/useAuth", () => ({
   __esModule: true,
-  useAuth: () => ({ user: { id: "11111111-1111-4111-8111-111111111111" } }),
+  useAuth: () => authState,
 }));
 jest.mock("@/lib/utils/formErrors", () => ({
   __esModule: true,
@@ -106,6 +107,7 @@ describe("route upload screen", () => {
     preventRemoveMock.mockReset();
     dispatchMock.mockReset();
     mockHandleSubmitFormError.mockClear();
+    authState.user.id = "11111111-1111-4111-8111-111111111111";
     jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
@@ -359,5 +361,63 @@ describe("route upload screen", () => {
     expect(invalidateRoutesMock).not.toHaveBeenCalled();
     expect(backMock).not.toHaveBeenCalled();
     expect(mockHandleSubmitFormError).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["fetch", "unmount"],
+    ["response text", "unmount"],
+    ["fetch", "owner change"],
+    ["response text", "owner change"],
+  ] as const)("does not let a late %s rejection affect an %s context", async (stage, contextChange) => {
+    let rejectRead!: (error: Error) => void;
+    const responseText = jest.fn(
+      () =>
+        new Promise<string>((_resolve, reject) => {
+          rejectRead = reject;
+        }),
+    );
+    if (stage === "fetch") {
+      (global.fetch as jest.Mock).mockReturnValueOnce(
+        new Promise((_resolve, reject) => {
+          rejectRead = reject;
+        }),
+      );
+    } else {
+      (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, text: responseText });
+    }
+
+    const UploadRouteScreen = (await import("../route-upload")).default;
+    const view = await renderScreen();
+    await pickFile();
+    const submit = screen.getByTestId("route-upload-submit-button").props.onPress;
+    await act(async () => {
+      void submit();
+    });
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
+    if (stage === "response text") {
+      await waitFor(() => expect(responseText).toHaveBeenCalledTimes(1));
+    }
+
+    if (contextChange === "unmount") {
+      await act(async () => {
+        view.unmount();
+      });
+    } else {
+      authState.user.id = "22222222-2222-4222-8222-222222222222";
+      await view.rerender(<UploadRouteScreen />);
+      expect(screen.getByTestId("route-upload-submit-button").props.disabled).toBe(false);
+    }
+
+    await act(async () => {
+      rejectRead(new Error("Late route read failure"));
+    });
+
+    expect(invalidateRoutesMock).not.toHaveBeenCalled();
+    expect(backMock).not.toHaveBeenCalled();
+    expect(mockHandleSubmitFormError).not.toHaveBeenCalled();
+    if (contextChange === "owner change") {
+      expect(screen.queryByText(/could not be read/i)).toBeNull();
+      expect(screen.getByTestId("route-upload-submit-button").props.disabled).toBe(false);
+    }
   });
 });
