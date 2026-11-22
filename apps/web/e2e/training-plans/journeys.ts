@@ -1,5 +1,6 @@
 import { expect, type Page, type TestInfo } from "@playwright/test";
 import { expectNoHorizontalOverflow } from "../pages/assertions";
+import { captureAuthoring } from "../pages/authoring";
 import { TrainingPlansPage } from "../pages/plans";
 import { currentE2ECleanupRegistry } from "../support/cleanup";
 import { createE2EExecutionIdentity } from "../support/identity";
@@ -12,6 +13,7 @@ export function trainingPlanName(testInfo: TestInfo, suffix: string) {
 export async function expectTrainingPlanLibraries(
   page: Page,
   names: { ownedName: string; templateName: string },
+  testInfo: TestInfo,
 ) {
   const plans = new TrainingPlansPage(page);
   await plans.openLibrary();
@@ -19,6 +21,7 @@ export async function expectTrainingPlanLibraries(
   const ownedCard = await plans.search(names.ownedName);
   await expect(ownedCard).toHaveCount(1);
   await expect(ownedCard.getByText("Owned browser-library fixture")).toBeVisible();
+  await captureAuthoring(page, testInfo, "training-owned-library");
 
   await page.getByRole("tab", { name: "Templates" }).focus();
   await page.keyboard.press("Enter");
@@ -30,6 +33,9 @@ export async function expectTrainingPlanLibraries(
   const templateCard = plans.card(names.templateName);
   await expect(templateCard).toHaveCount(1);
   await expect(templateCard.getByText("Template", { exact: true })).toBeVisible();
+  await expect(templateCard.getByText("private", { exact: true })).toHaveCount(0);
+  await expect(templateCard.getByText("1 activities · 1 weeks", { exact: true })).toBeVisible();
+  await captureAuthoring(page, testInfo, "training-template-library");
   const open = templateCard.getByRole("button", {
     name: `Open training plan ${names.templateName}`,
     exact: true,

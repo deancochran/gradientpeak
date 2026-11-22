@@ -157,7 +157,7 @@ test("athlete can browse persisted owned and template training-plan libraries", 
   athletePage,
 }, testInfo) => {
   await withTrainingPlanLibraryFixture(testInfo, athleteActor, async (fixture) => {
-    await expectTrainingPlanLibraries(athletePage, fixture);
+    await expectTrainingPlanLibraries(athletePage, fixture, testInfo);
   });
 });
 
