@@ -60,7 +60,7 @@ export function GroupCard({
   return (
     <ResourceCardShell
       accessibilityLabel={`View group ${group.name?.trim() || "Group"}`}
-      accessibilityState={{ selected }}
+      accessibilityState={selected === undefined ? {} : { selected }}
       cardClassName={variant === "compact" ? "rounded-xl py-3" : "rounded-2xl py-4"}
       compact={variant === "compact"}
       contentClassName={variant === "compact" ? "px-3" : "gap-3 px-4"}

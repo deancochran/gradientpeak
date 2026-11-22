@@ -2,6 +2,31 @@ import { describe, expect, it } from "vitest";
 import { createGroupEventEditorDraft, prepareGroupEventEditorPayload } from "../event-editor";
 
 describe("group event editor", () => {
+  it.each([
+    false,
+    true,
+  ])("preserves omitted versus cleared plan associations (recurring: %s)", (isRecurringCreate) => {
+    const draft = {
+      ...createGroupEventEditorDraft(undefined),
+      date: "2026-10-10",
+      recurrenceEndDate: "2026-10-17",
+      recurrenceFrequency: "weekly" as const,
+      startsTime: "09:00",
+      timezone: "UTC",
+      title: "Sunday run",
+    };
+    const omitted = prepareGroupEventEditorPayload(draft, { isRecurringCreate });
+    const cleared = prepareGroupEventEditorPayload(draft, {
+      isRecurringCreate,
+      activityPlanId: null,
+    });
+    expect(omitted.success).toBe(true);
+    expect(cleared.success).toBe(true);
+    if (!omitted.success || !cleared.success) throw new Error("Expected valid event payloads");
+    expect(Object.hasOwn(omitted.data, "activityPlanId")).toBe(false);
+    expect(cleared.data.activityPlanId).toBeNull();
+  });
+
   it("uses the event zone for defaults and leaves an optional end unset", () => {
     expect(
       createGroupEventEditorDraft({

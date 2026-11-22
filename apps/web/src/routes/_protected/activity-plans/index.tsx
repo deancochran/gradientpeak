@@ -186,7 +186,7 @@ function ActivityPlansPage() {
           name="activityPlanSearch"
           onValueChange={(q) =>
             void navigate({
-              search: (previous) => ({ ...previous, q: q || undefined }),
+              search: (previous) => activityPlanLibrarySearch({ ...previous, q }),
               replace: true,
             })
           }
@@ -202,10 +202,11 @@ function ActivityPlansPage() {
               key={option.value}
               onClick={() =>
                 void navigate({
-                  search: (previous) => ({
-                    ...previous,
-                    activity_category: option.value === "all" ? undefined : option.value,
-                  }),
+                  search: (previous) =>
+                    activityPlanLibrarySearch({
+                      ...previous,
+                      activity_category: option.value,
+                    }),
                   replace: true,
                 })
               }

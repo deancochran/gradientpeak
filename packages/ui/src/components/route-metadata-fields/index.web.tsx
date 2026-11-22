@@ -24,10 +24,12 @@ function RouteMetadataFields<TFieldValues extends FieldValues>({
         disabled={disabled}
         label={nameLabel}
         name={"name" as FieldPath<TFieldValues>}
-        placeholder={namePlaceholder}
+        {...(namePlaceholder !== undefined ? { placeholder: namePlaceholder } : {})}
         required
-        selectTextOnFocus={selectNameTextOnFocus}
-        testId={nameTestId}
+        {...(selectNameTextOnFocus !== undefined
+          ? { selectTextOnFocus: selectNameTextOnFocus }
+          : {})}
+        {...(nameTestId !== undefined ? { testId: nameTestId } : {})}
       />
       <FormTextareaField
         className={descriptionClassName}
@@ -36,8 +38,8 @@ function RouteMetadataFields<TFieldValues extends FieldValues>({
         disabled={disabled}
         label={descriptionLabel}
         name={"description" as FieldPath<TFieldValues>}
-        placeholder={descriptionPlaceholder}
-        testId={descriptionTestId}
+        {...(descriptionPlaceholder !== undefined ? { placeholder: descriptionPlaceholder } : {})}
+        {...(descriptionTestId !== undefined ? { testId: descriptionTestId } : {})}
       />
     </>
   );

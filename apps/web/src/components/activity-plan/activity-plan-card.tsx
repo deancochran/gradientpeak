@@ -83,12 +83,12 @@ export function ActivityPlanCard({
   const card = (
     <ResourceCardShell
       accessibilityLabel={accessibilityLabel}
-      accessibilityState={{ selected }}
+      accessibilityState={selected === undefined ? {} : { selected }}
       cardClassName={className}
       contentClassName="space-y-4 p-5"
       disabled={disabled}
-      highlighted={selected}
-      onPress={href ? undefined : onOpen}
+      highlighted={selected ?? false}
+      {...(!href && onOpen ? { onPress: onOpen } : {})}
       testID={`activity-plan-card-${plan.id}`}
     >
       {content}

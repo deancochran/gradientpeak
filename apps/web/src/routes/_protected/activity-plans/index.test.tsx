@@ -9,7 +9,7 @@ vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: object) => ({
     ...options,
     useNavigate: () => navigation.navigate,
-    useSearch: () => ({ activity_category: "run" }),
+    useSearch: () => navigation.search,
   }),
 }));
 vi.mock("../../../lib/api/client", () => ({
@@ -120,6 +120,8 @@ vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 afterEach(() => {
   cleanup();
   queryOverrides.current = {};
+  navigation.search = {};
+  navigation.navigate.mockReset();
 });
 describe("ActivityPlansPage cards", () => {
   it("keeps a failed query distinct from an empty library and offers retry", () => {
@@ -155,10 +157,13 @@ describe("ActivityPlansPage cards", () => {
         component: React.ComponentType;
       }
     ).component;
-    render(<Page />);
+    const view = render(<Page />);
     fireEvent.click(screen.getByRole("button", { name: "All" }));
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "Tempo" } });
-    expect(navigation.search).toEqual({ activity_category: undefined, q: "Tempo" });
+    expect(navigation.search).toStrictEqual({ q: "Tempo" });
+    view.rerender(<Page />);
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "" } });
+    expect(navigation.search).toStrictEqual({});
   });
   it("renders authored duration and calculated headline metrics on plan cards", () => {
     const ActivityPlansPage = (

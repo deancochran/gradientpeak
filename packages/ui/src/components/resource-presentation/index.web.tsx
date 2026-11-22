@@ -116,7 +116,7 @@ export function ResourceCardShell({
     >
       <CardContent className={cn(contentClassName ?? (compact ? "gap-3 px-2" : "gap-3 px-3"))}>
         {hasActionRegion ? (
-          <ResourceActionRegion testID={testID ? `${testID}-action-region` : undefined}>
+          <ResourceActionRegion {...(testID ? { testID: `${testID}-action-region` } : {})}>
             {actionRegion}
           </ResourceActionRegion>
         ) : null}

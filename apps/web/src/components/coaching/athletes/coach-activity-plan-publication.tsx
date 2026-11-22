@@ -438,10 +438,9 @@ export function CoachActivityPlanPublication({
           >
             <ActivityPlanCard
               disabled={!selectedPlanHref}
-              onOpen={selectedPlanHref ? undefined : () => {}}
               openLabel={`Inspect or edit selected activity plan ${selectedPlanCard.name}`}
               plan={selectedPlanCard}
-              {...(selectedPlanHref ? { href: selectedPlanHref } : {})}
+              {...(selectedPlanHref ? { href: selectedPlanHref } : { onOpen: () => {} })}
             />
           </ResourceAssociation>
         ) : null}

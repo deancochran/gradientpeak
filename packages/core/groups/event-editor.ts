@@ -166,7 +166,7 @@ export function prepareGroupEventEditorPayload(
   }
 
   const commonPayload = {
-    activityPlanId: options.activityPlanId,
+    ...(options.activityPlanId !== undefined ? { activityPlanId: options.activityPlanId } : {}),
     description: draft.description.trim() || null,
     endsAt,
     locationName: draft.locationName.trim() || null,
