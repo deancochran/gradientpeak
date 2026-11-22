@@ -434,8 +434,14 @@ export function RouteListCard({ onOpen, route }: { onOpen: () => void; route: Ro
           <RoutePreviewMap compact coordinates={coordinates} />
         </div>
         <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
-          <MetricPill label="Distance" value={formatDistance(route.total_distance, unitSystem)} />
+          <MetricPill
+            label="Distance"
+            value={
+              route.total_distance == null ? "—" : formatDistance(route.total_distance, unitSystem)
+            }
+          />
           <MetricPill label="Ascent" value={formatElevation(route.total_ascent, unitSystem)} />
+          <MetricPill label="Descent" value={formatElevation(route.total_descent, unitSystem)} />
           <MetricPill label="Visibility" value={route.is_public ? "Public" : "Private"} />
         </div>
       </CardContent>

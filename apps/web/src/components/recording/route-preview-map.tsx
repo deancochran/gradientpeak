@@ -22,6 +22,9 @@ function hasValidRouteGeometry(coordinates: RouteCoordinate[]) {
 export function RoutePreviewMap({ compact = false, coordinates }: RoutePreviewMapProps) {
   const projection = hasValidRouteGeometry(coordinates) ? projectRoutePreview(coordinates) : null;
   const heightClassName = compact ? "h-36" : "h-60";
+  const unavailableMessage = compact
+    ? "Route preview unavailable."
+    : "No route geometry available for preview.";
 
   if (!projection) {
     return (
@@ -29,7 +32,7 @@ export function RoutePreviewMap({ compact = false, coordinates }: RoutePreviewMa
         className={`flex ${heightClassName} items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 px-4 text-center text-sm text-muted-foreground`}
         data-testid="route-preview-unavailable"
       >
-        Route preview unavailable.
+        {unavailableMessage}
       </div>
     );
   }

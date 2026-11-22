@@ -69,6 +69,13 @@ test.describe("authenticated route journey", () => {
     athletePage,
     e2eData,
   }, testInfo) => {
+    const viewport =
+      testInfo.project.name === "Desktop Chrome"
+        ? { width: 1440, height: 1000 }
+        : { width: 390, height: 844 };
+    await athletePage.setViewportSize(viewport);
+    expect(athletePage.viewportSize()).toEqual(viewport);
+
     const routes = new RoutesPage(athletePage);
     const routeName = e2eArtifactIdentity(testInfo, "route");
     const updatedRouteName = `${routeName} Updated`;
@@ -146,10 +153,24 @@ test.describe("authenticated route journey", () => {
       await expect(routeCard.getByText("Distance", { exact: true })).toBeVisible();
       await expect(routeCard.getByText("Ascent", { exact: true })).toBeVisible();
       await expect(routeCard.getByTestId(`route-card-${createdRouteId}-open`)).toBeVisible();
-      await routeCard.screenshot({ path: testInfo.outputPath("route-resource-card.png") });
+      expect(
+        await athletePage
+          .locator("html")
+          .evaluate(
+            (documentElement) => documentElement.scrollWidth <= documentElement.clientWidth,
+          ),
+      ).toBe(true);
+      await athletePage.screenshot({
+        fullPage: true,
+        path: testInfo.outputPath("route-resource-library.png"),
+      });
       await expect(athletePage.getByRole("button", { name: "Previous page" })).toBeDisabled();
 
-      await routes.openCard(updatedRouteName);
+      const openRoute = routeCard.getByTestId(`route-card-${createdRouteId}-open`);
+      await openRoute.focus();
+      await openRoute.press("Enter");
+      await expect(athletePage).toHaveURL(new RegExp(`/routes/${createdRouteId}/?$`));
+      await expect(athletePage.getByRole("heading", { name: updatedRouteName })).toBeVisible();
       await athletePage.getByTestId(`route-detail-delete-${createdRouteId}`).click();
       await athletePage.getByTestId(`route-detail-delete-${createdRouteId}-confirm`).click();
       await expect(athletePage).toHaveURL(/\/routes(?:\?.*)?$/);
