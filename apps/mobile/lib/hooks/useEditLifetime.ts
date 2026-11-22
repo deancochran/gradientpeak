@@ -17,6 +17,14 @@ export function useEditLifetime(ownerKey: string) {
   }, []);
 
   return {
+    capture: useCallback(() => {
+      const capturedOwnerKey = context.current.ownerKey;
+      const capturedVersion = context.current.version;
+      return () =>
+        mounted.current &&
+        context.current.ownerKey === capturedOwnerKey &&
+        context.current.version === capturedVersion;
+    }, []),
     isCurrent: useCallback(
       () =>
         mounted.current &&
