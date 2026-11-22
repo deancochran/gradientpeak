@@ -57,12 +57,11 @@ export default function UploadRouteScreen() {
   const uploadMutation = api.routes.upload.useMutation();
   const { allowNavigationAfterSuccess } = useDirtyNavigationGuard({
     isDirty: form.formState.isDirty,
-    isPending: uploadPhase === "reading" || uploadPhase === "uploading" || uploadMutation.isPending,
+    isPending: uploadPhase === "reading" || uploadPhase === "uploading",
   });
   const files = form.watch("files");
   const selectedFile = files[0] ?? null;
-  const isFormDisabled =
-    uploadPhase !== "idle" || uploadMutation.isPending || operation.terminalSuccess;
+  const isFormDisabled = uploadPhase !== "idle" || operation.terminalSuccess;
 
   useEffect(() => {
     const fileKey = selectedFile
