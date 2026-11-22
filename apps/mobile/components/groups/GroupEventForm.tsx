@@ -1,9 +1,15 @@
-import { formatIsoInstantInIanaZone, scheduledDateTimeToIsoInstant } from "@repo/core/calendar";
 import type {
   CreateOneOffGroupEventInput,
   CreateRecurringEventSeriesInput,
+  GroupEventEditorDraft,
+  GroupEventRecurrenceFrequency,
   UpdateEventOccurrenceInput,
   UpdateOneOffGroupEventInput,
+} from "@repo/core/groups";
+import {
+  createGroupEventEditorDraft,
+  groupEventEditorDraftSchema,
+  prepareGroupEventEditorPayload,
 } from "@repo/core/groups";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -19,31 +25,15 @@ import { Text } from "@repo/ui/components/text";
 import { useZodForm } from "@repo/ui/hooks";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Pressable, View } from "react-native";
-import { z } from "zod";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { ClearFieldAction } from "@/components/shared/ClearFieldAction";
 import { InlineNotice, ScreenSection } from "@/components/shared/LayoutPrimitives";
 import { type ResourcePickerItem, ResourcePickerModal } from "@/components/shared/resource-picker";
 import { api } from "@/lib/api";
-import { formatRecurrenceUntil, recurrenceEndDate } from "@/lib/calendar/recurrenceInput";
 import type { GroupEventDetail } from "@/lib/groups";
 
-type RecurrenceFrequency = "none" | "daily" | "weekly" | "monthly";
-
-const groupEventFormSchema = z.object({
-  date: z.string(),
-  description: z.string(),
-  endsTime: z.string().nullable(),
-  locationName: z.string(),
-  recurrenceEndDate: z.string().nullable(),
-  recurrenceFrequency: z.enum(["none", "daily", "weekly", "monthly"]),
-  routeId: z.string().nullable(),
-  startsTime: z.string(),
-  title: z.string(),
-  timezone: z.string().nullable(),
-});
-
-type GroupEventFormValues = z.infer<typeof groupEventFormSchema>;
+type RecurrenceFrequency = GroupEventRecurrenceFrequency;
+type GroupEventFormValues = GroupEventEditorDraft;
 
 type SelectedActivityPlanOption = {
   activityPlanId: string;
@@ -71,39 +61,25 @@ export type GroupEventFormHandle = {
   submit: () => void;
 };
 
-function parseRecurrenceFrequency(rule?: string | null): RecurrenceFrequency {
-  const normalized = rule?.toUpperCase() ?? "";
-  if (normalized.includes("FREQ=DAILY")) return "daily";
-  if (normalized.includes("FREQ=WEEKLY")) return "weekly";
-  if (normalized.includes("FREQ=MONTHLY")) return "monthly";
-  return "none";
-}
-
-function buildRecurrenceRule(frequency: RecurrenceFrequency, endDate: string, timezone: string) {
-  if (frequency === "none") return null;
-  const until = formatRecurrenceUntil(endDate, timezone);
-  return `FREQ=${frequency.toUpperCase()};UNTIL=${until}`;
-}
-
 function toFormValues(
   event: GroupEventDetail | null | undefined,
   timezone: string,
 ): GroupEventFormValues {
-  const startsAt = event?.starts_at ? formatIsoInstantInIanaZone(event.starts_at, timezone) : "";
-  const endsAt = event?.ends_at ? formatIsoInstantInIanaZone(event.ends_at, timezone) : null;
-
-  return {
-    date: event ? startsAt.slice(0, 10) : "",
-    description: event?.description ?? "",
-    endsTime: endsAt?.slice(11, 16) ?? null,
-    locationName: event?.location_name ?? "",
-    recurrenceEndDate: recurrenceEndDate(event?.recurrence_rule, timezone),
-    recurrenceFrequency: parseRecurrenceFrequency(event?.recurrence_rule),
-    routeId: event?.route_id ?? null,
-    startsTime: event ? startsAt.slice(11, 16) : "",
-    title: event?.title ?? "",
-    timezone: event?.timezone ?? null,
-  };
+  return createGroupEventEditorDraft(
+    event
+      ? {
+          description: event.description,
+          endsAt: event.ends_at,
+          locationName: event.location_name,
+          recurrenceRule: event.recurrence_rule,
+          routeId: event.route_id,
+          startsAt: event.starts_at,
+          timezone: event.timezone,
+          title: event.title,
+        }
+      : undefined,
+    timezone,
+  );
 }
 
 function toSelectedActivityPlan(
@@ -134,18 +110,28 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
     ref,
   ) {
     const displayTimezone = event?.timezone ?? "UTC";
+    const initialDraft = toFormValues(event, displayTimezone);
     const form = useZodForm({
-      schema: groupEventFormSchema,
-      defaultValues: toFormValues(event, displayTimezone),
+      schema: groupEventEditorDraftSchema,
+      defaultValues: initialDraft,
     });
-    const [recurrenceFrequency, routeId] = form.watch(["recurrenceFrequency", "routeId"]);
+    const [date, endDate, endsTime, recurrenceFrequency, routeId] = form.watch([
+      "date",
+      "endDate",
+      "endsTime",
+      "recurrenceFrequency",
+      "routeId",
+    ]);
     const [selectedActivityPlan, setSelectedActivityPlan] =
       useState<SelectedActivityPlanOption | null>(() => toSelectedActivityPlan(event));
-    const [errorMessage, setErrorMessage] = useState<string | null>(null);
+    const [errorMessage, setErrorMessage] = useState<string | null>(
+      initialDraft.initializationError ?? null,
+    );
     const [isRecurringCreate, setIsRecurringCreate] = useState(false);
     const [pickerScope, setPickerScope] = useState<"route" | "activityPlans" | null>(null);
     const [isLocallySubmitting, setIsLocallySubmitting] = useState(false);
     const submitInFlightRef = useRef(false);
+    const previousStartDateRef = useRef(date);
     const { data: selectedRoute } = api.routes.get.useQuery(
       { id: routeId ?? "" },
       { enabled: Boolean(routeId) },
@@ -157,9 +143,22 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
     const selectedActivityPlanDetail = selectedActivityPlanQuery.data?.items[0] ?? null;
 
     useEffect(() => {
-      form.reset(toFormValues(event, displayTimezone));
+      const nextDraft = toFormValues(event, displayTimezone);
+      form.reset(nextDraft);
       setSelectedActivityPlan(toSelectedActivityPlan(event));
+      setErrorMessage(nextDraft.initializationError ?? null);
     }, [displayTimezone, event, form]);
+    useEffect(() => {
+      if (!endsTime) {
+        if (endDate) form.setValue("endDate", null, { shouldDirty: true });
+      } else if (
+        !endDate ||
+        (date !== previousStartDateRef.current && endDate === previousStartDateRef.current)
+      ) {
+        form.setValue("endDate", date, { shouldDirty: true });
+      }
+      previousStartDateRef.current = date;
+    }, [date, endDate, endsTime, form]);
     const isDirty =
       form.formState.isDirty ||
       (selectedActivityPlan?.activityPlanId ?? null) !== (event?.activity_plan_id ?? null) ||
@@ -179,72 +178,21 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
 
     const submitForm = useCallback(
       async (values: GroupEventFormValues) => {
-        const title = values.title.trim();
         if (isSubmitting || submitInFlightRef.current) return;
-        if (!title) {
-          setErrorMessage("Add a title for this event.");
-          return;
-        }
-        if (!values.date || !values.startsTime) {
-          setErrorMessage("Choose a start date and time.");
-          return;
-        }
-        if (!values.timezone) {
-          form.setError("timezone", { message: "Choose an event time zone." });
-          return;
-        }
-
-        let startsAt: string;
-        let endsAt: string | null;
-        try {
-          startsAt = scheduledDateTimeToIsoInstant({
-            scheduledDate: values.date,
-            time: values.startsTime,
-            timeZone: values.timezone,
-          });
-          endsAt = values.endsTime
-            ? scheduledDateTimeToIsoInstant({
-                scheduledDate: values.date,
-                time: values.endsTime,
-                timeZone: values.timezone,
-              })
-            : null;
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "Choose valid event times.";
-          form.setError("date", { message });
-          form.setError("startsTime", { message });
-          setErrorMessage(message);
-          return;
-        }
-        if (endsAt && new Date(endsAt).getTime() <= new Date(startsAt).getTime()) {
-          const message = "End time must be after start time.";
-          form.setError("endsTime", { message });
-          setErrorMessage(message);
-          return;
-        }
-        if (
-          isRecurringCreate &&
-          (!values.recurrenceEndDate || values.recurrenceEndDate < values.date)
-        ) {
-          const message = "Repeat end date must be on or after the event start date.";
-          form.setError("recurrenceEndDate", { message });
-          setErrorMessage(message);
+        const prepared = prepareGroupEventEditorPayload(values, {
+          activityPlanId: selectedActivityPlan?.activityPlanId ?? null,
+          isRecurringCreate,
+        });
+        if (!prepared.success) {
+          form.setError(prepared.field, { message: prepared.message });
+          setErrorMessage(prepared.message);
           return;
         }
 
         setErrorMessage(null);
         submitInFlightRef.current = true;
         setIsLocallySubmitting(true);
-        const payload = {
-          title,
-          description: values.description.trim() || null,
-          startsAt,
-          endsAt,
-          timezone: values.timezone,
-          locationName: values.locationName.trim() || null,
-          routeId: values.routeId,
-          activityPlanId: selectedActivityPlan?.activityPlanId ?? null,
-        };
+        const payload = prepared.data;
 
         try {
           if (event) {
@@ -253,22 +201,11 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
           }
 
           if (isRecurringCreate) {
-            const recurrenceRule = buildRecurrenceRule(
-              values.recurrenceFrequency,
-              values.recurrenceEndDate ?? "",
-              values.timezone,
-            );
-            if (!recurrenceRule) {
-              setErrorMessage("Choose how often this event repeats and when the series ends.");
-              return;
-            }
-
             await onSubmit({
               groupId,
               ...payload,
-              recurrenceRule,
-              recurrenceTimezone: values.timezone,
-              timezone: values.timezone,
+              recurrenceRule: payload.recurrenceRule ?? "",
+              recurrenceTimezone: payload.recurrenceTimezone ?? payload.timezone,
             });
             return;
           }
@@ -460,6 +397,16 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
                 />
               </View>
             </View>
+            {endsTime ? (
+              <FormDateInputField
+                accessibilityHint="Choose the event end date when it differs from the start date"
+                control={form.control}
+                label="End date"
+                name="endDate"
+                pickerPresentation="modal"
+                testId="group-event-end-date-button"
+              />
+            ) : null}
             <FormTextField
               control={form.control}
               label="Location"
