@@ -49,11 +49,18 @@ export class CalendarPage {
       await expect(dayLink).toHaveCount(1);
       await dayLink.click();
       await expect(this.page).toHaveURL(dayHref);
-      const eventLink = this.page.getByRole("link", { name: input.title, exact: true });
-      await expect(eventLink).toBeVisible();
+      const eventLink = this.page
+        .locator('a[href^="/calendar/events/"]')
+        .filter({ hasText: input.title });
+      await expect(eventLink).toHaveCount(1);
+      const eventHref = await eventLink.getAttribute("href");
+      if (!eventHref) throw new Error("Created event agenda link did not include an event URL.");
       await eventLink.click();
+      await expect(this.page).toHaveURL(eventHref);
       await expect(this.page.getByRole("heading", { name: input.title })).toBeVisible();
-      return this.eventId();
+      const eventId = await this.eventId();
+      expect(eventHref).toBe(`/calendar/events/${eventId}`);
+      return eventId;
     });
   }
 
