@@ -76,10 +76,12 @@ describe("GroupEventForm organizer timezone", () => {
     if (!form) throw new Error("Expected group event form.");
     fireEvent.submit(form);
 
-    await waitFor(() => expect(onSubmit).not.toHaveBeenCalled());
-    expect(document.getElementById("group-event-schedule-error")?.textContent).toContain(
-      "Choose a start date and time.",
+    await waitFor(() =>
+      expect(document.getElementById("group-event-schedule-error")?.textContent).toContain(
+        "Choose a start date and time.",
+      ),
     );
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 
   it("round-trips an overnight end in the event zone instead of the device zone", async () => {
