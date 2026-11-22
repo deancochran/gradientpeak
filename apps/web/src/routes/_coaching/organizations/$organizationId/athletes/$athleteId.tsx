@@ -163,7 +163,7 @@ function AthleteWorkspacePage() {
           <CoachAthleteCompletedActivities
             actorProfileId={actorProfileId}
             athleteProfileId={athleteId}
-            key={`${actorProfileId}:${organizationId}:${athleteId}`}
+            key={`completed-activities:${actorProfileId}:${organizationId}:${athleteId}`}
             organizationId={organizationId}
             onRetry={() => router.invalidate({ sync: true })}
             result={
@@ -181,7 +181,7 @@ function AthleteWorkspacePage() {
                   }
                 : result.calendarRange
             }
-            key={`${actorProfileId}:${organizationId}:${athleteId}`}
+            key={`calendar:${actorProfileId}:${organizationId}:${athleteId}`}
             organizationId={organizationId}
             result={identity ? calendar : forbiddenCalendar}
           />

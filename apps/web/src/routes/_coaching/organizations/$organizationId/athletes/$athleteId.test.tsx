@@ -173,6 +173,34 @@ afterEach(() => {
 });
 
 describe("coach athlete workspace route", () => {
+  it("gives sibling calendar and completion resources distinct identity-fenced keys", () => {
+    state.loaderData = {
+      actorProfileId: "actor-a",
+      athleteId: state.params.athleteId,
+      organizationId: state.params.organizationId,
+      overview: { status: "granted" },
+      directory: { status: "granted", items: [] },
+      identity: { profileId: state.params.athleteId },
+      calendar: { status: "granted", events: [], nextCursor: null },
+      calendarRange: { startDate: "2026-03-08", endDateExclusive: "2026-03-15" },
+      zones: {
+        actorId: "actor-a",
+        athleteProfileId: state.params.athleteId,
+        organizationId: state.params.organizationId,
+        revision: "fresh-revision",
+        state: { kind: "denied" },
+      },
+    };
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const route = Route as unknown as { component: () => React.ReactNode };
+    render(route.component());
+
+    expect(consoleError).not.toHaveBeenCalledWith(
+      expect.stringContaining("Encountered two children with the same key"),
+      expect.anything(),
+    );
+  });
+
   it("does not render a delayed prior athlete response after the selected athlete changes", () => {
     state.params = {
       athleteId: "33333333-3333-4333-8333-333333333333",
