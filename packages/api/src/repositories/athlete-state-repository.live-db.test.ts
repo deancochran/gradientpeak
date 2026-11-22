@@ -91,6 +91,43 @@ async function waitForBlockedAdvisoryLock(key: number) {
   throw new Error("Publisher did not reach the estimate insertion fence");
 }
 
+async function waitForBlockedProfileAdvisoryLock(profileId: string) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const result = await pool.query<{ waiting: boolean }>(
+      `with advisory_key as (
+         select hashtextextended($1, 0) as value
+       )
+       select exists (
+         select 1
+         from pg_locks, advisory_key
+         where locktype = 'advisory'
+           and granted = false
+           and classid = ((value >> 32) & 4294967295)::oid
+           and objid = (value & 4294967295)::oid
+           and objsubid = 1
+       ) as waiting`,
+      [profileId],
+    );
+    if (result.rows[0]?.waiting) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("Publisher did not reach the profile publication fence");
+}
+
+function createQueueCreationGate() {
+  let markInserted: (() => void) | undefined;
+  let rejectInserted: ((error: unknown) => void) | undefined;
+  const inserted = new Promise<void>((resolve, reject) => {
+    markInserted = resolve;
+    rejectInserted = reject;
+  });
+  return {
+    inserted,
+    markInserted: () => markInserted?.(),
+    rejectInserted: (error: unknown) => rejectInserted?.(error),
+  };
+}
+
 async function seedProfile(planningTimezone = "UTC") {
   const profileId = randomUUID();
   const email = `${profileId}@athlete-state.test`;
@@ -2159,45 +2196,211 @@ describe("athlete state persistence", () => {
     const creationGate = new Promise<void>((resolve) => {
       releaseCreation = resolve;
     });
-    let markInserted: (() => void) | undefined;
-    const inserted = new Promise<void>((resolve) => {
-      markInserted = resolve;
-    });
-    const creation = db.transaction(async (tx) => {
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${profileId}, 0))`);
-      await tx.insert(activityImportRuns).values({
-        profile_id: profileId,
-        integration_id: integrationId,
-        integration_generation: 1,
-        kind: "history_sync",
-        status: "queued",
+    const insertionGate = createQueueCreationGate();
+    const advisoryKey = 741_853;
+    const suffix = randomUUID().replaceAll("-", "");
+    const functionName = `pause_athlete_state_publication_${suffix}`;
+    const triggerName = `pause_athlete_state_publication_${suffix}`;
+    const lockClient = await pool.connect();
+    let lockHeld = false;
+    let creationReleased = false;
+    let creation: Promise<void> | undefined;
+    let publication: Promise<boolean> | undefined;
+    let latePublication: Promise<boolean> | undefined;
+    try {
+      await pool.query(`
+        create function public."${functionName}"() returns trigger
+        language plpgsql as $$
+        begin
+          if new.profile_id = '${profileId}'::uuid then
+            perform pg_advisory_xact_lock(${advisoryKey});
+          end if;
+          return new;
+        end
+        $$
+      `);
+      await pool.query(`
+        create trigger "${triggerName}"
+        before update on public.profile_athlete_state
+        for each row execute function public."${functionName}"()
+      `);
+      await lockClient.query("select pg_advisory_lock($1)", [advisoryKey]);
+      lockHeld = true;
+      creation = db.transaction(async (tx) => {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${profileId}, 0))`);
+        await tx.insert(activityImportRuns).values({
+          profile_id: profileId,
+          integration_id: integrationId,
+          integration_generation: 1,
+          kind: "history_sync",
+          status: "queued",
+        });
+        insertionGate.markInserted();
+        await creationGate;
       });
-      markInserted?.();
-      await creationGate;
-    });
-    await inserted;
-    const publication = publishAthleteState(db, {
-      claim,
-      state: {
-        fitness: 10,
-        fatigue: 8,
-        evidenceConfidence: 0.8,
-        coverageStartAt: null,
-        coverageEndAt: null,
-        lastActivityAt: null,
-        algorithmVersion: ATHLETE_STATE_PROJECTION_ALGORITHM_VERSION,
-      },
-      estimates: [],
-      now,
-    });
-    releaseCreation?.();
-    await creation;
-    await expect(publication).resolves.toBe(true);
-    const [state] = await db
-      .select()
-      .from(profileAthleteState)
-      .where(eq(profileAthleteState.profile_id, profileId));
-    expect(state?.published_revision).toBe(1);
+      void creation.catch(insertionGate.rejectInserted);
+      await insertionGate.inserted;
+      publication = publishAthleteState(db, {
+        claim,
+        state: {
+          fitness: 10,
+          fatigue: 8,
+          evidenceConfidence: 0.8,
+          coverageStartAt: null,
+          coverageEndAt: null,
+          lastActivityAt: null,
+          algorithmVersion: ATHLETE_STATE_PROJECTION_ALGORITHM_VERSION,
+        },
+        estimates: [],
+        now,
+      });
+      await waitForBlockedProfileAdvisoryLock(profileId);
+
+      releaseCreation?.();
+      creationReleased = true;
+      await creation;
+      await waitForBlockedAdvisoryLock(advisoryKey);
+
+      latePublication = publishAthleteState(db, {
+        claim,
+        state: {
+          fitness: 10,
+          fatigue: 8,
+          evidenceConfidence: 0.8,
+          coverageStartAt: null,
+          coverageEndAt: null,
+          lastActivityAt: null,
+          algorithmVersion: ATHLETE_STATE_PROJECTION_ALGORITHM_VERSION,
+        },
+        estimates: [],
+        now,
+      });
+      await waitForBlockedProfileAdvisoryLock(profileId);
+
+      await lockClient.query("select pg_advisory_unlock($1)", [advisoryKey]);
+      lockHeld = false;
+      await expect(publication).resolves.toBe(true);
+      await expect(latePublication).resolves.toBe(false);
+      const [state] = await db
+        .select()
+        .from(profileAthleteState)
+        .where(eq(profileAthleteState.profile_id, profileId));
+      expect(state?.published_revision).toBe(1);
+    } finally {
+      if (lockHeld) await lockClient.query("select pg_advisory_unlock($1)", [advisoryKey]);
+      if (!creationReleased) releaseCreation?.();
+      await creation?.catch(() => undefined);
+      await publication?.catch(() => undefined);
+      await latePublication?.catch(() => undefined);
+      await pool.query(`drop trigger if exists "${triggerName}" on public.profile_athlete_state`);
+      await pool.query(`drop function if exists public."${functionName}"()`);
+      lockClient.release();
+    }
+  });
+
+  it("cleans up publication ordering fixtures when queued creation rejects before its insertion gate", async () => {
+    const profileId = await seedProfile();
+    const integrationId = await seedIntegration(profileId, "wahoo");
+    const advisoryKey = 741_854;
+    const suffix = randomUUID().replaceAll("-", "");
+    const publicationFunctionName = `pause_athlete_state_publication_${suffix}`;
+    const publicationTriggerName = `pause_athlete_state_publication_${suffix}`;
+    const failureFunctionName = `reject_athlete_state_creation_${suffix}`;
+    const failureTriggerName = `reject_athlete_state_creation_${suffix}`;
+    const lockClient = await pool.connect();
+    const insertionGate = createQueueCreationGate();
+    let lockHeld = false;
+    let creation: Promise<void> | undefined;
+
+    try {
+      await pool.query(`
+        create function public."${publicationFunctionName}"() returns trigger
+        language plpgsql as $$
+        begin
+          if new.profile_id = '${profileId}'::uuid then
+            perform pg_advisory_xact_lock(${advisoryKey});
+          end if;
+          return new;
+        end
+        $$
+      `);
+      await pool.query(`
+        create trigger "${publicationTriggerName}"
+        before update on public.profile_athlete_state
+        for each row execute function public."${publicationFunctionName}"()
+      `);
+      await pool.query(`
+        create function public."${failureFunctionName}"() returns trigger
+        language plpgsql as $$
+        begin
+          if new.profile_id = '${profileId}'::uuid then
+            raise exception 'forced queued creation failure';
+          end if;
+          return new;
+        end
+        $$
+      `);
+      await pool.query(`
+        create trigger "${failureTriggerName}"
+        before insert on public.activity_import_runs
+        for each row execute function public."${failureFunctionName}"()
+      `);
+      await lockClient.query("select pg_advisory_lock($1)", [advisoryKey]);
+      lockHeld = true;
+      creation = db.transaction(async (tx) => {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${profileId}, 0))`);
+        await tx.insert(activityImportRuns).values({
+          profile_id: profileId,
+          integration_id: integrationId,
+          integration_generation: 1,
+          kind: "history_sync",
+          status: "queued",
+        });
+        insertionGate.markInserted();
+      });
+      void creation.catch(insertionGate.rejectInserted);
+
+      await expect(insertionGate.inserted).rejects.toMatchObject({
+        cause: expect.objectContaining({ message: "forced queued creation failure" }),
+      });
+    } finally {
+      if (lockHeld) await lockClient.query("select pg_advisory_unlock($1)", [advisoryKey]);
+      await creation?.catch(() => undefined);
+      await pool.query(
+        `drop trigger if exists "${failureTriggerName}" on public.activity_import_runs`,
+      );
+      await pool.query(`drop function if exists public."${failureFunctionName}"()`);
+      await pool.query(
+        `drop trigger if exists "${publicationTriggerName}" on public.profile_athlete_state`,
+      );
+      await pool.query(`drop function if exists public."${publicationFunctionName}"()`);
+      lockClient.release();
+    }
+
+    const [advisoryLock] = (
+      await pool.query<{ held: boolean }>(
+        `select exists (
+           select 1
+           from pg_locks
+           where database = (select oid from pg_database where datname = current_database())
+             and locktype = 'advisory'
+             and granted = true
+             and classid = 0
+             and objid = $1
+             and objsubid = 1
+         ) as held`,
+        [advisoryKey],
+      )
+    ).rows;
+    expect(advisoryLock?.held).toBe(false);
+    await expect(
+      pool.query("select to_regprocedure($1) as procedure", [
+        `public."${publicationFunctionName}"()`,
+      ]),
+    ).resolves.toMatchObject({ rows: [{ procedure: null }] });
+    await expect(
+      pool.query("select to_regprocedure($1) as procedure", [`public."${failureFunctionName}"()`]),
+    ).resolves.toMatchObject({ rows: [{ procedure: null }] });
   });
 
   it("enriches a direct source with trusted identity metadata for later convergence", async () => {
