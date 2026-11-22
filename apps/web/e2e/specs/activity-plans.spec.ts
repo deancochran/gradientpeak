@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { expect, test } from "../fixtures";
 import { ActivityPlansPage, expectNoHorizontalOverflow, ShellPage } from "../pages";
 import { captureAuthoring } from "../pages/authoring";
+import { waitForAppHydration } from "../support/hydration";
 import {
   cleanupOwnedActivityPlans,
   e2eArtifactIdentity,
@@ -29,7 +30,9 @@ test("athlete can discover and open the canonical V5 activity plan library", asy
   ).toBeInViewport();
   await captureAuthoring(athletePage, testInfo, "resource-library");
   await planCard.press("Enter");
-  await expect(athletePage).toHaveURL(`/activity-plans/${athleteActor.activityPlanId}`);
+  await expect(athletePage).toHaveURL(
+    new RegExp(`/activity-plans/${athleteActor.activityPlanId}\\?q=Tempo\\+Builder$`),
+  );
   await expect(
     athletePage.getByRole("heading", { name: /playwright tempo builder/i }),
   ).toBeVisible();
@@ -179,6 +182,7 @@ test("V5 authoring persists zero intensity and timed rest, recovers invalid draf
     await athletePage.getByRole("button", { name: "Save changes", exact: true }).click();
     await expect(athletePage.getByRole("heading", { name: editedName, exact: true })).toBeVisible();
     await athletePage.reload();
+    await waitForAppHydration(athletePage);
     await expect.poll(stored).toMatchObject({
       name: editedName,
       structure: {

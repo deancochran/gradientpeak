@@ -12,6 +12,10 @@ import { toast } from "sonner";
 import { ActivityPlanCard } from "../../../components/activity-plan/activity-plan-card";
 import { ActivityPlanComposer } from "../../../components/activity-plan/activity-plan-composer";
 import { DetailPageIntro } from "../../../components/protected/activity-route-primitives";
+import {
+  type ActivityPlanCategory,
+  activityPlanLibrarySearch,
+} from "../../../lib/activity-plan-library-search";
 import { api } from "../../../lib/api/client";
 import { loadRouteQuery } from "../../../lib/api/route-loading";
 import {
@@ -28,23 +32,10 @@ const categoryOptions = [
   { label: "Other", value: "other" },
 ] as const;
 
-type ActivityPlanCategory = Exclude<(typeof categoryOptions)[number]["value"], "all">;
-
 export const Route = createFileRoute("/_protected/activity-plans/")({
-  validateSearch: (search: Record<string, unknown>) => {
-    const preparation = parseActivityPlanPreparationContext(search);
-    return {
-      ...(preparation ?? {}),
-      activity_category: categoryOptions.some(
-        (option) => option.value !== "all" && option.value === search.activity_category,
-      )
-        ? (search.activity_category as (typeof categoryOptions)[number]["value"])
-        : undefined,
-      q: typeof search.q === "string" && search.q ? search.q.slice(0, 100) : undefined,
-    };
-  },
+  validateSearch: activityPlanLibrarySearch,
   loaderDeps: ({ search }) => ({
-    activity_category: search.activity_category === "all" ? undefined : search.activity_category,
+    activity_category: search.activity_category,
     q: search.q,
   }),
   loader: ({ context, deps }) => {
@@ -145,6 +136,7 @@ function ActivityPlansPage() {
             await navigate({
               to: "/activity-plans/$activityPlanId",
               params: { activityPlanId },
+              search: activityPlanLibrarySearch(routeSearch),
             } as never);
             if (creationOwner.current !== owner) return;
           }}
@@ -262,7 +254,7 @@ function ActivityPlansPage() {
                   void navigate({
                     to: "/activity-plans/$activityPlanId",
                     params: { activityPlanId: plan.id },
-                    ...(preparation ? { search: activityPlanPreparationSearch(preparation) } : {}),
+                    search: activityPlanLibrarySearch(routeSearch),
                   } as never)
                 }
                 plan={plan}
