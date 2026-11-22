@@ -18,6 +18,13 @@ const randomUuidMock = jest.fn();
 const mockRouteOperationStorage = new Map<string, string>();
 const preventRemoveMock = jest.fn();
 const dispatchMock = jest.fn();
+const mockHandleSubmitFormError = jest.fn(
+  (form: { setError: (name: "root", error: { message: string }) => void }, error: unknown) => {
+    form.setError("root", {
+      message: error instanceof Error ? error.message : "Unable to upload route",
+    });
+  },
+);
 jest.mock("expo-router/react-navigation", () => ({
   usePreventRemove: (...args: unknown[]) => preventRemoveMock(...args),
 }));
@@ -69,6 +76,11 @@ jest.mock("@/lib/hooks/useAuth", () => ({
   __esModule: true,
   useAuth: () => ({ user: { id: "11111111-1111-4111-8111-111111111111" } }),
 }));
+jest.mock("@/lib/utils/formErrors", () => ({
+  __esModule: true,
+  handleSubmitFormError: (...args: Parameters<typeof mockHandleSubmitFormError>) =>
+    mockHandleSubmitFormError(...args),
+}));
 
 jest.mock("@/lib/api", () => ({
   __esModule: true,
@@ -93,6 +105,7 @@ describe("route upload screen", () => {
     mockRouteOperationStorage.clear();
     preventRemoveMock.mockReset();
     dispatchMock.mockReset();
+    mockHandleSubmitFormError.mockClear();
     jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
@@ -313,5 +326,38 @@ describe("route upload screen", () => {
     ).toBeTruthy();
     await fireEvent.press(screen.getByTestId("route-upload-submit-button"));
     expect(uploadRouteMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    "success",
+    "failure",
+  ])("does not affect navigation, cache, or form errors after an unmounted late upload %s", async (outcome) => {
+    let resolve!: (value: { id: string }) => void;
+    let reject!: (error: Error) => void;
+    uploadRouteMock.mockReturnValueOnce(
+      new Promise((done, fail) => {
+        resolve = done;
+        reject = fail;
+      }),
+    );
+    const view = await renderScreen();
+    await pickFile();
+    const submit = screen.getByTestId("route-upload-submit-button").props.onPress;
+    await act(async () => {
+      void submit();
+    });
+    await waitFor(() => expect(uploadRouteMock).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      view.unmount();
+    });
+
+    await act(async () => {
+      if (outcome === "success") resolve({ id: "route-1" });
+      else reject(new Error("Late upload failure"));
+    });
+
+    expect(invalidateRoutesMock).not.toHaveBeenCalled();
+    expect(backMock).not.toHaveBeenCalled();
+    expect(mockHandleSubmitFormError).not.toHaveBeenCalled();
   });
 });
