@@ -1,4 +1,4 @@
-import type { TrainingPlanCalibrationConfig } from "../schemas/training_plan_structure";
+import type { TrainingPlanCalibrationConfig } from "../schemas/training-plan-structure";
 
 export type CompositeWeightKey = keyof TrainingPlanCalibrationConfig["readiness_composite"];
 

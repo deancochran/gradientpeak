@@ -15,7 +15,7 @@
 import { Text } from "@repo/ui/components/text";
 import { useCallback, useState } from "react";
 import { Alert, Pressable, View } from "react-native";
-import { useCurrentReadings, usePlan } from "@/lib/hooks/useActivityRecorder";
+import { useSessionView } from "@/lib/hooks/useActivityRecorder";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 
 export interface EllipticalControlUIProps {
@@ -24,9 +24,10 @@ export interface EllipticalControlUIProps {
   hasPlan: boolean;
 }
 
-export function EllipticalControlUI({ service, controlMode, hasPlan }: EllipticalControlUIProps) {
-  const plan = usePlan(service);
-  const currentReadings = useCurrentReadings(service);
+export function EllipticalControlUI({ service, controlMode }: EllipticalControlUIProps) {
+  const sessionView = useSessionView(service);
+  const plan = sessionView?.plan;
+  const currentReadings = sessionView?.currentReadings ?? {};
 
   // Elliptical control state
   const [resistanceLevel, setResistanceLevel] = useState<number>(5); // 1-20
@@ -89,6 +90,8 @@ export function EllipticalControlUI({ service, controlMode, hasPlan }: Elliptica
   // Get current power reading (read-only)
   const currentPower = currentReadings.power ? Math.round(currentReadings.power) : null;
 
+  const currentPlanTarget = plan?.currentStep?.targets?.at(0);
+
   return (
     <View className="gap-6">
       {/* Resistance Control */}
@@ -99,6 +102,10 @@ export function EllipticalControlUI({ service, controlMode, hasPlan }: Elliptica
             <Pressable
               onPress={() => setResistanceLevel(Math.max(1, resistanceLevel - 1))}
               disabled={isDisabled}
+              accessibilityRole="button"
+              accessibilityLabel="Decrease resistance by one level"
+              accessibilityState={{ disabled: isDisabled }}
+              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
               className={`w-12 h-12 items-center justify-center rounded ${
                 isDisabled ? "bg-muted" : "bg-primary"
               }`}
@@ -116,6 +123,10 @@ export function EllipticalControlUI({ service, controlMode, hasPlan }: Elliptica
             <Pressable
               onPress={() => setResistanceLevel(Math.min(20, resistanceLevel + 1))}
               disabled={isDisabled}
+              accessibilityRole="button"
+              accessibilityLabel="Increase resistance by one level"
+              accessibilityState={{ disabled: isDisabled }}
+              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
               className={`w-12 h-12 items-center justify-center rounded ${
                 isDisabled ? "bg-muted" : "bg-primary"
               }`}
@@ -129,7 +140,11 @@ export function EllipticalControlUI({ service, controlMode, hasPlan }: Elliptica
           <Pressable
             onPress={applyResistance}
             disabled={isDisabled}
-            className={`py-3 rounded ${isDisabled ? "bg-muted" : "bg-primary"}`}
+            accessibilityRole="button"
+            accessibilityLabel="Apply resistance level"
+            accessibilityState={{ disabled: isDisabled }}
+            style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+            className={`h-12 items-center justify-center rounded ${isDisabled ? "bg-muted" : "bg-primary"}`}
           >
             <Text
               className={`text-center font-medium ${
@@ -150,6 +165,10 @@ export function EllipticalControlUI({ service, controlMode, hasPlan }: Elliptica
             <Pressable
               onPress={() => setTargetCadence(Math.max(30, targetCadence - 5))}
               disabled={isDisabled}
+              accessibilityRole="button"
+              accessibilityLabel="Decrease target cadence by 5 steps per minute"
+              accessibilityState={{ disabled: isDisabled }}
+              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
               className={`w-12 h-12 items-center justify-center rounded ${
                 isDisabled ? "bg-muted" : "bg-primary"
               }`}
@@ -167,6 +186,10 @@ export function EllipticalControlUI({ service, controlMode, hasPlan }: Elliptica
             <Pressable
               onPress={() => setTargetCadence(Math.min(120, targetCadence + 5))}
               disabled={isDisabled}
+              accessibilityRole="button"
+              accessibilityLabel="Increase target cadence by 5 steps per minute"
+              accessibilityState={{ disabled: isDisabled }}
+              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
               className={`w-12 h-12 items-center justify-center rounded ${
                 isDisabled ? "bg-muted" : "bg-primary"
               }`}
@@ -180,7 +203,11 @@ export function EllipticalControlUI({ service, controlMode, hasPlan }: Elliptica
           <Pressable
             onPress={applyCadence}
             disabled={isDisabled}
-            className={`py-3 rounded ${isDisabled ? "bg-muted" : "bg-primary"}`}
+            accessibilityRole="button"
+            accessibilityLabel="Apply target cadence in steps per minute"
+            accessibilityState={{ disabled: isDisabled }}
+            style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+            className={`h-12 items-center justify-center rounded ${isDisabled ? "bg-muted" : "bg-primary"}`}
           >
             <Text
               className={`text-center font-medium ${
@@ -205,19 +232,19 @@ export function EllipticalControlUI({ service, controlMode, hasPlan }: Elliptica
       </View>
 
       {/* Plan Target Display (when in Auto mode) */}
-      {controlMode === "auto" && plan.hasPlan && plan.currentStep && (
+      {controlMode === "auto" && plan?.hasPlan && plan.currentStep && (
         <View className="bg-primary/10 p-4 rounded-lg border border-primary/20">
           <Text className="text-sm font-medium mb-1">Following Plan</Text>
           <Text className="text-xs text-muted-foreground">
             Current step: {plan.currentStep.name || "Interval"}
           </Text>
-          {plan.currentStep.targets && plan.currentStep.targets.length > 0 && (
+          {currentPlanTarget !== undefined && (
             <Text className="text-xs text-muted-foreground mt-1">
-              Target: {plan.currentStep.targets[0].type}{" "}
-              {"min" in plan.currentStep.targets[0] &&
-                "max" in plan.currentStep.targets[0] &&
-                `${plan.currentStep.targets[0].min}-${plan.currentStep.targets[0].max}`}
-              {"value" in plan.currentStep.targets[0] && `${plan.currentStep.targets[0].value}`}
+              Target: {currentPlanTarget.type}{" "}
+              {"min" in currentPlanTarget &&
+                "max" in currentPlanTarget &&
+                `${currentPlanTarget.min}-${currentPlanTarget.max}`}
+              {"value" in currentPlanTarget && `${currentPlanTarget.value}`}
             </Text>
           )}
         </View>

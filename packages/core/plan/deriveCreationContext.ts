@@ -1,18 +1,27 @@
 import type { ActivityDerivedZones } from "../activity-analysis/contracts";
 import { calculateRollingTrainingQuality } from "../calculations/training-quality";
+import type { CommonLoadResult } from "../load/common-relative-load";
+import {
+  type AthletePerformanceTargetFacts,
+  getAvailablePerformanceTargetValue,
+} from "../performance-model";
 import {
   type CreationContextSummary,
   creationContextSummarySchema,
-} from "../schemas/training_plan_structure";
-import { getMaxSustainableCTL, resolveNoHistoryStartingPrior } from "./calibration-constants";
+} from "../schemas/training-plan-structure";
+import {
+  getMaxSustainableLongTermLoad,
+  resolveNoHistoryStartingPrior,
+} from "./calibration-constants";
 import { learnIndividualRampRate } from "./ramp-learning";
 
 export interface CreationCompletedActivitySignal {
   occurred_at: string;
   activity_category?: string | null;
   duration_seconds?: number | null;
-  tss?: number | null;
-  intensity_factor?: number | null;
+  /** Historical progression input; not an activity-analysis stress result. */
+  load?: number | null;
+  common_load?: CommonLoadResult | null;
   zones?: Partial<ActivityDerivedZones> | null;
 }
 
@@ -34,31 +43,31 @@ export interface CreationActivityContextSignal {
   category_mix?: Record<string, number>;
 }
 
-export interface CreationProfileMetricsSignal {
-  ftp?: number | null;
-  threshold_hr?: number | null;
-  weight_kg?: number | null;
-  lthr?: number | null;
-}
-
 export interface DeriveCreationContextInput {
   completed_activities?: CreationCompletedActivitySignal[];
   efforts?: CreationEffortSignal[];
   activity_context?: CreationActivityContextSignal;
-  profile_metrics?: CreationProfileMetricsSignal;
+  performance_targets?: AthletePerformanceTargetFacts;
+  weight_kg?: number | null;
   profile?: CreationProfileSignal;
-  as_of?: string;
-  /** Global CTL override from profile settings. If provided, boosts confidence. */
+  as_of: string;
+  /** Global LongTermLoad override from profile settings. If provided, boosts confidence. */
   baseline_fitness_override?: {
     is_enabled: boolean;
-    override_ctl?: number;
-    override_atl?: number;
+    override_longTermLoad?: number;
+    override_recentLoad?: number;
     override_date?: string;
   };
 }
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+type PlanningTargetFact = AthletePerformanceTargetFacts["thresholds"]["bike"];
+
+function performanceTargetValue(fact: PlanningTargetFact | undefined): number | null {
+  return fact ? getAvailablePerformanceTargetValue(fact) : null;
 }
 
 function toDate(value: string): Date | null {
@@ -102,8 +111,8 @@ function percentile(values: number[], q: number): number {
  * - rich data -> tighter ranges and higher confidence
  */
 export function deriveCreationContext(input: DeriveCreationContextInput): CreationContextSummary {
-  const asOf = input.as_of ? toDate(input.as_of) : new Date();
-  const safeAsOf = asOf ?? new Date();
+  const safeAsOf = toDate(input.as_of);
+  if (!safeAsOf) throw new Error("deriveCreationContext requires a valid as_of instant");
   const recentWindowDays = 42;
 
   const activities = (input.completed_activities ?? []).filter((activity) => {
@@ -115,11 +124,11 @@ export function deriveCreationContext(input: DeriveCreationContextInput): Creati
 
   const activityCount = activities.length;
 
-  // If user has a baseline fitness override with a valid CTL, treat as having history
+  // If user has a baseline fitness override with a valid LongTermLoad, treat as having history
   const hasBaselineOverride =
     input.baseline_fitness_override?.is_enabled === true &&
-    typeof input.baseline_fitness_override.override_ctl === "number" &&
-    input.baseline_fitness_override.override_ctl > 0;
+    typeof input.baseline_fitness_override.override_longTermLoad === "number" &&
+    input.baseline_fitness_override.override_longTermLoad > 0;
 
   const historyState =
     activityCount === 0
@@ -149,27 +158,55 @@ export function deriveCreationContext(input: DeriveCreationContextInput): Creati
   });
   const effortCount = recentEfforts.length;
 
-  const metrics = input.profile_metrics;
+  const performanceTargets = input.performance_targets;
   const userAge = calculateAgeAtDate(input.profile?.dob ?? null, safeAsOf);
   const userGender =
     input.profile?.gender === "male" || input.profile?.gender === "female"
       ? input.profile.gender
       : null;
-  const starterPrior = resolveNoHistoryStartingPrior({ age: userAge });
-  const maxSustainableCtl = getMaxSustainableCTL(userAge);
+  const starterPrior = resolveNoHistoryStartingPrior({
+    ...(userAge === undefined ? {} : { age: userAge }),
+  });
+  const maxSustainableLongTermLoad = getMaxSustainableLongTermLoad(userAge);
   const missingRequiredOnboardingFields = input.profile?.dob ? [] : ["dob"];
+  const primaryCategory = input.activity_context?.primary_category;
+  const primaryThreshold =
+    primaryCategory === "bike"
+      ? performanceTargets?.thresholds.bike
+      : primaryCategory === "run"
+        ? performanceTargets?.thresholds.run
+        : primaryCategory === "swim"
+          ? performanceTargets?.thresholds.swim
+          : undefined;
+  const primaryLthr =
+    primaryCategory === "bike" || primaryCategory === "run" || primaryCategory === "swim"
+      ? performanceTargets?.heartRate[primaryCategory].lthr
+      : undefined;
+  const anyThreshold =
+    primaryThreshold ??
+    [
+      performanceTargets?.thresholds.bike,
+      performanceTargets?.thresholds.run,
+      performanceTargets?.thresholds.swim,
+    ].find((fact) => performanceTargetValue(fact) !== null);
+  const anyLthr =
+    primaryLthr ??
+    [
+      performanceTargets?.heartRate.bike.lthr,
+      performanceTargets?.heartRate.run.lthr,
+      performanceTargets?.heartRate.swim.lthr,
+    ].find((fact) => fact?.status === "available");
   const missingOptionalCalibrationFields = [
-    metrics?.weight_kg == null ? "weight_kg" : null,
-    metrics?.threshold_hr == null && metrics?.lthr == null ? "threshold_hr" : null,
-    metrics?.ftp == null ? "ftp" : null,
+    input.weight_kg == null ? "weight_kg" : null,
+    performanceTargetValue(anyThreshold) === null ? "performance_target" : null,
+    anyLthr?.status !== "available" ? "lthr" : null,
   ].filter((field): field is string => field !== null);
   const presentMetricCount = [
-    metrics?.ftp,
-    metrics?.threshold_hr,
-    metrics?.weight_kg,
-    metrics?.lthr,
+    input.weight_kg == null ? null : input.weight_kg,
+    performanceTargetValue(anyThreshold),
+    anyLthr?.status === "available" ? anyLthr.valueBpm : null,
   ].filter((value) => value !== null && value !== undefined).length;
-  const metricCompleteness = clamp(presentMetricCount / 4, 0, 1);
+  const metricCompleteness = clamp(presentMetricCount / 3, 0, 1);
 
   const consistencyMarker = hasBaselineOverride
     ? "high" // User declared baseline, treat as consistent
@@ -190,7 +227,7 @@ export function deriveCreationContext(input: DeriveCreationContextInput): Creati
 
   // Calculate baseline override bonus for signal quality
   const baselineOverrideBonus = hasBaselineOverride
-    ? Math.min(0.3, (input.baseline_fitness_override?.override_ctl ?? 0) / 300)
+    ? Math.min(0.3, (input.baseline_fitness_override?.override_longTermLoad ?? 0) / 300)
     : 0;
 
   const qualityScore = clamp(
@@ -204,7 +241,7 @@ export function deriveCreationContext(input: DeriveCreationContextInput): Creati
     1,
   );
 
-  const weeklyTssBuckets = Array.from({ length: 6 }, () => 0);
+  const weeklyLoadBuckets = Array.from({ length: 6 }, () => 0);
   const weeklySessionBuckets = Array.from({ length: 6 }, () => 0);
   const weekdayCounts = [0, 0, 0, 0, 0, 0, 0];
 
@@ -216,30 +253,31 @@ export function deriveCreationContext(input: DeriveCreationContextInput): Creati
 
     const ageDays = daysBetween(safeAsOf, date);
     const weekBucket = clamp(Math.floor(ageDays / 7), 0, 5);
-    const normalizedTss =
-      activity.tss !== null && activity.tss !== undefined
-        ? activity.tss
+    const normalizedLoad =
+      activity.load !== null && activity.load !== undefined
+        ? activity.load
         : ((activity.duration_seconds ?? 0) / 3600) * 45;
 
-    weeklyTssBuckets[weekBucket] = (weeklyTssBuckets[weekBucket] ?? 0) + Math.max(0, normalizedTss);
+    weeklyLoadBuckets[weekBucket] =
+      (weeklyLoadBuckets[weekBucket] ?? 0) + Math.max(0, normalizedLoad);
     weeklySessionBuckets[weekBucket] = (weeklySessionBuckets[weekBucket] ?? 0) + 1;
     const weekday = date.getUTCDay();
     weekdayCounts[weekday] = (weekdayCounts[weekday] ?? 0) + 1;
   }
 
-  const weeklyTssMedian = percentile(weeklyTssBuckets, 50);
-  const weeklyTssP25 = percentile(weeklyTssBuckets, 25);
-  const weeklyTssP75 = percentile(weeklyTssBuckets, 75);
-  const estimatedWeeklyTss =
+  const weeklyLoadMedian = percentile(weeklyLoadBuckets, 50);
+  const weeklyLoadP25 = percentile(weeklyLoadBuckets, 25);
+  const weeklyLoadP75 = percentile(weeklyLoadBuckets, 75);
+  const estimatedWeeklyLoad =
     activityCount > 0
-      ? Math.max(weeklyTssMedian, weeklyTssBuckets.reduce((a, b) => a + b, 0) / 6)
-      : starterPrior.starting_weekly_tss;
+      ? Math.max(weeklyLoadMedian, weeklyLoadBuckets.reduce((a, b) => a + b, 0) / 6)
+      : starterPrior.starting_weekly_load;
 
   const baselineBounds =
     historyState === "none"
       ? {
-          minFloor: Math.max(20, Math.round(starterPrior.starting_weekly_tss * 0.7)),
-          maxFloor: Math.round(starterPrior.starting_weekly_tss * 0.95),
+          minFloor: Math.max(20, Math.round(starterPrior.starting_weekly_load * 0.7)),
+          maxFloor: Math.round(starterPrior.starting_weekly_load * 0.95),
           maxCeil: starterPrior.is_youth ? 260 : 400,
         }
       : historyState === "sparse"
@@ -247,21 +285,21 @@ export function deriveCreationContext(input: DeriveCreationContextInput): Creati
         : { minFloor: 80, maxFloor: 140, maxCeil: 1200 };
 
   const baselineSpreadFromHistory =
-    weeklyTssP75 > 0 ? weeklyTssP75 - weeklyTssP25 : estimatedWeeklyTss * 0.35;
+    weeklyLoadP75 > 0 ? weeklyLoadP75 - weeklyLoadP25 : estimatedWeeklyLoad * 0.35;
   const confidenceWidthMultiplier =
     historyState === "rich" ? 0.85 : historyState === "sparse" ? 1 : 1.25;
   const lowSignalExpansion = clamp((0.7 - qualityScore) * 0.4, 0, 0.25);
   const baselineWidthMultiplier = confidenceWidthMultiplier + lowSignalExpansion;
   const baselineMin = Math.round(
     clamp(
-      estimatedWeeklyTss - baselineSpreadFromHistory * baselineWidthMultiplier,
+      estimatedWeeklyLoad - baselineSpreadFromHistory * baselineWidthMultiplier,
       baselineBounds.minFloor,
       baselineBounds.maxCeil,
     ),
   );
   const baselineMax = Math.round(
     clamp(
-      estimatedWeeklyTss + baselineSpreadFromHistory * baselineWidthMultiplier,
+      estimatedWeeklyLoad + baselineSpreadFromHistory * baselineWidthMultiplier,
       baselineBounds.maxFloor,
       baselineBounds.maxCeil,
     ),
@@ -306,16 +344,15 @@ export function deriveCreationContext(input: DeriveCreationContextInput): Creati
   const learnedRampRate = learnIndividualRampRate(
     (input.completed_activities ?? []).map((activity) => ({
       occurred_at: activity.occurred_at,
-      tss: activity.tss,
+      ...(activity.load === undefined ? {} : { load: activity.load }),
     })),
   );
 
   const trainingQuality = calculateRollingTrainingQuality(
     (input.completed_activities ?? []).map((activity) => ({
       occurred_at: activity.occurred_at,
-      tss: activity.tss,
-      intensity_factor: activity.intensity_factor,
-      zones: activity.zones,
+      ...(activity.common_load === undefined ? {} : { common_load: activity.common_load }),
+      ...(activity.zones === undefined ? {} : { zones: activity.zones }),
     })),
     28,
     safeAsOf,
@@ -352,7 +389,7 @@ export function deriveCreationContext(input: DeriveCreationContextInput): Creati
     profile_metric_completeness_marker: profileMarker,
     is_youth: starterPrior.is_youth,
     signal_quality: Number(qualityScore.toFixed(3)),
-    recommended_baseline_tss_range: {
+    recommended_baseline_load_range: {
       min: baselineMin,
       max: Math.max(baselineMax, baselineMin + 20),
     },
@@ -366,7 +403,7 @@ export function deriveCreationContext(input: DeriveCreationContextInput): Creati
     },
     user_age: userAge,
     user_gender: userGender,
-    max_sustainable_ctl: maxSustainableCtl,
+    max_sustainable_longTermLoad: maxSustainableLongTermLoad,
     missing_required_onboarding_fields: missingRequiredOnboardingFields,
     missing_optional_calibration_fields: missingOptionalCalibrationFields,
     learned_ramp_rate: {

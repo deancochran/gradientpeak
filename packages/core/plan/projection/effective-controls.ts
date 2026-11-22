@@ -1,7 +1,10 @@
-import type { TrainingPlanCalibrationConfig } from "../../schemas/training_plan_structure";
+import type { TrainingPlanCalibrationConfig } from "../../schemas/training-plan-structure";
 import { getMpcProfileBounds } from "./mpc/lattice";
 import type { OptimizationProfile, ProjectionSafetyConfig } from "./safety-caps";
-import { ABSOLUTE_MAX_CTL_RAMP_PER_WEEK, ABSOLUTE_MAX_WEEKLY_TSS_RAMP_PCT } from "./safety-caps";
+import {
+  ABSOLUTE_MAX_LongTermLoad_RAMP_PER_WEEK,
+  ABSOLUTE_MAX_WEEKLY_COMMON_LOAD_RAMP_PCT,
+} from "./safety-caps";
 
 export interface EffectiveProjectionControls {
   behavior_controls: ResolvedBehaviorControls;
@@ -14,8 +17,8 @@ export interface EffectiveProjectionControls {
     candidate_steps: number;
   };
   ramp_caps: {
-    max_weekly_tss_ramp_pct: number;
-    max_ctl_ramp_per_week: number;
+    max_weekly_load_ramp_pct: number;
+    max_longTermLoad_ramp_per_week: number;
   };
   curvature: {
     target: number;
@@ -29,10 +32,10 @@ export type CurvatureEnvelopePattern = "ramp" | "deload" | "taper" | "event" | "
 interface ResolveEffectiveProjectionControlsInput {
   normalized_config: ProjectionSafetyConfig;
   calibration: TrainingPlanCalibrationConfig;
-  behavior_controls_v1?: ProjectionBehaviorControlsV1Input;
+  behavior_controls?: ProjectionBehaviorControlsInput;
 }
 
-interface ProjectionBehaviorControlsV1Input {
+interface ProjectionBehaviorControlsInput {
   aggressiveness?: number;
   variability?: number;
   spike_frequency?: number;
@@ -77,7 +80,7 @@ const CURVATURE_TARGET_SCALE = 0.18;
 export function resolveEffectiveProjectionControls(
   input: ResolveEffectiveProjectionControlsInput,
 ): EffectiveProjectionControls {
-  const behaviorControls = normalizeBehaviorControls(input.behavior_controls_v1);
+  const behaviorControls = normalizeBehaviorControls(input.behavior_controls);
   const aggressiveness = behaviorControls.aggressiveness;
   const variability = behaviorControls.variability;
   const spikeFrequency = behaviorControls.spike_frequency;
@@ -147,18 +150,18 @@ export function resolveEffectiveProjectionControls(
       ),
     },
     ramp_caps: {
-      max_weekly_tss_ramp_pct: round3(
+      max_weekly_load_ramp_pct: round3(
         clampNumber(
-          input.normalized_config.max_weekly_tss_ramp_pct,
+          input.normalized_config.max_weekly_load_ramp_pct,
           0,
-          ABSOLUTE_MAX_WEEKLY_TSS_RAMP_PCT,
+          ABSOLUTE_MAX_WEEKLY_COMMON_LOAD_RAMP_PCT,
         ),
       ),
-      max_ctl_ramp_per_week: round3(
+      max_longTermLoad_ramp_per_week: round3(
         clampNumber(
-          input.normalized_config.max_ctl_ramp_per_week,
+          input.normalized_config.max_longTermLoad_ramp_per_week,
           0,
-          ABSOLUTE_MAX_CTL_RAMP_PER_WEEK,
+          ABSOLUTE_MAX_LongTermLoad_RAMP_PER_WEEK,
         ),
       ),
     },
@@ -187,7 +190,7 @@ export function buildCurvatureEnvelope(input: {
  * Computes mean squared second-difference mismatch against curvature target.
  */
 export function computeCurvaturePenalty(input: {
-  previous_week_tss: number;
+  previous_week_load: number;
   weekly_actions: number[];
   envelopes: number[];
   curvature: number;
@@ -197,7 +200,7 @@ export function computeCurvaturePenalty(input: {
     return 0;
   }
 
-  const series = [input.previous_week_tss, ...input.weekly_actions];
+  const series = [input.previous_week_load, ...input.weekly_actions];
   const safeScale = Math.max(20, input.scale_reference * 0.12);
   let penalty = 0;
   let samples = 0;
@@ -221,7 +224,7 @@ export function computeCurvaturePenalty(input: {
 }
 
 function normalizeBehaviorControls(
-  input: ProjectionBehaviorControlsV1Input | undefined,
+  input: ProjectionBehaviorControlsInput | undefined,
 ): ResolvedBehaviorControls {
   return {
     aggressiveness: clampNumber(

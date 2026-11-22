@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from "@storybook/react";
+import type { Meta, StoryObj } from "@storybook/react-native";
 import { CircleAlert } from "lucide-react-native";
 import { View } from "react-native";
 
@@ -25,4 +25,21 @@ export const Playground: Story = {
       <EmptyStateCard {...args} />
     </View>
   ),
+};
+
+export const UnbrokenContent: Story = {
+  ...Playground,
+  args: emptyStateCardFixtures.unbrokenText,
+};
+export const Unavailable: Story = {
+  ...Playground,
+  args: emptyStateCardFixtures.unavailable,
+};
+export const RecoverableError: Story = {
+  ...Playground,
+  args: emptyStateCardFixtures.recoverableError,
+};
+export const Denied: Story = {
+  ...Playground,
+  args: emptyStateCardFixtures.denied,
 };
