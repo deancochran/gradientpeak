@@ -4,59 +4,35 @@
  * Provides capability-based feature flags for UI components
  */
 
-import type {
-  RecordingCapabilities,
-  RecordingConfiguration,
-  RecordingSessionContract,
-} from "@repo/core";
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import type { ActivityRecorderService } from "../services/ActivityRecorder";
 import { useSessionView } from "./useActivityRecorder";
 
-/**
- * Get the current recording configuration
- * Compatibility selector over the canonical session view.
- */
-export function useRecordingConfig(
-  service: ActivityRecorderService | null,
-): RecordingConfiguration | null {
+/** Canonical recording configuration selector and configuration command boundary. */
+export function useRecordingConfig(service: ActivityRecorderService | null) {
   const sessionView = useSessionView(service);
+  const attachRoute = useCallback(
+    async (routeId: string) => {
+      if (!service) return;
+      await service.attachRoute(routeId);
+    },
+    [service],
+  );
+  const detachRoute = useCallback(() => {
+    service?.detachRoute();
+  }, [service]);
 
-  return useMemo(() => sessionView?.recordingConfiguration ?? null, [sessionView]);
-}
-
-/**
- * Get just the capabilities (what to show/do)
- * This is what most components need
- */
-export function useRecordingCapabilities(
-  service: ActivityRecorderService | null,
-): RecordingCapabilities | null {
-  const config = useRecordingConfig(service);
-  return config?.capabilities ?? null;
-}
-
-export function useRecordingSessionContract(
-  service: ActivityRecorderService | null,
-): RecordingSessionContract | null {
-  const config = useRecordingConfig(service);
-  return config?.session ?? null;
-}
-
-/**
- * Get validation errors/warnings
- * Useful for showing pre-recording checks
- */
-export function useRecordingValidation(service: ActivityRecorderService | null): {
-  isValid: boolean;
-  errors: string[];
-  warnings: string[];
-} {
-  const capabilities = useRecordingCapabilities(service);
-
-  return {
-    isValid: capabilities?.isValid ?? true,
-    errors: capabilities?.errors ?? [],
-    warnings: capabilities?.warnings ?? [],
-  };
+  return useMemo(
+    () => ({
+      sessionView,
+      recordingConfiguration: sessionView?.recordingConfiguration ?? null,
+      sessionContract: sessionView?.recordingConfiguration.session ?? null,
+      attachedRouteId: service?.attachedRouteId ?? null,
+      attachedRouteName: service?.currentRoute?.name ?? null,
+      hasAttachedRoute: service?.attachedRouteId !== undefined && service.attachedRouteId !== null,
+      attachRoute,
+      detachRoute,
+    }),
+    [attachRoute, detachRoute, service, sessionView],
+  );
 }
