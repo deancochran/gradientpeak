@@ -85,9 +85,20 @@ test("[variation:goals.lifecycle:cancel-edit] browser back abandons unsaved goal
     await athletePage.getByTestId(`goal-card-${goal.id}`).click();
     await athletePage.getByTestId(`goal-edit-${goal.id}`).click();
     await athletePage.getByLabel("Title").fill("Unsaved goal variation");
-    await chooseAuthoringOption(athletePage, "Priority", "1");
+    const priority = athletePage.getByRole("combobox", { name: "Priority", exact: true });
+    await priority.press("ArrowDown");
+    await priority.press("Home");
+    await priority.press("ArrowDown");
+    await priority.press("Enter");
+    await expect(priority).toHaveText("1");
+    await expect(athletePage.getByRole("listbox")).toHaveCount(0);
     await athletePage.goBack();
     await expect(athletePage.getByRole("heading", { name: goal.title })).toBeVisible();
+    await athletePage.screenshot({
+      path: test.info().outputPath("cancel-edit-return.png"),
+      animations: "disabled",
+      scale: "css",
+    });
     await athletePage.reload();
     await expect(athletePage.getByText("Unsaved goal variation")).toHaveCount(0);
     await expect

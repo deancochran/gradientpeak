@@ -616,6 +616,7 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
                     clampProjection={false}
                     id="goal-distance"
                     label={getDistanceLabel(draft.goalType)}
+                    required={targetField("raceDistanceKm")?.required ?? false}
                     value={draft.raceDistanceKm == null ? "" : String(draft.raceDistanceKm)}
                     onChange={() => undefined}
                     onInvalidChange={(invalid) =>
@@ -714,6 +715,7 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
                     clampProjection={false}
                     id="goal-power"
                     label="Watts"
+                    required={targetField("targetWatts")?.required ?? false}
                     value={draft.targetWatts == null ? "" : String(draft.targetWatts)}
                     onChange={() => undefined}
                     onInvalidChange={(invalid) =>
@@ -755,6 +757,7 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
                 clampProjection={false}
                 id="goal-heart-rate"
                 label="Target bpm"
+                required={targetField("targetBpm")?.required ?? false}
                 value={draft.targetBpm == null ? "" : String(draft.targetBpm)}
                 onChange={() => undefined}
                 onInvalidChange={(invalid) =>
