@@ -433,7 +433,7 @@ export function RouteListCard({ onOpen, route }: { onOpen: () => void; route: Ro
         <div data-testid={`route-card-${route.id}-preview`}>
           <RoutePreviewMap compact coordinates={coordinates} />
         </div>
-        <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
+        <div className="grid grid-cols-2 gap-2 text-sm text-muted-foreground">
           <MetricPill
             label="Distance"
             value={
