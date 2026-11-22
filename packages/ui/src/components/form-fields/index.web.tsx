@@ -1,7 +1,7 @@
 "use client";
 
 import { Popover } from "radix-ui";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   type Control,
   type ControllerRenderProps,
@@ -775,9 +775,10 @@ function FormTimezoneField<
   const [search, setSearch] = useState("");
   const { isSubmitting } = useFormState({ control });
   const currentValue = useWatch({ control, name });
-  const options = getTimezoneOptions(
-    typeof currentValue === "string" ? currentValue : null,
-    deviceTimeZone,
+  const timezoneValue = typeof currentValue === "string" ? currentValue : null;
+  const options = useMemo(
+    () => getTimezoneOptions(timezoneValue, deviceTimeZone),
+    [timezoneValue, deviceTimeZone],
   );
 
   return (
