@@ -502,7 +502,7 @@ function TrainingPlanEditorSession({
 
   return (
     <form
-      className="grid gap-6 lg:grid-cols-[1fr_22rem]"
+      className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]"
       onChangeCapture={(event) => {
         if (saveGuard.current || retainedCommitRequestRef.current || completed.current)
           event.stopPropagation();
@@ -512,8 +512,8 @@ function TrainingPlanEditorSession({
         void save();
       }}
     >
-      <div className="space-y-5">
-        <fieldset className="space-y-5" disabled={saving || completed.current}>
+      <div className="min-w-0 space-y-5">
+        <fieldset className="min-w-0 space-y-5" disabled={saving || completed.current}>
           <div>
             <p className="text-sm font-medium text-muted-foreground">Plan builder</p>
             <h1 className="text-3xl font-semibold">
@@ -654,7 +654,7 @@ function TrainingPlanEditorSession({
               {sessions.length === 0 ? <p>Add a activity to build the plan structure.</p> : null}
               {sessions.map((session, index) => (
                 <fieldset
-                  className="grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_8rem_auto]"
+                  className="grid min-w-0 gap-3 rounded-lg border p-4 sm:grid-cols-[minmax(0,1fr)_8rem_auto]"
                   disabled={hasUncertainCommit}
                   key={
                     session.draftId ??
@@ -662,7 +662,7 @@ function TrainingPlanEditorSession({
                   }
                 >
                   <legend className="px-1 text-sm font-medium">Activity {index + 1}</legend>
-                  <div className="space-y-2">
+                  <div className="min-w-0 space-y-2">
                     <ResourceSelectionField
                       automaticLabel="Choose automatically"
                       disabled={hasUncertainCommit}

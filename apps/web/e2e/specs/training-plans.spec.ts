@@ -3,6 +3,7 @@ import { plannedSessions, trainingPlanApplications, trainingPlans } from "@repo/
 import { and, desc, eq } from "drizzle-orm";
 import { expect, test } from "../fixtures";
 import { CalendarPage, TrainingPlansPage } from "../pages";
+import { expectNoHorizontalOverflow } from "../pages/assertions";
 import { captureAuthoring, createLocalAuthoringPage } from "../pages/authoring";
 import { isTrpcProcedure, trpcProcedureCount } from "../pages/network";
 import { withLocalE2EDatabase } from "../support/database";
@@ -89,6 +90,7 @@ test("[authoring-final] current training creation exits fresh and single-flights
     await athletePage
       .getByRole("combobox", { name: "Activity plan", exact: true })
       .selectOption({ label: "Playwright Tempo Builder" });
+    await expectNoHorizontalOverflow(athletePage);
     const form = athletePage
       .locator("form")
       .filter({ has: athletePage.getByLabel("Name", { exact: true }) });
