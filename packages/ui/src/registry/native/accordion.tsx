@@ -10,6 +10,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { cn } from "../../lib/cn";
+import { omitUndefined } from "../../lib/omit-undefined";
 import { Icon } from "./icon";
 import { TextClassContext } from "./text";
 
@@ -49,7 +50,7 @@ function AccordionItem({
     >
       <Animated.View
         className="native:overflow-hidden"
-        layout={Platform.select({ native: LinearTransition.duration(200) })}
+        {...omitUndefined({ layout: Platform.select({ native: LinearTransition.duration(200) }) })}
       >
         {children}
       </Animated.View>
@@ -132,7 +133,7 @@ function AccordionContent({
         {...props}
       >
         <Animated.View
-          exiting={Platform.select({ native: FadeOutUp.duration(200) })}
+          {...omitUndefined({ exiting: Platform.select({ native: FadeOutUp.duration(200) }) })}
           className={cn("pb-4", className)}
         >
           {children}

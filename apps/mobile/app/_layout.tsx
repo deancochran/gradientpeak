@@ -1,29 +1,40 @@
 // apps/native/app/_layout.tsx
 import "../polyfills";
-import { ThemeProvider } from "@react-navigation/native";
 import { NATIVE_THEME_VARIABLES } from "@repo/tailwindcss/native";
 import { Button } from "@repo/ui/components/button";
+import { Spinner } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
+import { ThemeProvider } from "expo-router/react-navigation";
 import "@/global.css";
+import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { PortalHost } from "@rn-primitives/portal";
 import { router, Slot } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { vars } from "nativewind";
 import * as React from "react";
-import { ActivityIndicator, View } from "react-native";
+import { View } from "react-native";
 import {
   SafeAreaProvider,
   SafeAreaView,
 } from "react-native-css/components/react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AppBootstrapGate } from "@/components/auth/AppBootstrapGate";
+import { EntityCommentsSheetProvider } from "@/components/social/EntityCommentsSheetProvider";
+import { initializeContractEpoch } from "@/lib/contract-epoch/contractEpoch";
+import { useStartupActivitySubmissionRecovery } from "@/lib/hooks/useStartupActivitySubmissionRecovery";
 import { PerformanceBeacon } from "@/lib/performance";
 import { QueryProvider } from "@/lib/providers/QueryProvider";
-import { initializeServerConfig, useServerConfig } from "@/lib/server-config";
-import { LocationManager } from "@/lib/services/ActivityRecorder/location";
+import { TelemetryProvider } from "@/lib/providers/TelemetryProvider";
+import {
+  getE2ERuntimeSentinel,
+  initializeServerConfig,
+  useServerConfig,
+} from "@/lib/server-config";
 import { StreamBuffer } from "@/lib/services/ActivityRecorder/StreamBuffer";
+import { incompleteQueueJobReferencesLocalFiles } from "@/lib/services/activitySubmissionQueue";
 import { GarminFitEncoder } from "@/lib/services/fit/GarminFitEncoder";
-import { initSentry } from "@/lib/services/sentry";
+import { prepareMobileRecordingStartup } from "@/lib/services/mobileRecordingStartup";
+import { captureException, initSentry, Sentry } from "@/lib/services/sentry";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useTheme } from "@/lib/stores/theme-store";
 import {
@@ -38,6 +49,10 @@ initSentry();
 
 // Export ErrorBoundary for the layout
 export function ErrorBoundary({ error, retry }: { error: Error; retry: () => void }) {
+  React.useEffect(() => {
+    captureException(error, { boundary: "root-layout" });
+  }, [error]);
+
   return (
     <View className="flex-1 justify-center items-center p-5 bg-background">
       <Text className="text-destructive text-2xl font-bold mb-3 text-center">
@@ -69,6 +84,8 @@ export function ErrorBoundary({ error, retry }: { error: Error; retry: () => voi
 
 function AppShell() {
   const { resolvedTheme, isLoaded: isThemeLoaded } = useTheme();
+  const profileId = useAuthStore((state) => state.profile?.id);
+  useStartupActivitySubmissionRecovery(profileId ?? null);
 
   const isDark = resolvedTheme === "dark";
   const navigationTheme = React.useMemo(() => getNavigationTheme(resolvedTheme), [resolvedTheme]);
@@ -76,11 +93,19 @@ function AppShell() {
     () => vars(NATIVE_THEME_VARIABLES[resolvedTheme]),
     [resolvedTheme],
   );
+  const e2eRuntimeSentinel = getE2ERuntimeSentinel();
 
   if (!isThemeLoaded) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
-        <ActivityIndicator size="large" className="text-foreground" />
+        <Spinner
+          accessibilityLiveRegion="polite"
+          accessibilityState={{ busy: true }}
+          className="text-foreground"
+          label="Loading app theme"
+          size="large"
+          testID="app-theme-loading"
+        />
       </View>
     );
   }
@@ -90,17 +115,38 @@ function AppShell() {
       <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider>
           <ThemeProvider value={navigationTheme}>
-            <View className="flex-1 bg-background">
-              <StatusBar style={isDark ? "light" : "dark"} />
-              <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
-                <View className="flex-1 bg-background">
-                  <Slot />
-                  <PortalHost />
-                  <E2ERuntimeErrorStatus />
-                  <PerformanceBeacon />
-                </View>
-              </SafeAreaView>
-            </View>
+            <BottomSheetModalProvider>
+              <View className="flex-1 bg-background">
+                <StatusBar style={isDark ? "light" : "dark"} />
+                <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
+                  <View className="flex-1 bg-background">
+                    <EntityCommentsSheetProvider>
+                      <Slot />
+                    </EntityCommentsSheetProvider>
+                    <PortalHost />
+                    {e2eRuntimeSentinel ? (
+                      <View
+                        pointerEvents="none"
+                        style={{
+                          position: "absolute",
+                          left: 0,
+                          bottom: 0,
+                          opacity: 0.01,
+                          maxWidth: 2,
+                          maxHeight: 2,
+                        }}
+                      >
+                        <Text accessibilityLabel={e2eRuntimeSentinel} testID="e2e-runtime-sentinel">
+                          {e2eRuntimeSentinel}
+                        </Text>
+                      </View>
+                    ) : null}
+                    <E2ERuntimeErrorStatus />
+                    <PerformanceBeacon />
+                  </View>
+                </SafeAreaView>
+              </View>
+            </BottomSheetModalProvider>
           </ThemeProvider>
         </SafeAreaProvider>
       </GestureHandlerRootView>
@@ -108,25 +154,53 @@ function AppShell() {
   );
 }
 
-export default function RootLayout() {
+function RootLayout() {
   const { initialized } = useServerConfig();
   const authReady = useAuthStore((state) => state.ready);
+  const profileId = useAuthStore((state) => state.profile?.id);
   const initializeAuth = useAuthStore((state) => state.initialize);
+  const [contractEpochState, setContractEpochState] = React.useState<
+    "initializing" | "ready" | "failed"
+  >("initializing");
+
+  const startContractEpochInitialization = React.useCallback(() => {
+    setContractEpochState("initializing");
+    void initializeContractEpoch().then(
+      () => setContractEpochState("ready"),
+      () => setContractEpochState("failed"),
+    );
+  }, []);
+
+  React.useEffect(() => {
+    startContractEpochInitialization();
+  }, [startContractEpochInitialization]);
 
   // Clean up any orphaned recording files on app startup
   React.useEffect(() => {
-    StreamBuffer.cleanupOrphanedRecordings().catch((error) => {
-      console.warn("Failed to cleanup orphaned recordings:", error);
-    });
+    if (contractEpochState !== "ready" || !authReady || !profileId) return;
+    void prepareMobileRecordingStartup(profileId)
+      .then(({ checkpoint: checkpointRecovery, hasQuarantinedEvidence, queueJobs }) => {
+        const hasRecoverableSubmission =
+          checkpointRecovery.status !== "none" ||
+          hasQuarantinedEvidence ||
+          queueJobs.some(incompleteQueueJobReferencesLocalFiles);
 
-    GarminFitEncoder.cleanupOrphanedRecordings().catch((error) => {
-      console.warn("Failed to cleanup orphaned FIT recordings:", error);
-    });
+        if (hasRecoverableSubmission) {
+          return;
+        }
 
-    LocationManager.cleanupOrphanedBackgroundTracking().catch((error) => {
-      console.warn("Failed to cleanup orphaned background location tracking:", error);
-    });
-  }, []);
+        StreamBuffer.cleanupOrphanedRecordings().catch((error) => {
+          console.warn("Failed to cleanup orphaned recordings:", error);
+        });
+
+        GarminFitEncoder.cleanupOrphanedRecordings().catch((error) => {
+          console.warn("Failed to cleanup orphaned FIT recordings:", error);
+        });
+      })
+      .catch((error) => {
+        console.warn("Failed to inspect pending activity submissions before cleanup:", error);
+      });
+  }, [authReady, contractEpochState, profileId]);
 
   React.useEffect(() => {
     installE2ERuntimeErrorCapture();
@@ -134,20 +208,49 @@ export default function RootLayout() {
   }, []);
 
   React.useEffect(() => {
+    if (contractEpochState !== "ready") return;
     void initializeServerConfig();
-  }, []);
+  }, [contractEpochState]);
 
   React.useEffect(() => {
-    if (initialized && !authReady) {
+    if (contractEpochState === "ready" && initialized && !authReady) {
       void initializeAuth();
     }
-  }, [authReady, initializeAuth, initialized]);
+  }, [authReady, contractEpochState, initializeAuth, initialized]);
+
+  if (contractEpochState === "initializing") {
+    return (
+      <View className="flex-1 items-center justify-center bg-background">
+        <Spinner label="Preparing app data" size="large" testID="contract-epoch-loading" />
+      </View>
+    );
+  }
+
+  if (contractEpochState === "failed") {
+    return (
+      <View className="flex-1 items-center justify-center gap-4 bg-background p-6">
+        <Text accessibilityRole="header" className="text-lg font-semibold text-foreground">
+          App data needs to be reset
+        </Text>
+        <Text className="text-center text-muted-foreground">
+          Retry to safely prepare this version of the app before continuing.
+        </Text>
+        <Button onPress={startContractEpochInitialization} testID="contract-epoch-retry">
+          <Text>Retry</Text>
+        </Button>
+      </View>
+    );
+  }
 
   return (
-    <QueryProvider>
-      <AppBootstrapGate>
-        <AppShell />
-      </AppBootstrapGate>
-    </QueryProvider>
+    <TelemetryProvider>
+      <QueryProvider>
+        <AppBootstrapGate>
+          <AppShell />
+        </AppBootstrapGate>
+      </QueryProvider>
+    </TelemetryProvider>
   );
 }
+
+export default Sentry.wrap(RootLayout);

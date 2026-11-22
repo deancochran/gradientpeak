@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { calculateATL } from "../../calculations";
+import { calculateRecentLoad } from "../../load/progression";
 import {
   getAgeAdjustedRampRateMultiplier,
   getGenderAdjustedFatigueTimeMultiplier,
   getGenderAdjustedRecoveryLoadMultiplier,
-  getMaxSustainableCTL,
-  getPersonalizedATLTimeConstant,
+  getMaxSustainableLongTermLoad,
+  getPersonalizedRecentLoadTimeConstant,
 } from "../calibration-constants";
 
 describe("age and gender personalization", () => {
@@ -14,23 +14,23 @@ describe("age and gender personalization", () => {
     expect(getGenderAdjustedFatigueTimeMultiplier("female")).toBeGreaterThan(1);
   });
 
-  it("increases ATL time constant for same-age female vs male", () => {
-    const maleAtlTc = getPersonalizedATLTimeConstant(45, "male");
-    const femaleAtlTc = getPersonalizedATLTimeConstant(45, "female");
+  it("increases RecentLoad time constant for same-age female vs male", () => {
+    const maleRecentLoadTc = getPersonalizedRecentLoadTimeConstant(45, "male");
+    const femaleRecentLoadTc = getPersonalizedRecentLoadTimeConstant(45, "female");
 
-    expect(femaleAtlTc).toBeGreaterThan(maleAtlTc);
+    expect(femaleRecentLoadTc).toBeGreaterThan(maleRecentLoadTc);
   });
 
   it("uses age-only behavior when gender is null or undefined", () => {
-    const baseline = getPersonalizedATLTimeConstant(45);
-    const nullGender = getPersonalizedATLTimeConstant(45, null);
+    const baseline = getPersonalizedRecentLoadTimeConstant(45);
+    const nullGender = getPersonalizedRecentLoadTimeConstant(45, null);
 
     expect(nullGender).toBe(baseline);
   });
 
-  it("produces slower ATL decay for same-age female vs male", () => {
-    const male = calculateATL(100, 0, 45, "male");
-    const female = calculateATL(100, 0, 45, "female");
+  it("produces slower RecentLoad decay for same-age female vs male", () => {
+    const male = calculateRecentLoad(100, 0, 45, "male");
+    const female = calculateRecentLoad(100, 0, 45, "female");
 
     expect(female).toBeGreaterThan(male);
   });
@@ -39,8 +39,8 @@ describe("age and gender personalization", () => {
     expect(getAgeAdjustedRampRateMultiplier(17.5)).toBeLessThan(
       getAgeAdjustedRampRateMultiplier(18.5),
     );
-    expect(getMaxSustainableCTL(14)).toBeLessThan(getMaxSustainableCTL(25));
-    expect(getMaxSustainableCTL(39)).toBeGreaterThan(getMaxSustainableCTL(41));
+    expect(getMaxSustainableLongTermLoad(14)).toBeLessThan(getMaxSustainableLongTermLoad(25));
+    expect(getMaxSustainableLongTermLoad(39)).toBeGreaterThan(getMaxSustainableLongTermLoad(41));
   });
 
   it("keeps gender recovery modulation bounded and recovery-only", () => {
