@@ -116,10 +116,31 @@ test.describe("authenticated route journey", () => {
       await expect(athletePage.getByText("Use for an event", { exact: true })).toBeVisible();
 
       await athletePage.getByTestId(`route-detail-edit-${createdRouteId}`).click();
+      const nameInput = athletePage.getByTestId("route-edit-name-input");
+      await nameInput.fill("");
+      await athletePage.getByTestId("route-edit-description-input").fill("Keep this draft");
+      await athletePage.getByTestId("route-edit-save").click();
+      await expect(nameInput).toHaveValue("");
+      await expect(athletePage.getByTestId("route-edit-description-input")).toHaveValue(
+        "Keep this draft",
+      );
+      await expect(nameInput).toBeFocused();
+      await nameInput.fill("Discard this route edit");
+      athletePage.once("dialog", (dialog) => dialog.accept());
+      await athletePage.getByTestId("route-edit-cancel").click();
+      await expect(athletePage.getByRole("heading", { name: routeName })).toBeVisible();
+      await athletePage.getByTestId(`route-detail-edit-${createdRouteId}`).click();
+      await expect(nameInput).toHaveValue(routeName);
+      await expect(athletePage.getByTestId("route-edit-description-input")).toHaveValue("");
       await athletePage.getByTestId("route-edit-name-input").fill(updatedRouteName);
       await athletePage
         .getByTestId("route-edit-description-input")
         .fill("Updated through the browser CRUD journey.");
+      await athletePage.screenshot({
+        path: testInfo.outputPath("route-metadata-editor.png"),
+        animations: "disabled",
+        fullPage: true,
+      });
       await athletePage.getByTestId("route-edit-save").click();
       await expect(athletePage.getByRole("heading", { name: updatedRouteName })).toBeVisible();
       await expect(
