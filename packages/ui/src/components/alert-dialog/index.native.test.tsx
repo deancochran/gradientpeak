@@ -1,3 +1,4 @@
+import { Text } from "react-native";
 import { renderNative } from "../../test/render-native";
 import {
   AlertDialog,
@@ -10,16 +11,22 @@ import {
 } from "./index.native";
 
 describe("AlertDialog native", () => {
-  it("maps normalized test props onto the rendered content", () => {
-    const { getByTestId } = renderNative(
+  it("maps normalized test props onto the rendered content", async () => {
+    const { getByTestId } = await renderNative(
       <AlertDialog open>
         <AlertDialogContent testId="confirm-delete-dialog">
           <AlertDialogHeader>
-            <AlertDialogTitle testID="confirm-delete-title">Delete activity</AlertDialogTitle>
-            <AlertDialogDescription>This cannot be undone.</AlertDialogDescription>
+            <AlertDialogTitle testID="confirm-delete-title">
+              <Text>Delete activity</Text>
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              <Text>This cannot be undone.</Text>
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogAction testID="confirm-delete-action">Delete</AlertDialogAction>
+            <AlertDialogAction testID="confirm-delete-action">
+              <Text>Delete</Text>
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>,

@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { View } from "react-native";
+import { omitUndefined } from "@/lib/omitUndefined";
 import type { DecompressedStream } from "@/lib/utils/streamDecompression";
 import { ElevationProfileChart } from "../charts/ElevationProfileChart";
 import { ActivityRouteMap } from "./ActivityRouteMap";
@@ -46,8 +47,8 @@ export function RouteElevationCard({
         {/* Elevation profile */}
         <View className="border-t border-border pt-4">
           <ElevationProfileChart
+            {...omitUndefined({ distanceStream })}
             elevationStream={elevationStream}
-            distanceStream={distanceStream}
             title=""
             height={150}
             showStats={true}

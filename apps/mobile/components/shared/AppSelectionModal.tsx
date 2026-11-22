@@ -2,6 +2,7 @@ import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
 import type React from "react";
 import { ActivityIndicator, View } from "react-native";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { AppFormModal } from "./AppFormModal";
 
 interface AppSelectionModalProps {
@@ -35,24 +36,23 @@ export function AppSelectionModal({
 }: AppSelectionModalProps) {
   return (
     <AppFormModal
-      description={description}
-      footerContent={footerContent}
-      onClose={onClose}
-      primaryAction={
-        !footerContent && onRefresh ? (
-          <Button disabled={refreshDisabled} onPress={onRefresh} variant="outline">
-            <Text className="text-foreground font-medium">Refresh</Text>
-          </Button>
-        ) : undefined
-      }
-      secondaryAction={
-        !footerContent ? (
+      {...omitUndefined({
+        description,
+        primaryAction:
+          !footerContent && onRefresh ? (
+            <Button disabled={refreshDisabled} onPress={onRefresh} variant="outline">
+              <Text className="text-foreground font-medium">Refresh</Text>
+            </Button>
+          ) : undefined,
+        secondaryAction: !footerContent ? (
           <Button onPress={onClose} variant="outline">
             <Text className="text-foreground font-medium">Close</Text>
           </Button>
-        ) : undefined
-      }
-      testID={testID}
+        ) : undefined,
+        testID,
+      })}
+      footerContent={footerContent}
+      onClose={onClose}
       title={title}
     >
       <View className="min-h-[280px]">

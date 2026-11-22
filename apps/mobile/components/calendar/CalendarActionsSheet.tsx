@@ -1,7 +1,6 @@
-import BottomSheet, { BottomSheetBackdrop, BottomSheetView } from "@gorhom/bottom-sheet";
 import { Text } from "@repo/ui/components/text";
-import { useCallback, useMemo, useRef } from "react";
 import { TouchableOpacity, View } from "react-native";
+import { AppBottomSheet } from "@/components/shared/AppBottomSheet";
 
 type CalendarActionsSheetProps = {
   visible: boolean;
@@ -20,33 +19,17 @@ export function CalendarActionsSheet({
   onCreateRaceTarget,
   onCreateCustom,
 }: CalendarActionsSheetProps) {
-  const bottomSheetRef = useRef<BottomSheet>(null);
-  const snapPoints = useMemo(() => ["40%"], []);
-
-  const renderBackdrop = useCallback(
-    (props: any) => (
-      <BottomSheetBackdrop
-        {...props}
-        appearsOnIndex={0}
-        disappearsOnIndex={-1}
-        pressBehavior="close"
-      />
-    ),
-    [],
-  );
-
-  if (!visible) return null;
-
   return (
-    <BottomSheet
-      ref={bottomSheetRef}
-      index={0}
-      snapPoints={snapPoints}
-      enablePanDownToClose
-      backdropComponent={renderBackdrop}
+    <AppBottomSheet
+      initialSnapIndex={0}
       onClose={onClose}
+      showTitleHeader={false}
+      snapPoints={["40%"]}
+      testID="calendar-actions-sheet"
+      title="Calendar actions"
+      visible={visible}
     >
-      <BottomSheetView className="flex-1 gap-3 px-4 pb-8 pt-2" testID="calendar-actions-sheet">
+      <View className="gap-3">
         <View className="gap-1">
           <Text className="text-lg font-semibold text-foreground">Calendar actions</Text>
           <Text className="text-sm text-muted-foreground">
@@ -69,7 +52,7 @@ export function CalendarActionsSheet({
             <Text className="text-sm font-semibold text-foreground">{label as string}</Text>
           </TouchableOpacity>
         ))}
-      </BottomSheetView>
-    </BottomSheet>
+      </View>
+    </AppBottomSheet>
   );
 }
