@@ -3,14 +3,7 @@ import { View } from "react-native";
 import { Card, CardContent } from "../card/index.native";
 import { Icon } from "../icon/index.native";
 import { Text } from "../text/index.native";
-import type { MetricCardProps } from "./shared";
-
-const variantColors = {
-  default: "text-foreground",
-  success: "text-green-600",
-  warning: "text-yellow-600",
-  danger: "text-red-600",
-} as const;
+import { METRIC_CARD_VARIANT_COLORS, type MetricCardProps } from "./shared";
 
 function MetricCard({
   color,
@@ -23,7 +16,7 @@ function MetricCard({
   value,
   variant = "default",
 }: MetricCardProps) {
-  const valueClassName = color ?? variantColors[variant];
+  const valueClassName = color ?? METRIC_CARD_VARIANT_COLORS[variant];
 
   return (
     <Card className="flex-1">
