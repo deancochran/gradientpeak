@@ -233,6 +233,12 @@ describe("CalendarPlannedActivityPickerModal", () => {
     expect(screen.getByTestId("calendar-planned-activity-section-favorites")).toBeTruthy();
     expect(screen.getByTestId("calendar-planned-activity-filter-all")).toBeTruthy();
     expect(screen.getByTestId("calendar-planned-activity-filter-run")).toBeTruthy();
+    expect(
+      screen.getByTestId("calendar-planned-activity-filter-all").props.accessibilityState,
+    ).toEqual({ selected: true });
+    expect(screen.getByTestId("calendar-planned-activity-filter-all").props.className).toContain(
+      "min-h-11",
+    );
   });
 
   it("supports activity_category filtering and search-driven results", async () => {

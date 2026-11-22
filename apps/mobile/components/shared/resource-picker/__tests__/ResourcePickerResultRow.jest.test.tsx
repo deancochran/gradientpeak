@@ -153,6 +153,29 @@ describe("ResourcePickerResultRow", () => {
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps selected and disabled semantics when a contextual picker supplies its own test id", async () => {
+    await renderNative(
+      <ResourcePickerResultRow
+        disabled
+        isSelected
+        item={{
+          activityPlan: createActivityPlanSummary({ id: "plan-1", name: "Tempo Builder" }),
+          id: "plan-1",
+          name: "Tempo Builder",
+          presentation: "canonical",
+        }}
+        onPress={jest.fn()}
+        scope="activityPlans"
+        testID="calendar-planned-activity-option-plan-1"
+      />,
+    );
+
+    const result = screen.getByTestId("calendar-planned-activity-option-plan-1");
+    expect(result.props.disabled).toBe(true);
+    expect(result.props.accessibilityState).toEqual({ disabled: true, selected: true });
+    expect(result.props.className).toContain("min-h-11");
+  });
+
   it("renders and selects routes through a stable semantic result action", async () => {
     const onPress = jest.fn();
     await renderNative(
