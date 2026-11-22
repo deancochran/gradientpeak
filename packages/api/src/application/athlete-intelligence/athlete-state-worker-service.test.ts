@@ -242,8 +242,9 @@ describe("athlete-state worker lease fencing", () => {
 
     await expect(
       new AthleteStateWorkerService({ db: {} as never }).processDueJobs({ limit: 1, now }),
-    ).resolves.toEqual({ completed: 1, failed: 0, processed: 2 });
+    ).resolves.toEqual({ completed: 1, failed: 0, processed: 1 });
 
+    expect(claimNextAthleteState).toHaveBeenCalledTimes(2);
     expect(claimNextAthleteState).toHaveBeenNthCalledWith(
       2,
       {},

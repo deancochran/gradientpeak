@@ -4,6 +4,7 @@ import {
   getCalendarDateInIanaZone,
 } from "@repo/core";
 import {
+  type ActivityTrainingEffect,
   ATHLETE_DERIVED_STATE_PERSISTENCE_CONTRACT_VERSION,
   activityTrainingEffectSchema,
 } from "@repo/core/athlete-derived-state";
@@ -24,6 +25,7 @@ import {
   appendActivityAnalysisRevision,
   readMatchingActivityAnalysisRevision,
 } from "../../repositories/activity-analysis-revision-repository";
+import type { AthleteDerivedStateRepositoryPort } from "../../repositories/athlete-derived-state-repository-port";
 import { recordActivityTrainingEffect } from "./record-activity-training-effect";
 import {
   buildAthleteRecalculationRequest,
@@ -55,6 +57,75 @@ export function resolveAthleteStateMaterialEffectiveAt(input: {
     input.activityMaterialChanged ? input.activityFinishedAt : null,
     effortEffectiveAt,
   );
+}
+
+/**
+ * Replay begins at the earliest affected evidence, while claim eligibility must
+ * wait for the latest observed boundary that supplied that evidence.
+ */
+export function resolveAthleteStateMaterialEligibilityAt(input: {
+  activityFinishedAt: Date;
+  activityMaterialChanged: boolean;
+  effortMaterialRecordedAt?: Date | null;
+}) {
+  if (input.effortMaterialRecordedAt) {
+    return new Date(
+      Math.max(input.activityFinishedAt.getTime(), input.effortMaterialRecordedAt.getTime()),
+    );
+  }
+  return input.activityMaterialChanged ? input.activityFinishedAt : null;
+}
+
+export function hasEquivalentActivityTrainingEffectContent(
+  existing: ActivityTrainingEffect,
+  candidate: ActivityTrainingEffect,
+) {
+  const existingCapability = existing.stimulus.capabilityObservation;
+  const candidateCapability = candidate.stimulus.capabilityObservation;
+  return (
+    existing.contractVersion === candidate.contractVersion &&
+    existing.profileId === candidate.profileId &&
+    existing.activityId === candidate.activityId &&
+    existing.activityAnalysisRevision === candidate.activityAnalysisRevision &&
+    existing.effectiveAt === candidate.effectiveAt &&
+    existing.planningDate === candidate.planningDate &&
+    existing.calculationVersion === candidate.calculationVersion &&
+    existing.inputFingerprint === candidate.inputFingerprint &&
+    existing.stimulus.kind === candidate.stimulus.kind &&
+    existing.stimulus.sourceId === candidate.stimulus.sourceId &&
+    existing.stimulus.occurredAt === candidate.stimulus.occurredAt &&
+    existing.stimulus.activityCategory === candidate.stimulus.activityCategory &&
+    existing.stimulus.commonLoad === candidate.stimulus.commonLoad &&
+    existing.stimulus.evidenceConfidence === candidate.stimulus.evidenceConfidence &&
+    existingCapability?.distanceMeters === candidateCapability?.distanceMeters &&
+    existingCapability?.durationMinutes === candidateCapability?.durationMinutes
+  );
+}
+
+async function queueEquivalentActivityTrainingEffectRevision(input: {
+  repository: AthleteDerivedStateRepositoryPort;
+  profileId: string;
+  planningTimezone: string;
+  effectiveAt: Date;
+  targetSourceRevision: number;
+  reason: "activity_created" | "analysis_replaced";
+  requestedAt: Date;
+}) {
+  return requestAthleteRecalculation({
+    repository: input.repository,
+    profileId: input.profileId,
+    request: buildAthleteRecalculationRequest({
+      profileId: input.profileId,
+      earliestAffectedAt: input.effectiveAt.toISOString(),
+      earliestAffectedPlanningDate: getCalendarDateInIanaZone(
+        input.effectiveAt.toISOString(),
+        input.planningTimezone,
+      ),
+      sourceRevision: input.targetSourceRevision,
+      reasons: [input.reason],
+      requestedAt: input.requestedAt.toISOString(),
+    }),
+  });
 }
 
 export async function materializeActivityAthleteStateEvidence(
@@ -144,6 +215,7 @@ export async function materializeActivityAthleteStateEvidence(
   if (
     !analysisRevision &&
     summaries.length > 0 &&
+    activity.performance_target_snapshot !== null &&
     (!input.deferAthleteStateRefresh || input.targetSourceRevision !== undefined)
   ) {
     const originalSnapshot = completedActivityPerformanceTargetSnapshotSchema.parse(
@@ -242,7 +314,6 @@ export async function materializeActivityAthleteStateEvidence(
       activityId: input.activityId,
     });
     if (effectiveAt !== null && !input.deferAthleteStateRefresh) {
-      if (!analysisRevision) throw new Error("Activity analysis revision is unavailable");
       const repository = createDrizzleAthleteDerivedStateRepository(tx);
       const state = await repository.lockPublicationState({ profileId: input.profileId });
       if (!state) throw new Error("Athlete publication state is unavailable");
@@ -257,7 +328,7 @@ export async function materializeActivityAthleteStateEvidence(
             state.planningTimezone,
           ),
           sourceRevision: state.sourceRevision + 1,
-          reasons: [analysisRevision.revision === 1 ? "activity_created" : "analysis_replaced"],
+          reasons: [analysisRevision?.revision === 1 ? "activity_created" : "analysis_replaced"],
           requestedAt: input.computedAt.toISOString(),
         }),
       });
@@ -300,6 +371,13 @@ export async function materializeActivityAthleteStateEvidence(
     activity.athlete_state_capability_duration_minutes !== capabilityDurationMinutes ||
     activity.athlete_state_input_version !== "canonical-activity-state-v1";
   const effectiveAt = resolveAthleteStateMaterialEffectiveAt({
+    activityFinishedAt: activity.finished_at,
+    activityMaterialChanged,
+    ...(input.effortMaterialRecordedAt !== undefined
+      ? { effortMaterialRecordedAt: input.effortMaterialRecordedAt }
+      : {}),
+  });
+  const eligibilityAt = resolveAthleteStateMaterialEligibilityAt({
     activityFinishedAt: activity.finished_at,
     activityMaterialChanged,
     ...(input.effortMaterialRecordedAt !== undefined
@@ -355,26 +433,76 @@ export async function materializeActivityAthleteStateEvidence(
               },
       },
     });
+    const reason = analysisRevision.revision === 1 ? "activity_created" : "analysis_replaced";
+    const queueEquivalentRevision = () =>
+      queueEquivalentActivityTrainingEffectRevision({
+        repository,
+        profileId: input.profileId,
+        planningTimezone: state.planningTimezone,
+        effectiveAt,
+        targetSourceRevision,
+        reason,
+        requestedAt: input.computedAt,
+      });
+    const mustQueueWithoutIncrementalApply =
+      input.allowIncrementalApply === false ||
+      (eligibilityAt !== null && eligibilityAt.getTime() > input.computedAt.getTime());
     if (input.deferAthleteStateRefresh) {
       const written = await repository.upsertActivityTrainingEffect({
         profileId: input.profileId,
         effect,
       });
       if (written.status === "identity_conflict") {
-        throw new Error("Activity training effect identity conflict");
-      }
-    } else {
-      await recordActivityTrainingEffect({
-        repository,
-        request: {
+        const existing = await repository.readActivityTrainingEffect({
           profileId: input.profileId,
-          expectedPublishedRevision: state.publishedRevision,
-          targetSourceRevision,
-          effect,
-        },
-        reason: analysisRevision.revision === 1 ? "activity_created" : "analysis_replaced",
-        requestedAt: input.computedAt.toISOString(),
+          activityId: input.activityId,
+          activityAnalysisRevision: analysisRevision.revision,
+        });
+        if (!existing || !hasEquivalentActivityTrainingEffectContent(existing, effect)) {
+          throw new Error("Activity training effect identity conflict");
+        }
+        await queueEquivalentRevision();
+      }
+    } else if (mustQueueWithoutIncrementalApply) {
+      const written = await repository.upsertActivityTrainingEffect({
+        profileId: input.profileId,
+        effect,
       });
+      if (written.status === "identity_conflict") {
+        const existing = await repository.readActivityTrainingEffect({
+          profileId: input.profileId,
+          activityId: input.activityId,
+          activityAnalysisRevision: analysisRevision.revision,
+        });
+        if (!existing || !hasEquivalentActivityTrainingEffectContent(existing, effect)) {
+          throw new Error("Activity training effect identity conflict");
+        }
+      }
+      await queueEquivalentRevision();
+    } else {
+      const existing = await repository.readActivityTrainingEffect({
+        profileId: input.profileId,
+        activityId: input.activityId,
+        activityAnalysisRevision: analysisRevision.revision,
+      });
+      if (existing) {
+        if (!hasEquivalentActivityTrainingEffectContent(existing, effect)) {
+          throw new Error("Activity training effect identity conflict");
+        }
+        await queueEquivalentRevision();
+      } else {
+        await recordActivityTrainingEffect({
+          repository,
+          request: {
+            profileId: input.profileId,
+            expectedPublishedRevision: state.publishedRevision,
+            targetSourceRevision,
+            effect,
+          },
+          reason,
+          requestedAt: input.computedAt.toISOString(),
+        });
+      }
     }
   }
   return { commonLoad, confidence, effectiveAt, materialChanged };

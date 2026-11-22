@@ -43,7 +43,12 @@ try {
 
     await runLiveDbProcess("pnpm", buildDisposableLiveDbVitestCommand(command), {
       cwd: packageDirectory,
-      env: { ...childEnv, DATABASE_URL: connectionString, POSTGRES_URL: connectionString },
+      env: {
+        ...childEnv,
+        DATABASE_URL: connectionString,
+        POSTGRES_URL: connectionString,
+        RUN_LIVE_DB_TESTS: "1",
+      },
       signal: controller.signal,
     });
   });

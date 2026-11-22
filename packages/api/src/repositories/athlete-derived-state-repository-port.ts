@@ -61,11 +61,17 @@ export interface AthleteDerivedStateRepositoryPort {
     profileId: string;
     effect: ActivityTrainingEffect;
   }): Promise<ActivityTrainingEffectWriteResult>;
+  readActivityTrainingEffect(input: {
+    profileId: string;
+    activityId: string;
+    activityAnalysisRevision: number;
+  }): Promise<ActivityTrainingEffect | null>;
   deleteActivityTrainingEffects(input: { profileId: string; activityId: string }): Promise<number>;
   listActivityTrainingEffects(input: {
     profileId: string;
     fromEffectiveAt: string;
     throughSourceRevision: number;
+    throughEffectiveAt?: string;
     limit: number;
     after?: { effectiveAt: string; activityId: string; activityAnalysisRevision: number };
   }): Promise<{ items: ActivityTrainingEffect[]; hasMore: boolean }>;
@@ -97,6 +103,7 @@ export interface AthleteDerivedStateRepositoryPort {
     profileId: string;
   }): Promise<AthleteRecalculationRequest | null>;
   claimNextRecalculation(input: {
+    now: string;
     claimedAt: string;
     leaseExpiresAt: string;
     claimToken: string;

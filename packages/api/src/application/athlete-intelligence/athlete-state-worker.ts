@@ -150,6 +150,7 @@ export class AthleteDerivedStateWorkerService {
     private readonly input: {
       db: DbClient;
       repository?: AthleteDerivedStateRepositoryPort;
+      leaseNow?: () => Date;
     },
   ) {}
 
@@ -160,11 +161,15 @@ export class AthleteDerivedStateWorkerService {
       this.input.repository ?? createDrizzleAthleteDerivedStateRepository(this.input.db);
     for (let index = 0; index < limit; index += 1) {
       const now = input.now ?? new Date();
+      const leaseNow = this.input.leaseNow?.() ?? new Date();
       const claimToken = crypto.randomUUID();
       const item = await repository.claimNextRecalculation({
         claimToken,
-        claimedAt: now.toISOString(),
-        leaseExpiresAt: new Date(now.getTime() + ATHLETE_STATE_LEASE_MILLISECONDS).toISOString(),
+        now: now.toISOString(),
+        claimedAt: leaseNow.toISOString(),
+        leaseExpiresAt: new Date(
+          leaseNow.getTime() + ATHLETE_STATE_LEASE_MILLISECONDS,
+        ).toISOString(),
       });
       if (!item) break;
       result.processed += 1;
@@ -190,20 +195,6 @@ export class AthleteDerivedStateWorkerService {
         if (item.request.sourceRevision > publication.sourceRevision) {
           throw new Error("Athlete recalculation revision is ahead of publication state");
         }
-        if (publication.publishedRevision === item.request.sourceRevision) {
-          const completed = await repository.transitionRecalculation({
-            profileId: item.request.profileId,
-            transition: {
-              action: "complete",
-              claimToken,
-              completedAt: now.toISOString(),
-              resultingPublishedRevision: item.request.sourceRevision,
-            },
-          });
-          if (completed.status !== "completed") throw new AthleteStateLeaseLostError();
-          result.completed += 1;
-          continue;
-        }
         const effects: ActivityTrainingEffect[] = [];
         let after:
           | { effectiveAt: string; activityId: string; activityAnalysisRevision: number }
@@ -213,6 +204,7 @@ export class AthleteDerivedStateWorkerService {
             profileId: item.request.profileId,
             fromEffectiveAt: "1970-01-01T00:00:00.000Z",
             throughSourceRevision: item.request.sourceRevision,
+            throughEffectiveAt: now.toISOString(),
             limit: DERIVED_EFFECT_PAGE_SIZE,
             ...(after === undefined ? {} : { after }),
           });
@@ -224,13 +216,16 @@ export class AthleteDerivedStateWorkerService {
             activityId: last.activityId,
             activityAnalysisRevision: last.activityAnalysisRevision,
           };
+          const renewedAt = this.input.leaseNow?.() ?? new Date();
           const renewed = await repository.transitionRecalculation({
             profileId: item.request.profileId,
             transition: {
               action: "renew",
               claimToken,
-              renewedAt: now.toISOString(),
-              leaseExpiresAt: new Date(Date.now() + ATHLETE_STATE_LEASE_MILLISECONDS).toISOString(),
+              renewedAt: renewedAt.toISOString(),
+              leaseExpiresAt: new Date(
+                renewedAt.getTime() + ATHLETE_STATE_LEASE_MILLISECONDS,
+              ).toISOString(),
             },
           });
           if (renewed.status !== "updated") throw new AthleteStateLeaseLostError();
@@ -282,6 +277,7 @@ export class AthleteDerivedStateWorkerService {
       } catch (error) {
         result.failed += 1;
         if (!(error instanceof AthleteStateLeaseLostError)) {
+          const failedAt = this.input.leaseNow?.() ?? new Date();
           await repository
             .transitionRecalculation({
               profileId: item.request.profileId,
@@ -289,8 +285,8 @@ export class AthleteDerivedStateWorkerService {
                 action: "retry",
                 claimToken,
                 failureCode: "internal",
-                failedAt: now.toISOString(),
-                nextAttemptAt: new Date(now.getTime() + 60_000).toISOString(),
+                failedAt: failedAt.toISOString(),
+                nextAttemptAt: new Date(failedAt.getTime() + 60_000).toISOString(),
               },
             })
             .catch(() => undefined);
@@ -602,7 +598,7 @@ export class AthleteStateWorkerService {
           if (continuationProfileId === undefined) break claimSlots;
           break;
         }
-        result.processed += 1;
+        if (continuationProfileId === undefined) result.processed += 1;
         try {
           if (claim.dirtyFromAt !== null && claim.dirtyFromAt.getTime() <= now.getTime()) {
             await renewClaimOrThrow(
