@@ -2,16 +2,34 @@ import type { RouteCoordinate } from "../../lib/recording-web";
 import { projectRoutePreview } from "../../lib/recording-web";
 
 type RoutePreviewMapProps = {
+  compact?: boolean;
   coordinates: RouteCoordinate[];
 };
 
-export function RoutePreviewMap({ coordinates }: RoutePreviewMapProps) {
-  const projection = projectRoutePreview(coordinates);
+function hasValidRouteGeometry(coordinates: RouteCoordinate[]) {
+  return (
+    coordinates.length >= 2 &&
+    coordinates.every(
+      ({ latitude, longitude }) =>
+        Number.isFinite(latitude) &&
+        Number.isFinite(longitude) &&
+        Math.abs(latitude) <= 90 &&
+        Math.abs(longitude) <= 180,
+    )
+  );
+}
+
+export function RoutePreviewMap({ compact = false, coordinates }: RoutePreviewMapProps) {
+  const projection = hasValidRouteGeometry(coordinates) ? projectRoutePreview(coordinates) : null;
+  const heightClassName = compact ? "h-36" : "h-60";
 
   if (!projection) {
     return (
-      <div className="flex h-60 items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
-        No route geometry available for preview.
+      <div
+        className={`flex ${heightClassName} items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 px-4 text-center text-sm text-muted-foreground`}
+        data-testid="route-preview-unavailable"
+      >
+        Route preview unavailable.
       </div>
     );
   }
@@ -20,7 +38,8 @@ export function RoutePreviewMap({ coordinates }: RoutePreviewMapProps) {
     <div className="overflow-hidden rounded-xl border border-border bg-gradient-to-br from-muted/70 via-background to-muted/30">
       <svg
         aria-label="Route preview"
-        className="h-60 w-full"
+        className={`${heightClassName} w-full`}
+        role="img"
         viewBox={`0 0 ${projection.width} ${projection.height}`}
       >
         <polyline

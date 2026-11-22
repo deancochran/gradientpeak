@@ -22,12 +22,14 @@ import {
   formatDistance,
   formatDuration,
   formatElevation,
+  getActivityCoordinates,
   type RouteCoordinate,
 } from "../../lib/activity-route-helpers";
 import { api } from "../../lib/api/client";
 import { CanonicalMetricsRow } from "../activity/canonical-metrics-row";
 import { ActivityCategoryBadges } from "../activity-category-presentation";
 import { AppHrefLink } from "../app-href-link";
+import { RoutePreviewMap } from "../recording/route-preview-map";
 
 type DetailMetricItem = {
   label: string;
@@ -398,6 +400,7 @@ export function ActivityListCard({
 
 export function RouteListCard({ onOpen, route }: { onOpen: () => void; route: RouteListItem }) {
   const { unitSystem } = useViewingUserPreferredUnitSystem();
+  const coordinates = getActivityCoordinates(route.polyline, null);
 
   return (
     <Card
@@ -427,10 +430,12 @@ export function RouteListCard({ onOpen, route }: { onOpen: () => void; route: Ro
             Open
           </Button>
         </div>
-        <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2 xl:grid-cols-4">
+        <div data-testid={`route-card-${route.id}-preview`}>
+          <RoutePreviewMap compact coordinates={coordinates} />
+        </div>
+        <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
           <MetricPill label="Distance" value={formatDistance(route.total_distance, unitSystem)} />
           <MetricPill label="Ascent" value={formatElevation(route.total_ascent, unitSystem)} />
-          <MetricPill label="Descent" value={formatElevation(route.total_descent, unitSystem)} />
           <MetricPill label="Visibility" value={route.is_public ? "Public" : "Private"} />
         </div>
       </CardContent>

@@ -142,6 +142,11 @@ test.describe("authenticated route journey", () => {
       const routeCard = athletePage.getByTestId(`route-card-${createdRouteId}`);
       await expect(routeCard).toBeVisible();
       await expect(routeCard.getByRole("heading", { name: updatedRouteName })).toBeVisible();
+      await expect(routeCard.getByRole("img", { name: "Route preview" })).toBeVisible();
+      await expect(routeCard.getByText("Distance", { exact: true })).toBeVisible();
+      await expect(routeCard.getByText("Ascent", { exact: true })).toBeVisible();
+      await expect(routeCard.getByTestId(`route-card-${createdRouteId}-open`)).toBeVisible();
+      await routeCard.screenshot({ path: testInfo.outputPath("route-resource-card.png") });
       await expect(athletePage.getByRole("button", { name: "Previous page" })).toBeDisabled();
 
       await routes.openCard(updatedRouteName);

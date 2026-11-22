@@ -174,7 +174,7 @@ describe("ActivityListCard", () => {
 });
 
 describe("resource card selectors", () => {
-  it("exposes route and effort identities plus their open actions", () => {
+  it("renders saved route geometry with lightweight metrics and an accessible open action", () => {
     render(
       <>
         <RouteListCard
@@ -192,7 +192,7 @@ describe("resource card selectors", () => {
             total_ascent: null,
             total_descent: null,
             elevation_polyline: null,
-            polyline: "encoded-polyline",
+            polyline: "_p~iF~ps|U_ulLnnqC_mqNvxq`@",
             is_system_template: false,
             is_public: false,
             likes_count: 0,
@@ -232,9 +232,71 @@ describe("resource card selectors", () => {
     );
 
     expect(screen.getByTestId("route-card-route-1")).toBeTruthy();
-    expect(screen.getByTestId("route-card-route-1-open")).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Route preview" })).toBeTruthy();
+    expect(screen.getByText("Distance")).toBeTruthy();
+    expect(screen.getByText("Ascent")).toBeTruthy();
+    expect(screen.queryByText("Descent")).toBeNull();
+    expect(screen.getByTestId("route-card-route-1-open").tagName).toBe("BUTTON");
     expect(screen.getByTestId("activity-effort-card-effort-1")).toBeTruthy();
     expect(screen.getByTestId("activity-effort-card-effort-1-open")).toBeTruthy();
+  });
+
+  it("shows a truthful compact fallback for absent or invalid route geometry", () => {
+    const { rerender } = render(
+      <RouteListCard
+        onOpen={() => undefined}
+        route={{
+          created_at: "2026-07-17T10:00:00.000Z",
+          updated_at: "2026-07-17T10:00:00.000Z",
+          description: null,
+          id: "route-without-geometry",
+          name: "No preview loop",
+          profile_id: null,
+          file_path: "routes/no-preview-loop.gpx",
+          storage_state: "ready",
+          total_distance: 1_000,
+          total_ascent: null,
+          total_descent: null,
+          elevation_polyline: null,
+          polyline: "",
+          is_system_template: false,
+          is_public: false,
+          likes_count: 0,
+          has_liked: false,
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("route-preview-unavailable")).toBeTruthy();
+    expect(screen.getByText("Route preview unavailable.")).toBeTruthy();
+
+    rerender(
+      <RouteListCard
+        onOpen={() => undefined}
+        route={{
+          created_at: "2026-07-17T10:00:00.000Z",
+          updated_at: "2026-07-17T10:00:00.000Z",
+          description: null,
+          id: "route-with-invalid-geometry",
+          name: "Invalid preview loop",
+          profile_id: null,
+          file_path: "routes/invalid-preview-loop.gpx",
+          storage_state: "ready",
+          total_distance: 1_000,
+          total_ascent: null,
+          total_descent: null,
+          elevation_polyline: null,
+          polyline: "encoded-polyline",
+          is_system_template: false,
+          is_public: false,
+          likes_count: 0,
+          has_liked: false,
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("route-preview-unavailable")).toBeTruthy();
+    expect(screen.getByText("Route preview unavailable.")).toBeTruthy();
   });
 });
 
