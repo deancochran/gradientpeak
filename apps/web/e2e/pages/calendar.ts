@@ -38,6 +38,11 @@ export class CalendarPage {
       else await this.page.getByLabel("Time", { exact: true }).fill("09:00");
       if (input.repeat) await this.page.getByLabel("Repeat weekly").selectOption("4");
       await this.page.getByRole("button", { name: /^create$/i }).press("Enter");
+      await expect(this.page).toHaveURL(/\/calendar(?:\?.*)?$/);
+      await this.page.reload();
+      const eventLink = this.page.getByRole("link", { name: input.title, exact: true });
+      await expect(eventLink).toBeVisible();
+      await eventLink.click();
       await expect(this.page.getByRole("heading", { name: input.title })).toBeVisible();
       return this.eventId();
     });

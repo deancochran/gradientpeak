@@ -906,7 +906,7 @@ function EventDetailPage() {
               value={`${formatDayLabel(scheduledDate)} · ${formatEventTimeRange(event)}`}
             />
             {event.route_id ? (
-              routeQuery.data?.id === event.route_id ? (
+              routeQuery.isSuccess && routeQuery.data?.id === event.route_id ? (
                 <RouteListCard href={`/routes/${event.route_id}`} route={routeQuery.data} />
               ) : (
                 <div className="space-y-2 rounded-xl border border-dashed border-border p-4">

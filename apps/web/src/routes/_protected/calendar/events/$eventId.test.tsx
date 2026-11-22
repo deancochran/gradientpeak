@@ -46,6 +46,7 @@ const mocks = vi.hoisted(() => ({
     data: null,
     isError: false,
     isLoading: false,
+    isSuccess: false,
     refetch: vi.fn(),
   } as Record<string, unknown>,
 }));
@@ -180,7 +181,13 @@ afterEach(() => {
   mocks.activityPlanOptions = [];
   mocks.routeInputs = [];
   mocks.routeOptions = [];
-  mocks.routeQuery = { data: null, isError: false, isLoading: false, refetch: vi.fn() };
+  mocks.routeQuery = {
+    data: null,
+    isError: false,
+    isLoading: false,
+    isSuccess: false,
+    refetch: vi.fn(),
+  };
   mocks.search = { month: "2026-07", view: "month" };
   mocks.completionCandidates = { canAssociate: true, items: [], nextCursor: null };
   mocks.plannedSessionMutationOptions = undefined;
@@ -266,6 +273,7 @@ describe("EventDetailPage", () => {
       },
       isError: false,
       isLoading: false,
+      isSuccess: true,
       refetch: vi.fn(),
     };
     const EventDetailPage = (Route as unknown as { component: React.ComponentType }).component;
@@ -298,7 +306,7 @@ describe("EventDetailPage", () => {
       notes: null,
       route_id: "route-1",
     };
-    mocks.routeQuery = { data: null, isError: true, isLoading: false, refetch };
+    mocks.routeQuery = { data: null, isError: true, isLoading: false, isSuccess: false, refetch };
     const EventDetailPage = (Route as unknown as { component: React.ComponentType }).component;
 
     render(<EventDetailPage />);
@@ -307,6 +315,63 @@ describe("EventDetailPage", () => {
     expect(screen.getByText("Route preview unavailable.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Retry route" }));
     expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not render cached route geometry after its attached route query fails", () => {
+    const refetch = vi.fn();
+    mocks.event = {
+      all_day: true,
+      event_type: "custom",
+      id: "event-1",
+      scheduled_date: "2026-07-28",
+      status: "scheduled",
+      title: "Route event",
+      activityPlanSummary: null,
+      notes: null,
+      route_id: "route-1",
+    };
+    mocks.routeQuery = {
+      data: { id: "route-1", name: "Cached ridge loop" },
+      isError: true,
+      isLoading: false,
+      isSuccess: false,
+      refetch,
+    };
+    const EventDetailPage = (Route as unknown as { component: React.ComponentType }).component;
+
+    render(<EventDetailPage />);
+
+    expect(screen.queryByTestId("route-card-route-1")).toBeNull();
+    expect(screen.getByText("Route preview unavailable.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Retry route" }));
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not render mismatched cached geometry and keeps a loading attachment truthful", () => {
+    mocks.event = {
+      all_day: true,
+      event_type: "custom",
+      id: "event-1",
+      scheduled_date: "2026-07-28",
+      status: "scheduled",
+      title: "Route event",
+      activityPlanSummary: null,
+      notes: null,
+      route_id: "route-1",
+    };
+    mocks.routeQuery = {
+      data: { id: "another-route", name: "Wrong route" },
+      isError: false,
+      isLoading: true,
+      isSuccess: false,
+      refetch: vi.fn(),
+    };
+    const EventDetailPage = (Route as unknown as { component: React.ComponentType }).component;
+
+    render(<EventDetailPage />);
+
+    expect(screen.queryByTestId("route-card-another-route")).toBeNull();
+    expect(screen.getByText("Loading route preview...")).toBeTruthy();
   });
 
   it("loads a planned session explicitly and retries the same manual completion request", async () => {
