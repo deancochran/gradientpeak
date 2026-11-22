@@ -95,6 +95,16 @@ the Cloudflare Tunnel for `https://dev.gradientpeak.com`, so provider callbacks 
   browser checks in their selected lanes. The required `Basic checks` status
   remains fail-closed. Security checks remain independent.
 
+The `db` and `full` quality profiles run the same complete API live-database matrix as CI.
+`pnpm --filter @repo/api test:live-db:disposable --disposable --local --all` creates a fresh,
+uniquely named database on the verified
+repository-managed local PostgreSQL host and removes it afterward; it does not use an ambient
+application database URL. Replace `--all` with one package-relative `src/**/*.live-db.test.ts`
+path for a focused iteration. The guarded runner requires POSIX process groups (Linux/macOS);
+no matching tests and interrupted runs fail rather than passing. Normal completion, test failure,
+SIGINT and SIGTERM clean up the owned target. SIGKILL or host failure still requires inspection
+of the exact run-owned resources.
+
 Lefthook installs during `pnpm install`. Pre-commit formats/lints staged files;
 there is no pre-push suite. A successful push is not acceptance evidence.
 

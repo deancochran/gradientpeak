@@ -94,6 +94,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # db:verify reads the exact fingerprint from a pinned historical
+          # prerequisite commit; the default one-commit checkout omits it.
+          fetch-depth: 0
       - name: Enable pnpm from packageManager
         run: corepack enable && corepack prepare pnpm@10.34.5 --activate
       - name: Setup Node
@@ -108,7 +112,7 @@ jobs:
       - name: Verify database migrations
         run: pnpm --filter @repo/db db:verify
       - name: Run live database suite
-        run: pnpm --filter @repo/api test:live-db
+        run: pnpm --filter @repo/api test:live-db:disposable --disposable --local --all
       - name: Verify disposable database runner cleanup
         run: pnpm --filter @repo/api test:live-db:runner:disposable
       - name: Stop local database

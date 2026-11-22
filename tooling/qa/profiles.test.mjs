@@ -28,8 +28,10 @@ test("runtime profiles point directly to the maintained browser smoke test", () 
       args: [
         "--filter",
         "@repo/api",
-        "test:live-db",
-        "src/routers/__tests__/public-share-visibility.live-db.test.ts",
+        "test:live-db:disposable",
+        "--disposable",
+        "--local",
+        "--all",
       ],
     },
     {
@@ -79,6 +81,36 @@ test("CLI accepts only named profile and changed-path options", () => {
   assert.throws(() => parseArguments(["--changed-paths"]), /at least one path/);
 });
 
+test("database and full profiles run the complete CI live-database matrix", async () => {
+  for (const profile of ["db", "full"]) {
+    const plan = createProfilePlan({ profile, includeStatic: false });
+    const databaseCommands = plan.commands.filter((entry) =>
+      entry.args.includes("test:live-db:disposable"),
+    );
+    assert.deepEqual(databaseCommands, [
+      {
+        command: "pnpm",
+        args: [
+          "--filter",
+          "@repo/api",
+          "test:live-db:disposable",
+          "--disposable",
+          "--local",
+          "--all",
+        ],
+      },
+    ]);
+  }
+  const workflow = await readFile(
+    path.resolve(import.meta.dirname, "../../.github/workflows/ci.yml"),
+    "utf8",
+  );
+  assert.match(
+    workflow,
+    /run: pnpm --filter @repo\/api test:live-db:disposable --disposable --local --all\s*\n/,
+  );
+});
+
 test("CI owns full validation while Git hooks stay lightweight", async () => {
   const root = path.resolve(import.meta.dirname, "../..");
   const [manifestSource, lefthook, workflow] = await Promise.all([
@@ -96,8 +128,15 @@ test("CI owns full validation while Git hooks stay lightweight", async () => {
   assert.doesNotMatch(staticJob, /self-host:|test:live-db|db:verify/);
   const database = workflow.split("  runtime-db:")[1]?.split("  runtime-web:")[0];
   assert.ok(database);
+  assert.match(
+    database,
+    /- name: Checkout\s+uses: actions\/checkout@v4\s+with:\s+# db:verify reads the exact fingerprint from a pinned historical\s+# prerequisite commit; the default one-commit checkout omits it\.\s+fetch-depth: 0/,
+  );
   assert.match(database, /run: pnpm --filter @repo\/db db:verify/);
-  assert.match(database, /run: pnpm --filter @repo\/api test:live-db\n/);
+  assert.match(
+    database,
+    /run: pnpm --filter @repo\/api test:live-db:disposable --disposable --local --all\n/,
+  );
   const browser = workflow.split("  runtime-web:")[1]?.split("  ci:")[0];
   assert.ok(browser);
   assert.match(browser, /run: pnpm --filter @repo\/db self-host:up/);

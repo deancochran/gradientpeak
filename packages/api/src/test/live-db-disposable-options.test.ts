@@ -32,6 +32,18 @@ describe("disposable live-DB command options", () => {
     expect(() => requireDisposableLiveDbFlags(["--", "--disposable", "--local", "--"])).toThrow();
   });
 
+  it("selects the whole owned matrix only with explicit --all", () => {
+    const command = parseDisposableLiveDbCommand(["--disposable", "--local", "--all"]);
+    expect(command).toEqual({ testFile: null });
+    expect(buildDisposableLiveDbVitestCommand(command)).toEqual([
+      "exec",
+      "vitest",
+      "run",
+      "--config",
+      "vitest.live-db.config.ts",
+    ]);
+  });
+
   it("accepts only one leading delimiter", () => {
     expect(() =>
       parseDisposableLiveDbCommand(["--", target, "--disposable", "--local"]),
@@ -141,6 +153,11 @@ describe("disposable live-DB command options", () => {
     [["--disposable", "--local", target, "--config", "other.config.ts"]],
     [["--disposable", "--local", target, "--config=other.config.ts"]],
     [["--disposable", "--local", target, "--testNamePattern=only-this"]],
+    [["--disposable", "--local", target, "--passWithNoTests"]],
+    [["--disposable", "--local", "--all", "--passWithNoTests"]],
+    [["--disposable", "--local", "--all", "--config=other.config.ts"]],
+    [["--disposable", "--local", "--all", target]],
+    [["--disposable", "--local", "--all", "--all"]],
     [["--disposable", "--local", target, "-t", "only-this"]],
     [[target, "--", "--disposable", "--local"]],
     [["--", "--", target, "--disposable", "--local"]],
