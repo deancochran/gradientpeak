@@ -128,6 +128,10 @@ test("CI owns full validation while Git hooks stay lightweight", async () => {
   assert.doesNotMatch(staticJob, /self-host:|test:live-db|db:verify/);
   const database = workflow.split("  runtime-db:")[1]?.split("  runtime-web:")[0];
   assert.ok(database);
+  assert.match(
+    database,
+    /- name: Checkout\s+uses: actions\/checkout@v4\s+with:\s+# db:verify reads the exact fingerprint from a pinned historical\s+# prerequisite commit; the default one-commit checkout omits it\.\s+fetch-depth: 0/,
+  );
   assert.match(database, /run: pnpm --filter @repo\/db db:verify/);
   assert.match(
     database,
