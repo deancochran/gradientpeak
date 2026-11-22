@@ -201,7 +201,7 @@ export function CoachAthleteCompletedActivities({
                   <p className="font-semibold">Completed session</p>
                   <p className="text-xs text-muted-foreground">Planned {item.planningDate}</p>
                 </div>
-                <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-3">
                   <CompletionMetric
                     label="Sport"
                     value={item.activityCategory ?? "Activity category unavailable"}
@@ -239,7 +239,7 @@ export function CoachAthleteCompletedActivities({
 
 function CompletionMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div>
+    <div className="min-w-0">
       <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</dt>
       <dd className="mt-0.5 text-sm font-semibold text-foreground">{value}</dd>
     </div>

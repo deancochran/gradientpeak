@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   preview: vi.fn(),
   previewQuery: vi.fn(),
+  publishPending: false,
   publish: vi.fn(),
   refreshSelectedPlan: vi.fn(),
   linkSearch: undefined as unknown,
@@ -110,7 +111,9 @@ vi.mock("../../../lib/api/client", () => ({
           return { isFetching: false, refetch: mocks.preview };
         },
       },
-      publish: { useMutation: () => ({ isPending: false, mutateAsync: mocks.publish }) },
+      publish: {
+        useMutation: () => ({ isPending: mocks.publishPending, mutateAsync: mocks.publish }),
+      },
     },
   },
 }));
@@ -150,6 +153,7 @@ afterEach(() => {
   cleanup();
   mocks.preview.mockReset();
   mocks.previewQuery.mockReset();
+  mocks.publishPending = false;
   mocks.publish.mockReset();
   mocks.refreshSelectedPlan.mockReset();
   mocks.linkSearch = undefined;
@@ -279,6 +283,33 @@ describe("CoachActivityPlanPublication", () => {
     const prepare = screen.getByRole("button", { name: "Prepare activity plan" });
     expect(prepare.hasAttribute("disabled")).toBe(true);
     expect(prepare.tagName).toBe("BUTTON");
+    expect(screen.queryByRole("link", { name: "Prepare activity plan" })).toBeNull();
+  });
+
+  it("disables preparation and selected-plan inspection while publication is pending", () => {
+    mocks.publishPending = true;
+    render(
+      <CoachActivityPlanPublication
+        athleteId="22222222-2222-4222-8222-222222222222"
+        organizationId="11111111-1111-4111-8111-111111111111"
+        preparation={{
+          activityPlanId: "44444444-4444-4444-8444-444444444444",
+          athleteId: "22222222-2222-4222-8222-222222222222",
+          organizationId: "11111111-1111-4111-8111-111111111111",
+          planningDate: "2026-11-12",
+          returnTo: "athlete-workspace",
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Prepare activity plan" }).hasAttribute("disabled"),
+    ).toBe(true);
+    expect(
+      screen
+        .getByRole("button", { name: "Inspect or edit selected activity plan Threshold" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
     expect(screen.queryByRole("link", { name: "Prepare activity plan" })).toBeNull();
   });
 
@@ -468,6 +499,34 @@ describe("CoachActivityPlanPublication", () => {
       planningDate: "2026-11-13",
       returnTo: "athlete-workspace",
     });
+  });
+
+  it("does not replace an already-current validated workspace URL when a blank date draft is restored", () => {
+    const preparation = {
+      activityPlanId: "44444444-4444-4444-8444-444444444444",
+      athleteId: "22222222-2222-4222-8222-222222222222",
+      calendarStartDate: "2026-11-16",
+      organizationId: "11111111-1111-4111-8111-111111111111",
+      planningDate: "2026-11-23",
+      returnTo: "athlete-workspace" as const,
+    };
+    mocks.routerSearch = preparation;
+    render(
+      <CoachActivityPlanPublication
+        athleteId={preparation.athleteId}
+        calendarStartDate={preparation.calendarStartDate}
+        organizationId={preparation.organizationId}
+        preparation={preparation}
+      />,
+    );
+    mocks.navigate.mockClear();
+
+    fireEvent.change(screen.getByLabelText("Athlete planning date"), { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("Athlete planning date"), {
+      target: { value: preparation.planningDate },
+    });
+
+    expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
   it("replaces the workspace URL with the current authoring context before leaving to prepare", () => {

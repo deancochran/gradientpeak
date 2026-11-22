@@ -69,6 +69,9 @@ export function CoachActivityPlanPublication({
         ? state.location.search.calendarStartDate
         : undefined,
   });
+  const liveWorkspaceSearch = useRouterState({
+    select: (state) => state.location.search as Record<string, unknown>,
+  });
   const organizations = api.organizations.listMine.useQuery({ cursor: null, limit: 50 });
   const activityPlans = api.activityPlans.list.useQuery({ limit: 50, ownerScope: "own" });
   const publish = api.coachingPublication.publish.useMutation({ retry: false });
@@ -185,6 +188,17 @@ export function CoachActivityPlanPublication({
     // A date control can temporarily be blank while the coach corrects it.
     // Keep that in-memory draft and the last valid return URL intact.
     if (!nextContext) return;
+    const current = parseAthleteWorkspaceSearch(liveWorkspaceSearch);
+    const nextSearch = activityPlanPreparationSearch(nextContext, next.activityPlanId);
+    if (
+      current.activityPlanId === nextSearch.activityPlanId &&
+      current.athleteId === nextSearch.athleteId &&
+      current.calendarStartDate === nextSearch.calendarStartDate &&
+      current.organizationId === nextSearch.organizationId &&
+      current.planningDate === nextSearch.planningDate &&
+      current.returnTo === nextSearch.returnTo
+    )
+      return;
     void navigate({
       to: "/organizations/$organizationId/athletes/$athleteId",
       params: { athleteId, organizationId },
@@ -273,7 +287,7 @@ export function CoachActivityPlanPublication({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {preparationContext ? (
+        {preparationContext && !publish.isPending ? (
           <Button
             asChild
             className="border-border bg-card text-foreground hover:bg-muted hover:text-foreground"

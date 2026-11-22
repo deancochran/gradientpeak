@@ -89,6 +89,7 @@ test("non-admin coach sees consent-scoped historical load assessment without rec
   const page = await coachActor.createPage(`/organizations/${organizationId}/athletes`);
   await expect(page.getByRole("heading", { name: "Assigned athletes" })).toBeVisible();
   await page.getByRole("link", { name: athleteActor.username ?? "Assigned athlete" }).click();
+  await page.locator("summary").filter({ hasText: "Training context and shared data" }).click();
   await expect(page.getByText("Athlete workspace unavailable")).toBeVisible();
   await page.screenshot({
     fullPage: true,
@@ -103,6 +104,7 @@ test("non-admin coach sees consent-scoped historical load assessment without rec
     .locator(`a[href="/organizations/${organizationId}/athletes/${secondAthlete.profileId}"]`)
     .click();
   await expect(page).not.toHaveURL(priorUrl);
+  await page.locator("summary").filter({ hasText: "Training context and shared data" }).click();
   await expect(page.getByText("Athlete workspace unavailable")).toBeVisible();
   // Published fixtures live only in this harness-created disposable database.
   await withLocalE2EDatabase(async (database) => {
@@ -330,12 +332,12 @@ test("non-admin coach sees consent-scoped historical load assessment without rec
   await page.reload();
   await waitForAppHydration(page);
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await expect(page.getByText("322 watts", { exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Historical training state" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Historical training state" })).toBeVisible();
   await expect(page.getByRole("img", { name: /Historical training state/ })).toBeVisible();
   await expect(page.getByLabel("Chart legend")).toContainText("Fitness · Recorded");
   await expect(page.getByRole("img", { name: /Historical Fitness/ })).toHaveCount(0);
   await page.locator("summary").filter({ hasText: "Training context and shared data" }).click();
+  await expect(page.getByText("322 watts", { exact: true })).toBeVisible();
   await expect(page.getByText("Recent completed daily Common Load", { exact: true })).toBeVisible();
   await expect(page.getByText("-8.0", { exact: true })).toBeVisible();
   await expect(page.getByText(/Values are recorded history only/)).toBeVisible();
@@ -382,13 +384,18 @@ test("non-admin coach sees consent-scoped historical load assessment without rec
   );
   await page.reload();
   await waitForAppHydration(page);
+  await expect(page.getByRole("region", { name: "Historical training state" })).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Historical training state" })
+      .getByText("Historical load is not available in the published projection."),
+  ).toBeVisible();
+  await expect(page.getByRole("img", { name: /Historical training state/ })).toHaveCount(0);
+  await page.locator("summary").filter({ hasText: "Training context and shared data" }).click();
   await expect(page.getByText("322 watts", { exact: true })).toBeVisible();
   await expect(page.getByText("Recent completed daily Common Load", { exact: true })).toHaveCount(
     0,
   );
-  await expect(page.getByRole("heading", { name: "Historical training state" })).toBeVisible();
-  await expect(page.getByText(/Historical load is unavailable/)).toBeVisible();
-  await expect(page.getByRole("img", { name: /Historical training state/ })).toHaveCount(0);
   await expect(page.getByRole("table")).toHaveCount(0);
   await page.screenshot({
     fullPage: true,
@@ -402,6 +409,7 @@ test("non-admin coach sees consent-scoped historical load assessment without rec
     .getByRole("list", { name: "Switch athlete" })
     .locator(`a[href="/organizations/${organizationId}/athletes/${athleteActor.profileId}"]`)
     .click();
+  await page.locator("summary").filter({ hasText: "Training context and shared data" }).click();
   await expect(page.getByText("211 watts", { exact: true })).toBeVisible();
   await expect(page.getByText("322 watts", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Recent completed daily Common Load", { exact: true })).toHaveCount(
@@ -410,6 +418,7 @@ test("non-admin coach sees consent-scoped historical load assessment without rec
   await expect(page.getByText(`@${athleteActor.username}`, { exact: true })).toBeVisible();
   await page.reload();
   await waitForAppHydration(page);
+  await page.locator("summary").filter({ hasText: "Training context and shared data" }).click();
   await expect(page.getByText("211 watts", { exact: true })).toBeVisible();
   await page.close();
 });
