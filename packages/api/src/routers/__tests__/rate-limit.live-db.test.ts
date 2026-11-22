@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { db, pool } from "@repo/db/client";
 import { sql } from "drizzle-orm";
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { type Context, createApiContext } from "../../context";
 import {
   checkApiRateLimit,
@@ -32,6 +32,16 @@ async function durableWindowCount() {
   return Number(result.rows[0]?.count);
 }
 
+async function withFrozenDate<T>(now: number, callback: () => Promise<T>): Promise<T> {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(now);
+  try {
+    return await callback();
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
 afterEach(async () => {
   await Promise.all(
     [...insertedHashes].map((keyHash) =>
@@ -46,35 +56,40 @@ afterAll(async () => pool.end());
 describe("Postgres API rate-limit store", () => {
   it("atomically increments one current-window key and persists only its hash", async () => {
     const value = identity("same-key");
-    const now = Date.now();
+    const now = Date.UTC(2026, 0, 1);
     const store = new PostgresApiRateLimitStore(await context(), { windowMs: 1_000 });
 
-    const buckets = await Promise.all(
-      Array.from({ length: 16 }, () => store.increment(value, now)),
-    );
+    await withFrozenDate(now, async () => {
+      const buckets = await Promise.all(
+        Array.from({ length: 16 }, () => store.increment(value, now)),
+      );
 
-    expect(buckets.map((bucket) => bucket.count).sort((a, b) => a - b)).toEqual(
-      Array.from({ length: 16 }, (_, index) => index + 1),
-    );
-    const persisted = await db.execute(sql<{ key_hash: string; count: number }>`
-      select key_hash, count from public.api_rate_limit_windows
-      where key_hash = ${createHash("sha256").update(value.key).digest("hex")}
-    `);
-    expect(persisted.rows).toEqual([
-      { key_hash: createHash("sha256").update(value.key).digest("hex"), count: 16 },
-    ]);
-    expect(JSON.stringify(persisted.rows)).not.toContain(value.key);
+      expect(buckets.map((bucket) => bucket.count).sort((a, b) => a - b)).toEqual(
+        Array.from({ length: 16 }, (_, index) => index + 1),
+      );
+      const persisted = await db.execute(sql<{ key_hash: string; count: number }>`
+        select key_hash, count from public.api_rate_limit_windows
+        where key_hash = ${createHash("sha256").update(value.key).digest("hex")}
+      `);
+      expect(persisted.rows).toEqual([
+        { key_hash: createHash("sha256").update(value.key).digest("hex"), count: 16 },
+      ]);
+      expect(JSON.stringify(persisted.rows)).not.toContain(value.key);
+    });
   });
 
   it("admits distinct new keys only through the configured finite durable cap", async () => {
+    const now = Date.UTC(2026, 0, 1);
     const store = new PostgresApiRateLimitStore(await context(), {
       windowMs: 1_000,
       maxDurableWindows: (await durableWindowCount()) + 2,
     });
 
-    const results = await Promise.allSettled(
-      [identity("cap-a"), identity("cap-b"), identity("cap-c")].map((value) =>
-        store.increment(value, Date.now()),
+    const results = await withFrozenDate(now, () =>
+      Promise.allSettled(
+        [identity("cap-a"), identity("cap-b"), identity("cap-c")].map((value) =>
+          store.increment(value, now),
+        ),
       ),
     );
 
@@ -84,6 +99,7 @@ describe("Postgres API rate-limit store", () => {
 
   it("cleans expired windows before admitting a new window", async () => {
     const baseCount = await durableWindowCount();
+    const now = Date.UTC(2026, 0, 1);
     const store = new PostgresApiRateLimitStore(await context(), {
       windowMs: 1_000,
       maxDurableWindows: baseCount + 1,
@@ -91,14 +107,16 @@ describe("Postgres API rate-limit store", () => {
     const expired = identity("expired");
     const current = identity("current");
 
-    await store.increment(expired, Date.now() - 5_000);
-    await expect(store.increment(current, Date.now())).resolves.toMatchObject({ count: 1 });
+    await withFrozenDate(now, async () => {
+      await store.increment(expired, now - 5_000);
+      await expect(store.increment(current, now)).resolves.toMatchObject({ count: 1 });
 
-    const expiredHash = createHash("sha256").update(expired.key).digest("hex");
-    const expiredRow = await db.execute(sql`
-      select 1 from public.api_rate_limit_windows where key_hash = ${expiredHash}
-    `);
-    expect(expiredRow.rows).toHaveLength(0);
+      const expiredHash = createHash("sha256").update(expired.key).digest("hex");
+      const expiredRow = await db.execute(sql`
+        select 1 from public.api_rate_limit_windows where key_hash = ${expiredHash}
+      `);
+      expect(expiredRow.rows).toHaveLength(0);
+    });
   });
 
   it("fails closed when its durable database authority is unavailable", async () => {
