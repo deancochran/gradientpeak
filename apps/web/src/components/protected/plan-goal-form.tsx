@@ -5,25 +5,30 @@ import {
   canonicalActivityCategorySchema,
   createEmptyGoalDraft,
   type GoalEditorDraft,
+  getGoalEditorTargetFields,
   goalFocusChoices,
   goalPriorityChoices,
   goalPriorityHelpText,
   goalRaceMeasureChoices,
   type ProfileGoalRecord,
   parseProfileGoalRecord,
+  resetGoalEditorDraftForType,
 } from "@repo/core";
-import { normalizeDurationInput, parseHmsToSeconds } from "@repo/core/utils/fitness-inputs";
 import { Button } from "@repo/ui/components/button";
 import { ChoiceField as Choice } from "@repo/ui/components/choice-field";
 import { DateInput } from "@repo/ui/components/date-input";
-import { DurationInput } from "@repo/ui/components/duration-input";
-import { Form, FormBoundedNumberField, FormPaceField } from "@repo/ui/components/form";
+import {
+  Form,
+  FormBoundedNumberField,
+  FormDurationField,
+  FormPaceField,
+} from "@repo/ui/components/form";
 import { Input } from "@repo/ui/components/input";
 import { Label } from "@repo/ui/components/label";
 import { useZodFormSubmit } from "@repo/ui/hooks";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useRef, useState } from "react";
-import { Controller, type FieldPath, type FieldPathValue, useForm } from "react-hook-form";
+import { type FieldPath, type FieldPathValue, useForm } from "react-hook-form";
 import { api } from "../../lib/api/client";
 import { getTodayDateKey } from "../../lib/planning";
 import { createPlanGoalAction, updatePlanGoalAction } from "../../lib/planning/server-actions";
@@ -170,43 +175,6 @@ function PlanGoalFormSession({
     },
   });
 
-  function durationField(
-    name: "targetDuration" | "thresholdTestDuration",
-    label: string,
-    required = false,
-  ) {
-    return (
-      <Controller
-        key={`${draft.goalType}:${name}`}
-        control={form.control}
-        name={name}
-        rules={{
-          validate: (value) =>
-            (!value?.trim()
-              ? !required
-              : (parseHmsToSeconds(normalizeDurationInput(value)) ?? 0) > 0) ||
-            `Enter a valid ${label.toLowerCase()}${required ? "." : " or clear the field."}`,
-        }}
-        render={({ field, fieldState }) => (
-          <DurationInput
-            ref={field.ref}
-            id={`goal-${name}`}
-            label={label}
-            name={field.name}
-            required={required}
-            disabled={isSubmitting}
-            value={field.value ?? ""}
-            onChange={field.onChange}
-            onBlur={field.onBlur}
-            {...(fieldState.error?.message === undefined
-              ? {}
-              : { error: fieldState.error.message })}
-          />
-        )}
-      />
-    );
-  }
-
   const race = draft.goalType === "race_performance";
   const completion = draft.goalType === "completion";
   const threshold =
@@ -265,24 +233,8 @@ function PlanGoalFormSession({
               form.formState.isSubmitting
             )
               return;
-            const defaults = createEmptyGoalDraft();
             setSubmitError(null);
-            form.reset({
-              ...defaults,
-              title: draft.title,
-              targetDate: draft.targetDate,
-              importance: draft.importance,
-              originalGoal: undefined,
-              goalType: choice.value,
-              activityCategory:
-                choice.value === "pace_threshold"
-                  ? "run"
-                  : choice.value === "power_threshold"
-                    ? "bike"
-                    : draft.activityCategory,
-              thresholdTestDuration:
-                choice.value === "hr_threshold" ? "" : (defaults.thresholdTestDuration ?? ""),
-            });
+            form.reset(resetGoalEditorDraftForType({ draft, goalType: choice.value }));
           }}
         />
         <Choice
@@ -299,7 +251,9 @@ function PlanGoalFormSession({
         />
         {race || completion ? (
           <>
-            {numberField("raceDistanceKm", "Distance (km)", race)}
+            {getGoalEditorTargetFields(draft)
+              .filter((field) => field.name === "raceDistanceKm")
+              .map((field) => numberField("raceDistanceKm", field.label, field.required, false))}
             {race ? (
               <Choice
                 label="Race target"
@@ -314,7 +268,13 @@ function PlanGoalFormSession({
               />
             ) : null}
             {completion || draft.raceTargetMode !== "pace" ? (
-              durationField("targetDuration", completion ? "Duration" : "Goal time", race)
+              <FormDurationField
+                control={form.control}
+                name="targetDuration"
+                label={completion ? "Duration" : "Goal time"}
+                required={race}
+                disabled={isSubmitting}
+              />
             ) : (
               <FormPaceField
                 key={`${draft.goalType}:targetPace`}
@@ -339,7 +299,14 @@ function PlanGoalFormSession({
         ) : null}
         {draft.goalType === "power_threshold" ? numberField("targetWatts", "Watts", true) : null}
         {draft.goalType === "hr_threshold" ? numberField("targetBpm", "Target bpm", true) : null}
-        {threshold ? durationField("thresholdTestDuration", "Test duration") : null}
+        {threshold ? (
+          <FormDurationField
+            control={form.control}
+            name="thresholdTestDuration"
+            label="Test duration"
+            disabled={isSubmitting}
+          />
+        ) : null}
         {draft.goalType === "consistency" ? (
           <>
             {numberField("consistencySessionsPerWeek", "Sessions / week", false, true)}

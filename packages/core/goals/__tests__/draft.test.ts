@@ -7,10 +7,35 @@ import {
   getGoalMetricSummary,
   getGoalObjectiveSummary,
 } from "../draft";
+import { getGoalEditorTargetFields, resetGoalEditorDraftForType } from "../editor-contract";
 
 const profileId = "11111111-1111-4111-8111-111111111111";
 
 describe("goal draft helpers", () => {
+  it("shares target-field requirements and retains goal continuity across a type change", () => {
+    const draft = {
+      ...createEmptyGoalDraft(),
+      title: "Autumn goal",
+      targetDate: "2026-10-01",
+      importance: 8,
+      activityCategory: "swim" as const,
+    };
+
+    expect(getGoalEditorTargetFields({ goalType: "power_threshold" })).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "targetWatts", required: true, min: Number.MIN_VALUE }),
+        expect.objectContaining({ name: "thresholdTestDuration", required: false, layout: "ms" }),
+      ]),
+    );
+    expect(resetGoalEditorDraftForType({ draft, goalType: "power_threshold" })).toMatchObject({
+      title: "Autumn goal",
+      targetDate: "2026-10-01",
+      importance: 8,
+      goalType: "power_threshold",
+      activityCategory: "bike",
+    });
+  });
+
   it("builds a race payload from athlete-friendly pace input", () => {
     const payload = buildGoalCreatePayload({
       profileId,

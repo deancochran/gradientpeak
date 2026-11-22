@@ -7,11 +7,13 @@ import {
   type GoalEditorGoalType,
   type GoalEditorRaceTargetMode,
   getGoalDraftQualityFeedback,
+  getGoalEditorTargetFields,
   goalFocusChoices,
   goalPriorityChoices,
   goalPriorityHelpText,
   goalRaceMeasureChoices,
   profileGoalSchema,
+  resetGoalEditorDraftForType,
 } from "@repo/core";
 import { numericUxPolicies } from "@repo/core/utils/numeric-ux-policy";
 import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
@@ -320,6 +322,14 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
       return () => subscription.unsubscribe();
     }, [form, shouldObserveDraft]);
 
+    const targetFields = useMemo(
+      () =>
+        getGoalEditorTargetFields({
+          goalType: draft.goalType,
+          raceTargetMode: draft.raceTargetMode,
+        }),
+      [draft.goalType, draft.raceTargetMode],
+    );
     const distancePresets = useMemo(
       () => DISTANCE_PRESETS_BY_ACTIVITY[draft.activityCategory] ?? [],
       [draft.activityCategory],
@@ -422,26 +432,10 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
       if (goalType === draft.goalType) return;
       confirmReplacement(() => {
         setInvalidNumericFields({});
-        const base = createEmptyGoalDraft();
         const current = form.getValues() as GoalEditorDraft;
-
-        form.reset(
-          {
-            ...base,
-            title: current.title,
-            targetDate: current.targetDate,
-            importance: current.importance,
-            goalType,
-            thresholdTestDuration: goalType === "hr_threshold" ? "" : base.thresholdTestDuration,
-            activityCategory:
-              goalType === "pace_threshold"
-                ? "run"
-                : goalType === "power_threshold"
-                  ? "bike"
-                  : current.activityCategory,
-          },
-          { keepDefaultValues: true },
-        );
+        form.reset(resetGoalEditorDraftForType({ draft: current, goalType }), {
+          keepDefaultValues: true,
+        });
       });
     };
 
@@ -619,7 +613,10 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
                     adjustmentStep={numericUxPolicies.distanceKilometers.adjustmentStep}
                     clampProjection={false}
                     id="goal-distance"
-                    label={getDistanceLabel(draft.goalType)}
+                    label={
+                      targetFields.find((field) => field.name === "raceDistanceKm")?.label ??
+                      getDistanceLabel(draft.goalType)
+                    }
                     value={draft.raceDistanceKm == null ? "" : String(draft.raceDistanceKm)}
                     onChange={() => undefined}
                     onInvalidChange={(invalid) =>
