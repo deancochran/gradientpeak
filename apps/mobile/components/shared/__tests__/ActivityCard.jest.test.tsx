@@ -182,8 +182,8 @@ describe("ActivityCard", () => {
 
     expect(screen.getByText("Morning Run")).toBeTruthy();
     expect(screen.getByText("Steady aerobic work.").props.numberOfLines).toBe(2);
-    expect(screen.getByTestId("activity-card-metrics").props.className).toBe(
-      "flex-row flex-wrap items-start gap-x-5 gap-y-2 px-1",
+    expect(screen.getByTestId("activity-card-metrics").props.className.split(" ").sort()).toEqual(
+      ["flex-row", "flex-wrap", "items-start", "gap-x-5", "gap-y-2", "px-1"].sort(),
     );
     expect(screen.getByTestId("activity-card-like-button-activity-1")).toBeTruthy();
     expect(screen.getByTestId("activity-card-comment-button-activity-1")).toBeTruthy();
@@ -193,8 +193,8 @@ describe("ActivityCard", () => {
 
     expect(screen.getByText("Morning Run")).toBeTruthy();
     expect(screen.getByText("Steady aerobic work.").props.numberOfLines).toBe(2);
-    expect(screen.getByTestId("activity-card-metrics").props.className).toBe(
-      "flex-row flex-wrap items-start gap-x-5 gap-y-2 px-1",
+    expect(screen.getByTestId("activity-card-metrics").props.className.split(" ").sort()).toEqual(
+      ["flex-row", "flex-wrap", "items-start", "gap-x-5", "gap-y-2", "px-1"].sort(),
     );
     expect(screen.getByTestId("activity-card-like-button-activity-1")).toBeTruthy();
   });
