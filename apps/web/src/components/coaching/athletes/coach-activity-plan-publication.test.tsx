@@ -6,14 +6,40 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   preview: vi.fn(),
   previewQuery: vi.fn(),
+  publishPending: false,
   publish: vi.fn(),
   refreshSelectedPlan: vi.fn(),
   linkSearch: undefined as unknown,
+  navigate: vi.fn(),
+  routerSearch: {} as Record<string, unknown>,
   selectedPlanQueryState: "ready" as "error" | "loading" | "missing" | "not-editable" | "ready",
   selectedPlan: {
+    activityCategory: "bike",
     activityPlanRevision: 3,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    description: "Threshold work with a real prescription.",
+    engagement: { likes: 0, viewerHasLiked: false },
+    href: "/activity-plans/44444444-4444-4444-8444-444444444444",
     id: "44444444-4444-4444-8444-444444444444",
+    isSystemTemplate: false,
+    metrics: [],
     name: "Threshold",
+    owner: null,
+    structure: {
+      activity_category: "bike",
+      items: [
+        {
+          duration: { seconds: 600, type: "time" },
+          id: "00000000-0000-4000-8000-000000000003",
+          name: "Tempo block",
+          targets: [{ intensity: 4, type: "RPE" }],
+          type: "step",
+        },
+      ],
+      version: 5,
+    },
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    visibility: "private" as const,
   },
 }));
 
@@ -85,14 +111,39 @@ vi.mock("../../../lib/api/client", () => ({
           return { isFetching: false, refetch: mocks.preview };
         },
       },
-      publish: { useMutation: () => ({ isPending: false, mutateAsync: mocks.publish }) },
+      publish: {
+        useMutation: () => ({ isPending: mocks.publishPending, mutateAsync: mocks.publish }),
+      },
     },
   },
 }));
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children, search }: { children: React.ReactNode; search?: unknown }) => {
+  defaultParseSearch: (search: string) => Object.fromEntries(new URLSearchParams(search)),
+  useNavigate: () => mocks.navigate,
+  useRouterState: ({
+    select,
+  }: {
+    select: (state: { location: { search: Record<string, unknown> } }) => unknown;
+  }) => select({ location: { search: mocks.routerSearch } }),
+  Link: ({
+    children,
+    search,
+    ...props
+  }: {
+    children: React.ReactNode;
+    search?: unknown;
+    [key: string]: unknown;
+  }) => {
     mocks.linkSearch = search;
-    return <a href="/activity-plans">{children}</a>;
+    const query =
+      search && typeof search === "object"
+        ? new URLSearchParams(search as Record<string, string>).toString()
+        : "";
+    return (
+      <a {...props} href={`/activity-plans${query ? `?${query}` : ""}`}>
+        {children}
+      </a>
+    );
   },
 }));
 
@@ -102,18 +153,121 @@ afterEach(() => {
   cleanup();
   mocks.preview.mockReset();
   mocks.previewQuery.mockReset();
+  mocks.publishPending = false;
   mocks.publish.mockReset();
   mocks.refreshSelectedPlan.mockReset();
   mocks.linkSearch = undefined;
+  mocks.navigate.mockReset();
+  mocks.routerSearch = {};
   mocks.selectedPlanQueryState = "ready";
   mocks.selectedPlan = {
+    activityCategory: "bike",
     activityPlanRevision: 3,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    description: "Threshold work with a real prescription.",
+    engagement: { likes: 0, viewerHasLiked: false },
+    href: "/activity-plans/44444444-4444-4444-8444-444444444444",
     id: "44444444-4444-4444-8444-444444444444",
+    isSystemTemplate: false,
+    metrics: [],
     name: "Threshold",
+    owner: null,
+    structure: {
+      activity_category: "bike",
+      items: [
+        {
+          duration: { seconds: 600, type: "time" },
+          id: "00000000-0000-4000-8000-000000000003",
+          name: "Tempo block",
+          targets: [{ intensity: 4, type: "RPE" }],
+          type: "step",
+        },
+      ],
+      version: 5,
+    },
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    visibility: "private" as const,
   };
 });
 
 describe("CoachActivityPlanPublication", () => {
+  it("renders the selected owned plan with its canonical timeline and contextual inspect link", () => {
+    mocks.routerSearch = { calendarStartDate: "2026-11-09" };
+    render(
+      <CoachActivityPlanPublication
+        athleteId="22222222-2222-4222-8222-222222222222"
+        organizationId="11111111-1111-4111-8111-111111111111"
+        preparation={{
+          activityPlanId: "44444444-4444-4444-8444-444444444444",
+          athleteId: "22222222-2222-4222-8222-222222222222",
+          calendarStartDate: "2026-11-09",
+          organizationId: "11111111-1111-4111-8111-111111111111",
+          planningDate: "2026-11-12",
+          returnTo: "athlete-workspace",
+        }}
+      />,
+    );
+
+    const card = screen.getByTestId("activity-plan-card-44444444-4444-4444-8444-444444444444");
+    expect(card).toBeTruthy();
+    expect(
+      screen.getByTestId("activity-plan-card-timeline-44444444-4444-4444-8444-444444444444"),
+    ).toBeTruthy();
+    expect(card.getAttribute("href")).toContain("athleteId=22222222-2222-4222-8222-222222222222");
+    expect(card.getAttribute("href")).toContain("planningDate=2026-11-12");
+    expect(card.getAttribute("href")).toContain("calendarStartDate=2026-11-09");
+    expect(card.getAttribute("href")).toContain(
+      "activityPlanId=44444444-4444-4444-8444-444444444444",
+    );
+  });
+
+  it.each([
+    "loading",
+    "error",
+    "not-editable",
+  ] as const)("hides the selected visual while the owned-plan detail is %s", (selectedPlanQueryState) => {
+    mocks.selectedPlanQueryState = selectedPlanQueryState;
+    render(
+      <CoachActivityPlanPublication
+        athleteId="22222222-2222-4222-8222-222222222222"
+        organizationId="11111111-1111-4111-8111-111111111111"
+        preparation={{
+          activityPlanId: "44444444-4444-4444-8444-444444444444",
+          athleteId: "22222222-2222-4222-8222-222222222222",
+          organizationId: "11111111-1111-4111-8111-111111111111",
+          planningDate: "2026-11-12",
+          returnTo: "athlete-workspace",
+        }}
+      />,
+    );
+
+    expect(
+      screen.queryByTestId("activity-plan-card-44444444-4444-4444-8444-444444444444"),
+    ).toBeNull();
+  });
+
+  it("resets the selected visual when the coach clears the plan choice", () => {
+    render(
+      <CoachActivityPlanPublication
+        athleteId="22222222-2222-4222-8222-222222222222"
+        organizationId="11111111-1111-4111-8111-111111111111"
+        preparation={{
+          activityPlanId: "44444444-4444-4444-8444-444444444444",
+          athleteId: "22222222-2222-4222-8222-222222222222",
+          organizationId: "11111111-1111-4111-8111-111111111111",
+          planningDate: "2026-11-12",
+          returnTo: "athlete-workspace",
+        }}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Your activity plan"), { target: { value: "" } });
+
+    expect(
+      screen.queryByTestId("activity-plan-card-44444444-4444-4444-8444-444444444444"),
+    ).toBeNull();
+  });
+
   it("uses the semantic date input surface without forcing a dark native control", () => {
     render(<CoachActivityPlanPublication athleteId="athlete" organizationId="organization" />);
 
@@ -121,6 +275,47 @@ describe("CoachActivityPlanPublication", () => {
     expect(planningDate.className).toContain("border-input");
     expect(planningDate.className).toContain("bg-background");
     expect(planningDate.className).not.toContain("color-scheme:dark");
+  });
+
+  it("uses a real disabled button rather than a disabled-looking link until the date is valid", () => {
+    render(<CoachActivityPlanPublication athleteId="athlete" organizationId="organization" />);
+
+    const prepare = screen.getByRole("button", { name: "Prepare activity plan" });
+    expect(prepare.hasAttribute("disabled")).toBe(true);
+    expect(prepare.tagName).toBe("BUTTON");
+    expect(screen.queryByRole("link", { name: "Prepare activity plan" })).toBeNull();
+  });
+
+  it("disables preparation and selected-plan inspection while publication is pending", () => {
+    mocks.publishPending = true;
+    render(
+      <CoachActivityPlanPublication
+        athleteId="22222222-2222-4222-8222-222222222222"
+        organizationId="11111111-1111-4111-8111-111111111111"
+        preparation={{
+          activityPlanId: "44444444-4444-4444-8444-444444444444",
+          athleteId: "22222222-2222-4222-8222-222222222222",
+          organizationId: "11111111-1111-4111-8111-111111111111",
+          planningDate: "2026-11-12",
+          returnTo: "athlete-workspace",
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Prepare activity plan" }).hasAttribute("disabled"),
+    ).toBe(true);
+    expect(
+      screen
+        .getByRole("button", { name: "Inspect or edit selected activity plan Threshold" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    expect(
+      screen
+        .getByRole("button", { name: "Inspect or edit selected activity plan Threshold" })
+        .getAttribute("href"),
+    ).toBeNull();
+    expect(screen.queryByRole("link", { name: "Prepare activity plan" })).toBeNull();
   });
 
   it("requires a fresh successful preview before publishing the selected owned activity plan", async () => {
@@ -311,8 +506,151 @@ describe("CoachActivityPlanPublication", () => {
     });
   });
 
+  it("does not replace an already-current validated workspace URL when a blank date draft is restored", () => {
+    const preparation = {
+      activityPlanId: "44444444-4444-4444-8444-444444444444",
+      athleteId: "22222222-2222-4222-8222-222222222222",
+      calendarStartDate: "2026-11-16",
+      organizationId: "11111111-1111-4111-8111-111111111111",
+      planningDate: "2026-11-23",
+      returnTo: "athlete-workspace" as const,
+    };
+    mocks.routerSearch = preparation;
+    render(
+      <CoachActivityPlanPublication
+        athleteId={preparation.athleteId}
+        calendarStartDate={preparation.calendarStartDate}
+        organizationId={preparation.organizationId}
+        preparation={preparation}
+      />,
+    );
+    mocks.navigate.mockClear();
+
+    fireEvent.change(screen.getByLabelText("Athlete planning date"), { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("Athlete planning date"), {
+      target: { value: preparation.planningDate },
+    });
+
+    expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
+  it("replaces the workspace URL with the current authoring context before leaving to prepare", () => {
+    render(
+      <CoachActivityPlanPublication
+        athleteId="22222222-2222-4222-8222-222222222222"
+        organizationId="11111111-1111-4111-8111-111111111111"
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Athlete planning date"), {
+      target: { value: "2026-11-23" },
+    });
+
+    const navigation = mocks.navigate.mock.calls.at(-1)?.[0] as {
+      params: Record<string, string>;
+      replace: boolean;
+      search: (previous: Record<string, unknown>) => Record<string, unknown>;
+    };
+    expect(navigation.params).toEqual({
+      athleteId: "22222222-2222-4222-8222-222222222222",
+      organizationId: "11111111-1111-4111-8111-111111111111",
+    });
+    expect(navigation.replace).toBe(true);
+    expect(navigation.search({})).toMatchObject({
+      planningDate: "2026-11-23",
+      returnTo: "athlete-workspace",
+    });
+  });
+
+  it("preserves a live pending calendar range in date changes and the prepare link", () => {
+    mocks.routerSearch = { calendarStartDate: "2026-11-28" };
+    render(
+      <CoachActivityPlanPublication
+        athleteId="22222222-2222-4222-8222-222222222222"
+        organizationId="11111111-1111-4111-8111-111111111111"
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Athlete planning date"), {
+      target: { value: "2026-11-23" },
+    });
+
+    const navigation = mocks.navigate.mock.calls.at(-1)?.[0] as {
+      search: (previous: Record<string, unknown>) => Record<string, unknown>;
+    };
+    expect(navigation.search({ calendarStartDate: "2026-12-05" })).toMatchObject({
+      calendarStartDate: "2026-12-05",
+      planningDate: "2026-11-23",
+    });
+    expect(mocks.linkSearch).toMatchObject({
+      calendarStartDate: "2026-11-28",
+      planningDate: "2026-11-23",
+    });
+  });
+
+  it("removes a cleared local plan from the URL instead of reviving it on Back", () => {
+    render(
+      <CoachActivityPlanPublication
+        athleteId="22222222-2222-4222-8222-222222222222"
+        organizationId="11111111-1111-4111-8111-111111111111"
+        preparation={{
+          activityPlanId: "44444444-4444-4444-8444-444444444444",
+          athleteId: "22222222-2222-4222-8222-222222222222",
+          organizationId: "11111111-1111-4111-8111-111111111111",
+          planningDate: "2026-11-23",
+          returnTo: "athlete-workspace",
+        }}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Your activity plan"), { target: { value: "" } });
+
+    const navigation = mocks.navigate.mock.calls.at(-1)?.[0] as {
+      search: (previous: Record<string, unknown>) => Record<string, unknown>;
+    };
+    const nextSearch = navigation.search({
+      activityPlanId: "44444444-4444-4444-8444-444444444444",
+      athleteId: "22222222-2222-4222-8222-222222222222",
+      organizationId: "11111111-1111-4111-8111-111111111111",
+      planningDate: "2026-11-23",
+      returnTo: "athlete-workspace",
+    });
+    expect(nextSearch).not.toHaveProperty("activityPlanId");
+    expect(nextSearch).toMatchObject({ planningDate: "2026-11-23" });
+  });
+
+  it("retains a newer blank date draft when a delayed local plan-selection URL update arrives", () => {
+    const props = {
+      athleteId: "22222222-2222-4222-8222-222222222222",
+      organizationId: "11111111-1111-4111-8111-111111111111",
+    };
+    const view = render(<CoachActivityPlanPublication {...props} />);
+    const date = screen.getByLabelText("Athlete planning date");
+    fireEvent.change(date, { target: { value: "2026-11-23" } });
+    fireEvent.change(screen.getByLabelText("Your activity plan"), {
+      target: { value: "44444444-4444-4444-8444-444444444444" },
+    });
+    fireEvent.change(date, { target: { value: "" } });
+
+    view.rerender(
+      <CoachActivityPlanPublication
+        {...props}
+        preparation={{
+          activityPlanId: "44444444-4444-4444-8444-444444444444",
+          athleteId: props.athleteId,
+          organizationId: props.organizationId,
+          planningDate: "2026-11-23",
+          returnTo: "athlete-workspace",
+        }}
+      />,
+    );
+
+    expect((screen.getByLabelText("Athlete planning date") as HTMLInputElement).value).toBe("");
+  });
+
   it("resolves a prepared owned plan outside the first library page", async () => {
     mocks.selectedPlan = {
+      ...mocks.selectedPlan,
       activityPlanRevision: 7,
       id: "55555555-5555-4555-8555-555555555555",
       name: "Later plan",

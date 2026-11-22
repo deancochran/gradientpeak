@@ -52,6 +52,12 @@ describe("CoachAthleteCompletedActivities", () => {
 
     expect(screen.getByText("Completed session")).toBeTruthy();
     expect(screen.getByText(/planned 2026-11-10/i)).toBeTruthy();
+    expect(screen.getByText("Activity")).toBeTruthy();
+    expect(screen.getByText("Time")).toBeTruthy();
+    expect(screen.getByText("Distance")).toBeTruthy();
+    expect(screen.getByText("run")).toBeTruthy();
+    expect(screen.getByText("30 min")).toBeTruthy();
+    expect(screen.getByText("5.0 km")).toBeTruthy();
     expect(screen.getByText(/does not mark anything reviewed/i)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Mark reviewed" })).toBeTruthy();
   });

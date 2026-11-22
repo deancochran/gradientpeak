@@ -62,10 +62,13 @@ export function getActivityPlanEstimateItems(metrics: readonly SemanticMetric[])
 }
 
 export function ActivityPlanEstimateRow({
+  compact = false,
   metrics,
+  showUnavailableDetails = true,
 }: {
   metrics: readonly SemanticMetric[];
   compact?: boolean;
+  showUnavailableDetails?: boolean;
 }) {
   const estimates = getActivityPlanEstimateItems(metrics);
   const unavailable = metrics.filter((metric) => metric.status !== "available");
@@ -73,6 +76,7 @@ export function ActivityPlanEstimateRow({
   return (
     <div className="space-y-2">
       <CanonicalMetricsRow
+        compact={compact}
         items={estimates.map((estimate) => {
           const accessibilityValue = estimate.value === "—" ? "Unavailable" : estimate.value;
           return {
@@ -87,7 +91,7 @@ export function ActivityPlanEstimateRow({
         })}
         testID="activity-plan-estimates"
       />
-      {unavailable.length ? (
+      {showUnavailableDetails && unavailable.length ? (
         <details className="text-sm text-muted-foreground">
           <summary>Estimate details</summary>
           <ul className="mt-1 list-disc pl-5">
@@ -98,6 +102,11 @@ export function ActivityPlanEstimateRow({
             ))}
           </ul>
         </details>
+      ) : unavailable.length ? (
+        <p className="text-xs text-muted-foreground">
+          Unavailable estimates —{" "}
+          {unavailable.map((metric) => `${metric.label}: ${metric.reason ?? "Unknown"}`).join("; ")}
+        </p>
       ) : null}
     </div>
   );

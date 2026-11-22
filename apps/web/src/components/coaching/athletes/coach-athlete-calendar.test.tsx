@@ -4,9 +4,13 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import type React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ load: vi.fn() }));
+const mocks = vi.hoisted(() => ({ load: vi.fn(), navigate: vi.fn() }));
 
 vi.mock("@tanstack/react-start", () => ({ useServerFn: () => mocks.load }));
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children }: { children: React.ReactNode }) => <a href="/activity-plans">{children}</a>,
+  useNavigate: () => mocks.navigate,
+}));
 vi.mock("../../../lib/coaching/athlete-calendar-server-functions", () => ({
   loadCoachAthleteCalendar: {},
   shiftCalendarWeek: (
@@ -23,6 +27,7 @@ import { CoachAthleteCalendar } from "./coach-athlete-calendar";
 afterEach(() => {
   cleanup();
   mocks.load.mockReset();
+  mocks.navigate.mockReset();
 });
 
 const ids = {
@@ -63,14 +68,15 @@ function calendar(overrides: Partial<React.ComponentProps<typeof CoachAthleteCal
 describe("CoachAthleteCalendar", () => {
   it("renders date-only records literally and never calls an empty range available", () => {
     render(calendar());
-    expect(screen.getByRole("heading", { name: "Planned sessions", level: 2 })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Next scheduled work", level: 2 })).toBeTruthy();
     expect(screen.getByText("2026-03-08")).toBeTruthy();
     expect(screen.queryByText(/available/i)).toBeNull();
+    expect(screen.getByRole("link", { name: "Prepare a separate plan" })).toBeTruthy();
   });
 
   it("uses semantic level-two titles for loaded, denied, and error calendar states", () => {
     const view = render(calendar());
-    expect(screen.getByRole("heading", { name: "Planned sessions", level: 2 })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Next scheduled work", level: 2 })).toBeTruthy();
     view.rerender(calendar({ result: { status: "forbidden" } }));
     expect(
       screen.getByRole("heading", { name: "Planned sessions unavailable", level: 2 }),
@@ -109,6 +115,7 @@ describe("CoachAthleteCalendar", () => {
     });
     await screen.findByText("2026-03-09");
     expect(screen.getAllByText("2026-03-08")).toHaveLength(1);
+    expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
   it("discards a deferred completion through an actor A-B-A scope transition", async () => {

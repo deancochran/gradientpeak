@@ -59,7 +59,7 @@ export function ActivityPlanCard({
       </div>
 
       <div className="mt-4">
-        <ActivityPlanEstimateRow compact metrics={plan.metrics} />
+        <ActivityPlanEstimateRow compact metrics={plan.metrics} showUnavailableDetails={false} />
       </div>
 
       {presentation?.occurrences.length ? (

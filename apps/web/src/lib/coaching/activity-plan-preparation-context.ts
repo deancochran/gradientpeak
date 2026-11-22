@@ -5,6 +5,7 @@ const returnToValues = ["athlete-workspace"] as const;
 
 export type ActivityPlanPreparationContext = {
   athleteId: string;
+  calendarStartDate?: string;
   organizationId: string;
   planningDate: string;
   returnTo: (typeof returnToValues)[number];
@@ -12,6 +13,15 @@ export type ActivityPlanPreparationContext = {
 
 export type ActivityPlanPreparationSearch = ActivityPlanPreparationContext & {
   activityPlanId?: string;
+};
+
+export type AthleteWorkspaceSearch = {
+  activityPlanId?: string;
+  athleteId?: string;
+  calendarStartDate?: string;
+  organizationId?: string;
+  planningDate?: string;
+  returnTo?: (typeof returnToValues)[number];
 };
 
 function isRealDate(value: string) {
@@ -36,6 +46,10 @@ export function parseActivityPlanPreparationContext(
 ): ActivityPlanPreparationContext | null {
   const organizationId = uuid.safeParse(search.organizationId);
   const athleteId = uuid.safeParse(search.athleteId);
+  const calendarStartDate =
+    typeof search.calendarStartDate === "string" && isRealDate(search.calendarStartDate)
+      ? search.calendarStartDate
+      : undefined;
   const planningDate = typeof search.planningDate === "string" ? search.planningDate : null;
   const returnTo = search.returnTo;
   if (
@@ -46,7 +60,13 @@ export function parseActivityPlanPreparationContext(
     returnTo !== "athlete-workspace"
   )
     return null;
-  return { athleteId: athleteId.data, organizationId: organizationId.data, planningDate, returnTo };
+  return {
+    athleteId: athleteId.data,
+    ...(calendarStartDate ? { calendarStartDate } : {}),
+    organizationId: organizationId.data,
+    planningDate,
+    returnTo,
+  };
 }
 
 export function parseActivityPlanPreparationSearch(
@@ -56,6 +76,21 @@ export function parseActivityPlanPreparationSearch(
   if (!context) return null;
   const activityPlanId = uuid.safeParse(search.activityPlanId);
   return activityPlanId.success ? { ...context, activityPlanId: activityPlanId.data } : context;
+}
+
+/** Validates the route-owned context without treating an incomplete form draft as a return flow. */
+export function parseAthleteWorkspaceSearch(
+  search: Record<string, unknown>,
+): AthleteWorkspaceSearch {
+  const calendarStartDate =
+    typeof search.calendarStartDate === "string" && isRealDate(search.calendarStartDate)
+      ? search.calendarStartDate
+      : undefined;
+  const preparation = parseActivityPlanPreparationSearch(search);
+  return {
+    ...(calendarStartDate ? { calendarStartDate } : {}),
+    ...(preparation ?? {}),
+  };
 }
 
 export function activityPlanPreparationSearch(

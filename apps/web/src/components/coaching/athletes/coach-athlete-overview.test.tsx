@@ -49,11 +49,6 @@ describe("CoachAthleteOverview", () => {
     expect(screen.getByRole("cell", { name: "0.0" })).toBeTruthy();
     expect(screen.getByText(/Common Load points are derived/)).toBeTruthy();
     expect(screen.getByText(/Dates are planning dates in America\/Chicago/)).toBeTruthy();
-    expect(screen.getByRole("img", { name: /Historical Fitness/ })).toBeTruthy();
-    expect(screen.getByRole("img", { name: /Historical Fatigue/ })).toBeTruthy();
-    expect(screen.getByRole("img", { name: /Historical Form.*-10.0/ })).toBeTruthy();
-    expect(screen.getByLabelText("Training-state legend").textContent).toContain("Fitness");
-    expect(screen.getByLabelText("Training-state legend").textContent).toContain("Recorded");
     expect(screen.getByLabelText("Recent training load").className).not.toContain("dark");
     expect(screen.getByRole("table").textContent).toContain("Modeled recent load");
     expect(screen.queryByText("Published load state")).toBeNull();
@@ -63,6 +58,7 @@ describe("CoachAthleteOverview", () => {
     render(
       <CoachAthleteOverview
         athleteId="athlete-a"
+        mode="summary"
         result={{
           status: "granted",
           model: {
@@ -84,6 +80,7 @@ describe("CoachAthleteOverview", () => {
     render(
       <CoachAthleteOverview
         athleteId="athlete-a"
+        mode="summary"
         result={{
           status: "granted",
           model: {
@@ -97,7 +94,7 @@ describe("CoachAthleteOverview", () => {
     );
 
     expect(screen.getByText(/Modeled baseline is still being established/)).toBeTruthy();
-    expect(screen.getByRole("cell", { name: "0.0" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: /Historical training state/ })).toBeTruthy();
   });
 
   it("renders shared activity history without exposing unshared metrics", () => {
@@ -129,6 +126,20 @@ describe("CoachAthleteOverview", () => {
     );
     expect(screen.getByText("Published training state")).toBeTruthy();
     expect(screen.getByText("Published performance estimates")).toBeTruthy();
+  });
+
+  it("shows one recorded historical-state visual in the concise workspace summary", () => {
+    render(
+      <CoachAthleteOverview
+        athleteId="athlete-a"
+        mode="summary"
+        result={{ status: "granted", model: { loadHistory: availableHistory } }}
+      />,
+    );
+
+    expect(screen.getByRole("img", { name: /Historical training state/ })).toBeTruthy();
+    expect(screen.getByLabelText("Chart legend").textContent).toContain("Fitness · Recorded");
+    expect(screen.queryByRole("table")).toBeNull();
   });
 
   it("does not call stale, partial published baseline values current", () => {

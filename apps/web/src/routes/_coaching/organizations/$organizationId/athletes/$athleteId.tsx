@@ -1,3 +1,4 @@
+import { addDaysDateOnlyUtc } from "@repo/core/calendar";
 import { Button } from "@repo/ui/components/button";
 import { createFileRoute, Link, useRouter, useRouterState } from "@tanstack/react-router";
 import { AthleteWorkspaceSwitcher } from "../../../../../components/coaching/athletes/athlete-workspace-switcher";
@@ -9,6 +10,7 @@ import { CoachAthleteOverview } from "../../../../../components/coaching/athlete
 import { CoachAthleteZonesSection } from "../../../../../components/coaching/athletes/coach-athlete-zones-section";
 import {
   parseActivityPlanPreparationSearch,
+  parseAthleteWorkspaceSearch,
   preparationMatchesWorkspace,
 } from "../../../../../lib/coaching/activity-plan-preparation-context";
 import {
@@ -32,12 +34,18 @@ export const Route = createFileRoute(
 )({
   pendingMs: 0,
   validateSearch: (search: Record<string, unknown>) => {
-    const preparation = parseActivityPlanPreparationSearch(search);
-    return preparation ?? {};
+    return parseAthleteWorkspaceSearch(search);
   },
-  loader: async ({ context, params }) => {
+  loaderDeps: ({ search }) => ({ calendarStartDate: search.calendarStartDate }),
+  loader: async ({ context, params, deps = {} }) => {
     const data = { organizationId: params.organizationId, athleteProfileId: params.athleteId };
-    const range = currentCalendarWeek();
+    const defaultRange = currentCalendarWeek();
+    const range = deps.calendarStartDate
+      ? {
+          startDate: deps.calendarStartDate,
+          endDateExclusive: addDaysDateOnlyUtc(deps.calendarStartDate, 7),
+        }
+      : defaultRange;
     const [overview, directory, identity, calendar, completedActivities, goals, zones] =
       await Promise.all([
         loadCoachAthleteOverview({ data }),
@@ -108,8 +116,9 @@ function AthleteWorkspacePage() {
   const result = Route.useLoaderData();
   const { overview, directory, identity, calendar, completedActivities, goals, zones } = result;
   const { athleteId, organizationId } = Route.useParams();
+  const workspaceSearch = Route.useSearch();
   const preparationSearch = parseActivityPlanPreparationSearch(
-    Route.useSearch() as Record<string, unknown>,
+    workspaceSearch as Record<string, unknown>,
   );
   const { actorProfileId } = Route.useRouteContext();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
@@ -150,36 +159,49 @@ function AthleteWorkspacePage() {
         selectedAthlete={identity}
       />
       <div className="grid items-start gap-6 xl:grid-cols-2">
-        {identity ? (
-          <CoachActivityPlanPublication
-            athleteId={athleteId}
-            key={`${organizationId}:${athleteId}:${preparation?.activityPlanId ?? ""}:${preparation?.planningDate ?? ""}`}
-            organizationId={organizationId}
-            preparation={preparation}
-          />
-        ) : null}
-        <div>
+        <div className="space-y-6">
           <CoachAthleteCompletedActivities
             actorProfileId={actorProfileId}
             athleteProfileId={athleteId}
-            key={`${actorProfileId}:${organizationId}:${athleteId}`}
+            key={`completed-activities:${actorProfileId}:${organizationId}:${athleteId}`}
             organizationId={organizationId}
             onRetry={() => router.invalidate({ sync: true })}
             result={
               identity ? (completedActivities ?? { status: "forbidden" }) : { status: "forbidden" }
             }
           />
+          <CoachAthleteCalendar
+            actorProfileId={actorProfileId}
+            athleteId={athleteId}
+            initialRange={
+              workspaceSearch.calendarStartDate
+                ? {
+                    startDate: workspaceSearch.calendarStartDate,
+                    endDateExclusive: addDaysDateOnlyUtc(workspaceSearch.calendarStartDate, 7),
+                  }
+                : result.calendarRange
+            }
+            key={`calendar:${actorProfileId}:${organizationId}:${athleteId}`}
+            organizationId={organizationId}
+            result={identity ? calendar : forbiddenCalendar}
+          />
         </div>
-        <CoachAthleteCalendar
-          actorProfileId={actorProfileId}
-          athleteId={athleteId}
-          initialRange={result.calendarRange}
-          key={`${actorProfileId}:${organizationId}:${athleteId}`}
-          organizationId={organizationId}
-          result={identity ? calendar : forbiddenCalendar}
-        />
+        {identity ? (
+          <CoachActivityPlanPublication
+            athleteId={athleteId}
+            {...(workspaceSearch.calendarStartDate
+              ? { calendarStartDate: workspaceSearch.calendarStartDate }
+              : {})}
+            key={`${organizationId}:${athleteId}`}
+            organizationId={organizationId}
+            preparation={preparation}
+          />
+        ) : null}
       </div>
-      <details className="group rounded-xl border border-border bg-muted/50" open>
+      {identity && overview.status === "granted" ? (
+        <CoachAthleteOverview athleteId={athleteId} mode="summary" result={overview} />
+      ) : null}
+      <details className="group rounded-xl border border-border bg-muted/50">
         <summary className="cursor-pointer list-none px-5 py-4 font-medium text-foreground marker:hidden">
           <span className="flex items-center justify-between gap-4">
             Training context and shared data

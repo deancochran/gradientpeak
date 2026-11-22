@@ -11,7 +11,13 @@ const mocks = vi.hoisted(() => ({
   directory: vi.fn(),
   invalidate: vi.fn(),
   overview: vi.fn(),
-  publicationProps: undefined as undefined | { preparation?: unknown },
+  calendarProps: undefined as undefined | { initialRange?: unknown },
+  publicationProps: undefined as
+    | undefined
+    | {
+        calendarStartDate?: unknown;
+        preparation?: unknown;
+      },
   selected: vi.fn(),
   zones: vi.fn(),
 }));
@@ -52,8 +58,14 @@ vi.mock("../../../../../components/coaching/athletes/coach-athlete-overview", ()
   CoachAthleteOverview: ({ athleteId }: { athleteId: string }) => <p>overview for {athleteId}</p>,
 }));
 vi.mock("../../../../../components/coaching/athletes/coach-activity-plan-publication", () => ({
-  CoachActivityPlanPublication: ({ preparation }: { preparation?: unknown }) => {
-    mocks.publicationProps = { preparation };
+  CoachActivityPlanPublication: ({
+    calendarStartDate,
+    preparation,
+  }: {
+    calendarStartDate?: unknown;
+    preparation?: unknown;
+  }) => {
+    mocks.publicationProps = { calendarStartDate, preparation };
     return <p>activityPlan publication</p>;
   },
 }));
@@ -61,9 +73,16 @@ vi.mock("../../../../../components/coaching/athletes/coach-athlete-goals", () =>
   CoachAthleteGoals: () => <p>goals</p>,
 }));
 vi.mock("../../../../../components/coaching/athletes/coach-athlete-calendar", () => ({
-  CoachAthleteCalendar: ({ result }: { result: { status: string } }) => (
-    <p data-testid="calendar">calendar {result.status}</p>
-  ),
+  CoachAthleteCalendar: ({
+    initialRange,
+    result,
+  }: {
+    initialRange?: unknown;
+    result: { status: string };
+  }) => {
+    mocks.calendarProps = { initialRange };
+    return <p data-testid="calendar">calendar {result.status}</p>;
+  },
 }));
 vi.mock("../../../../../components/coaching/athletes/coach-athlete-completed-activities", () => ({
   CoachAthleteCompletedActivities: ({ result }: { result: { status: string } }) => (
@@ -148,11 +167,40 @@ afterEach(() => {
   mocks.invalidate.mockReset();
   mocks.overview.mockReset();
   mocks.publicationProps = undefined;
+  mocks.calendarProps = undefined;
   mocks.selected.mockReset();
   mocks.zones.mockReset();
 });
 
 describe("coach athlete workspace route", () => {
+  it("gives sibling calendar and completion resources distinct identity-fenced keys", () => {
+    state.loaderData = {
+      actorProfileId: "actor-a",
+      athleteId: state.params.athleteId,
+      organizationId: state.params.organizationId,
+      overview: { status: "granted" },
+      directory: { status: "granted", items: [] },
+      identity: { profileId: state.params.athleteId },
+      calendar: { status: "granted", events: [], nextCursor: null },
+      calendarRange: { startDate: "2026-03-08", endDateExclusive: "2026-03-15" },
+      zones: {
+        actorId: "actor-a",
+        athleteProfileId: state.params.athleteId,
+        organizationId: state.params.organizationId,
+        revision: "fresh-revision",
+        state: { kind: "denied" },
+      },
+    };
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const route = Route as unknown as { component: () => React.ReactNode };
+    render(route.component());
+
+    expect(consoleError).not.toHaveBeenCalledWith(
+      expect.stringContaining("Encountered two children with the same key"),
+      expect.anything(),
+    );
+  });
+
   it("does not render a delayed prior athlete response after the selected athlete changes", () => {
     state.params = {
       athleteId: "33333333-3333-4333-8333-333333333333",
@@ -238,6 +286,37 @@ describe("coach athlete workspace route", () => {
     render(route.component());
 
     expect(mocks.publicationProps?.preparation).toBeNull();
+  });
+
+  it("passes a week-only route anchor to both calendar and publication context", () => {
+    state.search = { calendarStartDate: "2026-11-22" };
+    state.loaderData = {
+      actorProfileId: "actor-a",
+      athleteId: state.params.athleteId,
+      organizationId: state.params.organizationId,
+      overview: { status: "granted" },
+      directory: { status: "granted", items: [] },
+      identity: { profileId: state.params.athleteId },
+      calendar: { status: "granted", events: [], nextCursor: null },
+      calendarRange: { startDate: "2026-11-22", endDateExclusive: "2026-11-29" },
+      zones: {
+        actorId: "actor-a",
+        athleteProfileId: state.params.athleteId,
+        organizationId: state.params.organizationId,
+        revision: "fresh-revision",
+        state: { kind: "denied" },
+      },
+    };
+    const route = Route as unknown as { component: () => React.ReactNode };
+    render(route.component());
+
+    expect(mocks.publicationProps).toEqual({
+      calendarStartDate: "2026-11-22",
+      preparation: null,
+    });
+    expect(mocks.calendarProps).toEqual({
+      initialRange: { startDate: "2026-11-22", endDateExclusive: "2026-11-29" },
+    });
   });
 
   it("does not render realistic prior granted zones after the actor changes", () => {
@@ -421,7 +500,7 @@ describe("coach athlete workspace route", () => {
     const route = Route as unknown as { component: () => React.ReactNode };
     render(route.component());
 
-    expect(screen.getByText(`overview for ${state.params.athleteId}`)).toBeTruthy();
+    expect(screen.getAllByText(`overview for ${state.params.athleteId}`)).toHaveLength(2);
     expect(screen.getByTestId("calendar").textContent).toContain("calendar granted");
     expect(screen.getByRole("alert").textContent).toContain("Bike zones could not be loaded.");
     expect(screen.getByRole("button", { name: "Retry bike zones" })).toBeTruthy();

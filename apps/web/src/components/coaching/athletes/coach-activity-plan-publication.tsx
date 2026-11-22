@@ -1,3 +1,4 @@
+import type { ActivityPlanSummary } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import {
   Card,
@@ -7,14 +8,16 @@ import {
   CardTitle,
 } from "@repo/ui/components/card";
 import { Label } from "@repo/ui/components/label";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { api } from "../../../lib/api/client";
 import {
   type ActivityPlanPreparationSearch,
   activityPlanPreparationSearch,
   parseActivityPlanPreparationContext,
+  parseAthleteWorkspaceSearch,
 } from "../../../lib/coaching/activity-plan-preparation-context";
+import { ActivityPlanCard } from "../../activity-plan/activity-plan-card";
 
 type PublicationInput = {
   activityPlanId: string;
@@ -50,13 +53,25 @@ function errorMessage(error: unknown) {
  */
 export function CoachActivityPlanPublication({
   athleteId,
+  calendarStartDate,
   organizationId,
   preparation = null,
 }: {
   athleteId: string;
+  calendarStartDate?: string;
   organizationId: string;
   preparation?: ActivityPlanPreparationSearch | null;
 }) {
+  const navigate = useNavigate();
+  const liveCalendarStartDate = useRouterState({
+    select: (state) =>
+      typeof state.location.search.calendarStartDate === "string"
+        ? state.location.search.calendarStartDate
+        : undefined,
+  });
+  const liveWorkspaceSearch = useRouterState({
+    select: (state) => state.location.search as Record<string, unknown>,
+  });
   const organizations = api.organizations.listMine.useQuery({ cursor: null, limit: 50 });
   const activityPlans = api.activityPlans.list.useQuery({ limit: 50, ownerScope: "own" });
   const publish = api.coachingPublication.publish.useMutation({ retry: false });
@@ -80,7 +95,6 @@ export function CoachActivityPlanPublication({
   const [success, setSuccess] = useState<string | null>(null);
   const operationId = useRef(crypto.randomUUID());
   const previewGeneration = useRef(0);
-
   // The library list is intentionally paginated. Resolve the selected id independently so a
   // prepared plan beyond its first page can still be published, while canEdit keeps this flow
   // restricted to the coach's own plan.
@@ -89,6 +103,17 @@ export function CoachActivityPlanPublication({
     { enabled: Boolean(activityPlanId), retry: false },
   );
   const selectedPlanDetail = selectedPlanQuery.data?.detail;
+  const selectedPlanCard: ActivityPlanSummary | null =
+    selectedPlanDetail?.id === activityPlanId &&
+    selectedPlanDetail.capabilities.canEdit &&
+    !selectedPlanQuery.isError &&
+    !selectedPlanQuery.isLoading &&
+    selectedPlanDetail.structure
+      ? {
+          ...selectedPlanDetail,
+          contractVersion: "activity-plan-summary-v1",
+        }
+      : null;
   const selectedPlan =
     selectedPlanDetail?.id === activityPlanId && selectedPlanDetail.capabilities.canEdit
       ? {
@@ -131,15 +156,83 @@ export function CoachActivityPlanPublication({
     operationId.current = crypto.randomUUID();
   }
 
+  // A week transition updates the router location before its loader settles.
+  // Use that live URL anchor for both the next replacement and the outbound
+  // library link; the loader-owned prop may still describe the previous week.
+  const currentCalendarStartDate = liveCalendarStartDate ?? calendarStartDate;
   // The workspace can remain mounted when a coach changes dates. Always derive outbound
   // preparation from the current form state rather than reusing the arrival URL's old date.
   const preparationContext = parseActivityPlanPreparationContext({
     athleteId,
+    ...(currentCalendarStartDate ? { calendarStartDate: currentCalendarStartDate } : {}),
     organizationId,
     planningDate,
     returnTo: "athlete-workspace",
   });
+  const selectedPlanHref =
+    selectedPlanCard && preparationContext && !publish.isPending
+      ? `/activity-plans/${selectedPlanCard.id}?${new URLSearchParams(
+          activityPlanPreparationSearch(preparationContext, selectedPlanCard.id),
+        ).toString()}`
+      : undefined;
   const selectedPlanIsInLibrary = plans.some((plan) => plan.id === selectedPlan?.id);
+
+  function retainWorkspaceContext(next: { activityPlanId?: string; planningDate: string }) {
+    const nextContext = parseActivityPlanPreparationContext({
+      athleteId,
+      ...(currentCalendarStartDate ? { calendarStartDate: currentCalendarStartDate } : {}),
+      organizationId,
+      planningDate: next.planningDate,
+      returnTo: "athlete-workspace",
+    });
+    // A date control can temporarily be blank while the coach corrects it.
+    // Keep that in-memory draft and the last valid return URL intact.
+    if (!nextContext) return;
+    const current = parseAthleteWorkspaceSearch(liveWorkspaceSearch);
+    const nextSearch = activityPlanPreparationSearch(nextContext, next.activityPlanId);
+    if (
+      current.activityPlanId === nextSearch.activityPlanId &&
+      current.athleteId === nextSearch.athleteId &&
+      current.calendarStartDate === nextSearch.calendarStartDate &&
+      current.organizationId === nextSearch.organizationId &&
+      current.planningDate === nextSearch.planningDate &&
+      current.returnTo === nextSearch.returnTo
+    )
+      return;
+    void navigate({
+      to: "/organizations/$organizationId/athletes/$athleteId",
+      params: { athleteId, organizationId },
+      search: ((previous: Record<string, unknown>) => {
+        const {
+          activityPlanId: _priorActivityPlanId,
+          athleteId: _priorAthleteId,
+          calendarStartDate: _priorCalendarStartDate,
+          organizationId: _priorOrganizationId,
+          planningDate: _priorPlanningDate,
+          returnTo: _priorReturnTo,
+          ...otherSearch
+        } = previous;
+        const latest = parseAthleteWorkspaceSearch(previous);
+        const context = parseActivityPlanPreparationContext({
+          athleteId,
+          ...((latest.calendarStartDate ?? currentCalendarStartDate)
+            ? { calendarStartDate: latest.calendarStartDate ?? currentCalendarStartDate }
+            : {}),
+          organizationId,
+          planningDate: next.planningDate,
+          returnTo: "athlete-workspace",
+        });
+        // nextContext proves this date is valid. Keep the fallback fail-closed
+        // in case a future caller changes the callback's previous search shape.
+        if (!context) return otherSearch;
+        return {
+          ...otherSearch,
+          ...activityPlanPreparationSearch(context, next.activityPlanId),
+        };
+      }) as never,
+      replace: true,
+    } as never);
+  }
 
   async function requestPreview() {
     if (!input || !key) return;
@@ -187,9 +280,6 @@ export function CoachActivityPlanPublication({
   return (
     <Card className="border-primary/30 bg-background text-foreground shadow-[0_0_0_1px_rgba(34,211,238,0.04)]">
       <CardHeader className="space-y-2">
-        <p className="text-xs font-medium uppercase tracking-[0.18em] text-primary">
-          Primary action
-        </p>
         <CardTitle className="text-xl tracking-tight">Publish an activity plan</CardTitle>
         <CardDescription className="text-muted-foreground">
           Choose one of your activity plans and the athlete’s local planning date. Publishing
@@ -197,27 +287,35 @@ export function CoachActivityPlanPublication({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <Button
-          asChild
-          className="border-border bg-card text-foreground hover:bg-muted hover:text-foreground"
-          disabled={!preparationContext}
-          type="button"
-          variant="outline"
-        >
-          <Link
-            to="/activity-plans"
-            search={
-              preparationContext
-                ? (activityPlanPreparationSearch(
-                    preparationContext,
-                    activityPlanId || undefined,
-                  ) as never)
-                : { activity_category: undefined, q: undefined }
-            }
+        {preparationContext && !publish.isPending ? (
+          <Button
+            asChild
+            className="border-border bg-card text-foreground hover:bg-muted hover:text-foreground"
+            type="button"
+            variant="outline"
+          >
+            <Link
+              to="/activity-plans"
+              search={
+                activityPlanPreparationSearch(
+                  preparationContext,
+                  activityPlanId || undefined,
+                ) as never
+              }
+            >
+              Prepare activity plan
+            </Link>
+          </Button>
+        ) : (
+          <Button
+            className="border-border bg-card text-foreground hover:bg-muted hover:text-foreground"
+            disabled
+            type="button"
+            variant="outline"
           >
             Prepare activity plan
-          </Link>
-        </Button>
+          </Button>
+        )}
         {!preparationContext ? (
           <p className="text-sm text-muted-foreground">
             Choose a real athlete planning date before preparing an activity plan.
@@ -254,7 +352,9 @@ export function CoachActivityPlanPublication({
               id="coach-activity-plan"
               onChange={(event) => {
                 invalidatePreviewIntent();
-                setActivityPlanId(event.target.value);
+                const nextActivityPlanId = event.target.value;
+                setActivityPlanId(nextActivityPlanId);
+                retainWorkspaceContext({ activityPlanId: nextActivityPlanId, planningDate });
               }}
               value={activityPlanId}
             >
@@ -284,7 +384,9 @@ export function CoachActivityPlanPublication({
               id="coach-planning-date"
               onChange={(event) => {
                 invalidatePreviewIntent();
-                setPlanningDate(event.target.value);
+                const nextPlanningDate = event.target.value;
+                setPlanningDate(nextPlanningDate);
+                retainWorkspaceContext({ activityPlanId, planningDate: nextPlanningDate });
               }}
               type="date"
               value={planningDate}
@@ -321,6 +423,24 @@ export function CoachActivityPlanPublication({
               ? "The selected activity plan is not editable in your owned library."
               : "The selected activity plan is no longer available."}
           </p>
+        ) : null}
+        {selectedPlanCard ? (
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-foreground">Selected activity plan</p>
+            <ActivityPlanCard
+              disabled={!selectedPlanHref}
+              openLabel={`Inspect or edit selected activity plan ${selectedPlanCard.name}`}
+              plan={selectedPlanCard}
+              {...(selectedPlanHref ? { href: selectedPlanHref } : {})}
+            />
+            <p className="text-xs text-muted-foreground">
+              {selectedPlanHref
+                ? "Inspect or edit this plan before publishing. Your athlete, planning date, and selected week stay attached to the return link."
+                : publish.isPending
+                  ? "Plan inspection is unavailable while publication is pending."
+                  : "Choose a real athlete planning date before inspecting or editing this plan."}
+            </p>
+          </div>
         ) : null}
         {error ? (
           <p role="alert" className="text-sm text-destructive">

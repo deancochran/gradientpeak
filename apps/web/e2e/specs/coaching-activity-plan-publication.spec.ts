@@ -82,6 +82,8 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
   const engagementId = e2eIdentity.uuid("publication-engagement");
   const metricsPolicyId = e2eIdentity.uuid("publication-metrics-policy");
   const metricsConsentId = e2eIdentity.uuid("publication-metrics-consent");
+  const calendarPolicyId = e2eIdentity.uuid("publication-calendar-policy");
+  const calendarConsentId = e2eIdentity.uuid("publication-calendar-consent");
   await e2eDatabase.typedTransaction(async (transaction) => {
     await transaction
       .update(profiles)
@@ -108,23 +110,44 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
       coach_membership_id: coachMembershipId,
       assignment_kind: "primary",
     });
-    await transaction.insert(athleteConsentPolicyVersions).values({
-      id: metricsPolicyId,
-      scope_key: "metrics",
-      effective_from: new Date(Date.now() - 1_000),
-      jurisdiction: "e2e",
-      terms_text: "Disposable coach assessment metrics consent",
-      content_digest: `sha256:${metricsPolicyId}`,
-    });
-    await transaction.insert(athleteDataSharingConsents).values({
-      id: metricsConsentId,
-      organization_id: organizationId,
-      engagement_id: engagementId,
-      athlete_profile_id: athleteActor.profileId,
-      scope_key: "metrics",
-      policy_version_id: metricsPolicyId,
-      granted_by_profile_id: athleteActor.profileId,
-    });
+    await transaction.insert(athleteConsentPolicyVersions).values([
+      {
+        id: metricsPolicyId,
+        scope_key: "metrics",
+        effective_from: new Date(Date.now() - 1_000),
+        jurisdiction: "e2e",
+        terms_text: "Disposable coach assessment metrics consent",
+        content_digest: `sha256:${metricsPolicyId}`,
+      },
+      {
+        id: calendarPolicyId,
+        scope_key: "calendar",
+        effective_from: new Date(Date.now() - 1_000),
+        jurisdiction: "e2e",
+        terms_text: "Disposable planned-session calendar consent",
+        content_digest: `sha256:${calendarPolicyId}`,
+      },
+    ]);
+    await transaction.insert(athleteDataSharingConsents).values([
+      {
+        id: metricsConsentId,
+        organization_id: organizationId,
+        engagement_id: engagementId,
+        athlete_profile_id: athleteActor.profileId,
+        scope_key: "metrics",
+        policy_version_id: metricsPolicyId,
+        granted_by_profile_id: athleteActor.profileId,
+      },
+      {
+        id: calendarConsentId,
+        organization_id: organizationId,
+        engagement_id: engagementId,
+        athlete_profile_id: athleteActor.profileId,
+        scope_key: "calendar",
+        policy_version_id: calendarPolicyId,
+        granted_by_profile_id: athleteActor.profileId,
+      },
+    ]);
     const assessedAt = new Date();
     const athleteState = {
       source_revision: 1,
@@ -169,13 +192,27 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
 
   await coachPage.goto(`/organizations/${organizationId}/athletes/${athleteActor.profileId}`);
   await waitForAppHydration(coachPage);
-  await expect(coachPage.getByText("255 watts", { exact: true })).toBeVisible();
-  await expect(coachPage.getByText("Published training state", { exact: true })).toBeVisible();
-  await expect(coachPage.getByText(/Fitness \(Long-term load\)/)).toBeVisible();
-  await expect(coachPage.getByText(/Fatigue \(Recent load\)/)).toBeVisible();
-  await expect(coachPage.getByText(/Form \(Load balance\)/)).toBeVisible();
   await expect(coachPage.getByText("Publish an activity plan", { exact: true })).toBeVisible();
+  await coachPage.getByRole("button", { name: "Next week", exact: true }).click();
+  // Do not wait for the new range loader. A date edit while it is pending must
+  // compose with the live range URL, then survive library navigation and Back.
+  await expect(coachPage).toHaveURL(/calendarStartDate=/);
   await coachPage.getByLabel("Athlete planning date", { exact: true }).fill(planningDate);
+  await expect(coachPage.getByLabel("Athlete planning date", { exact: true })).toHaveValue(
+    planningDate,
+  );
+  await expect(
+    coachPage.getByRole("link", { name: "Prepare activity plan", exact: true }),
+  ).toBeVisible();
+  await coachPage.getByRole("link", { name: "Prepare activity plan", exact: true }).click();
+  await expect(coachPage.getByText("Preparing for an athlete", { exact: true })).toBeVisible();
+  await coachPage.goBack();
+  await expect(coachPage.getByLabel("Athlete planning date", { exact: true })).toHaveValue(
+    planningDate,
+  );
+  await expect(
+    coachPage.getByText(/Scheduled work in .* \(exclusive\)\. This selected range/i),
+  ).toBeVisible();
   await coachPage.getByRole("link", { name: "Prepare activity plan", exact: true }).click();
   await expect(coachPage.getByText("Preparing for an athlete", { exact: true })).toBeVisible();
   await coachPage.getByRole("button", { name: "Create activity plan", exact: true }).click();
@@ -184,9 +221,7 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
   await coachPage.getByLabel("Activity category", { exact: true }).selectOption("bike");
   await coachPage.getByRole("button", { name: "Add step", exact: true }).click();
   const preparedStep = coachPage.getByTestId("activity-plan-item-0");
-  await preparedStep.getByRole("button", { name: "Add name", exact: true }).click();
   await preparedStep.getByLabel("Name (optional)", { exact: true }).fill("Tempo block");
-  await preparedStep.getByRole("button", { name: "Add instructions", exact: true }).click();
   await preparedStep
     .getByLabel("Instructions (optional)", { exact: true })
     .fill("Hold smooth pressure through the full interval.");
@@ -407,9 +442,7 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
   });
 
   const activitiesPolicyId = e2eIdentity.uuid("publication-activities-policy");
-  const calendarPolicyId = e2eIdentity.uuid("publication-calendar-policy");
   const activitiesConsentId = e2eIdentity.uuid("publication-activities-consent");
-  const calendarConsentId = e2eIdentity.uuid("publication-calendar-consent");
   await e2eDatabase.typedTransaction(async (transaction) => {
     await transaction.insert(athleteConsentPolicyVersions).values([
       {
@@ -420,14 +453,6 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
         terms_text: "Disposable completed activities consent",
         content_digest: `sha256:${activitiesPolicyId}`,
       },
-      {
-        id: calendarPolicyId,
-        scope_key: "calendar",
-        effective_from: new Date(Date.now() - 1_000),
-        jurisdiction: "e2e",
-        terms_text: "Disposable completed session calendar consent",
-        content_digest: `sha256:${calendarPolicyId}`,
-      },
     ]);
     await transaction.insert(athleteDataSharingConsents).values([
       {
@@ -437,15 +462,6 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
         athlete_profile_id: athleteActor.profileId,
         scope_key: "activities",
         policy_version_id: activitiesPolicyId,
-        granted_by_profile_id: athleteActor.profileId,
-      },
-      {
-        id: calendarConsentId,
-        organization_id: organizationId,
-        engagement_id: engagementId,
-        athlete_profile_id: athleteActor.profileId,
-        scope_key: "calendar",
-        policy_version_id: calendarPolicyId,
         granted_by_profile_id: athleteActor.profileId,
       },
     ]);
@@ -535,8 +551,14 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
     `/organizations/${organizationId}/athletes/${athleteActor.profileId}`,
   );
   await expect(
-    foreignCoachPage.getByRole("heading", { name: "Coaching access required", exact: true }),
+    foreignCoachPage.getByRole("heading", { name: "Organization access unavailable", exact: true }),
   ).toBeVisible();
+  await expect(foreignCoachPage.getByText("Publish an activity plan", { exact: true })).toHaveCount(
+    0,
+  );
+  await expect(foreignCoachPage.getByLabel("Athlete planning date", { exact: true })).toHaveCount(
+    0,
+  );
   await foreignCoachPage.close();
 
   await athletePage.goto("/settings#coaching");
