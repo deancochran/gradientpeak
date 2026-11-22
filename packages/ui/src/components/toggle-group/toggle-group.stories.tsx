@@ -1,6 +1,6 @@
-import type { Meta, StoryObj } from "@storybook/react";
-import { expect } from "@storybook/test";
+import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
+import { expect } from "storybook/test";
 
 import { toggleGroupFixtures } from "./fixtures";
 import { ToggleGroup, ToggleGroupItem } from "./index.web";
