@@ -182,7 +182,7 @@ describe("TrainingPlanCard", () => {
     expect(screen.getByText("10 weeks")).toBeTruthy();
     expect(screen.getByText("Authored avg: 0.2/week")).toBeTruthy();
     expect(screen.getByText("run")).toBeTruthy();
-    expect(screen.queryByText("Level")).toBeNull();
+    expect(screen.getByText("Level")).toBeTruthy();
     expect(screen.queryByTestId("training-plan-card-like-button-training-plan-1")).toBeNull();
     expect(screen.queryByText("Coach Kim")).toBeNull();
     expect(screen.queryByText("Mar 21, 2026 • 8:00 AM")).toBeNull();
@@ -240,7 +240,7 @@ describe("TrainingPlanCard", () => {
     expect(screen.getByText("Target: 4/week")).toBeTruthy();
   });
 
-  it("renders metadata from a flattened public template projection", async () => {
+  it("keeps all four compact list metrics from a flattened public template projection", async () => {
     await renderNative(
       <TrainingPlanCard
         plan={{
@@ -251,6 +251,7 @@ describe("TrainingPlanCard", () => {
           experienceLevel: "beginner",
           sessionsPerWeek: 3,
         }}
+        variant="list"
       />,
     );
 

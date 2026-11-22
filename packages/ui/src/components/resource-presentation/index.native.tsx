@@ -57,7 +57,11 @@ export function ResourceCardShell({
           className={navigationClassName}
           disabled={isDisabled}
           onPress={isDisabled ? undefined : onPress}
-          style={({ pressed }) => (pressed && !isDisabled ? { opacity: 0.85 } : undefined)}
+          style={({ pressed }) => ({
+            minHeight: 44,
+            minWidth: 44,
+            ...(pressed && !isDisabled ? { opacity: 0.85 } : {}),
+          })}
           testID={testID}
         >
           {children}

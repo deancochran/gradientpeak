@@ -26,6 +26,11 @@ describe("Resource presentation native", () => {
 
     const navigation = getByLabelText("Open route Ridge loop");
     expect(navigation.props.accessibilityRole).toBe("button");
+    expect(navigation.props.style({ pressed: false })).toMatchObject({
+      minHeight: 44,
+      minWidth: 44,
+    });
+    expect(navigation.props.style({ pressed: true })).toMatchObject({ opacity: 0.85 });
     await fireEvent.press(navigation);
     expect(onOpen).toHaveBeenCalledTimes(1);
   });
