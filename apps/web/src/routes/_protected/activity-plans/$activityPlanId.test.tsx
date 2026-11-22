@@ -10,6 +10,10 @@ const mocks = vi.hoisted(() => ({
     onError: (error: { message: string }) => void;
     onSettled: () => void;
   },
+  duplicateOptions: null as null | {
+    onSuccess: (duplicated: { id: string }) => void | Promise<void>;
+  },
+  invalidateActivityPlans: vi.fn(),
   scheduleError: false,
   scheduleItems: [] as Array<Record<string, unknown>>,
   scheduleLoading: false,
@@ -22,6 +26,7 @@ const mocks = vi.hoisted(() => ({
   planInputs: [] as unknown[],
   recordPlanSearch: undefined as unknown,
   activityPlanId: "invalid-plan",
+  librarySearch: undefined as Record<string, unknown> | undefined,
   navigate: vi.fn(),
   search: { edit: undefined } as Record<string, unknown>,
 }));
@@ -32,10 +37,11 @@ vi.mock("@tanstack/react-router", () => ({
     to,
   }: {
     children: React.ReactNode;
-    search?: Record<string, string>;
+    search?: Record<string, unknown>;
     to: string;
   }) => {
     if (to === "/record/plan") mocks.recordPlanSearch = search;
+    if (to === "/activity-plans") mocks.librarySearch = search;
     return (
       <a href={`${to}${search?.activityPlanId ? `?activityPlanId=${search.activityPlanId}` : ""}`}>
         {children}
@@ -78,7 +84,12 @@ vi.mock("../../../lib/api/client", () => ({
         },
       },
       update: { useMutation: () => ({ isPending: false, mutateAsync: vi.fn() }) },
-      duplicate: { useMutation: () => ({ isPending: false, mutate: vi.fn() }) },
+      duplicate: {
+        useMutation: (options: NonNullable<typeof mocks.duplicateOptions>) => {
+          mocks.duplicateOptions = options;
+          return { isPending: false, mutate: vi.fn() };
+        },
+      },
       delete: { useMutation: () => ({ isPending: false, mutate: vi.fn(), mutateAsync: vi.fn() }) },
     },
     calendar: {
@@ -146,13 +157,19 @@ vi.mock("../../../lib/api/client", () => ({
       update: { useMutation: () => ({ isPending: false, mutate: vi.fn() }) },
     },
     social: { toggleLike: { useMutation: () => ({ isPending: false, mutate: vi.fn() }) } },
-    useUtils: () => ({ activityPlans: { invalidate: vi.fn() }, calendar: { invalidate: vi.fn() } }),
+    useUtils: () => ({
+      activityPlans: { invalidate: mocks.invalidateActivityPlans },
+      calendar: { invalidate: vi.fn() },
+    }),
   },
 }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 beforeEach(() => {
   mocks.createEvent.mockReset();
   mocks.moveEvent.mockReset();
+  mocks.duplicateOptions = null;
+  mocks.invalidateActivityPlans.mockReset();
+  mocks.invalidateActivityPlans.mockResolvedValue(undefined);
   mocks.scheduleError = false;
   mocks.scheduleItems = [];
   mocks.scheduleLoading = false;
@@ -162,6 +179,7 @@ beforeEach(() => {
   mocks.refetchSchedule.mockReset();
   mocks.eventListInput = undefined;
   mocks.planInputs = [];
+  mocks.librarySearch = undefined;
   mocks.recordPlanSearch = undefined;
   mocks.activityPlanId = "invalid-plan";
   mocks.navigate.mockReset();
@@ -185,6 +203,19 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 describe("ActivityPlanDetailPage invalid plan", () => {
+  it("retains validated library filters in the detail route search", () => {
+    const validateSearch = (
+      Route as unknown as {
+        validateSearch: (search: Record<string, unknown>) => Record<string, unknown>;
+      }
+    ).validateSearch;
+
+    expect(validateSearch({ activity_category: "bike", q: "tempo" })).toEqual({
+      activity_category: "bike",
+      edit: undefined,
+      q: "tempo",
+    });
+  });
   it("treats a noncanonical structure as an unavailable API result", () => {
     const ActivityPlanDetailPage = (
       Route as unknown as {
@@ -198,6 +229,81 @@ describe("ActivityPlanDetailPage invalid plan", () => {
   });
 });
 describe("ActivityPlanDetailPage print", () => {
+  it("retains validated library and preparation context when duplicate navigation succeeds", async () => {
+    mocks.search = {
+      activity_category: "bike",
+      athleteId: "22222222-2222-4222-8222-222222222222",
+      calendarStartDate: "2026-11-10",
+      organizationId: "11111111-1111-4111-8111-111111111111",
+      planningDate: "2026-11-12",
+      q: "tempo",
+      returnTo: "athlete-workspace",
+    };
+    mocks.plan = {
+      detail: {
+        id: "invalid-plan",
+        name: "Tempo bike",
+        description: null,
+        activityCategory: "bike",
+        visibility: "private",
+        createdAt: "2026-07-01T00:00:00.000Z",
+        gpsRecordingEnabled: true,
+        owner: null,
+        capabilities: { canDuplicate: true, canEdit: false, canSchedule: false },
+        engagement: { likes: 0, viewerHasLiked: false },
+        metrics: [],
+        structure: null,
+      },
+      edit: null,
+    };
+    const ActivityPlanDetailPage = (Route as unknown as { component: React.ComponentType })
+      .component;
+    render(<ActivityPlanDetailPage />);
+
+    await act(async () => {
+      await mocks.duplicateOptions?.onSuccess({ id: "duplicated-plan" });
+    });
+
+    expect(mocks.invalidateActivityPlans).toHaveBeenCalledOnce();
+    expect(mocks.navigate).toHaveBeenCalledWith({
+      params: { activityPlanId: "duplicated-plan" },
+      search: {
+        activity_category: "bike",
+        athleteId: "22222222-2222-4222-8222-222222222222",
+        calendarStartDate: "2026-11-10",
+        organizationId: "11111111-1111-4111-8111-111111111111",
+        planningDate: "2026-11-12",
+        q: "tempo",
+        returnTo: "athlete-workspace",
+      },
+      to: "/activity-plans/$activityPlanId",
+    });
+  });
+  it("uses the validated library filters for the explicit back link", () => {
+    mocks.search = { activity_category: "bike", q: "tempo" };
+    mocks.plan = {
+      detail: {
+        id: "invalid-plan",
+        name: "Tempo bike",
+        description: null,
+        activityCategory: "bike",
+        visibility: "private",
+        createdAt: "2026-07-01T00:00:00.000Z",
+        gpsRecordingEnabled: true,
+        owner: null,
+        capabilities: { canDuplicate: false, canEdit: false, canSchedule: false },
+        engagement: { likes: 0, viewerHasLiked: false },
+        metrics: [],
+        structure: null,
+      },
+      edit: null,
+    };
+    const ActivityPlanDetailPage = (Route as unknown as { component: React.ComponentType })
+      .component;
+    render(<ActivityPlanDetailPage />);
+
+    expect(mocks.librarySearch).toEqual({ activity_category: "bike", q: "tempo" });
+  });
   it("renders the fixed authored relative prescription and print actions for an owner", () => {
     mocks.plan = {
       detail: {
@@ -298,6 +404,11 @@ describe("ActivityPlanDetailPage print", () => {
     expect(screen.queryByText(/~1h|approximately 1h/i)).toBeNull();
     expect(screen.queryByText(/recorded signal pattern|effort profile/i)).toBeNull();
     expect(mocks.planInputs).not.toContainEqual({ id: "invalid-plan", personalize: true });
+    expect(screen.getByRole("button", { name: "PDF actions" }).getAttribute("aria-expanded")).toBe(
+      "false",
+    );
+    expect(screen.queryByRole("button", { name: "Download PDF" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "PDF actions" }));
     expect((screen.getByRole("combobox", { name: "PDF format" }) as HTMLSelectElement).value).toBe(
       "full-page",
     );

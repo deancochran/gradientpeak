@@ -20,6 +20,7 @@ import {
   CardTitle,
 } from "@repo/ui/components/card";
 import { DateInput } from "@repo/ui/components/date-input";
+import { Disclosure } from "@repo/ui/components/disclosure";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import type { inferRouterInputs } from "@trpc/server";
 import { ArrowLeft, CalendarDays, Copy, Loader2, Pencil, Trash2 } from "lucide-react";
@@ -36,6 +37,7 @@ import {
   LikeToggleButton,
   OwnerSummary,
 } from "../../../components/protected/activity-route-primitives";
+import { activityPlanLibrarySearch } from "../../../lib/activity-plan-library-search";
 import { formatDate } from "../../../lib/activity-route-helpers";
 import { api } from "../../../lib/api/client";
 import { loadRouteQuery } from "../../../lib/api/route-loading";
@@ -56,7 +58,7 @@ export const Route = createFileRoute("/_protected/activity-plans/$activityPlanId
     );
   },
   validateSearch: (search: Record<string, unknown>) => ({
-    ...(parseActivityPlanPreparationContext(search) ?? {}),
+    ...activityPlanLibrarySearch(search),
     edit: search.edit === true || search.edit === "true" ? true : undefined,
   }),
   component: ActivityPlanDetailPage,
@@ -69,10 +71,10 @@ function ActivityPlanDetailPage() {
   const activePlanId = useRef(activityPlanId);
   activePlanId.current = activityPlanId;
   const editOwner = useRef(0);
-  const { edit: editMode } = Route.useSearch();
-  const preparation = parseActivityPlanPreparationContext(
-    Route.useSearch() as Record<string, unknown>,
-  );
+  const routeSearch = Route.useSearch() as Record<string, unknown>;
+  const { edit: editMode } = routeSearch;
+  const librarySearch = activityPlanLibrarySearch(routeSearch);
+  const preparation = parseActivityPlanPreparationContext(routeSearch);
   const editing = editMode === true;
   const planQuery = api.activityPlans.getById.useQuery(
     { id: activityPlanId, personalize: false },
@@ -91,6 +93,7 @@ function ActivityPlanDetailPage() {
   const [likesCount, setLikesCount] = useState(0);
   const [scheduleDate, setScheduleDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [dateDirty, setDateDirty] = useState(false);
+  const [pdfActionsOpen, setPdfActionsOpen] = useState(false);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const scheduleGuard = useRef(false);
   const scheduleContext = JSON.stringify([activityPlanId, profileQuery.data?.id]);
@@ -161,6 +164,7 @@ function ActivityPlanDetailPage() {
       void navigate({
         to: "/activity-plans/$activityPlanId",
         params: { activityPlanId: duplicated.id },
+        search: librarySearch,
       } as never);
     },
     onError: (error) => toast.error(error.message || "Activity plan could not be duplicated"),
@@ -228,7 +232,7 @@ function ActivityPlanDetailPage() {
   const deletePlan = api.activityPlans.delete.useMutation({
     onSuccess: (_result, variables) => {
       if (variables.id !== activePlanId.current) return;
-      void navigate({ to: "/activity-plans" } as never);
+      void navigate({ to: "/activity-plans", search: librarySearch } as never);
       void utils.activityPlans.invalidate();
       toast.success("Activity plan deleted");
     },
@@ -258,7 +262,7 @@ function ActivityPlanDetailPage() {
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
           <Button asChild variant="outline">
-            <Link to="/activity-plans" search={{ activity_category: undefined, q: undefined }}>
+            <Link to="/activity-plans" search={librarySearch}>
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back to activity plans
             </Link>
@@ -281,9 +285,7 @@ function ActivityPlanDetailPage() {
           onCancel={() => {
             editOwner.current += 1;
             void navigate({
-              search: preparation
-                ? { ...activityPlanPreparationSearch(preparation), edit: undefined }
-                : { edit: undefined },
+              search: { ...librarySearch, edit: undefined },
               replace: true,
             });
           }}
@@ -300,7 +302,7 @@ function ActivityPlanDetailPage() {
                 },
                 search: activityPlanPreparationSearch(preparation, activityPlanId),
               } as never);
-            return navigate({ search: { edit: undefined }, replace: true });
+            return navigate({ search: { ...librarySearch, edit: undefined }, replace: true });
           }}
         />
       </div>
@@ -311,18 +313,7 @@ function ActivityPlanDetailPage() {
   return (
     <div className="container mx-auto max-w-5xl space-y-6 py-4 print:max-w-none print:py-0">
       <Button asChild className="print:hidden" size="sm" variant="ghost">
-        <Link
-          to="/activity-plans"
-          search={
-            preparation
-              ? {
-                  ...activityPlanPreparationSearch(preparation),
-                  activity_category: undefined,
-                  q: undefined,
-                }
-              : { activity_category: undefined, q: undefined }
-          }
-        >
+        <Link to="/activity-plans" search={librarySearch}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to activity plans
         </Link>
@@ -331,7 +322,15 @@ function ActivityPlanDetailPage() {
       <DetailPageIntro
         actions={
           <div className="flex flex-wrap gap-2 print:hidden">
-            {printModel ? <ActivityPlanPdfActions key={detail.id} model={printModel} /> : null}
+            {printModel ? (
+              <Disclosure
+                label="PDF actions"
+                onOpenChange={setPdfActionsOpen}
+                open={pdfActionsOpen}
+              >
+                <ActivityPlanPdfActions key={detail.id} model={printModel} />
+              </Disclosure>
+            ) : null}
             {detail.capabilities.canRecord ? (
               <Button asChild>
                 <Link
@@ -374,9 +373,7 @@ function ActivityPlanDetailPage() {
               <Button
                 onClick={() =>
                   void navigate({
-                    search: preparation
-                      ? { ...activityPlanPreparationSearch(preparation), edit: true }
-                      : { edit: true },
+                    search: { ...librarySearch, edit: true },
                   })
                 }
                 type="button"

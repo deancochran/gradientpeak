@@ -14,7 +14,6 @@ import {
   activityPlanDraftStructureSchema,
   activityPlanStepNoteSchema,
   createUnavailableAthletePerformanceTargetFacts,
-  getActivityPlanTargetTypeDefault,
   normalizeActivityPlanAuthoringStructure,
   resolveActivityPlanDraft,
 } from "@repo/core";
@@ -1228,11 +1227,7 @@ function StepEditor({
                       : {
                           ...item,
                           targets: item.targets.map((value, itemIndex) =>
-                            itemIndex === index
-                              ? type === "cadence"
-                                ? getActivityPlanTargetTypeDefault(type, category ?? undefined)
-                                : { type, intensity: null }
-                              : value,
+                            itemIndex === index ? { type, intensity: null } : value,
                           ),
                         },
                   );
