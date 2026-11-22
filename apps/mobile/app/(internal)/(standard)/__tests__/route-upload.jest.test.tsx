@@ -19,6 +19,7 @@ const mockRouteOperationStorage = new Map<string, string>();
 const preventRemoveMock = jest.fn();
 const dispatchMock = jest.fn();
 const authState = { user: { id: "11111111-1111-4111-8111-111111111111" } };
+let mutationPending = false;
 const mockHandleSubmitFormError = jest.fn(
   (form: { setError: (name: "root", error: { message: string }) => void }, error: unknown) => {
     form.setError("root", {
@@ -89,7 +90,7 @@ jest.mock("@/lib/api", () => ({
     useUtils: () => ({ routes: { invalidate: invalidateRoutesMock } }),
     routes: {
       upload: {
-        useMutation: () => ({ isPending: false, mutateAsync: uploadRouteMock }),
+        useMutation: () => ({ isPending: mutationPending, mutateAsync: uploadRouteMock }),
       },
     },
   },
@@ -108,6 +109,7 @@ describe("route upload screen", () => {
     dispatchMock.mockReset();
     mockHandleSubmitFormError.mockClear();
     authState.user.id = "11111111-1111-4111-8111-111111111111";
+    mutationPending = false;
     jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
@@ -419,5 +421,57 @@ describe("route upload screen", () => {
       expect(screen.queryByText(/could not be read/i)).toBeNull();
       expect(screen.getByTestId("route-upload-submit-button").props.disabled).toBe(false);
     }
+  });
+
+  it("lets a new owner submit while a previous owner mutation remains globally pending", async () => {
+    let resolveA!: (value: { id: string }) => void;
+    let resolveB!: (value: { id: string }) => void;
+    uploadRouteMock
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            mutationPending = true;
+            resolveA = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveB = resolve;
+          }),
+      );
+
+    const UploadRouteScreen = (await import("../route-upload")).default;
+    const view = await renderScreen();
+    await pickFile();
+    const submitA = screen.getByTestId("route-upload-submit-button").props.onPress;
+    await act(async () => {
+      void submitA();
+    });
+    await waitFor(() => expect(uploadRouteMock).toHaveBeenCalledTimes(1));
+
+    authState.user.id = "22222222-2222-4222-8222-222222222222";
+    await view.rerender(<UploadRouteScreen />);
+    expect(screen.getByTestId("route-upload-submit-button").props.disabled).toBe(false);
+
+    const submitB = screen.getByTestId("route-upload-submit-button").props.onPress;
+    await act(async () => {
+      void submitB();
+    });
+    await waitFor(() => expect(uploadRouteMock).toHaveBeenCalledTimes(2));
+    expect(screen.getByTestId("route-upload-submit-button").props.disabled).toBe(true);
+
+    await act(async () => {
+      resolveA({ id: "route-a" });
+    });
+    expect(screen.getByTestId("route-upload-submit-button").props.disabled).toBe(true);
+    expect(invalidateRoutesMock).not.toHaveBeenCalled();
+    expect(backMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveB({ id: "route-b" });
+    });
+    await waitFor(() => expect(invalidateRoutesMock).toHaveBeenCalledTimes(1));
+    expect(backMock).toHaveBeenCalledTimes(1);
   });
 });
