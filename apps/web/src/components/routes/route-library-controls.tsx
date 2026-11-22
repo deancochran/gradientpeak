@@ -1,3 +1,4 @@
+import { parseNumericInput } from "@repo/core/utils/numeric-ux-policy";
 import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
 import { Button } from "@repo/ui/components/button";
 import { Disclosure } from "@repo/ui/components/disclosure";
@@ -199,11 +200,15 @@ function getRouteNumberErrors(drafts: {
   minAscentM: string;
   maxAscentM: string;
 }) {
-  const values = Object.entries(drafts).map(([key, value]) => [key, value.trim()] as const);
-  for (const [key, value] of values) {
-    if (value && (!Number.isFinite(Number(value)) || Number(value) < 0)) {
+  for (const { key, decimals } of numericFilters) {
+    const result = parseNumericInput(drafts[key], {
+      min: 0,
+      max: Number.MAX_SAFE_INTEGER,
+      precision: decimals === 0 ? "integer" : "decimal",
+    });
+    if (result.status === "invalid") {
       return [
-        `${routeNumberLabels[key as keyof typeof routeNumberLabels]} must be a non-negative number.`,
+        `${routeNumberLabels[key]} must be a non-negative ${decimals === 0 ? "whole number" : "number"} no greater than ${Number.MAX_SAFE_INTEGER}.`,
       ];
     }
   }

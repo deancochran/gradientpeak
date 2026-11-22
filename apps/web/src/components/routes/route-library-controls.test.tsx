@@ -21,6 +21,23 @@ const filters: RouteLibraryFilters = {
 afterEach(cleanup);
 
 describe("RouteLibraryControls", () => {
+  it.each([
+    ["Minimum ascent (m)", "100.5"],
+    ["Minimum distance (km)", "9007199254740992"],
+  ])("blocks and retains a control-invalid %s draft when collapsed", (label, value) => {
+    const onChange = vi.fn();
+    render(<RouteLibraryControls filters={filters} onChange={onChange} onClear={vi.fn()} />);
+    const disclosure = screen.getByRole("button", { name: "Distance and ascent" });
+    fireEvent.click(disclosure);
+    fireEvent.change(screen.getByLabelText(label), { target: { value } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.click(disclosure);
+    expect(screen.getByRole("alert").textContent).toContain("non-negative");
+    fireEvent.click(disclosure);
+    expect((screen.getByLabelText(label) as HTMLInputElement).value).toBe(value);
+  });
+
   it("emits accessible search, scope, sort, and distance changes", () => {
     const onChange = vi.fn();
     render(<RouteLibraryControls filters={filters} onChange={onChange} onClear={vi.fn()} />);
