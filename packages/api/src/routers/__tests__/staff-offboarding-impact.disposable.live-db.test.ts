@@ -133,11 +133,13 @@ describe("staff offboarding-impact API against a disposable migrated PostgreSQL 
               assignment_kind: "primary",
             });
           }
-          const primaryEngagementId = engagementIds.at(0);
-          if (!primaryEngagementId) throw new Error("Missing generated primary engagement");
+          // Pagination is ordered by engagement UUID, not insertion order. Put the
+          // dual-role athlete on page two so this fixture always exercises that boundary.
+          const supportingEngagementId = engagementIds.toSorted().at(-1);
+          if (!supportingEngagementId) throw new Error("Missing generated supporting engagement");
           await client.db.insert(coachingAssignments).values({
             organization_id: organizationId,
-            engagement_id: primaryEngagementId,
+            engagement_id: supportingEngagementId,
             coach_membership_id: coachMembershipId,
             assignment_kind: "supporting",
           });
@@ -206,8 +208,8 @@ describe("staff offboarding-impact API against a disposable migrated PostgreSQL 
             resourceInventory: { status: "unavailable" },
           });
           expect(first.assignedAthletes).toHaveLength(20);
-          expect(first.assignedAthletes.flatMap((row) => row.assignmentKinds)).toContain(
-            "supporting",
+          expect(first.assignedAthletes.map((row) => row.engagementId)).not.toContain(
+            supportingEngagementId,
           );
           expect(first.assignedAthletes.map((row) => row.engagementId)).not.toContain(
             endedAssignmentEngagement,
@@ -225,6 +227,14 @@ describe("staff offboarding-impact API against a disposable migrated PostgreSQL 
             cursor: first.nextCursor,
           });
           expect(second).toMatchObject({ assignedAthleteCount: 22, hasMore: false });
+          expect(second.assignedAthletes).toHaveLength(2);
+          const assignedAthletes = [...first.assignedAthletes, ...second.assignedAthletes];
+          expect(assignedAthletes.map((row) => row.engagementId)).toEqual(engagementIds.toSorted());
+          for (const row of assignedAthletes) {
+            expect(row.assignmentKinds).toEqual(
+              row.engagementId === supportingEngagementId ? ["primary", "supporting"] : ["primary"],
+            );
+          }
           expect(
             Array.from(
               new Set(
