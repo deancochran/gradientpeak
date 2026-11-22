@@ -40,6 +40,14 @@ const mocks = vi.hoisted(() => ({
   },
   activityPlanInputs: [] as unknown[],
   activityPlanOptions: [] as unknown[],
+  routeInputs: [] as unknown[],
+  routeOptions: [] as unknown[],
+  routeQuery: {
+    data: null,
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as Record<string, unknown>,
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -49,7 +57,20 @@ vi.mock("@tanstack/react-router", () => ({
     useParams: () => ({ eventId: "event-1" }),
     useSearch: () => mocks.search,
   }),
-  Link: ({ children }: { children: React.ReactNode }) => <a href="/calendar">{children}</a>,
+  Link: ({
+    children,
+    params,
+    to,
+    ...props
+  }: {
+    children: React.ReactNode;
+    params?: { routeId?: string };
+    to: string;
+  }) => (
+    <a {...props} href={params?.routeId ? `/routes/${params.routeId}` : to}>
+      {children}
+    </a>
+  ),
 }));
 
 vi.mock("@repo/api/react", () => ({
@@ -62,6 +83,21 @@ vi.mock("@repo/api/react", () => ({
 vi.mock("@tanstack/react-start", () => ({ useServerFn: () => mocks.deleteAction }));
 
 vi.mock("../../../../components/route-flash-toast", () => ({ RouteFlashToast: () => null }));
+vi.mock("../../../../components/app-href-link", () => ({
+  AppHrefLink: (props: React.ComponentProps<"a">) => <a {...props} />,
+}));
+vi.mock("../../../../components/protected/activity-route-primitives", () => ({
+  RouteListCard: ({ href, route }: { href?: string; route: { id: string; name: string } }) => (
+    <article data-testid={`route-card-${route.id}`}>
+      <a href={href}>{route.name}</a>
+      <svg aria-label="Route preview" role="img" />
+      <span>Distance</span>
+      <span>Ascent</span>
+      <span>Descent</span>
+      <span>Visibility</span>
+    </article>
+  ),
+}));
 vi.mock("../../../../lib/planning/server-actions", () => ({
   deleteCalendarEventAction: { url: "/actions/delete" },
 }));
@@ -120,7 +156,15 @@ vi.mock("../../../../lib/api/client", () => ({
         getById: { invalidate: vi.fn() },
       },
     }),
-    routes: { get: { useQuery: () => ({ data: null }) } },
+    routes: {
+      get: {
+        useQuery: (input: unknown, options: unknown) => {
+          mocks.routeInputs.push(input);
+          mocks.routeOptions.push(options);
+          return mocks.routeQuery;
+        },
+      },
+    },
   },
 }));
 
@@ -134,6 +178,9 @@ afterEach(() => {
   mocks.plannedSessionOptions = [];
   mocks.activityPlanInputs = [];
   mocks.activityPlanOptions = [];
+  mocks.routeInputs = [];
+  mocks.routeOptions = [];
+  mocks.routeQuery = { data: null, isError: false, isLoading: false, refetch: vi.fn() };
   mocks.search = { month: "2026-07", view: "month" };
   mocks.completionCandidates = { canAssociate: true, items: [], nextCursor: null };
   mocks.plannedSessionMutationOptions = undefined;
@@ -183,6 +230,83 @@ describe("EventDetailPage", () => {
     expect(mocks.eventInputs).toContainEqual({ id: "event-1", personalize: false });
     expect(mocks.eventOptions).toContainEqual({ enabled: true });
     expect(mocks.plannedSessionOptions).toContainEqual({ enabled: false });
+  });
+
+  it("renders an authorized attached route with its saved preview and keeps the route-name link", () => {
+    mocks.event = {
+      all_day: true,
+      event_type: "custom",
+      id: "event-1",
+      scheduled_date: "2026-07-28",
+      status: "scheduled",
+      title: "Route event",
+      activityPlanSummary: null,
+      notes: null,
+      route_id: "route-1",
+    };
+    mocks.routeQuery = {
+      data: {
+        created_at: "2026-07-17T10:00:00.000Z",
+        updated_at: "2026-07-17T10:00:00.000Z",
+        description: null,
+        id: "route-1",
+        name: "Ridge loop",
+        profile_id: null,
+        file_path: "routes/ridge-loop.gpx",
+        storage_state: "ready",
+        total_distance: 1_000,
+        total_ascent: 25,
+        total_descent: 15,
+        elevation_polyline: null,
+        polyline: "_p~iF~ps|U_ulLnnqC_mqNvxq`@",
+        is_system_template: false,
+        is_public: false,
+        likes_count: 0,
+        has_liked: false,
+      },
+      isError: false,
+      isLoading: false,
+      refetch: vi.fn(),
+    };
+    const EventDetailPage = (Route as unknown as { component: React.ComponentType }).component;
+
+    render(<EventDetailPage />);
+
+    expect(screen.getByTestId("route-card-route-1")).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Route preview" })).toBeTruthy();
+    expect(screen.getByText("Distance")).toBeTruthy();
+    expect(screen.getByText("Ascent")).toBeTruthy();
+    expect(screen.getByText("Descent")).toBeTruthy();
+    expect(screen.getByText("Visibility")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Ridge loop" }).getAttribute("href")).toBe(
+      "/routes/route-1",
+    );
+    expect(mocks.routeInputs).toContainEqual({ id: "route-1" });
+    expect(mocks.routeOptions).toContainEqual({ enabled: true });
+  });
+
+  it("keeps the route link and exposes retry when an attached route cannot load", () => {
+    const refetch = vi.fn();
+    mocks.event = {
+      all_day: true,
+      event_type: "custom",
+      id: "event-1",
+      scheduled_date: "2026-07-28",
+      status: "scheduled",
+      title: "Route event",
+      activityPlanSummary: null,
+      notes: null,
+      route_id: "route-1",
+    };
+    mocks.routeQuery = { data: null, isError: true, isLoading: false, refetch };
+    const EventDetailPage = (Route as unknown as { component: React.ComponentType }).component;
+
+    render(<EventDetailPage />);
+
+    expect(screen.getByRole("link", { name: "Open attached route" })).toBeTruthy();
+    expect(screen.getByText("Route preview unavailable.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Retry route" }));
+    expect(refetch).toHaveBeenCalledTimes(1);
   });
 
   it("loads a planned session explicitly and retries the same manual completion request", async () => {

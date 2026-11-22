@@ -27,6 +27,7 @@ import { ArrowLeft, Pencil, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { z } from "zod";
 import { ActivityPlanSessionFlow } from "../../../../../components/activity-plan/activity-plan-session-flow";
+import { RouteListCard } from "../../../../../components/protected/activity-route-primitives";
 import { RouteFlashToast, type RouteFlashType } from "../../../../../components/route-flash-toast";
 import { api } from "../../../../../lib/api/client";
 import { loadRouteQuery } from "../../../../../lib/api/route-loading";
@@ -904,22 +905,41 @@ function EventDetailPage() {
               label="When"
               value={`${formatDayLabel(scheduledDate)} · ${formatEventTimeRange(event)}`}
             />
-            <div className="grid gap-1 sm:grid-cols-[11rem_1fr] sm:items-start">
-              <dt className="text-sm font-medium text-muted-foreground">Route</dt>
-              <dd className="min-w-0 text-sm">
-                {event.route_id ? (
+            {event.route_id ? (
+              routeQuery.data?.id === event.route_id ? (
+                <RouteListCard href={`/routes/${event.route_id}`} route={routeQuery.data} />
+              ) : (
+                <div className="space-y-2 rounded-xl border border-dashed border-border p-4">
+                  <p className="text-sm font-medium text-muted-foreground">Attached route</p>
                   <Link
                     className="font-medium text-primary underline-offset-4 hover:underline"
                     to="/routes/$routeId"
                     params={{ routeId: event.route_id }}
                   >
-                    {routeQuery.data?.name ?? "Open attached route"}
+                    Open attached route
                   </Link>
-                ) : (
-                  "None attached"
-                )}
-              </dd>
-            </div>
+                  {routeQuery.isLoading ? (
+                    <p className="text-sm text-muted-foreground">Loading route preview...</p>
+                  ) : (
+                    <>
+                      <p className="text-sm text-muted-foreground">Route preview unavailable.</p>
+                      {routeQuery.isError ? (
+                        <Button
+                          onClick={() => void routeQuery.refetch()}
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          Retry route
+                        </Button>
+                      ) : null}
+                    </>
+                  )}
+                </div>
+              )
+            ) : (
+              <DetailRow label="Route" value="None attached" />
+            )}
             <DetailRow label="Notes" value={event.notes?.trim() || "No notes yet."} />
           </CardContent>
         </Card>

@@ -152,10 +152,24 @@ test("[variation:routes.event-attachment:keyboard] keyboard event selection pers
       await routes.openDetail(routeId);
       await routes.attachToEvent(eventId, "keyboard");
       await calendar.openDetail(eventId);
+      const routeCard = athletePage.getByTestId(`route-card-${routeId}`);
+      await expect(routeCard.getByRole("img", { name: "Route preview" })).toBeVisible();
+      await expect(routeCard.getByText("Distance", { exact: true })).toBeVisible();
+      await expect(routeCard.getByText("Ascent", { exact: true })).toBeVisible();
+      await expect(routeCard.getByText("Descent", { exact: true })).toBeVisible();
+      await athletePage.screenshot({
+        fullPage: true,
+        path: testInfo.outputPath("event-route-attached-before-reload.png"),
+      });
       const link = athletePage.getByRole("link", { name: routeName });
       await expect(link).toHaveAttribute("href", `/routes/${routeId}`);
       await athletePage.reload();
       await expect(link).toBeVisible();
+      await expect(routeCard.getByRole("img", { name: "Route preview" })).toBeVisible();
+      await athletePage.screenshot({
+        fullPage: true,
+        path: testInfo.outputPath("event-route-attached-after-reload.png"),
+      });
     });
   } finally {
     if (eventId) await detachEventRoute(eventId);
@@ -180,11 +194,23 @@ test("[variation:routes.event-attachment:route-back] event route link opens map 
       await routes.openDetail(routeId);
       await routes.attachToEvent(eventId);
       await calendar.openDetail(eventId);
+      const routeCard = athletePage.getByTestId(`route-card-${routeId}`);
+      await expect(routeCard.getByRole("img", { name: "Route preview" })).toBeVisible();
+      await expect(routeCard.getByText("Distance", { exact: true })).toBeVisible();
+      await athletePage.screenshot({
+        fullPage: true,
+        path: testInfo.outputPath("event-route-attached-before-open.png"),
+      });
       await athletePage.getByRole("link", { name: routeName }).click();
       await expect(athletePage.getByText("Map preview", { exact: true })).toBeVisible();
       await athletePage.goBack();
       await expect(athletePage.getByRole("heading", { name: eventTitle })).toBeVisible();
       await expect(athletePage.getByRole("link", { name: routeName })).toBeVisible();
+      await expect(routeCard.getByRole("img", { name: "Route preview" })).toBeVisible();
+      await athletePage.screenshot({
+        fullPage: true,
+        path: testInfo.outputPath("event-route-attached-after-back.png"),
+      });
     });
   } finally {
     if (eventId) await detachEventRoute(eventId);

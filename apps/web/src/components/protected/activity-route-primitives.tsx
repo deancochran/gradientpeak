@@ -420,7 +420,15 @@ export function ActivityListCard({
   );
 }
 
-export function RouteListCard({ onOpen, route }: { onOpen: () => void; route: RouteListItem }) {
+export function RouteListCard({
+  href,
+  onOpen,
+  route,
+}: {
+  href?: string;
+  onOpen?: () => void;
+  route: RouteListItem;
+}) {
   const { unitSystem } = useViewingUserPreferredUnitSystem();
   const coordinates = getCompactRoutePreviewCoordinates(route.polyline);
 
@@ -436,21 +444,41 @@ export function RouteListCard({ onOpen, route }: { onOpen: () => void; route: Ro
           </div>
           <div className="min-w-0 flex-1 space-y-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-lg font-semibold text-foreground">{route.name}</h3>
+              <h3 className="text-lg font-semibold text-foreground">
+                {href ? (
+                  <AppHrefLink className="hover:underline" href={href}>
+                    {route.name}
+                  </AppHrefLink>
+                ) : (
+                  route.name
+                )}
+              </h3>
             </div>
             <p className="text-sm text-muted-foreground">Saved {formatDate(route.created_at)}</p>
             {route.description ? (
               <p className="line-clamp-2 text-sm text-muted-foreground">{route.description}</p>
             ) : null}
           </div>
-          <Button
-            data-testid={`route-card-${route.id}-open`}
-            onClick={onOpen}
-            type="button"
-            variant="ghost"
-          >
-            Open
-          </Button>
+          {href ? (
+            <Button asChild variant="ghost">
+              <AppHrefLink
+                aria-label={`Open route ${route.name}`}
+                data-testid={`route-card-${route.id}-open`}
+                href={href}
+              >
+                Open
+              </AppHrefLink>
+            </Button>
+          ) : onOpen ? (
+            <Button
+              data-testid={`route-card-${route.id}-open`}
+              onClick={onOpen}
+              type="button"
+              variant="ghost"
+            >
+              Open
+            </Button>
+          ) : null}
         </div>
         <div data-testid={`route-card-${route.id}-preview`}>
           <RoutePreviewMap compact coordinates={coordinates} />
