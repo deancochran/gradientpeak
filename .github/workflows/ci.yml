@@ -75,8 +75,44 @@ jobs:
       - name: Check dead files and dependencies
         run: pnpm knip
 
+      - name: Report static test host resources
+        run: |
+          node <<'NODE'
+          const os = require("node:os");
+          console.log(
+            JSON.stringify({
+              availableParallelism:
+                typeof os.availableParallelism === "function" ? os.availableParallelism() : null,
+              cpuCount: os.cpus().length,
+              freeMemory: os.freemem(),
+              node: process.version,
+              totalMemory: os.totalmem(),
+            }),
+          );
+          NODE
+          for file in cpu.max cpuset.cpus.effective memory.max cpu.stat memory.events; do
+            path="/sys/fs/cgroup/$file"
+            if [[ -r "$path" ]]; then
+              printf 'cgroup.%s=' "$file"
+              tr '\n' ';' < "$path"
+              printf '\n'
+            fi
+          done
+
       - name: Tests
-        run: pnpm test
+        run: /usr/bin/time --verbose pnpm test
+
+      - name: Report static test resource counters after test
+        if: always()
+        run: |
+          for file in cpu.stat memory.events; do
+            path="/sys/fs/cgroup/$file"
+            if [[ -r "$path" ]]; then
+              printf 'cgroup.%s=' "$file"
+              tr '\n' ';' < "$path"
+              printf '\n'
+            fi
+          done
 
       - name: Production build
         run: pnpm build
