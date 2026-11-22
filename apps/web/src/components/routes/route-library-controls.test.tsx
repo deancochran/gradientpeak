@@ -45,6 +45,7 @@ describe("RouteLibraryControls", () => {
   it("keeps malformed drafts visible and blocks applying them", () => {
     const onChange = vi.fn();
     render(<RouteLibraryControls filters={filters} onChange={onChange} onClear={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Distance and ascent" }));
 
     fireEvent.change(screen.getByLabelText("Minimum distance (km)"), {
       target: { value: "not-a-number" },
@@ -62,6 +63,7 @@ describe("RouteLibraryControls", () => {
     const onChange = vi.fn();
     const onClear = vi.fn();
     render(<RouteLibraryControls filters={filters} onChange={onChange} onClear={onClear} />);
+    fireEvent.click(screen.getByRole("button", { name: "Distance and ascent" }));
 
     fireEvent.change(screen.getByLabelText("Minimum distance (km)"), {
       target: { value: "20" },
@@ -88,6 +90,7 @@ describe("RouteLibraryControls", () => {
   it("retains exact kilometer draft precision when applying filters", () => {
     const onChange = vi.fn();
     render(<RouteLibraryControls filters={filters} onChange={onChange} onClear={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Distance and ascent" }));
 
     fireEvent.change(screen.getByLabelText("Minimum distance (km)"), {
       target: { value: "21.15" },
@@ -95,6 +98,23 @@ describe("RouteLibraryControls", () => {
     fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
 
     expect(onChange).toHaveBeenCalledWith({ ...filters, minDistanceKm: "21.15" });
+  });
+
+  it("retains an unapplied invalid draft and its warning when advanced filters close", () => {
+    render(<RouteLibraryControls filters={filters} onChange={vi.fn()} onClear={vi.fn()} />);
+    const disclosure = screen.getByRole("button", { name: "Distance and ascent" });
+    expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(disclosure);
+    fireEvent.change(screen.getByLabelText("Minimum distance (km)"), {
+      target: { value: "invalid" },
+    });
+    fireEvent.click(disclosure);
+    expect(screen.getByRole("alert").textContent).toContain("non-negative number");
+    expect(screen.getByRole("status").textContent).toContain("have not been applied");
+    fireEvent.click(disclosure);
+    expect((screen.getByLabelText("Minimum distance (km)") as HTMLInputElement).value).toBe(
+      "invalid",
+    );
   });
 
   it("uses practical distance and ascent adjustment controls", () => {

@@ -153,6 +153,27 @@ test.describe("authenticated route journey", () => {
       await expect(routeCard.getByText("Distance", { exact: true })).toBeVisible();
       await expect(routeCard.getByText("Ascent", { exact: true })).toBeVisible();
       await expect(routeCard.getByTestId(`route-card-${createdRouteId}-open`)).toBeVisible();
+      const advancedFilters = athletePage.getByRole("button", { name: "Distance and ascent" });
+      await expect(advancedFilters).toHaveAttribute("aria-expanded", "false");
+      await expect(routeCard.getByRole("heading", { name: updatedRouteName })).toBeInViewport();
+      await advancedFilters.click();
+      const minimumDistance = athletePage.getByRole("textbox", {
+        name: "Minimum distance (km)",
+        exact: true,
+      });
+      await minimumDistance.fill("invalid");
+      await advancedFilters.click();
+      await expect(athletePage.getByRole("alert")).toContainText("non-negative number");
+      await advancedFilters.click();
+      await expect(minimumDistance).toHaveValue("invalid");
+      await minimumDistance.fill("0");
+      await athletePage.getByRole("button", { name: "Apply filters", exact: true }).click();
+      // Router JSON-encodes numeric strings to preserve their draft type.
+      await expect(athletePage).toHaveURL(
+        (url) => url.searchParams.get("minDistanceKm") === JSON.stringify("0"),
+      );
+      await athletePage.getByRole("button", { name: "Distance and ascent (1 applied)" }).click();
+      await expect(routeCard).toBeVisible();
       expect(
         await athletePage
           .locator("html")

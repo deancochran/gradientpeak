@@ -1,6 +1,7 @@
 import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
 import { Button } from "@repo/ui/components/button";
-import { Input } from "@repo/ui/components/input";
+import { Disclosure } from "@repo/ui/components/disclosure";
+import { SearchField } from "@repo/ui/components/search-field";
 import { useEffect, useState } from "react";
 
 export const routeSortValues = [
@@ -47,7 +48,11 @@ export function RouteLibraryControls({
     minDistanceKm: filters.minDistanceKm,
   });
   const [hasPendingNumberDrafts, setHasPendingNumberDrafts] = useState(false);
+  const [showNumberFilters, setShowNumberFilters] = useState(() =>
+    Object.values(numberDrafts).some(Boolean),
+  );
   const numberErrors = getRouteNumberErrors(numberDrafts);
+  const appliedCount = numericFilters.filter(({ key }) => filters[key] !== "").length;
 
   useEffect(() => {
     const appliedMatchesDraft =
@@ -95,18 +100,15 @@ export function RouteLibraryControls({
   return (
     <fieldset className="min-w-0 space-y-4 border-0 p-0">
       <legend className="sr-only">Route library filters</legend>
-      <div className="grid gap-4 lg:grid-cols-[2fr_1fr_1fr]">
-        <label className="space-y-2 text-sm font-medium" htmlFor="route-library-search">
-          <span>Search routes</span>
-          <Input
-            aria-label="Search routes"
-            id="route-library-search"
-            onChange={(event) => update("search", event.target.value)}
+      <div className="grid grid-cols-2 items-end gap-3 lg:grid-cols-[2fr_1fr_1fr]">
+        <div className="col-span-2 lg:col-span-1">
+          <SearchField
+            accessibilityLabel="Search routes"
+            onValueChange={(value) => update("search", value)}
             placeholder="Name or description"
-            type="search"
             value={filters.search}
           />
-        </label>
+        </div>
         <label className="space-y-2 text-sm font-medium">
           <span>Library</span>
           <select
@@ -138,40 +140,31 @@ export function RouteLibraryControls({
           </select>
         </label>
       </div>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <NumberFilter
-          id="route-min-distance"
-          label="Minimum distance (km)"
-          value={numberDrafts.minDistanceKm}
-          onChange={(value) => updateNumberDraft("minDistanceKm", value)}
-          adjustmentStep={0.1}
-          decimals={3}
-        />
-        <NumberFilter
-          id="route-max-distance"
-          label="Maximum distance (km)"
-          value={numberDrafts.maxDistanceKm}
-          onChange={(value) => updateNumberDraft("maxDistanceKm", value)}
-          adjustmentStep={0.1}
-          decimals={3}
-        />
-        <NumberFilter
-          id="route-min-ascent"
-          label="Minimum ascent (m)"
-          value={numberDrafts.minAscentM}
-          onChange={(value) => updateNumberDraft("minAscentM", value)}
-          adjustmentStep={10}
-          decimals={0}
-        />
-        <NumberFilter
-          id="route-max-ascent"
-          label="Maximum ascent (m)"
-          value={numberDrafts.maxAscentM}
-          onChange={(value) => updateNumberDraft("maxAscentM", value)}
-          adjustmentStep={10}
-          decimals={0}
-        />
-      </div>
+      <Disclosure
+        label={`Distance and ascent${appliedCount ? ` (${appliedCount} applied)` : ""}`}
+        open={showNumberFilters}
+        onOpenChange={setShowNumberFilters}
+      >
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {numericFilters.map(({ key, id, unit, adjustmentStep, decimals }) => (
+            <BoundedNumberInput
+              key={key}
+              id={id}
+              label={`${routeNumberLabels[key]} (${unit})`}
+              value={numberDrafts[key]}
+              onChange={(value) => updateNumberDraft(key, value)}
+              adjustmentStep={adjustmentStep}
+              decimals={decimals}
+              min={0}
+              max={Number.MAX_SAFE_INTEGER}
+              showAdjustmentButtons
+            />
+          ))}
+        </div>
+        <Button onClick={applyNumberDrafts} type="button">
+          Apply filters
+        </Button>
+      </Disclosure>
       {hasPendingNumberDrafts ? (
         <p className="text-sm text-muted-foreground" role="status">
           Numeric filter edits have not been applied.
@@ -179,9 +172,6 @@ export function RouteLibraryControls({
       ) : null}
       {numberErrors.length > 0 ? <p role="alert">{numberErrors[0]}</p> : null}
       <div className="flex justify-end gap-3">
-        <Button onClick={applyNumberDrafts} type="button">
-          Apply filters
-        </Button>
         <Button
           onClick={() => {
             setHasPendingNumberDrafts(false);
@@ -241,32 +231,9 @@ const routeNumberLabels = {
   minDistanceKm: "Minimum distance",
 };
 
-function NumberFilter({
-  id,
-  label,
-  onChange,
-  adjustmentStep,
-  decimals,
-  value,
-}: {
-  id: string;
-  label: string;
-  onChange: (value: string) => void;
-  value: string;
-  adjustmentStep: number;
-  decimals: number;
-}) {
-  return (
-    <BoundedNumberInput
-      adjustmentStep={adjustmentStep}
-      decimals={decimals}
-      id={id}
-      label={label}
-      max={Number.MAX_SAFE_INTEGER}
-      min={0}
-      onChange={onChange}
-      showAdjustmentButtons
-      value={value}
-    />
-  );
-}
+const numericFilters = [
+  { key: "minDistanceKm", id: "route-min-distance", unit: "km", adjustmentStep: 0.1, decimals: 3 },
+  { key: "maxDistanceKm", id: "route-max-distance", unit: "km", adjustmentStep: 0.1, decimals: 3 },
+  { key: "minAscentM", id: "route-min-ascent", unit: "m", adjustmentStep: 10, decimals: 0 },
+  { key: "maxAscentM", id: "route-max-ascent", unit: "m", adjustmentStep: 10, decimals: 0 },
+] as const;
