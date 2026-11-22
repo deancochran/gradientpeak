@@ -2,7 +2,7 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { RoutePreviewMap } from "./route-preview-map";
+import { COMPACT_ROUTE_PREVIEW_MAX_COORDINATES, RoutePreviewMap } from "./route-preview-map";
 
 afterEach(cleanup);
 
@@ -34,6 +34,21 @@ describe("RoutePreviewMap", () => {
     const fallback = screen.getByTestId("route-preview-unavailable");
     expect(fallback.textContent).toBe("Route preview unavailable.");
     expect(fallback.className).toContain("h-36");
+  });
+
+  it("does not project more coordinates than the compact card preview budget", () => {
+    render(
+      <RoutePreviewMap
+        compact
+        coordinates={Array.from({ length: COMPACT_ROUTE_PREVIEW_MAX_COORDINATES + 1 }, () => ({
+          latitude: 40,
+          longitude: -74,
+        }))}
+      />,
+    );
+
+    expect(screen.getByTestId("route-preview-unavailable")).toBeTruthy();
+    expect(screen.queryByRole("img", { name: "Route preview" })).toBeNull();
   });
 
   const invalidGeometries = [

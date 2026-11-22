@@ -29,7 +29,10 @@ import { api } from "../../lib/api/client";
 import { CanonicalMetricsRow } from "../activity/canonical-metrics-row";
 import { ActivityCategoryBadges } from "../activity-category-presentation";
 import { AppHrefLink } from "../app-href-link";
-import { RoutePreviewMap } from "../recording/route-preview-map";
+import {
+  COMPACT_ROUTE_PREVIEW_MAX_COORDINATES,
+  RoutePreviewMap,
+} from "../recording/route-preview-map";
 
 type DetailMetricItem = {
   label: string;
@@ -39,6 +42,25 @@ type DetailMetricItem = {
 type RouterOutputs = inferRouterOutputs<AppRouter>;
 type RouteListItem = RouterOutputs["routes"]["list"]["items"][number];
 type ActivityEffort = RouterOutputs["activities"]["getEfforts"][number];
+
+/** Limits only the library-card presentation path; route detail and recording remain unrestricted. */
+export const COMPACT_ROUTE_PREVIEW_MAX_ENCODED_LENGTH = 12 * 1024;
+
+function decodeRoutePreviewCoordinates(polyline: string) {
+  return getActivityCoordinates(polyline, null);
+}
+
+export function getCompactRoutePreviewCoordinates(
+  polyline: string | null | undefined,
+  decode = decodeRoutePreviewCoordinates,
+) {
+  if (!polyline || polyline.length > COMPACT_ROUTE_PREVIEW_MAX_ENCODED_LENGTH) {
+    return [] as RouteCoordinate[];
+  }
+
+  const coordinates = decode(polyline);
+  return coordinates.length <= COMPACT_ROUTE_PREVIEW_MAX_COORDINATES ? coordinates : [];
+}
 
 export function DetailPageIntro({
   actions,
@@ -400,7 +422,7 @@ export function ActivityListCard({
 
 export function RouteListCard({ onOpen, route }: { onOpen: () => void; route: RouteListItem }) {
   const { unitSystem } = useViewingUserPreferredUnitSystem();
-  const coordinates = getActivityCoordinates(route.polyline, null);
+  const coordinates = getCompactRoutePreviewCoordinates(route.polyline);
 
   return (
     <Card

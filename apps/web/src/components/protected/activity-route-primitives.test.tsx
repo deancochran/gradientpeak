@@ -18,10 +18,13 @@ vi.mock("@tanstack/react-router", async (importOriginal) => ({
   ),
 }));
 
+import { COMPACT_ROUTE_PREVIEW_MAX_COORDINATES } from "../recording/route-preview-map";
 import {
   ActivityEffortListCard,
   ActivityListCard,
+  COMPACT_ROUTE_PREVIEW_MAX_ENCODED_LENGTH,
   EntityMapCard,
+  getCompactRoutePreviewCoordinates,
   LikeToggleButton,
   RouteListCard,
 } from "./activity-route-primitives";
@@ -174,6 +177,29 @@ describe("ActivityListCard", () => {
 });
 
 describe("resource card selectors", () => {
+  it("does not decode an over-budget encoded route preview", () => {
+    const decode = vi.fn();
+
+    expect(
+      getCompactRoutePreviewCoordinates(
+        "a".repeat(COMPACT_ROUTE_PREVIEW_MAX_ENCODED_LENGTH + 1),
+        decode,
+      ),
+    ).toEqual([]);
+    expect(decode).not.toHaveBeenCalled();
+  });
+
+  it("uses a compact fallback instead of projecting an over-budget decoded route", () => {
+    const coordinates = Array.from({ length: COMPACT_ROUTE_PREVIEW_MAX_COORDINATES + 1 }, () => ({
+      latitude: 40,
+      longitude: -74,
+    }));
+    const decode = vi.fn(() => coordinates);
+
+    expect(getCompactRoutePreviewCoordinates("normal-encoded-route", decode)).toEqual([]);
+    expect(decode).toHaveBeenCalledWith("normal-encoded-route");
+  });
+
   it("renders saved route geometry with lightweight metrics and an accessible open action", () => {
     const onOpen = vi.fn();
     render(

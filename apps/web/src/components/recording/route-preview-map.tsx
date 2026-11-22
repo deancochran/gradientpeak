@@ -1,14 +1,20 @@
 import type { RouteCoordinate } from "../../lib/recording-web";
 import { projectRoutePreview } from "../../lib/recording-web";
 
+export const COMPACT_ROUTE_PREVIEW_MAX_COORDINATES = 2_000;
+
 type RoutePreviewMapProps = {
   compact?: boolean;
   coordinates: RouteCoordinate[];
 };
 
-function hasValidRouteGeometry(coordinates: RouteCoordinate[]) {
+function hasValidRouteGeometry(
+  coordinates: RouteCoordinate[],
+  maxCoordinates = Number.POSITIVE_INFINITY,
+) {
   return (
     coordinates.length >= 2 &&
+    coordinates.length <= maxCoordinates &&
     coordinates.every(
       ({ latitude, longitude }) =>
         Number.isFinite(latitude) &&
@@ -20,7 +26,12 @@ function hasValidRouteGeometry(coordinates: RouteCoordinate[]) {
 }
 
 export function RoutePreviewMap({ compact = false, coordinates }: RoutePreviewMapProps) {
-  const projection = hasValidRouteGeometry(coordinates) ? projectRoutePreview(coordinates) : null;
+  const projection = hasValidRouteGeometry(
+    coordinates,
+    compact ? COMPACT_ROUTE_PREVIEW_MAX_COORDINATES : Number.POSITIVE_INFINITY,
+  )
+    ? projectRoutePreview(coordinates)
+    : null;
   const heightClassName = compact ? "h-36" : "h-60";
   const unavailableMessage = compact
     ? "Route preview unavailable."
