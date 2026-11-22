@@ -1,3 +1,4 @@
+import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
 import { LoadingButton } from "@repo/ui/components/loading";
 import { ListSkeleton } from "@repo/ui/components/loading-skeletons";
 import { Text } from "@repo/ui/components/text";
@@ -36,14 +37,11 @@ type ResourceListProps<TItem> = {
 
 function DefaultEmptyState({ description, title }: { description?: string; title?: string }) {
   return (
-    <View className="items-center justify-center px-6 py-12">
-      <Text className="text-center text-lg font-medium text-foreground">
-        {title ?? "Nothing here yet"}
-      </Text>
-      {description ? (
-        <Text className="mt-2 text-center text-sm text-muted-foreground">{description}</Text>
-      ) : null}
-    </View>
+    <EmptyStateCard
+      compact
+      title={title ?? "Nothing here yet"}
+      {...(description ? { description } : {})}
+    />
   );
 }
 
@@ -59,17 +57,16 @@ export function DefaultErrorState({
   title?: string;
 }) {
   return (
-    <View className="items-center justify-center px-6 py-12">
-      <Text className="text-center text-lg font-medium text-destructive">
-        {title ?? "Unable to load"}
-      </Text>
-      <Text className="mt-2 text-center text-sm text-muted-foreground">
-        {description ?? "Please try again later."}
-      </Text>
+    <EmptyStateCard
+      compact
+      title={title ?? "Unable to load"}
+      description={description ?? "Please try again later."}
+      tone="error"
+    >
       {onRetry ? (
         <RetryButton className="mt-4" isRetrying={isRetrying} label="Try again" onRetry={onRetry} />
       ) : null}
-    </View>
+    </EmptyStateCard>
   );
 }
 

@@ -19,4 +19,19 @@ describe("ErrorStateCard native", () => {
 
     expect(getByText(errorStateCardFixtures.inline.message)).toBeTruthy();
   });
+
+  it("announces failures and can explicitly withhold retry", async () => {
+    const { container, queryByText } = await renderNative(
+      <ErrorStateCard
+        title="Unable to load"
+        message="Your draft is unchanged."
+        onRetry={jest.fn()}
+        showRetryButton={false}
+      />,
+    );
+    expect(
+      container.queryAll((node) => node.props.accessibilityLiveRegion === "assertive").length,
+    ).toBeGreaterThan(0);
+    expect(queryByText("Try Again")).toBeNull();
+  });
 });
