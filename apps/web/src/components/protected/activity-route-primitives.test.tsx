@@ -232,6 +232,40 @@ describe("resource card selectors", () => {
     expect(onOpen).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the route name and Open action as separate links when given a route href", () => {
+    render(
+      <RouteListCard
+        href="/routes/route-link"
+        route={{
+          created_at: "2026-07-17T10:00:00.000Z",
+          updated_at: "2026-07-17T10:00:00.000Z",
+          description: null,
+          id: "route-link",
+          name: "Linked ridge loop",
+          profile_id: null,
+          file_path: "routes/linked-ridge-loop.gpx",
+          storage_state: "ready",
+          total_distance: 1_000,
+          total_ascent: null,
+          total_descent: null,
+          elevation_polyline: null,
+          polyline: "",
+          is_system_template: false,
+          is_public: false,
+          likes_count: 0,
+          has_liked: false,
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: "Linked ridge loop" }).getAttribute("href")).toBe(
+      "/routes/route-link",
+    );
+    expect(
+      screen.getByRole("link", { name: "Open route Linked ridge loop" }).getAttribute("href"),
+    ).toBe("/routes/route-link");
+  });
+
   it("renders saved route geometry with lightweight metrics and an accessible open action", () => {
     const onOpen = vi.fn();
     render(
