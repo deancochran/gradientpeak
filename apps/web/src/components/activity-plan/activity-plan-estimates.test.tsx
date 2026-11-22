@@ -32,9 +32,10 @@ describe("ActivityPlanEstimateRow", () => {
     render(<ActivityPlanEstimateRow compact metrics={metrics} showUnavailableDetails={false} />);
 
     expect(screen.getByText(/Unavailable estimates/).textContent).toContain(
-      "Duration: source_missing",
+      "Duration: source missing",
     );
-    expect(screen.getByText(/Unavailable estimates/).textContent).toContain("Load: no_load_data");
+    expect(screen.getByText(/Unavailable estimates/).textContent).toContain("Load: no load data");
+    expect(screen.queryByText(/source_missing|no_load_data/)).toBeNull();
     expect(screen.queryByText("Estimate details")).toBeNull();
     expect(screen.queryByTestId("activity-plan-estimates")).toBeNull();
   });

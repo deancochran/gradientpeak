@@ -76,7 +76,9 @@ describe("ActivityPlanCard", () => {
 
     render(<ActivityPlanCard plan={plan} />);
 
-    expect(screen.getByText("Some estimates are unavailable.")).toBeTruthy();
+    expect(screen.getByText(/Unavailable estimates/).textContent).toContain(
+      "Distance: not prescribed",
+    );
     expect(screen.queryByText(/not_prescribed/)).toBeNull();
   });
 

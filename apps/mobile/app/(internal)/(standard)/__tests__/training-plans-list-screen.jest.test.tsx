@@ -73,11 +73,6 @@ jest.mock("@repo/ui/components/loading-skeletons", () => ({
   ListSkeleton: createHost("ListSkeleton"),
 }));
 
-jest.mock("@repo/ui/components/empty-state-card", () => ({
-  __esModule: true,
-  EmptyStateCard: createHost("EmptyStateCard"),
-}));
-
 jest.mock("@repo/ui/components/icon", () => ({
   __esModule: true,
   Icon: createHost("Icon"),

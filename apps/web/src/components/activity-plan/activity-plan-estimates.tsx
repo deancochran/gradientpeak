@@ -10,6 +10,10 @@ const estimateLabels: Record<(typeof estimateOrder)[number], string> = {
   common_load: "Load",
 };
 
+function unavailableEstimateDescription(metric: SemanticMetric) {
+  return `${metric.label}: ${metric.reason?.replaceAll("_", " ") ?? "Unknown"}`;
+}
+
 function formatHeadline(
   metric: SemanticMetric,
   key: (typeof estimateOrder)[number] | "objective_intensity",
@@ -94,16 +98,13 @@ export function ActivityPlanEstimateRow({
           <summary>Estimate details</summary>
           <ul className="mt-1 list-disc pl-5">
             {unavailable.map((metric) => (
-              <li key={metric.key}>
-                {metric.label}: {metric.reason ?? "Unknown"}
-              </li>
+              <li key={metric.key}>{unavailableEstimateDescription(metric)}</li>
             ))}
           </ul>
         </details>
       ) : unavailable.length ? (
         <p className="text-xs text-muted-foreground">
-          Unavailable estimates —{" "}
-          {unavailable.map((metric) => `${metric.label}: ${metric.reason ?? "Unknown"}`).join("; ")}
+          Unavailable estimates — {unavailable.map(unavailableEstimateDescription).join("; ")}
         </p>
       ) : null}
     </div>
