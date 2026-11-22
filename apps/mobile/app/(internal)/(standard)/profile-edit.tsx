@@ -1,3 +1,5 @@
+import { invalidateProfileIdentityQueries } from "@repo/api/profile-identity-cache";
+import { THEME } from "@repo/tailwindcss/native";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import {
@@ -7,6 +9,7 @@ import {
   FormSwitchField,
   FormTextareaField,
   FormTextField,
+  FormTimezoneField,
 } from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
 import { LoadingButton } from "@repo/ui/components/loading";
@@ -16,7 +19,7 @@ import { File as ExpoFile } from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import { Stack, useRouter } from "expo-router";
 import { Camera, ImagePlus, X } from "lucide-react-native";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -27,26 +30,22 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { z } from "zod";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { AppConfirmModal } from "@/components/shared/AppFormModal";
 import { AppSelectionModal } from "@/components/shared/AppSelectionModal";
 import { api } from "@/lib/api";
+import { getDeviceTimeZone } from "@/lib/calendar/eventSchedule";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { useDirtyNavigationGuard } from "@/lib/hooks/useDirtyNavigationGuard";
+import {
+  getProfileEditFormDefaults,
+  type ProfileEditForm,
+  profileEditFormSchema,
+  toProfilePatchInput,
+} from "@/lib/profile/profile-edit-form";
 import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
-import { useAuthStore } from "@/lib/stores/auth-store";
+import { useTheme } from "@/lib/stores/theme-store";
 import { handleSubmitFormError } from "@/lib/utils/formErrors";
-
-const profileEditSchema = z.object({
-  username: z.string().min(3, "Username must be at least 3 characters").nullable(),
-  bio: z.string().max(500, "Bio must be 500 characters or less").nullable(),
-  dob: z.string().nullable(), // Format: YYYY-MM-DD
-  preferred_units: z.enum(["metric", "imperial"]).nullable(),
-  language: z.string().nullable(),
-  is_public: z.boolean().nullable(),
-});
-
-type ProfileEditForm = z.infer<typeof profileEditSchema>;
 
 const AVATAR_MIME_TYPES = {
   jpg: "image/jpeg",
@@ -63,7 +62,38 @@ function isAbsoluteUrl(value: string) {
   return /^https?:\/\//i.test(value);
 }
 
+function getOwnedProfileMediaPath(value: string | null, userId: string | undefined) {
+  if (!value || !userId) {
+    return null;
+  }
+
+  let path = value;
+  if (isAbsoluteUrl(value)) {
+    try {
+      const url = new URL(value);
+      const bucketMarker = "/storage/v1/object/public/profile-avatars/";
+      const markerIndex = url.pathname.indexOf(bucketMarker);
+      if (markerIndex < 0 || url.search || url.hash) return null;
+      path = decodeURIComponent(url.pathname.slice(markerIndex + bucketMarker.length));
+    } catch {
+      return null;
+    }
+  }
+
+  const segments = path.split("/");
+  if (
+    segments[0] !== userId ||
+    segments.length < 2 ||
+    segments.some((segment) => segment.length === 0 || segment === "." || segment === "..")
+  ) {
+    return null;
+  }
+
+  return path;
+}
+
 function ProfileEditScreen() {
+  const { resolvedTheme } = useTheme();
   const router = useRouter();
   const { profile, refreshProfile } = useAuth();
   const [uploadingImageField, setUploadingImageField] = useState<ProfileImageFieldName | null>(
@@ -78,7 +108,9 @@ function ProfileEditScreen() {
   const utils = api.useUtils();
 
   const updateProfileMutation = api.profiles.update.useMutation();
+  const compareAndSwapMediaMutation = api.profiles.compareAndSwapMedia.useMutation();
   const createAvatarUploadUrlMutation = api.storage.createSignedUploadUrl.useMutation();
+  const deleteFileMutation = api.storage.deleteFile.useMutation();
   const avatarFilePath =
     profile?.avatar_url && !isAbsoluteUrl(profile.avatar_url) ? profile.avatar_url : null;
   const { data: avatarUrlData } = api.storage.getSignedUrl.useQuery(
@@ -107,28 +139,25 @@ function ProfileEditScreen() {
       ? getReachableSupabaseStorageUrl(profile.cover_url)
       : null;
   const form = useZodForm({
-    schema: profileEditSchema,
-    defaultValues: {
-      username: profile?.username || null,
-      bio: profile?.bio || null,
-      dob: profile?.dob || null,
-      preferred_units: profile?.preferred_units || "metric",
-      language: profile?.language || "en",
-      is_public: profile?.is_public ?? true,
-    },
+    schema: profileEditFormSchema,
+    defaultValues: getProfileEditFormDefaults(profile, getDeviceTimeZone()),
+  });
+  const { allowNavigationAfterSuccess } = useDirtyNavigationGuard({
+    isDirty: form.formState.isDirty,
+    isPending: updateProfileMutation.isPending || Boolean(uploadingImageField),
   });
   const watchedUsername = form.watch("username");
   const watchedIsPublic = form.watch("is_public");
   const profileInitial = watchedUsername?.charAt(0)?.toUpperCase() || "U";
+  const formOwner = useRef(profile?.id);
+  // RHF requires a dirty-field subscription when merging background refreshes.
+  void form.formState.dirtyFields;
 
   useEffect(() => {
-    form.reset({
-      username: profile?.username || null,
-      bio: profile?.bio || null,
-      dob: profile?.dob || null,
-      preferred_units: profile?.preferred_units || "metric",
-      language: profile?.language || "en",
-      is_public: profile?.is_public ?? true,
+    const sameOwner = formOwner.current === profile?.id;
+    formOwner.current = profile?.id;
+    form.reset(getProfileEditFormDefaults(profile, getDeviceTimeZone()), {
+      keepDirtyValues: sameOwner,
     });
   }, [form, profile]);
 
@@ -136,16 +165,10 @@ function ProfileEditScreen() {
     form,
     shouldRethrow: false,
     onSubmit: async (data) => {
-      await updateProfileMutation.mutateAsync({
-        username: data.username || null,
-        bio: data.bio || null,
-        dob: data.dob || null,
-        preferred_units: data.preferred_units || null,
-        language: data.language || null,
-        is_public: data.is_public ?? undefined,
-      });
+      await updateProfileMutation.mutateAsync(toProfilePatchInput(data));
 
-      await Promise.all([utils.profiles.invalidate(), refreshProfile()]);
+      await Promise.all([invalidateProfileIdentityQueries(utils), refreshProfile()]);
+      allowNavigationAfterSuccess();
       router.back();
     },
     onError: (error) =>
@@ -160,28 +183,56 @@ function ProfileEditScreen() {
     submittingLabel: "Saving...",
   });
 
-  const syncProfileImage = async (fieldName: ProfileImageFieldName, value: string | null) => {
-    const updatedProfile = await updateProfileMutation.mutateAsync({ [fieldName]: value });
+  const syncProfileImage = async (
+    fieldName: ProfileImageFieldName,
+    expected: string | null,
+    next: string | null,
+  ) => {
+    await compareAndSwapMediaMutation.mutateAsync({ field: fieldName, expected, next });
+    await Promise.all([invalidateProfileIdentityQueries(utils), refreshProfile()]);
+  };
 
-    useAuthStore.getState().setProfile(updatedProfile);
-    await Promise.all([utils.profiles.invalidate(), refreshProfile()]);
+  const deleteFileWithoutMaskingError = async (filePath: string) => {
+    try {
+      await deleteFileMutation.mutateAsync({ filePath });
+    } catch {
+      // Preserve the upload or CAS failure that prompted this cleanup.
+    }
+  };
+
+  const deletePreviousOwnedImage = async (
+    fieldName: ProfileImageFieldName,
+    previousValue: string | null,
+    nextPath: string | null,
+  ) => {
+    const previousPath = getOwnedProfileMediaPath(previousValue, profile?.id);
+    const otherFieldName = fieldName === "avatar_url" ? "cover_url" : "avatar_url";
+    if (!previousPath || previousPath === nextPath || profile?.[otherFieldName] === previousValue) {
+      return;
+    }
+
+    try {
+      await deleteFileMutation.mutateAsync({ filePath: previousPath });
+    } catch (error) {
+      console.error(`Failed to clean up previous ${fieldName}:`, error);
+    }
   };
 
   const uploadProfileImage = async (fieldName: ProfileImageFieldName, uri: string) => {
     try {
       setUploadingImageField(fieldName);
+      const expected = profile?.[fieldName] ?? null;
 
       const ext = uri.split(".").pop()?.toLowerCase() || "jpg";
       const fileName = `profile-${fieldName.replace("_url", "")}-${Date.now()}.${ext}`;
       const fileType: AvatarMimeType =
         AVATAR_MIME_TYPES[ext as keyof typeof AVATAR_MIME_TYPES] ?? "image/jpeg";
 
-      const { signedUrl, publicUrl } = await createAvatarUploadUrlMutation.mutateAsync({
+      const { signedUrl, path, publicUrl } = await createAvatarUploadUrlMutation.mutateAsync({
         fileName,
         fileType,
       });
       const reachableSignedUrl = getReachableSupabaseStorageUrl(signedUrl);
-      const reachablePublicUrl = getReachableSupabaseStorageUrl(publicUrl);
 
       // Create ExpoFile instance and ensure it exists before upload
       const file = new ExpoFile(uri);
@@ -191,21 +242,28 @@ function ProfileEditScreen() {
       }
 
       const fileResponse = await fetch(file.uri);
-      const blob = await fileResponse.blob();
+      const bytes = await fileResponse.arrayBuffer();
 
       const uploadResponse = await fetch(reachableSignedUrl, {
         method: "PUT",
         headers: {
           "Content-Type": fileType,
         },
-        body: blob,
+        body: bytes,
       });
 
       if (!uploadResponse.ok) {
         throw new Error(`Upload failed: ${uploadResponse.statusText}`);
       }
 
-      await syncProfileImage(fieldName, reachablePublicUrl);
+      try {
+        await syncProfileImage(fieldName, expected, publicUrl);
+      } catch (error) {
+        await deleteFileWithoutMaskingError(path);
+        throw error;
+      }
+
+      await deletePreviousOwnedImage(fieldName, expected, path);
     } catch (error) {
       console.error("Profile image upload error:", error);
       setStatusModal({
@@ -268,7 +326,9 @@ function ProfileEditScreen() {
   const clearProfileImage = async (fieldName: ProfileImageFieldName) => {
     try {
       setUploadingImageField(fieldName);
-      await syncProfileImage(fieldName, null);
+      const expected = profile?.[fieldName] ?? null;
+      await syncProfileImage(fieldName, expected, null);
+      await deletePreviousOwnedImage(fieldName, expected, null);
     } catch (error) {
       setStatusModal({
         title: "Update Failed",
@@ -379,7 +439,10 @@ function ProfileEditScreen() {
                       </Avatar>
                       <View className="absolute bottom-0 right-0 rounded-full bg-primary p-2">
                         {uploadingImageField === "avatar_url" ? (
-                          <ActivityIndicator color="white" size="small" />
+                          <ActivityIndicator
+                            color={THEME[resolvedTheme].primaryForeground}
+                            size="small"
+                          />
                         ) : (
                           <Icon as={Camera} size={18} className="text-primary-foreground" />
                         )}
@@ -399,6 +462,13 @@ function ProfileEditScreen() {
                   </View>
 
                   <View className="min-w-0 flex-1 gap-3">
+                    <FormTextField
+                      control={form.control}
+                      label="Full Name *"
+                      name="full_name"
+                      placeholder="Enter full name"
+                      testId="profile-edit-full-name"
+                    />
                     <FormTextField
                       control={form.control}
                       label="Username"
@@ -460,11 +530,33 @@ function ProfileEditScreen() {
                   ]}
                 />
 
+                <FormTimezoneField
+                  control={form.control}
+                  deviceTimeZone={getDeviceTimeZone()}
+                  description="Used to interpret calendar days and scheduled training."
+                  label="Planning Timezone"
+                  name="planning_timezone"
+                  testId="profile-edit-planning-timezone"
+                />
+
                 <FormSwitchField
                   control={form.control}
-                  description="Allow anyone to view your profile and activities"
-                  label="Public Account"
+                  description="Allow anyone to view your profile. Activities use the default below unless changed."
+                  label="Open profile"
                   name="is_public"
+                />
+
+                <FormSegmentedSelectField
+                  control={form.control}
+                  description="New activities use this unless you choose a different visibility."
+                  label="Default activity visibility"
+                  name="default_content_visibility"
+                  options={[
+                    { label: "Private", value: "private" },
+                    { label: "Followers", value: "followers" },
+                    { label: "Public", value: "public" },
+                  ]}
+                  testId="profile-edit-default-content-visibility"
                 />
               </View>
             </Form>

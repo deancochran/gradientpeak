@@ -2,6 +2,7 @@ import { resolveGoalReadinessViewModel } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import { View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { useTheme } from "@/lib/stores/theme-store";
 
 function formatReadinessPercent(value: number | null) {
@@ -70,7 +71,10 @@ export function GoalReadinessRing({
   const progress = numericValue === null ? 0 : Math.max(0, Math.min(100, numericValue));
   const visualProgress = progress > 0 && progress < 100 ? Math.max(progress, 1) : progress;
   const strokeDashoffset = circumference - (visualProgress / 100) * circumference;
-  const viewModel = resolveGoalReadinessViewModel({ value: numericValue, target });
+  const viewModel = resolveGoalReadinessViewModel({
+    value: numericValue,
+    ...omitUndefined({ target }),
+  });
   const tone = getReadinessTone(viewModel, isDark);
   const percentLabel = formatReadinessPercent(numericValue);
 

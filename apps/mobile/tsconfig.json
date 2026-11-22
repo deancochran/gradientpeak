@@ -1,7 +1,6 @@
 {
   "extends": "@repo/typescript-config/expo.json",
   "compilerOptions": {
-    "baseUrl": ".",
     "paths": {
       "@/*": ["./*"],
       "@repo/auth": ["../../packages/auth/src/client.ts"],
@@ -11,7 +10,16 @@
         "../../packages/auth/src/client/*",
         "../../packages/auth/src/runtime/*"
       ]
-    }
+    },
+    "types": ["jest", "node"]
   },
-  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts", "nativewind-env.d.ts"]
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".expo/types/**/*.ts",
+    ".rnstorybook/**/*.ts",
+    ".rnstorybook/**/*.tsx",
+    "expo-env.d.ts",
+    "nativewind-env.d.ts"
+  ]
 }

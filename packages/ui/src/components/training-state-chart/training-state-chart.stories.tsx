@@ -1,0 +1,28 @@
+import type { Meta, StoryObj } from "@storybook/react-vite";
+import { trainingStateChartFixtures } from "./fixtures";
+import { TrainingStateChart } from "./index.web";
+
+const meta = {
+  title: "Components/TrainingStateChart",
+  component: TrainingStateChart,
+  args: {
+    emptyMessage: "Training state is unavailable for this period.",
+    colors: trainingStateChartFixtures.mixedSeries.colors,
+    series: [
+      { metric: "fitness", source: "recorded" },
+      { metric: "fatigue", source: "recorded" },
+      { metric: "form", source: "recorded" },
+      { metric: "fitness", source: "projected" },
+      { metric: "fatigue", source: "projected" },
+      { metric: "form", source: "projected" },
+    ],
+    title: "Recorded and projected training state",
+    visual: trainingStateChartFixtures.mixedSeries,
+  },
+} satisfies Meta<typeof TrainingStateChart>;
+
+export default meta;
+
+type Story = StoryObj<typeof meta>;
+
+export const MixedRecordedAndProjected: Story = {};
