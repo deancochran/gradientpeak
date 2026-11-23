@@ -173,49 +173,160 @@ describe("withEphemeralTimedDuration", () => {
     expect(totalDurationSeconds(result.structure)).toBe(11);
   });
 
+  it("preserves repeat-block timing at the source total and scales it proportionally", () => {
+    const { item, step } = repeatFixture();
+    const twoRepeatBlocks = activityPlanStructureSchema.parse({
+      ...repeatedStructure,
+      items: [
+        { ...item, count: 2, steps: [{ ...step, duration: { type: "time", seconds: 100 } }] },
+        {
+          ...item,
+          id: "66666666-6666-4666-8666-666666666666",
+          count: 3,
+          steps: [
+            {
+              ...step,
+              id: "77777777-7777-4777-8777-777777777777",
+              duration: { type: "time", seconds: 100 },
+            },
+          ],
+        },
+      ],
+    });
+    const identity = withEphemeralTimedDuration({
+      structure: twoRepeatBlocks,
+      targetDurationSeconds: 500,
+    });
+    expect(identity).toEqual({
+      status: "transformed",
+      sourceDurationSeconds: 500,
+      structure: twoRepeatBlocks,
+    });
+
+    const scaled = withEphemeralTimedDuration({
+      structure: twoRepeatBlocks,
+      targetDurationSeconds: 505,
+    });
+    if (scaled.status !== "transformed") throw new Error("expected proportional transform");
+    expect(
+      scaled.structure.items
+        .flatMap((item) => (item.type === "step" ? [item] : item.steps))
+        .map((step) => step.duration),
+    ).toEqual([
+      { type: "time", seconds: 101 },
+      { type: "time", seconds: 101 },
+    ]);
+    expect(totalDurationSeconds(scaled.structure)).toBe(505);
+  });
+
   it("matches exact feasibility for small repeat multiplier sets", () => {
-    for (const [firstCount, secondCount] of [
-      [2, 3],
-      [2, 4],
-      [3, 4],
-    ] as const) {
-      const { item, step } = repeatFixture();
-      const repeatGroups = activityPlanStructureSchema.parse({
-        ...repeatedStructure,
-        items: [
-          { ...item, count: firstCount },
-          {
-            ...item,
-            id: "66666666-6666-4666-8666-666666666666",
-            count: secondCount,
-            steps: [{ ...step, id: "77777777-7777-4777-8777-777777777777" }],
-          },
-        ],
-      });
-      const minimum = firstCount + secondCount;
-      for (
-        let targetDurationSeconds = minimum;
-        targetDurationSeconds <= 40;
-        targetDurationSeconds += 1
-      ) {
-        const remaining = targetDurationSeconds - minimum;
-        const exists = Array.from({ length: remaining + 1 }, (_, firstExtra) =>
-          Array.from(
-            { length: remaining + 1 },
-            (_, secondExtra) => firstCount * firstExtra + secondCount * secondExtra === remaining,
-          ).some(Boolean),
-        ).some(Boolean);
-        const result = withEphemeralTimedDuration({
-          structure: repeatGroups,
-          targetDurationSeconds,
+    for (const stepSeconds of [1, 3, 17] as const) {
+      for (const [firstCount, secondCount] of [
+        [2, 3],
+        [2, 4],
+        [3, 4],
+      ] as const) {
+        const { item, step } = repeatFixture();
+        const repeatGroups = activityPlanStructureSchema.parse({
+          ...repeatedStructure,
+          items: [
+            {
+              ...item,
+              count: firstCount,
+              steps: [{ ...step, duration: { type: "time", seconds: stepSeconds } }],
+            },
+            {
+              ...item,
+              id: "66666666-6666-4666-8666-666666666666",
+              count: secondCount,
+              steps: [
+                {
+                  ...step,
+                  id: "77777777-7777-4777-8777-777777777777",
+                  duration: { type: "time", seconds: stepSeconds },
+                },
+              ],
+            },
+          ],
         });
-        expect(result.status, `${firstCount}/${secondCount} at ${targetDurationSeconds}`).toBe(
-          exists ? "transformed" : "unsupported",
-        );
-        if (result.status === "transformed")
-          expect(totalDurationSeconds(result.structure)).toBe(targetDurationSeconds);
+        const minimum = firstCount + secondCount;
+        for (
+          let targetDurationSeconds = minimum;
+          targetDurationSeconds <= 60;
+          targetDurationSeconds += 1
+        ) {
+          const remaining = targetDurationSeconds - minimum;
+          const exists = Array.from({ length: remaining + 1 }, (_, firstExtra) =>
+            Array.from(
+              { length: remaining + 1 },
+              (_, secondExtra) => firstCount * firstExtra + secondCount * secondExtra === remaining,
+            ).some(Boolean),
+          ).some(Boolean);
+          const result = withEphemeralTimedDuration({
+            structure: repeatGroups,
+            targetDurationSeconds,
+          });
+          expect(
+            result.status,
+            `${stepSeconds}s ${firstCount}/${secondCount} at ${targetDurationSeconds}`,
+          ).toBe(exists ? "transformed" : "unsupported");
+          if (result.status === "transformed")
+            expect(totalDurationSeconds(result.structure)).toBe(targetDurationSeconds);
+        }
       }
     }
+  });
+
+  it("uses a bounded valid allocation at ordinary step capacity", () => {
+    const capacityFixture = activityPlanStructureSchema.parse({
+      ...structure,
+      items: [
+        { ...structure.items[0], duration: { type: "time", seconds: 100 } },
+        { ...structure.items[1], duration: { type: "time", seconds: 1 } },
+      ],
+    });
+    const result = withEphemeralTimedDuration({
+      structure: capacityFixture,
+      targetDurationSeconds: 172_800,
+    });
+    expect(result).toMatchObject({ status: "transformed" });
+    if (result.status !== "transformed") throw new Error("expected capacity transform");
+    expect(result.structure.items.map((item) => item.type === "step" && item.duration)).toEqual([
+      { type: "time", seconds: 86_400 },
+      { type: "time", seconds: 86_400 },
+    ]);
+  });
+
+  it("keeps a near-week repeat allocation exact and within every step bound", () => {
+    const { item, step } = repeatFixture();
+    const largeRepeatFixture = activityPlanStructureSchema.parse({
+      ...repeatedStructure,
+      items: Array.from({ length: 4 }, (_, index) => ({
+        ...item,
+        id: `33333333-3333-4333-8333-33333333333${index}`,
+        count: 2,
+        steps: [{ ...step, id: `44444444-4444-4444-8444-44444444444${index}` }],
+      })),
+    });
+    const result = withEphemeralTimedDuration({
+      structure: largeRepeatFixture,
+      targetDurationSeconds: ACTIVITY_PLAN_LIMITS.maxExplicitTimedDurationSeconds,
+    });
+    expect(result).toMatchObject({ status: "transformed" });
+    if (result.status !== "transformed") throw new Error("expected large repeat transform");
+    expect(totalDurationSeconds(result.structure)).toBe(
+      ACTIVITY_PLAN_LIMITS.maxExplicitTimedDurationSeconds,
+    );
+    expect(
+      result.structure.items
+        .flatMap((item) => (item.type === "step" ? [item] : item.steps))
+        .every(
+          (step) =>
+            step.duration.type === "time" &&
+            step.duration.seconds >= 1 &&
+            step.duration.seconds <= ACTIVITY_PLAN_LIMITS.maxStepDurationSeconds,
+        ),
+    ).toBe(true);
   });
 
   it("returns unsupported instead of parsing an overlarge per-step duration", () => {
