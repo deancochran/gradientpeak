@@ -238,6 +238,17 @@ describe("TrainingLoadPath", () => {
 
     rerender(
       <TrainingLoadPath
+        projection={{ ...projection, fitnessHistory: undefined }}
+        selectedDate="2026-07-24"
+      />,
+    );
+
+    const absentHistoryChart = within(container).getByRole("img", { name: /training load chart/i });
+    expect(within(absentHistoryChart).getAllByText(/unverified baseline/i)).toHaveLength(2);
+    expect(within(absentHistoryChart).queryByText(/^Model-derived fitness/)).toBeNull();
+
+    rerender(
+      <TrainingLoadPath
         projection={{
           ...projection,
           fitnessHistory: {

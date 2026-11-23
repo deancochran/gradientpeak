@@ -228,7 +228,7 @@ export function TrainingLoadChart({
 
   const visibleSeries = allSeries.filter((series) => series.points.length > 0);
   const fitnessDescription =
-    fitnessHistory?.status === "unavailable"
+    fitnessHistory?.status !== "current" && fitnessHistory?.status !== "historical"
       ? "Scheduled and completed Common Load. Planned model-derived fitness uses an unverified baseline."
       : "Scheduled and completed Common Load with available model-derived fitness.";
   const summary = `${allSeries.map(seriesSummary).join(" ")}${
