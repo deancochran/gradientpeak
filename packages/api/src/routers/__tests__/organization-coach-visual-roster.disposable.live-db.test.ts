@@ -124,7 +124,7 @@ it("proves bounded visual roster scopes, local dates, cursors, and revoked acces
         for (const athlete of [activitiesOnly, allScopes]) {
           await db.insert(profileAthleteState).values({
             profile_id: athlete,
-            source_revision: 1,
+            source_revision: athlete === activitiesOnly ? 2 : 1,
             published_revision: 1,
             fitness: 30,
             fatigue: 20,
@@ -196,12 +196,16 @@ it("proves bounded visual roster scopes, local dates, cursors, and revoked acces
           metrics: { status: "unshared" },
           activities: {
             status: "available",
-            qualifier: "partial",
+            qualifier: "stale",
             planningTimezone: "America/Los_Angeles",
           },
           goals: { status: "unshared", items: [] },
         });
         expect(activitiesOnlyResult?.activities.points).toHaveLength(1);
+        expect(activitiesOnlyResult?.activities.points[0]).toMatchObject({
+          coverageStatus: "partial",
+          omittedActivityCount: 1,
+        });
         expect(activitiesOnlyResult?.activities.points[0]).not.toMatchObject({
           date: "2099-01-01",
         });

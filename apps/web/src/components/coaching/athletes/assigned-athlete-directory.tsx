@@ -145,6 +145,17 @@ export function AssignedAthleteDirectory({
 function VisualFacts({ athlete }: { athlete: Athlete }) {
   if (!athlete.metrics || !athlete.activities || !athlete.goals) return null;
   const goal = athlete.goals.items[0];
+  const activityQualifier =
+    athlete.activities.status === "available"
+      ? [
+          athlete.activities.qualifier === "stale" ? "stale" : null,
+          athlete.activities.points.some((point) => point.coverageStatus === "partial")
+            ? "partial coverage"
+            : null,
+        ]
+          .filter((value): value is string => value !== null)
+          .join(" · ") || "fresh"
+      : null;
   return (
     <dl className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
       <div>
@@ -163,7 +174,7 @@ function VisualFacts({ athlete }: { athlete: Athlete }) {
         <dt className="font-medium text-foreground">28-day training state</dt>
         <dd>
           {athlete.activities.status === "available"
-            ? `${athlete.activities.points.length} recorded days · ${athlete.activities.qualifier ?? "unavailable"}`
+            ? `${athlete.activities.points.length} recorded days · ${activityQualifier}`
             : athlete.activities.status === "unshared"
               ? "Unshared"
               : "Unavailable"}

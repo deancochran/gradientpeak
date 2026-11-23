@@ -164,4 +164,45 @@ describe("AssignedAthleteDirectory", () => {
     expect(screen.getByText(/2 recorded days/)).toBeTruthy();
     expect(screen.getByText(/Missing dates are shown as gaps/)).toBeTruthy();
   });
+
+  it("shows stale and partial coverage together when both are present", () => {
+    render(
+      <AssignedAthleteDirectory
+        organizationId="organization-1"
+        page={{
+          hasMore: false,
+          items: [
+            {
+              profileId: "athlete-1",
+              displayName: "Avery",
+              username: "avery",
+              metrics: { status: "available", freshness: "stale" },
+              activities: {
+                status: "available",
+                planningTimezone: "UTC",
+                rangeStartDate: "2026-11-01",
+                rangeEndDate: "2026-11-01",
+                qualifier: "stale",
+                points: [
+                  {
+                    date: "2026-11-01",
+                    dailyLoad: 12,
+                    fitness: 30,
+                    fatigue: 25,
+                    form: 5,
+                    coverageStatus: "partial",
+                    omittedActivityCount: 2,
+                  },
+                ],
+              },
+              goals: { status: "unavailable", items: [] },
+            },
+          ],
+          nextCursor: null,
+        }}
+        search={null}
+      />,
+    );
+    expect(screen.getByText("1 recorded days · stale · partial coverage")).toBeTruthy();
+  });
 });
