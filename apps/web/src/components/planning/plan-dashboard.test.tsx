@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   goalInput: vi.fn(),
+  progressInput: vi.fn(),
+  thresholdInput: vi.fn(),
   projectionInput: vi.fn(),
   profile: {
     data: { id: "profile" },
@@ -16,6 +18,18 @@ const state = vi.hoisted(() => ({
   projection: { data: {} as unknown, isError: false, isLoading: false, refetch: vi.fn() },
   goals: {
     data: { items: [] },
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  },
+  progress: {
+    data: undefined,
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  },
+  thresholdOverview: {
+    data: undefined,
     isError: false,
     isLoading: false,
     refetch: vi.fn(),
@@ -90,6 +104,20 @@ vi.mock("../../lib/api/client", () => ({
         },
       },
     },
+    athleteIntelligence: {
+      getGoalProgress: {
+        useQuery: (input: unknown) => {
+          state.progressInput(input);
+          return state.progress;
+        },
+      },
+      getThresholdOverview: {
+        useQuery: (input: unknown) => {
+          state.thresholdInput(input);
+          return state.thresholdOverview;
+        },
+      },
+    },
   },
 }));
 vi.mock("../../components/protected/plan-goal-form", () => ({ PlanGoalForm: () => null }));
@@ -99,6 +127,8 @@ import { PlanDashboard } from "./plan-dashboard";
 afterEach(() => {
   cleanup();
   state.goalInput.mockReset();
+  state.progressInput.mockReset();
+  state.thresholdInput.mockReset();
   state.projectionInput.mockReset();
   state.profile = {
     data: { id: "profile" },
@@ -110,6 +140,18 @@ afterEach(() => {
   state.projection = { data: {}, isError: false, isLoading: false, refetch: vi.fn() };
   state.goals = {
     data: { items: [] },
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  };
+  state.progress = {
+    data: undefined,
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  };
+  state.thresholdOverview = {
+    data: undefined,
     isError: false,
     isLoading: false,
     refetch: vi.fn(),
@@ -129,6 +171,7 @@ function renderEmptySelectedDay(date: string, selectedDay: typeof state.selected
       today: "2026-04-02",
       timeline: { days: [], weeks: [] },
       fitness: { actual: [], scheduled: [], recommended: [] },
+      goalMarkers: [],
     },
     isError: false,
     isLoading: false,
@@ -165,6 +208,7 @@ it("uses the projection's authoritative day for selected-day status and the goal
         ],
       },
       fitness: { actual: [], scheduled: [], recommended: [] },
+      goalMarkers: [],
     },
     isError: false,
     isLoading: false,
@@ -209,6 +253,7 @@ it("reanchors a no-URL selection to the server planning day without navigation",
         ],
       },
       fitness: { actual: [], scheduled: [], recommended: [] },
+      goalMarkers: [],
     },
     isError: false,
     isLoading: false,
@@ -372,9 +417,10 @@ it("keeps compact goal, library, and current-session access available", () => {
   expect(screen.getByRole("button", { name: "New goal" })).toBeTruthy();
   expect(screen.getByRole("link", { name: "Open training-plan library" })).toBeTruthy();
   expect(screen.getByRole("link", { name: "All goals" })).toBeTruthy();
-  expect(screen.getByRole("link", { name: /Spring race/ }).getAttribute("data-goal-id")).toBe(
-    "goal-1",
-  );
+  expect(
+    screen.getAllByRole("link", { name: /Spring race/ })[0]?.getAttribute("data-goal-id"),
+  ).toBe("goal-1");
+  expect(state.progressInput).toHaveBeenCalledWith({ goalId: "goal-1" });
 });
 
 it("only offers a follow-session action for a canonically scheduled session", () => {
@@ -431,6 +477,7 @@ it("only offers a follow-session action for a canonically scheduled session", ()
         ],
       },
       fitness: { actual: [], scheduled: [], recommended: [] },
+      goalMarkers: [],
     },
     isError: false,
     isLoading: false,

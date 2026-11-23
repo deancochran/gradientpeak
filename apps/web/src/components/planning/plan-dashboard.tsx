@@ -22,6 +22,7 @@ import {
   shiftDateKey,
 } from "../../lib/planning";
 import { CalendarProjectionCard } from "../calendar/calendar-projection-card";
+import { GoalProgressWorkspace } from "./goal-progress-workspace";
 import { TrainingLoadPath } from "./training-load-path";
 
 export function getUpcomingScheduledWorkItems(
@@ -456,6 +457,13 @@ export function PlanDashboard({
           )}
         </CardContent>
       </Card>
+      {nextGoal ? (
+        <GoalProgressWorkspace
+          goal={nextGoal}
+          key={nextGoal.id}
+          planningTimezone={planningTimezone}
+        />
+      ) : null}
       <div className="flex flex-wrap gap-2">
         <Button asChild variant="outline">
           <Link to="/training-plans" search={{ tab: "owned" }}>
