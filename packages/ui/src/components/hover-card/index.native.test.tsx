@@ -1,13 +1,16 @@
+import { Text } from "react-native";
 import { renderNative } from "../../test/render-native";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "./index.native";
 
 describe("HoverCard native", () => {
-  it("renders trigger text and preview content", () => {
-    const { getByTestId } = renderNative(
+  it("renders trigger text and preview content", async () => {
+    const { getByTestId } = await renderNative(
       <HoverCard openDelay={0}>
-        <HoverCardTrigger testID="athlete-preview-trigger">Athlete preview</HoverCardTrigger>
+        <HoverCardTrigger testID="athlete-preview-trigger">
+          <Text>Athlete preview</Text>
+        </HoverCardTrigger>
         <HoverCardContent testID="athlete-preview-content">
-          Last session: 10 x 400m.
+          <Text>Last session: 10 x 400m.</Text>
         </HoverCardContent>
       </HoverCard>,
     );

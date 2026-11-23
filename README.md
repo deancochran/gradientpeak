@@ -1,19 +1,8 @@
 # GradientPeak
 
-GradientPeak is a product monorepo for the web app, mobile app, shared UI, backend APIs, and core training logic.
+Training software for web and mobile, with shared domain logic, APIs, and UI.
 
-## What lives here
-
-- `apps/web` contains the active web product.
-- `apps/mobile` contains the mobile product.
-- `packages/api` contains backend procedures and server-side application logic.
-- `packages/core` contains shared domain logic and calculations.
-- `packages/ui` contains reusable UI components.
-- `packages/db` contains database-related code and local data tooling.
-
-## Getting started
-
-Install dependencies:
+## Get started
 
 ```bash
 mise trust
@@ -21,61 +10,41 @@ mise install
 pnpm install
 ```
 
-Start local development:
+Follow [CONTRIBUTING.md](CONTRIBUTING.md) to configure your local environment and
+start the web or mobile app. Use `pnpm dev:web:local` for web development without
+a public tunnel. `pnpm dev` starts the full development graph, including provider
+workers and the configured tunnel; it is not needed for every task.
 
-```bash
-pnpm dev
-pnpm dev:web:scan
-```
+## Repository map
 
-Use package-specific entrypoints when you only need one surface:
+- `apps/web` — TanStack Start web app.
+- `apps/mobile` — Expo / React Native app.
+- `packages/api` — API procedures, orchestration, and persistence boundaries.
+- `packages/auth` — shared authentication contracts and runtime.
+- `packages/core` — framework-independent domain logic and calculations.
+- `packages/db` — schema, migrations, and database tooling.
+- `packages/ui` — shared web/native UI primitives.
+- `tooling` — shared configuration and focused development utilities.
 
-```bash
-pnpm --filter web dev
-pnpm --filter mobile dev
-pnpm self-host:up
-```
+Keep code with its owner. Share domain logic and primitives rather than copying
+them between apps; prefer direct functions and existing tools over new wrappers.
 
-Run the main validation commands before opening a PR:
+## Working on a change
 
-```bash
-pnpm knip
-pnpm knip:full
-pnpm check-types
-pnpm lint
-pnpm test
-```
+Run the owning package's tests or type check while iterating. CI owns full
+validation; the pre-commit hook only checks staged files and pushes do not run
+the entire suite. See [CONTRIBUTING.md](CONTRIBUTING.md) for verification choices.
 
-## Development workflow
+## Documentation
 
-1. Create a focused branch for one change.
-2. Make the smallest change that solves the problem.
-3. Run the relevant checks locally.
-4. Open a PR with a short summary of the user-facing outcome.
+- [Contributing](CONTRIBUTING.md): setup, commands, code organization, and checks.
+- [Changelog](CHANGELOG.md): notable changes, not execution logs.
+- [Security](SECURITY.md): vulnerability reporting.
+- [Web](apps/web/README.md), [mobile](apps/mobile/README.md), and
+  [database](packages/db/README.md): owner-specific instructions.
+- [Local environments](docs/local-environments.md) and
+  [development errors](docs/development-errors.md): operational troubleshooting.
 
-## Multi-Agent Workflow
-
-- Keep orchestration and review in the root checkout.
-- For medium and large efforts, use one Worktrunk worktree per bounded lane under `~/GradientPeak/.worktrees/<branch>`.
-- Keep all GradientPeak worktrees inside the repo-local `.worktrees/` directory.
-- Use branch names shaped like `spec/<spec-slug>/<lane>` for multi-lane efforts.
-- Require merge packets and a fan-in owner before integrating parallel lane outputs.
-
-## Where to go next
-
-- `apps/web/README.md` covers web-specific setup and commands.
-- `apps/mobile/README.md` covers mobile-specific setup, testing, and E2E entrypoints.
-- `packages/db/README.md` covers database ownership and local DB tooling.
-- `provider-onboarding.md` documents the recommended flow for onboarding a new third-party provider starting from the current Wahoo-first setup.
-
-Environment files should live with the owning app or package, not at the repo root.
-
-Git hooks are managed with `lefthook` and install automatically from `pnpm install`.
-
-## Important notes
-
-- Keep shared business logic in `packages/core` when it should work across apps.
-- Keep backend and data access changes aligned with `packages/api` and `packages/db`.
-- Prefer small, reviewable changes over broad refactors.
-- Treat the README as a high-level guide, not a full internal handbook.
-- Production web deployment now targets the TanStack Start app in `apps/web`.
+Keep active contracts and runbooks in the repository. Use Git history for old
+plans and audits; keep generated exports, screenshots, and execution logs outside
+source control. Required generated contracts and migrations remain versioned.

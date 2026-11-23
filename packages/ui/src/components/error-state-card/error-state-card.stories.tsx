@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from "@storybook/react";
+import type { Meta, StoryObj } from "@storybook/react-vite";
 
 import { errorStateCardFixtures } from "./fixtures";
 import { ErrorMessage, ErrorStateCard } from "./index.web";

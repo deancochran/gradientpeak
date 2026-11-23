@@ -1,0 +1,18 @@
+appId: com.deancochran.gradientpeak.dev
+name: Preserve the finalized recording after the runner-injected offline save fault
+---
+# Fault boundary: the runner removes only its API reverse before this UI action.
+- extendedWaitUntil:
+    visible:
+      id: activity-submit-save-button
+    timeout: 15000
+- tapOn:
+    id: activity-submit-save-button
+- extendedWaitUntil:
+    visible:
+      id: activity-submit-status
+    timeout: 45000
+- assertVisible: "Failed to upload your activity. Please check your connection and try again."
+- tapOn: "OK"
+- assertVisible:
+    id: activity-submit-save-button
