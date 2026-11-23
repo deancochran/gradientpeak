@@ -1,4 +1,5 @@
 import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
+import { useId } from "react";
 
 type PlanTabProjection = inferRouterOutputs<AppRouter>["trainingPlans"]["getPlanTabProjection"];
 type TimelineDay = NonNullable<PlanTabProjection["timeline"]>["days"][number];
@@ -203,6 +204,9 @@ export function TrainingLoadChart({
   days: TimelineDay[];
   selectedDate?: string;
 }) {
+  const descriptionId = useId();
+  const summaryId = useId();
+  const titleId = useId();
   const planned = days.flatMap((day) =>
     day.load.scheduledLoadStatus === "unavailable" || day.load.scheduledLoad === null
       ? []
@@ -302,21 +306,29 @@ export function TrainingLoadChart({
     unavailableLoadValues > 0
       ? ` ${unavailableLoadValues} day${unavailableLoadValues === 1 ? " has" : "s have"} unavailable Common Load values; those values are omitted, not shown as zero.`
       : "";
+  const truncationSummary = goalMarkersTruncated
+    ? " Some goal markers may not be shown because the returned marker list is truncated."
+    : "";
 
   return (
     <section
-      aria-label={`Training load chart. ${summary}${unavailableSummary}${
-        goalMarkersTruncated
-          ? " Some goal markers may not be shown because the returned marker list is truncated."
-          : ""
-      }`}
+      aria-describedby={`${descriptionId} ${summaryId}`}
+      aria-labelledby={titleId}
       className="space-y-4 rounded-xl border p-4"
-      role="img"
     >
       <div>
-        <h3 className="font-medium">Daily training chart</h3>
-        <p className="text-sm text-muted-foreground">{fitnessDescription}</p>
+        <h3 className="font-medium" id={titleId}>
+          Daily training chart
+        </h3>
+        <p className="text-sm text-muted-foreground" id={descriptionId}>
+          {fitnessDescription}
+        </p>
       </div>
+      <p className="sr-only" id={summaryId}>
+        {summary}
+        {unavailableSummary}
+        {truncationSummary}
+      </p>
       <ul aria-label="Chart legend" className="flex list-none flex-wrap gap-x-4 gap-y-2 text-xs">
         {visibleSeries.map((series) => (
           <li className="inline-flex items-center gap-2" key={series.label}>

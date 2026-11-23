@@ -62,13 +62,16 @@ test("a personal goal target date appears on Home and Plan without implying a go
 
       for (const route of ["/", `/plan?date=${planning.date}`]) {
         await openPlanningRoute(athletePage, route, route === "/" ? /^welcome back$/i : /plan/i);
-        const chart = athletePage.getByRole("img", { name: /training load chart/i });
+        const chart = athletePage.getByRole("region", { name: "Daily training chart" });
         await expect(chart).toBeVisible();
         await expect(
           chart.getByRole("link", {
             name: new RegExp(`${title}, target date ${planning.date}, priority 6, run`),
           }),
         ).toBeVisible();
+        await expect(chart).toMatchAriaSnapshot(`
+          - link /target date ${planning.date}, priority 6, run/
+        `);
         const goalLink = chart.getByRole("link", { name: new RegExp(`${title}, target date`) });
         await expect(goalLink).toHaveAttribute("href", `/goals/${goalId}`);
         await goalLink.focus();

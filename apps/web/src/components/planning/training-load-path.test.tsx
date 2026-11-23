@@ -4,6 +4,13 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { TrainingLoadPath } from "./training-load-path";
 
+function accessibleDescription(element: HTMLElement) {
+  return (element.getAttribute("aria-describedby") ?? "")
+    .split(" ")
+    .map((id) => document.getElementById(id)?.textContent ?? "")
+    .join(" ");
+}
+
 describe("TrainingLoadPath", () => {
   it("keeps the selected day as an accessible, URL-ownable control", () => {
     const onSelectedDateChange = vi.fn();
@@ -151,7 +158,7 @@ describe("TrainingLoadPath", () => {
     expect(screen.getByText("Session history & details")).toBeTruthy();
     expect(screen.getAllByText("Common Load 100").length).toBeGreaterThan(0);
     expect(screen.getByText(/for 2026-07-20–2026-07-26 in UTC/)).toBeTruthy();
-    const chart = screen.getByRole("img", { name: /Training load chart/ });
+    const chart = screen.getByRole("region", { name: "Daily training chart" });
     expect(within(chart).getByText("Scheduled / planned Common Load")).toBeTruthy();
     expect(within(chart).getByText("Completed Common Load")).toBeTruthy();
     expect(
@@ -162,8 +169,8 @@ describe("TrainingLoadPath", () => {
         "Planned model-derived fitness (projected from a baseline verified through 2026-07-25)",
       ),
     ).toBeTruthy();
-    expect(chart.getAttribute("aria-label")).toMatch(/latest 42 on 2026-07-25/);
-    expect(chart.getAttribute("aria-label")).toMatch(/Some goal markers may not be shown/);
+    expect(accessibleDescription(chart)).toMatch(/latest 42 on 2026-07-25/);
+    expect(accessibleDescription(chart)).toMatch(/Some goal markers may not be shown/);
     expect(within(chart).getByText("Goal target date")).toBeTruthy();
     expect(
       within(chart)
@@ -265,12 +272,12 @@ describe("TrainingLoadPath", () => {
       <TrainingLoadPath projection={projection} selectedDate="2026-07-24" />,
     );
 
-    const chart = within(container).getByRole("img", { name: /training load chart/i });
+    const chart = within(container).getByRole("region", { name: "Daily training chart" });
     const legend = within(chart).getByLabelText("Chart legend");
     expect(legend.textContent).toContain(
       "Planned model-derived fitness (projected from an unverified baseline)",
     );
-    expect(within(chart).getAllByText(/unverified baseline/i)).toHaveLength(2);
+    expect(within(chart).getAllByText(/unverified baseline/i)).toHaveLength(3);
     expect(within(chart).queryByText(/^Model-derived fitness/)).toBeNull();
     expect(
       within(container)
@@ -285,8 +292,10 @@ describe("TrainingLoadPath", () => {
       />,
     );
 
-    const absentHistoryChart = within(container).getByRole("img", { name: /training load chart/i });
-    expect(within(absentHistoryChart).getAllByText(/unverified baseline/i)).toHaveLength(2);
+    const absentHistoryChart = within(container).getByRole("region", {
+      name: "Daily training chart",
+    });
+    expect(within(absentHistoryChart).getAllByText(/unverified baseline/i)).toHaveLength(3);
     expect(within(absentHistoryChart).queryByText(/^Model-derived fitness/)).toBeNull();
 
     rerender(
@@ -303,7 +312,7 @@ describe("TrainingLoadPath", () => {
       />,
     );
 
-    const historicalChart = within(container).getByRole("img", { name: /training load chart/i });
+    const historicalChart = within(container).getByRole("region", { name: "Daily training chart" });
     expect(
       within(historicalChart).getByText(
         "Historical model-derived fitness verified through 2026-07-23",
@@ -405,7 +414,7 @@ describe("TrainingLoadPath", () => {
       />,
     );
 
-    expect(within(container).getByRole("img", { name: /Selected day: 2026-07-25/ })).toBeTruthy();
+    expect(within(container).getByRole("region", { name: "Daily training chart" })).toBeTruthy();
     expect(within(container).getByDisplayValue("2026-07-25")).toBeTruthy();
     expect(
       [...container.querySelectorAll('[data-goal-marker-date="2026-07-24"] line')].every(
@@ -499,10 +508,10 @@ describe("TrainingLoadPath", () => {
     expect(within(completedItem).getByText("Common Load unavailable")).toBeTruthy();
     expect(within(completedItem).queryByText("Common Load 0")).toBeNull();
     expect(
-      screen.getByRole("img", {
-        name: /unavailable Common Load values.*omitted, not shown as zero/i,
-      }),
-    ).toBeTruthy();
+      accessibleDescription(
+        within(container).getByRole("region", { name: "Daily training chart" }),
+      ),
+    ).toMatch(/unavailable Common Load values.*omitted, not shown as zero/i);
     expect(container.querySelectorAll("circle").length).toBeGreaterThan(0);
 
     rerender(
@@ -596,10 +605,10 @@ describe("TrainingLoadPath", () => {
       />,
     );
     expect(
-      within(container).getByRole("img", {
-        name: /Visible goal on 2026-07-25/i,
-      }),
-    ).toBeTruthy();
+      accessibleDescription(
+        within(container).getByRole("region", { name: "Daily training chart" }),
+      ),
+    ).toMatch(/Visible goal on 2026-07-25/i);
     expect(within(container).getByText("Visible goal · 2026-07-25")).toBeTruthy();
   });
 });
