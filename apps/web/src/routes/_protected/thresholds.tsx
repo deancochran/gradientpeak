@@ -5,6 +5,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
+import {
+  formatThresholdDate,
+  formatThresholdValue,
+  groupThresholdHistory,
+  ThresholdHistoryChart,
+  thresholdMetricLabel,
+} from "@repo/ui/components/threshold-history";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { api } from "../../lib/api/client";
 import { loadRouteQuery } from "../../lib/api/route-loading";
@@ -12,27 +19,17 @@ import { loadRouteQuery } from "../../lib/api/route-loading";
 export const Route = createFileRoute("/_protected/thresholds")({
   loader: ({ context }) =>
     loadRouteQuery(
-      () => context.apiUtils.athleteIntelligence.getThresholdOverview.getData({}),
-      () => context.apiUtils.athleteIntelligence.getThresholdOverview.fetch({}),
+      () =>
+        context.apiUtils.athleteIntelligence.getThresholdOverview.getData({ historyLimit: 100 }),
+      () => context.apiUtils.athleteIntelligence.getThresholdOverview.fetch({ historyLimit: 100 }),
     ),
   component: ThresholdsPage,
 });
 
-function formatThreshold(
-  value: number,
-  unit: "watts" | "meters_per_second" | "bpm",
-  category: "bike" | "run" | "swim",
-) {
-  if (unit === "watts") return `${Math.round(value)} W`;
-  if (unit === "bpm") return `${Math.round(value)} bpm`;
-  if (value <= 0) return "—";
-  const distance = category === "swim" ? 100 : 1_000;
-  const seconds = Math.round(distance / value);
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")} /${distance === 100 ? "100m" : "km"}`;
-}
-
 function ThresholdsPage() {
-  const overviewQuery = api.athleteIntelligence.getThresholdOverview.useQuery({});
+  const overviewQuery = api.athleteIntelligence.getThresholdOverview.useQuery({
+    historyLimit: 100,
+  });
   const overview = overviewQuery.data;
 
   return (
@@ -44,15 +41,38 @@ function ThresholdsPage() {
 
       {overviewQuery.isLoading ? (
         <p className="text-sm text-muted-foreground">Loading thresholds...</p>
-      ) : overviewQuery.isError ? (
+      ) : overviewQuery.isError && !overview ? (
         <Card role="alert">
           <CardHeader>
             <CardTitle>Thresholds unavailable</CardTitle>
             <CardDescription>Try again to load calculated thresholds.</CardDescription>
+            <button
+              className="w-fit text-sm font-medium underline"
+              onClick={() => void overviewQuery.refetch()}
+              type="button"
+            >
+              Try again
+            </button>
           </CardHeader>
         </Card>
       ) : overview ? (
         <>
+          {overviewQuery.isError ? (
+            <Card role="status">
+              <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
+                <p className="text-sm text-muted-foreground">
+                  Showing cached threshold data. The latest refresh failed.
+                </p>
+                <button
+                  className="text-sm font-medium underline"
+                  onClick={() => void overviewQuery.refetch()}
+                  type="button"
+                >
+                  Try again
+                </button>
+              </CardContent>
+            </Card>
+          ) : null}
           <section className="grid gap-4 md:grid-cols-3" aria-label="Current calculated thresholds">
             {(["bike", "run", "swim"] as const).map((activityCategory) => {
               const threshold = overview.current.thresholds[activityCategory];
@@ -69,7 +89,7 @@ function ThresholdsPage() {
                   <CardContent>
                     <p className="text-2xl font-semibold">
                       {threshold.status === "available"
-                        ? formatThreshold(threshold.value, threshold.unit, activityCategory)
+                        ? formatThresholdValue(threshold.value, threshold.unit, activityCategory)
                         : "—"}
                     </p>
                   </CardContent>
@@ -87,32 +107,65 @@ function ThresholdsPage() {
                 No calculated threshold changes yet.
               </p>
             ) : (
-              <div className="mt-3 space-y-3">
-                {overview.history.items.map((item) => (
-                  <Card key={item.thresholdId}>
-                    <CardContent className="flex items-center justify-between gap-4 p-4">
-                      <div>
-                        <p className="font-medium capitalize">{item.activityCategory}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {formatThreshold(item.value, item.unit, item.activityCategory)} ·{" "}
-                          {new Date(item.effectiveAt).toLocaleDateString()}
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap justify-end gap-2">
-                        {item.sourceActivities.map((activity) => (
-                          <Link
-                            className="text-sm font-medium underline"
-                            key={activity.id}
-                            params={{ activityId: activity.id }}
-                            to="/activities/$activityId"
+              <div className="mt-3 space-y-6">
+                {groupThresholdHistory(overview.history.items).map((series) => (
+                  <Card key={series.id}>
+                    <CardHeader>
+                      <CardTitle className="capitalize">
+                        {thresholdMetricLabel(series.activityCategory, series.metric)}
+                      </CardTitle>
+                      <CardDescription>
+                        Chronological calculated values on one {series.unit} scale.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <ThresholdHistoryChart
+                        emptyMessage="No values available for this threshold."
+                        series={series}
+                        testId={`threshold-history-${series.id}`}
+                      />
+                      <ol
+                        className="space-y-3"
+                        aria-label={`${thresholdMetricLabel(series.activityCategory, series.metric)} evidence`}
+                      >
+                        {series.points.map((item) => (
+                          <li
+                            className="flex flex-wrap items-start justify-between gap-3 border-t pt-3"
+                            key={item.thresholdId}
                           >
-                            {activity.name}
-                          </Link>
+                            <div>
+                              <p className="font-medium">
+                                {formatThresholdValue(item.value, item.unit, item.activityCategory)}
+                              </p>
+                              <p className="text-sm text-muted-foreground">
+                                Effective {formatThresholdDate(item.effectiveAt)} · {item.method} ·
+                                policy {item.policyVersion}
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {item.sourceActivities.map((activity) => (
+                                <Link
+                                  className="text-sm font-medium underline"
+                                  key={activity.id}
+                                  params={{ activityId: activity.id }}
+                                  to="/activities/$activityId"
+                                >
+                                  {activity.name}
+                                </Link>
+                              ))}
+                            </div>
+                          </li>
                         ))}
-                      </div>
+                      </ol>
                     </CardContent>
                   </Card>
                 ))}
+                {overview.history.nextCursor ? (
+                  <p className="text-sm text-muted-foreground" role="status">
+                    More calculated threshold history is available. This view shows the newest 100
+                    records; additional records are not included in these charts.
+                  </p>
+                ) : null}
               </div>
             )}
           </section>

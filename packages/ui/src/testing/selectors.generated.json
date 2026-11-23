@@ -398,6 +398,23 @@
       "testId": "activity-notes-textarea"
     }
   },
+  "threshold-history": {
+    "bikePower": {
+      "id": "bike:power:watts",
+      "points": [
+        {
+          "confidence": 0.8,
+          "thresholdId": "bike-power-early",
+          "value": 240
+        },
+        {
+          "confidence": 0.8,
+          "thresholdId": "bike-power-latest",
+          "value": 260
+        }
+      ]
+    }
+  },
   "time-input": {
     "startTime": {
       "id": "start-time",

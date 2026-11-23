@@ -1,6 +1,12 @@
-import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
+import {
+  formatThresholdDate,
+  formatThresholdValue,
+  groupThresholdHistory,
+  ThresholdHistoryChart,
+  thresholdMetricLabel,
+} from "@repo/ui/components/threshold-history";
 import { useRouter } from "expo-router";
 import { ScrollView, TouchableOpacity, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
@@ -8,58 +14,8 @@ import { ErrorState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 
-type ThresholdOverview =
-  inferRouterOutputs<AppRouter>["athleteIntelligence"]["getThresholdOverview"];
-type HistoryItem = ThresholdOverview["history"]["items"][number];
-
-const dateFormatter = new Intl.DateTimeFormat("en-US", {
-  day: "numeric",
-  month: "short",
-  year: "numeric",
-  timeZone: "UTC",
-});
-
-function formatPace(seconds: number) {
-  const rounded = Math.round(seconds);
-  return `${Math.floor(rounded / 60)}:${String(rounded % 60).padStart(2, "0")}`;
-}
-
-function formatThreshold(category: "bike" | "run" | "swim", value: number) {
-  if (category === "bike") return `${Math.round(value)} W`;
-  return category === "run"
-    ? `${formatPace(1000 / value)} /km`
-    : `${formatPace(100 / value)} /100m`;
-}
-
 function readable(value: string) {
   return value.replaceAll("_", " ");
-}
-
-function ThresholdHistoryChart({ items }: { items: readonly HistoryItem[] }) {
-  const ordered = [...items].sort((left, right) =>
-    left.effectiveAt.localeCompare(right.effectiveAt),
-  );
-  const values = ordered.map((item) => item.value);
-  const minimum = values.length ? Math.min(...values) : 0;
-  const maximum = values.length ? Math.max(...values) : 1;
-  const span = Math.max(maximum - minimum, maximum * 0.05, 1);
-  return (
-    <View
-      accessibilityLabel={`Threshold progression with ${ordered.length} calculated values`}
-      className="h-24 flex-row items-end gap-1 rounded-xl bg-muted/20 px-2 py-2"
-      importantForAccessibility="no-hide-descendants"
-      testID="threshold-history-chart"
-    >
-      {ordered.map((item) => (
-        <View
-          className="min-w-2 flex-1 rounded-t-sm bg-primary/70"
-          key={item.thresholdId}
-          style={{ height: 12 + ((item.value - minimum) / span) * 68 }}
-          testID={`threshold-history-point-${item.thresholdId}`}
-        />
-      ))}
-    </View>
-  );
 }
 
 function ThresholdOverviewScreen() {
@@ -83,7 +39,7 @@ function ThresholdOverviewScreen() {
       </View>
       {overviewQuery.isLoading ? (
         <LoadingState message="Loading thresholds..." testID="threshold-overview-loading" />
-      ) : overviewQuery.isError ? (
+      ) : overviewQuery.isError && !overviewQuery.data ? (
         <ErrorState
           description="Try again to load calculated thresholds."
           onAction={() => void overviewQuery.refetch()}
@@ -92,6 +48,14 @@ function ThresholdOverviewScreen() {
         />
       ) : overviewQuery.data ? (
         <>
+          {overviewQuery.isError ? (
+            <ErrorState
+              description="Showing cached threshold data. Try again to refresh it."
+              onAction={() => void overviewQuery.refetch()}
+              testID="threshold-overview-refresh-error"
+              title="Latest threshold refresh failed"
+            />
+          ) : null}
           <Text className="text-xs capitalize text-muted-foreground">
             Publication {overviewQuery.data.publication.status} · revision{" "}
             {overviewQuery.data.publication.publishedRevision ?? "unavailable"}
@@ -107,12 +71,12 @@ function ThresholdOverviewScreen() {
                     </Text>
                     <Text className="text-xl font-semibold text-foreground">
                       {threshold.status === "available"
-                        ? formatThreshold(activityCategory, threshold.value)
+                        ? formatThresholdValue(threshold.value, threshold.unit, activityCategory)
                         : "—"}
                     </Text>
                     <Text className="text-xs capitalize text-muted-foreground">
                       {threshold.status === "available"
-                        ? `${threshold.freshness} · ${dateFormatter.format(new Date(threshold.effectiveAt))}`
+                        ? `${threshold.freshness} · ${formatThresholdDate(threshold.effectiveAt)}`
                         : "No eligible calculated value"}
                     </Text>
                     {threshold.status === "available" ? (
@@ -126,29 +90,28 @@ function ThresholdOverviewScreen() {
               );
             })}
           </View>
-          {(["bike", "run", "swim"] as const).map((activityCategory) => {
-            const history = overviewQuery.data.history.items.filter(
-              (item) => item.activityCategory === activityCategory,
-            );
-            if (!history.length) return null;
+          {groupThresholdHistory(overviewQuery.data.history.items).map((series) => {
             return (
-              <View
-                className="gap-3"
-                key={activityCategory}
-                testID={`threshold-history-${activityCategory}`}
-              >
-                <Text className="text-lg font-semibold capitalize text-foreground">
-                  {activityCategory} progression
+              <View className="gap-3" key={series.id} testID={`threshold-history-${series.id}`}>
+                <Text className="text-lg font-semibold text-foreground">
+                  {thresholdMetricLabel(series.activityCategory, series.metric)}
                 </Text>
-                <ThresholdHistoryChart items={history} />
-                {history.map((item) => (
+                <Text className="text-xs text-muted-foreground">
+                  Chronological calculated values on one {series.unit} scale.
+                </Text>
+                <ThresholdHistoryChart
+                  emptyMessage="No values available for this threshold."
+                  series={series}
+                  testId={`threshold-history-chart-${series.id}`}
+                />
+                {series.points.map((item) => (
                   <View
                     className="gap-2 rounded-xl border border-border p-3"
                     key={item.thresholdId}
                   >
                     <Text className="font-semibold text-foreground">
-                      {formatThreshold(activityCategory, item.value)} ·{" "}
-                      {dateFormatter.format(new Date(item.effectiveAt))}
+                      {formatThresholdValue(item.value, item.unit, item.activityCategory)} ·{" "}
+                      {formatThresholdDate(item.effectiveAt)}
                     </Text>
                     <Text className="text-xs capitalize text-muted-foreground">
                       {readable(item.method)} · {Math.round(item.confidence * 100)}% confidence ·
@@ -167,7 +130,7 @@ function ThresholdOverviewScreen() {
                       >
                         <Text className="text-sm font-medium text-foreground">{activity.name}</Text>
                         <Text className="text-xs text-muted-foreground">
-                          {dateFormatter.format(new Date(activity.finishedAt))}
+                          {formatThresholdDate(activity.finishedAt)}
                         </Text>
                       </TouchableOpacity>
                     ))}
@@ -176,6 +139,12 @@ function ThresholdOverviewScreen() {
               </View>
             );
           })}
+          {overviewQuery.data.history.nextCursor ? (
+            <Text className="text-sm text-muted-foreground">
+              More calculated threshold history is available. This view shows the newest 100
+              records; additional records are not included in these charts.
+            </Text>
+          ) : null}
           {overviewQuery.data.history.items.length === 0 ? (
             <Text className="text-sm text-muted-foreground">
               No calculated threshold changes yet.
