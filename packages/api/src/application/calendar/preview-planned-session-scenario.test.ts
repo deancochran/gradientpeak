@@ -443,6 +443,18 @@ describe("previewPlannedSessionScenario application boundary", () => {
     });
   });
 
+  it("rejects a selected session just beyond the bounded scenario horizon", async () => {
+    const beyondHorizonRepository = repository(
+      scenarioSessions().map((item) =>
+        item.id === SELECTED_SESSION_ID ? { ...item, planningDate: "2027-08-02" } : item,
+      ),
+    );
+    await expect(
+      preview({ values: request({ kind: "as_planned" }), repository: beyondHorizonRepository }),
+    ).resolves.toEqual({ status: "unavailable", reason: "horizon_exceeds_limit" });
+    expect(beyondHorizonRepository.listOwnedRange).not.toHaveBeenCalled();
+  });
+
   it("fails closed when current plans cannot produce a complete timed Common Load", async () => {
     await expect(
       preview({
