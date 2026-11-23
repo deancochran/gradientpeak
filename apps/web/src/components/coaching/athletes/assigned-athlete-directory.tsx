@@ -246,6 +246,7 @@ function RosterTrainingStateChart({
         { metric: "form", source: "recorded" },
       ]}
       title="Recent training state"
+      density="compact"
       visual={visual}
     />
   );

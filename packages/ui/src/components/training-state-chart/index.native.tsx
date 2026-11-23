@@ -3,6 +3,8 @@ import { View } from "react-native";
 import { CartesianChart, Line, Scatter } from "victory-native";
 import { Text } from "../text/index.native";
 import {
+  formatTrainingStateDate,
+  formatTrainingStateValue,
   getTrainingStateAccessibilityLabel,
   getTrainingStateMetric,
   getTrainingStateSourceLabel,
@@ -62,6 +64,7 @@ function TrainingStateLegend({
 function TrainingStateChart({
   className,
   colors,
+  density = "default",
   description,
   emptyMessage,
   series,
@@ -88,6 +91,49 @@ function TrainingStateChart({
     }
     return datum;
   });
+  const chart = (
+    <View
+      accessible
+      accessibilityLabel={getTrainingStateAccessibilityLabel(visual, series)}
+      accessibilityRole="image"
+      className={
+        density === "compact"
+          ? "h-24"
+          : "h-40 overflow-hidden rounded-2xl border border-border bg-card p-2"
+      }
+    >
+      <CartesianChart
+        data={data}
+        domainPadding={{ bottom: 8, left: 8, right: 8, top: 8 }}
+        frame={{ lineColor: "transparent", lineWidth: 0 }}
+        xKey="index"
+        yKeys={yKeys}
+      >
+        {({ points }) => (
+          <>
+            {series.map(({ metric, source }) => (
+              <Fragment key={getNativeSeriesKey(metric, source)}>
+                <Line
+                  color={colors?.[metric] ?? getTrainingStateMetric(metric).nativeColor}
+                  connectMissingData={false}
+                  curveType="natural"
+                  {...(source === "projected" ? { opacity: 0.45 } : {})}
+                  points={points[getNativeSeriesKey(metric, source)]}
+                  strokeWidth={metric === "fitness" ? 3 : metric === "fatigue" ? 2.5 : 2}
+                />
+                <Scatter
+                  color={colors?.[metric] ?? getTrainingStateMetric(metric).nativeColor}
+                  {...(source === "projected" ? { opacity: 0.45 } : {})}
+                  points={points[getNativeSeriesKey(metric, source)]}
+                  radius={2.5}
+                />
+              </Fragment>
+            ))}
+          </>
+        )}
+      </CartesianChart>
+    </View>
+  );
   return (
     <View {...(className === undefined ? {} : { className })} testID={testId}>
       {title ? (
@@ -97,43 +143,32 @@ function TrainingStateChart({
       ) : null}
       {description ? <Text className="text-xs text-muted-foreground">{description}</Text> : null}
       {hasValues ? (
-        <View
-          accessible
-          accessibilityLabel={getTrainingStateAccessibilityLabel(visual, series)}
-          accessibilityRole="image"
-          className="h-40 overflow-hidden rounded-2xl border border-border bg-card p-2"
-        >
-          <CartesianChart
-            data={data}
-            domainPadding={{ bottom: 8, left: 8, right: 8, top: 8 }}
-            frame={{ lineColor: "transparent", lineWidth: 0 }}
-            xKey="index"
-            yKeys={yKeys}
-          >
-            {({ points }) => (
-              <>
-                {series.map(({ metric, source }) => (
-                  <Fragment key={getNativeSeriesKey(metric, source)}>
-                    <Line
-                      color={colors?.[metric] ?? getTrainingStateMetric(metric).nativeColor}
-                      connectMissingData={false}
-                      curveType="natural"
-                      {...(source === "projected" ? { opacity: 0.45 } : {})}
-                      points={points[getNativeSeriesKey(metric, source)]}
-                      strokeWidth={metric === "fitness" ? 3 : metric === "fatigue" ? 2.5 : 2}
-                    />
-                    <Scatter
-                      color={colors?.[metric] ?? getTrainingStateMetric(metric).nativeColor}
-                      {...(source === "projected" ? { opacity: 0.45 } : {})}
-                      points={points[getNativeSeriesKey(metric, source)]}
-                      radius={2.5}
-                    />
-                  </Fragment>
-                ))}
-              </>
-            )}
-          </CartesianChart>
-        </View>
+        density === "compact" ? (
+          <>
+            <Text className="text-xs text-muted-foreground">
+              {`${formatTrainingStateDate(visual.points[0]?.date ?? "", visual.timeZone)} – ${formatTrainingStateDate(visual.points.at(-1)?.date ?? "", visual.timeZone)} · ${visual.unitLabel}`}
+            </Text>
+            {chart}
+            <View className="flex-row flex-wrap gap-3">
+              {series.map(({ metric, source }) => {
+                const value = visual.points
+                  .map((point) => point[source][metric])
+                  .filter((candidate): candidate is number => candidate !== null)
+                  .at(-1);
+                return (
+                  <Text
+                    className="text-xs text-muted-foreground"
+                    key={getNativeSeriesKey(metric, source)}
+                  >
+                    {`${getTrainingStateMetric(metric).label}: ${formatTrainingStateValue(value ?? null, visual.unitLabel)}`}
+                  </Text>
+                );
+              })}
+            </View>
+          </>
+        ) : (
+          chart
+        )
       ) : (
         <Text className="rounded-xl bg-muted/20 px-3 py-3 text-sm text-muted-foreground">
           {emptyMessage}

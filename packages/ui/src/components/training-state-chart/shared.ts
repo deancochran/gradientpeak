@@ -38,6 +38,11 @@ export type TrainingStateVisualFixture = TrainingStateVisualContract & TrainingS
 export type TrainingStateChartProps = {
   className?: string;
   colors?: Partial<Record<TrainingStateMetricId, string>>;
+  /**
+   * A denser rendering for repeated comparisons. It preserves the selected
+   * series, units, date range, latest values, and the full accessible summary.
+   */
+  density?: "default" | "compact";
   description?: string;
   emptyMessage: string;
   /** Every visible line, legend entry, and announced series must be declared here. */

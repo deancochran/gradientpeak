@@ -36,8 +36,11 @@ test("coach compares shared visual evidence and returns from a prefixed athlete 
   const organizationId = new URL(athletePage.url()).pathname.split("/")[2];
   if (!organizationId) throw new Error("Missing organization id");
   const second = await actorFactory.create("athlete", { label: "visual oversight second athlete" });
+  const unshared = await actorFactory.create("athlete", {
+    label: "visual oversight unshared athlete",
+  });
   const membershipId = e2eIdentity.uuid("coach-membership");
-  const athletes = [athleteActor, second];
+  const athletes = [athleteActor, second, unshared];
   const engagements = athletes.map((_, index) => e2eIdentity.uuid(`engagement-${index}`));
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
   await withLocalE2EDatabase(async (database) =>
@@ -82,20 +85,28 @@ test("coach compares shared visual evidence and returns from a prefixed athlete 
           content_digest: `sha256:${policyId}`,
         });
         await tx.insert(athleteDataSharingConsents).values(
-          athletes.map((athlete, index) => ({
-            organization_id: organizationId,
-            engagement_id: engagements[index] ?? "",
-            athlete_profile_id: athlete.profileId,
-            scope_key: scope,
-            policy_version_id: policyId,
-            granted_by_profile_id: athlete.profileId,
-          })),
+          athletes
+            .filter((athlete) => {
+              if (athlete.profileId === unshared.profileId) return false;
+              return scope === "activities" || athlete.profileId === athleteActor.profileId;
+            })
+            .map((athlete) => {
+              const athleteIndex = athletes.indexOf(athlete);
+              return {
+                organization_id: organizationId,
+                engagement_id: engagements[athleteIndex] ?? "",
+                athlete_profile_id: athlete.profileId,
+                scope_key: scope,
+                policy_version_id: policyId,
+                granted_by_profile_id: athlete.profileId,
+              };
+            }),
         );
       }
       for (const [index, athlete] of athletes.entries()) {
         await tx.insert(profileAthleteState).values({
           profile_id: athlete.profileId,
-          source_revision: 1,
+          source_revision: athlete.profileId === second.profileId ? 2 : 1,
           published_revision: 1,
           fitness: 30 + index,
           fatigue: 20 + index,
@@ -109,9 +120,9 @@ test("coach compares shared visual evidence and returns from a prefixed athlete 
           fitness: 30 + index,
           fatigue: 20 + index,
           form: 10,
-          coverage_status: "complete",
+          coverage_status: athlete.profileId === second.profileId ? "partial" : "complete",
           contributing_activity_count: 1,
-          omitted_activity_count: 0,
+          omitted_activity_count: athlete.profileId === second.profileId ? 1 : 0,
           source_revision: 1,
           calculation_version: "e2e-v1",
         });
@@ -136,8 +147,13 @@ test("coach compares shared visual evidence and returns from a prefixed athlete 
   );
   const page = await coachActor.createPage(`/organizations/${organizationId}/athletes`);
   await expect(page.getByRole("heading", { name: "Assigned athletes" })).toBeVisible();
+  await expect(page.getByRole("list", { name: "Assigned athletes" }).getByRole("link")).toHaveCount(
+    3,
+  );
   await expect(page.getByText("Recent training state").first()).toBeVisible();
   await expect(page.getByText("Target race · 2027-01-01")).toBeVisible();
+  await expect(page.getByText(/stale · partial coverage/)).toBeVisible();
+  await expect(page.getByText("Unshared", { exact: true })).toHaveCount(4);
   for (const viewport of [
     { width: 1440, height: 1000 },
     { width: 390, height: 844 },
@@ -145,7 +161,7 @@ test("coach compares shared visual evidence and returns from a prefixed athlete 
     await page.setViewportSize(viewport);
     await expectNoHorizontalOverflow(page);
     await page.screenshot({
-      path: testInfo.outputPath(`coach-visual-roster-${viewport.width}.png`),
+      path: testInfo.outputPath(`coach-compact-roster-${viewport.width}.png`),
       fullPage: true,
     });
   }

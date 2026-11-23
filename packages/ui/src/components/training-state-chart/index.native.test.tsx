@@ -139,4 +139,23 @@ describe("TrainingStateChart native", () => {
     expect(getByText("No selected training state")).toBeTruthy();
     expect(queryByTestId("training-state-native-chart")).toBeTruthy();
   });
+
+  it("keeps the compact chart's values and accessible data equivalent", async () => {
+    const { getByLabelText, getByText } = await renderNative(
+      <TrainingStateChart
+        density="compact"
+        emptyMessage="No training state"
+        series={[
+          { metric: "fitness", source: "recorded" },
+          { metric: "fatigue", source: "recorded" },
+          { metric: "form", source: "recorded" },
+        ]}
+        visual={trainingStateChartFixtures.mixedSeries}
+      />,
+    );
+
+    expect(getByLabelText(/Planning timezone America\/Los_Angeles/)).toBeTruthy();
+    expect(getByText("Fitness: 42.0 Common Load points")).toBeTruthy();
+    expect(getByText("Fatigue: 0.0 Common Load points")).toBeTruthy();
+  });
 });
