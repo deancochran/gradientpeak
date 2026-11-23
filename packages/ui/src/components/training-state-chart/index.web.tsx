@@ -169,6 +169,7 @@ function TrainingStateChart({
                   ? "absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full"
                   : "absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 border-2 bg-background"
               }
+              data-date={point.label}
               data-marker={plot.source === "recorded" ? "circle-filled" : "square-outline"}
               data-source={plot.source}
               key={`${plot.id}-${point.label ?? point.x}`}

@@ -18,27 +18,47 @@ export type SessionScenarioComparisonProps = {
   timeZone: string;
 };
 
-function dateFromInstant(value: string) {
-  return value.slice(0, 10);
+function dateFromInstant(value: string, timeZone: string) {
+  const instant = new Date(value);
+  if (Number.isNaN(instant.valueOf()))
+    throw new Error("Scenario transition must have a valid instant.");
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone,
+    year: "numeric",
+  }).formatToParts(instant);
+  const values = Object.fromEntries(
+    parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]),
+  );
+  if (!values.year || !values.month || !values.day)
+    throw new Error("Scenario transition could not be placed in its planning timezone.");
+  return `${values.year}-${values.month}-${values.day}`;
 }
 
 /**
- * The simulator supplies the aligned horizon. This is strictly a presentation
- * adapter: it neither projects values nor fills a missing transition.
+ * This is strictly a presentation adapter: it groups each source's canonical
+ * instants by planning day and never projects, fills, or interpolates a gap.
  */
 export function toSessionScenarioComparisonVisual(
   input: SessionScenarioComparisonProps,
 ): TrainingStateVisualContract {
-  const pointCount = Math.max(
-    input.baseline.transitions.length,
-    input.alternative.transitions.length,
-  );
+  const transitionsByDate = (transitions: SessionScenarioSimulation["transitions"]) =>
+    new Map(
+      transitions.map((transition) => [
+        dateFromInstant(transition.toAsOf, input.timeZone),
+        transition,
+      ]),
+    );
+  const baselineByDate = transitionsByDate(input.baseline.transitions);
+  const alternativeByDate = transitionsByDate(input.alternative.transitions);
+  const dates = [...new Set([...baselineByDate.keys(), ...alternativeByDate.keys()])].sort();
   return {
-    points: Array.from({ length: pointCount }, (_, index) => {
-      const baseline = input.baseline.transitions[index] ?? null;
-      const alternative = input.alternative.transitions[index] ?? null;
+    points: dates.map((date, index) => {
+      const baseline = baselineByDate.get(date) ?? null;
+      const alternative = alternativeByDate.get(date) ?? null;
       return {
-        date: dateFromInstant(baseline?.toAsOf ?? alternative?.toAsOf ?? ""),
+        date,
         index,
         recorded: {
           fitness: baseline?.state.longTermLoad ?? null,
