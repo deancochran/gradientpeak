@@ -1,5 +1,5 @@
 import type { Page, TestInfo } from "@playwright/test";
-import { thresholds } from "@repo/db/schema";
+import { activities, profiles, thresholds } from "@repo/db/schema";
 import { eq } from "drizzle-orm";
 import { expect, test } from "../fixtures";
 import { expectNoHorizontalOverflow } from "../pages";
@@ -79,8 +79,34 @@ test("athlete threshold history keeps real power and heart-rate evidence in sepa
 });
 
 test("new athlete threshold evidence remains unavailable instead of fabricated zero trends", async ({
-  athletePage: page,
+  actorFactory,
+  e2eDatabase,
 }, testInfo) => {
+  // The default athlete preset includes a historical power threshold. Start with
+  // the unseeded onboarding preset and complete only its synthetic profile.
+  const actor = await actorFactory.create("onboarding", { label: "athlete-without-evidence" });
+  await e2eDatabase.db
+    .update(profiles)
+    .set({
+      full_name: "New athlete",
+      onboarding_status: "completed",
+      planning_timezone: "UTC",
+      username: `no_evidence_${actor.profileId.slice(0, 8)}`,
+    })
+    .where(eq(profiles.id, actor.profileId));
+  expect(
+    await e2eDatabase.db
+      .select({ id: thresholds.id })
+      .from(thresholds)
+      .where(eq(thresholds.profile_id, actor.profileId)),
+  ).toEqual([]);
+  expect(
+    await e2eDatabase.db
+      .select({ id: activities.id })
+      .from(activities)
+      .where(eq(activities.profile_id, actor.profileId)),
+  ).toEqual([]);
+  const page = await actor.createPage("/");
   const compact = (page.viewportSize()?.width ?? 1440) < 600;
   await page.setViewportSize(compact ? { width: 390, height: 844 } : { width: 1440, height: 1000 });
   await page.goto("/thresholds");
