@@ -173,11 +173,25 @@ jest.mock("@deancochran/ftms", () => {
   };
 });
 
+let mockBleState: Promise<string> | string = Promise.resolve("PoweredOn");
+let mockBleStateListeners: Array<(state: string) => void> = [];
+
 jest.mock("react-native-ble-plx", () => ({
   __esModule: true,
   BleManager: class MockBleManager {
-    onStateChange() {
-      return { remove: () => undefined };
+    onStateChange(listener: (state: string) => void) {
+      mockBleStateListeners.push(listener);
+      return {
+        remove: () => {
+          mockBleStateListeners = mockBleStateListeners.filter(
+            (registeredListener) => registeredListener !== listener,
+          );
+        },
+      };
+    }
+
+    state() {
+      return mockBleState;
     }
 
     stopDeviceScan() {}
@@ -254,9 +268,90 @@ function setKnownSensors(manager: SensorsManager, sensors: KnownSensorFixture[])
 }
 
 describe("SensorsManager QA regressions", () => {
+  beforeEach(() => {
+    mockBleState = Promise.resolve("PoweredOn");
+    mockBleStateListeners = [];
+  });
+
   afterEach(() => {
     jest.restoreAllMocks();
     jest.clearAllMocks();
+  });
+
+  it("contains an initial Bluetooth-state rejection and exposes recoverable unavailability", async () => {
+    mockBleState = Promise.reject(new Error("native state unavailable"));
+    const warn = jest.spyOn(console, "warn").mockImplementation();
+    const manager = new SensorsManager();
+    const observedStates: string[] = [];
+    const unsubscribe = manager.subscribeBleState((state) => observedStates.push(state));
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(manager.getBleState()).toBe("Unavailable");
+    expect(manager.getTrainerState().lastServiceError).toMatchObject({
+      category: "bluetooth_unavailable",
+      recoverable: true,
+    });
+    expect(observedStates).toEqual(["Unknown", "Unavailable"]);
+    expect(warn).toHaveBeenCalledWith(
+      "[SensorsManager] Bluetooth availability check failed",
+      "Error",
+    );
+
+    unsubscribe();
+    await manager.cleanup();
+  });
+
+  it("continues receiving future PoweredOn events after initial Bluetooth availability fails", async () => {
+    mockBleState = Promise.reject(new Error("native state unavailable"));
+    const manager = new SensorsManager();
+
+    await Promise.resolve();
+    await Promise.resolve();
+    mockBleStateListeners.forEach((listener) => {
+      listener("PoweredOn");
+    });
+
+    expect(manager.getBleState()).toBe("PoweredOn");
+
+    await manager.cleanup();
+  });
+
+  it("does not notify or restore Bluetooth state after cleanup resolves an initial state request", async () => {
+    let resolveState: (state: string) => void = () => undefined;
+    mockBleState = new Promise<string>((resolve) => {
+      resolveState = resolve;
+    });
+    const manager = new SensorsManager();
+    const observedStates: string[] = [];
+    manager.subscribeBleState((state) => observedStates.push(state));
+
+    await manager.cleanup();
+    resolveState("PoweredOn");
+    await Promise.resolve();
+
+    expect(observedStates).toEqual(["Unknown"]);
+    expect(manager.getBleState()).toBe("Unknown");
+  });
+
+  it("contains an initial Bluetooth-state rejection after cleanup without notifying listeners", async () => {
+    let rejectState: (reason?: unknown) => void = () => undefined;
+    mockBleState = new Promise<string>((_resolve, reject) => {
+      rejectState = reject;
+    });
+    const warn = jest.spyOn(console, "warn").mockImplementation();
+    const manager = new SensorsManager();
+    const observedStates: string[] = [];
+    manager.subscribeBleState((state) => observedStates.push(state));
+
+    await manager.cleanup();
+    rejectState(new Error("native state unavailable"));
+    await Promise.resolve();
+
+    expect(observedStates).toEqual(["Unknown"]);
+    expect(manager.getBleState()).toBe("Unknown");
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it("awaits Bluetooth manager teardown so a native rejection cannot escape cleanup", async () => {
