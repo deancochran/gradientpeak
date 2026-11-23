@@ -54,10 +54,12 @@ function seriesSummary(series: ChartSeries) {
 
 function ChartPanel({
   dates: timelineDates,
+  selectedDate,
   series,
   title,
 }: {
   dates: string[];
+  selectedDate?: string;
   series: ChartSeries[];
   title: string;
 }) {
@@ -71,6 +73,9 @@ function ChartPanel({
     ...series.flatMap((entry) => entry.points.map((point) => point.value)),
     1,
   );
+  const selectedDateIndex = selectedDate ? dates.indexOf(selectedDate) : -1;
+  const selectedDateX =
+    selectedDateIndex >= 0 ? (selectedDateIndex / Math.max(dates.length - 1, 1)) * 100 : null;
 
   return (
     <div className="space-y-2">
@@ -90,6 +95,18 @@ function ChartPanel({
           y1="100"
           y2="100"
         />
+        {selectedDateX !== null ? (
+          <line
+            className="text-primary"
+            stroke="currentColor"
+            strokeDasharray="3 3"
+            strokeWidth="1"
+            x1={selectedDateX}
+            x2={selectedDateX}
+            y1="0"
+            y2="100"
+          />
+        ) : null}
         {series.map((entry) => {
           const geometry = buildSeriesGeometry(entry.points, dates, maximum);
           return (
@@ -131,9 +148,11 @@ function ChartPanel({
 export function TrainingLoadChart({
   fitness,
   days,
+  selectedDate,
 }: {
   fitness: PlanTabProjection["fitness"];
   days: TimelineDay[];
+  selectedDate?: string;
 }) {
   const planned = days.flatMap((day) =>
     day.load.scheduledLoadStatus === "unavailable" || day.load.scheduledLoad === null
@@ -185,7 +204,9 @@ export function TrainingLoadChart({
   }
 
   const visibleSeries = allSeries.filter((series) => series.points.length > 0);
-  const summary = allSeries.map(seriesSummary).join(" ");
+  const summary = `${allSeries.map(seriesSummary).join(" ")}${
+    selectedDate ? ` Selected day: ${selectedDate}.` : ""
+  }`;
   const unavailableSummary =
     unavailableLoadValues > 0
       ? ` ${unavailableLoadValues} day${unavailableLoadValues === 1 ? " has" : "s have"} unavailable Common Load values; those values are omitted, not shown as zero.`
@@ -214,6 +235,7 @@ export function TrainingLoadChart({
       {loadSeries.some((series) => series.points.length > 0) ? (
         <ChartPanel
           dates={days.map((day) => day.date)}
+          selectedDate={selectedDate}
           series={loadSeries.filter((series) => series.points.length > 0)}
           title="Common Load"
         />
@@ -221,6 +243,7 @@ export function TrainingLoadChart({
       {fitnessSeries.some((series) => series.points.length > 0) ? (
         <ChartPanel
           dates={days.map((day) => day.date)}
+          selectedDate={selectedDate}
           series={fitnessSeries.filter((series) => series.points.length > 0)}
           title="Fitness"
         />

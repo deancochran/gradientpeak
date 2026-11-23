@@ -120,16 +120,88 @@ describe("TrainingLoadPath", () => {
     expect(
       document.querySelector('[data-scheduled-item-id="00000000-0000-4000-8000-000000000001"]'),
     ).toBeTruthy();
-    expect(screen.getByText("Timeline & diagnostics")).toBeTruthy();
+    expect(screen.getByText("Session history & details")).toBeTruthy();
     expect(screen.getAllByText("Common Load 100").length).toBeGreaterThan(0);
     expect(screen.getByText(/for 2026-07-20–2026-07-26 in UTC/)).toBeTruthy();
-    screen.getByText("Timeline & diagnostics").click();
     const chart = screen.getByRole("img", { name: /Training load chart/ });
     expect(within(chart).getByText("Scheduled / planned Common Load")).toBeTruthy();
     expect(within(chart).getByText("Completed Common Load")).toBeTruthy();
     expect(within(chart).getByText("Actual fitness")).toBeTruthy();
     expect(within(chart).getByText("Scheduled fitness")).toBeTruthy();
     expect(chart.getAttribute("aria-label")).toMatch(/latest 42 on 2026-07-25/);
+  });
+
+  it("marks the selected date on the visible chart while keeping date controls keyboard accessible", () => {
+    const { container } = render(
+      <TrainingLoadPath
+        onSelectedDateChange={vi.fn()}
+        projection={{
+          contractVersion: "plan-tab-projection-v2",
+          asOf: "2026-07-25T12:00:00.000Z",
+          planningTimezone: "UTC",
+          today: "2026-07-25",
+          currentScheduledPlan: null,
+          timeline: {
+            startDate: "2026-07-24",
+            endDate: "2026-07-25",
+            today: "2026-07-25",
+            days: [
+              {
+                date: "2026-07-24",
+                load: {
+                  plannedLoad: 20,
+                  plannedLoadStatus: "complete",
+                  scheduledLoad: 20,
+                  scheduledLoadStatus: "complete",
+                  completedLoad: 0,
+                  completedLoadStatus: "known_zero",
+                  remainingLoad: 20,
+                  remainingLoadStatus: "complete",
+                  recommendedLoad: null,
+                  recommendedLoadStatus: "unavailable",
+                  deltaLoad: null,
+                },
+                scheduledItems: [],
+                completedItems: [],
+                annotations: [],
+              },
+              {
+                date: "2026-07-25",
+                load: {
+                  plannedLoad: 30,
+                  plannedLoadStatus: "complete",
+                  scheduledLoad: 30,
+                  scheduledLoadStatus: "complete",
+                  completedLoad: 0,
+                  completedLoadStatus: "known_zero",
+                  remainingLoad: 30,
+                  remainingLoadStatus: "complete",
+                  recommendedLoad: null,
+                  recommendedLoadStatus: "unavailable",
+                  deltaLoad: null,
+                },
+                scheduledItems: [],
+                completedItems: [],
+                annotations: [],
+              },
+            ],
+            weeks: [],
+          },
+          dayLoads: {},
+          fitness: { actual: [], scheduled: [], recommended: [] },
+          recommendationPoints: [],
+          ledgerItems: [],
+          sourceCoverage: { activities: null, scheduledItems: null },
+          goalMarkers: [],
+          publishedRevision: null,
+          algorithmVersion: null,
+        }}
+        selectedDate="2026-07-25"
+      />,
+    );
+
+    expect(within(container).getByRole("img", { name: /Selected day: 2026-07-25/ })).toBeTruthy();
+    expect(within(container).getByDisplayValue("2026-07-25")).toBeTruthy();
   });
 
   it("withholds partial scheduled work and unavailable completed activity Load without zeroing it", () => {
