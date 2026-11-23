@@ -140,10 +140,11 @@ function distributeGroupAdjustment(input: {
  * The allocation objective is lexicographic: preserve an identical source
  * exactly; otherwise use the bounded proportional continuous allocation,
  * round down, then give exact integer seconds to the largest fractional
- * remainders. If repeat weights make that rounding impossible, the smallest
- * local (at most 49 seconds) downward rounding repair is tried before a
- * bounded exact-feasibility fallback. This avoids concentrating a valid
- * proportional allocation in an arbitrary repeat group.
+ * remainders. If repeat weights make that rounding impossible, repairs are
+ * tried from one to 49 seconds, choosing the deterministic
+ * lowest-fractional-remainder group for each size, before a bounded
+ * exact-feasibility fallback. This avoids concentrating a valid proportional
+ * allocation in an arbitrary repeat group.
  */
 export function withEphemeralTimedDuration(input: {
   structure: ActivityPlanStructure;
@@ -244,42 +245,55 @@ export function withEphemeralTimedDuration(input: {
     // A small modular repair keeps the result nearest to proportional rounding
     // for cases such as repeat weights 2 and 3 with a remainder of one.
     for (let repair = 1; repair <= MAX_ROUNDING_REPAIR_SECONDS && !additions; repair += 1) {
-      for (const [groupIndex, group] of groups.entries()) {
-        const removable = group.indices.reduce(
-          (sum, index) =>
-            sum + requiredAt(durations, index, "Timed duration transform lost a duration") - 1,
-          0,
-        );
-        if (removable < repair) continue;
-        const repairedDurations = [...durations];
-        const removals = new Array<number>(groups.length).fill(0);
-        removals[groupIndex] = repair;
-        distributeGroupAdjustment({
-          amounts: removals,
-          durations: repairedDurations,
-          fractions,
-          groups,
-          direction: "remove",
-        });
-        const repairedCapacities = groups.map((candidate) =>
-          candidate.indices.reduce(
+      const candidateGroups = groups
+        .map((group, groupIndex) => ({
+          group,
+          groupIndex,
+          removable: group.indices.reduce(
             (sum, index) =>
-              sum +
-              ACTIVITY_PLAN_LIMITS.maxStepDurationSeconds -
-              requiredAt(repairedDurations, index, "Timed duration transform lost a duration"),
+              sum + requiredAt(durations, index, "Timed duration transform lost a duration") - 1,
             0,
           ),
+          fraction: Math.min(
+            ...group.indices.map((index) =>
+              requiredAt(fractions, index, "Timed duration transform lost a fraction"),
+            ),
+          ),
+        }))
+        .filter((candidate) => candidate.removable >= repair)
+        .sort(
+          (left, right) =>
+            left.fraction - right.fraction || left.group.multiplier - right.group.multiplier,
         );
-        const candidate = allocateWeightedExtras({
-          capacities: repairedCapacities,
-          groups,
-          target: roundingRemainder + repair * group.multiplier,
-        });
-        if (candidate) {
-          durations.splice(0, durations.length, ...repairedDurations);
-          additions = candidate;
-          break;
-        }
+      const selected = candidateGroups[0];
+      if (!selected) continue;
+      const repairedDurations = [...durations];
+      const removals = new Array<number>(groups.length).fill(0);
+      removals[selected.groupIndex] = repair;
+      distributeGroupAdjustment({
+        amounts: removals,
+        durations: repairedDurations,
+        fractions,
+        groups,
+        direction: "remove",
+      });
+      const repairedCapacities = groups.map((candidate) =>
+        candidate.indices.reduce(
+          (sum, index) =>
+            sum +
+            ACTIVITY_PLAN_LIMITS.maxStepDurationSeconds -
+            requiredAt(repairedDurations, index, "Timed duration transform lost a duration"),
+          0,
+        ),
+      );
+      const candidate = allocateWeightedExtras({
+        capacities: repairedCapacities,
+        groups,
+        target: roundingRemainder + repair * selected.group.multiplier,
+      });
+      if (candidate) {
+        durations.splice(0, durations.length, ...repairedDurations);
+        additions = candidate;
       }
     }
   }
