@@ -115,7 +115,30 @@ describe("TrainingLoadPath", () => {
               status: "complete",
             },
           },
-          goalMarkers: [],
+          goalMarkers: [
+            {
+              id: "00000000-0000-4000-8000-000000000010",
+              label: "Spring race",
+              priority: 2,
+              targetDate: "2026-07-25",
+              activityCategory: "run",
+            },
+            {
+              id: "00000000-0000-4000-8000-000000000011",
+              label: "Bike event",
+              priority: 4,
+              targetDate: "2026-07-25",
+              activityCategory: "bike",
+            },
+            {
+              id: "00000000-0000-4000-8000-000000000012",
+              label: "Outside window",
+              priority: 1,
+              targetDate: "2026-07-27",
+              activityCategory: null,
+            },
+          ],
+          goalMarkersTruncated: true,
           publishedRevision: 4,
           algorithmVersion: "athlete-state-projection-v1",
         }}
@@ -140,6 +163,25 @@ describe("TrainingLoadPath", () => {
       ),
     ).toBeTruthy();
     expect(chart.getAttribute("aria-label")).toMatch(/latest 42 on 2026-07-25/);
+    expect(chart.getAttribute("aria-label")).toMatch(/Some goal markers may not be shown/);
+    expect(within(chart).getByText("Goal target date")).toBeTruthy();
+    expect(
+      within(chart)
+        .getByRole("link", {
+          name: "Spring race, target date 2026-07-25, priority 2, run",
+        })
+        .getAttribute("href"),
+    ).toBe("/goals/00000000-0000-4000-8000-000000000010");
+    expect(
+      within(chart).getByRole("link", {
+        name: "Bike event, target date 2026-07-25, priority 4, bike",
+      }),
+    ).toBeTruthy();
+    expect(within(chart).queryByText(/Outside window/)).toBeNull();
+    expect(
+      chart.querySelectorAll('[data-goal-marker-date="2026-07-25"][data-goal-marker-count="2"]')
+        .length,
+    ).toBeGreaterThan(0);
   });
 
   it("withholds unavailable actual fitness while retaining scheduled projection and labels historical series", () => {
@@ -340,7 +382,22 @@ describe("TrainingLoadPath", () => {
           recommendationPoints: [],
           ledgerItems: [],
           sourceCoverage: { activities: null, scheduledItems: null },
-          goalMarkers: [],
+          goalMarkers: [
+            {
+              id: "00000000-0000-4000-8000-000000000014",
+              label: "Window start",
+              priority: 1,
+              targetDate: "2026-07-24",
+              activityCategory: null,
+            },
+            {
+              id: "00000000-0000-4000-8000-000000000015",
+              label: "Window end",
+              priority: 1,
+              targetDate: "2026-07-25",
+              activityCategory: null,
+            },
+          ],
           publishedRevision: null,
           algorithmVersion: null,
         }}
@@ -350,6 +407,16 @@ describe("TrainingLoadPath", () => {
 
     expect(within(container).getByRole("img", { name: /Selected day: 2026-07-25/ })).toBeTruthy();
     expect(within(container).getByDisplayValue("2026-07-25")).toBeTruthy();
+    expect(
+      [...container.querySelectorAll('[data-goal-marker-date="2026-07-24"] line')].every(
+        (marker) => marker.getAttribute("x1") === "0",
+      ),
+    ).toBe(true);
+    expect(
+      [...container.querySelectorAll('[data-goal-marker-date="2026-07-25"] line')].every(
+        (marker) => marker.getAttribute("x1") === "100",
+      ),
+    ).toBe(true);
   });
 
   it("withholds partial scheduled work and unavailable completed activity Load without zeroing it", () => {
@@ -491,6 +558,15 @@ describe("TrainingLoadPath", () => {
       <TrainingLoadPath
         projection={{
           ...projection,
+          goalMarkers: [
+            {
+              id: "00000000-0000-4000-8000-000000000013",
+              label: "Visible goal",
+              priority: 1,
+              targetDate: "2026-07-25",
+              activityCategory: null,
+            },
+          ],
           timeline: {
             ...projection.timeline,
             days: [
@@ -519,7 +595,11 @@ describe("TrainingLoadPath", () => {
         }}
       />,
     );
-    expect(within(container).queryByRole("img", { name: /Training load chart/ })).toBeNull();
-    expect(within(container).getByText(/No chart data is available/)).toBeTruthy();
+    expect(
+      within(container).getByRole("img", {
+        name: /Visible goal on 2026-07-25/i,
+      }),
+    ).toBeTruthy();
+    expect(within(container).getByText("Visible goal · 2026-07-25")).toBeTruthy();
   });
 });

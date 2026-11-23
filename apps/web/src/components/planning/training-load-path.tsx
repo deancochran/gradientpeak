@@ -273,6 +273,8 @@ export function TrainingLoadPath({
             <TrainingLoadChart
               fitness={projection.fitness}
               fitnessHistory={projection.fitnessHistory}
+              goalMarkers={projection.goalMarkers}
+              goalMarkersTruncated={projection.goalMarkersTruncated}
               days={timeline.days}
               selectedDate={selectedDate}
             />
