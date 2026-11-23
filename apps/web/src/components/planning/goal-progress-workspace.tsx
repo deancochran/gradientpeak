@@ -5,7 +5,11 @@ import { Link } from "@tanstack/react-router";
 import { Activity } from "lucide-react";
 import { api } from "../../lib/api/client";
 import { GoalProgressChart } from "./goal-progress-chart";
-import { formatGoalTimeLeft, goalPlanningDate } from "./goal-progress-presentation";
+import {
+  formatGoalTimeLeft,
+  goalPlanningDate,
+  selectGoalProgressHistory,
+} from "./goal-progress-presentation";
 
 type UpcomingGoal = {
   id: string;
@@ -30,6 +34,7 @@ export function GoalProgressWorkspace({
     goal.target_date,
     goalPlanningDate(new Date(), planningTimezone),
   );
+  const history = selectGoalProgressHistory(progressQuery.data, historyQuery.data);
 
   if (progressQuery.data?.result.status === "unsupported") {
     return (
@@ -86,8 +91,9 @@ export function GoalProgressWorkspace({
       </div>
       <GoalProgressChart
         data={progressQuery.data}
-        history={historyQuery.data?.history.items ?? []}
+        history={history.history}
         historyError={historyQuery.isError}
+        historyLimited={history.historyLimited}
         isError={progressQuery.isError}
         isLoading={progressQuery.isLoading || (supportsThresholdProgress && historyQuery.isLoading)}
         onRetry={() => {
@@ -95,6 +101,7 @@ export function GoalProgressWorkspace({
           void historyQuery.refetch();
         }}
         planningTimezone={planningTimezone}
+        publicationMismatch={history.publicationMismatch}
         targetDate={goal.target_date}
       />
     </section>

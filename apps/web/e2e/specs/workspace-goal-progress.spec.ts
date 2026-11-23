@@ -27,7 +27,7 @@ test("Home and Plan expose observed threshold-goal progress from canonical athle
     const goalId = cardId.replace("goal-card-", "");
     fixture.rememberGoal(goalId);
 
-    for (const route of ["/", "/plan"]) {
+    for (const route of ["/", "/plan?date=2026-11-28"]) {
       await athletePage.goto(route);
       const workspace = athletePage.getByRole("region", { name: /goal progress/i });
       await expect(workspace).toBeVisible();
@@ -44,6 +44,17 @@ test("Home and Plan expose observed threshold-goal progress from canonical athle
         workspace.getByRole("link", { name: /Source activity: Playwright threshold source/ }),
       ).toBeVisible();
       await expectNoHorizontalOverflow(athletePage);
+      await workspace.getByRole("link", { name: title }).click();
+      await expect(athletePage.getByRole("heading", { name: title, exact: true })).toBeVisible();
+      await athletePage.goBack();
+      await expect(athletePage).toHaveURL(new RegExp(`${route.replace("?", "\\?")}$`));
+      const sourceLink = athletePage
+        .getByRole("region", { name: /goal progress/i })
+        .getByRole("link", { name: /Source activity: Playwright threshold source/ });
+      await sourceLink.click();
+      await expect(athletePage).toHaveURL(/\/activities\//);
+      await athletePage.goBack();
+      await expect(athletePage).toHaveURL(new RegExp(`${route.replace("?", "\\?")}$`));
     }
   });
 });

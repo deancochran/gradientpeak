@@ -20,6 +20,8 @@ export function GoalProgressChart({
   isLoading,
   isError,
   historyError = false,
+  historyLimited = false,
+  publicationMismatch = false,
   onRetry,
   planningTimezone = null,
   targetDate = null,
@@ -29,6 +31,8 @@ export function GoalProgressChart({
   isLoading: boolean;
   isError: boolean;
   historyError?: boolean;
+  historyLimited?: boolean;
+  publicationMismatch?: boolean;
   onRetry: () => void;
   planningTimezone?: string | null;
   targetDate?: string | null;
@@ -41,7 +45,7 @@ export function GoalProgressChart({
         <p role="status">Loading goal progress…</p>
       </ChartCard>
     );
-  if (isError)
+  if (isError && !data)
     return (
       <ChartCard title="Goal progress">
         <div role="alert">
@@ -111,6 +115,25 @@ export function GoalProgressChart({
           {data.publication?.status === "unavailable" ? "unavailable" : "stale"}.
         </p>
       ) : null}
+      {isError ? (
+        <div role="alert" className="text-sm">
+          <p>Goal progress could not be refreshed. Available observations may be stale.</p>
+          <Button variant="ghost" onClick={onRetry}>
+            Retry progress
+          </Button>
+        </div>
+      ) : null}
+      {publicationMismatch ? (
+        <div role="alert" className="text-sm">
+          <p>
+            History is from a different publication. Showing only evidence attached to this goal
+            progress.
+          </p>
+          <Button variant="ghost" onClick={onRetry}>
+            Retry history
+          </Button>
+        </div>
+      ) : null}
       {historyError ? (
         <div role="alert" className="text-sm">
           <p>Full history could not be loaded. Showing available goal evidence.</p>
@@ -118,6 +141,11 @@ export function GoalProgressChart({
             Retry history
           </Button>
         </div>
+      ) : null}
+      {historyLimited ? (
+        <p className="text-sm text-muted-foreground">
+          History is limited to the most recent available measurements.
+        </p>
       ) : null}
       {plot.points.length ? (
         <>
