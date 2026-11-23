@@ -18,7 +18,7 @@ import {
   requireFreshBaseline,
   withDisposableDatabase,
 } from "@repo/db/testing/disposable-database";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { expect, it } from "vitest";
 import { organizationsRouter } from "../organizations";
 
@@ -62,6 +62,9 @@ it("proves bounded visual roster scopes, local dates, cursors, and revoked acces
         const owner = await person(db, "Owner");
         const coach = await person(db, "Coach");
         const activitiesOnly = await person(db, "Activities only");
+        const metricsOnly = await person(db, "Metrics only");
+        const goalsOnly = await person(db, "Goals only");
+        const noConsent = await person(db, "No consent");
         const allScopes = await person(db, "All scopes");
         const organizationId = randomUUID();
         const wrongOrganizationId = randomUUID();
@@ -86,7 +89,7 @@ it("proves bounded visual roster scopes, local dates, cursors, and revoked acces
           role_key: "coach",
         });
         const engagements = new Map<string, string>();
-        for (const athlete of [activitiesOnly, allScopes]) {
+        for (const athlete of [activitiesOnly, metricsOnly, goalsOnly, noConsent, allScopes]) {
           const engagementId = randomUUID();
           engagements.set(athlete, engagementId);
           await db.insert(coachingEngagements).values({
@@ -108,7 +111,13 @@ it("proves bounded visual roster scopes, local dates, cursors, and revoked acces
               (id, scope_key, effective_from, jurisdiction, terms_text, content_digest)
             values (${policy}::uuid, ${scope}, now() - interval '1 second', 'US', 'Fixture terms', ${`sha256:${policy}`})
           `);
-          for (const athlete of scope === "activities" ? [activitiesOnly, allScopes] : [allScopes])
+          const consentingAthletes =
+            scope === "activities"
+              ? [activitiesOnly, allScopes]
+              : scope === "metrics"
+                ? [metricsOnly, allScopes]
+                : [goalsOnly, allScopes];
+          for (const athlete of consentingAthletes)
             await db.insert(athleteDataSharingConsents).values({
               organization_id: organizationId,
               engagement_id: engagements.get(athlete) ?? "",
@@ -121,7 +130,7 @@ it("proves bounded visual roster scopes, local dates, cursors, and revoked acces
         const today = new Date().toLocaleDateString("en-CA", {
           timeZone: "America/Los_Angeles",
         });
-        for (const athlete of [activitiesOnly, allScopes]) {
+        for (const athlete of [activitiesOnly, metricsOnly, allScopes]) {
           await db.insert(profileAthleteState).values({
             profile_id: athlete,
             source_revision: athlete === activitiesOnly ? 2 : 1,
@@ -160,23 +169,27 @@ it("proves bounded visual roster scopes, local dates, cursors, and revoked acces
             },
           ]);
         }
-        await db.insert(profileGoals).values({
-          id: randomUUID(),
-          profile_id: allScopes,
-          created_at: new Date(),
-          updated_at: new Date(),
-          title: "Target event",
-          priority: 1,
-          activity_category: "run",
-          target_date: "2027-01-01",
-          target_payload: {
-            type: "event_performance",
-            activity_category: "run",
-            distance_m: 5000,
-            target_time_s: 1500,
-          },
-        });
+        await db.insert(profileGoals).values(
+          [allScopes, goalsOnly].map((profileId) => ({
+            id: randomUUID(),
+            profile_id: profileId,
+            created_at: new Date(),
+            updated_at: new Date(),
+            title: "Target event",
+            priority: 1,
+            activity_category: "run" as const,
+            target_date: "2027-01-01",
+            target_payload: {
+              type: "event_performance",
+              activity_category: "run",
+              distance_m: 5000,
+              target_time_s: 1500,
+            },
+          })),
+        );
         const caller = organizationsRouter.createCaller(context(db, coach)).coachAthletes;
+        const full = await caller.listVisualRoster({ organizationId, limit: 50 });
+        expect(full.items).toHaveLength(5);
         const first = await caller.listVisualRoster({ organizationId, limit: 1 });
         expect(first.queryCount).toBe(3);
         expect(first.items).toHaveLength(1);
@@ -186,12 +199,8 @@ it("proves bounded visual roster scopes, local dates, cursors, and revoked acces
           limit: 1,
           cursor: first.nextCursor,
         });
-        expect([...first.items, ...second.items].map((item) => item.profileId).sort()).toEqual(
-          [activitiesOnly, allScopes].sort(),
-        );
-        const activitiesOnlyResult = [...first.items, ...second.items].find(
-          (item) => item.profileId === activitiesOnly,
-        );
+        expect(first.items[0]?.profileId).not.toBe(second.items[0]?.profileId);
+        const activitiesOnlyResult = full.items.find((item) => item.profileId === activitiesOnly);
         expect(activitiesOnlyResult).toMatchObject({
           metrics: { status: "unshared" },
           activities: {
@@ -208,6 +217,36 @@ it("proves bounded visual roster scopes, local dates, cursors, and revoked acces
         });
         expect(activitiesOnlyResult?.activities.points[0]).not.toMatchObject({
           date: "2099-01-01",
+        });
+        const scopeResult = (profileId: string) =>
+          full.items.find((item) => item.profileId === profileId);
+        expect(scopeResult(metricsOnly)).toMatchObject({
+          metrics: { status: "available" },
+          activities: { status: "unshared", points: [] },
+          goals: { status: "unshared", items: [] },
+        });
+        expect(scopeResult(goalsOnly)).toMatchObject({
+          metrics: { status: "unshared" },
+          activities: { status: "unshared", points: [] },
+          goals: { status: "available" },
+        });
+        expect(scopeResult(noConsent)).toMatchObject({
+          metrics: { status: "unshared" },
+          activities: { status: "unshared", points: [] },
+          goals: { status: "unshared", items: [] },
+        });
+        await db
+          .update(athleteDataSharingConsents)
+          .set({ ended_at: new Date() })
+          .where(
+            and(
+              eq(athleteDataSharingConsents.athlete_profile_id, allScopes),
+              eq(athleteDataSharingConsents.scope_key, "activities"),
+            ),
+          );
+        const consentRevoked = await caller.listVisualRoster({ organizationId, limit: 50 });
+        expect(consentRevoked.items.find((item) => item.profileId === allScopes)).toMatchObject({
+          activities: { status: "unshared", points: [] },
         });
         await expect(
           caller.listVisualRoster({ organizationId: wrongOrganizationId }),
