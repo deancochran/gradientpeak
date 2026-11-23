@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
     composeQuery: "coach" as string | undefined,
     composeRecipients: [{ id: "user-1", username: "rider", is_public: true, avatar_url: null }],
     conversationId: undefined,
+    returnTo: undefined as string | undefined,
     flash: undefined,
     flashType: undefined,
   },
@@ -90,12 +91,31 @@ afterEach(() => {
   mocks.routeSearch.composeRecipients = [
     { id: "user-1", username: "rider", is_public: true, avatar_url: null },
   ];
+  mocks.routeSearch.returnTo = undefined;
   mocks.inboxError = false;
   mocks.searchError = false;
   mocks.searchFetching = false;
 });
 
 describe("messages recipient GET form", () => {
+  it("keeps only an allowlisted athlete workspace return context", () => {
+    mocks.routeSearch.returnTo =
+      "/organizations/11111111-1111-1111-1111-111111111111/athletes/22222222-2222-2222-2222-222222222222";
+    const MessagesPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<MessagesPage />);
+
+    expect(
+      screen.getByRole("link", { name: "Return to athlete workspace" }).getAttribute("href"),
+    ).toBe(mocks.routeSearch.returnTo);
+
+    const route = Route as unknown as {
+      validateSearch: (search: Record<string, unknown>) => { returnTo?: string };
+    };
+    expect(
+      route.validateSearch({ returnTo: "https://untrusted.example/" }).returnTo,
+    ).toBeUndefined();
+  });
+
   it("submits native search params once and keeps clear local until submit", () => {
     const MessagesPage = (Route as unknown as { component: React.ComponentType }).component;
     const { rerender } = render(<MessagesPage />);
