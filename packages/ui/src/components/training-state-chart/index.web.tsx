@@ -42,11 +42,13 @@ function TrainingStateLegend({
 }
 
 function TrainingStateChart({
+  accessibilityLabel,
   className,
   colors,
   description,
   emptyMessage,
   series,
+  sourceLabels,
   testId,
   title,
   visual,
@@ -60,7 +62,7 @@ function TrainingStateChart({
     return {
       color: colors?.[metric] ?? metricDefinition.webColor,
       id: `${metric}-${source}`,
-      label: `${metricDefinition.label} · ${getTrainingStateSourceLabel(source)}`,
+      label: `${metricDefinition.label} · ${sourceLabels?.[source] ?? getTrainingStateSourceLabel(source)}`,
       source,
       values,
       summary: summarizeChartValues(values),
@@ -118,7 +120,10 @@ function TrainingStateChart({
       title={chartTitle}
     >
       <div
-        aria-label={`${chartTitle}. ${getTrainingStateAccessibilityLabel(visual, series)}`}
+        aria-label={
+          accessibilityLabel ??
+          `${chartTitle}. ${getTrainingStateAccessibilityLabel(visual, series)}`
+        }
         className="relative h-56 w-full"
         data-testid={testId}
         role="img"

@@ -60,11 +60,13 @@ function TrainingStateLegend({
 }
 
 function TrainingStateChart({
+  accessibilityLabel,
   className,
   colors,
   description,
   emptyMessage,
   series,
+  sourceLabels: _sourceLabels,
   testId,
   title,
   visual,
@@ -99,7 +101,9 @@ function TrainingStateChart({
       {hasValues ? (
         <View
           accessible
-          accessibilityLabel={getTrainingStateAccessibilityLabel(visual, series)}
+          accessibilityLabel={
+            accessibilityLabel ?? getTrainingStateAccessibilityLabel(visual, series)
+          }
           accessibilityRole="image"
           className="h-40 overflow-hidden rounded-2xl border border-border bg-card p-2"
         >

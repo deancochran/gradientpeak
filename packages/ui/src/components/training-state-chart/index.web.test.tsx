@@ -126,4 +126,25 @@ describe("TrainingStateChart", () => {
     expect(document.querySelector("polyline")?.getAttribute("stroke-dasharray")).toBe("6 4");
     expect(screen.getByLabelText("Chart legend")).toHaveTextContent("Fitness · Projected");
   });
+
+  it("preserves default source labels unless a compatible caller override is supplied", () => {
+    const { rerender } = render(
+      <TrainingStateChart
+        emptyMessage="No training state"
+        series={[{ metric: "fitness", source: "recorded" }]}
+        visual={trainingStateChartFixtures.mixedSeries}
+      />,
+    );
+    expect(screen.getByLabelText("Chart legend")).toHaveTextContent("Fitness · Recorded");
+
+    rerender(
+      <TrainingStateChart
+        emptyMessage="No training state"
+        series={[{ metric: "fitness", source: "recorded" }]}
+        sourceLabels={{ recorded: "Baseline" }}
+        visual={trainingStateChartFixtures.mixedSeries}
+      />,
+    );
+    expect(screen.getByLabelText("Chart legend")).toHaveTextContent("Fitness · Baseline");
+  });
 });

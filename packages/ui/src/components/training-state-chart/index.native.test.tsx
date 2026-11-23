@@ -139,4 +139,18 @@ describe("TrainingStateChart native", () => {
     expect(getByText("No selected training state")).toBeTruthy();
     expect(queryByTestId("training-state-native-chart")).toBeTruthy();
   });
+
+  it("uses an explicit accessibility override without changing default data keys", async () => {
+    const { getByLabelText, getByTestId } = await renderNative(
+      <TrainingStateChart
+        accessibilityLabel="Baseline and alternative comparison"
+        emptyMessage="No training state"
+        series={[{ metric: "fitness", source: "recorded" }]}
+        visual={trainingStateChartFixtures.mixedSeries}
+      />,
+    );
+
+    expect(getByLabelText("Baseline and alternative comparison")).toBeTruthy();
+    expect(getByTestId("victory-cartesian-chart").props.yKeys).toEqual(["recorded-fitness"]);
+  });
 });
