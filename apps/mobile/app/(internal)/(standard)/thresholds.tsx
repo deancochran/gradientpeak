@@ -1,18 +1,26 @@
+import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
+import type { ThresholdHistoryPoint } from "@repo/ui/components/threshold-history";
 import {
   formatThresholdDate,
   formatThresholdValue,
   groupThresholdHistory,
+  mergeThresholdHistoryPages,
   ThresholdHistoryChart,
   thresholdMetricLabel,
 } from "@repo/ui/components/threshold-history";
 import { useRouter } from "expo-router";
+import { useEffect, useState } from "react";
 import { ScrollView, TouchableOpacity, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { ErrorState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
+
+type HistoryCursor = NonNullable<
+  inferRouterOutputs<AppRouter>["athleteIntelligence"]["getThresholdOverview"]["history"]["nextCursor"]
+>;
 
 function readable(value: string) {
   return value.replaceAll("_", " ");
@@ -23,6 +31,39 @@ function ThresholdOverviewScreen() {
   const overviewQuery = api.athleteIntelligence.getThresholdOverview.useQuery({
     historyLimit: 100,
   });
+  const overview = overviewQuery.data;
+  const sourceKey = `${overview?.publication?.publishedRevision ?? "none"}:${overview?.publication?.computedAt ?? "none"}`;
+  const [olderItems, setOlderItems] = useState<readonly ThresholdHistoryPoint[]>([]);
+  const [olderNextCursor, setOlderNextCursor] = useState<HistoryCursor | null>(null);
+  const [requestedCursor, setRequestedCursor] = useState<HistoryCursor | null>(null);
+  const [requestSourceKey, setRequestSourceKey] = useState<string | null>(null);
+  const olderQuery = api.athleteIntelligence.getThresholdOverview.useQuery(
+    { historyLimit: 100, ...(requestedCursor ? { historyCursor: requestedCursor } : {}) },
+    { enabled: requestedCursor !== null },
+  );
+  useEffect(() => {
+    setOlderItems([]);
+    setOlderNextCursor(null);
+    setRequestedCursor(null);
+    setRequestSourceKey(null);
+  }, [sourceKey]);
+  useEffect(() => {
+    if (!requestedCursor || !olderQuery.data || requestSourceKey !== sourceKey) return;
+    setOlderItems((items) => mergeThresholdHistoryPages(items, olderQuery.data.history.items));
+    setOlderNextCursor(olderQuery.data.history.nextCursor);
+    setRequestedCursor(null);
+  }, [olderQuery.data, requestSourceKey, requestedCursor, sourceKey]);
+  const historyItems = overview
+    ? mergeThresholdHistoryPages(overview.history.items, olderItems)
+    : [];
+  const nextHistoryCursor = olderItems.length
+    ? olderNextCursor
+    : (overview?.history.nextCursor ?? null);
+  const loadEarlier = () => {
+    if (!nextHistoryCursor) return;
+    setRequestSourceKey(sourceKey);
+    setRequestedCursor(nextHistoryCursor);
+  };
 
   return (
     <ScrollView
@@ -46,7 +87,7 @@ function ThresholdOverviewScreen() {
           testID="threshold-overview-error"
           title="Thresholds unavailable"
         />
-      ) : overviewQuery.data ? (
+      ) : overview ? (
         <>
           {overviewQuery.isError ? (
             <ErrorState
@@ -57,12 +98,12 @@ function ThresholdOverviewScreen() {
             />
           ) : null}
           <Text className="text-xs capitalize text-muted-foreground">
-            Publication {overviewQuery.data.publication.status} · revision{" "}
-            {overviewQuery.data.publication.publishedRevision ?? "unavailable"}
+            Publication {overview.publication.status} · revision{" "}
+            {overview.publication.publishedRevision ?? "unavailable"}
           </Text>
           <View className="gap-3" testID="threshold-overview-current">
             {(["bike", "run", "swim"] as const).map((activityCategory) => {
-              const threshold = overviewQuery.data.current.thresholds[activityCategory];
+              const threshold = overview.current.thresholds[activityCategory];
               return (
                 <Card key={activityCategory}>
                   <CardContent className="gap-1 p-4">
@@ -90,7 +131,7 @@ function ThresholdOverviewScreen() {
               );
             })}
           </View>
-          {groupThresholdHistory(overviewQuery.data.history.items).map((series) => {
+          {groupThresholdHistory(historyItems).map((series) => {
             return (
               <View className="gap-3" key={series.id} testID={`threshold-history-${series.id}`}>
                 <Text className="text-lg font-semibold text-foreground">
@@ -139,13 +180,36 @@ function ThresholdOverviewScreen() {
               </View>
             );
           })}
-          {overviewQuery.data.history.nextCursor ? (
-            <Text className="text-sm text-muted-foreground">
-              More calculated threshold history is available. This view shows the newest 100
-              records; additional records are not included in these charts.
-            </Text>
+          {nextHistoryCursor ? (
+            <TouchableOpacity
+              accessibilityLabel="Load earlier threshold history"
+              accessibilityRole="button"
+              className="min-h-11 justify-center rounded-lg bg-muted/30 px-3"
+              disabled={requestedCursor !== null}
+              onPress={loadEarlier}
+              testID="threshold-history-load-earlier"
+            >
+              <Text className="text-sm font-medium text-foreground">
+                {requestedCursor ? "Loading earlier history..." : "Load earlier history"}
+              </Text>
+            </TouchableOpacity>
           ) : null}
-          {overviewQuery.data.history.items.length === 0 ? (
+          {olderQuery.isError && requestedCursor ? (
+            <View className="gap-2">
+              <Text className="text-sm text-muted-foreground">
+                Earlier threshold history could not be loaded. Loaded history is unchanged.
+              </Text>
+              <TouchableOpacity
+                accessibilityLabel="Retry earlier threshold history"
+                accessibilityRole="button"
+                className="min-h-11 justify-center rounded-lg bg-muted/30 px-3"
+                onPress={() => void olderQuery.refetch()}
+              >
+                <Text className="text-sm font-medium text-foreground">Try again</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+          {historyItems.length === 0 ? (
             <Text className="text-sm text-muted-foreground">
               No calculated threshold changes yet.
             </Text>

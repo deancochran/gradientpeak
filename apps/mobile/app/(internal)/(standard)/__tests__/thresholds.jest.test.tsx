@@ -160,5 +160,5 @@ it("keeps bike power and LTHR evidence in separate charts and reports incomplete
 
   expect(screen.getByLabelText(/bike power history with 1 chronological records/i)).toBeTruthy();
   expect(screen.getByLabelText(/bike LTHR history with 1 chronological records/i)).toBeTruthy();
-  expect(screen.getByText(/newest 100 records/i)).toBeTruthy();
+  expect(screen.getByTestId("threshold-history-load-earlier")).toBeTruthy();
 });
