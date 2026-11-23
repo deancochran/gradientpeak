@@ -319,6 +319,7 @@ export const plannedSessionScenarioPreviewDtoSchema = z.discriminatedUnion("stat
   z
     .object({
       status: z.literal("available"),
+      previewFingerprint: z.string().regex(/^v1:sha256:[0-9a-f]{64}$/),
       selectedSession: z
         .object({
           id: uuidSchema,

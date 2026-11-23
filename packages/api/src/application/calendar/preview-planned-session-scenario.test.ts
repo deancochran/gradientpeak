@@ -262,6 +262,7 @@ async function preview(input: {
   db?: ReturnType<typeof dbWithCandidates>;
   profileId?: string;
   createRepository?: typeof createDrizzlePlannedSessionRepository;
+  now?: Date;
 }) {
   const currentRepository = input.repository ?? repository();
   const db = input.db ?? dbWithCandidates();
@@ -269,7 +270,7 @@ async function preview(input: {
     db,
     profileId: input.profileId ?? PROFILE_ID,
     values: input.values,
-    now,
+    now: input.now ?? now,
     createRepository: input.createRepository ?? (() => currentRepository),
   });
 }
@@ -441,6 +442,47 @@ describe("previewPlannedSessionScenario application boundary", () => {
       reason: "state_revision",
       currentStateRevision: 10,
     });
+  });
+
+  it("keeps a fingerprint stable within a planning date and invalidates it for horizon changes", async () => {
+    const morning = await preview({
+      values: request({ kind: "as_planned" }),
+      now: new Date("2026-08-01T01:00:00.000Z"),
+    });
+    const evening = await preview({
+      values: request({ kind: "as_planned" }),
+      now: new Date("2026-08-01T22:00:00.000Z"),
+    });
+    if (morning.status !== "available" || evening.status !== "available")
+      throw new Error("fixture must be available");
+    expect(evening.previewFingerprint).toBe(morning.previewFingerprint);
+
+    const changedHorizon = repository(
+      scenarioSessions().map((item) =>
+        item.id === FUTURE_SESSION_ID ? { ...item, sessionRevision: 4 } : item,
+      ),
+    );
+    const changed = await preview({
+      values: request({ kind: "as_planned" }),
+      repository: changedHorizon,
+    });
+    if (changed.status !== "available") throw new Error("fixture must be available");
+    expect(changed.previewFingerprint).not.toBe(morning.previewFingerprint);
+
+    mocks.planningBaseline.mockResolvedValueOnce({
+      status: "available",
+      revision: 9,
+      context: {
+        ...planningContext,
+        evidence: {
+          ...planningContext.evidence,
+          metricCount: planningContext.evidence.metricCount + 1,
+        },
+      },
+    });
+    const changedObservation = await preview({ values: request({ kind: "as_planned" }) });
+    if (changedObservation.status !== "available") throw new Error("fixture must be available");
+    expect(changedObservation.previewFingerprint).not.toBe(morning.previewFingerprint);
   });
 
   it("rejects a selected session just beyond the bounded scenario horizon", async () => {
