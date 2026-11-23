@@ -1,0 +1,32 @@
+appId: com.deancochran.gradientpeak.dev
+name: Render shared scenario and threshold charts on the current Android candidate
+---
+# This fixture-only developer surface is enabled exclusively by
+# EXPO_PUBLIC_MAESTRO_E2E=1. It does not authenticate or write athlete data.
+- openLink: "gradientpeak-dev://storybook"
+- extendedWaitUntil:
+    visible:
+      id: ui-preview-surface
+    timeout: 90000
+- scrollUntilVisible:
+    element:
+      id: ui-preview-scenario-session-scenario-comparison
+    direction: DOWN
+- assertVisible:
+    text: "Session scenario comparison"
+- assertVisible:
+    text: "Baseline"
+- assertVisible:
+    text: "Alternative"
+- takeScreenshot: visual-charts-scenario-comparison
+- scrollUntilVisible:
+    element:
+      id: ui-preview-scenario-threshold-history
+    direction: DOWN
+- assertVisible:
+    text: "Threshold history"
+- assertVisible:
+    text: "Bike power history"
+- assertVisible:
+    text: "260 W"
+- takeScreenshot: visual-charts-threshold-history

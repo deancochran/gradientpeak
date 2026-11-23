@@ -37,6 +37,7 @@ import {
 import { SessionScenarioComparison } from "../../components/session-scenario-comparison/index.web";
 import { Switch } from "../../components/switch/index.web";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/tabs/index.web";
+import { ThresholdHistoryChart } from "../../components/threshold-history/index.web";
 import { TrainingStateChart } from "../../components/training-state-chart/index.web";
 import { uiPreviewContract, uiPreviewFixtures, uiPreviewFormFields } from "./shared";
 
@@ -109,6 +110,20 @@ function UiPreviewSurface() {
             title={uiPreviewContract.scenarios.sessionScenarioComparison.title}
           />
           <SessionScenarioComparison {...uiPreviewFixtures.sessionScenarioComparison} />
+        </section>
+        <section
+          className="space-y-4 lg:col-span-2"
+          data-testid={uiPreviewContract.scenarios.thresholdHistory.testId}
+        >
+          <ScenarioHeader
+            description={uiPreviewContract.scenarios.thresholdHistory.description}
+            title={uiPreviewContract.scenarios.thresholdHistory.title}
+          />
+          <ThresholdHistoryChart
+            emptyMessage="No threshold history is available."
+            series={uiPreviewFixtures.thresholdHistory}
+            testId="ui-preview-threshold-history"
+          />
         </section>
         <section
           className="space-y-4"

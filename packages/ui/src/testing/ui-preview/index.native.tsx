@@ -37,6 +37,7 @@ import { SessionScenarioComparison } from "../../components/session-scenario-com
 import { Switch } from "../../components/switch/index.native";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/tabs/index.native";
 import { Text } from "../../components/text/index.native";
+import { ThresholdHistoryChart } from "../../components/threshold-history/index.native";
 import {
   TrainingStateChart,
   TrainingStateLegend,
@@ -111,6 +112,17 @@ function UiPreviewSurface() {
           title={uiPreviewContract.scenarios.sessionScenarioComparison.title}
         />
         <SessionScenarioComparison {...uiPreviewFixtures.sessionScenarioComparison} />
+      </View>
+      <View className="gap-4" testID={uiPreviewContract.scenarios.thresholdHistory.testId}>
+        <ScenarioHeader
+          description={uiPreviewContract.scenarios.thresholdHistory.description}
+          title={uiPreviewContract.scenarios.thresholdHistory.title}
+        />
+        <ThresholdHistoryChart
+          emptyMessage="No threshold history is available."
+          series={uiPreviewFixtures.thresholdHistory}
+          testId="ui-preview-threshold-history"
+        />
       </View>
 
       <View className="gap-4" testID={uiPreviewContract.scenarios.identitySummary.testId}>

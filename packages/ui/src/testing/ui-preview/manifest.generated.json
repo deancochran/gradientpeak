@@ -21,6 +21,15 @@
       ]
     },
     {
+      "description": "Chronological threshold evidence retains its timestamps and units.",
+      "testId": "ui-preview-scenario-threshold-history",
+      "title": "Threshold history",
+      "key": "thresholdHistory",
+      "selectors": [
+        "ui-preview-threshold-history"
+      ]
+    },
+    {
       "description": "Shared identity hierarchy with supporting context and status.",
       "testId": "ui-preview-scenario-identity-summary",
       "title": "Identity summary",
