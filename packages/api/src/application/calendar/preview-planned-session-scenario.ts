@@ -77,6 +77,82 @@ function demandForPlan(plan: ActivityPlanPrescriptionSource) {
   };
 }
 
+function fingerprintPlanningBaseline(
+  baseline: Awaited<ReturnType<typeof loadPlanningBaseline>>,
+  planningDate: string,
+) {
+  if (baseline.status === "no_context") return { status: baseline.status, planningDate };
+
+  const { context } = baseline;
+  const normalizeUnknownFitnessFact = <T extends { source: string; recordedAt: string | null }>(
+    fact: T,
+  ) => (fact.source === "unknown" ? { ...fact, recordedAt: null } : fact);
+  const {
+    asOf: _targetAsOf,
+    thresholds,
+    heartRate,
+    ...performanceTargetFacts
+  } = context.performanceTargets;
+  const withoutElapsedAge = <T extends { ageSeconds: number | null }>(fact: T) => {
+    const { ageSeconds: _ageSeconds, ...stableFact } = fact;
+    return stableFact;
+  };
+
+  return {
+    status: baseline.status,
+    revision: baseline.revision,
+    context: {
+      demographics: context.demographics,
+      body: context.body,
+      physiology: {
+        ...context.physiology,
+        currentFitnessLongTermLoad: normalizeUnknownFitnessFact(
+          context.physiology.currentFitnessLongTermLoad,
+        ),
+        currentFatigueRecentLoad: normalizeUnknownFitnessFact(
+          context.physiology.currentFatigueRecentLoad,
+        ),
+        currentFormLoadBalance: normalizeUnknownFitnessFact(
+          context.physiology.currentFormLoadBalance,
+        ),
+      },
+      wellness: context.wellness,
+      efforts: context.efforts,
+      evidence: {
+        metricCount: context.evidence.metricCount,
+        effortCount: context.evidence.effortCount,
+        missingFields: context.evidence.missingFields,
+        profileMetricsCoverage: context.evidence.profileMetricsCoverage,
+        activityEffortsCoverage: context.evidence.activityEffortsCoverage,
+        excludedFutureMetricCount: context.evidence.excludedFutureMetricCount,
+        excludedFutureEffortCount: context.evidence.excludedFutureEffortCount,
+      },
+      performanceTargets: {
+        ...performanceTargetFacts,
+        thresholds: {
+          bike: withoutElapsedAge(thresholds.bike),
+          run: withoutElapsedAge(thresholds.run),
+          swim: withoutElapsedAge(thresholds.swim),
+        },
+        heartRate: {
+          bike: {
+            lthr: withoutElapsedAge(heartRate.bike.lthr),
+            maxHr: withoutElapsedAge(heartRate.bike.maxHr),
+          },
+          run: {
+            lthr: withoutElapsedAge(heartRate.run.lthr),
+            maxHr: withoutElapsedAge(heartRate.run.maxHr),
+          },
+          swim: {
+            lthr: withoutElapsedAge(heartRate.swim.lthr),
+            maxHr: withoutElapsedAge(heartRate.swim.maxHr),
+          },
+        },
+      },
+    },
+  };
+}
+
 /**
  * Read-only comparison authority. It resolves every remaining scheduled session
  * from the current plan reference; persisted snapshots are provenance only.
@@ -398,11 +474,13 @@ export async function derivePlannedSessionScenario(input: {
         publishedState: {
           revision: readModel.publishedRevision,
           algorithmVersion: readModel.algorithmVersion ?? null,
-          freshness: readModel.status?.freshness ?? "unavailable",
         },
         // This server-only input captures evidence, observations, and preferences
         // that can change the canonical prescription without a state-revision bump.
-        planningBaseline: baseline,
+        // Its explicit fingerprint projection excludes only runtime elapsed clocks
+        // while retaining their semantic freshness/expiry state and all persisted
+        // evidence values and timestamps.
+        planningBaseline: fingerprintPlanningBaseline(baseline, today),
         sessions: resolvedPlans
           .map(({ session, plan }) => ({
             id: session.id,

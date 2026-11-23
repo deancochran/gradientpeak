@@ -14,10 +14,11 @@ import {
   plannedSessions,
   profileAthleteState,
   profileGoals,
+  profileMetrics,
   profiles,
   users,
 } from "@repo/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import { createDrizzlePlannedSessionRepository } from "../../infrastructure/repositories";
 import { markAthleteStateDirty } from "../../repositories/athlete-state-repository";
@@ -237,6 +238,107 @@ async function readScenarioRows(profileId: string) {
       .from(activityTrainingEffects)
       .where(eq(activityTrainingEffects.profile_id, profileId)),
   ]);
+}
+
+async function createScheduledScenarioSession(input: {
+  profileId: string;
+  planId: string;
+  planningDate: string;
+}) {
+  const id = randomUUID();
+  const source = { kind: "direct" as const, operationId: `scenario_${id.replaceAll("-", "")}` };
+  await expect(
+    createDrizzlePlannedSessionRepository(db).createOwned({
+      profileId: input.profileId,
+      session: plannedSessionSchema.parse({
+        contractVersion: PLANNED_SESSION_CONTRACT_VERSION,
+        id,
+        profileId: input.profileId,
+        sessionRevision: 1,
+        planningDate: input.planningDate,
+        originalTargetDate: input.planningDate,
+        source,
+        idempotencyKey: plannedSessionIdempotencyKey(source),
+        groupEventId: null,
+        activityPlanId: input.planId,
+        lifecycle: { status: "scheduled" },
+      }),
+    }),
+  ).resolves.toMatchObject({ status: "created" });
+  return id;
+}
+
+async function createAvailableScenarioFixture(label: string) {
+  const ownerId = await seedProfile(label);
+  const planId = randomUUID();
+  const hash = activityPlanStructureHash(structure);
+  const semanticHash = activityPlanSemanticHash({
+    structure,
+    trainingIntent: "general_maintenance",
+  });
+  await submitCanonicalBikeFixture({
+    profileId: ownerId,
+    finishedAt: new Date("2026-07-20T10:00:00.000Z"),
+    durationMs: 1_800_000,
+    powerWatts: 300,
+    calibration: true,
+  });
+  await db.transaction((tx) =>
+    markAthleteStateDirty(tx, {
+      profileId: ownerId,
+      effectiveAt: new Date("2026-07-20T10:00:00.000Z"),
+      now,
+    }),
+  );
+  await new AthleteStateWorkerService({ db }).processDueJobs({ limit: 1, now });
+  await new AthleteStateWorkerService({ db }).processDueJobs({ limit: 1, now });
+  const [publishedState] = await db
+    .select()
+    .from(profileAthleteState)
+    .where(eq(profileAthleteState.profile_id, ownerId));
+  if (!publishedState?.published_revision) throw new Error("Expected published athlete state");
+  await db.insert(activityPlans).values({
+    id: planId,
+    profile_id: ownerId,
+    name: `${label} source plan`,
+    structure,
+    structure_hash: hash,
+    semantic_hash: semanticHash,
+    content_visibility: "private",
+  });
+  const selectedSessionId = await createScheduledScenarioSession({
+    profileId: ownerId,
+    planId,
+    planningDate: "2026-08-10",
+  });
+  const otherSessionId = await createScheduledScenarioSession({
+    profileId: ownerId,
+    planId,
+    planningDate: "2026-08-11",
+  });
+  const previewRequest = {
+    sessionId: selectedSessionId,
+    expectedSessionRevision: 1,
+    expectedPlanRevision: 1,
+    expectedStateRevision: publishedState.published_revision,
+    scenario: { kind: "less" as const, targetDurationSeconds: 900 },
+  };
+  const preview = await previewPlannedSessionScenario({
+    db,
+    profileId: ownerId,
+    values: previewRequest,
+    now,
+  });
+  if (preview.status !== "available") throw new Error("Expected available scenario preview");
+  return {
+    ownerId,
+    planId,
+    selectedSessionId,
+    otherSessionId,
+    publishedState,
+    previewRequest,
+    preview,
+  };
 }
 
 describeDisposable("planned-session scenario preview against a disposable database", () => {
@@ -1097,5 +1199,219 @@ describeDisposable("planned-session scenario preview against a disposable databa
           ),
         ),
     ).toHaveLength(0);
+  });
+
+  it("rejects an old preview after each persisted scenario authority change without copying, repointing, or syncing", async () => {
+    const cases = [
+      {
+        label: "selected session",
+        change: async (fixture: Awaited<ReturnType<typeof createAvailableScenarioFixture>>) => {
+          await db
+            .update(plannedSessions)
+            .set({ session_revision: 2 })
+            .where(eq(plannedSessions.id, fixture.selectedSessionId));
+        },
+      },
+      {
+        label: "source plan",
+        change: async (fixture: Awaited<ReturnType<typeof createAvailableScenarioFixture>>) => {
+          const changedStructure = activityPlanStructureSchema.parse({
+            version: 5,
+            activity_category: "bike",
+            items: [
+              {
+                type: "step",
+                id: "11111111-1111-4111-8111-111111111111",
+                duration: { type: "time", seconds: 1_200 },
+                targets: [{ type: "%FTP", intensity: 75 }],
+              },
+            ],
+          });
+          await db
+            .update(activityPlans)
+            .set({
+              structure: changedStructure,
+              structure_hash: activityPlanStructureHash(changedStructure),
+              semantic_hash: activityPlanSemanticHash({
+                structure: changedStructure,
+                trainingIntent: "general_maintenance",
+              }),
+            })
+            .where(eq(activityPlans.id, fixture.planId));
+        },
+      },
+      {
+        label: "published state",
+        change: async (fixture: Awaited<ReturnType<typeof createAvailableScenarioFixture>>) => {
+          await submitCanonicalBikeFixture({
+            profileId: fixture.ownerId,
+            finishedAt: new Date("2026-07-31T10:00:00.000Z"),
+            durationMs: 1_800_000,
+            powerWatts: 280,
+          });
+          await db.transaction((tx) =>
+            markAthleteStateDirty(tx, {
+              profileId: fixture.ownerId,
+              effectiveAt: new Date("2026-07-31T10:00:00.000Z"),
+              now,
+            }),
+          );
+          await new AthleteStateWorkerService({ db }).processDueJobs({ limit: 1, now });
+          await new AthleteStateWorkerService({ db }).processDueJobs({ limit: 1, now });
+        },
+      },
+      {
+        label: "other horizon session",
+        change: async (fixture: Awaited<ReturnType<typeof createAvailableScenarioFixture>>) => {
+          await db
+            .update(plannedSessions)
+            .set({ session_revision: 2 })
+            .where(eq(plannedSessions.id, fixture.otherSessionId));
+        },
+      },
+    ];
+
+    for (const testCase of cases) {
+      const fixture = await createAvailableScenarioFixture(`Stale ${testCase.label}`);
+      const providerCalls: Array<{ sessionId: string; action: string }> = [];
+      const plansBefore = await db
+        .select({ id: activityPlans.id })
+        .from(activityPlans)
+        .where(eq(activityPlans.profile_id, fixture.ownerId));
+      await testCase.change(fixture);
+      const [selectedBeforeApply] = await db
+        .select()
+        .from(plannedSessions)
+        .where(eq(plannedSessions.id, fixture.selectedSessionId));
+
+      const result = await applyPlannedSessionScenario({
+        db,
+        actorId: fixture.ownerId,
+        profileId: fixture.ownerId,
+        request: {
+          preview: fixture.previewRequest,
+          expectedPreviewFingerprint: fixture.preview.previewFingerprint,
+          operationId: `stale-authority-${testCase.label.replaceAll(" ", "-")}-0001`,
+        },
+        now,
+        enqueueProviderSync: async ({ sessionId, action }) => {
+          providerCalls.push({ sessionId, action });
+        },
+      });
+      expect(result.status, testCase.label).toBe("stale");
+      expect(
+        await db
+          .select({ id: activityPlans.id })
+          .from(activityPlans)
+          .where(eq(activityPlans.profile_id, fixture.ownerId)),
+      ).toEqual(plansBefore);
+      expect(
+        await db.query.plannedSessions.findFirst({
+          where: eq(plannedSessions.id, fixture.selectedSessionId),
+        }),
+      ).toEqual(selectedBeforeApply);
+      expect(providerCalls).toEqual([]);
+    }
+  });
+
+  it("uses a planning-day-stable fingerprint and invalidates it for a persisted observation", async () => {
+    const fixture = await createAvailableScenarioFixture("Fingerprint observation");
+    const morning = await previewPlannedSessionScenario({
+      db,
+      profileId: fixture.ownerId,
+      values: fixture.previewRequest,
+      now: new Date("2026-08-01T00:01:00.000Z"),
+    });
+    const evening = await previewPlannedSessionScenario({
+      db,
+      profileId: fixture.ownerId,
+      values: fixture.previewRequest,
+      now: new Date("2026-08-01T01:00:00.000Z"),
+    });
+    expect(morning.status).toBe("available");
+    expect(evening.status).toBe("available");
+    if (morning.status !== "available" || evening.status !== "available")
+      throw new Error("Expected available planning-day previews");
+    expect(evening.provenance.selectedAlternative?.structure).toEqual(
+      morning.provenance.selectedAlternative?.structure,
+    );
+    expect(evening.baseline).toEqual(morning.baseline);
+    expect(evening.alternative).toEqual(morning.alternative);
+    expect(evening.previewFingerprint).toBe(morning.previewFingerprint);
+
+    await db.insert(profileMetrics).values({
+      id: randomUUID(),
+      profile_id: fixture.ownerId,
+      metric_type: "resting_hr",
+      value: 47,
+      unit: "bpm",
+      recorded_at: new Date("2026-07-31T12:00:00.000Z"),
+      source: "manual",
+      method: "scenario-disposable-fixture",
+      calculation_version: "scenario-disposable-v1",
+      quality_score: 1,
+      provenance: { source: "scenario-disposable-fixture" },
+    });
+    const changed = await previewPlannedSessionScenario({
+      db,
+      profileId: fixture.ownerId,
+      values: fixture.previewRequest,
+      now: new Date("2026-08-01T01:00:00.000Z"),
+    });
+    expect(changed.status).toBe("available");
+    if (changed.status !== "available") throw new Error("Expected changed available preview");
+    expect(changed.previewFingerprint).not.toBe(morning.previewFingerprint);
+  });
+
+  it("denies the original actor's replay after the applied session is transferred to another actor", async () => {
+    const fixture = await createAvailableScenarioFixture("Receipt ownership transfer");
+    const newOwnerId = await seedProfile("Receipt ownership transfer recipient");
+    const providerCalls: Array<{ sessionId: string; action: string }> = [];
+    const request = {
+      preview: fixture.previewRequest,
+      expectedPreviewFingerprint: fixture.preview.previewFingerprint,
+      operationId: "receipt-ownership-transfer-operation",
+    };
+    const applied = await applyPlannedSessionScenario({
+      db,
+      actorId: fixture.ownerId,
+      profileId: fixture.ownerId,
+      request,
+      now,
+      enqueueProviderSync: async ({ sessionId, action }) => {
+        providerCalls.push({ sessionId, action });
+      },
+    });
+    expect(applied).toMatchObject({ status: "applied", action: "repointed" });
+    // Ownership fields are immutable in production. This disposable fixture
+    // transition models an administrative ownership transfer while preserving
+    // the real receipt fence and its post-fence authorization check.
+    await db.execute(
+      sql`alter table planned_sessions disable trigger planned_sessions_identity_immutable`,
+    );
+    try {
+      await db
+        .update(plannedSessions)
+        .set({ profile_id: newOwnerId })
+        .where(eq(plannedSessions.id, fixture.selectedSessionId));
+    } finally {
+      await db.execute(
+        sql`alter table planned_sessions enable trigger planned_sessions_identity_immutable`,
+      );
+    }
+
+    await expect(
+      applyPlannedSessionScenario({
+        db,
+        actorId: fixture.ownerId,
+        profileId: fixture.ownerId,
+        request,
+        now,
+        enqueueProviderSync: async ({ sessionId, action }) => {
+          providerCalls.push({ sessionId, action });
+        },
+      }),
+    ).rejects.toMatchObject({ name: "OperationReceiptUnauthorizedError" });
+    expect(providerCalls).toEqual([{ sessionId: fixture.selectedSessionId, action: "publish" }]);
   });
 });
