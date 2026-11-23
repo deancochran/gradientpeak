@@ -2,7 +2,7 @@ import { Button } from "@repo/ui/components/button";
 import { SessionScenarioComparison } from "@repo/ui/components/session-scenario-comparison";
 import { Text } from "@repo/ui/components/text";
 import { skipToken } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { TextInput, View } from "react-native";
 import { ActivitySelector } from "@/components/training-plan/modals/components/ActivitySelector";
 import { api } from "@/lib/api";
@@ -10,6 +10,16 @@ import { api } from "@/lib/api";
 type ScenarioKind = "as_planned" | "less" | "more" | "substitute" | "skip";
 
 export function SessionScenarioPreview({
+  ...props
+}: {
+  activityPlanRevision: number;
+  session: { id: string; profileId: string; sessionRevision: number };
+  timeZone: string | null;
+}) {
+  return <SessionScenarioPreviewContents key={props.session.id} {...props} />;
+}
+
+function SessionScenarioPreviewContents({
   activityPlanRevision,
   session,
   timeZone,
@@ -21,11 +31,6 @@ export function SessionScenarioPreview({
   const [kind, setKind] = useState<ScenarioKind>("as_planned");
   const [durationDraft, setDurationDraft] = useState("");
   const [substituteId, setSubstituteId] = useState<string | null>(null);
-  useEffect(() => {
-    setKind("as_planned");
-    setDurationDraft("");
-    setSubstituteId(null);
-  }, [session.id]);
   const stateQuery = api.athleteIntelligence.getReadModel.useQuery(
     { profileId: session.profileId, sections: { publishedState: true, status: true } },
     { enabled: Boolean(timeZone) },
@@ -97,6 +102,31 @@ export function SessionScenarioPreview({
           activities={plans}
           onSelect={(plan) => setSubstituteId(plan.id)}
           selectedActivityId={substituteId}
+          footer={
+            plansQuery.hasNextPage || plansQuery.isError ? (
+              <View className="gap-2 pt-2">
+                {plansQuery.isError ? (
+                  <Text className="text-sm text-destructive">Unable to load activity plans.</Text>
+                ) : null}
+                <Button
+                  disabled={plansQuery.isFetchingNextPage}
+                  onPress={() =>
+                    void (plansQuery.isError ? plansQuery.refetch() : plansQuery.fetchNextPage())
+                  }
+                  testID="session-scenario-load-more-plans"
+                  variant="outline"
+                >
+                  <Text>
+                    {plansQuery.isError
+                      ? "Retry activity plans"
+                      : plansQuery.isFetchingNextPage
+                        ? "Loading activity plans…"
+                        : "Load more activity plans"}
+                  </Text>
+                </Button>
+              </View>
+            ) : null
+          }
         />
       ) : null}
       {stateQuery.isSuccess && typeof stateRevision !== "number" ? (

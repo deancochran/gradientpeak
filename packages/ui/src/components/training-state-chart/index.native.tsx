@@ -30,6 +30,7 @@ function TrainingStateLegend({
   colors,
   metrics = ["fitness", "fatigue", "form"],
   sources,
+  sourceLabels,
   testId,
 }: TrainingStateLegendProps) {
   return (
@@ -52,7 +53,7 @@ function TrainingStateLegend({
       })}
       {sources?.map((source) => (
         <Text className="text-xs text-muted-foreground" key={source}>
-          ━ {getTrainingStateSourceLabel(source)}
+          ━ {sourceLabels?.[source] ?? getTrainingStateSourceLabel(source)}
         </Text>
       ))}
     </View>
@@ -66,7 +67,7 @@ function TrainingStateChart({
   description,
   emptyMessage,
   series,
-  sourceLabels: _sourceLabels,
+  sourceLabels,
   testId,
   title,
   visual,
@@ -99,44 +100,58 @@ function TrainingStateChart({
       ) : null}
       {description ? <Text className="text-xs text-muted-foreground">{description}</Text> : null}
       {hasValues ? (
-        <View
-          accessible
-          accessibilityLabel={
-            accessibilityLabel ?? getTrainingStateAccessibilityLabel(visual, series)
-          }
-          accessibilityRole="image"
-          className="h-40 overflow-hidden rounded-2xl border border-border bg-card p-2"
-        >
-          <CartesianChart
-            data={data}
-            domainPadding={{ bottom: 8, left: 8, right: 8, top: 8 }}
-            frame={{ lineColor: "transparent", lineWidth: 0 }}
-            xKey="index"
-            yKeys={yKeys}
+        <View className="gap-2">
+          <View
+            accessible
+            accessibilityLabel={[
+              accessibilityLabel,
+              getTrainingStateAccessibilityLabel(visual, series),
+            ]
+              .filter(Boolean)
+              .join(". ")}
+            accessibilityRole="image"
+            className="h-40 overflow-hidden rounded-2xl border border-border bg-card p-2"
           >
-            {({ points }) => (
-              <>
-                {series.map(({ metric, source }) => (
-                  <Fragment key={getNativeSeriesKey(metric, source)}>
-                    <Line
-                      color={colors?.[metric] ?? getTrainingStateMetric(metric).nativeColor}
-                      connectMissingData={false}
-                      curveType="natural"
-                      {...(source === "projected" ? { opacity: 0.45 } : {})}
-                      points={points[getNativeSeriesKey(metric, source)]}
-                      strokeWidth={metric === "fitness" ? 3 : metric === "fatigue" ? 2.5 : 2}
-                    />
-                    <Scatter
-                      color={colors?.[metric] ?? getTrainingStateMetric(metric).nativeColor}
-                      {...(source === "projected" ? { opacity: 0.45 } : {})}
-                      points={points[getNativeSeriesKey(metric, source)]}
-                      radius={2.5}
-                    />
-                  </Fragment>
-                ))}
-              </>
-            )}
-          </CartesianChart>
+            <CartesianChart
+              data={data}
+              domainPadding={{ bottom: 8, left: 8, right: 8, top: 8 }}
+              frame={{ lineColor: "transparent", lineWidth: 0 }}
+              xKey="index"
+              yKeys={yKeys}
+            >
+              {({ points }) => (
+                <>
+                  {series.map(({ metric, source }) => (
+                    <Fragment key={getNativeSeriesKey(metric, source)}>
+                      <Line
+                        color={colors?.[metric] ?? getTrainingStateMetric(metric).nativeColor}
+                        connectMissingData={false}
+                        curveType="natural"
+                        {...(source === "projected"
+                          ? { opacity: 0.45, strokeDasharray: [6, 4] }
+                          : {})}
+                        points={points[getNativeSeriesKey(metric, source)]}
+                        strokeWidth={metric === "fitness" ? 3 : metric === "fatigue" ? 2.5 : 2}
+                      />
+                      <Scatter
+                        color={colors?.[metric] ?? getTrainingStateMetric(metric).nativeColor}
+                        {...(source === "projected" ? { opacity: 0.45 } : {})}
+                        points={points[getNativeSeriesKey(metric, source)]}
+                        radius={2.5}
+                      />
+                    </Fragment>
+                  ))}
+                </>
+              )}
+            </CartesianChart>
+          </View>
+          <TrainingStateLegend
+            colors={colors}
+            metrics={[...new Set(series.map(({ metric }) => metric))]}
+            sources={[...new Set(series.map(({ source }) => source))]}
+            sourceLabels={sourceLabels}
+            testId={testId === undefined ? undefined : `${testId}-legend`}
+          />
         </View>
       ) : (
         <Text className="rounded-xl bg-muted/20 px-3 py-3 text-sm text-muted-foreground">

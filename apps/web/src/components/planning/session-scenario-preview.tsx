@@ -2,7 +2,7 @@ import { Button } from "@repo/ui/components/button";
 import { Input } from "@repo/ui/components/input";
 import { SessionScenarioComparison } from "@repo/ui/components/session-scenario-comparison";
 import { skipToken } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { api } from "../../lib/api/client";
 
 type ScenarioKind = "as_planned" | "less" | "more" | "substitute" | "skip";
@@ -23,6 +23,17 @@ function describeUnavailable(reason: string) {
 }
 
 export function SessionScenarioPreview({
+  ...props
+}: {
+  activityPlan: ActivityPlanPreviewIdentity | undefined;
+  session: PlannedSessionPreviewIdentity;
+  timeZone: string | null;
+}) {
+  // A keyed child resets drafts before React can issue a query for a new session.
+  return <SessionScenarioPreviewContents key={props.session.id} {...props} />;
+}
+
+function SessionScenarioPreviewContents({
   activityPlan,
   session,
   timeZone,
@@ -34,12 +45,6 @@ export function SessionScenarioPreview({
   const [kind, setKind] = useState<ScenarioKind>("as_planned");
   const [durationDraft, setDurationDraft] = useState("");
   const [substituteId, setSubstituteId] = useState("");
-  useEffect(() => {
-    setKind("as_planned");
-    setDurationDraft("");
-    setSubstituteId("");
-  }, [session.id]);
-
   const stateQuery = api.athleteIntelligence.getReadModel.useQuery(
     {
       profileId: session.profileId,
@@ -139,6 +144,23 @@ export function SessionScenarioPreview({
           </select>
         </label>
       )}
+      {alternativesQuery.hasNextPage ? (
+        <Button
+          disabled={alternativesQuery.isFetchingNextPage}
+          onClick={() => void alternativesQuery.fetchNextPage()}
+          type="button"
+          variant="outline"
+        >
+          {alternativesQuery.isFetchingNextPage
+            ? "Loading activity plans…"
+            : "Load more activity plans"}
+        </Button>
+      ) : null}
+      {alternativesQuery.isError ? (
+        <Button onClick={() => void alternativesQuery.refetch()} type="button" variant="outline">
+          Retry activity plans
+        </Button>
+      ) : null}
       {!activityPlan ? (
         <p className="text-sm text-muted-foreground">Loading current plan…</p>
       ) : null}

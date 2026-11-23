@@ -6,6 +6,8 @@ import { SessionScenarioPreview } from "./session-scenario-preview";
 
 const mocks = vi.hoisted(() => ({
   alternativeInputs: [] as unknown[],
+  fetchNextPage: vi.fn(),
+  previewInputs: [] as unknown[],
   previewInput: undefined as unknown,
   previewResult: {
     data: undefined as unknown,
@@ -27,7 +29,11 @@ vi.mock("../../lib/api/client", () => ({
           mocks.alternativeInputs.push(input);
           return {
             data: { pages: [{ items: [{ id: "substitute", name: "Substitute plan" }] }] },
+            fetchNextPage: mocks.fetchNextPage,
             hasNextPage: false,
+            isError: false,
+            isFetchingNextPage: false,
+            refetch: vi.fn(),
           };
         },
       },
@@ -37,6 +43,7 @@ vi.mock("../../lib/api/client", () => ({
       previewScenario: {
         useQuery: (input: unknown) => {
           mocks.previewInput = input;
+          mocks.previewInputs.push(input);
           return mocks.previewResult;
         },
       },
@@ -51,7 +58,9 @@ vi.mock("@repo/ui/components/session-scenario-comparison", () => ({
 afterEach(cleanup);
 beforeEach(() => {
   mocks.alternativeInputs = [];
+  mocks.fetchNextPage = vi.fn();
   mocks.previewInput = undefined;
+  mocks.previewInputs = [];
   mocks.previewResult = { data: undefined, isError: false, isLoading: false, refetch: vi.fn() };
   mocks.stateResult = {
     data: { publishedState: { baseline: { stateRevision: 7 } } },
@@ -163,5 +172,12 @@ describe("SessionScenarioPreview", () => {
     );
     expect(inputScenario()).toEqual({ kind: "as_planned" });
     expect(screen.queryByDisplayValue("5400")).toBeNull();
+    expect(mocks.previewInputs).not.toContainEqual({
+      expectedPlanRevision: 5,
+      expectedSessionRevision: 4,
+      expectedStateRevision: 7,
+      scenario: { kind: "more", targetDurationSeconds: 5400 },
+      sessionId: "session-b",
+    });
   });
 });

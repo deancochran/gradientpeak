@@ -30,6 +30,7 @@ export type TrainingStateLegendProps = {
   colors?: Partial<Record<TrainingStateMetricId, string>>;
   metrics?: readonly TrainingStateMetricId[];
   sources?: readonly TrainingStateSource[];
+  sourceLabels?: Partial<Record<TrainingStateSource, string>>;
   testId?: string;
 };
 

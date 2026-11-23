@@ -4,6 +4,7 @@ import { SessionScenarioPreview } from "../SessionScenarioPreview";
 
 const mocks = {
   previewInput: undefined as unknown,
+  previewInputs: [] as unknown[],
   preview: { data: undefined, isError: false, isLoading: false, refetch: jest.fn() },
 };
 
@@ -13,6 +14,11 @@ jest.mock("@/lib/api", () => ({
       list: {
         useInfiniteQuery: () => ({
           data: { pages: [{ items: [{ id: "substitute", name: "Substitute" }] }] },
+          fetchNextPage: jest.fn(),
+          hasNextPage: false,
+          isError: false,
+          isFetchingNextPage: false,
+          refetch: jest.fn(),
         }),
       },
     },
@@ -28,6 +34,7 @@ jest.mock("@/lib/api", () => ({
       previewScenario: {
         useQuery: (input: unknown) => {
           mocks.previewInput = input;
+          mocks.previewInputs.push(input);
           return mocks.preview;
         },
       },
@@ -56,6 +63,7 @@ describe("SessionScenarioPreview", () => {
 
   beforeEach(() => {
     mocks.previewInput = undefined;
+    mocks.previewInputs = [];
     mocks.preview = { data: undefined, isError: false, isLoading: false, refetch: jest.fn() };
   });
 
@@ -112,5 +120,29 @@ describe("SessionScenarioPreview", () => {
     });
     expect(screen.getByDisplayValue("0")).toBeTruthy();
     expect(screen.getByText(/Enter a positive target duration/)).toBeTruthy();
+  });
+
+  it("never submits a prior session draft during a session change", async () => {
+    const screen = await renderNative(<SessionScenarioPreview {...props} />);
+    await act(async () => {
+      (await screen.findByTestId("session-scenario-more")).props.onPress();
+    });
+    await act(async () => {
+      screen.getByPlaceholderText("Enter an explicit duration").props.onChangeText("5400");
+    });
+    await act(async () => {
+      screen.rerender(
+        <SessionScenarioPreview
+          {...props}
+          session={{ id: "session-b", profileId: "profile-a", sessionRevision: 4 }}
+        />,
+      );
+    });
+    expect(mocks.previewInputs).not.toContainEqual(
+      expect.objectContaining({
+        sessionId: "session-b",
+        scenario: { kind: "more", targetDurationSeconds: 5400 },
+      }),
+    );
   });
 });

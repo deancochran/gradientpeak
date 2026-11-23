@@ -140,17 +140,31 @@ describe("TrainingStateChart native", () => {
     expect(queryByTestId("training-state-native-chart")).toBeTruthy();
   });
 
-  it("uses an explicit accessibility override without changing default data keys", async () => {
-    const { getByLabelText, getByTestId } = await renderNative(
+  it("keeps an accessibility override additive and announces supplied source labels with non-color encoding", async () => {
+    const { getAllByTestId, getByLabelText, getByTestId, getByText } = await renderNative(
       <TrainingStateChart
         accessibilityLabel="Baseline and alternative comparison"
         emptyMessage="No training state"
-        series={[{ metric: "fitness", source: "recorded" }]}
+        series={[
+          { metric: "fitness", source: "recorded" },
+          { metric: "fitness", source: "projected" },
+        ]}
+        sourceLabels={{ projected: "Alternative", recorded: "Baseline" }}
+        testId="scenario-chart"
         visual={trainingStateChartFixtures.mixedSeries}
       />,
     );
 
-    expect(getByLabelText("Baseline and alternative comparison")).toBeTruthy();
-    expect(getByTestId("victory-cartesian-chart").props.yKeys).toEqual(["recorded-fitness"]);
+    expect(
+      getByLabelText(/Baseline and alternative comparison.*Planning timezone America\/Los_Angeles/),
+    ).toBeTruthy();
+    expect(getByTestId("victory-cartesian-chart").props.yKeys).toEqual([
+      "recorded-fitness",
+      "projected-fitness",
+    ]);
+    expect(getByTestId("scenario-chart-legend")).toBeTruthy();
+    expect(getByText("━ Baseline")).toBeTruthy();
+    expect(getByText("━ Alternative")).toBeTruthy();
+    expect(getAllByTestId("victory-line")[1]?.props.strokeDasharray).toEqual([6, 4]);
   });
 });
