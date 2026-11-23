@@ -170,8 +170,8 @@ describe("TrainingStateChart native", () => {
       "projected-fitness",
     ]);
     expect(getByTestId("scenario-chart-legend")).toBeTruthy();
-    expect(getByText("● Baseline")).toBeTruthy();
-    expect(getByText("■ Alternative")).toBeTruthy();
+    expect(getByText("● Baseline · solid")).toBeTruthy();
+    expect(getByText("□ Alternative · dashed")).toBeTruthy();
     const dashEffects = getAllByTestId("skia-dash-path-effect");
     expect(dashEffects).toHaveLength(1);
     expect(dashEffects[0]?.props.intervals).toEqual([6, 4]);

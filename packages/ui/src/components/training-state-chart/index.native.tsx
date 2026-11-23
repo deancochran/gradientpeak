@@ -54,8 +54,9 @@ function TrainingStateLegend({
       })}
       {sources?.map((source) => (
         <Text className="text-xs text-muted-foreground" key={source}>
-          {source === "recorded" ? "●" : "■"}{" "}
-          {sourceLabels?.[source] ?? getTrainingStateSourceLabel(source)}
+          {source === "recorded" ? "●" : "□"}{" "}
+          {sourceLabels?.[source] ?? getTrainingStateSourceLabel(source)} ·{" "}
+          {source === "recorded" ? "solid" : "dashed"}
         </Text>
       ))}
     </View>

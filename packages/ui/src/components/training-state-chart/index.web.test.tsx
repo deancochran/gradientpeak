@@ -10,7 +10,7 @@ describe("TrainingStateLegend", () => {
     render(<TrainingStateLegend sources={["recorded", "projected"]} />);
 
     expect(screen.getByLabelText("Training-state legend")).toHaveTextContent(
-      "FitnessFatigueForm● Recorded■ Projected",
+      "FitnessFatigueForm● Recorded · solid□ Projected · dashed",
     );
   });
 });
@@ -40,6 +40,9 @@ describe("TrainingStateChart", () => {
     expect(document.querySelectorAll('[data-marker="circle-filled"]')).toHaveLength(4);
     expect(document.querySelectorAll('[data-marker="square-outline"]')).toHaveLength(3);
     expect(screen.getByLabelText("Chart legend")).toHaveTextContent("Form · Projected");
+    expect(screen.getByLabelText("Training-state legend")).toHaveTextContent(
+      "● Recorded · solid□ Projected · dashed",
+    );
     expect(screen.getAllByText("0.0 Common Load points")).toHaveLength(1);
   });
 
