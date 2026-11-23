@@ -1054,11 +1054,27 @@ describeDisposable("planned-session scenario preview against a disposable databa
           operationId: "outbox-failure-scenario-operation01",
         },
         now,
+        createRepository: (executor) => {
+          const repository = createDrizzlePlannedSessionRepository(executor);
+          return {
+            ...repository,
+            mutateOwned: async (mutation) =>
+              mutation.action === "repoint_activity_plan"
+                ? { status: "stale_revision" as const, currentRevision: 2 }
+                : repository.mutateOwned(mutation),
+          };
+        },
         enqueueProviderSync: async () => {
-          throw new Error("simulated durable outbox failure");
+          throw new Error("provider follow-up must not run after stale repoint");
         },
       }),
-    ).rejects.toThrow("simulated durable outbox failure");
+    ).resolves.toEqual({
+      status: "stale",
+      reason: "session_revision",
+      currentSessionRevision: 2,
+      currentPlanRevision: 1,
+      currentStateRevision: publishedState.published_revision,
+    });
     expect(
       await db
         .select({ id: activityPlans.id })
