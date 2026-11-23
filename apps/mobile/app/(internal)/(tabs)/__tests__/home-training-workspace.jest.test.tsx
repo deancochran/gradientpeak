@@ -1,5 +1,4 @@
 import React from "react";
-import { ROUTES } from "@/lib/constants/routes";
 import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
@@ -8,6 +7,8 @@ const setParamsMock = jest.fn();
 const retryTimezoneInitializationMock = jest.fn();
 const refreshMock = jest.fn();
 let trainingPathState: Record<string, unknown>;
+let routeDate = "2026-04-15";
+const trainingPathInputs: Array<string | null> = [];
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -15,7 +16,7 @@ jest.mock("react-native", () => ({
   View: createHost("View"),
 }));
 jest.mock("expo-router", () => ({
-  useLocalSearchParams: () => ({ date: "2026-04-15" }),
+  useLocalSearchParams: () => ({ date: routeDate }),
   useRouter: () => ({ navigate: navigateMock, setParams: setParamsMock }),
 }));
 jest.mock("@repo/ui/components/button", () => ({ Button: createHost("Button") }));
@@ -31,7 +32,10 @@ jest.mock("@/components/feed", () => ({
     React.createElement("View", { testID: "feed-list" }, primaryContent),
 }));
 jest.mock("@/components/plan/training-path/usePlanTrainingPathData", () => ({
-  usePlanTrainingPathData: () => trainingPathState,
+  usePlanTrainingPathData: (input: string | null) => {
+    trainingPathInputs.push(input);
+    return trainingPathState;
+  },
 }));
 jest.mock("@/components/plan/training-path/PlanDashboardContent", () => ({
   PlanDashboardContent: (props: {
@@ -69,21 +73,42 @@ function readyTrainingPath() {
 describe("Home training workspace", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    routeDate = "2026-04-15";
+    trainingPathInputs.length = 0;
     trainingPathState = readyTrainingPath();
   });
 
   it("puts the selected goal/date/session workspace ahead of the secondary feed and retains date context", async () => {
-    await renderNative(<Home />);
+    const view = await renderNative(<Home />);
 
     expect(screen.getByTestId("home-training-workspace")).toBeTruthy();
     expect(screen.getByTestId("plan-command-center")).toBeTruthy();
     await fireEvent.press(screen.getByTestId("select-training-date"));
     expect(setParamsMock).toHaveBeenCalledWith({ date: "2026-04-16" });
     await fireEvent.press(screen.getByTestId("open-planned-session"));
-    expect(navigateMock).toHaveBeenCalledWith(ROUTES.PLAN.EVENT_DETAIL("session-1"));
+    expect(navigateMock).toHaveBeenCalledWith({
+      pathname: "/event-detail",
+      params: { id: "session-1", resourceType: "planned_session" },
+    });
+    routeDate = "2026-04-17";
+    await view.rerender(<Home />);
+    expect(trainingPathInputs).toContain("2026-04-17");
   });
 
-  it("keeps a failed workspace separate from the feed and provides retry", async () => {
+  it("keeps cached training data visible behind a refresh warning that retries the training path", async () => {
+    trainingPathState = {
+      ...readyTrainingPath(),
+      queryFailureCount: 1,
+    };
+    await renderNative(<Home />);
+
+    expect(screen.getByTestId("plan-command-center")).toBeTruthy();
+    expect(screen.getByTestId("home-training-refresh-warning")).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("home-training-refresh-retry"));
+    expect(refreshMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a blocking training failure separate from the feed and provides retry", async () => {
     trainingPathState = {
       ...readyTrainingPath(),
       hasUsableData: false,
@@ -92,6 +117,7 @@ describe("Home training workspace", () => {
     await renderNative(<Home />);
 
     expect(screen.getByTestId("home-training-error")).toBeTruthy();
+    expect(screen.queryByTestId("plan-command-center")).toBeNull();
     await fireEvent.press(screen.getByTestId("home-training-retry"));
     expect(refreshMock).toHaveBeenCalledTimes(1);
   });

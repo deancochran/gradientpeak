@@ -171,6 +171,19 @@ test("current Android candidate onboards and creates an executable activity plan
     .from(plannedSessions)
     .where(eq(plannedSessions.profile_id, actor.profileId));
   if (!manualSession) throw new Error("Native UI-created session is missing");
+  const athleteVisualWorkspaceResult = runMaestro("athlete-visual-workspace.yaml", {
+    MAESTRO_ACCEPTANCE_SESSION_DATE: today,
+    MAESTRO_ACCEPTANCE_SESSION_ID: manualSession.id,
+  });
+  writeFileSync(
+    testInfo.outputPath("maestro-athlete-visual-workspace.log"),
+    `${athleteVisualWorkspaceResult.stdout ?? ""}\n${athleteVisualWorkspaceResult.stderr ?? ""}`,
+    { mode: 0o600 },
+  );
+  expect(
+    athleteVisualWorkspaceResult.status,
+    "Home must keep its truthful goal state and selected scheduled session after returning",
+  ).toBe(0);
   const manualResult = runMaestro("manual-native-session.yaml", {
     MAESTRO_ACCEPTANCE_PLAN_NAME: planName,
     MAESTRO_ACCEPTANCE_SESSION_DATE: today,

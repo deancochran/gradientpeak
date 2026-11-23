@@ -102,7 +102,7 @@ function useTrainingPathTodayKey(planningTimezone: string | null) {
 export function usePlanTrainingPathData(
   input: string | { anchorDate: string; period: PlanAnalysisWindowPeriod } | null = null,
 ) {
-  const initialSelectedDate = typeof input === "string" ? input : (input?.anchorDate ?? null);
+  const inputSelectedDate = typeof input === "string" ? input : (input?.anchorDate ?? null);
   const { profile, profileLoading, profileError, refreshProfile, user } = useAuth();
   const utils = api.useUtils();
   const initializeTimezoneMutation = api.profiles.initializePlanningTimezone.useMutation();
@@ -129,7 +129,7 @@ export function usePlanTrainingPathData(
       account.active = false;
     };
   }, [account]);
-  const [selectedDate, setSelectedDate] = useState<string | null>(initialSelectedDate);
+  const [selectedDate, setSelectedDate] = useState<string | null>(inputSelectedDate);
   const [analysisPeriod, setAnalysisPeriod] = useState<PlanAnalysisWindowPeriod>(
     typeof input === "object" && input ? input.period : "6w",
   );
@@ -141,6 +141,11 @@ export function usePlanTrainingPathData(
     endDate: string;
     startDate: string;
   } | null>(null);
+  useEffect(() => {
+    if (inputSelectedDate === null) return;
+    pendingBoundarySelectionRef.current = null;
+    setSelectedDate((current) => (current === inputSelectedDate ? current : inputSelectedDate));
+  }, [inputSelectedDate]);
   const ownedProfile = profile?.id === user?.id ? profile : null;
   const persistedCandidate = ianaTimezoneSchema.safeParse(
     ownedProfile?.planning_timezone ??
