@@ -2,49 +2,49 @@ import {
   getCalendarDateInIanaZone,
   ianaTimezoneSchema,
   type ProjectedTrainingStimulus,
+  type ResolutionManifest,
   resolvePlanReadinessHorizon,
   resolvePrescription,
   scheduledDateTimeToIsoInstant,
   simulateTrainingPlan,
 } from "@repo/core";
+import { activityPlanSemanticHash, withEphemeralTimedDuration } from "@repo/core/activity-plan";
 import type { PlannedSession } from "@repo/core/calendar";
 import { activityPlans } from "@repo/db";
-import { and, eq, or } from "drizzle-orm";
-import { z } from "zod";
-import type { DrizzleQueryExecutor } from "../../db";
+import { and, eq, inArray, or } from "drizzle-orm";
+import type { z } from "zod";
+import {
+  plannedSessionScenarioPreviewDtoSchema,
+  type plannedSessionScenarioUnavailableReasonSchema,
+  previewPlannedSessionScenarioRequestSchema,
+} from "../../contracts/planned-sessions";
+import { type DrizzleQueryExecutor, withProfileFencedRepeatableReadSnapshot } from "../../db";
 import type {
   ActivityPlanPrescriptionSource,
   PlannedSessionRepositoryPort,
 } from "../../repositories/planned-session-repository-port";
-import { toVerifiedResolverCandidates } from "../activity-plans/resolver-candidate";
-import { activityPlanCanonicalStructureHash } from "../activity-plans/structure-hash";
+import {
+  toVerifiedResolverCandidate,
+  toVerifiedResolverCandidates,
+} from "../activity-plans/resolver-candidate";
+import {
+  activityPlanCanonicalStructureHash,
+  activityPlanStructureHash,
+} from "../activity-plans/structure-hash";
 import { readAthleteReadModel } from "../athlete-intelligence/athlete-read-model";
 import { loadPlanningBaseline } from "../athlete-intelligence/load-planning-baseline";
 import { selectSimulatedSessionsForProjection } from "../training-plan/projection-planning";
 import { resolveCurrentPlannedSessionPlan } from "./resolve-current-planned-session-plan";
 
 const MAX_SCENARIO_SESSIONS = 366;
-const scenarioSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("as_planned") }).strict(),
-  z.object({ kind: z.literal("less") }).strict(),
-  z.object({ kind: z.literal("more") }).strict(),
-  z.object({ kind: z.literal("skip") }).strict(),
-  z.object({ kind: z.literal("substitute"), activityPlanId: z.string().uuid() }).strict(),
-]);
+export const previewPlannedSessionScenarioInputSchema = previewPlannedSessionScenarioRequestSchema;
 
-export const previewPlannedSessionScenarioInputSchema = z
-  .object({
-    sessionId: z.string().uuid(),
-    expectedSessionRevision: z.number().int().positive(),
-    expectedPlanRevision: z.number().int().positive(),
-    expectedStateRevision: z.number().int().nonnegative(),
-    scenario: scenarioSchema,
-  })
-  .strict();
-
-const unavailable = (reason: string) => ({ status: "unavailable" as const, reason });
+const unavailable = (reason: z.output<typeof plannedSessionScenarioUnavailableReasonSchema>) => ({
+  status: "unavailable" as const,
+  reason,
+});
 const stale = (
-  reason: string,
+  reason: "session_revision" | "plan_revision" | "state_revision",
   current: { sessionRevision?: number; planRevision?: number; stateRevision?: number } = {},
 ) => ({
   status: "stale" as const,
@@ -62,10 +62,6 @@ function demandForPlan(plan: ActivityPlanPrescriptionSource) {
     target_common_load: null,
     importance: "normal" as const,
   };
-}
-
-function scaleDuration(durationSeconds: number | null, scale: number) {
-  return durationSeconds === null ? null : Math.max(1, Math.round((durationSeconds / 60) * scale));
 }
 
 /**
@@ -109,11 +105,13 @@ export async function previewPlannedSessionScenario(input: {
 
   const today = getCalendarDateInIanaZone(input.now.toISOString(), timezone.data);
   if (selected.planningDate < today) return unavailable("session_in_past");
-  const endDate = new Date(`${selected.planningDate}T00:00:00.000Z`);
+  const baselineDate = getCalendarDateInIanaZone(simulationBaseline.asOf, timezone.data);
+  const startDate = baselineDate > today ? baselineDate : today;
+  const endDate = new Date(`${startDate}T00:00:00.000Z`);
   endDate.setUTCDate(endDate.getUTCDate() + MAX_SCENARIO_SESSIONS - 1);
   const range = await input.repository.listOwnedRange({
     profileId: input.profileId,
-    startDate: selected.planningDate,
+    startDate,
     endDate: endDate.toISOString().slice(0, 10),
     limit: MAX_SCENARIO_SESSIONS,
   });
@@ -152,6 +150,7 @@ export async function previewPlannedSessionScenario(input: {
     .from(activityPlans)
     .where(
       and(
+        inArray(activityPlans.id, [...ids]),
         or(
           eq(activityPlans.profile_id, input.profileId),
           eq(activityPlans.content_visibility, "public"),
@@ -159,12 +158,8 @@ export async function previewPlannedSessionScenario(input: {
         ),
       ),
     )
-    .limit(1001);
-  if (
-    candidateRows.length > 1000 ||
-    [...ids].some((id) => !candidateRows.some((row) => row.id === id))
-  )
-    return unavailable("candidate_unavailable");
+    .limit(ids.size + 1);
+  if (candidateRows.length !== ids.size) return unavailable("candidate_unavailable");
   let candidates: ReturnType<typeof toVerifiedResolverCandidates>;
   try {
     candidates = toVerifiedResolverCandidates(
@@ -191,7 +186,6 @@ export async function previewPlannedSessionScenario(input: {
     plan: ActivityPlanPrescriptionSource,
     alternative: boolean,
   ) => {
-    const activityPlanId = alternative && session.id === selected.id ? replacementId : plan.id;
     const baselineResolution = resolvePrescription({
       demand: demandForPlan(plan),
       activity_plan_id: plan.id,
@@ -209,21 +203,67 @@ export async function previewPlannedSessionScenario(input: {
       candidates: candidates.filter((candidate) => candidate.id === plan.id),
     });
     if (baselineResolution.status !== "resolved") return baselineResolution;
-    const scale =
-      alternative && session.id === selected.id
-        ? values.scenario.kind === "less"
-          ? 0.75
-          : values.scenario.kind === "more"
-            ? 1.25
-            : 1
-        : 1;
-    const targetDuration = scaleDuration(
-      baselineResolution.manifest.prescription_estimate.duration.value_seconds,
-      scale,
-    );
+    if (!alternative || session.id !== selected.id || values.scenario.kind === "as_planned")
+      return baselineResolution;
+    if (values.scenario.kind === "skip") return baselineResolution;
+    if (values.scenario.kind === "substitute") {
+      const replacement = candidates.find((candidate) => candidate.id === replacementId);
+      if (!replacement)
+        return {
+          status: "unsupported" as const,
+          reasons: [
+            {
+              code: "explicit_plan_missing" as const,
+              message: "The selected replacement is unavailable.",
+            },
+          ],
+        };
+      return resolvePrescription({
+        demand: {
+          activity_category: replacement.activity_category,
+          training_intent: replacement.training_intent,
+          target_duration_minutes: null,
+          target_common_load: null,
+          importance: "normal",
+        },
+        activity_plan_id: replacement.id,
+        preferences: {
+          weekly_session_count: null,
+          target_weekly_duration_minutes: null,
+          maximum_session_duration_minutes: null,
+          preferred_weekdays: [],
+          rest_days: [],
+          progression_style: null,
+          recovery_priority: null,
+        },
+        baseline,
+        planning_weekday: new Date(`${session.planningDate}T00:00:00.000Z`).getUTCDay(),
+        candidates: [replacement],
+      });
+    }
+    const transformed = withEphemeralTimedDuration({
+      structure: plan.structure,
+      targetDurationSeconds: values.scenario.targetDurationSeconds,
+    });
+    if (transformed.status !== "transformed")
+      return {
+        status: "unsupported" as const,
+        reasons: [{ code: "unsupported_duration" as const, message: transformed.reason }],
+      };
+    const ephemeral = toVerifiedResolverCandidate({
+      id: plan.id,
+      revision: plan.revision,
+      structure: transformed.structure,
+      structureHash: activityPlanStructureHash(transformed.structure),
+      semanticHash: activityPlanSemanticHash({
+        structure: transformed.structure,
+        trainingIntent: plan.trainingIntent,
+      }),
+      trainingIntent: plan.trainingIntent,
+    });
     return resolvePrescription({
-      demand: { ...demandForPlan(plan), target_duration_minutes: targetDuration },
-      activity_plan_id: activityPlanId,
+      demand: demandForPlan(plan),
+      activity_plan_id: plan.id,
       preferences: {
         weekly_session_count: null,
         target_weekly_duration_minutes: null,
@@ -235,12 +275,15 @@ export async function previewPlannedSessionScenario(input: {
       },
       baseline,
       planning_weekday: new Date(`${session.planningDate}T00:00:00.000Z`).getUTCDay(),
-      candidates:
-        activityPlanId === null
-          ? candidates
-          : candidates.filter((candidate) => candidate.id === activityPlanId),
+      candidates: [ephemeral],
     });
   };
+  let selectedAlternative: {
+    activityPlanId: string;
+    activityPlanRevision: number;
+    structure: ActivityPlanPrescriptionSource["structure"];
+    manifest: ResolutionManifest;
+  } | null = null;
   const toStimuli = (alternative: boolean): ProjectedTrainingStimulus[] | null => {
     const stimuli: Array<ProjectedTrainingStimulus & { planningDate: string; isUntimed: boolean }> =
       [];
@@ -252,6 +295,14 @@ export async function previewPlannedSessionScenario(input: {
         result.manifest.prescription_estimate.common_load.value === null
       )
         return null;
+      if (alternative && session.id === selected.id && values.scenario.kind !== "skip") {
+        selectedAlternative = {
+          activityPlanId: result.manifest.activity_plan_id,
+          activityPlanRevision: result.manifest.activity_plan_revision,
+          structure: result.manifest.resolved_structure,
+          manifest: result.manifest,
+        };
+      }
       stimuli.push({
         kind: "projected",
         sourceId: session.id,
@@ -288,7 +339,7 @@ export async function previewPlannedSessionScenario(input: {
       planningTimezone: timezone.data,
       goal: null,
     });
-  return {
+  return plannedSessionScenarioPreviewDtoSchema.parse({
     status: "available" as const,
     selectedSession: {
       id: selected.id,
@@ -305,6 +356,7 @@ export async function previewPlannedSessionScenario(input: {
       resolution: "current_activity_plan",
       selectedPlan: { id: selectedPlan.id, revision: selectedPlan.revision },
       historicalSnapshots: "provenance_only" as const,
+      selectedAlternative,
     },
-  };
+  });
 }

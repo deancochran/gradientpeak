@@ -52,6 +52,7 @@ import {
   plannedSessionDetailDtoSchema,
   plannedSessionMutationReceiptSchema,
   plannedSessionRangeDtoSchema,
+  plannedSessionScenarioPreviewDtoSchema,
   previewPlannedSessionScenarioRequestSchema,
   readPlannedSessionsRangeRequestSchema,
   skipPlannedSessionDtoRequestSchema,
@@ -295,6 +296,7 @@ export function createPlannedSessionsRouter(
       }),
     previewScenario: protectedProcedure
       .input(previewPlannedSessionScenarioRequestSchema)
+      .output(plannedSessionScenarioPreviewDtoSchema)
       .query(async ({ ctx, input }) => {
         const result = await services.previewScenario({
           db: getRequiredDb(ctx),
