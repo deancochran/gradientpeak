@@ -40,10 +40,27 @@ test("Home and Plan expose observed threshold-goal progress from canonical athle
       await expect(workspace.getByText("Target", { exact: true })).toBeVisible();
       await expect(workspace.getByText("300 W", { exact: true })).toBeVisible();
       await expect(workspace.getByText("Remaining gap", { exact: true })).toBeVisible();
+      await expect(workspace.getByText("15 W", { exact: true })).toBeVisible();
+      await expect(workspace.getByText(/Target date: 2027-02-01/)).toBeVisible();
+      await expect(
+        workspace.getByRole("img", {
+          name: /Threshold history\. Current: 285 W\. Target: 300 W\. Remaining gap: 15 W\./,
+        }),
+      ).toBeVisible();
+      await expect(
+        workspace.getByText(/Calculated threshold.*Target.*Deadline.*Assessed/),
+      ).toBeVisible();
       await expect(
         workspace.getByRole("link", { name: /Source activity: Playwright threshold source/ }),
       ).toBeVisible();
       await expectNoHorizontalOverflow(athletePage);
+      await workspace.scrollIntoViewIfNeeded();
+      await expect(workspace).toBeInViewport();
+      await workspace.screenshot({
+        path: testInfo.outputPath(
+          route === "/" ? "home-goal-progress.png" : "plan-goal-progress.png",
+        ),
+      });
       await workspace.getByRole("link", { name: title }).click();
       await expect(athletePage.getByRole("heading", { name: title, exact: true })).toBeVisible();
       await athletePage.goBack();
@@ -53,6 +70,9 @@ test("Home and Plan expose observed threshold-goal progress from canonical athle
         .getByRole("link", { name: /Source activity: Playwright threshold source/ });
       await sourceLink.click();
       await expect(athletePage).toHaveURL(/\/activities\//);
+      await expect(
+        athletePage.getByText("Playwright threshold source", { exact: true }),
+      ).toBeVisible();
       await athletePage.goBack();
       await expect(athletePage).toHaveURL(new RegExp(`${route.replace("?", "\\?")}$`));
     }
