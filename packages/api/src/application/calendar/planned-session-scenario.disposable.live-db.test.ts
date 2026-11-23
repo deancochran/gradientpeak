@@ -10,6 +10,7 @@ import { db, pool } from "@repo/db/client";
 import {
   activityPlans,
   activityTrainingEffects,
+  chatbotOperationReceipts,
   plannedSessions,
   profileAthleteState,
   profileGoals,
@@ -28,16 +29,17 @@ import {
 } from "../activities/submit-activity";
 import { activityPlanStructureHash } from "../activity-plans/structure-hash";
 import { AthleteStateWorkerService } from "../athlete-intelligence/athlete-state-worker";
+import { applyPlannedSessionScenario } from "./apply-planned-session-scenario";
 import { previewPlannedSessionScenario } from "./preview-planned-session-scenario";
 
 function isDisposableScenarioDatabase() {
-  if (process.env.RUN_PLANNED_SESSION_LIVE_DB !== "1") return false;
+  if (process.env.RUN_PLANNED_SESSION_LIVE_DB !== "1" && process.env.RUN_LIVE_DB_TESTS !== "1")
+    return false;
   try {
     const url = new URL(process.env.DATABASE_URL ?? "");
     return (
       ["127.0.0.1", "localhost"].includes(url.hostname) &&
-      url.port === "54322" &&
-      /^\/gradientpeak_planned_sessions_\d+_\d+$/.test(url.pathname)
+      /^\/gradientpeak_(?:planned_sessions|api_live_db)_\d+_\d+$/.test(url.pathname)
     );
   } catch {
     return false;
@@ -353,5 +355,366 @@ describeDisposable("planned-session scenario preview against a disposable databa
         where: and(eq(plannedSessions.id, sessionId), eq(plannedSessions.profile_id, ownerId)),
       }),
     ).toBeTruthy();
+  });
+
+  it("durably applies a canonical less scenario once while retaining source provenance", async () => {
+    const ownerId = await seedProfile("Scenario apply owner");
+    const planId = randomUUID();
+    const selectedSessionId = randomUUID();
+    const otherSessionId = randomUUID();
+    const hash = activityPlanStructureHash(structure);
+    const semanticHash = activityPlanSemanticHash({
+      structure,
+      trainingIntent: "general_maintenance",
+    });
+
+    await submitCanonicalBikeFixture({
+      profileId: ownerId,
+      finishedAt: new Date("2026-07-20T10:00:00.000Z"),
+      durationMs: 1_800_000,
+      powerWatts: 300,
+      calibration: true,
+    });
+    await db.transaction((tx) =>
+      markAthleteStateDirty(tx, {
+        profileId: ownerId,
+        effectiveAt: new Date("2026-07-20T10:00:00.000Z"),
+        now,
+      }),
+    );
+    await new AthleteStateWorkerService({ db }).processDueJobs({ limit: 1, now });
+    await new AthleteStateWorkerService({ db }).processDueJobs({ limit: 1, now });
+    const [publishedState] = await db
+      .select()
+      .from(profileAthleteState)
+      .where(eq(profileAthleteState.profile_id, ownerId));
+    if (!publishedState?.published_revision) throw new Error("Expected published athlete state");
+
+    await db.insert(activityPlans).values({
+      id: planId,
+      profile_id: ownerId,
+      name: "Canonical private source",
+      structure,
+      structure_hash: hash,
+      semantic_hash: semanticHash,
+      content_visibility: "private",
+    });
+    for (const [id, planningDate] of [
+      [selectedSessionId, "2026-08-10"],
+      [otherSessionId, "2026-08-11"],
+    ] as const) {
+      const source = { kind: "direct" as const, operationId: `scenario_${id.replaceAll("-", "")}` };
+      const session = plannedSessionSchema.parse({
+        contractVersion: PLANNED_SESSION_CONTRACT_VERSION,
+        id,
+        profileId: ownerId,
+        sessionRevision: 1,
+        planningDate,
+        originalTargetDate: planningDate,
+        source,
+        idempotencyKey: plannedSessionIdempotencyKey(source),
+        groupEventId: null,
+        activityPlanId: planId,
+        lifecycle: { status: "scheduled" },
+      });
+      await expect(
+        createDrizzlePlannedSessionRepository(db).createOwned({ profileId: ownerId, session }),
+      ).resolves.toMatchObject({ status: "created" });
+    }
+
+    const previewRequest = {
+      sessionId: selectedSessionId,
+      expectedSessionRevision: 1,
+      expectedPlanRevision: 1,
+      expectedStateRevision: publishedState.published_revision,
+      scenario: { kind: "less" as const, targetDurationSeconds: 900 },
+    };
+    const preview = await previewPlannedSessionScenario({
+      db,
+      profileId: ownerId,
+      values: previewRequest,
+      now,
+    });
+    expect(preview.status).toBe("available");
+    if (preview.status !== "available") throw new Error("Expected available scenario preview");
+    const providerCalls: Array<{ sessionId: string; action: string }> = [];
+    const request = {
+      preview: previewRequest,
+      expectedPreviewFingerprint: preview.previewFingerprint,
+      operationId: "less-scenario-apply-operation-00001",
+    };
+    const result = await applyPlannedSessionScenario({
+      db,
+      actorId: ownerId,
+      profileId: ownerId,
+      request,
+      now,
+      enqueueProviderSync: async ({ sessionId, action }) => {
+        providerCalls.push({ sessionId, action });
+      },
+    });
+    expect(result).toMatchObject({ status: "applied", action: "repointed" });
+    if (result.status !== "applied" || !result.createdActivityPlanId)
+      throw new Error("Expected created scenario copy");
+    expect(providerCalls).toEqual([{ sessionId: selectedSessionId, action: "publish" }]);
+
+    const [sourceAfter] = await db.select().from(activityPlans).where(eq(activityPlans.id, planId));
+    const [copy] = await db
+      .select()
+      .from(activityPlans)
+      .where(eq(activityPlans.id, result.createdActivityPlanId));
+    const [selectedAfter] = await db
+      .select()
+      .from(plannedSessions)
+      .where(eq(plannedSessions.id, selectedSessionId));
+    const [otherAfter] = await db
+      .select()
+      .from(plannedSessions)
+      .where(eq(plannedSessions.id, otherSessionId));
+    expect(sourceAfter).toMatchObject({
+      id: planId,
+      structure_hash: hash,
+      semantic_hash: semanticHash,
+      content_visibility: "private",
+    });
+    expect(copy).toMatchObject({
+      profile_id: ownerId,
+      content_visibility: "private",
+      is_system_template: false,
+    });
+    expect(copy?.id).not.toBe(planId);
+    expect(copy?.structure_hash).not.toBe(hash);
+    expect(selectedAfter).toMatchObject({
+      activity_plan_id: copy?.id,
+      session_revision: 2,
+      status: "scheduled",
+    });
+    expect(otherAfter).toMatchObject({
+      activity_plan_id: planId,
+      session_revision: 1,
+      status: "scheduled",
+    });
+
+    const replay = await applyPlannedSessionScenario({
+      db,
+      actorId: ownerId,
+      profileId: ownerId,
+      request,
+      now,
+      enqueueProviderSync: async ({ sessionId, action }) => {
+        providerCalls.push({ sessionId, action });
+      },
+    });
+    expect(replay).toEqual(result);
+    expect(providerCalls).toHaveLength(1);
+
+    const moreSessionId = randomUUID();
+    const moreSource = {
+      kind: "direct" as const,
+      operationId: `scenario_${moreSessionId.replaceAll("-", "")}`,
+    };
+    await createDrizzlePlannedSessionRepository(db).createOwned({
+      profileId: ownerId,
+      session: plannedSessionSchema.parse({
+        contractVersion: PLANNED_SESSION_CONTRACT_VERSION,
+        id: moreSessionId,
+        profileId: ownerId,
+        sessionRevision: 1,
+        planningDate: "2026-08-12",
+        originalTargetDate: "2026-08-12",
+        source: moreSource,
+        idempotencyKey: plannedSessionIdempotencyKey(moreSource),
+        groupEventId: null,
+        activityPlanId: planId,
+        lifecycle: { status: "scheduled" },
+      }),
+    });
+    const morePreviewRequest = {
+      sessionId: moreSessionId,
+      expectedSessionRevision: 1,
+      expectedPlanRevision: 1,
+      expectedStateRevision: publishedState.published_revision,
+      scenario: { kind: "more" as const, targetDurationSeconds: 2_700 },
+    };
+    const morePreview = await previewPlannedSessionScenario({
+      db,
+      profileId: ownerId,
+      values: morePreviewRequest,
+      now,
+    });
+    expect(morePreview.status).toBe("available");
+    if (morePreview.status !== "available") throw new Error("Expected available more preview");
+    const moreResult = await applyPlannedSessionScenario({
+      db,
+      actorId: ownerId,
+      profileId: ownerId,
+      request: {
+        preview: morePreviewRequest,
+        expectedPreviewFingerprint: morePreview.previewFingerprint,
+        operationId: "more-scenario-apply-operation-00001",
+      },
+      now,
+      enqueueProviderSync: async ({ sessionId, action }) => {
+        providerCalls.push({ sessionId, action });
+      },
+    });
+    expect(moreResult).toMatchObject({ status: "applied", action: "repointed" });
+    if (moreResult.status !== "applied" || !moreResult.createdActivityPlanId)
+      throw new Error("Expected more scenario copy");
+    const [moreCopy] = await db
+      .select()
+      .from(activityPlans)
+      .where(eq(activityPlans.id, moreResult.createdActivityPlanId));
+    expect(moreCopy).toMatchObject({ profile_id: ownerId, content_visibility: "private" });
+    expect(moreCopy?.structure_hash).not.toBe(hash);
+
+    const unchangedPreviewRequest = {
+      sessionId: otherSessionId,
+      expectedSessionRevision: 1,
+      expectedPlanRevision: 1,
+      expectedStateRevision: publishedState.published_revision,
+      scenario: { kind: "as_planned" as const },
+    };
+    const unchangedPreview = await previewPlannedSessionScenario({
+      db,
+      profileId: ownerId,
+      values: unchangedPreviewRequest,
+      now,
+    });
+    if (unchangedPreview.status !== "available") throw new Error("Expected as-planned preview");
+    await expect(
+      applyPlannedSessionScenario({
+        db,
+        actorId: ownerId,
+        profileId: ownerId,
+        request: {
+          preview: unchangedPreviewRequest,
+          expectedPreviewFingerprint: unchangedPreview.previewFingerprint,
+          operationId: "unchanged-scenario-apply-operation1",
+        },
+        now,
+        enqueueProviderSync: async ({ sessionId, action }) => {
+          providerCalls.push({ sessionId, action });
+        },
+      }),
+    ).resolves.toMatchObject({
+      status: "applied",
+      action: "unchanged",
+      createdActivityPlanId: null,
+    });
+
+    const skipPreviewRequest = { ...unchangedPreviewRequest, scenario: { kind: "skip" as const } };
+    const skipPreview = await previewPlannedSessionScenario({
+      db,
+      profileId: ownerId,
+      values: skipPreviewRequest,
+      now,
+    });
+    if (skipPreview.status !== "available") throw new Error("Expected future skip preview");
+    await expect(
+      applyPlannedSessionScenario({
+        db,
+        actorId: ownerId,
+        profileId: ownerId,
+        request: {
+          preview: skipPreviewRequest,
+          expectedPreviewFingerprint: skipPreview.previewFingerprint,
+          operationId: "future-skip-scenario-operation-0001",
+        },
+        now,
+        enqueueProviderSync: async ({ sessionId, action }) => {
+          providerCalls.push({ sessionId, action });
+        },
+      }),
+    ).resolves.toMatchObject({ status: "applied", action: "cancelled" });
+    expect(providerCalls).toEqual([
+      { sessionId: selectedSessionId, action: "publish" },
+      { sessionId: moreSessionId, action: "publish" },
+      { sessionId: otherSessionId, action: "delete" },
+    ]);
+    expect(
+      await db
+        .select()
+        .from(chatbotOperationReceipts)
+        .where(eq(chatbotOperationReceipts.profile_id, ownerId)),
+    ).toHaveLength(4);
+
+    const rollbackSessionId = randomUUID();
+    const rollbackSource = {
+      kind: "direct" as const,
+      operationId: `scenario_${rollbackSessionId.replaceAll("-", "")}`,
+    };
+    await createDrizzlePlannedSessionRepository(db).createOwned({
+      profileId: ownerId,
+      session: plannedSessionSchema.parse({
+        contractVersion: PLANNED_SESSION_CONTRACT_VERSION,
+        id: rollbackSessionId,
+        profileId: ownerId,
+        sessionRevision: 1,
+        planningDate: "2026-08-13",
+        originalTargetDate: "2026-08-13",
+        source: rollbackSource,
+        idempotencyKey: plannedSessionIdempotencyKey(rollbackSource),
+        groupEventId: null,
+        activityPlanId: planId,
+        lifecycle: { status: "scheduled" },
+      }),
+    });
+    const rollbackPreviewRequest = {
+      sessionId: rollbackSessionId,
+      expectedSessionRevision: 1,
+      expectedPlanRevision: 1,
+      expectedStateRevision: publishedState.published_revision,
+      scenario: { kind: "less" as const, targetDurationSeconds: 900 },
+    };
+    const rollbackPreview = await previewPlannedSessionScenario({
+      db,
+      profileId: ownerId,
+      values: rollbackPreviewRequest,
+      now,
+    });
+    if (rollbackPreview.status !== "available") throw new Error("Expected rollback preview");
+    const plansBeforeOutboxFailure = await db
+      .select({ id: activityPlans.id })
+      .from(activityPlans)
+      .where(eq(activityPlans.profile_id, ownerId));
+    await expect(
+      applyPlannedSessionScenario({
+        db,
+        actorId: ownerId,
+        profileId: ownerId,
+        request: {
+          preview: rollbackPreviewRequest,
+          expectedPreviewFingerprint: rollbackPreview.previewFingerprint,
+          operationId: "outbox-failure-scenario-operation01",
+        },
+        now,
+        enqueueProviderSync: async () => {
+          throw new Error("simulated durable outbox failure");
+        },
+      }),
+    ).rejects.toThrow("simulated durable outbox failure");
+    expect(
+      await db
+        .select({ id: activityPlans.id })
+        .from(activityPlans)
+        .where(eq(activityPlans.profile_id, ownerId)),
+    ).toEqual(plansBeforeOutboxFailure);
+    const [rollbackSession] = await db
+      .select()
+      .from(plannedSessions)
+      .where(eq(plannedSessions.id, rollbackSessionId));
+    expect(rollbackSession).toMatchObject({ activity_plan_id: planId, session_revision: 1 });
+    expect(
+      await db
+        .select()
+        .from(chatbotOperationReceipts)
+        .where(
+          and(
+            eq(chatbotOperationReceipts.profile_id, ownerId),
+            eq(chatbotOperationReceipts.operation_id, "outbox-failure-scenario-operation01"),
+          ),
+        ),
+    ).toHaveLength(0);
   });
 });
