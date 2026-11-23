@@ -1,0 +1,353 @@
+import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
+import { Button } from "@repo/ui/components/button";
+import { Icon } from "@repo/ui/components/icon";
+import { InlineLoadingStatus, Spinner } from "@repo/ui/components/loading";
+import { Text } from "@repo/ui/components/text";
+import { AlertCircle, Check, Link, RefreshCcw, Unlink } from "lucide-react-native";
+import { Pressable, View } from "react-native";
+import type { IntegrationProvider } from "@/lib/constants/integrations";
+
+type IntegrationOutputs = inferRouterOutputs<AppRouter>["integrations"];
+type AthleteReadModel = inferRouterOutputs<AppRouter>["athleteIntelligence"]["getReadModel"];
+
+export type IntegrationOverviewItem = IntegrationOutputs["getSyncOverview"][number];
+
+type IntegrationProviderListProps = {
+  integrations: IntegrationOverviewItem[];
+  publishedState?: AthleteReadModel;
+  error?: unknown;
+  isLoading?: boolean;
+  onConnect: (provider: IntegrationProvider) => void;
+  onDisconnect?: (integration: IntegrationOverviewItem) => void;
+  onViewImportedActivities?: (importRunId: string) => void;
+  onReviewImportedActivities?: () => void;
+  pendingByProvider?: Partial<
+    Record<IntegrationProvider, "connect" | "disconnect" | "sync_now" | "refresh_setup_data">
+  >;
+  onAction?: (provider: IntegrationProvider, action: "sync_now" | "refresh_setup_data") => void;
+  onRetry?: () => unknown;
+};
+
+function getStatusTone(health: IntegrationOverviewItem["summary"]["health"]) {
+  switch (health) {
+    case "connected":
+      return {
+        container: "border-success/30 bg-success-subtle",
+        text: "text-success-subtle-foreground",
+      };
+    case "queued":
+    case "syncing":
+    case "disconnecting":
+      return {
+        container: "border-info/30 bg-info-subtle",
+        text: "text-info-subtle-foreground",
+      };
+    case "failed":
+    case "needs_reconnect":
+      return { container: "border-destructive/30 bg-destructive/10", text: "text-destructive" };
+    case "unavailable":
+      return { container: "border-border bg-muted/30", text: "text-muted-foreground" };
+  }
+}
+
+function getProviderError(overview: IntegrationOverviewItem) {
+  return (
+    overview.providerHealth.lastError ??
+    overview.activityHistory.lastError ??
+    overview.setupData.lastError ??
+    overview.plannedActivities.lastError ??
+    null
+  );
+}
+
+function athleteStateCopy(state: AthleteReadModel | undefined) {
+  if (state?.status?.importStatus === "failed") return "History incomplete after failed import";
+  switch (state?.status?.rebuildStatus) {
+    case "pending":
+      return "Activities imported; state pending";
+    case "rebuilding":
+      return "State rebuilding";
+    case "fresh":
+      return "State current";
+    default:
+      return "State unavailable";
+  }
+}
+
+function activityHistoryCopy(status: IntegrationOverviewItem["activityHistory"]["status"]) {
+  switch (status) {
+    case "queued":
+      return "Activities queued";
+    case "importing":
+      return "Activities importing";
+    case "synced":
+      return "Activities imported";
+    case "failed":
+      return "History import failed";
+    case "unsupported":
+      return "History import unsupported";
+    default:
+      return "Ready to import";
+  }
+}
+
+export function IntegrationProviderList({
+  integrations,
+  publishedState,
+  error,
+  isLoading = false,
+  onConnect,
+  onDisconnect,
+  onViewImportedActivities,
+  onReviewImportedActivities,
+  pendingByProvider = {},
+  onRetry,
+  onAction,
+}: IntegrationProviderListProps) {
+  const visibleIntegrations = integrations.filter(
+    (integration) =>
+      integration.configured ||
+      integration.connected ||
+      integration.providerHealth.status === "disconnecting",
+  );
+  const readyCount = visibleIntegrations.filter(
+    (integration) => integration.providerHealth.status === "connected",
+  ).length;
+
+  return (
+    <View className="gap-4">
+      <View className="flex-row items-center justify-between">
+        {isLoading ? (
+          <InlineLoadingStatus label="Checking…" />
+        ) : (
+          <Text className="text-sm text-muted-foreground">
+            {error
+              ? "Availability unavailable"
+              : `${readyCount}/${visibleIntegrations.length} ready`}
+          </Text>
+        )}
+      </View>
+
+      {error ? (
+        <View
+          className="gap-3 rounded-2xl border border-destructive/30 bg-destructive/10 p-4"
+          testID="integration-provider-list-error"
+        >
+          <View className="flex-row items-start gap-2">
+            <Icon as={AlertCircle} size={16} className="mt-0.5 text-destructive" />
+            <View className="flex-1">
+              <Text className="text-sm font-semibold text-destructive">
+                Couldn’t load integration availability
+              </Text>
+              <Text className="mt-1 text-xs text-muted-foreground">
+                Retry to check which providers are configured.
+              </Text>
+            </View>
+          </View>
+          {onRetry ? (
+            <Pressable
+              accessibilityRole="button"
+              className="self-start rounded-full border border-destructive/30 bg-background px-3 py-2"
+              onPress={() => {
+                void onRetry();
+              }}
+              testID="integration-provider-list-retry"
+            >
+              <Text className="text-sm font-semibold text-destructive">Retry</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
+
+      <View className="gap-2">
+        <View className="rounded-2xl border border-border bg-card px-4 py-3">
+          <Text className="text-sm font-semibold text-foreground">Athlete state</Text>
+          <Text className="mt-1 text-xs text-muted-foreground">
+            {athleteStateCopy(publishedState)}
+          </Text>
+        </View>
+        {visibleIntegrations.map((integration) => {
+          const pendingAction = pendingByProvider[integration.provider];
+          const isDisconnecting = integration.providerHealth.status === "disconnecting";
+          const canRetryDisconnect = isDisconnecting && integration.primaryAction === "disconnect";
+          const isPending = pendingAction !== undefined || (isDisconnecting && !canRetryDisconnect);
+          const error = getProviderError(integration);
+          const statusTone = getStatusTone(integration.summary.health);
+
+          return (
+            <View
+              key={integration.provider}
+              testID={`integration-provider-${integration.provider}`}
+              className={`rounded-2xl border border-border bg-card px-4 py-3 ${isPending ? "opacity-70" : ""}`}
+            >
+              <View className="flex-row items-center gap-3">
+                <View className="flex-1">
+                  <View className="flex-row items-center gap-2">
+                    <Text className="text-base font-semibold text-foreground">
+                      {integration.summary.title}
+                    </Text>
+                    <View className={`rounded-full border px-2 py-0.5 ${statusTone.container}`}>
+                      <Text className={`text-[11px] font-semibold ${statusTone.text}`}>
+                        {integration.summary.badge}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text className="mt-1 text-xs text-muted-foreground">
+                    {integration.summary.subtitle}
+                  </Text>
+                  <Text className="mt-1 text-xs text-muted-foreground">
+                    {activityHistoryCopy(integration.activityHistory.status)}
+                  </Text>
+                  {integration.activityHistory.importRun ? (
+                    <Text className="mt-1 text-xs text-muted-foreground">
+                      {integration.activityHistory.importRun.importedCount} imported
+                    </Text>
+                  ) : null}
+                  {integration.activityHistory.importRun && onViewImportedActivities ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      className="mt-2 self-start py-1"
+                      onPress={() =>
+                        onViewImportedActivities(integration.activityHistory.importRun?.id ?? "")
+                      }
+                      testID={`integration-view-import-${integration.provider}`}
+                    >
+                      <Text className="text-xs font-semibold text-primary">
+                        View imported activities
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                  {integration.unresolvedReviewCount > 0 && onReviewImportedActivities ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      className="mt-2 self-start py-1"
+                      onPress={onReviewImportedActivities}
+                      testID={`integration-review-imports-${integration.provider}`}
+                    >
+                      <Text className="text-xs font-semibold text-primary">
+                        Review {integration.unresolvedReviewCount} imported{" "}
+                        {integration.unresolvedReviewCount === 1 ? "activity" : "activities"}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+
+                {isPending ? (
+                  <Spinner
+                    accessibilityLiveRegion="polite"
+                    accessibilityState={{ busy: true }}
+                    label={`${integration.label} action in progress`}
+                    size="small"
+                  />
+                ) : integration.primaryAction === "connect" ? (
+                  <Button
+                    accessibilityLabel={`Connect ${integration.label}`}
+                    accessibilityState={{ disabled: false }}
+                    className="rounded-full border border-border bg-background"
+                    onPress={() => onConnect(integration.provider)}
+                    role="button"
+                    size="icon"
+                    testId={`integration-connect-${integration.provider}`}
+                    variant="ghost"
+                  >
+                    <Icon as={Link} size={18} className="text-foreground" />
+                  </Button>
+                ) : integration.primaryAction === "reconnect" ? (
+                  <Button
+                    accessibilityLabel={`Reconnect ${integration.label}`}
+                    accessibilityState={{ disabled: false }}
+                    className="rounded-full border border-destructive/30 bg-background"
+                    onPress={() => onConnect(integration.provider)}
+                    role="button"
+                    size="icon"
+                    testId={`integration-reconnect-${integration.provider}`}
+                    variant="ghost"
+                  >
+                    <Icon as={RefreshCcw} size={18} className="text-destructive" />
+                  </Button>
+                ) : integration.primaryAction === "disconnect" && onDisconnect ? (
+                  <View className="flex-row items-center gap-1">
+                    {integration.actions.includes("sync_now") && onAction ? (
+                      <Button
+                        accessibilityLabel={`Sync ${integration.label} now`}
+                        onPress={() => onAction(integration.provider, "sync_now")}
+                        testId={`integration-sync-now-${integration.provider}`}
+                        variant="ghost"
+                      >
+                        <Text>Sync</Text>
+                      </Button>
+                    ) : null}
+                    {integration.actions.includes("refresh_setup_data") && onAction ? (
+                      <Button
+                        accessibilityLabel={`Refresh ${integration.label} setup`}
+                        onPress={() => onAction(integration.provider, "refresh_setup_data")}
+                        testId={`integration-refresh-setup-${integration.provider}`}
+                        variant="ghost"
+                      >
+                        <Text>Refresh</Text>
+                      </Button>
+                    ) : null}
+                    <Button
+                      accessibilityLabel={`${canRetryDisconnect ? "Retry disconnect" : "Disconnect"} ${integration.label}`}
+                      accessibilityState={{ disabled: false }}
+                      className="rounded-full border border-border bg-background"
+                      onPress={() => onDisconnect(integration)}
+                      role="button"
+                      size="icon"
+                      testId={`integration-disconnect-${integration.provider}`}
+                      variant="ghost"
+                    >
+                      <Icon as={Unlink} size={18} className="text-muted-foreground" />
+                    </Button>
+                  </View>
+                ) : integration.connected ? (
+                  <View className="flex-row items-center gap-1">
+                    {integration.actions.includes("sync_now") && onAction ? (
+                      <Button
+                        accessibilityLabel={`Sync ${integration.label} now`}
+                        onPress={() => onAction(integration.provider, "sync_now")}
+                        testId={`integration-sync-now-${integration.provider}`}
+                        variant="ghost"
+                      >
+                        <Text>Sync</Text>
+                      </Button>
+                    ) : null}
+                    {integration.actions.includes("refresh_setup_data") && onAction ? (
+                      <Button
+                        accessibilityLabel={`Refresh ${integration.label} setup`}
+                        onPress={() => onAction(integration.provider, "refresh_setup_data")}
+                        testId={`integration-refresh-setup-${integration.provider}`}
+                        variant="ghost"
+                      >
+                        <Text>Refresh</Text>
+                      </Button>
+                    ) : null}
+                    <Icon as={Check} className="text-success" size={20} />
+                  </View>
+                ) : null}
+              </View>
+
+              {error ? (
+                <View className="mt-3 flex-row items-start gap-2 rounded-xl bg-destructive/10 px-3 py-2">
+                  <Icon as={AlertCircle} size={14} className="mt-0.5 text-destructive" />
+                  <Text className="flex-1 text-xs text-destructive" numberOfLines={2}>
+                    {error}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          );
+        })}
+      </View>
+
+      {!isLoading && !error && visibleIntegrations.length === 0 ? (
+        <View className="rounded-2xl border border-border bg-card p-4">
+          <Text className="text-sm font-semibold text-foreground">No integrations</Text>
+          <Text className="mt-1 text-xs text-muted-foreground">
+            Server credentials are not configured.
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}

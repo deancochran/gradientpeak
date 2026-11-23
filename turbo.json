@@ -3,6 +3,12 @@
   "globalDependencies": ["**/.env.*local"],
   "globalEnv": [
     "BETTER_AUTH_SECRET",
+    "APP_URL",
+    "OAUTH_CALLBACK_BASE_URL",
+    "OAUTH_MOBILE_CALLBACK_URL",
+    "AUTH_ALLOWED_DEEP_LINK_PREFIXES",
+    "AUTH_MOBILE_CALLBACK_URL",
+    "AUTH_MOBILE_SCHEME",
     "DATABASE_URL",
     "NEXT_PRIVATE_SUPABASE_SECRET_KEY",
     "NEXT_PRIVATE_SUPABASE_URL",
@@ -11,22 +17,19 @@
     "SUPABASE_DB_URL",
     "SUPABASE_SERVICE_ROLE_KEY"
   ],
+  "globalPassThroughEnv": [
+    "INTERNAL_PROVIDER_SYNC_SECRET",
+    "WAHOO_PROVIDER_SYNC_DRAIN_INTERVAL_MS",
+    "WAHOO_PROVIDER_SYNC_STARTUP_RETRY_MS",
+    "WAHOO_PROVIDER_SYNC_DRAIN_URL"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [
-        ".next/**",
-        "!.next/cache/**",
-        ".output/**",
-        ".nitro/**",
-        ".tanstack/**",
-        "dist/**"
-      ]
-    },
-    "check": {
-      "outputs": []
+      "outputs": [".output/**", ".nitro/**", ".tanstack/**", "dist/**"]
     },
     "check-types": {
+      "dependsOn": ["^check-types"],
       "outputs": []
     },
     "lint": {
@@ -41,32 +44,33 @@
       "outputs": []
     },
     "dev": {
+      "dependsOn": ["@repo/db#dev:setup"],
       "cache": false,
       "persistent": true
     },
-    "dev:e2e": {
+    "dev:setup": {
       "cache": false,
+      "outputs": []
+    },
+    "dev:e2e": {
+      "dependsOn": ["@repo/db#db:e2e:start", "@repo/db#db:e2e:migrate"],
+      "cache": false,
+      "passThroughEnv": ["E2E_RUN_ID", "E2E_WEB_PORT", "PORT"],
       "persistent": true
+    },
+    "db:e2e:start": {
+      "cache": false,
+      "outputs": []
+    },
+    "db:e2e:migrate": {
+      "dependsOn": ["db:e2e:start"],
+      "cache": false,
+      "outputs": []
     },
     "test": {
       "dependsOn": ["^build"],
       "outputs": ["coverage/**"],
       "cache": true
-    },
-    "test:e2e:web": {
-      "dependsOn": ["build"],
-      "outputs": [],
-      "cache": false
-    },
-    "test:e2e:mobile": {
-      "dependsOn": [],
-      "outputs": [],
-      "cache": false
-    },
-    "test:all": {
-      "dependsOn": ["test", "test:e2e:web", "test:e2e:mobile"],
-      "outputs": [],
-      "cache": false
     }
   }
 }
