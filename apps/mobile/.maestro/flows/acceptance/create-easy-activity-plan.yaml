@@ -50,15 +50,20 @@ name: Native athlete opens their plan library and creates an executable easy act
     timeout: 15000
 - tapOn: "Duration type"
 - tapOn: "Time"
-- tapOn: "Duration value"
+# The compact shared duration field presents its current semantic value ("Not
+# set"), while its label is an accessibility label rather than rendered text.
+- tapOn: "Not set"
 - extendedWaitUntil:
     visible: "Minutes"
     timeout: 10000
-- tapOn: "Duration value minutes"
+- tapOn:
+    id: Duration value minutes-picker
 - tapOn: "1"
-- tapOn: "Done Duration value"
+- tapOn: "Done"
 - tapOn: "Add target"
-- tapOn: "Target type"
+# A newly-added target has Pace selected by the shared semantic choice field.
+# Its field label is accessibility-only, so open the visible current selection.
+- tapOn: "Pace"
 - tapOn: "Rest"
 - tapOn:
     id: step-editor-save-button

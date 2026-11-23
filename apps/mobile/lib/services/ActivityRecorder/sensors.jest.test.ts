@@ -354,6 +354,100 @@ describe("SensorsManager QA regressions", () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
+  it("does not let a stale initial PoweredOff state override a later PoweredOn event", async () => {
+    let resolveState: (state: string) => void = () => undefined;
+    mockBleState = new Promise<string>((resolve) => {
+      resolveState = resolve;
+    });
+    const manager = new SensorsManager();
+    const disconnectAll = jest.spyOn(manager, "disconnectAll");
+    const observedStates: string[] = [];
+    manager.subscribeBleState((state) => observedStates.push(state));
+
+    mockBleStateListeners.forEach((listener) => {
+      listener("PoweredOn");
+    });
+    resolveState("PoweredOff");
+    await Promise.resolve();
+
+    expect(manager.getBleState()).toBe("PoweredOn");
+    expect(observedStates).toEqual(["Unknown", "PoweredOn"]);
+    expect(disconnectAll).not.toHaveBeenCalled();
+
+    await manager.cleanup();
+  });
+
+  it("does not expose unavailable state when a stale initial read rejects after PoweredOn", async () => {
+    let rejectState: (reason?: unknown) => void = () => undefined;
+    mockBleState = new Promise<string>((_resolve, reject) => {
+      rejectState = reject;
+    });
+    const warn = jest.spyOn(console, "warn").mockImplementation();
+    const manager = new SensorsManager();
+    const observedStates: string[] = [];
+    manager.subscribeBleState((state) => observedStates.push(state));
+
+    mockBleStateListeners.forEach((listener) => {
+      listener("PoweredOn");
+    });
+    rejectState(new Error("stale native state unavailable"));
+    await Promise.resolve();
+
+    expect(manager.getBleState()).toBe("PoweredOn");
+    expect(observedStates).toEqual(["Unknown", "PoweredOn"]);
+    expect(warn).not.toHaveBeenCalled();
+
+    await manager.cleanup();
+  });
+
+  it("does not let a stale initial PoweredOn state override a later PoweredOff event", async () => {
+    let resolveState: (state: string) => void = () => undefined;
+    mockBleState = new Promise<string>((resolve) => {
+      resolveState = resolve;
+    });
+    const manager = new SensorsManager();
+    const disconnectAll = jest.spyOn(manager, "disconnectAll");
+    const observedStates: string[] = [];
+    manager.subscribeBleState((state) => observedStates.push(state));
+
+    mockBleStateListeners.forEach((listener) => {
+      listener("PoweredOff");
+    });
+    resolveState("PoweredOn");
+    await Promise.resolve();
+
+    expect(manager.getBleState()).toBe("PoweredOff");
+    expect(observedStates).toEqual(["Unknown", "PoweredOff"]);
+    expect(disconnectAll).toHaveBeenCalledTimes(1);
+
+    await manager.cleanup();
+  });
+
+  it("does not expose unavailable state when a stale initial read rejects after PoweredOff", async () => {
+    let rejectState: (reason?: unknown) => void = () => undefined;
+    mockBleState = new Promise<string>((_resolve, reject) => {
+      rejectState = reject;
+    });
+    const warn = jest.spyOn(console, "warn").mockImplementation();
+    const manager = new SensorsManager();
+    const disconnectAll = jest.spyOn(manager, "disconnectAll");
+    const observedStates: string[] = [];
+    manager.subscribeBleState((state) => observedStates.push(state));
+
+    mockBleStateListeners.forEach((listener) => {
+      listener("PoweredOff");
+    });
+    rejectState(new Error("stale native state unavailable"));
+    await Promise.resolve();
+
+    expect(manager.getBleState()).toBe("PoweredOff");
+    expect(observedStates).toEqual(["Unknown", "PoweredOff"]);
+    expect(disconnectAll).toHaveBeenCalledTimes(1);
+    expect(warn).not.toHaveBeenCalled();
+
+    await manager.cleanup();
+  });
+
   it("awaits Bluetooth manager teardown so a native rejection cannot escape cleanup", async () => {
     const manager = new SensorsManager();
     const destroy = jest

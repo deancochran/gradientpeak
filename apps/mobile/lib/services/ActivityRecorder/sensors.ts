@@ -152,6 +152,7 @@ export class SensorsManager {
   private connectionCallbacks: Set<(sensor: ConnectedSensor) => void> = new Set();
   private bleStateCallbacks: Set<(state: string) => void> = new Set();
   private bleStateSubscription?: { remove: () => void } | undefined;
+  private hasReceivedBleStateEvent = false;
   private connectionMonitorTimer?: ReturnType<typeof setInterval> | undefined;
   private readonly DISCONNECT_TIMEOUT_MS = SENSOR_READING_STALE_AFTER_MS;
   private readonly HEALTH_CHECK_INTERVAL_MS = 15000; // 15 seconds (increased from 10s to reduce battery drain)
@@ -236,18 +237,19 @@ export class SensorsManager {
     // promise when `emitCurrentState` is true, without attaching a rejection
     // handler. Read it here instead so an unavailable native manager does not
     // turn a non-Bluetooth screen into an unhandled-rejection overlay.
-    this.bleStateSubscription = this.bleManager.onStateChange(
-      (state) => this.handleBleStateChange(state),
-      false,
-    );
+    this.bleStateSubscription = this.bleManager.onStateChange((state) => {
+      this.hasReceivedBleStateEvent = true;
+      this.handleBleStateChange(state);
+    }, false);
     void this.readInitialBleState();
   }
 
   private async readInitialBleState(): Promise<void> {
     try {
-      this.handleBleStateChange(await this.bleManager.state());
+      const state = await this.bleManager.state();
+      if (!this.disposed && !this.hasReceivedBleStateEvent) this.handleBleStateChange(state);
     } catch (error) {
-      if (this.disposed) return;
+      if (this.disposed || this.hasReceivedBleStateEvent) return;
 
       this.bleState = "Unavailable";
       const availabilityError = this.recordServiceError(
