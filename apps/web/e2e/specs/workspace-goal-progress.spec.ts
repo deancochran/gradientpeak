@@ -29,7 +29,7 @@ test("Home and Plan expose observed threshold-goal progress from canonical athle
 
     for (const route of ["/", "/plan?date=2026-11-28"]) {
       await athletePage.goto(route);
-      const workspace = athletePage.getByRole("region", { name: /goal progress/i });
+      const workspace = athletePage.getByRole("region", { name: title });
       await expect(workspace).toBeVisible();
       await expect(workspace.getByRole("link", { name: title })).toHaveAttribute(
         "href",
@@ -49,7 +49,7 @@ test("Home and Plan expose observed threshold-goal progress from canonical athle
       await athletePage.goBack();
       await expect(athletePage).toHaveURL(new RegExp(`${route.replace("?", "\\?")}$`));
       const sourceLink = athletePage
-        .getByRole("region", { name: /goal progress/i })
+        .getByRole("region", { name: title })
         .getByRole("link", { name: /Source activity: Playwright threshold source/ });
       await sourceLink.click();
       await expect(athletePage).toHaveURL(/\/activities\//);
