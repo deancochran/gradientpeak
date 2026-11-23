@@ -61,10 +61,18 @@ test("authenticated HTTP schedules an app-created 60-second Rest run", async ({
   );
   expect(createSession.status()).toBe(200);
 
+  const expectedSession = {
+    id: expect.any(String),
+    activityPlanId: plan.id,
+    planningDate,
+    profileId: athleteActor.profileId,
+    status: "scheduled",
+  };
   await expect
     .poll(async () =>
       e2eDatabase.db
         .select({
+          id: plannedSessions.id,
           activityPlanId: plannedSessions.activity_plan_id,
           planningDate: plannedSessions.planning_date,
           profileId: plannedSessions.profile_id,
@@ -73,12 +81,16 @@ test("authenticated HTTP schedules an app-created 60-second Rest run", async ({
         .from(plannedSessions)
         .where(eq(plannedSessions.activity_plan_id, plan.id)),
     )
-    .toEqual([
-      {
-        activityPlanId: plan.id,
-        planningDate,
-        profileId: athleteActor.profileId,
-        status: "scheduled",
-      },
-    ]);
+    .toEqual([expectedSession]);
+  const [session] = await e2eDatabase.db
+    .select({ id: plannedSessions.id })
+    .from(plannedSessions)
+    .where(eq(plannedSessions.activity_plan_id, plan.id));
+  if (!session) throw new Error("The HTTP-created planned session is missing.");
+
+  const detailInput = encodeURIComponent(JSON.stringify({ 0: { json: { id: session.id } } }));
+  const readSession = await athleteActor.request.get(
+    `/api/trpc/plannedSessions.getById?batch=1&input=${detailInput}`,
+  );
+  expect(readSession.status()).toBe(200);
 });
