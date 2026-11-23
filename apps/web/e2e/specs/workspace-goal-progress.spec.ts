@@ -35,11 +35,11 @@ test("Home and Plan expose observed threshold-goal progress from canonical athle
         "href",
         `/goals/${goalId}`,
       );
-      await expect(workspace.getByText("Current")).toBeVisible();
+      await expect(workspace.getByText("Current", { exact: true })).toBeVisible();
       await expect(workspace.getByText("285 W", { exact: true })).toBeVisible();
-      await expect(workspace.getByText("Target")).toBeVisible();
+      await expect(workspace.getByText("Target", { exact: true })).toBeVisible();
       await expect(workspace.getByText("300 W", { exact: true })).toBeVisible();
-      await expect(workspace.getByText("Remaining gap")).toBeVisible();
+      await expect(workspace.getByText("Remaining gap", { exact: true })).toBeVisible();
       await expect(
         workspace.getByRole("link", { name: /Source activity: Playwright threshold source/ }),
       ).toBeVisible();
