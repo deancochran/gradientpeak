@@ -146,8 +146,9 @@ describe("TrainingStateChart", () => {
       screen.getByRole("img", { name: /Planning timezone America\/Los_Angeles/ }),
     ).toBeTruthy();
     expect(screen.getByText("Fitness · Recorded")).toBeTruthy();
-    expect(screen.getByText("42.0 Common Load points")).toBeTruthy();
-    expect(screen.getByText("0.0 Common Load points")).toBeTruthy();
+    expect(screen.getByText("Common Load points")).toBeTruthy();
+    expect(screen.getByText("42.0")).toBeTruthy();
+    expect(screen.getByText("0.0")).toBeTruthy();
     expect(screen.queryByLabelText("Chart legend")).toBeNull();
     expect(document.querySelector('[role="img"]')?.className).toContain("h-24");
   });

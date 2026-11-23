@@ -155,7 +155,8 @@ describe("TrainingStateChart native", () => {
     );
 
     expect(getByLabelText(/Planning timezone America\/Los_Angeles/)).toBeTruthy();
-    expect(getByText("Fitness: 42.0 Common Load points")).toBeTruthy();
-    expect(getByText("Fatigue: 0.0 Common Load points")).toBeTruthy();
+    expect(getByText(/Common Load points/)).toBeTruthy();
+    expect(getByText("Fitness: 42.0")).toBeTruthy();
+    expect(getByText("Fatigue: 0.0")).toBeTruthy();
   });
 });

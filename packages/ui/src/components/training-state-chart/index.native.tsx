@@ -4,7 +4,6 @@ import { CartesianChart, Line, Scatter } from "victory-native";
 import { Text } from "../text/index.native";
 import {
   formatTrainingStateDate,
-  formatTrainingStateValue,
   getTrainingStateAccessibilityLabel,
   getTrainingStateMetric,
   getTrainingStateSourceLabel,
@@ -160,7 +159,7 @@ function TrainingStateChart({
                     className="text-xs text-muted-foreground"
                     key={getNativeSeriesKey(metric, source)}
                   >
-                    {`${getTrainingStateMetric(metric).label}: ${formatTrainingStateValue(value ?? null, visual.unitLabel)}`}
+                    {`${getTrainingStateMetric(metric).label}: ${value === undefined ? "Unavailable" : value.toFixed(1)}`}
                   </Text>
                 );
               })}

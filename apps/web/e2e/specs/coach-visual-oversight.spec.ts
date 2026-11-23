@@ -49,6 +49,10 @@ test("coach compares shared visual evidence and returns from a prefixed athlete 
         .update(profiles)
         .set({ planning_timezone: "America/Los_Angeles" })
         .where(eq(profiles.id, athleteActor.profileId));
+      await tx
+        .update(profiles)
+        .set({ planning_timezone: "America/Los_Angeles" })
+        .where(eq(profiles.id, second.profileId));
       await tx.insert(organizationMemberships).values({
         id: membershipId,
         organization_id: organizationId,
@@ -153,7 +157,7 @@ test("coach compares shared visual evidence and returns from a prefixed athlete 
   await expect(page.getByText("Recent training state").first()).toBeVisible();
   await expect(page.getByText("Target race · 2027-01-01")).toBeVisible();
   await expect(page.getByText(/stale · partial coverage/)).toBeVisible();
-  await expect(page.getByText("Unshared", { exact: true })).toHaveCount(4);
+  await expect(page.getByText("Unshared", { exact: true })).toHaveCount(5);
   for (const viewport of [
     { width: 1440, height: 1000 },
     { width: 390, height: 844 },
@@ -165,6 +169,26 @@ test("coach compares shared visual evidence and returns from a prefixed athlete 
       fullPage: true,
     });
   }
+  const search = athleteActor.username ?? "Assigned athlete";
+  const searchField = page.getByRole("searchbox", { name: "Search assigned athletes" });
+  await searchField.fill(search);
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(page).toHaveURL(
+    new RegExp(`/organizations/${organizationId}/athletes\\?q=${encodeURIComponent(search)}$`),
+  );
+  await expect(page.getByRole("list", { name: "Assigned athletes" }).getByRole("link")).toHaveCount(
+    1,
+  );
+  await page.getByRole("link", { name: athleteActor.username ?? "Assigned athlete" }).click();
+  await waitForAppHydration(page);
+  await page.goBack();
+  await expect(page).toHaveURL(
+    new RegExp(`/organizations/${organizationId}/athletes\\?q=${encodeURIComponent(search)}$`),
+  );
+  await expect(searchField).toHaveValue(search);
+  await expect(page.getByRole("list", { name: "Assigned athletes" }).getByRole("link")).toHaveCount(
+    1,
+  );
   await page.getByRole("link", { name: athleteActor.username ?? "Assigned athlete" }).click();
   await waitForAppHydration(page);
   await expect(page.getByRole("link", { name: "Message athlete" })).toBeVisible();

@@ -178,9 +178,7 @@ function TrainingStateChart({
             <div key={item.id}>
               <dt className="text-xs text-muted-foreground">{item.label}</dt>
               <dd className="text-sm font-semibold text-foreground">
-                {item.summary
-                  ? `${item.summary.last.toFixed(1)} ${visual.unitLabel}`
-                  : "Unavailable"}
+                {item.summary ? item.summary.last.toFixed(1) : "Unavailable"}
               </dd>
             </div>
           ))}
