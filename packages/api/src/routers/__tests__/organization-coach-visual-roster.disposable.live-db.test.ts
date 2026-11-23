@@ -248,6 +248,15 @@ it("proves bounded visual roster scopes, local dates, cursors, and revoked acces
         expect(consentRevoked.items.find((item) => item.profileId === allScopes)).toMatchObject({
           activities: { status: "unshared", points: [] },
         });
+        await db
+          .update(coachingEngagements)
+          .set({ ended_at: new Date() })
+          .where(eq(coachingEngagements.id, engagements.get(allScopes) ?? ""));
+        expect(
+          (await caller.listVisualRoster({ organizationId, limit: 50 })).items.map(
+            (item) => item.profileId,
+          ),
+        ).not.toContain(allScopes);
         await expect(
           caller.listVisualRoster({ organizationId: wrongOrganizationId }),
         ).rejects.toMatchObject({
