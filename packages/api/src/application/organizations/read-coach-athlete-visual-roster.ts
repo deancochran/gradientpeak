@@ -35,8 +35,8 @@ export async function readCoachAthleteVisualRoster(input: {
     }),
     hasMore: page.hasMore,
     nextCursor: page.nextCursor,
-    // One bounded identity query + one batched scope/data query. This is a
-    // fixture-observable count, not a claimed performance threshold.
-    queryCount: 2,
+    // Membership check + bounded identity page + batched scope/data query.
+    // This is a fixture-observable count, not a claimed performance threshold.
+    queryCount: 3,
   };
 }

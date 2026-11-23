@@ -58,7 +58,7 @@ export const coachAthleteVisualRosterResponseSchema = z
     ),
     nextCursor: rosterCursorSchema.nullable(),
     hasMore: z.boolean(),
-    queryCount: z.literal(2),
+    queryCount: z.literal(3),
   })
   .strict();
 
