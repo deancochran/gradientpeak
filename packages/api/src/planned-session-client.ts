@@ -29,7 +29,7 @@ export function buildDirectPlannedSessionCreateInput(input: {
       source: { kind: "direct", operationId: input.operationId },
       activityPlanId: input.activityPlanId,
       ...(input.demand ? { demand: input.demand } : {}),
-      groupEventId: input.groupEventId,
+      ...(input.groupEventId === undefined ? {} : { groupEventId: input.groupEventId }),
     },
   });
 }

@@ -27,6 +27,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { afterAll, describe, expect, it } from "vitest";
 import { createDrizzleAthleteDerivedStateRepository } from "../../infrastructure/repositories/drizzle-athlete-derived-state-repository";
 import { createDrizzlePlannedSessionRepository } from "../../infrastructure/repositories/drizzle-planned-session-repository";
+import { buildDirectPlannedSessionCreateInput } from "../../planned-session-client";
 import { activityPlansRouter } from "../../routers/activity-plans";
 import { groupEventsRouter } from "../../routers/groups/events";
 import { plannedSessionsRouter } from "../../routers/planned-sessions";
@@ -309,14 +310,14 @@ describeDisposable("planned-session services against a disposable database", () 
         operationId: randomUUID(),
       });
       await expect(
-        routerCaller.create({
-          profileId,
-          session: {
+        routerCaller.create(
+          buildDirectPlannedSessionCreateInput({
+            profileId,
             planningDate: "2026-11-23",
-            source: { kind: "direct", operationId: randomUUID() },
+            operationId: randomUUID(),
             activityPlanId: appCreatedNativePlan.id,
-          },
-        }),
+          }),
+        ),
       ).resolves.toMatchObject({
         outcome: "created",
         session: {
