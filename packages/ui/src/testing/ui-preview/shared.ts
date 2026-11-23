@@ -8,8 +8,10 @@ import { inputFixtures } from "../../components/input/fixtures";
 import { loadingSkeletonFixtures } from "../../components/loading-skeletons/fixtures";
 import { radioGroupFixtures } from "../../components/radio-group/fixtures";
 import { selectFixtures } from "../../components/select/fixtures";
+import { sessionScenarioComparisonFixtures } from "../../components/session-scenario-comparison/fixtures";
 import { switchFixtures } from "../../components/switch/fixtures";
 import { tabsFixtures } from "../../components/tabs/fixtures";
+import { thresholdHistoryFixtures } from "../../components/threshold-history/fixtures";
 import { trainingStateChartFixtures } from "../../components/training-state-chart/fixtures";
 import type { TrainingStateChartProps } from "../../components/training-state-chart/shared";
 import { uiPreviewContract, uiPreviewFormFields, uiPreviewScenarios } from "./contract";
@@ -31,6 +33,8 @@ export const uiPreviewFixtures = {
     title: "Recorded and projected training state",
     visual: trainingStateChartFixtures.mixedSeries,
   } satisfies TrainingStateChartProps,
+  sessionScenarioComparison: sessionScenarioComparisonFixtures.aligned,
+  thresholdHistory: thresholdHistoryFixtures.bikePower,
   button: buttonFixtures.save,
   card: cardFixtures,
   checkbox: checkboxFixtures.terms,
