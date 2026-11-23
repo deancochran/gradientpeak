@@ -328,10 +328,20 @@ export function PlanDashboard({
             <p className="text-sm text-muted-foreground">This day’s work is unavailable.</p>
           ) : selectedDayItems.length ? (
             <div className="space-y-3">
+              {selectedDayStale ? (
+                <p className="text-sm text-muted-foreground">
+                  Listed work is from the last available update and may be stale.
+                </p>
+              ) : null}
               {selectedDayItems.map((item) => (
                 <CalendarProjectionCard item={item} key={item.id} />
               ))}
             </div>
+          ) : selectedDayStale ? (
+            <p className="text-sm text-muted-foreground">
+              No work was present in the last available update. Retry to confirm this day before
+              adding anything.
+            </p>
           ) : (
             <Button asChild size="sm" variant="outline">
               <Link

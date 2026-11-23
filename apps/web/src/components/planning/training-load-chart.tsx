@@ -172,18 +172,18 @@ export function TrainingLoadChart({
   const fitnessHistoryQualifier = fitnessHistory?.verifiedThrough
     ? ` verified through ${fitnessHistory.verifiedThrough}`
     : "";
-  const fitnessStatusLabel =
+  const actualFitnessLabel =
     fitnessHistory?.status === "historical"
       ? "Historical model-derived fitness"
       : "Model-derived fitness";
+  const scheduledFitnessLabel =
+    fitnessHistory?.status === "historical"
+      ? `Planned model-derived fitness (projected from a historical baseline${fitnessHistoryQualifier})`
+      : fitnessHistory?.status === "current"
+        ? `Planned model-derived fitness (projected from a baseline${fitnessHistoryQualifier})`
+        : "Planned model-derived fitness (projected from an unverified baseline)";
   const actualFitness = fitnessHistoryAvailable
     ? fitness.actual.map((point) => ({
-        date: point.date,
-        value: point.longTermLoad,
-      }))
-    : [];
-  const scheduledFitness = fitnessHistoryAvailable
-    ? fitness.scheduled.map((point) => ({
         date: point.date,
         value: point.longTermLoad,
       }))
@@ -195,13 +195,16 @@ export function TrainingLoadChart({
   const fitnessSeries: ChartSeries[] = [
     {
       className: "text-violet-600",
-      label: `${fitnessStatusLabel}${fitnessHistoryQualifier}`,
+      label: `${actualFitnessLabel}${fitnessHistoryQualifier}`,
       points: actualFitness,
     },
     {
       className: "text-amber-600",
-      label: `Planned ${fitnessStatusLabel.toLowerCase()}${fitnessHistoryQualifier}`,
-      points: scheduledFitness,
+      label: scheduledFitnessLabel,
+      points: fitness.scheduled.map((point) => ({
+        date: point.date,
+        value: point.longTermLoad,
+      })),
       strokeDasharray: "5 3",
     },
   ];
@@ -226,7 +229,7 @@ export function TrainingLoadChart({
   const visibleSeries = allSeries.filter((series) => series.points.length > 0);
   const fitnessDescription =
     fitnessHistory?.status === "unavailable"
-      ? "Scheduled and completed Common Load. Model-derived fitness history is unavailable."
+      ? "Scheduled and completed Common Load. Planned model-derived fitness uses an unverified baseline."
       : "Scheduled and completed Common Load with available model-derived fitness.";
   const summary = `${allSeries.map(seriesSummary).join(" ")}${
     selectedDate ? ` Selected day: ${selectedDate}.` : ""

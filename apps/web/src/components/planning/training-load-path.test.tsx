@@ -135,12 +135,14 @@ describe("TrainingLoadPath", () => {
       within(chart).getByText("Model-derived fitness verified through 2026-07-25"),
     ).toBeTruthy();
     expect(
-      within(chart).getByText("Planned model-derived fitness verified through 2026-07-25"),
+      within(chart).getByText(
+        "Planned model-derived fitness (projected from a baseline verified through 2026-07-25)",
+      ),
     ).toBeTruthy();
     expect(chart.getAttribute("aria-label")).toMatch(/latest 42 on 2026-07-25/);
   });
 
-  it("withholds unavailable fitness history and labels historical model-derived series", () => {
+  it("withholds unavailable actual fitness while retaining scheduled projection and labels historical series", () => {
     const projection = {
       contractVersion: "plan-tab-projection-v2" as const,
       asOf: "2026-07-25T12:00:00.000Z",
@@ -222,10 +224,12 @@ describe("TrainingLoadPath", () => {
     );
 
     const chart = within(container).getByRole("img", { name: /training load chart/i });
-    expect(within(chart).getByText(/history is unavailable/i)).toBeTruthy();
-    expect(within(chart).getByLabelText("Chart legend").textContent).not.toMatch(
-      /model-derived fitness/i,
+    const legend = within(chart).getByLabelText("Chart legend");
+    expect(legend.textContent).toContain(
+      "Planned model-derived fitness (projected from an unverified baseline)",
     );
+    expect(within(chart).getAllByText(/unverified baseline/i)).toHaveLength(2);
+    expect(within(chart).queryByText(/^Model-derived fitness/)).toBeNull();
     expect(
       within(container)
         .getAllByTestId("training-chart-selected-date-marker")
@@ -254,7 +258,7 @@ describe("TrainingLoadPath", () => {
     ).toBeTruthy();
     expect(
       within(historicalChart).getByText(
-        "Planned historical model-derived fitness verified through 2026-07-23",
+        "Planned model-derived fitness (projected from a historical baseline verified through 2026-07-23)",
       ),
     ).toBeTruthy();
     expect(

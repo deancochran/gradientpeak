@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   goalInput: vi.fn(),
@@ -121,6 +121,21 @@ afterEach(() => {
     refetch: vi.fn(),
   };
 });
+
+function renderEmptySelectedDay(date: string, selectedDay: typeof state.selectedDay) {
+  state.selectedDay = selectedDay;
+  state.projection = {
+    data: {
+      today: "2026-04-02",
+      timeline: { days: [], weeks: [] },
+      fitness: { actual: [], scheduled: [], recommended: [] },
+    },
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as never;
+  render(<PlanDashboard selectedDate={date} />);
+}
 
 it("uses the projection's authoritative day for selected-day status and the goal lower bound", () => {
   state.projection = {
@@ -605,6 +620,85 @@ it("offers an empty-day action after a successful current-day result", () => {
 
   expect(screen.getByText("No session scheduled")).toBeTruthy();
   expect(screen.getByRole("link", { name: "Add work" })).toBeTruthy();
+});
+
+describe.each([
+  ["past", "2026-04-01"],
+  ["today", "2026-04-02"],
+  ["future", "2026-04-03"],
+])("selected %s day action availability", (_label, date) => {
+  it("withholds add actions while the day is pending", () => {
+    renderEmptySelectedDay(date, {
+      data: undefined,
+      isError: false,
+      isLoading: true,
+      refetch: vi.fn(),
+    } as never);
+
+    expect(screen.queryByRole("link", { name: /Add (work|to this day)/ })).toBeNull();
+  });
+
+  it("withholds add actions when the day has an initial failure", () => {
+    renderEmptySelectedDay(date, {
+      data: undefined,
+      isError: true,
+      isLoading: false,
+      refetch: vi.fn(),
+    } as never);
+
+    expect(screen.queryByRole("link", { name: /Add (work|to this day)/ })).toBeNull();
+  });
+
+  it("withholds add actions for a failed refresh of an empty cached day", () => {
+    renderEmptySelectedDay(date, {
+      data: { projection: { items: [] } },
+      isError: true,
+      isLoading: false,
+      refetch: vi.fn(),
+    } as never);
+
+    expect(screen.getByRole("alert").textContent).toMatch(/may be stale/);
+    expect(screen.queryByRole("link", { name: /Add (work|to this day)/ })).toBeNull();
+  });
+
+  it("offers an add action after a successful empty-day result", () => {
+    renderEmptySelectedDay(date, {
+      data: { projection: { items: [] } },
+      isError: false,
+      isLoading: false,
+      refetch: vi.fn(),
+    } as never);
+
+    expect(screen.getAllByRole("link", { name: /Add (work|to this day)/ }).length).toBeGreaterThan(
+      0,
+    );
+  });
+});
+
+it("keeps cached nonempty selected-day work visible and explicitly stale", () => {
+  renderEmptySelectedDay("2026-04-03", {
+    data: {
+      projection: {
+        items: [
+          {
+            id: "stale-session",
+            calendarDate: "2026-04-03",
+            kind: "planned_activity",
+            status: "scheduled",
+            title: "Cached tempo",
+            plannedSession: { lifecycle: { status: "scheduled" } },
+          },
+        ],
+      },
+    },
+    isError: true,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as never);
+
+  expect(screen.getByText("Cached tempo")).toBeTruthy();
+  expect(screen.getByText(/last available update and may be stale/i)).toBeTruthy();
+  expect(screen.queryByRole("link", { name: "Add to this day" })).toBeNull();
 });
 
 it("requests the first future goal with a bounded server-side date predicate", () => {
