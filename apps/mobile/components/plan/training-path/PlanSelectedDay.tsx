@@ -47,6 +47,7 @@ export function PlanSelectedDay({
   onOpenCompletedActivity,
   onOpenDayDetails,
   onOpenGoal,
+  onOpenPlannedSession,
   onRetryCompletedActivities,
   point,
   selectedDate,
@@ -59,6 +60,7 @@ export function PlanSelectedDay({
   onOpenCompletedActivity: (activityId: string) => void;
   onOpenDayDetails: (date: string) => void;
   onOpenGoal: (goalId: string) => void;
+  onOpenPlannedSession: (sessionId: string) => void;
   onRetryCompletedActivities: () => void;
   point: DailyTrainingAdjustmentPoint | null;
   selectedDate: string;
@@ -155,7 +157,7 @@ export function PlanSelectedDay({
         {visibleScheduled.map((item) => (
           <PlannedActivityCard
             key={`scheduled-${item.id}`}
-            onPress={() => onOpenDayDetails(selectedDate)}
+            onPress={() => onOpenPlannedSession(item.id)}
             plannedActivity={{
               calendarDate: item.date,
               id: item.id,

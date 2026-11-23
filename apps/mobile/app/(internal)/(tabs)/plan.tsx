@@ -111,6 +111,9 @@ function PlanOverview({
           onCreateGoal={() => router.navigate(ROUTES.GOALS.CREATE as never)}
           onOpenGoal={(goalId) => router.navigate(ROUTES.GOALS.DETAIL(goalId) as never)}
           onOpenGoals={() => router.navigate(ROUTES.GOALS.LIST as never)}
+          onOpenPlannedSession={(sessionId) =>
+            router.navigate(ROUTES.PLAN.EVENT_DETAIL(sessionId) as never)
+          }
           onOpenSourceActivity={(activityId) =>
             router.navigate(ROUTES.ACTIVITIES.DETAIL(activityId) as never)
           }
