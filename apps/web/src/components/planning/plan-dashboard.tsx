@@ -142,6 +142,9 @@ export function PlanDashboard({
       item.kind === "planned_activity" &&
       (item.status === "completed" || item.plannedSession?.lifecycle.status === "completed"),
   );
+  const selectedDayPending = selectedDayQuery.isLoading && !selectedDayQuery.data;
+  const selectedDayUnavailable = selectedDayQuery.isError && !selectedDayQuery.data;
+  const selectedDayStale = selectedDayQuery.isError && Boolean(selectedDayQuery.data);
 
   return (
     <>
@@ -237,6 +240,17 @@ export function PlanDashboard({
                   Reload your planning profile to see today’s session.
                 </p>
               </div>
+            ) : selectedDayPending ? (
+              <div className="rounded-xl border border-dashed p-4">
+                <p className="font-medium">Loading today’s next action...</p>
+              </div>
+            ) : selectedDayUnavailable ? (
+              <div className="rounded-xl border border-dashed p-4">
+                <p className="font-medium">Today’s next action is unavailable</p>
+                <p className="text-sm text-muted-foreground">
+                  Retry to load today’s scheduled work.
+                </p>
+              </div>
             ) : scheduledSession ? (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/30 bg-primary/5 p-4">
                 <div className="space-y-1">
@@ -280,29 +294,37 @@ export function PlanDashboard({
             ) : (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed p-4">
                 <div>
-                  <p className="font-medium">No session scheduled</p>
+                  <p className="font-medium">
+                    {selectedDayStale
+                      ? "No session in the last available update"
+                      : "No session scheduled"}
+                  </p>
                   <p className="text-sm text-muted-foreground">
-                    Add today’s work when you’re ready to plan it.
+                    {selectedDayStale
+                      ? "Retry to confirm today’s current work before adding anything."
+                      : "Add today’s work when you’re ready to plan it."}
                   </p>
                 </div>
-                <Button asChild size="sm" variant="outline">
-                  <Link
-                    to="/calendar/new"
-                    search={{
-                      date: selectedDate,
-                      month: getMonthKey(new Date(`${selectedDate}T12:00:00`)),
-                      view: "month",
-                    }}
-                  >
-                    Add work
-                  </Link>
-                </Button>
+                {!selectedDayStale ? (
+                  <Button asChild size="sm" variant="outline">
+                    <Link
+                      to="/calendar/new"
+                      search={{
+                        date: selectedDate,
+                        month: getMonthKey(new Date(`${selectedDate}T12:00:00`)),
+                        view: "month",
+                      }}
+                    >
+                      Add work
+                    </Link>
+                  </Button>
+                ) : null}
               </div>
             )
           ) : null}
-          {selectedDayQuery.isLoading ? (
+          {selectedDayPending ? (
             <p className="text-sm text-muted-foreground">Loading this day’s work...</p>
-          ) : selectedDayQuery.isError && !selectedDayQuery.data ? (
+          ) : selectedDayUnavailable ? (
             <p className="text-sm text-muted-foreground">This day’s work is unavailable.</p>
           ) : selectedDayItems.length ? (
             <div className="space-y-3">

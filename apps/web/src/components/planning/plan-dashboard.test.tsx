@@ -508,6 +508,105 @@ it("does not offer a next-session action for a cancelled session", () => {
   expect(screen.queryByRole("link", { name: /Open session/ })).toBeNull();
 });
 
+it("does not offer an empty-day action while today is still loading", () => {
+  state.selectedDay = {
+    data: undefined,
+    isError: false,
+    isLoading: true,
+    refetch: vi.fn(),
+  } as never;
+  state.projection = {
+    data: {
+      today: "2026-04-02",
+      timeline: { days: [], weeks: [] },
+      fitness: { actual: [], scheduled: [], recommended: [] },
+    },
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as never;
+
+  render(<PlanDashboard selectedDate="2026-04-02" />);
+
+  expect(screen.getByText("Loading today’s next action...")).toBeTruthy();
+  expect(screen.queryByText("No session scheduled")).toBeNull();
+  expect(screen.queryByRole("link", { name: "Add work" })).toBeNull();
+});
+
+it("does not offer an empty-day action when today cannot be loaded", () => {
+  state.selectedDay = {
+    data: undefined,
+    isError: true,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as never;
+  state.projection = {
+    data: {
+      today: "2026-04-02",
+      timeline: { days: [], weeks: [] },
+      fitness: { actual: [], scheduled: [], recommended: [] },
+    },
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as never;
+
+  render(<PlanDashboard selectedDate="2026-04-02" />);
+
+  expect(screen.getByText("Today’s next action is unavailable")).toBeTruthy();
+  expect(screen.queryByText("No session scheduled")).toBeNull();
+  expect(screen.queryByRole("link", { name: "Add work" })).toBeNull();
+});
+
+it("keeps cached failed empty-day data visibly stale and withholds its add action", () => {
+  state.selectedDay = {
+    data: { projection: { items: [] } },
+    isError: true,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as never;
+  state.projection = {
+    data: {
+      today: "2026-04-02",
+      timeline: { days: [], weeks: [] },
+      fitness: { actual: [], scheduled: [], recommended: [] },
+    },
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as never;
+
+  render(<PlanDashboard selectedDate="2026-04-02" />);
+
+  expect(screen.getByRole("alert").textContent).toMatch(/may be stale/);
+  expect(screen.getByText("No session in the last available update")).toBeTruthy();
+  expect(screen.queryByRole("link", { name: "Add work" })).toBeNull();
+});
+
+it("offers an empty-day action after a successful current-day result", () => {
+  state.selectedDay = {
+    data: { projection: { items: [] } },
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as never;
+  state.projection = {
+    data: {
+      today: "2026-04-02",
+      timeline: { days: [], weeks: [] },
+      fitness: { actual: [], scheduled: [], recommended: [] },
+    },
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as never;
+
+  render(<PlanDashboard selectedDate="2026-04-02" />);
+
+  expect(screen.getByText("No session scheduled")).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Add work" })).toBeTruthy();
+});
+
 it("requests the first future goal with a bounded server-side date predicate", () => {
   render(<PlanDashboard />);
   expect(screen.queryByText("No upcoming goals.")).toBeNull();

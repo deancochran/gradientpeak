@@ -272,6 +272,7 @@ export function TrainingLoadPath({
             </div>
             <TrainingLoadChart
               fitness={projection.fitness}
+              fitnessHistory={projection.fitnessHistory}
               days={timeline.days}
               selectedDate={selectedDate}
             />

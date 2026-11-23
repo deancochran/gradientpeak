@@ -98,6 +98,7 @@ function ChartPanel({
         {selectedDateX !== null ? (
           <line
             className="text-primary"
+            data-testid="training-chart-selected-date-marker"
             stroke="currentColor"
             strokeDasharray="3 3"
             strokeWidth="1"
@@ -147,10 +148,12 @@ function ChartPanel({
 
 export function TrainingLoadChart({
   fitness,
+  fitnessHistory,
   days,
   selectedDate,
 }: {
   fitness: PlanTabProjection["fitness"];
+  fitnessHistory: PlanTabProjection["fitnessHistory"];
   days: TimelineDay[];
   selectedDate?: string;
 }) {
@@ -164,23 +167,40 @@ export function TrainingLoadChart({
       ? []
       : [{ date: day.date, value: day.load.completedLoad }],
   );
-  const actualFitness = fitness.actual.map((point) => ({
-    date: point.date,
-    value: point.longTermLoad,
-  }));
-  const scheduledFitness = fitness.scheduled.map((point) => ({
-    date: point.date,
-    value: point.longTermLoad,
-  }));
+  const fitnessHistoryAvailable =
+    fitnessHistory?.status === "current" || fitnessHistory?.status === "historical";
+  const fitnessHistoryQualifier = fitnessHistory?.verifiedThrough
+    ? ` verified through ${fitnessHistory.verifiedThrough}`
+    : "";
+  const fitnessStatusLabel =
+    fitnessHistory?.status === "historical"
+      ? "Historical model-derived fitness"
+      : "Model-derived fitness";
+  const actualFitness = fitnessHistoryAvailable
+    ? fitness.actual.map((point) => ({
+        date: point.date,
+        value: point.longTermLoad,
+      }))
+    : [];
+  const scheduledFitness = fitnessHistoryAvailable
+    ? fitness.scheduled.map((point) => ({
+        date: point.date,
+        value: point.longTermLoad,
+      }))
+    : [];
   const loadSeries: ChartSeries[] = [
     { className: "text-primary", label: "Scheduled / planned Common Load", points: planned },
     { className: "text-emerald-600", label: "Completed Common Load", points: completed },
   ];
   const fitnessSeries: ChartSeries[] = [
-    { className: "text-violet-600", label: "Actual fitness", points: actualFitness },
+    {
+      className: "text-violet-600",
+      label: `${fitnessStatusLabel}${fitnessHistoryQualifier}`,
+      points: actualFitness,
+    },
     {
       className: "text-amber-600",
-      label: "Scheduled fitness",
+      label: `Planned ${fitnessStatusLabel.toLowerCase()}${fitnessHistoryQualifier}`,
       points: scheduledFitness,
       strokeDasharray: "5 3",
     },
@@ -204,6 +224,10 @@ export function TrainingLoadChart({
   }
 
   const visibleSeries = allSeries.filter((series) => series.points.length > 0);
+  const fitnessDescription =
+    fitnessHistory?.status === "unavailable"
+      ? "Scheduled and completed Common Load. Model-derived fitness history is unavailable."
+      : "Scheduled and completed Common Load with available model-derived fitness.";
   const summary = `${allSeries.map(seriesSummary).join(" ")}${
     selectedDate ? ` Selected day: ${selectedDate}.` : ""
   }`;
@@ -220,9 +244,7 @@ export function TrainingLoadChart({
     >
       <div>
         <h3 className="font-medium">Daily training chart</h3>
-        <p className="text-sm text-muted-foreground">
-          Scheduled and completed Common Load with actual and scheduled fitness.
-        </p>
+        <p className="text-sm text-muted-foreground">{fitnessDescription}</p>
       </div>
       <ul aria-label="Chart legend" className="flex list-none flex-wrap gap-x-4 gap-y-2 text-xs">
         {visibleSeries.map((series) => (

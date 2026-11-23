@@ -96,6 +96,11 @@ describe("TrainingLoadPath", () => {
             scheduled: [{ date: "2026-07-25", longTermLoad: 44, recentLoad: 54, loadBalance: -10 }],
             recommended: [],
           },
+          fitnessHistory: {
+            status: "current",
+            verifiedThrough: "2026-07-25",
+            maturity: "mature",
+          },
           recommendationPoints: [],
           ledgerItems: [],
           sourceCoverage: {
@@ -126,9 +131,137 @@ describe("TrainingLoadPath", () => {
     const chart = screen.getByRole("img", { name: /Training load chart/ });
     expect(within(chart).getByText("Scheduled / planned Common Load")).toBeTruthy();
     expect(within(chart).getByText("Completed Common Load")).toBeTruthy();
-    expect(within(chart).getByText("Actual fitness")).toBeTruthy();
-    expect(within(chart).getByText("Scheduled fitness")).toBeTruthy();
+    expect(
+      within(chart).getByText("Model-derived fitness verified through 2026-07-25"),
+    ).toBeTruthy();
+    expect(
+      within(chart).getByText("Planned model-derived fitness verified through 2026-07-25"),
+    ).toBeTruthy();
     expect(chart.getAttribute("aria-label")).toMatch(/latest 42 on 2026-07-25/);
+  });
+
+  it("withholds unavailable fitness history and labels historical model-derived series", () => {
+    const projection = {
+      contractVersion: "plan-tab-projection-v2" as const,
+      asOf: "2026-07-25T12:00:00.000Z",
+      planningTimezone: "UTC",
+      today: "2026-07-25",
+      currentScheduledPlan: null,
+      timeline: {
+        startDate: "2026-07-24",
+        endDate: "2026-07-25",
+        today: "2026-07-25",
+        days: [
+          {
+            date: "2026-07-24",
+            load: {
+              plannedLoad: 20,
+              plannedLoadStatus: "complete" as const,
+              scheduledLoad: 20,
+              scheduledLoadStatus: "complete" as const,
+              completedLoad: 0,
+              completedLoadStatus: "known_zero" as const,
+              remainingLoad: 20,
+              remainingLoadStatus: "complete" as const,
+              recommendedLoad: null,
+              recommendedLoadStatus: "unavailable" as const,
+              deltaLoad: null,
+            },
+            scheduledItems: [],
+            completedItems: [],
+            annotations: [],
+          },
+          {
+            date: "2026-07-25",
+            load: {
+              plannedLoad: 30,
+              plannedLoadStatus: "complete" as const,
+              scheduledLoad: 30,
+              scheduledLoadStatus: "complete" as const,
+              completedLoad: 0,
+              completedLoadStatus: "known_zero" as const,
+              remainingLoad: 30,
+              remainingLoadStatus: "complete" as const,
+              recommendedLoad: null,
+              recommendedLoadStatus: "unavailable" as const,
+              deltaLoad: null,
+            },
+            scheduledItems: [],
+            completedItems: [],
+            annotations: [],
+          },
+        ],
+        weeks: [],
+      },
+      dayLoads: {},
+      fitness: {
+        actual: [
+          { date: "2026-07-24", longTermLoad: 40, recentLoad: 50, loadBalance: -10 },
+          { date: "2026-07-25", longTermLoad: 42, recentLoad: 52, loadBalance: -10 },
+        ],
+        scheduled: [
+          { date: "2026-07-24", longTermLoad: 41, recentLoad: 51, loadBalance: -10 },
+          { date: "2026-07-25", longTermLoad: 43, recentLoad: 53, loadBalance: -10 },
+        ],
+        recommended: [],
+      },
+      fitnessHistory: {
+        status: "unavailable" as const,
+        verifiedThrough: null,
+        maturity: null,
+      },
+      recommendationPoints: [],
+      ledgerItems: [],
+      sourceCoverage: { activities: null, scheduledItems: null },
+      goalMarkers: [],
+      publishedRevision: null,
+      algorithmVersion: null,
+    };
+    const { container, rerender } = render(
+      <TrainingLoadPath projection={projection} selectedDate="2026-07-24" />,
+    );
+
+    const chart = within(container).getByRole("img", { name: /training load chart/i });
+    expect(within(chart).getByText(/history is unavailable/i)).toBeTruthy();
+    expect(within(chart).getByLabelText("Chart legend").textContent).not.toMatch(
+      /model-derived fitness/i,
+    );
+    expect(
+      within(container)
+        .getAllByTestId("training-chart-selected-date-marker")
+        .every((marker) => marker.getAttribute("x1") === "0"),
+    ).toBe(true);
+
+    rerender(
+      <TrainingLoadPath
+        projection={{
+          ...projection,
+          fitnessHistory: {
+            status: "historical",
+            verifiedThrough: "2026-07-23",
+            maturity: "establishing_baseline",
+          },
+        }}
+        selectedDate="2026-07-25"
+      />,
+    );
+
+    const historicalChart = within(container).getByRole("img", { name: /training load chart/i });
+    expect(
+      within(historicalChart).getByText(
+        "Historical model-derived fitness verified through 2026-07-23",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(historicalChart).getByText(
+        "Planned historical model-derived fitness verified through 2026-07-23",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(container)
+        .getAllByTestId("training-chart-selected-date-marker")
+        .every((marker) => marker.getAttribute("x1") === "100"),
+    ).toBe(true);
   });
 
   it("marks the selected date on the visible chart while keeping date controls keyboard accessible", () => {
