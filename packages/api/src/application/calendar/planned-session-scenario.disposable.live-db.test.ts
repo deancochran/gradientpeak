@@ -443,6 +443,25 @@ describeDisposable("planned-session scenario preview against a disposable databa
       expectedPreviewFingerprint: preview.previewFingerprint,
       operationId: "less-scenario-apply-operation-00001",
     };
+    const beforeStaleFingerprint = await readScenarioRows(ownerId);
+    await expect(
+      applyPlannedSessionScenario({
+        db,
+        actorId: ownerId,
+        profileId: ownerId,
+        request: {
+          ...request,
+          expectedPreviewFingerprint: `v1:sha256:${"f".repeat(64)}`,
+          operationId: "stale-fingerprint-scenario-operation",
+        },
+        now,
+        enqueueProviderSync: async ({ sessionId, action }) => {
+          providerCalls.push({ sessionId, action });
+        },
+      }),
+    ).resolves.toMatchObject({ status: "stale", reason: "preview_fingerprint" });
+    expect(await readScenarioRows(ownerId)).toEqual(beforeStaleFingerprint);
+    expect(providerCalls).toHaveLength(0);
     const result = await applyPlannedSessionScenario({
       db,
       actorId: ownerId,
@@ -484,6 +503,9 @@ describeDisposable("planned-session scenario preview against a disposable databa
     });
     expect(copy?.id).not.toBe(planId);
     expect(copy?.structure_hash).not.toBe(hash);
+    expect(copy?.structure.items).toMatchObject([
+      { type: "step", duration: { type: "time", seconds: 900 } },
+    ]);
     expect(selectedAfter).toMatchObject({
       activity_plan_id: copy?.id,
       session_revision: 2,
@@ -506,6 +528,32 @@ describeDisposable("planned-session scenario preview against a disposable databa
       },
     });
     expect(replay).toEqual(result);
+    expect(providerCalls).toHaveLength(1);
+    const copiesBeforeConflict = await db
+      .select({ id: activityPlans.id })
+      .from(activityPlans)
+      .where(eq(activityPlans.profile_id, ownerId));
+    await expect(
+      applyPlannedSessionScenario({
+        db,
+        actorId: ownerId,
+        profileId: ownerId,
+        request: {
+          ...request,
+          preview: { ...previewRequest, scenario: { kind: "less", targetDurationSeconds: 1_200 } },
+        },
+        now,
+        enqueueProviderSync: async ({ sessionId, action }) => {
+          providerCalls.push({ sessionId, action });
+        },
+      }),
+    ).rejects.toMatchObject({ name: "OperationReceiptConflictError" });
+    expect(
+      await db
+        .select({ id: activityPlans.id })
+        .from(activityPlans)
+        .where(eq(activityPlans.profile_id, ownerId)),
+    ).toEqual(copiesBeforeConflict);
     expect(providerCalls).toHaveLength(1);
 
     const moreSessionId = randomUUID();
@@ -567,6 +615,9 @@ describeDisposable("planned-session scenario preview against a disposable databa
       .where(eq(activityPlans.id, moreResult.createdActivityPlanId));
     expect(moreCopy).toMatchObject({ profile_id: ownerId, content_visibility: "private" });
     expect(moreCopy?.structure_hash).not.toBe(hash);
+    expect(moreCopy?.structure.items).toMatchObject([
+      { type: "step", duration: { type: "time", seconds: 2_700 } },
+    ]);
 
     const unchangedPreviewRequest = {
       sessionId: otherSessionId,
@@ -637,7 +688,7 @@ describeDisposable("planned-session scenario preview against a disposable databa
         .select()
         .from(chatbotOperationReceipts)
         .where(eq(chatbotOperationReceipts.profile_id, ownerId)),
-    ).toHaveLength(4);
+    ).toHaveLength(5);
 
     const rollbackSessionId = randomUUID();
     const rollbackSource = {
