@@ -20,6 +20,8 @@ const loadPointSchema = z
     fitness: z.number().nonnegative(),
     fatigue: z.number().nonnegative(),
     form: z.number(),
+    coverageStatus: z.enum(["complete", "partial"]),
+    omittedActivityCount: z.number().int().nonnegative(),
   })
   .strict();
 
@@ -42,6 +44,9 @@ export const coachAthleteVisualRosterResponseSchema = z
             .object({
               status: scopeStateSchema,
               planningTimezone: z.string().min(1).nullable(),
+              rangeStartDate: dateOnlySchema.nullable(),
+              rangeEndDate: dateOnlySchema.nullable(),
+              qualifier: z.enum(["fresh", "stale", "partial", "unavailable"]).optional(),
               points: z.array(loadPointSchema).max(28),
             })
             .strict(),

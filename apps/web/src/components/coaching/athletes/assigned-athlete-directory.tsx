@@ -26,12 +26,17 @@ type Athlete = {
   activities?: {
     status: "available" | "unavailable" | "unshared";
     planningTimezone: string | null;
+    rangeStartDate: string | null;
+    rangeEndDate: string | null;
+    qualifier?: "fresh" | "stale" | "partial" | "unavailable";
     points: Array<{
       date: string;
       dailyLoad: number;
       fitness: number;
       fatigue: number;
       form: number;
+      coverageStatus: "complete" | "partial";
+      omittedActivityCount: number;
     }>;
   };
   goals?: {
@@ -158,7 +163,7 @@ function VisualFacts({ athlete }: { athlete: Athlete }) {
         <dt className="font-medium text-foreground">28-day training state</dt>
         <dd>
           {athlete.activities.status === "available"
-            ? `${athlete.activities.points.length} recorded days`
+            ? `${athlete.activities.points.length} recorded days · ${athlete.activities.qualifier ?? "unavailable"}`
             : athlete.activities.status === "unshared"
               ? "Unshared"
               : "Unavailable"}
@@ -178,6 +183,8 @@ function VisualFacts({ athlete }: { athlete: Athlete }) {
         <div className="sm:col-span-3">
           <RosterTrainingStateChart
             points={athlete.activities.points}
+            rangeEndDate={athlete.activities.rangeEndDate}
+            rangeStartDate={athlete.activities.rangeStartDate}
             timeZone={athlete.activities.planningTimezone}
           />
         </div>
@@ -188,17 +195,31 @@ function VisualFacts({ athlete }: { athlete: Athlete }) {
 
 function RosterTrainingStateChart({
   points,
+  rangeEndDate,
+  rangeStartDate,
   timeZone,
 }: {
   points: NonNullable<Athlete["activities"]>["points"];
+  rangeEndDate: string | null;
+  rangeStartDate: string | null;
   timeZone: string;
 }) {
+  const byDate = new Map(points.map((point) => [point.date, point]));
+  const dates =
+    rangeStartDate && rangeEndDate
+      ? calendarDatesInclusive(rangeStartDate, rangeEndDate)
+      : points.map((point) => point.date);
   const visual: TrainingStateVisualContract = {
-    points: points.map((point, index) => ({
-      date: point.date,
+    points: dates.map((date, index) => ({
+      date,
       index,
       projected: { fatigue: null, fitness: null, form: null },
-      recorded: { fatigue: point.fatigue, fitness: point.fitness, form: point.form },
+      recorded: (() => {
+        const point = byDate.get(date);
+        return point
+          ? { fatigue: point.fatigue, fitness: point.fitness, form: point.form }
+          : { fatigue: null, fitness: null, form: null };
+      })(),
     })),
     sourceStatus: "recorded",
     timeZone,
@@ -206,7 +227,7 @@ function RosterTrainingStateChart({
   };
   return (
     <TrainingStateChart
-      description={`Recorded training state for the latest ${points.length} available planning days (${timeZone}). Missing dates are shown as gaps; no values are inferred.`}
+      description={`Recorded training state for ${rangeStartDate ?? "the available"} through ${rangeEndDate ?? "the available"} planning dates (${timeZone}). Missing dates are shown as gaps; no values are inferred.`}
       emptyMessage="No complete daily load observations are available."
       series={[
         { metric: "fitness", source: "recorded" },
@@ -217,4 +238,15 @@ function RosterTrainingStateChart({
       visual={visual}
     />
   );
+}
+
+function calendarDatesInclusive(start: string, end: string) {
+  const dates: string[] = [];
+  for (
+    let current = new Date(`${start}T00:00:00Z`);
+    current <= new Date(`${end}T00:00:00Z`);
+    current.setUTCDate(current.getUTCDate() + 1)
+  )
+    dates.push(current.toISOString().slice(0, 10));
+  return dates;
 }

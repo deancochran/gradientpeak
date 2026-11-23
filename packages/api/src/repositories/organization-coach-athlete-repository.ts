@@ -136,10 +136,10 @@ export function createOrganizationCoachAthleteRepository(db: DrizzleQueryExecuto
       if (input.athleteProfileIds.length === 0) return [];
       const result = await db.execute(sql`
         with selected as (
-          select unnest(${sql.join(
-            input.athleteProfileIds.map((id) => sql`${id}::uuid`),
+          select profile_id from (values ${sql.join(
+            input.athleteProfileIds.map((id) => sql`(${id}::uuid)`),
             sql`, `,
-          )}) as profile_id
+          )}) as selected_values(profile_id)
         ), access as (
           select selected.profile_id,
             public.coaching_athlete_read_access_decision(
@@ -165,11 +165,21 @@ export function createOrganizationCoachAthleteRepository(db: DrizzleQueryExecuto
             then state.computed_at else null end as "publishedAt",
           case when access.activities_allowed then coalesce(history.points, '[]'::json) else '[]'::json end as "activityPoints",
           case when access.activities_allowed then profile.planning_timezone else null end as "planningTimezone",
+          case when access.activities_allowed then history.range_start_date else null end as "rangeStartDate",
+          case when access.activities_allowed then history.range_end_date else null end as "rangeEndDate",
           case
             when not access.activities_allowed then 'unshared'
             when coalesce(json_array_length(history.points), 0) = 0 then 'unavailable'
             else 'available'
           end as "activitiesStatus",
+          case
+            when not access.activities_allowed or coalesce(json_array_length(history.points), 0) = 0
+              then 'unavailable'
+            when activity_state.dirty_from_at is not null
+              or activity_state.source_revision <> activity_state.published_revision then 'stale'
+            when history.has_partial then 'partial'
+            else 'fresh'
+          end as "activitiesQualifier",
           case when access.goals_allowed then coalesce(goals.items, '[]'::json) else '[]'::json end as "goalItems",
           case
             when not access.goals_allowed then 'unshared'
@@ -180,18 +190,27 @@ export function createOrganizationCoachAthleteRepository(db: DrizzleQueryExecuto
         left join profiles profile on profile.id = access.profile_id
         left join profile_athlete_state state
           on state.profile_id = access.profile_id and access.metrics_allowed
+        left join profile_athlete_state activity_state
+          on activity_state.profile_id = access.profile_id and access.activities_allowed
         left join lateral (
-          select json_agg(json_build_object(
+          select
+            min(recent.planning_date) as range_start_date,
+            max(recent.planning_date) as range_end_date,
+            coalesce(bool_or(recent.coverage_status = 'partial'), false) as has_partial,
+            json_agg(json_build_object(
             'date', recent.planning_date, 'dailyLoad', recent.common_load,
-            'fitness', recent.fitness, 'fatigue', recent.fatigue, 'form', recent.form
+            'fitness', recent.fitness, 'fatigue', recent.fatigue, 'form', recent.form,
+            'coverageStatus', recent.coverage_status, 'omittedActivityCount', recent.omitted_activity_count
           )
             order by recent.planning_date) as points
           from (
-            select load.planning_date, load.common_load, load.fitness, load.fatigue, load.form
+            select load.planning_date, load.common_load, load.fitness, load.fatigue, load.form,
+              load.coverage_status, load.omitted_activity_count
             from daily_training_load load
             where load.profile_id = access.profile_id
-              and load.source_revision = state.published_revision
-              and load.planning_date >= (current_date - 27)
+              and load.source_revision = activity_state.published_revision
+              and load.planning_date >= ((now() at time zone profile.planning_timezone)::date - 27)
+              and load.planning_date <= (now() at time zone profile.planning_timezone)::date
             order by load.planning_date desc
             limit 28
           ) recent
@@ -215,15 +234,20 @@ export function createOrganizationCoachAthleteRepository(db: DrizzleQueryExecuto
         const value = row as {
           profileId: string;
           metricsStatus: "fresh" | "stale" | "unavailable" | "unshared";
-          publishedAt: Date | null;
+          publishedAt: Date | string | null;
           activitiesStatus: "available" | "unavailable" | "unshared";
           planningTimezone: string | null;
+          rangeStartDate: string | null;
+          rangeEndDate: string | null;
+          activitiesQualifier: "fresh" | "stale" | "partial" | "unavailable";
           activityPoints: Array<{
             date: string;
             dailyLoad: number;
             fitness: number;
             fatigue: number;
             form: number;
+            coverageStatus: "complete" | "partial";
+            omittedActivityCount: number;
           }>;
           goalsStatus: "available" | "unavailable" | "unshared";
           goalItems: Array<{
@@ -243,13 +267,20 @@ export function createOrganizationCoachAthleteRepository(db: DrizzleQueryExecuto
             ...(value.metricsStatus === "fresh" || value.metricsStatus === "stale"
               ? {
                   freshness: value.metricsStatus,
-                  ...(value.publishedAt ? { publishedAt: value.publishedAt.toISOString() } : {}),
+                  ...(value.publishedAt
+                    ? { publishedAt: new Date(value.publishedAt).toISOString() }
+                    : {}),
                 }
               : {}),
           },
           activities: {
             status: value.activitiesStatus,
             planningTimezone: value.planningTimezone,
+            rangeStartDate: value.rangeStartDate,
+            rangeEndDate: value.rangeEndDate,
+            ...(value.activitiesStatus === "available"
+              ? { qualifier: value.activitiesQualifier }
+              : {}),
             points: value.activityPoints,
           },
           goals: { status: value.goalsStatus, items: value.goalItems },
