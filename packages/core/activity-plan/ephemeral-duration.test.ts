@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { withEphemeralTimedDuration } from "./ephemeral-duration";
 import { activityPlanStructureSchema } from "./structure-schema";
+import { ACTIVITY_PLAN_LIMITS } from "./structure-validation";
 
 const structure = activityPlanStructureSchema.parse({
   version: 5,
@@ -59,6 +60,14 @@ function totalDurationSeconds(value: typeof repeatedStructure) {
       }, 0)
     );
   }, 0);
+}
+
+function repeatFixture() {
+  const item = repeatedStructure.items[0];
+  if (!item || item.type !== "repeat") throw new Error("expected repeat fixture");
+  const step = item.steps[0];
+  if (!step) throw new Error("expected repeat step fixture");
+  return { item, step };
 }
 
 describe("withEphemeralTimedDuration", () => {
@@ -139,5 +148,82 @@ describe("withEphemeralTimedDuration", () => {
         reason: "target_out_of_range",
       },
     );
+  });
+
+  it("finds a global exact allocation when proportional floors need to be undone", () => {
+    const { item, step } = repeatFixture();
+    const twoRepeatGroups = activityPlanStructureSchema.parse({
+      ...repeatedStructure,
+      items: [
+        { ...item, count: 2 },
+        {
+          ...item,
+          id: "66666666-6666-4666-8666-666666666666",
+          count: 3,
+          steps: [{ ...step, id: "77777777-7777-4777-8777-777777777777" }],
+        },
+      ],
+    });
+    const result = withEphemeralTimedDuration({
+      structure: twoRepeatGroups,
+      targetDurationSeconds: 11,
+    });
+    expect(result).toMatchObject({ status: "transformed" });
+    if (result.status !== "transformed") throw new Error("expected exact transform");
+    expect(totalDurationSeconds(result.structure)).toBe(11);
+  });
+
+  it("matches exact feasibility for small repeat multiplier sets", () => {
+    for (const [firstCount, secondCount] of [
+      [2, 3],
+      [2, 4],
+      [3, 4],
+    ] as const) {
+      const { item, step } = repeatFixture();
+      const repeatGroups = activityPlanStructureSchema.parse({
+        ...repeatedStructure,
+        items: [
+          { ...item, count: firstCount },
+          {
+            ...item,
+            id: "66666666-6666-4666-8666-666666666666",
+            count: secondCount,
+            steps: [{ ...step, id: "77777777-7777-4777-8777-777777777777" }],
+          },
+        ],
+      });
+      const minimum = firstCount + secondCount;
+      for (
+        let targetDurationSeconds = minimum;
+        targetDurationSeconds <= 40;
+        targetDurationSeconds += 1
+      ) {
+        const remaining = targetDurationSeconds - minimum;
+        const exists = Array.from({ length: remaining + 1 }, (_, firstExtra) =>
+          Array.from(
+            { length: remaining + 1 },
+            (_, secondExtra) => firstCount * firstExtra + secondCount * secondExtra === remaining,
+          ).some(Boolean),
+        ).some(Boolean);
+        const result = withEphemeralTimedDuration({
+          structure: repeatGroups,
+          targetDurationSeconds,
+        });
+        expect(result.status, `${firstCount}/${secondCount} at ${targetDurationSeconds}`).toBe(
+          exists ? "transformed" : "unsupported",
+        );
+        if (result.status === "transformed")
+          expect(totalDurationSeconds(result.structure)).toBe(targetDurationSeconds);
+      }
+    }
+  });
+
+  it("returns unsupported instead of parsing an overlarge per-step duration", () => {
+    expect(
+      withEphemeralTimedDuration({
+        structure,
+        targetDurationSeconds: ACTIVITY_PLAN_LIMITS.maxExplicitTimedDurationSeconds,
+      }),
+    ).toEqual({ status: "unsupported", reason: "target_out_of_range" });
   });
 });

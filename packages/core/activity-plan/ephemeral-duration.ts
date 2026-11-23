@@ -3,6 +3,7 @@ import {
   type ActivityPlanStructure,
   activityPlanStructureSchema,
 } from "./structure-schema";
+import { ACTIVITY_PLAN_LIMITS } from "./structure-validation";
 
 export type EphemeralDurationTransform =
   | { status: "transformed"; structure: ActivityPlanStructure; sourceDurationSeconds: number }
@@ -32,7 +33,10 @@ export function withEphemeralTimedDuration(input: {
     0,
   );
   const minimumDurationSeconds = steps.reduce((sum, { multiplier }) => sum + multiplier, 0);
-  if (input.targetDurationSeconds < minimumDurationSeconds)
+  if (
+    input.targetDurationSeconds < minimumDurationSeconds ||
+    input.targetDurationSeconds > ACTIVITY_PLAN_LIMITS.maxExplicitTimedDurationSeconds
+  )
     return { status: "unsupported", reason: "target_out_of_range" };
   const remainingDurationSeconds = input.targetDurationSeconds - minimumDurationSeconds;
   const sourceFlexibleDurationSeconds = sourceDurationSeconds - minimumDurationSeconds;
@@ -44,49 +48,97 @@ export function withEphemeralTimedDuration(input: {
     const rawExtraSeconds = (weight * remainingDurationSeconds) / weightDurationSeconds;
     const extraSeconds = Math.floor(rawExtraSeconds);
     return {
-      seconds: extraSeconds + 1,
+      extraSeconds,
       fraction: rawExtraSeconds % 1,
       multiplier,
     };
   });
-  let remainder =
-    input.targetDurationSeconds -
-    scaled.reduce((sum, item) => sum + item.seconds * item.multiplier, 0);
-  const candidates = scaled
-    .map((item, index) => ({ ...item, index }))
+  const groups = [...new Set(scaled.map((item) => item.multiplier))]
+    .map((multiplier) => ({
+      multiplier,
+      indices: scaled
+        .map((item, index) => ({ ...item, index }))
+        .filter((item) => item.multiplier === multiplier),
+    }))
     .sort(
       (left, right) =>
-        right.fraction - left.fraction ||
-        left.multiplier - right.multiplier ||
-        left.index - right.index,
+        Math.max(...right.indices.map((item) => item.fraction)) -
+          Math.max(...left.indices.map((item) => item.fraction)) ||
+        left.multiplier - right.multiplier,
     );
-  const allocation = Array.from<{ previous: number; index: number } | undefined>({
-    length: remainder + 1,
-  });
-  allocation[0] = { previous: 0, index: -1 };
-  for (let duration = 1; duration <= remainder; duration += 1) {
-    for (const candidate of candidates) {
-      const previous = duration - candidate.multiplier;
-      if (previous < 0 || !allocation[previous]) continue;
-      allocation[duration] = { previous, index: candidate.index };
-      break;
+  const reachable = new Uint8Array(remainingDurationSeconds + 1);
+  const remainingCapacity = new Int32Array(remainingDurationSeconds + 1);
+  const previous = new Int32Array(remainingDurationSeconds + 1);
+  const multiplierAt = new Int16Array(remainingDurationSeconds + 1);
+  previous.fill(-1);
+  reachable[0] = 1;
+  for (const group of groups) {
+    const capacity = Math.min(
+      group.indices.length * (ACTIVITY_PLAN_LIMITS.maxStepDurationSeconds - 1),
+      remainingDurationSeconds,
+    );
+    for (let duration = 0; duration <= remainingDurationSeconds; duration += 1) {
+      if (reachable[duration]) {
+        remainingCapacity[duration] = capacity;
+        continue;
+      }
+      const before = duration - group.multiplier;
+      if (before >= 0 && (remainingCapacity[before] ?? 0) > 0) {
+        reachable[duration] = 1;
+        remainingCapacity[duration] = (remainingCapacity[before] ?? 0) - 1;
+        previous[duration] = before;
+        multiplierAt[duration] = group.multiplier;
+      }
     }
   }
-  if (!allocation[remainder]) return { status: "unsupported", reason: "target_out_of_range" };
-  while (remainder > 0) {
-    const item = allocation[remainder];
-    if (!item || item.index < 0) throw new Error("Timed duration transform lost an allocation");
-    const scaledItem = scaled[item.index];
-    if (!scaledItem) throw new Error("Timed duration transform lost a scaled step");
-    scaledItem.seconds += 1;
-    remainder = item.previous;
+  if (!reachable[remainingDurationSeconds])
+    return { status: "unsupported", reason: "target_out_of_range" };
+  const increments = new Map<number, number>();
+  for (let duration = remainingDurationSeconds; duration > 0; ) {
+    const multiplier = multiplierAt[duration];
+    const priorDuration = previous[duration];
+    if (!multiplier || priorDuration === undefined || priorDuration < 0)
+      throw new Error("Timed duration transform lost an allocation");
+    increments.set(multiplier, (increments.get(multiplier) ?? 0) + 1);
+    duration = priorDuration;
+  }
+  for (const group of groups) {
+    let extraSeconds = increments.get(group.multiplier) ?? 0;
+    const ordered = [...group.indices].sort(
+      (left, right) =>
+        right.fraction - left.fraction ||
+        right.extraSeconds - left.extraSeconds ||
+        left.index - right.index,
+    );
+    for (const item of ordered) {
+      const allocation = Math.min(item.extraSeconds, extraSeconds);
+      const scaledItem = scaled[item.index];
+      if (!scaledItem) throw new Error("Timed duration transform lost a scaled step");
+      scaledItem.extraSeconds = allocation;
+      extraSeconds -= allocation;
+    }
+    for (const item of ordered) {
+      if (extraSeconds === 0) break;
+      const scaledItem = scaled[item.index];
+      if (!scaledItem) throw new Error("Timed duration transform lost a scaled step");
+      const allocation = Math.min(
+        ACTIVITY_PLAN_LIMITS.maxStepDurationSeconds - 1 - scaledItem.extraSeconds,
+        extraSeconds,
+      );
+      scaledItem.extraSeconds += allocation;
+      extraSeconds -= allocation;
+    }
+    if (extraSeconds !== 0) throw new Error("Timed duration transform exceeded step capacity");
   }
   let index = 0;
   const items = input.structure.items.map((item) => {
     const apply = (step: ActivityPlanStep) => {
       const replacement = scaled[index++];
       if (!replacement) throw new Error("Timed duration transform lost a step");
-      return { ...step, duration: { type: "time" as const, seconds: replacement.seconds } };
+      return {
+        ...step,
+        duration: { type: "time" as const, seconds: replacement.extraSeconds + 1 },
+      };
     };
     return item.type === "step" ? apply(item) : { ...item, steps: item.steps.map(apply) };
   });
