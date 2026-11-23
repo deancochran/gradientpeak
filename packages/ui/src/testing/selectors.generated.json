@@ -342,6 +342,46 @@
       "testId": "section-divider"
     }
   },
+  "session-scenario-comparison": {
+    "aligned": {
+      "alternative": {
+        "transitions": [
+          {
+            "state": {
+              "longTermLoad": 42,
+              "recentLoad": 57,
+              "loadBalance": -15
+            }
+          },
+          {
+            "state": {
+              "longTermLoad": 43,
+              "recentLoad": 50,
+              "loadBalance": -7
+            }
+          }
+        ]
+      },
+      "baseline": {
+        "transitions": [
+          {
+            "state": {
+              "longTermLoad": 42,
+              "recentLoad": 57,
+              "loadBalance": -15
+            }
+          },
+          {
+            "state": {
+              "longTermLoad": 43,
+              "recentLoad": 55,
+              "loadBalance": -12
+            }
+          }
+        ]
+      }
+    }
+  },
   "sheet": {
     "filters": {
       "testId": "activity-filters-sheet"
@@ -396,6 +436,23 @@
       "accessibilityLabel": "Activity notes",
       "id": "activity-notes",
       "testId": "activity-notes-textarea"
+    }
+  },
+  "threshold-history": {
+    "bikePower": {
+      "id": "bike:power:watts",
+      "points": [
+        {
+          "confidence": 0.8,
+          "thresholdId": "bike-power-early",
+          "value": 240
+        },
+        {
+          "confidence": 0.8,
+          "thresholdId": "bike-power-latest",
+          "value": 260
+        }
+      ]
     }
   },
   "time-input": {

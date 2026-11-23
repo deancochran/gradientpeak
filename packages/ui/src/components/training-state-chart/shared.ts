@@ -30,18 +30,21 @@ export type TrainingStateLegendProps = {
   colors?: Partial<Record<TrainingStateMetricId, string>>;
   metrics?: readonly TrainingStateMetricId[];
   sources?: readonly TrainingStateSource[];
+  sourceLabels?: Partial<Record<TrainingStateSource, string>>;
   testId?: string;
 };
 
 export type TrainingStateVisualFixture = TrainingStateVisualContract & TrainingStateLegendProps;
 
 export type TrainingStateChartProps = {
+  accessibilityLabel?: string;
   className?: string;
   colors?: Partial<Record<TrainingStateMetricId, string>>;
   description?: string;
   emptyMessage: string;
   /** Every visible line, legend entry, and announced series must be declared here. */
   series: readonly TrainingStateSeriesSelection[];
+  sourceLabels?: Partial<Record<TrainingStateSource, string>>;
   testId?: string;
   title?: string;
   visual: TrainingStateVisualContract;
