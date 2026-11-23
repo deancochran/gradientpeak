@@ -32,6 +32,7 @@ test("coach compares shared visual evidence and returns from a prefixed athlete 
     .getByLabel("Organization URL name", { exact: true })
     .fill(`visual-${e2eIdentity.uuid("organization")}`);
   await athletePage.getByRole("button", { name: "Create organization", exact: true }).click();
+  await expect(athletePage).toHaveURL(/\/organizations\/[0-9a-f-]{36}\/dashboard$/i);
   const organizationId = new URL(athletePage.url()).pathname.split("/")[2];
   if (!organizationId) throw new Error("Missing organization id");
   const second = await actorFactory.create("athlete", { label: "visual oversight second athlete" });
@@ -150,11 +151,11 @@ test("coach compares shared visual evidence and returns from a prefixed athlete 
   }
   await page.getByRole("link", { name: athleteActor.username ?? "Assigned athlete" }).click();
   await waitForAppHydration(page);
-  await expect(page.getByRole("button", { name: "Message athlete" })).toBeVisible();
-  await page.getByRole("button", { name: "Message athlete" }).click();
+  await expect(page.getByRole("link", { name: "Message athlete" })).toBeVisible();
+  await page.getByRole("link", { name: "Message athlete" }).click();
   await expect(page.getByRole("heading", { name: "New message" })).toBeVisible();
   await expect(
-    page.getByRole("button", { name: new RegExp(`@${athleteActor.username}`) }),
+    page.getByRole("button", { name: `Remove @${athleteActor.username} from recipients` }),
   ).toBeVisible();
   await page.getByRole("link", { name: "Close" }).click();
   await expect(page.getByRole("link", { name: "Return to athlete workspace" })).toBeVisible();
