@@ -265,6 +265,22 @@ export const plannedSessionRangeDtoSchema = z
   .object({ items: z.array(plannedSessionDtoSchema).max(5_000), truncated: z.boolean() })
   .strict();
 
+export const previewPlannedSessionScenarioRequestSchema = z
+  .object({
+    sessionId: uuidSchema,
+    expectedSessionRevision: z.number().int().positive(),
+    expectedPlanRevision: z.number().int().positive(),
+    expectedStateRevision: z.number().int().nonnegative(),
+    scenario: z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("as_planned") }).strict(),
+      z.object({ kind: z.literal("less") }).strict(),
+      z.object({ kind: z.literal("more") }).strict(),
+      z.object({ kind: z.literal("skip") }).strict(),
+      z.object({ kind: z.literal("substitute"), activityPlanId: uuidSchema }).strict(),
+    ]),
+  })
+  .strict();
+
 export const plannedSessionMutationReceiptSchema = z
   .object({
     outcome: z.enum(["created", "unchanged", "updated"]),

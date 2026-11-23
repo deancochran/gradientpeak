@@ -121,7 +121,12 @@ function router(overrides: Record<string, unknown> = {}) {
     })),
     linkGroupEvent: vi.fn(async () => current),
     unlinkGroupEvent: vi.fn(async () => current),
+    skip: vi.fn(async () => current),
     readLinkedActivityObservation: vi.fn(async () => null),
+    previewScenario: vi.fn(async () => ({
+      status: "unavailable" as const,
+      reason: "baseline_unavailable",
+    })),
     createId: () => SESSION_ID,
     now: () => new Date("2026-08-01T08:00:00.000Z"),
     ...overrides,
@@ -132,6 +137,56 @@ const transactionDb = {
   transaction: async <T>(work: (tx: never) => Promise<T>) => work({} as never),
 };
 describe("plannedSessionsRouter", () => {
+  it("keeps scenario previews owner-scoped and read-only", async () => {
+    const previewScenario = vi.fn(async (input: { profileId: string }) =>
+      input.profileId === PROFILE_ID
+        ? { status: "unavailable" as const, reason: "baseline_unavailable" }
+        : { status: "unavailable" as const, reason: "session_not_found" },
+    );
+    const { router: planned, dependencies } = router({ previewScenario });
+    const caller = createRouterCaller(planned, { userId: PROFILE_ID, db: transactionDb });
+    await expect(
+      caller.previewScenario({
+        sessionId: SESSION_ID,
+        expectedSessionRevision: 1,
+        expectedPlanRevision: 1,
+        expectedStateRevision: 1,
+        scenario: { kind: "skip" },
+      }),
+    ).resolves.toEqual({ status: "unavailable", reason: "baseline_unavailable" });
+    expect(previewScenario).toHaveBeenCalledWith(
+      expect.objectContaining({
+        profileId: PROFILE_ID,
+        values: expect.objectContaining({ sessionId: SESSION_ID }),
+      }),
+    );
+    expect(dependencies.skip).not.toHaveBeenCalled();
+    expect(dependencies.cancel).not.toHaveBeenCalled();
+    const denied = createRouterCaller(planned, { userId: OTHER_ID, db: transactionDb });
+    // A different actor reaches the same owner-scoped lookup, never a target-profile input.
+    await expect(
+      denied.previewScenario({
+        sessionId: SESSION_ID,
+        expectedSessionRevision: 1,
+        expectedPlanRevision: 1,
+        expectedStateRevision: 1,
+        scenario: { kind: "skip" },
+      }),
+    ).resolves.toEqual({ status: "unavailable", reason: "session_not_found" });
+    expect(previewScenario).toHaveBeenLastCalledWith(
+      expect.objectContaining({ profileId: OTHER_ID }),
+    );
+    await expect(
+      caller.previewScenario({
+        sessionId: SESSION_ID,
+        expectedSessionRevision: 1,
+        expectedPlanRevision: 1,
+        expectedStateRevision: 1,
+        scenario: { kind: "skip" },
+        plannedSessions: [],
+      } as never),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
   it("maps newly selected plan policy failures to BAD_REQUEST with field diagnostics", async () => {
     const prescription = session().prescription;
     if (!prescription) throw new Error("Fixture must retain a legacy prescription");

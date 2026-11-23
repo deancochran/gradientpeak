@@ -21,6 +21,10 @@ import {
   PlannedSessionStaleRevisionError,
   PlannedSessionStateConflictError,
 } from "../application/calendar/planned-session-errors";
+import {
+  previewPlannedSessionScenario,
+  previewPlannedSessionScenarioInputSchema,
+} from "../application/calendar/preview-planned-session-scenario";
 import { readPlannedSessionCompletionCandidates } from "../application/calendar/read-planned-session-completion-candidates";
 import { readPlannedSessionRange } from "../application/calendar/read-planned-session-range";
 import {
@@ -48,6 +52,7 @@ import {
   plannedSessionDetailDtoSchema,
   plannedSessionMutationReceiptSchema,
   plannedSessionRangeDtoSchema,
+  previewPlannedSessionScenarioRequestSchema,
   readPlannedSessionsRangeRequestSchema,
   skipPlannedSessionDtoRequestSchema,
   toPlannedSessionDto,
@@ -72,6 +77,7 @@ type PlannedSessionRouterDependencies = {
   linkGroupEvent: typeof linkPlannedSessionGroupEvent;
   unlinkGroupEvent: typeof unlinkPlannedSessionGroupEvent;
   readLinkedActivityObservation: typeof readOwnedLinkedActivityObservation;
+  previewScenario: typeof previewPlannedSessionScenario;
   createId: () => string;
   now: () => Date;
 };
@@ -159,6 +165,7 @@ export function createPlannedSessionsRouter(
     unlinkGroupEvent: dependencies.unlinkGroupEvent ?? unlinkPlannedSessionGroupEvent,
     readLinkedActivityObservation:
       dependencies.readLinkedActivityObservation ?? readOwnedLinkedActivityObservation,
+    previewScenario: dependencies.previewScenario ?? previewPlannedSessionScenario,
     createId: dependencies.createId ?? randomUUID,
     now: dependencies.now ?? (() => new Date()),
   };
@@ -285,6 +292,18 @@ export function createPlannedSessionsRouter(
             },
           }),
         });
+      }),
+    previewScenario: protectedProcedure
+      .input(previewPlannedSessionScenarioRequestSchema)
+      .query(async ({ ctx, input }) => {
+        const result = await services.previewScenario({
+          db: getRequiredDb(ctx),
+          repository: repository(ctx),
+          profileId: ctx.session.user.id,
+          values: previewPlannedSessionScenarioInputSchema.parse(input),
+          now: services.now(),
+        });
+        return result;
       }),
     recordingLaunch: protectedProcedure
       .input(z.object({ id: z.string().uuid() }).strict())
