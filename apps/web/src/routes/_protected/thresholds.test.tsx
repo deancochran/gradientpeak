@@ -279,6 +279,11 @@ it("loads the advertised cursor, appends chronological history, and retains firs
   expect(state.requestedInputs.at(-1)).toEqual({ historyCursor: cursor, historyLimit: 100 });
 
   state.olderData = {
+    publication: {
+      computedAt: "2026-05-01T00:00:00Z",
+      publishedRevision: 1,
+      status: "available",
+    },
     history: {
       items: [
         {
@@ -370,6 +375,11 @@ it("keeps loaded history on an older-page failure and retries the same cursor", 
 
   state.olderIsError = false;
   state.olderData = {
+    publication: {
+      computedAt: "2026-05-01T00:00:00Z",
+      publishedRevision: 1,
+      status: "available",
+    },
     history: {
       items: [
         {
@@ -436,10 +446,163 @@ it("drops old pages and ignores an in-flight older response after publication ch
     },
     history: { items: [point("revision-two", 260)], nextCursor: null },
   };
-  state.olderData = { history: { items: [point("stale-response", 150)], nextCursor: null } };
+  state.olderData = {
+    publication: {
+      computedAt: "2026-05-01T00:00:00Z",
+      publishedRevision: 1,
+      status: "available",
+    },
+    history: { items: [point("stale-response", 150)], nextCursor: null },
+  };
   view.rerender(<ThresholdsPage />);
 
   await waitFor(() => expect(screen.getByText("260 W")).toBeTruthy());
   expect(screen.queryByText("250 W")).toBeNull();
   expect(screen.queryByText("150 W")).toBeNull();
+});
+
+it("rejects an older response when the server publication changes during the request", async () => {
+  const cursor = {
+    createdAt: "2026-02-01T00:00:00Z",
+    effectiveAt: "2026-02-01T00:00:00Z",
+    thresholdId: "cursor",
+  };
+  const point = {
+    activityCategory: "bike" as const,
+    confidence: 0.8,
+    effectiveAt: "2026-05-01T00:00:00Z",
+    metric: "power" as const,
+    method: "bike_power_30m",
+    policyVersion: "v2",
+    sourceActivities: [],
+    thresholdId: "current",
+    unit: "watts" as const,
+    value: 250,
+  };
+  state.data = {
+    publication: { computedAt: "2026-05-01T00:00:00Z", publishedRevision: 1, status: "available" },
+    current: {
+      thresholds: {
+        bike: { status: "unavailable" },
+        run: { status: "unavailable" },
+        swim: { status: "unavailable" },
+      },
+    },
+    history: { items: [point], nextCursor: cursor },
+  };
+  const ThresholdsPage = (Route as unknown as { component: React.ComponentType }).component;
+  const view = render(<ThresholdsPage />);
+  fireEvent.click(screen.getByRole("button", { name: "Load earlier history" }));
+  state.olderData = {
+    publication: { computedAt: "2026-05-02T00:00:00Z", publishedRevision: 2, status: "available" },
+    history: { items: [{ ...point, thresholdId: "unexpected", value: 999 }], nextCursor: null },
+  };
+  view.rerender(<ThresholdsPage />);
+
+  await waitFor(() => expect(state.refetch).toHaveBeenCalledOnce());
+  expect(screen.queryByText("999 W")).toBeNull();
+  expect(screen.getByRole("button", { name: "Load earlier history" })).toBeTruthy();
+});
+
+it("rejects a cached old-publication response after a new first page reuses its cursor", async () => {
+  const cursor = {
+    createdAt: "2026-02-01T00:00:00Z",
+    effectiveAt: "2026-02-01T00:00:00Z",
+    thresholdId: "cursor",
+  };
+  const point = (thresholdId: string, value: number) => ({
+    activityCategory: "bike" as const,
+    confidence: 0.8,
+    effectiveAt: "2026-05-01T00:00:00Z",
+    metric: "power" as const,
+    method: "bike_power_30m",
+    policyVersion: "v2",
+    sourceActivities: [],
+    thresholdId,
+    unit: "watts" as const,
+    value,
+  });
+  state.data = {
+    publication: { computedAt: "2026-05-01T00:00:00Z", publishedRevision: 1, status: "available" },
+    current: {
+      thresholds: {
+        bike: { status: "unavailable" },
+        run: { status: "unavailable" },
+        swim: { status: "unavailable" },
+      },
+    },
+    history: { items: [point("revision-one", 250)], nextCursor: cursor },
+  };
+  const ThresholdsPage = (Route as unknown as { component: React.ComponentType }).component;
+  const view = render(<ThresholdsPage />);
+  state.data = {
+    publication: { computedAt: "2026-05-02T00:00:00Z", publishedRevision: 2, status: "available" },
+    current: {
+      thresholds: {
+        bike: { status: "unavailable" },
+        run: { status: "unavailable" },
+        swim: { status: "unavailable" },
+      },
+    },
+    history: { items: [point("revision-two", 260)], nextCursor: cursor },
+  };
+  view.rerender(<ThresholdsPage />);
+  await waitFor(() => expect(screen.getByText("Publication available · revision 2")).toBeTruthy());
+  fireEvent.click(screen.getByRole("button", { name: "Load earlier history" }));
+  state.olderData = {
+    publication: { computedAt: "2026-05-01T00:00:00Z", publishedRevision: 1, status: "available" },
+    history: { items: [point("cached-old", 150)], nextCursor: null },
+  };
+  view.rerender(<ThresholdsPage />);
+
+  await waitFor(() => expect(state.refetch).toHaveBeenCalledOnce());
+  expect(screen.getByText("260 W")).toBeTruthy();
+  expect(screen.queryByText("150 W")).toBeNull();
+});
+
+it("honors an accepted empty terminal older page instead of offering the original cursor again", async () => {
+  const cursor = {
+    createdAt: "2026-02-01T00:00:00Z",
+    effectiveAt: "2026-02-01T00:00:00Z",
+    thresholdId: "cursor",
+  };
+  state.data = {
+    publication: { computedAt: "2026-05-01T00:00:00Z", publishedRevision: 1, status: "available" },
+    current: {
+      thresholds: {
+        bike: { status: "unavailable" },
+        run: { status: "unavailable" },
+        swim: { status: "unavailable" },
+      },
+    },
+    history: {
+      items: [
+        {
+          activityCategory: "bike",
+          confidence: 0.8,
+          effectiveAt: "2026-05-01T00:00:00Z",
+          metric: "power",
+          method: "bike_power_30m",
+          policyVersion: "v2",
+          sourceActivities: [],
+          thresholdId: "current",
+          unit: "watts",
+          value: 250,
+        },
+      ],
+      nextCursor: cursor,
+    },
+  };
+  const ThresholdsPage = (Route as unknown as { component: React.ComponentType }).component;
+  const view = render(<ThresholdsPage />);
+  fireEvent.click(screen.getByRole("button", { name: "Load earlier history" }));
+  state.olderData = {
+    publication: { computedAt: "2026-05-01T00:00:00Z", publishedRevision: 1, status: "available" },
+    history: { items: [], nextCursor: null },
+  };
+  view.rerender(<ThresholdsPage />);
+
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "Load earlier history" })).toBeNull(),
+  );
 });
