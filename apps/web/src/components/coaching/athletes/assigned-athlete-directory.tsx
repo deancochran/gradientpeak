@@ -8,6 +8,10 @@ import {
 } from "@repo/ui/components/card";
 import { IdentitySummary } from "@repo/ui/components/identity-summary";
 import { SearchField } from "@repo/ui/components/search-field";
+import {
+  TrainingStateChart,
+  type TrainingStateVisualContract,
+} from "@repo/ui/components/training-state-chart";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
@@ -21,7 +25,14 @@ type Athlete = {
   };
   activities?: {
     status: "available" | "unavailable" | "unshared";
-    points: Array<{ date: string; dailyLoad: number }>;
+    planningTimezone: string | null;
+    points: Array<{
+      date: string;
+      dailyLoad: number;
+      fitness: number;
+      fatigue: number;
+      form: number;
+    }>;
   };
   goals?: {
     status: "available" | "unavailable" | "unshared";
@@ -128,12 +139,6 @@ export function AssignedAthleteDirectory({
 
 function VisualFacts({ athlete }: { athlete: Athlete }) {
   if (!athlete.metrics || !athlete.activities || !athlete.goals) return null;
-  const latest = athlete.activities.points.at(-1);
-  const first = athlete.activities.points[0];
-  const change =
-    latest && first && athlete.activities.points.length > 1
-      ? latest.dailyLoad - first.dailyLoad
-      : null;
   const goal = athlete.goals.items[0];
   return (
     <dl className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
@@ -150,10 +155,10 @@ function VisualFacts({ athlete }: { athlete: Athlete }) {
         </dd>
       </div>
       <div>
-        <dt className="font-medium text-foreground">28-day load</dt>
+        <dt className="font-medium text-foreground">28-day training state</dt>
         <dd>
-          {athlete.activities.status === "available" && latest
-            ? `${latest.dailyLoad.toFixed(1)}${change === null ? "" : ` · ${change >= 0 ? "+" : ""}${change.toFixed(1)}`}`
+          {athlete.activities.status === "available"
+            ? `${athlete.activities.points.length} recorded days`
             : athlete.activities.status === "unshared"
               ? "Unshared"
               : "Unavailable"}
@@ -169,6 +174,47 @@ function VisualFacts({ athlete }: { athlete: Athlete }) {
               : "Unavailable"}
         </dd>
       </div>
+      {athlete.activities.status === "available" && athlete.activities.planningTimezone ? (
+        <div className="sm:col-span-3">
+          <RosterTrainingStateChart
+            points={athlete.activities.points}
+            timeZone={athlete.activities.planningTimezone}
+          />
+        </div>
+      ) : null}
     </dl>
+  );
+}
+
+function RosterTrainingStateChart({
+  points,
+  timeZone,
+}: {
+  points: NonNullable<Athlete["activities"]>["points"];
+  timeZone: string;
+}) {
+  const visual: TrainingStateVisualContract = {
+    points: points.map((point, index) => ({
+      date: point.date,
+      index,
+      projected: { fatigue: null, fitness: null, form: null },
+      recorded: { fatigue: point.fatigue, fitness: point.fitness, form: point.form },
+    })),
+    sourceStatus: "recorded",
+    timeZone,
+    unitLabel: "Common Load points",
+  };
+  return (
+    <TrainingStateChart
+      description={`Recorded training state for the latest ${points.length} available planning days (${timeZone}). Missing dates are shown as gaps; no values are inferred.`}
+      emptyMessage="No complete daily load observations are available."
+      series={[
+        { metric: "fitness", source: "recorded" },
+        { metric: "fatigue", source: "recorded" },
+        { metric: "form", source: "recorded" },
+      ]}
+      title="Recent training state"
+      visual={visual}
+    />
   );
 }

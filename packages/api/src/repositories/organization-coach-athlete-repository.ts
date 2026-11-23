@@ -164,6 +164,7 @@ export function createOrganizationCoachAthleteRepository(db: DrizzleQueryExecuto
           case when access.metrics_allowed and state.computed_at is not null
             then state.computed_at else null end as "publishedAt",
           case when access.activities_allowed then coalesce(history.points, '[]'::json) else '[]'::json end as "activityPoints",
+          case when access.activities_allowed then profile.planning_timezone else null end as "planningTimezone",
           case
             when not access.activities_allowed then 'unshared'
             when coalesce(json_array_length(history.points), 0) = 0 then 'unavailable'
@@ -176,13 +177,17 @@ export function createOrganizationCoachAthleteRepository(db: DrizzleQueryExecuto
             else 'available'
           end as "goalsStatus"
         from access
+        left join profiles profile on profile.id = access.profile_id
         left join profile_athlete_state state
           on state.profile_id = access.profile_id and access.metrics_allowed
         left join lateral (
-          select json_agg(json_build_object('date', recent.planning_date, 'dailyLoad', recent.common_load)
+          select json_agg(json_build_object(
+            'date', recent.planning_date, 'dailyLoad', recent.common_load,
+            'fitness', recent.fitness, 'fatigue', recent.fatigue, 'form', recent.form
+          )
             order by recent.planning_date) as points
           from (
-            select load.planning_date, load.common_load
+            select load.planning_date, load.common_load, load.fitness, load.fatigue, load.form
             from daily_training_load load
             where load.profile_id = access.profile_id
               and load.source_revision = state.published_revision
@@ -212,7 +217,14 @@ export function createOrganizationCoachAthleteRepository(db: DrizzleQueryExecuto
           metricsStatus: "fresh" | "stale" | "unavailable" | "unshared";
           publishedAt: Date | null;
           activitiesStatus: "available" | "unavailable" | "unshared";
-          activityPoints: Array<{ date: string; dailyLoad: number }>;
+          planningTimezone: string | null;
+          activityPoints: Array<{
+            date: string;
+            dailyLoad: number;
+            fitness: number;
+            fatigue: number;
+            form: number;
+          }>;
           goalsStatus: "available" | "unavailable" | "unshared";
           goalItems: Array<{
             id: string;
@@ -235,7 +247,11 @@ export function createOrganizationCoachAthleteRepository(db: DrizzleQueryExecuto
                 }
               : {}),
           },
-          activities: { status: value.activitiesStatus, points: value.activityPoints },
+          activities: {
+            status: value.activitiesStatus,
+            planningTimezone: value.planningTimezone,
+            points: value.activityPoints,
+          },
           goals: { status: value.goalsStatus, items: value.goalItems },
         };
       });

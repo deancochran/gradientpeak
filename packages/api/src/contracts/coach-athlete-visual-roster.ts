@@ -14,7 +14,13 @@ export const coachAthleteVisualRosterRequestSchema = z
   .strict();
 
 const loadPointSchema = z
-  .object({ date: dateOnlySchema, dailyLoad: z.number().nonnegative() })
+  .object({
+    date: dateOnlySchema,
+    dailyLoad: z.number().nonnegative(),
+    fitness: z.number().nonnegative(),
+    fatigue: z.number().nonnegative(),
+    form: z.number(),
+  })
   .strict();
 
 export const coachAthleteVisualRosterResponseSchema = z
@@ -33,7 +39,11 @@ export const coachAthleteVisualRosterResponseSchema = z
             })
             .strict(),
           activities: z
-            .object({ status: scopeStateSchema, points: z.array(loadPointSchema).max(28) })
+            .object({
+              status: scopeStateSchema,
+              planningTimezone: z.string().min(1).nullable(),
+              points: z.array(loadPointSchema).max(28),
+            })
             .strict(),
           goals: z
             .object({

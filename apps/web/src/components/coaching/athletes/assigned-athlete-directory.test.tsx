@@ -90,7 +90,7 @@ describe("AssignedAthleteDirectory", () => {
               displayName: "Avery",
               username: "avery",
               metrics: { status: "available", freshness: "stale" },
-              activities: { status: "unshared", points: [] },
+              activities: { status: "unshared", planningTimezone: null, points: [] },
               goals: { status: "unavailable", items: [] },
             },
           ],
@@ -104,5 +104,39 @@ describe("AssignedAthleteDirectory", () => {
     expect(screen.getAllByText("Unshared")).toHaveLength(1);
     expect(screen.getAllByText("Unavailable")).toHaveLength(1);
     expect(screen.queryByText("0.0")).toBeNull();
+  });
+
+  it("renders the existing chart from actual recorded points with missing dates left absent", () => {
+    render(
+      <AssignedAthleteDirectory
+        organizationId="organization-1"
+        page={{
+          hasMore: false,
+          items: [
+            {
+              profileId: "athlete-1",
+              displayName: "Avery",
+              username: "avery",
+              metrics: { status: "available", freshness: "fresh" },
+              activities: {
+                status: "available",
+                planningTimezone: "America/Los_Angeles",
+                points: [
+                  { date: "2026-11-01", dailyLoad: 12, fitness: 30, fatigue: 25, form: 5 },
+                  { date: "2026-11-03", dailyLoad: 18, fitness: 31, fatigue: 27, form: 4 },
+                ],
+              },
+              goals: { status: "unavailable", items: [] },
+            },
+          ],
+          nextCursor: null,
+        }}
+        search={null}
+      />,
+    );
+
+    expect(screen.getByText("Recent training state")).toBeTruthy();
+    expect(screen.getByText(/2 recorded days/)).toBeTruthy();
+    expect(screen.getByText(/Missing dates are shown as gaps/)).toBeTruthy();
   });
 });
