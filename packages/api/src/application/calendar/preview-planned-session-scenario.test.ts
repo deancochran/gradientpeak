@@ -9,6 +9,7 @@ import { createAthletePlanningContextFromSnapshot } from "@repo/core/plan";
 import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import type { DrizzleDbClient } from "@repo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { createDrizzlePlannedSessionRepository } from "../../infrastructure/repositories";
 import type {
   ActivityPlanPrescriptionSource,
   PlannedSessionRepositoryPort,
@@ -37,6 +38,7 @@ vi.mock("../athlete-intelligence/load-planning-baseline", () => ({
 const PROFILE_ID = "11111111-1111-4111-8111-111111111111";
 const OTHER_PROFILE_ID = "22222222-2222-4222-8222-222222222222";
 const SELECTED_SESSION_ID = "33333333-3333-4333-8333-333333333333";
+const BEFORE_SESSION_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const MIDDLE_SESSION_ID = "44444444-4444-4444-8444-444444444444";
 const FUTURE_SESSION_ID = "55555555-5555-4555-8555-555555555555";
 const RUN_PLAN_ID = "66666666-6666-4666-8666-666666666666";
@@ -103,6 +105,18 @@ function plan(
 const runPlan = plan(RUN_PLAN_ID, runStructure);
 const bikePlan = plan(BIKE_PLAN_ID, bikeStructure);
 const secondRunPlan = plan(SECOND_RUN_PLAN_ID, runStructure);
+const nonTimedRunPlan = plan(
+  RUN_PLAN_ID,
+  activityPlanStructureSchema.parse({
+    ...runStructure,
+    items: [
+      {
+        ...runStructure.items[0],
+        duration: { type: "distance", meters: 1000 },
+      },
+    ],
+  }),
+);
 
 function session(input: {
   id: string;
@@ -149,6 +163,7 @@ function scenarioSessions() {
       planningDate: "2026-08-10",
       activityPlanId: RUN_PLAN_ID,
     }),
+    session({ id: BEFORE_SESSION_ID, planningDate: "2026-08-05", activityPlanId: RUN_PLAN_ID }),
     session({
       id: MIDDLE_SESSION_ID,
       planningDate: "2026-08-12",
@@ -158,12 +173,11 @@ function scenarioSessions() {
   ];
 }
 
-function repository(sessions = scenarioSessions()) {
-  const sources = new Map([
-    [RUN_PLAN_ID, runPlan],
-    [BIKE_PLAN_ID, bikePlan],
-    [SECOND_RUN_PLAN_ID, secondRunPlan],
-  ]);
+function repository(
+  sessions = scenarioSessions(),
+  plans: ActivityPlanPrescriptionSource[] = [runPlan, bikePlan, secondRunPlan],
+) {
+  const sources = new Map(plans.map((source) => [source.id, source]));
   return {
     getOwned: vi.fn(async ({ profileId, sessionId }) =>
       profileId === PROFILE_ID ? (sessions.find((item) => item.id === sessionId) ?? null) : null,
@@ -247,6 +261,7 @@ async function preview(input: {
   repository?: PlannedSessionRepositoryPort;
   db?: ReturnType<typeof dbWithCandidates>;
   profileId?: string;
+  createRepository?: typeof createDrizzlePlannedSessionRepository;
 }) {
   const currentRepository = input.repository ?? repository();
   const db = input.db ?? dbWithCandidates();
@@ -255,13 +270,13 @@ async function preview(input: {
     profileId: input.profileId ?? PROFILE_ID,
     values: input.values,
     now,
-    createRepository: vi.fn(() => currentRepository),
+    createRepository: input.createRepository ?? (() => currentRepository),
   });
 }
 
 beforeEach(() => {
   mocks.fencedSnapshot.mockReset();
-  mocks.fencedSnapshot.mockImplementation(async (_db, _profileId, read) => read(_db));
+  mocks.fencedSnapshot.mockImplementation(async (db, _profileId, read) => read({ ...db }));
   mocks.readModel.mockReset();
   mocks.readModel.mockResolvedValue({
     publishedRevision: 9,
@@ -280,25 +295,30 @@ describe("previewPlannedSessionScenario application boundary", () => {
   it("uses canonical resolution and simulation for every scenario without mutating the schedule", async () => {
     const currentRepository = repository();
     const db = dbWithCandidates();
+    const createRepository = vi.fn(() => currentRepository);
     const asPlanned = await preview({
       values: request({ kind: "as_planned" }),
       repository: currentRepository,
       db,
+      createRepository,
     });
     const less = await preview({
       values: request({ kind: "less", targetDurationSeconds: 900 }),
       repository: currentRepository,
       db,
+      createRepository,
     });
     const more = await preview({
       values: request({ kind: "more", targetDurationSeconds: 3600 }),
       repository: currentRepository,
       db,
+      createRepository,
     });
     const skipped = await preview({
       values: request({ kind: "skip" }),
       repository: currentRepository,
       db,
+      createRepository,
     });
     const substituted = await preview({
       values: request({ kind: "substitute", activityPlanId: BIKE_PLAN_ID }),
@@ -308,6 +328,7 @@ describe("previewPlannedSessionScenario application boundary", () => {
         candidateRow(secondRunPlan),
         candidateRow(bikePlan),
       ]),
+      createRepository,
     });
 
     for (const [name, result] of [
@@ -356,7 +377,7 @@ describe("previewPlannedSessionScenario application boundary", () => {
     ]);
     expect(less.alternative).not.toEqual(less.baseline);
     expect(more.alternative).not.toEqual(more.baseline);
-    expect(skipped.horizon.sessionCount).toBe(3);
+    expect(skipped.horizon.sessionCount).toBe(4);
     expect(skipped.horizon).toEqual(asPlanned.horizon);
     expect(
       skipped.alternative.transitions
@@ -367,6 +388,9 @@ describe("previewPlannedSessionScenario application boundary", () => {
         .map((transition) => transition.sourceId)
         .filter((sourceId) => sourceId !== "plan-day:2026-08-10" && sourceId !== null),
     );
+    expect(skipped.alternative.transitions.map((transition) => transition.sourceId)).toContain(
+      "plan-day:2026-08-05",
+    );
     expect(substituted.provenance.selectedAlternative).toMatchObject({
       activityPlanId: BIKE_PLAN_ID,
       activityPlanRevision: 7,
@@ -376,6 +400,12 @@ describe("previewPlannedSessionScenario application boundary", () => {
     expect(currentRepository.listOwnedRange).toHaveBeenCalledTimes(5);
     expect(currentRepository.mutateOwned).not.toHaveBeenCalled();
     expect(mocks.fencedSnapshot).toHaveBeenCalledWith(db, PROFILE_ID, expect.any(Function));
+    const transactionDb = mocks.readModel.mock.calls[0]?.[0].db;
+    expect(transactionDb).not.toBe(db);
+    expect(mocks.planningBaseline).toHaveBeenCalledWith(
+      expect.objectContaining({ db: transactionDb, profileId: PROFILE_ID }),
+    );
+    expect(createRepository).toHaveBeenCalledWith(transactionDb);
   });
 
   it("returns distinct stale states before candidate reads", async () => {
@@ -410,6 +440,25 @@ describe("previewPlannedSessionScenario application boundary", () => {
       status: "stale",
       reason: "state_revision",
       currentStateRevision: 10,
+    });
+  });
+
+  it("fails closed when current plans cannot produce a complete timed Common Load", async () => {
+    await expect(
+      preview({
+        values: request({ kind: "less", targetDurationSeconds: 900 }),
+        repository: repository(scenarioSessions(), [nonTimedRunPlan, bikePlan, secondRunPlan]),
+        db: dbWithCandidates([candidateRow(nonTimedRunPlan), candidateRow(secondRunPlan)]),
+      }),
+    ).resolves.toEqual({ status: "unavailable", reason: "prescription_unavailable" });
+
+    mocks.planningBaseline.mockResolvedValueOnce({
+      status: "no_context",
+      as_of: now.toISOString(),
+    });
+    await expect(preview({ values: request({ kind: "as_planned" }) })).resolves.toEqual({
+      status: "unavailable",
+      reason: "prescription_unavailable",
     });
   });
 
