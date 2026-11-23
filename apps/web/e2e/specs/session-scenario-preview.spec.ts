@@ -30,6 +30,7 @@ test("a published bike baseline supports each read-only session scenario without
     name: /Baseline and alternative training-load projections shown over the same planning horizon/i,
   });
   await expect(chart).toBeVisible();
+  await expect(chart.locator("svg polyline")).toHaveCount(6);
   const comparison = athletePage.getByRole("region", { name: "Explore a session scenario" });
   await expect(comparison.getByLabel("Chart legend")).toContainText("Baseline");
   await expect(comparison.getByLabel("Chart legend")).toContainText("Alternative");
@@ -45,6 +46,9 @@ test("a published bike baseline supports each read-only session scenario without
   await expect(athletePage.getByRole("img", { name: /Baseline and alternative/i })).toBeVisible();
   await athletePage.getByRole("button", { name: "skip", exact: true }).click();
   await expect(athletePage.getByRole("img", { name: /Baseline and alternative/i })).toBeVisible();
+  await expect(
+    athletePage.getByText(`${fixture.sessionCount} sessions in the shared horizon.`),
+  ).toBeVisible();
 
   await expectNoHorizontalOverflow(athletePage);
   await athletePage.screenshot({

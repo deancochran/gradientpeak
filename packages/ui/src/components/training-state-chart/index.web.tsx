@@ -14,6 +14,7 @@ function TrainingStateLegend({
   metrics = ["fitness", "fatigue", "form"],
   sources,
   testId,
+  sourceLabels,
 }: TrainingStateLegendProps) {
   return (
     <ul
@@ -35,7 +36,10 @@ function TrainingStateLegend({
         );
       })}
       {sources?.map((source) => (
-        <li key={source}>━ {getTrainingStateSourceLabel(source)}</li>
+        <li key={source}>
+          {source === "recorded" ? "●" : "■"}{" "}
+          {sourceLabels?.[source] ?? getTrainingStateSourceLabel(source)}
+        </li>
       ))}
     </ul>
   );
@@ -154,10 +158,18 @@ function TrainingStateChart({
           plot.segments.flat().map((point) => (
             <span
               aria-hidden="true"
-              className="absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-background"
+              className={
+                plot.source === "recorded"
+                  ? "absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full"
+                  : "absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 border-2 bg-background"
+              }
+              data-marker={plot.source === "recorded" ? "circle-filled" : "square-outline"}
+              data-source={plot.source}
               key={`${plot.id}-${point.label ?? point.x}`}
               style={{
-                borderColor: plot.color,
+                ...(plot.source === "recorded"
+                  ? { backgroundColor: plot.color }
+                  : { borderColor: plot.color }),
                 left: `${point.plotX}%`,
                 top: `${point.plotY}%`,
               }}

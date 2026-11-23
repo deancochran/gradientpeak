@@ -1,3 +1,4 @@
+import { DashPathEffect } from "@shopify/react-native-skia";
 import { Fragment } from "react";
 import { View } from "react-native";
 import { CartesianChart, Line, Scatter } from "victory-native";
@@ -53,7 +54,8 @@ function TrainingStateLegend({
       })}
       {sources?.map((source) => (
         <Text className="text-xs text-muted-foreground" key={source}>
-          ━ {sourceLabels?.[source] ?? getTrainingStateSourceLabel(source)}
+          {source === "recorded" ? "●" : "■"}{" "}
+          {sourceLabels?.[source] ?? getTrainingStateSourceLabel(source)}
         </Text>
       ))}
     </View>
@@ -127,17 +129,18 @@ function TrainingStateChart({
                         color={colors?.[metric] ?? getTrainingStateMetric(metric).nativeColor}
                         connectMissingData={false}
                         curveType="natural"
-                        {...(source === "projected"
-                          ? { opacity: 0.45, strokeDasharray: [6, 4] }
-                          : {})}
+                        {...(source === "projected" ? { opacity: 0.45 } : {})}
                         points={points[getNativeSeriesKey(metric, source)]}
                         strokeWidth={metric === "fitness" ? 3 : metric === "fatigue" ? 2.5 : 2}
-                      />
+                      >
+                        {source === "projected" ? <DashPathEffect intervals={[6, 4]} /> : null}
+                      </Line>
                       <Scatter
                         color={colors?.[metric] ?? getTrainingStateMetric(metric).nativeColor}
                         {...(source === "projected" ? { opacity: 0.45 } : {})}
                         points={points[getNativeSeriesKey(metric, source)]}
                         radius={2.5}
+                        shape={source === "recorded" ? "circle" : "square"}
                       />
                     </Fragment>
                   ))}

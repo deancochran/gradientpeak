@@ -32,6 +32,7 @@ export type SessionScenarioFixture = {
   activityPlanRevision: number;
   date: string;
   sessionId: string;
+  sessionCount: number;
   sessionRevision: number;
   stateRevision: number;
   substituteId: string;
@@ -176,6 +177,7 @@ export async function createSessionScenarioFixture(input: {
 }): Promise<SessionScenarioFixture> {
   const now = new Date();
   const date = new Date(now.getTime() + 86_400_000).toISOString().slice(0, 10);
+  const horizonDate = new Date(now.getTime() + 8 * 86_400_000).toISOString().slice(0, 10);
   await input.database.db
     .update(profiles)
     .set({ planning_timezone: "UTC" })
@@ -217,6 +219,7 @@ export async function createSessionScenarioFixture(input: {
     actorEmail: input.actor.email,
     label: "scenario-substitute",
   });
+  const operationId = input.identity.suffix("scenario-session", 32);
   const response = await input.actor.request.post("/api/trpc/plannedSessions.create?batch=1", {
     data: {
       0: {
@@ -225,7 +228,7 @@ export async function createSessionScenarioFixture(input: {
           session: {
             activityPlanId: selected.id,
             planningDate: date,
-            source: { kind: "direct", operationId: input.identity.suffix("scenario-session", 32) },
+            source: { kind: "direct", operationId },
           },
         },
       },
@@ -233,13 +236,37 @@ export async function createSessionScenarioFixture(input: {
   });
   if (!response.ok())
     throw new Error(`Scenario session fixture failed with HTTP ${response.status()}.`);
+  const horizonResponse = await input.actor.request.post(
+    "/api/trpc/plannedSessions.create?batch=1",
+    {
+      data: {
+        0: {
+          json: {
+            profileId: input.actor.profileId,
+            session: {
+              activityPlanId: selected.id,
+              planningDate: horizonDate,
+              source: {
+                kind: "direct",
+                operationId: input.identity.suffix("scenario-horizon-session", 32),
+              },
+            },
+          },
+        },
+      },
+    },
+  );
+  if (!horizonResponse.ok())
+    throw new Error(
+      `Scenario horizon session fixture failed with HTTP ${horizonResponse.status()}.`,
+    );
   const [session] = await input.database.db
     .select({ id: plannedSessions.id, revision: plannedSessions.session_revision })
     .from(plannedSessions)
     .where(
       and(
         eq(plannedSessions.profile_id, input.actor.profileId),
-        eq(plannedSessions.activity_plan_id, selected.id),
+        eq(plannedSessions.idempotency_key, `direct:${operationId}`),
       ),
     )
     .limit(1);
@@ -254,6 +281,7 @@ export async function createSessionScenarioFixture(input: {
     activityPlanRevision: plan.revision,
     date,
     sessionId: session.id,
+    sessionCount: 2,
     sessionRevision: session.revision,
     stateRevision: state.published_revision,
     substituteId: substitute.id,

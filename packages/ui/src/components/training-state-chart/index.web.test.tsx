@@ -10,7 +10,7 @@ describe("TrainingStateLegend", () => {
     render(<TrainingStateLegend sources={["recorded", "projected"]} />);
 
     expect(screen.getByLabelText("Training-state legend")).toHaveTextContent(
-      "FitnessFatigueForm━ Recorded━ Projected",
+      "FitnessFatigueForm● Recorded■ Projected",
     );
   });
 });
@@ -37,6 +37,8 @@ describe("TrainingStateChart", () => {
     expect(screen.queryByText("No training state")).toBeNull();
     expect(document.querySelectorAll("polyline")).toHaveLength(6);
     expect(document.querySelectorAll('polyline[stroke-dasharray="6 4"]')).toHaveLength(3);
+    expect(document.querySelectorAll('[data-marker="circle-filled"]')).toHaveLength(4);
+    expect(document.querySelectorAll('[data-marker="square-outline"]')).toHaveLength(3);
     expect(screen.getByLabelText("Chart legend")).toHaveTextContent("Form · Projected");
     expect(screen.getAllByText("0.0 Common Load points")).toHaveLength(1);
   });
@@ -125,6 +127,7 @@ describe("TrainingStateChart", () => {
 
     expect(document.querySelector("polyline")?.getAttribute("stroke-dasharray")).toBe("6 4");
     expect(screen.getByLabelText("Chart legend")).toHaveTextContent("Fitness · Projected");
+    expect(document.querySelector('[data-marker="square-outline"]')).toBeTruthy();
   });
 
   it("preserves default source labels unless a compatible caller override is supplied", () => {
