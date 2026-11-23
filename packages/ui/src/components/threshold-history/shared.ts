@@ -28,6 +28,12 @@ export type ThresholdHistorySeries = {
   points: readonly ThresholdHistoryPoint[];
 };
 
+export type ThresholdHistoryChartDatum = {
+  timestamp: number;
+  value: number | null;
+  thresholdId?: string;
+};
+
 export function thresholdMetricLabel(category: ThresholdActivityCategory, metric: ThresholdMetric) {
   if (metric === "lthr") return `${category} LTHR`;
   if (metric === "power") return `${category} power`;
@@ -89,6 +95,37 @@ export function groupThresholdHistory(
       ),
     }))
     .sort((left, right) => left.id.localeCompare(right.id));
+}
+
+export function mergeThresholdHistoryPages(
+  ...pages: readonly (readonly ThresholdHistoryPoint[])[]
+): readonly ThresholdHistoryPoint[] {
+  const unique = new Map<string, ThresholdHistoryPoint>();
+  for (const page of pages) {
+    for (const point of page) unique.set(point.thresholdId, point);
+  }
+  return [...unique.values()].sort(
+    (left, right) =>
+      Date.parse(right.effectiveAt) - Date.parse(left.effectiveAt) ||
+      right.thresholdId.localeCompare(left.thresholdId),
+  );
+}
+
+/** Preserves elapsed-time x positions and uses nulls to prevent false continuity. */
+export function buildThresholdHistoryChartData(
+  points: readonly ThresholdHistoryPoint[],
+): readonly ThresholdHistoryChartDatum[] {
+  return points.flatMap((point, index) => {
+    const previous = points[index - 1];
+    const timestamp = Date.parse(point.effectiveAt);
+    const changedMethod =
+      previous &&
+      (previous.method !== point.method || previous.policyVersion !== point.policyVersion);
+    return [
+      ...(changedMethod ? [{ timestamp, value: null }] : []),
+      { thresholdId: point.thresholdId, timestamp, value: point.value },
+    ];
+  });
 }
 
 export type ThresholdHistoryChartProps = {

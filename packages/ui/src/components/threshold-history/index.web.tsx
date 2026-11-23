@@ -1,5 +1,6 @@
 import { buildChartSegments, getPaddedChartDomain } from "../../lib/chart";
 import {
+  buildThresholdHistoryChartData,
   formatThresholdDate,
   formatThresholdValue,
   type ThresholdHistoryChartProps,
@@ -15,16 +16,11 @@ function ThresholdHistoryChart({ emptyMessage, series, testId }: ThresholdHistor
     minimumPadding: series.unit === "meters_per_second" ? 0.01 : 1,
   });
   const segments = buildChartSegments(
-    series.points.flatMap((point, index) => {
-      const previous = series.points[index - 1];
-      const hasChangedMethod =
-        previous &&
-        (previous.method !== point.method || previous.policyVersion !== point.policyVersion);
-      return [
-        ...(hasChangedMethod ? [{ x: Date.parse(point.effectiveAt), y: null }] : []),
-        { label: point.thresholdId, x: Date.parse(point.effectiveAt), y: point.value },
-      ];
-    }),
+    buildThresholdHistoryChartData(series.points).map((point) => ({
+      ...(point.thresholdId === undefined ? {} : { label: point.thresholdId }),
+      x: point.timestamp,
+      y: point.value,
+    })),
     { bottom: 80, domain, left: 10, right: 96, top: 8 },
   );
   const first = series.points[0];

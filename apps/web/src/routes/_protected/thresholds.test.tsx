@@ -154,7 +154,7 @@ it("separates bike power and LTHR into independently scaled chronological eviden
   expect(
     screen.getByRole("img", { name: /bike LTHR history.*1 chronological records/i }),
   ).toBeTruthy();
-  expect(screen.getByText(/newest 100 records/i)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Load earlier history" })).toBeTruthy();
 });
 
 it("retains cached data and exposes retry when a refresh fails", () => {

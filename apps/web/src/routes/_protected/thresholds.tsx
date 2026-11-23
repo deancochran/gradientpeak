@@ -1,3 +1,4 @@
+import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
 import {
   Card,
   CardContent,
@@ -5,16 +6,23 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
+import type { ThresholdHistoryPoint } from "@repo/ui/components/threshold-history";
 import {
   formatThresholdDate,
   formatThresholdValue,
   groupThresholdHistory,
+  mergeThresholdHistoryPages,
   ThresholdHistoryChart,
   thresholdMetricLabel,
 } from "@repo/ui/components/threshold-history";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { api } from "../../lib/api/client";
 import { loadRouteQuery } from "../../lib/api/route-loading";
+
+type HistoryCursor = NonNullable<
+  inferRouterOutputs<AppRouter>["athleteIntelligence"]["getThresholdOverview"]["history"]["nextCursor"]
+>;
 
 export const Route = createFileRoute("/_protected/thresholds")({
   loader: ({ context }) =>
@@ -31,6 +39,38 @@ function ThresholdsPage() {
     historyLimit: 100,
   });
   const overview = overviewQuery.data;
+  const sourceKey = `${overview?.publication?.publishedRevision ?? "none"}:${overview?.publication?.computedAt ?? "none"}`;
+  const [olderItems, setOlderItems] = useState<readonly ThresholdHistoryPoint[]>([]);
+  const [olderNextCursor, setOlderNextCursor] = useState<HistoryCursor | null>(null);
+  const [requestedCursor, setRequestedCursor] = useState<HistoryCursor | null>(null);
+  const [requestSourceKey, setRequestSourceKey] = useState<string | null>(null);
+  const olderQuery = api.athleteIntelligence.getThresholdOverview.useQuery(
+    { historyLimit: 100, ...(requestedCursor ? { historyCursor: requestedCursor } : {}) },
+    { enabled: requestedCursor !== null },
+  );
+  useEffect(() => {
+    setOlderItems([]);
+    setOlderNextCursor(null);
+    setRequestedCursor(null);
+    setRequestSourceKey(null);
+  }, [sourceKey]);
+  useEffect(() => {
+    if (!requestedCursor || !olderQuery.data || requestSourceKey !== sourceKey) return;
+    setOlderItems((items) => mergeThresholdHistoryPages(items, olderQuery.data.history.items));
+    setOlderNextCursor(olderQuery.data.history.nextCursor);
+    setRequestedCursor(null);
+  }, [olderQuery.data, requestSourceKey, requestedCursor, sourceKey]);
+  const historyItems = overview
+    ? mergeThresholdHistoryPages(overview.history.items, olderItems)
+    : [];
+  const nextHistoryCursor = olderItems.length
+    ? olderNextCursor
+    : (overview?.history.nextCursor ?? null);
+  const loadEarlier = () => {
+    if (!nextHistoryCursor) return;
+    setRequestSourceKey(sourceKey);
+    setRequestedCursor(nextHistoryCursor);
+  };
 
   return (
     <div className="space-y-6" data-testid="threshold-overview">
@@ -73,6 +113,12 @@ function ThresholdsPage() {
               </CardContent>
             </Card>
           ) : null}
+          {overview.publication ? (
+            <p className="text-xs capitalize text-muted-foreground">
+              Publication {overview.publication.status} · revision{" "}
+              {overview.publication.publishedRevision ?? "unavailable"}
+            </p>
+          ) : null}
           <section className="grid gap-4 md:grid-cols-3" aria-label="Current calculated thresholds">
             {(["bike", "run", "swim"] as const).map((activityCategory) => {
               const threshold = overview.current.thresholds[activityCategory];
@@ -82,7 +128,7 @@ function ThresholdsPage() {
                     <CardTitle className="capitalize">{activityCategory}</CardTitle>
                     <CardDescription>
                       {threshold.status === "available"
-                        ? `Effective ${new Date(threshold.effectiveAt).toLocaleDateString()}`
+                        ? `${threshold.freshness} · Effective ${formatThresholdDate(threshold.effectiveAt)}`
                         : "No calculated threshold"}
                     </CardDescription>
                   </CardHeader>
@@ -102,13 +148,13 @@ function ThresholdsPage() {
             <h2 className="text-xl font-semibold" id="threshold-history-heading">
               History
             </h2>
-            {overview.history.items.length === 0 ? (
+            {historyItems.length === 0 ? (
               <p className="mt-2 text-sm text-muted-foreground">
                 No calculated threshold changes yet.
               </p>
             ) : (
               <div className="mt-3 space-y-6">
-                {groupThresholdHistory(overview.history.items).map((series) => (
+                {groupThresholdHistory(historyItems).map((series) => (
                   <Card key={series.id}>
                     <CardHeader>
                       <CardTitle className="capitalize">
@@ -160,11 +206,34 @@ function ThresholdsPage() {
                     </CardContent>
                   </Card>
                 ))}
-                {overview.history.nextCursor ? (
-                  <p className="text-sm text-muted-foreground" role="status">
-                    More calculated threshold history is available. This view shows the newest 100
-                    records; additional records are not included in these charts.
-                  </p>
+                {nextHistoryCursor ? (
+                  <div className="flex flex-wrap items-center gap-3" role="status">
+                    <p className="text-sm text-muted-foreground">
+                      Earlier calculated threshold history is available.
+                    </p>
+                    <button
+                      className="text-sm font-medium underline"
+                      disabled={requestedCursor !== null}
+                      onClick={loadEarlier}
+                      type="button"
+                    >
+                      {requestedCursor ? "Loading earlier history..." : "Load earlier history"}
+                    </button>
+                  </div>
+                ) : null}
+                {olderQuery.isError && requestedCursor ? (
+                  <div className="flex flex-wrap items-center gap-3" role="alert">
+                    <p className="text-sm text-muted-foreground">
+                      Earlier threshold history could not be loaded. Loaded history is unchanged.
+                    </p>
+                    <button
+                      className="text-sm font-medium underline"
+                      onClick={() => void olderQuery.refetch()}
+                      type="button"
+                    >
+                      Try again
+                    </button>
+                  </div>
                 ) : null}
               </div>
             )}
