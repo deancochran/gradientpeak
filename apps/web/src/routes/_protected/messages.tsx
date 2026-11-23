@@ -392,6 +392,13 @@ function MessagesPage() {
           })
         }
       />
+      {returnTo ? (
+        <div className="border-b px-4 py-2 text-sm">
+          <a className="text-primary underline-offset-4 hover:underline" href={returnTo}>
+            Return to athlete workspace
+          </a>
+        </div>
+      ) : null}
       <div className="flex h-full w-full min-w-0">
         <div className="hidden h-full w-[28%] min-w-[18rem] max-w-[28rem] shrink-0 border-r xl:block">
           <div className="flex h-full flex-col">
@@ -590,13 +597,6 @@ function MessagesPage() {
                   </Link>
                 </Button>
               </div>
-              {returnTo ? (
-                <div className="border-b px-4 py-2 text-sm">
-                  <a className="text-primary underline-offset-4 hover:underline" href={returnTo}>
-                    Return to athlete workspace
-                  </a>
-                </div>
-              ) : null}
               <ScrollArea className="flex-1">
                 <div className="space-y-6 p-4">
                   <form

@@ -122,13 +122,17 @@ describe("messages recipient GET form", () => {
     mocks.routeSearch.returnTo =
       "/organizations/11111111-1111-1111-1111-111111111111/athletes/22222222-2222-2222-2222-222222222222";
     const MessagesPage = (Route as unknown as { component: React.ComponentType }).component;
-    render(<MessagesPage />);
+    const { rerender } = render(<MessagesPage />);
 
     const close = screen.getByRole("link", { name: "Close" });
     expect(JSON.parse(close.getAttribute("data-search") ?? "{}")).toMatchObject({
       compose: false,
       returnTo: mocks.routeSearch.returnTo,
     });
+    mocks.routeSearch.compose = false;
+    rerender(<MessagesPage />);
+    expect(screen.getByRole("link", { name: "Return to athlete workspace" })).toBeTruthy();
+    mocks.routeSearch.compose = true;
   });
 
   it("submits native search params once and keeps clear local until submit", () => {
