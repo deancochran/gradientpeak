@@ -11,25 +11,27 @@ describe("RadioGroup web", () => {
 
     renderWeb(
       <RadioGroup
-        defaultValue={radioGroupFixtures.sport.value}
-        id={radioGroupFixtures.sport.id}
+        defaultValue={radioGroupFixtures.activityCategory.value}
+        id={radioGroupFixtures.activityCategory.id}
         onValueChange={onValueChange}
-        testId={radioGroupFixtures.sport.testId}
+        testId={radioGroupFixtures.activityCategory.testId}
       >
-        {radioGroupFixtures.sport.options.map((option) => (
+        {radioGroupFixtures.activityCategory.options.map((option) => (
           <div key={option.value}>
             <RadioGroupItem
-              id={`${radioGroupFixtures.sport.id}-${option.value}`}
+              id={`${radioGroupFixtures.activityCategory.id}-${option.value}`}
               value={option.value}
             />
-            <Label htmlFor={`${radioGroupFixtures.sport.id}-${option.value}`}>{option.label}</Label>
+            <Label htmlFor={`${radioGroupFixtures.activityCategory.id}-${option.value}`}>
+              {option.label}
+            </Label>
           </div>
         ))}
       </RadioGroup>,
     );
 
-    const group = screen.getByTestId(radioGroupFixtures.sport.testId);
-    expect(group).toHaveAttribute("id", radioGroupFixtures.sport.id);
+    const group = screen.getByTestId(radioGroupFixtures.activityCategory.testId);
+    expect(group).toHaveAttribute("id", radioGroupFixtures.activityCategory.id);
 
     fireEvent.click(screen.getByRole("radio", { name: "Run" }));
 
