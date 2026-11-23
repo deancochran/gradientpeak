@@ -31,22 +31,56 @@ export function withEphemeralTimedDuration(input: {
       sum + (step.duration.type === "time" ? step.duration.seconds * multiplier : 0),
     0,
   );
-  if (input.targetDurationSeconds < steps.reduce((sum, { multiplier }) => sum + multiplier, 0))
+  const minimumDurationSeconds = steps.reduce((sum, { multiplier }) => sum + multiplier, 0);
+  if (input.targetDurationSeconds < minimumDurationSeconds)
     return { status: "unsupported", reason: "target_out_of_range" };
+  const remainingDurationSeconds = input.targetDurationSeconds - minimumDurationSeconds;
+  const sourceFlexibleDurationSeconds = sourceDurationSeconds - minimumDurationSeconds;
+  const weightDurationSeconds =
+    sourceFlexibleDurationSeconds === 0 ? minimumDurationSeconds : sourceFlexibleDurationSeconds;
   const scaled = steps.map(({ step, multiplier }) => {
-    const seconds = step.duration.type === "time" ? step.duration.seconds : 1;
-    const raw = (seconds * input.targetDurationSeconds) / sourceDurationSeconds;
-    return { seconds: Math.max(1, Math.floor(raw)), fraction: raw % 1, multiplier };
+    const sourceSeconds = step.duration.type === "time" ? step.duration.seconds : 1;
+    const weight = sourceFlexibleDurationSeconds === 0 ? 1 : sourceSeconds - 1;
+    const rawExtraSeconds = (weight * remainingDurationSeconds) / weightDurationSeconds;
+    const extraSeconds = Math.floor(rawExtraSeconds);
+    return {
+      seconds: extraSeconds + 1,
+      fraction: rawExtraSeconds % 1,
+      multiplier,
+    };
   });
   let remainder =
     input.targetDurationSeconds -
     scaled.reduce((sum, item) => sum + item.seconds * item.multiplier, 0);
-  for (const item of [...scaled].sort((a, b) => b.fraction - a.fraction)) {
-    if (remainder < item.multiplier) continue;
-    item.seconds += 1;
-    remainder -= item.multiplier;
+  const candidates = scaled
+    .map((item, index) => ({ ...item, index }))
+    .sort(
+      (left, right) =>
+        right.fraction - left.fraction ||
+        left.multiplier - right.multiplier ||
+        left.index - right.index,
+    );
+  const allocation = Array.from<{ previous: number; index: number } | undefined>({
+    length: remainder + 1,
+  });
+  allocation[0] = { previous: 0, index: -1 };
+  for (let duration = 1; duration <= remainder; duration += 1) {
+    for (const candidate of candidates) {
+      const previous = duration - candidate.multiplier;
+      if (previous < 0 || !allocation[previous]) continue;
+      allocation[duration] = { previous, index: candidate.index };
+      break;
+    }
   }
-  if (remainder !== 0) return { status: "unsupported", reason: "target_out_of_range" };
+  if (!allocation[remainder]) return { status: "unsupported", reason: "target_out_of_range" };
+  while (remainder > 0) {
+    const item = allocation[remainder];
+    if (!item || item.index < 0) throw new Error("Timed duration transform lost an allocation");
+    const scaledItem = scaled[item.index];
+    if (!scaledItem) throw new Error("Timed duration transform lost a scaled step");
+    scaledItem.seconds += 1;
+    remainder = item.previous;
+  }
   let index = 0;
   const items = input.structure.items.map((item) => {
     const apply = (step: ActivityPlanStep) => {

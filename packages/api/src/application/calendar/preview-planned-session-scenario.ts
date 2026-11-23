@@ -131,6 +131,8 @@ async function derivePlannedSessionScenario(input: {
   const startDate = baselineDate > today ? baselineDate : today;
   const endDate = new Date(`${startDate}T00:00:00.000Z`);
   endDate.setUTCDate(endDate.getUTCDate() + MAX_SCENARIO_SESSIONS - 1);
+  if (selected.planningDate > endDate.toISOString().slice(0, 10))
+    return unavailable("horizon_exceeds_limit");
   const range = await input.repository.listOwnedRange({
     profileId: input.profileId,
     startDate,

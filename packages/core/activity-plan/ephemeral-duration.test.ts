@@ -21,6 +21,46 @@ const structure = activityPlanStructureSchema.parse({
   ],
 });
 
+const repeatedStructure = activityPlanStructureSchema.parse({
+  version: 5,
+  activity_category: "run",
+  items: [
+    {
+      type: "repeat",
+      id: "33333333-3333-4333-8333-333333333333",
+      count: 2,
+      steps: [
+        {
+          type: "step",
+          id: "44444444-4444-4444-8444-444444444444",
+          duration: { type: "time", seconds: 3 },
+          targets: [{ type: "RPE", intensity: 4 }],
+        },
+      ],
+    },
+    {
+      type: "step",
+      id: "55555555-5555-4555-8555-555555555555",
+      duration: { type: "time", seconds: 100 },
+      targets: [{ type: "RPE", intensity: 6 }],
+    },
+  ],
+});
+
+function totalDurationSeconds(value: typeof repeatedStructure) {
+  return value.items.reduce((total, item) => {
+    const steps = item.type === "step" ? [item] : item.steps;
+    const multiplier = item.type === "step" ? 1 : item.count;
+    return (
+      total +
+      steps.reduce((itemTotal, step) => {
+        if (step.duration.type !== "time") throw new Error("expected timed structure");
+        return itemTotal + step.duration.seconds * multiplier;
+      }, 0)
+    );
+  }, 0);
+}
+
 describe("withEphemeralTimedDuration", () => {
   it("changes only timed duration while preserving authored topology and targets", () => {
     const result = withEphemeralTimedDuration({ structure, targetDurationSeconds: 2700 });
@@ -61,6 +101,42 @@ describe("withEphemeralTimedDuration", () => {
       {
         status: "unsupported",
         reason: "non_timed_structure",
+      },
+    );
+  });
+
+  it("allocates repeat minima before preserving proportional intent near the minimum", () => {
+    const result = withEphemeralTimedDuration({
+      structure: repeatedStructure,
+      targetDurationSeconds: 5,
+    });
+    expect(result).toMatchObject({ status: "transformed", sourceDurationSeconds: 106 });
+    if (result.status !== "transformed") throw new Error("expected timed transform");
+    const repeatedItem = repeatedStructure.items[0];
+    if (!repeatedItem || repeatedItem.type !== "repeat") throw new Error("expected repeat fixture");
+    const repeatedStep = repeatedItem.steps[0];
+    if (!repeatedStep) throw new Error("expected repeat step fixture");
+    expect(totalDurationSeconds(result.structure)).toBe(5);
+    expect(result.structure.items).toEqual([
+      {
+        ...repeatedItem,
+        steps: [{ ...repeatedStep, duration: { type: "time", seconds: 1 } }],
+      },
+      { ...repeatedStructure.items[1], duration: { type: "time", seconds: 3 } },
+    ]);
+  });
+
+  it("fails closed when repeat multipliers make the requested total impossible", () => {
+    const repeatedItem = repeatedStructure.items[0];
+    if (!repeatedItem || repeatedItem.type !== "repeat") throw new Error("expected repeat fixture");
+    const repeatOnly = activityPlanStructureSchema.parse({
+      ...repeatedStructure,
+      items: [repeatedItem],
+    });
+    expect(withEphemeralTimedDuration({ structure: repeatOnly, targetDurationSeconds: 5 })).toEqual(
+      {
+        status: "unsupported",
+        reason: "target_out_of_range",
       },
     );
   });
