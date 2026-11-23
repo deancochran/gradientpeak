@@ -1,13 +1,15 @@
 import { z } from "zod";
 
 const finiteNumberSchema = z.number().finite();
-const timestampLikeSchema = z.union([finiteNumberSchema, z.string()]);
+const timestampLikeSchema = z.union([finiteNumberSchema, z.string(), z.date()]);
 
 export const activityStreamRecordSchema = z
   .object({
     heartRate: finiteNumberSchema.optional(),
     heart_rate: finiteNumberSchema.optional(),
     heart_rate_bpm: finiteNumberSchema.optional(),
+    power: finiteNumberSchema.optional(),
+    speed: finiteNumberSchema.optional(),
     startTime: timestampLikeSchema.optional(),
     time: timestampLikeSchema.optional(),
     timestamp: timestampLikeSchema.optional(),
@@ -31,8 +33,18 @@ export const activityLapRecordSchema = z
   })
   .passthrough();
 
+export const MAX_ACTIVITY_LAPS = 1000;
+export const MAX_ACTIVITY_LAPS_JSON_BYTES = 1_048_576;
+
 export const activityStreamRecordListSchema = z.array(activityStreamRecordSchema);
-export const activityLapRecordListSchema = z.array(activityLapRecordSchema);
+export const activityLapRecordListSchema = z
+  .array(activityLapRecordSchema)
+  .max(MAX_ACTIVITY_LAPS)
+  .superRefine((laps, context) => {
+    if (new TextEncoder().encode(JSON.stringify(laps)).byteLength > MAX_ACTIVITY_LAPS_JSON_BYTES) {
+      context.addIssue({ code: "custom", message: "Activity laps exceed the 1 MiB JSON limit" });
+    }
+  });
 
 export type ActivityStreamRecord = z.infer<typeof activityStreamRecordSchema>;
 export type ActivityLapRecord = z.infer<typeof activityLapRecordSchema>;

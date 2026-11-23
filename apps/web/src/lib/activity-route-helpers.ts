@@ -1,4 +1,11 @@
 import { decodePolyline } from "@repo/core";
+import {
+  formatDistance as formatPreferredDistance,
+  formatElevation as formatPreferredElevation,
+  formatSpeed as formatPreferredSpeed,
+  formatRunningPace,
+  type PreferredUnitSystem,
+} from "./units/presentation";
 
 export type RouteCoordinate = {
   latitude: number;
@@ -7,15 +14,15 @@ export type RouteCoordinate = {
 };
 
 type ActivityLikeRecord = {
-  positionLat?: number;
-  positionLong?: number;
-  latitude?: number;
-  longitude?: number;
-  altitude?: number;
-  heartRate?: number;
-  power?: number;
-  cadence?: number;
-  speed?: number;
+  positionLat?: number | undefined;
+  positionLong?: number | undefined;
+  latitude?: number | undefined;
+  longitude?: number | undefined;
+  altitude?: number | undefined;
+  heartRate?: number | undefined;
+  power?: number | undefined;
+  cadence?: number | undefined;
+  speed?: number | undefined;
 };
 
 export function formatDateTime(value: string | Date) {
@@ -31,20 +38,22 @@ export function formatDate(value: string | Date) {
   }).format(typeof value === "string" ? new Date(value) : value);
 }
 
-export function formatDistance(meters: number | null | undefined) {
-  if (!meters || meters <= 0) {
-    return "0.00 km";
-  }
-
-  return `${(meters / 1000).toFixed(2)} km`;
+export function formatDistance(
+  meters: number | null | undefined,
+  unitSystem: PreferredUnitSystem = "metric",
+) {
+  return formatPreferredDistance(meters && meters > 0 ? meters : 0, unitSystem);
 }
 
-export function formatElevation(meters: number | null | undefined) {
+export function formatElevation(
+  meters: number | null | undefined,
+  unitSystem: PreferredUnitSystem = "metric",
+) {
   if (meters == null) {
     return "-";
   }
 
-  return `${Math.round(meters)} m`;
+  return formatPreferredElevation(meters, unitSystem);
 }
 
 export function formatDuration(seconds: number | null | undefined) {
@@ -99,27 +108,30 @@ export function formatHeartRate(value: number | null | undefined) {
   return `${Math.round(value)} bpm`;
 }
 
-export function formatSpeed(value: number | null | undefined) {
+export function formatSpeed(
+  value: number | null | undefined,
+  unitSystem: PreferredUnitSystem = "metric",
+) {
   if (value == null) {
     return "-";
   }
 
-  return `${(value * 3.6).toFixed(1)} km/h`;
+  return formatPreferredSpeed(value, unitSystem);
 }
 
-export function formatPace(value: number | null | undefined) {
+export function formatPace(
+  value: number | null | undefined,
+  unitSystem: PreferredUnitSystem = "metric",
+) {
   if (!value || value <= 0) {
     return "-";
   }
 
-  const secondsPerKm = 1000 / value;
-  const minutes = Math.floor(secondsPerKm / 60);
-  const seconds = Math.floor(secondsPerKm % 60);
-  return `${minutes}:${seconds.toString().padStart(2, "0")} /km`;
+  return formatRunningPace(1000 / value, unitSystem);
 }
 
-export function getActivityBadgeLabel(activityType: string) {
-  switch (activityType) {
+export function getActivityBadgeLabel(activityCategory: string) {
+  switch (activityCategory) {
     case "run":
       return "Run";
     case "bike":
@@ -133,8 +145,57 @@ export function getActivityBadgeLabel(activityType: string) {
   }
 }
 
-export function getActivityEmoji(activityType: string) {
-  switch (activityType) {
+type ActivityDisplaySegment = {
+  activity_category?: string | null;
+  ordinal: number;
+  role: string;
+};
+
+export function deriveActivityCategoryDisplay(segments: readonly ActivityDisplaySegment[]) {
+  const categories = segments
+    .filter(
+      (segment): segment is ActivityDisplaySegment & { activity_category: string } =>
+        segment.role === "activity" && segment.activity_category != null,
+    )
+    .sort((left, right) => left.ordinal - right.ordinal)
+    .map((segment) => segment.activity_category);
+
+  return {
+    categories,
+    label:
+      categories.length === 0
+        ? "Unknown activity"
+        : categories.map(getActivityBadgeLabel).join(" → "),
+    singleCategory: categories.length === 1 ? (categories[0] ?? null) : null,
+  };
+}
+
+export function deriveActivityTimingDisplay(activity: {
+  active_ms: number | null;
+  elapsed_ms: number;
+  moving_ms: number | null;
+  timing_coverage: "complete" | "partial" | "unavailable";
+}) {
+  const hasCoveredTiming = activity.timing_coverage !== "unavailable";
+  return {
+    activeSeconds:
+      hasCoveredTiming && activity.active_ms !== null ? activity.active_ms / 1_000 : null,
+    coverage: activity.timing_coverage,
+    elapsedSeconds: activity.elapsed_ms / 1_000,
+    movingSeconds:
+      hasCoveredTiming && activity.moving_ms !== null ? activity.moving_ms / 1_000 : null,
+  };
+}
+
+export function deriveCurrentArtifactLabel(
+  artifact: { format: string; original_name: string | null } | null,
+) {
+  if (!artifact) return null;
+  return artifact.original_name?.trim() || `${artifact.format.toUpperCase()} activity file`;
+}
+
+export function getActivityEmoji(activityCategory: string) {
+  switch (activityCategory) {
     case "run":
       return "🏃";
     case "bike":
@@ -193,7 +254,7 @@ export function getActivityCoordinates(
       coordinates.push({
         latitude,
         longitude,
-        altitude: typeof record.altitude === "number" ? record.altitude : undefined,
+        ...(typeof record.altitude === "number" ? { altitude: record.altitude } : {}),
       });
     }
   }
@@ -268,7 +329,10 @@ export function buildElevationPolylinePoints(coordinates: RouteCoordinate[]) {
     .join(" ");
 }
 
-export function summarizeActivityStreams(records: ActivityLikeRecord[] | null | undefined) {
+export function summarizeActivityStreams(
+  records: ActivityLikeRecord[] | null | undefined,
+  unitSystem: PreferredUnitSystem = "metric",
+) {
   if (!records?.length) {
     return [] as Array<{ label: string; value: string }>;
   }
@@ -304,14 +368,17 @@ export function summarizeActivityStreams(records: ActivityLikeRecord[] | null | 
   if (numeric.Speed.length > 0) {
     summaries.push({
       label: "Speed peak",
-      value: `${(Math.max(...numeric.Speed) * 3.6).toFixed(1)} km/h`,
+      value: formatSpeed(Math.max(...numeric.Speed), unitSystem),
     });
   }
 
   if (numeric.Elevation.length > 0) {
     summaries.push({
       label: "Elevation range",
-      value: `${Math.round(Math.min(...numeric.Elevation))}-${Math.round(Math.max(...numeric.Elevation))} m`,
+      value: `${formatElevation(Math.min(...numeric.Elevation), unitSystem)}–${formatElevation(
+        Math.max(...numeric.Elevation),
+        unitSystem,
+      )}`,
     });
   }
 

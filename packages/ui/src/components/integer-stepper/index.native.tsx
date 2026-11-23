@@ -1,78 +1,92 @@
-import { useEffect, useState } from "react";
-import { clampInteger, parseBoundedInteger } from "../../lib/fitness-inputs";
-import { View } from "../../lib/react-native";
+import { clampInteger } from "@repo/core/utils/fitness-inputs";
+import { type Ref, useImperativeHandle, useRef } from "react";
+import { View } from "react-native";
 import { Button } from "../button/index.native";
-import { Input } from "../input/index.native";
-import { Label } from "../label/index.native";
+import { NativeQuantityInput } from "../native-quantity-input/index.native";
 import { Text } from "../text/index.native";
 import type { IntegerStepperProps } from "./shared";
 
-function IntegerStepper({
-  accessibilityHint,
-  error,
-  helperText,
-  id,
-  label,
-  max = 20,
-  min = 0,
-  onChange,
-  step = 1,
-  value,
-}: IntegerStepperProps) {
-  const labelText = label || "value";
-  const [draftValue, setDraftValue] = useState(String(value));
+interface NativeIntegerStepperProps extends IntegerStepperProps {
+  presentation?: "default" | "tactile" | "compact";
+}
 
-  useEffect(() => {
-    setDraftValue(String(value));
-  }, [value]);
-
-  const commitDraft = (nextDraft: string) => {
-    const parsed = parseBoundedInteger(nextDraft, { min, max });
-    if (parsed === undefined) {
-      setDraftValue(String(value));
+/** Count changes are a finite native dial; +/- remains a secondary quick adjustment. */
+function IntegerStepper(props: NativeIntegerStepperProps) {
+  const {
+    disabled = false,
+    label = "Value",
+    max = 20,
+    min = 0,
+    presentation = "default",
+    step = 1,
+  } = props;
+  const dial = useRef<{ focus: () => void }>(null);
+  useImperativeHandle(props.ref as Ref<{ focus: () => void }>, () => ({
+    focus: () => dial.current?.focus(),
+  }));
+  const current =
+    typeof props.value === "number" && Number.isSafeInteger(props.value) ? props.value : undefined;
+  const increment = Number.isSafeInteger(step) && step > 0 ? step : 1;
+  const decrementDisabled = disabled || current === undefined || current <= min;
+  const incrementDisabled = disabled || current === undefined || current >= max;
+  const nudge = (direction: -1 | 1) => {
+    if (
+      current === undefined ||
+      disabled ||
+      (direction < 0 && current <= min) ||
+      (direction > 0 && current >= max)
+    )
       return;
-    }
-
-    const normalized = clampInteger(parsed, min, max);
-    setDraftValue(String(normalized));
-    onChange(normalized);
+    const next = clampInteger(current + direction * increment, min, max);
+    props.onDraftChange?.(String(next));
+    props.onChange(next);
   };
-
   return (
-    <View className="gap-2">
-      {label ? (
-        <Label nativeID={id}>
-          <Text className="text-sm font-medium text-foreground">{label}</Text>
-        </Label>
-      ) : null}
-      <View className="flex-row items-center gap-2">
-        <Button
-          accessibilityLabel={`Decrease ${labelText}`}
-          variant="outline"
-          size="sm"
-          onPress={() => onChange(clampInteger(value - step, min, max))}
-        >
-          <Text>-</Text>
-        </Button>
-        <Input
-          accessibilityHint={accessibilityHint ?? `Enter whole number between ${min} and ${max}`}
-          className="flex-1 text-center"
-          value={draftValue}
-          onBlur={() => commitDraft(draftValue)}
-          onChangeText={setDraftValue}
-          keyboardType="numeric"
+    <View className={presentation === "compact" ? "flex-row items-center gap-2" : "gap-2"}>
+      <Button
+        accessibilityLabel={`Decrease ${label}`}
+        disabled={decrementDisabled}
+        onPress={() => nudge(-1)}
+        size="sm"
+        variant="outline"
+      >
+        <Text>-</Text>
+      </Button>
+      <View className="flex-1">
+        <NativeQuantityInput
+          ref={dial}
+          label={label}
+          value={props.exactDraft ?? (current === undefined ? "" : String(current))}
+          onChange={props.onDraftChange ?? (() => undefined)}
+          onNumberChange={(value) => {
+            if (value !== undefined) props.onChange(value);
+          }}
+          onInputResult={props.onInputResult}
+          onInvalidChange={props.onInvalidChange}
+          onBlur={props.onBlur}
+          formControl={props.formControl}
+          fieldName={props.fieldName}
+          resetKey={props.resetKey}
+          required={props.required}
+          disabled={disabled}
+          min={min}
+          max={max}
+          decimals={0}
+          error={props.error}
+          helperText={props.helperText}
+          accessibilityHint={props.accessibilityHint}
+          testId={props.testId}
         />
-        <Button
-          accessibilityLabel={`Increase ${labelText}`}
-          variant="outline"
-          size="sm"
-          onPress={() => onChange(clampInteger(value + step, min, max))}
-        >
-          <Text>+</Text>
-        </Button>
       </View>
-      {helperText ? <Text className="text-xs text-muted-foreground">{helperText}</Text> : null}
-      {error ? <Text className="text-xs text-destructive">{error}</Text> : null}
+      <Button
+        accessibilityLabel={`Increase ${label}`}
+        disabled={incrementDisabled}
+        onPress={() => nudge(1)}
+        size="sm"
+        variant="outline"
+      >
+        <Text>+</Text>
+      </Button>
     </View>
   );
 }

@@ -1,12 +1,12 @@
 export const radioGroupFixtures = {
-  sport: {
-    id: "preferred-sport",
+  activityCategory: {
+    id: "preferred-activity-category",
     options: [
       { label: "Run", value: "run" },
-      { label: "Ride", value: "ride" },
+      { label: "Bike", value: "bike" },
       { label: "Swim", value: "swim" },
     ],
-    testId: "preferred-sport-radio-group",
-    value: "ride",
+    testId: "preferred-activity-category-radio-group",
+    value: "bike",
   },
 } as const;

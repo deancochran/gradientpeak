@@ -1,9 +1,12 @@
 import { z } from "zod";
-import type { ActivityPlanStructureV2 } from "../schemas/activity_plan_v2";
-import type { CanonicalSport } from "../schemas/sport";
+import { activityPlanTargetSchema } from "../activity-plan";
+import { activityPrescriptionQuantificationBundleSchema } from "../activity-quantification";
+import { activityPlanDurationEstimateSchema } from "../duration";
+import { commonLoadAggregateSchema, commonLoadResultSchema } from "../load";
+import { type SessionDemand, sessionDemandSchema } from "../schemas/training-plan-structure";
 import {
   type ActivityPlanPlanningEstimate,
-  type ActivityPlanPlanningEstimateInput,
+  createUnavailableActivityPlanPlanningEstimate,
   estimateActivityPlanForTrainingContext,
 } from "./activity-plan-planning-estimate";
 import type { AthletePlanningContext } from "./athletePlanningContext";
@@ -16,8 +19,7 @@ export const plannedTrainingActivityPlanFactsSchema = z
     name: z.string().min(1),
     published: z.boolean(),
     accessible: z.boolean(),
-    estimatedTss: z.number().min(0).nullable(),
-    estimatedDurationSeconds: z.number().int().min(0).nullable(),
+    prescriptionQuantification: activityPrescriptionQuantificationBundleSchema.nullable(),
   })
   .strict();
 
@@ -29,26 +31,12 @@ export const plannedTrainingEventOverridesSchema = z
   })
   .strict();
 
-export const plannedTrainingSessionIntentSchema = z
-  .object({
-    type: z.enum(["endurance", "recovery", "threshold", "general", "test"]),
-    driver: z.enum([
-      "consistency-frequency",
-      "completion-duration",
-      "completion-distance",
-      "preference-frequency",
-      "starter-frequency",
-    ]),
-    targetDurationSeconds: z.number().int().min(0).optional(),
-    targetTss: z.number().min(0).optional(),
-  })
-  .strict();
-
 export const plannedTrainingSessionSchema = z
   .object({
+    id: uuidSchema,
     localId: z.string().min(1),
     offsetDays: z.number().int(),
-    intent: plannedTrainingSessionIntentSchema.optional(),
+    demand: sessionDemandSchema,
     activityPlan: plannedTrainingActivityPlanFactsSchema.nullable(),
     eventOverrides: plannedTrainingEventOverridesSchema.optional(),
   })
@@ -57,13 +45,52 @@ export const plannedTrainingSessionSchema = z
 export const estimatedPlannedTrainingSessionSchema = plannedTrainingSessionSchema.extend({
   activityPlanEstimate: z
     .object({
-      durationSeconds: z.number().nullable(),
-      distanceMeters: z.number().nullable(),
-      intensityFactor: z.number().nullable(),
-      tss: z.number().nullable(),
-      confidence: z.enum(["high", "medium", "low"]),
+      stage: z.enum(["template", "plan", "scheduled"]),
+      prescriptionQuantification: activityPrescriptionQuantificationBundleSchema,
+      authoredTargets: z.array(
+        z
+          .object({
+            occurrenceId: z.string().min(1),
+            targets: z.array(activityPlanTargetSchema),
+          })
+          .strict(),
+      ),
+      durationEstimate: activityPlanDurationEstimateSchema,
+      durationProvenance: z.enum(["estimated", "prescribed", "measured", "unknown"]).nullable(),
+      restSeconds: z.number(),
+      distanceProvenance: z.enum(["estimated", "prescribed", "measured", "unknown"]).nullable(),
+      hasOpenCompletion: z.boolean(),
+      categoryDoses: z.array(
+        z
+          .object({
+            activity_category: z.enum(["run", "bike", "swim", "strength", "other"]),
+            timedActiveSeconds: z.number(),
+            distanceMeters: z.number(),
+            repetitionCount: z.number(),
+            openOccurrenceCount: z.number(),
+            commonLoad: z.union([commonLoadResultSchema, commonLoadAggregateSchema]),
+            evidence: z.enum(["common_load", "partial_common_load", "unsupported"]),
+            evidenceCoverage: z.number().nullable(),
+          })
+          .strict(),
+      ),
       factors: z.array(z.string()),
       warnings: z.array(z.string()),
+    })
+    .strict()
+    .superRefine((estimate, context) => {
+      const elapsed = estimate.prescriptionQuantification.summary.duration.elapsed;
+      const quantifiedDuration = elapsed.status === "unavailable" ? null : elapsed.value;
+      if (
+        estimate.durationEstimate.status !== "unavailable" &&
+        quantifiedDuration !== estimate.durationEstimate.valueSeconds
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["durationEstimate", "valueSeconds"],
+          message: "Duration projection must match the provenance-bearing duration estimate",
+        });
+      }
     })
     .nullable(),
 });
@@ -72,41 +99,45 @@ export type PlannedTrainingActivityPlanFacts = z.infer<
   typeof plannedTrainingActivityPlanFactsSchema
 >;
 export type PlannedTrainingEventOverrides = z.infer<typeof plannedTrainingEventOverridesSchema>;
-export type PlannedTrainingSessionIntent = z.infer<typeof plannedTrainingSessionIntentSchema>;
+export type { SessionDemand };
 export type PlannedTrainingSession = z.infer<typeof plannedTrainingSessionSchema>;
 export type EstimatedPlannedTrainingSession = z.infer<typeof estimatedPlannedTrainingSessionSchema>;
 
 export type EstimateablePlanningActivityPlan = {
+  id?: string;
   activity_category?: string | null;
-  authoritative_metrics?: {
-    estimated_duration?: number | null;
-    estimated_tss?: number | null;
-    intensity_factor?: number | null;
-    distance_meters?: number | null;
-  } | null;
   structure?: unknown;
 };
 
 export function estimatePlanningActivityPlanForAthlete({
   activityPlan,
   athleteContext,
+  scheduledEventId,
+  planId,
+  stage = "plan",
 }: {
   activityPlan: EstimateablePlanningActivityPlan;
   athleteContext: AthletePlanningContext;
+  scheduledEventId?: string | undefined;
+  planId?: string | undefined;
+  stage?: "template" | "plan" | "scheduled" | undefined;
 }): ActivityPlanPlanningEstimate {
+  if (activityPlan.structure === undefined) {
+    return createUnavailableActivityPlanPlanningEstimate({
+      asOf: athleteContext.performanceTargets.asOf,
+      stage,
+      planId: planId ?? activityPlan.id,
+      scheduledEventId,
+      reason: "source_missing",
+    });
+  }
   return estimateActivityPlanForTrainingContext({
-    activityCategory: normalizePlanningActivityCategory(activityPlan.activity_category),
-    structure: activityPlan.structure as ActivityPlanPlanningEstimateInput["structure"],
-    authoritativeMetrics: {
-      estimatedDurationSeconds: activityPlan.authoritative_metrics?.estimated_duration ?? null,
-      estimatedTss: activityPlan.authoritative_metrics?.estimated_tss ?? null,
-      intensityFactor: activityPlan.authoritative_metrics?.intensity_factor ?? null,
-      distanceMeters: activityPlan.authoritative_metrics?.distance_meters ?? null,
-    },
-    athleteContext: {
-      ftpWatts: athleteContext.physiology.ftpWatts.value,
-      thresholdPaceSecondsPerKm: deriveThresholdPaceSecondsPerKm(athleteContext),
-    },
+    structure: activityPlan.structure,
+    performanceTargets: athleteContext.performanceTargets,
+    asOf: athleteContext.performanceTargets.asOf,
+    stage,
+    planId: planId ?? activityPlan.id,
+    scheduledEventId,
   });
 }
 
@@ -119,21 +150,20 @@ export function derivePlannedTrainingSessionEstimate({
   athleteContext: AthletePlanningContext;
   session: PlannedTrainingSession;
 }): ActivityPlanPlanningEstimate | null {
-  const activityPlanId = session.activityPlan?.id;
-  if (!activityPlanId) return null;
+  const activityPlan = session.activityPlan;
+  if (!activityPlan) return null;
+  const activityPlanId = activityPlan.id;
   const fullPlan = activityPlansById[activityPlanId];
   if (fullPlan) {
-    return estimatePlanningActivityPlanForAthlete({ activityPlan: fullPlan, athleteContext });
+    return estimatePlanningActivityPlanForAthlete({
+      activityPlan: fullPlan,
+      athleteContext,
+      planId: activityPlanId,
+      scheduledEventId: `${session.localId}:${session.offsetDays}`,
+      stage: "scheduled",
+    });
   }
-  return {
-    durationSeconds: session.activityPlan?.estimatedDurationSeconds ?? null,
-    distanceMeters: null,
-    intensityFactor: null,
-    tss: session.activityPlan?.estimatedTss ?? null,
-    confidence: "low",
-    factors: ["saved activity plan metrics"],
-    warnings: ["Full activity plan details are not loaded for athlete-context estimation."],
-  };
+  return null;
 }
 
 export function deriveEstimatedPlannedTrainingSessions({
@@ -160,34 +190,21 @@ export function applyEstimatedSessionActivityFacts(
   estimate: ActivityPlanPlanningEstimate | null,
 ): PlannedTrainingSession {
   if (!session.activityPlan || !estimate) return session;
+  const existingQuantification = session.activityPlan.prescriptionQuantification;
+  const evidenceRank = { unavailable: 0, partial: 1, complete: 2 } as const;
   if (
-    session.activityPlan.estimatedDurationSeconds === estimate.durationSeconds &&
-    session.activityPlan.estimatedTss === estimate.tss
+    existingQuantification &&
+    evidenceRank[existingQuantification.summary.commonLoad.status] >
+      evidenceRank[estimate.prescriptionQuantification.summary.commonLoad.status]
   ) {
     return session;
   }
+
   return {
     ...session,
     activityPlan: {
       ...session.activityPlan,
-      estimatedDurationSeconds: estimate.durationSeconds,
-      estimatedTss: estimate.tss,
+      prescriptionQuantification: estimate.prescriptionQuantification,
     },
   };
-}
-
-function deriveThresholdPaceSecondsPerKm(athleteContext: AthletePlanningContext) {
-  const speedEfforts = athleteContext.efforts.filter(
-    (effort) =>
-      effort.activityCategory === "run" && effort.effortType === "speed" && effort.value > 0,
-  );
-  const latestSpeed = speedEfforts[0]?.value ?? null;
-  return latestSpeed ? 1000 / latestSpeed : null;
-}
-
-function normalizePlanningActivityCategory(category: string | null | undefined): CanonicalSport {
-  if (category === "run" || category === "bike" || category === "swim" || category === "strength") {
-    return category;
-  }
-  return "other";
 }

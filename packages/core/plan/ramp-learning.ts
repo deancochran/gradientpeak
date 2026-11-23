@@ -4,7 +4,7 @@ export interface RampLearningActivityInput {
   occurred_at?: string;
   start_time?: string;
   date?: string;
-  tss?: number | null;
+  load?: number | null;
 }
 
 export interface LearnedRampRateResult {
@@ -47,28 +47,28 @@ function percentileNearestRank(values: number[], percentile: number): number {
 }
 
 /**
- * Learn a personalized weekly ramp cap from historical activity TSS.
+ * Learn a personalized weekly ramp cap from historical activity Common Load.
  *
  * - Groups activities by ISO week (Monday start)
- * - Computes positive week-over-week TSS ramps
+ * - Computes positive week-over-week Common Load ramps
  * - Uses p75 of positive ramps and clamps to [30, 70]
  * - Falls back to 40 with low confidence for sparse data
  */
 export function learnIndividualRampRate(
   activities: RampLearningActivityInput[],
 ): LearnedRampRateResult {
-  const weeklyTss = new Map<string, number>();
+  const weeklyLoad = new Map<string, number>();
 
   for (const activity of activities) {
     const date = parseActivityDate(activity);
     if (!date) continue;
 
     const weekKey = getIsoWeekStart(date);
-    const tss = Math.max(0, activity.tss ?? 0);
-    weeklyTss.set(weekKey, (weeklyTss.get(weekKey) ?? 0) + tss);
+    const load = Math.max(0, activity.load ?? 0);
+    weeklyLoad.set(weekKey, (weeklyLoad.get(weekKey) ?? 0) + load);
   }
 
-  const orderedWeeks = [...weeklyTss.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  const orderedWeeks = [...weeklyLoad.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 
   if (orderedWeeks.length < MIN_WEEKS_FOR_LEARNING) {
     return { maxSafeRampRate: DEFAULT_RAMP_CAP, confidence: "low" };

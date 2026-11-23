@@ -1,25 +1,22 @@
 import { invalidateActivityPlanQueries } from "@repo/api/react";
+import type { ActivityPlanDetail, ActivityPlanSummary } from "@repo/core";
+import type { ImperativeRouter } from "expo-router";
 import { Alert } from "react-native";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
 
-type RouterLike = {
-  back: () => void;
-  navigate: (value: unknown) => void;
-  replace: (value: unknown) => void;
-};
-
 interface UseActivityPlanSchedulingActionsParams {
   action?: string;
-  activityPlan: any;
+  activityPlan: ActivityPlanSummary | ActivityPlanDetail | null;
   beginRedirect: () => void;
   eventId?: string;
-  plannedActivity: any;
+  plannedActivity: { id: string; scheduled_date?: string | null } | null | undefined;
   planId?: string;
-  profileId?: string;
+  canDuplicatePlan?: boolean;
+  canSchedulePlan?: boolean;
   queryClient: ReturnType<typeof import("@tanstack/react-query").useQueryClient>;
-  router: RouterLike;
+  router: Pick<ImperativeRouter, "back" | "navigate" | "replace">;
   utils: ReturnType<typeof api.useUtils>;
 }
 
@@ -30,7 +27,8 @@ export function useActivityPlanSchedulingActions({
   eventId,
   plannedActivity,
   planId,
-  profileId,
+  canDuplicatePlan = false,
+  canSchedulePlan = false,
   queryClient,
   router,
   utils,
@@ -51,13 +49,14 @@ export function useActivityPlanSchedulingActions({
           text: "Open",
           onPress: () =>
             router.replace({
-              pathname: "/activity-plan-detail" as any,
+              pathname: "/activity-plan-detail",
               params: { planId: duplicatedPlan.id },
             }),
         },
       ]);
     },
     onError: (error) => {
+      duplicateActionRef.current = null;
       Alert.alert("Duplicate failed", error.message || "Could not duplicate this activity plan");
     },
   });
@@ -73,6 +72,13 @@ export function useActivityPlanSchedulingActions({
   });
 
   const handleSchedule = () => {
+    if (!canSchedulePlan) {
+      Alert.alert(
+        "Scheduling unavailable",
+        "Only executable single-activity-category plans can be scheduled.",
+      );
+      return;
+    }
     if (!activityPlan) return;
     if (!activityPlan.id) {
       Alert.alert(
@@ -112,17 +118,28 @@ export function useActivityPlanSchedulingActions({
   };
 
   const handleDuplicate = () => {
+    if (duplicateActionRef.current || duplicatePlanMutation.isPending) return;
+    if (!canDuplicatePlan) {
+      Alert.alert(
+        "Duplicate unavailable",
+        "Only executable single-activity-category plans can be duplicated.",
+      );
+      return;
+    }
     const actualPlanId = planId || activityPlan?.id;
     if (!actualPlanId) {
       Alert.alert("Duplicate failed", "No activity plan ID was found.");
       return;
     }
     duplicateActionRef.current = "copy";
-    duplicatePlanMutation.mutate({ id: actualPlanId, newName: `${activityPlan.name} (Copy)` });
+    duplicatePlanMutation.mutate({
+      id: actualPlanId,
+      newName: `${activityPlan?.name ?? "Activity Plan"} (Copy)`,
+    });
   };
 
   React.useEffect(() => {
-    if (action !== "schedule" || !activityPlan?.id) return;
+    if (action !== "schedule" || !activityPlan?.id || !canSchedulePlan) return;
     if (eventId && !plannedActivity?.id) return;
     const scheduleKey = `${activityPlan.id}:${eventId ?? "none"}:${action}`;
     if (scheduleActionHandledRef.current === scheduleKey) return;
@@ -138,15 +155,7 @@ export function useActivityPlanSchedulingActions({
         mode: "create",
       },
     });
-  }, [
-    action,
-    activityPlan?.id,
-    activityPlan?.profile_id,
-    eventId,
-    plannedActivity?.id,
-    profileId,
-    router,
-  ]);
+  }, [action, activityPlan?.id, eventId, plannedActivity?.id, canSchedulePlan, router]);
 
   return {
     duplicatePending: duplicatePlanMutation.isPending,
