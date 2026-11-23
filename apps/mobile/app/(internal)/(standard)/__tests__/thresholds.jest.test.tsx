@@ -10,6 +10,7 @@ const paginationState = {
   olderIsError: false,
   olderRefetch: jest.fn(),
   overviewData: null as unknown,
+  overviewRefetch: jest.fn(),
   requestedInputs: [] as unknown[],
 };
 
@@ -50,6 +51,7 @@ afterEach(() => {
   paginationState.olderIsError = false;
   paginationState.olderRefetch.mockReset();
   paginationState.overviewData = null;
+  paginationState.overviewRefetch.mockReset();
   paginationState.requestedInputs = [];
   useQuery.mockReset();
 });
@@ -69,7 +71,7 @@ function mockPaginationQueries() {
       data: paginationState.overviewData,
       isError: false,
       isLoading: false,
-      refetch: jest.fn(),
+      refetch: paginationState.overviewRefetch,
     };
   });
 }
@@ -250,6 +252,11 @@ it("loads the advertised cursor, retains first-page history facts, and appends e
   });
 
   paginationState.olderData = {
+    publication: {
+      computedAt: "2026-05-01T00:00:00Z",
+      publishedRevision: 1,
+      status: "available",
+    },
     history: {
       items: [
         { ...historyPoint("current", 999), method: "obsolete" },
@@ -316,6 +323,11 @@ it("retains loaded history after an older-page failure and retries the same curs
 
   paginationState.olderIsError = false;
   paginationState.olderData = {
+    publication: {
+      computedAt: "2026-05-01T00:00:00Z",
+      publishedRevision: 1,
+      status: "available",
+    },
     history: {
       items: [{ ...historyPoint("older", 225), effectiveAt: "2026-02-01T00:00:00.000Z" }],
       nextCursor: null,
@@ -363,6 +375,11 @@ it("clears old pages and ignores an in-flight response when the publication chan
     history: { items: [historyPoint("revision-two", 260)], nextCursor: null },
   };
   paginationState.olderData = {
+    publication: {
+      computedAt: "2026-05-01T00:00:00Z",
+      publishedRevision: 1,
+      status: "available",
+    },
     history: { items: [historyPoint("stale-response", 150)], nextCursor: null },
   };
   await act(async () => {
@@ -372,4 +389,125 @@ it("clears old pages and ignores an in-flight response when the publication chan
   await waitFor(() => expect(screen.getByText("260 W · May 1, 2026")).toBeTruthy());
   expect(screen.queryByText("250 W · May 1, 2026")).toBeNull();
   expect(screen.queryByText("150 W · May 1, 2026")).toBeNull();
+});
+
+it("rejects an older response when the server publication changes during the request", async () => {
+  const cursor = {
+    createdAt: "2026-02-01T00:00:00.000Z",
+    effectiveAt: "2026-02-01T00:00:00.000Z",
+    thresholdId: "cursor",
+  };
+  paginationState.overviewData = {
+    publication: { computedAt: "2026-05-01T00:00:00Z", publishedRevision: 1, status: "available" },
+    current: {
+      thresholds: {
+        bike: { status: "unavailable" },
+        run: { status: "unavailable" },
+        swim: { status: "unavailable" },
+      },
+    },
+    history: { items: [historyPoint("current", 250)], nextCursor: cursor },
+  };
+  mockPaginationQueries();
+  const view = await renderNative(<ThresholdsScreen />);
+  await act(async () => {});
+  await act(async () => {
+    fireEvent.press(screen.getByTestId("threshold-history-load-earlier"));
+  });
+  paginationState.olderData = {
+    publication: { computedAt: "2026-05-02T00:00:00Z", publishedRevision: 2, status: "available" },
+    history: { items: [historyPoint("unexpected", 999)], nextCursor: null },
+  };
+  await act(async () => {
+    view.rerender(<ThresholdsScreen />);
+  });
+
+  await waitFor(() => expect(paginationState.overviewRefetch).toHaveBeenCalledTimes(1));
+  expect(screen.queryByText("999 W · May 1, 2026")).toBeNull();
+  expect(screen.getByTestId("threshold-history-load-earlier")).toBeTruthy();
+});
+
+it("rejects a cached old-publication response after a new first page reuses its cursor", async () => {
+  const cursor = {
+    createdAt: "2026-02-01T00:00:00.000Z",
+    effectiveAt: "2026-02-01T00:00:00.000Z",
+    thresholdId: "cursor",
+  };
+  paginationState.overviewData = {
+    publication: { computedAt: "2026-05-01T00:00:00Z", publishedRevision: 1, status: "available" },
+    current: {
+      thresholds: {
+        bike: { status: "unavailable" },
+        run: { status: "unavailable" },
+        swim: { status: "unavailable" },
+      },
+    },
+    history: { items: [historyPoint("revision-one", 250)], nextCursor: cursor },
+  };
+  mockPaginationQueries();
+  const view = await renderNative(<ThresholdsScreen />);
+  await act(async () => {});
+  paginationState.overviewData = {
+    publication: { computedAt: "2026-05-02T00:00:00Z", publishedRevision: 2, status: "available" },
+    current: {
+      thresholds: {
+        bike: { status: "unavailable" },
+        run: { status: "unavailable" },
+        swim: { status: "unavailable" },
+      },
+    },
+    history: { items: [historyPoint("revision-two", 260)], nextCursor: cursor },
+  };
+  await act(async () => {
+    view.rerender(<ThresholdsScreen />);
+  });
+  await waitFor(() => expect(screen.getByText("Publication available · revision 2")).toBeTruthy());
+  await act(async () => {
+    fireEvent.press(screen.getByTestId("threshold-history-load-earlier"));
+  });
+  paginationState.olderData = {
+    publication: { computedAt: "2026-05-01T00:00:00Z", publishedRevision: 1, status: "available" },
+    history: { items: [historyPoint("cached-old", 150)], nextCursor: null },
+  };
+  await act(async () => {
+    view.rerender(<ThresholdsScreen />);
+  });
+
+  await waitFor(() => expect(paginationState.overviewRefetch).toHaveBeenCalledTimes(1));
+  expect(screen.getByText("260 W · May 1, 2026")).toBeTruthy();
+  expect(screen.queryByText("150 W · May 1, 2026")).toBeNull();
+});
+
+it("honors an accepted empty terminal older page instead of offering the original cursor again", async () => {
+  const cursor = {
+    createdAt: "2026-02-01T00:00:00.000Z",
+    effectiveAt: "2026-02-01T00:00:00.000Z",
+    thresholdId: "cursor",
+  };
+  paginationState.overviewData = {
+    publication: { computedAt: "2026-05-01T00:00:00Z", publishedRevision: 1, status: "available" },
+    current: {
+      thresholds: {
+        bike: { status: "unavailable" },
+        run: { status: "unavailable" },
+        swim: { status: "unavailable" },
+      },
+    },
+    history: { items: [historyPoint("current", 250)], nextCursor: cursor },
+  };
+  mockPaginationQueries();
+  const view = await renderNative(<ThresholdsScreen />);
+  await act(async () => {});
+  await act(async () => {
+    fireEvent.press(screen.getByTestId("threshold-history-load-earlier"));
+  });
+  paginationState.olderData = {
+    publication: { computedAt: "2026-05-01T00:00:00Z", publishedRevision: 1, status: "available" },
+    history: { items: [], nextCursor: null },
+  };
+  await act(async () => {
+    view.rerender(<ThresholdsScreen />);
+  });
+
+  await waitFor(() => expect(screen.queryByTestId("threshold-history-load-earlier")).toBeNull());
 });
