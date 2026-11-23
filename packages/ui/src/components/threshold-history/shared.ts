@@ -102,7 +102,10 @@ export function mergeThresholdHistoryPages(
 ): readonly ThresholdHistoryPoint[] {
   const unique = new Map<string, ThresholdHistoryPoint>();
   for (const page of pages) {
-    for (const point of page) unique.set(point.thresholdId, point);
+    // The newest page is authoritative when pagination overlaps at its boundary.
+    for (const point of page) {
+      if (!unique.has(point.thresholdId)) unique.set(point.thresholdId, point);
+    }
   }
   return [...unique.values()].sort(
     (left, right) =>
