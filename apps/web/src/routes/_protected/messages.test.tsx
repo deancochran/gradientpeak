@@ -37,8 +37,10 @@ vi.mock("@tanstack/react-router", () => ({
     useNavigate: () => mocks.navigate,
     useSearch: () => mocks.routeSearch,
   }),
-  Link: ({ children, to }: { children: React.ReactNode; to: string }) => (
-    <a href={to}>{children}</a>
+  Link: ({ children, search, to }: { children: React.ReactNode; search?: unknown; to: string }) => (
+    <a data-search={JSON.stringify(search)} href={to}>
+      {children}
+    </a>
   ),
 }));
 vi.mock("@tanstack/react-start", () => ({ useServerFn: () => vi.fn() }));
@@ -114,6 +116,19 @@ describe("messages recipient GET form", () => {
     expect(
       route.validateSearch({ returnTo: "https://untrusted.example/" }).returnTo,
     ).toBeUndefined();
+  });
+
+  it("retains validated athlete context when compose is closed to the inbox", () => {
+    mocks.routeSearch.returnTo =
+      "/organizations/11111111-1111-1111-1111-111111111111/athletes/22222222-2222-2222-2222-222222222222";
+    const MessagesPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<MessagesPage />);
+
+    const close = screen.getByRole("link", { name: "Close" });
+    expect(JSON.parse(close.getAttribute("data-search") ?? "{}")).toMatchObject({
+      compose: false,
+      returnTo: mocks.routeSearch.returnTo,
+    });
   });
 
   it("submits native search params once and keeps clear local until submit", () => {

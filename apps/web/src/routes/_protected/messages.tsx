@@ -582,7 +582,7 @@ function MessagesPage() {
                       conversationId: conversationId ?? conversations[0]?.id,
                       flash: undefined,
                       flashType: undefined,
-                      returnTo: undefined,
+                      returnTo,
                     }}
                   >
                     <X className="mr-2 h-4 w-4" />
