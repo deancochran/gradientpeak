@@ -4,8 +4,8 @@ import { textareaFixtures } from "./fixtures";
 import { Textarea } from "./index.native";
 
 describe("Textarea native", () => {
-  it("maps normalized test props onto the text input", () => {
-    const { getByDisplayValue, getByTestId } = renderNative(
+  it("maps normalized test props onto the text input", async () => {
+    const { getByDisplayValue, getByTestId } = await renderNative(
       <Textarea {...textareaFixtures.notes} value={textareaFixtures.value} />,
     );
 
@@ -18,8 +18,8 @@ describe("Textarea native", () => {
     expect(textarea.props.accessibilityLabel).toBe(textareaFixtures.notes.accessibilityLabel);
   });
 
-  it("applies theme-aware text and placeholder colors", () => {
-    const { getByTestId } = renderNative(
+  it("applies theme-aware text and placeholder colors", async () => {
+    const { getByTestId } = await renderNative(
       <Textarea {...textareaFixtures.notes} placeholder="Notes" value={textareaFixtures.value} />,
     );
 
@@ -31,5 +31,12 @@ describe("Textarea native", () => {
     expect(textarea.props.style).toEqual(
       expect.arrayContaining([expect.objectContaining({ color: NATIVE_THEME.light.foreground })]),
     );
+  });
+
+  it("forwards refs to the native text input", async () => {
+    const ref = jest.fn();
+    await renderNative(<Textarea {...textareaFixtures.notes} ref={ref} />);
+
+    expect(ref).toHaveBeenCalled();
   });
 });
