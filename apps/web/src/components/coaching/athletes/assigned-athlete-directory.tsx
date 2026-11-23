@@ -11,7 +11,29 @@ import { SearchField } from "@repo/ui/components/search-field";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
-type Athlete = { profileId: string; displayName: string | null; username: string | null };
+type Athlete = {
+  profileId: string;
+  displayName: string | null;
+  username: string | null;
+  metrics?: {
+    status: "available" | "unavailable" | "unshared";
+    freshness?: "fresh" | "stale" | "unavailable";
+  };
+  activities?: {
+    status: "available" | "unavailable" | "unshared";
+    points: Array<{ date: string; dailyLoad: number }>;
+  };
+  goals?: {
+    status: "available" | "unavailable" | "unshared";
+    items: Array<{
+      id: string;
+      name: string;
+      targetDate: string;
+      category: string;
+      priority: number;
+    }>;
+  };
+};
 type Page = { items: Athlete[]; nextCursor: string | null; hasMore: boolean };
 
 export function AssignedAthleteDirectory({
@@ -61,8 +83,7 @@ export function AssignedAthleteDirectory({
         <CardHeader>
           <CardTitle>Athlete directory</CardTitle>
           <CardDescription>
-            Identity details are limited to the assignment directory. Data availability is checked
-            after selection.
+            Shared training facts are shown only for the scope each athlete has authorized.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -81,6 +102,7 @@ export function AssignedAthleteDirectory({
                       supporting={athlete.username ? `@${athlete.username}` : undefined}
                       title={athlete.displayName ?? athlete.username ?? "Assigned athlete"}
                     />
+                    <VisualFacts athlete={athlete} />
                   </Link>
                 </li>
               ))}
@@ -101,5 +123,52 @@ export function AssignedAthleteDirectory({
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function VisualFacts({ athlete }: { athlete: Athlete }) {
+  if (!athlete.metrics || !athlete.activities || !athlete.goals) return null;
+  const latest = athlete.activities.points.at(-1);
+  const first = athlete.activities.points[0];
+  const change =
+    latest && first && athlete.activities.points.length > 1
+      ? latest.dailyLoad - first.dailyLoad
+      : null;
+  const goal = athlete.goals.items[0];
+  return (
+    <dl className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
+      <div>
+        <dt className="font-medium text-foreground">Training state</dt>
+        <dd>
+          {athlete.metrics.status === "available"
+            ? athlete.metrics.freshness === "stale"
+              ? "Stale"
+              : "Fresh"
+            : athlete.metrics.status === "unshared"
+              ? "Unshared"
+              : "Unavailable"}
+        </dd>
+      </div>
+      <div>
+        <dt className="font-medium text-foreground">28-day load</dt>
+        <dd>
+          {athlete.activities.status === "available" && latest
+            ? `${latest.dailyLoad.toFixed(1)}${change === null ? "" : ` · ${change >= 0 ? "+" : ""}${change.toFixed(1)}`}`
+            : athlete.activities.status === "unshared"
+              ? "Unshared"
+              : "Unavailable"}
+        </dd>
+      </div>
+      <div>
+        <dt className="font-medium text-foreground">Next goal</dt>
+        <dd>
+          {athlete.goals.status === "available" && goal
+            ? `${goal.name} · ${goal.targetDate}`
+            : athlete.goals.status === "unshared"
+              ? "Unshared"
+              : "Unavailable"}
+        </dd>
+      </div>
+    </dl>
   );
 }

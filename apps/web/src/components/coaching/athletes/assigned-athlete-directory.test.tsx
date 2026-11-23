@@ -77,4 +77,32 @@ describe("AssignedAthleteDirectory", () => {
     expect(screen.getByRole("link", { name: new RegExp(displayName) })).toBeTruthy();
     expect(screen.getByText("@avery-carter")).toBeTruthy();
   });
+
+  it("keeps shared facts explicit rather than turning unavailable evidence into zero", () => {
+    render(
+      <AssignedAthleteDirectory
+        organizationId="organization-1"
+        page={{
+          hasMore: false,
+          items: [
+            {
+              profileId: "athlete-1",
+              displayName: "Avery",
+              username: "avery",
+              metrics: { status: "available", freshness: "stale" },
+              activities: { status: "unshared", points: [] },
+              goals: { status: "unavailable", items: [] },
+            },
+          ],
+          nextCursor: null,
+        }}
+        search={null}
+      />,
+    );
+
+    expect(screen.getByText("Stale")).toBeTruthy();
+    expect(screen.getAllByText("Unshared")).toHaveLength(1);
+    expect(screen.getAllByText("Unavailable")).toHaveLength(1);
+    expect(screen.queryByText("0.0")).toBeNull();
+  });
 });
