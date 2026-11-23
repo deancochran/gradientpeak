@@ -233,6 +233,15 @@ export async function applyPlannedSessionScenario(input: {
             activityPlanId: createdActivityPlanId,
           }),
         );
+        if (repointed.status === "stale_revision") {
+          return {
+            status: "stale",
+            reason: "session_revision",
+            currentSessionRevision: repointed.currentRevision,
+            currentPlanRevision: preview.provenance.selectedPlan.revision,
+            currentStateRevision: preview.stateRevision,
+          };
+        }
         if (repointed.status !== "updated")
           throw new Error("Scenario apply did not repoint the session");
         await input.enqueueProviderSync({

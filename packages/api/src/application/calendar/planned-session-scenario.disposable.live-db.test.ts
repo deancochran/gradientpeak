@@ -503,7 +503,7 @@ describeDisposable("planned-session scenario preview against a disposable databa
     });
     expect(copy?.id).not.toBe(planId);
     expect(copy?.structure_hash).not.toBe(hash);
-    expect(copy?.structure.items).toMatchObject([
+    expect(activityPlanStructureSchema.parse(copy?.structure).items).toMatchObject([
       { type: "step", duration: { type: "time", seconds: 900 } },
     ]);
     expect(selectedAfter).toMatchObject({
@@ -615,7 +615,7 @@ describeDisposable("planned-session scenario preview against a disposable databa
       .where(eq(activityPlans.id, moreResult.createdActivityPlanId));
     expect(moreCopy).toMatchObject({ profile_id: ownerId, content_visibility: "private" });
     expect(moreCopy?.structure_hash).not.toBe(hash);
-    expect(moreCopy?.structure.items).toMatchObject([
+    expect(activityPlanStructureSchema.parse(moreCopy?.structure).items).toMatchObject([
       { type: "step", duration: { type: "time", seconds: 2_700 } },
     ]);
 
@@ -662,22 +662,34 @@ describeDisposable("planned-session scenario preview against a disposable databa
       now,
     });
     if (skipPreview.status !== "available") throw new Error("Expected future skip preview");
+    const futureSkipRequest = {
+      preview: skipPreviewRequest,
+      expectedPreviewFingerprint: skipPreview.previewFingerprint,
+      operationId: "future-skip-scenario-operation-0001",
+    };
+    const futureSkip = await applyPlannedSessionScenario({
+      db,
+      actorId: ownerId,
+      profileId: ownerId,
+      request: futureSkipRequest,
+      now,
+      enqueueProviderSync: async ({ sessionId, action }) => {
+        providerCalls.push({ sessionId, action });
+      },
+    });
+    expect(futureSkip).toMatchObject({ status: "applied", action: "cancelled" });
     await expect(
       applyPlannedSessionScenario({
         db,
         actorId: ownerId,
         profileId: ownerId,
-        request: {
-          preview: skipPreviewRequest,
-          expectedPreviewFingerprint: skipPreview.previewFingerprint,
-          operationId: "future-skip-scenario-operation-0001",
-        },
+        request: futureSkipRequest,
         now,
         enqueueProviderSync: async ({ sessionId, action }) => {
           providerCalls.push({ sessionId, action });
         },
       }),
-    ).resolves.toMatchObject({ status: "applied", action: "cancelled" });
+    ).resolves.toEqual(futureSkip);
     expect(providerCalls).toEqual([
       { sessionId: selectedSessionId, action: "publish" },
       { sessionId: moreSessionId, action: "publish" },
@@ -689,6 +701,308 @@ describeDisposable("planned-session scenario preview against a disposable databa
         .from(chatbotOperationReceipts)
         .where(eq(chatbotOperationReceipts.profile_id, ownerId)),
     ).toHaveLength(5);
+
+    const sameDaySessionId = randomUUID();
+    const sameDaySource = {
+      kind: "direct" as const,
+      operationId: `scenario_${sameDaySessionId.replaceAll("-", "")}`,
+    };
+    await createDrizzlePlannedSessionRepository(db).createOwned({
+      profileId: ownerId,
+      session: plannedSessionSchema.parse({
+        contractVersion: PLANNED_SESSION_CONTRACT_VERSION,
+        id: sameDaySessionId,
+        profileId: ownerId,
+        sessionRevision: 1,
+        planningDate: "2026-08-01",
+        originalTargetDate: "2026-08-01",
+        source: sameDaySource,
+        idempotencyKey: plannedSessionIdempotencyKey(sameDaySource),
+        groupEventId: null,
+        activityPlanId: planId,
+        lifecycle: { status: "scheduled" },
+      }),
+    });
+    const sameDayPreviewRequest = {
+      sessionId: sameDaySessionId,
+      expectedSessionRevision: 1,
+      expectedPlanRevision: 1,
+      expectedStateRevision: publishedState.published_revision,
+      scenario: { kind: "skip" as const },
+    };
+    const sameDayPreview = await previewPlannedSessionScenario({
+      db,
+      profileId: ownerId,
+      values: sameDayPreviewRequest,
+      now,
+    });
+    if (sameDayPreview.status !== "available") throw new Error("Expected same-day skip preview");
+    const sameDaySkipRequest = {
+      preview: sameDayPreviewRequest,
+      expectedPreviewFingerprint: sameDayPreview.previewFingerprint,
+      operationId: "same-day-skip-scenario-operation01",
+    };
+    const sameDaySkip = await applyPlannedSessionScenario({
+      db,
+      actorId: ownerId,
+      profileId: ownerId,
+      request: sameDaySkipRequest,
+      now,
+      enqueueProviderSync: async ({ sessionId, action }) => {
+        providerCalls.push({ sessionId, action });
+      },
+    });
+    expect(sameDaySkip).toMatchObject({ status: "applied", action: "skipped" });
+    const [sameDayAfter] = await db
+      .select()
+      .from(plannedSessions)
+      .where(eq(plannedSessions.id, sameDaySessionId));
+    expect(sameDayAfter).toMatchObject({
+      status: "completed",
+      completion_outcome: "skipped",
+      completed_activity_id: null,
+    });
+    await expect(
+      applyPlannedSessionScenario({
+        db,
+        actorId: ownerId,
+        profileId: ownerId,
+        request: sameDaySkipRequest,
+        now,
+        enqueueProviderSync: async ({ sessionId, action }) => {
+          providerCalls.push({ sessionId, action });
+        },
+      }),
+    ).resolves.toEqual(sameDaySkip);
+    await expect(
+      applyPlannedSessionScenario({
+        db,
+        actorId: ownerId,
+        profileId: ownerId,
+        request: {
+          ...sameDaySkipRequest,
+          operationId: "terminal-session-scenario-operation",
+        },
+        now,
+        enqueueProviderSync: async ({ sessionId, action }) => {
+          providerCalls.push({ sessionId, action });
+        },
+      }),
+    ).resolves.toEqual({ status: "unavailable", reason: "session_not_scheduled" });
+    expect(providerCalls).toEqual([
+      { sessionId: selectedSessionId, action: "publish" },
+      { sessionId: moreSessionId, action: "publish" },
+      { sessionId: otherSessionId, action: "delete" },
+      { sessionId: sameDaySessionId, action: "delete" },
+    ]);
+
+    const ownedAlternativeId = randomUUID();
+    const foreignOwnerId = await seedProfile("Scenario foreign candidate");
+    const foreignAlternativeId = randomUUID();
+    await db.insert(activityPlans).values([
+      {
+        id: ownedAlternativeId,
+        profile_id: ownerId,
+        name: "Owned private substitute",
+        structure,
+        structure_hash: hash,
+        semantic_hash: semanticHash,
+        content_visibility: "private",
+      },
+      {
+        id: foreignAlternativeId,
+        profile_id: foreignOwnerId,
+        name: "Foreign private substitute",
+        structure,
+        structure_hash: hash,
+        semantic_hash: semanticHash,
+        content_visibility: "private",
+      },
+    ]);
+    const substituteSessionId = randomUUID();
+    const substituteSource = {
+      kind: "direct" as const,
+      operationId: `scenario_${substituteSessionId.replaceAll("-", "")}`,
+    };
+    await createDrizzlePlannedSessionRepository(db).createOwned({
+      profileId: ownerId,
+      session: plannedSessionSchema.parse({
+        contractVersion: PLANNED_SESSION_CONTRACT_VERSION,
+        id: substituteSessionId,
+        profileId: ownerId,
+        sessionRevision: 1,
+        planningDate: "2026-08-14",
+        originalTargetDate: "2026-08-14",
+        source: substituteSource,
+        idempotencyKey: plannedSessionIdempotencyKey(substituteSource),
+        groupEventId: null,
+        activityPlanId: planId,
+        lifecycle: { status: "scheduled" },
+      }),
+    });
+    const substitutePreviewRequest = {
+      sessionId: substituteSessionId,
+      expectedSessionRevision: 1,
+      expectedPlanRevision: 1,
+      expectedStateRevision: publishedState.published_revision,
+      scenario: { kind: "substitute" as const, activityPlanId: ownedAlternativeId },
+    };
+    const substitutePreview = await previewPlannedSessionScenario({
+      db,
+      profileId: ownerId,
+      values: substitutePreviewRequest,
+      now,
+    });
+    if (substitutePreview.status !== "available")
+      throw new Error("Expected owned substitute preview");
+    const substituteResult = await applyPlannedSessionScenario({
+      db,
+      actorId: ownerId,
+      profileId: ownerId,
+      request: {
+        preview: substitutePreviewRequest,
+        expectedPreviewFingerprint: substitutePreview.previewFingerprint,
+        operationId: "owned-substitute-scenario-operation1",
+      },
+      now,
+      enqueueProviderSync: async ({ sessionId, action }) => {
+        providerCalls.push({ sessionId, action });
+      },
+    });
+    expect(substituteResult).toMatchObject({ status: "applied", action: "repointed" });
+    if (substituteResult.status !== "applied" || !substituteResult.createdActivityPlanId)
+      throw new Error("Expected owned substitute copy");
+    const [ownedSubstituteCopy] = await db
+      .select()
+      .from(activityPlans)
+      .where(eq(activityPlans.id, substituteResult.createdActivityPlanId));
+    expect(ownedSubstituteCopy).toMatchObject({
+      profile_id: ownerId,
+      content_visibility: "private",
+      structure_hash: hash,
+    });
+
+    const foreignSessionId = randomUUID();
+    const foreignSource = {
+      kind: "direct" as const,
+      operationId: `scenario_${foreignSessionId.replaceAll("-", "")}`,
+    };
+    await createDrizzlePlannedSessionRepository(db).createOwned({
+      profileId: ownerId,
+      session: plannedSessionSchema.parse({
+        contractVersion: PLANNED_SESSION_CONTRACT_VERSION,
+        id: foreignSessionId,
+        profileId: ownerId,
+        sessionRevision: 1,
+        planningDate: "2026-08-15",
+        originalTargetDate: "2026-08-15",
+        source: foreignSource,
+        idempotencyKey: plannedSessionIdempotencyKey(foreignSource),
+        groupEventId: null,
+        activityPlanId: planId,
+        lifecycle: { status: "scheduled" },
+      }),
+    });
+    const foreignRequest = {
+      sessionId: foreignSessionId,
+      expectedSessionRevision: 1,
+      expectedPlanRevision: 1,
+      expectedStateRevision: publishedState.published_revision,
+      scenario: { kind: "substitute" as const, activityPlanId: foreignAlternativeId },
+    };
+    const beforeForeignApply = await readScenarioRows(ownerId);
+    await expect(
+      applyPlannedSessionScenario({
+        db,
+        actorId: ownerId,
+        profileId: ownerId,
+        request: {
+          preview: foreignRequest,
+          expectedPreviewFingerprint: `v1:sha256:${"e".repeat(64)}`,
+          operationId: "foreign-substitute-scenario-operation",
+        },
+        now,
+        enqueueProviderSync: async ({ sessionId, action }) => {
+          providerCalls.push({ sessionId, action });
+        },
+      }),
+    ).resolves.toEqual({ status: "unavailable", reason: "candidate_unavailable" });
+    expect(await readScenarioRows(ownerId)).toEqual(beforeForeignApply);
+
+    const concurrentSessionId = randomUUID();
+    const concurrentSource = {
+      kind: "direct" as const,
+      operationId: `scenario_${concurrentSessionId.replaceAll("-", "")}`,
+    };
+    await createDrizzlePlannedSessionRepository(db).createOwned({
+      profileId: ownerId,
+      session: plannedSessionSchema.parse({
+        contractVersion: PLANNED_SESSION_CONTRACT_VERSION,
+        id: concurrentSessionId,
+        profileId: ownerId,
+        sessionRevision: 1,
+        planningDate: "2026-08-16",
+        originalTargetDate: "2026-08-16",
+        source: concurrentSource,
+        idempotencyKey: plannedSessionIdempotencyKey(concurrentSource),
+        groupEventId: null,
+        activityPlanId: planId,
+        lifecycle: { status: "scheduled" },
+      }),
+    });
+    const concurrentPreviewRequest = {
+      sessionId: concurrentSessionId,
+      expectedSessionRevision: 1,
+      expectedPlanRevision: 1,
+      expectedStateRevision: publishedState.published_revision,
+      scenario: { kind: "less" as const, targetDurationSeconds: 900 },
+    };
+    const concurrentPreview = await previewPlannedSessionScenario({
+      db,
+      profileId: ownerId,
+      values: concurrentPreviewRequest,
+      now,
+    });
+    if (concurrentPreview.status !== "available") throw new Error("Expected concurrent preview");
+    const copiesBeforeConcurrent = await db
+      .select({ id: activityPlans.id })
+      .from(activityPlans)
+      .where(eq(activityPlans.profile_id, ownerId));
+    const concurrentResults = await Promise.all(
+      ["concurrent-scenario-operation-0001", "concurrent-scenario-operation-0002"].map(
+        (operationId) =>
+          applyPlannedSessionScenario({
+            db,
+            actorId: ownerId,
+            profileId: ownerId,
+            request: {
+              preview: concurrentPreviewRequest,
+              expectedPreviewFingerprint: concurrentPreview.previewFingerprint,
+              operationId,
+            },
+            now,
+            enqueueProviderSync: async ({ sessionId, action }) => {
+              providerCalls.push({ sessionId, action });
+            },
+          }),
+      ),
+    );
+    expect(concurrentResults.filter((result) => result.status === "applied")).toHaveLength(1);
+    expect(concurrentResults.filter((result) => result.status === "stale")).toHaveLength(1);
+    expect(
+      await db
+        .select({ id: activityPlans.id })
+        .from(activityPlans)
+        .where(eq(activityPlans.profile_id, ownerId)),
+    ).toHaveLength(copiesBeforeConcurrent.length + 1);
+    const [concurrentAfter] = await db
+      .select()
+      .from(plannedSessions)
+      .where(eq(plannedSessions.id, concurrentSessionId));
+    expect(concurrentAfter).toMatchObject({ session_revision: 2, status: "scheduled" });
+    expect(providerCalls.filter((call) => call.sessionId === concurrentSessionId)).toEqual([
+      { sessionId: concurrentSessionId, action: "publish" },
+    ]);
 
     const rollbackSessionId = randomUUID();
     const rollbackSource = {
