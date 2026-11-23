@@ -300,7 +300,6 @@ export function createPlannedSessionsRouter(
       .query(async ({ ctx, input }) => {
         const result = await services.previewScenario({
           db: getRequiredDb(ctx),
-          repository: repository(ctx),
           profileId: ctx.session.user.id,
           values: previewPlannedSessionScenarioInputSchema.parse(input),
           now: services.now(),

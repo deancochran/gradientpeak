@@ -10,6 +10,7 @@ import {
 } from "@repo/core";
 import { activityPlanSemanticHash, withEphemeralTimedDuration } from "@repo/core/activity-plan";
 import type { PlannedSession } from "@repo/core/calendar";
+import type { DrizzleDbClient } from "@repo/db";
 import { activityPlans } from "@repo/db";
 import { and, eq, inArray, or } from "drizzle-orm";
 import type { z } from "zod";
@@ -19,6 +20,7 @@ import {
   previewPlannedSessionScenarioRequestSchema,
 } from "../../contracts/planned-sessions";
 import { type DrizzleQueryExecutor, withProfileFencedRepeatableReadSnapshot } from "../../db";
+import { createDrizzlePlannedSessionRepository } from "../../infrastructure/repositories";
 import type {
   ActivityPlanPrescriptionSource,
   PlannedSessionRepositoryPort,
@@ -69,6 +71,26 @@ function demandForPlan(plan: ActivityPlanPrescriptionSource) {
  * from the current plan reference; persisted snapshots are provenance only.
  */
 export async function previewPlannedSessionScenario(input: {
+  db: DrizzleDbClient;
+  profileId: string;
+  values: z.input<typeof previewPlannedSessionScenarioInputSchema>;
+  now: Date;
+  createRepository?: typeof createDrizzlePlannedSessionRepository;
+}) {
+  const values = previewPlannedSessionScenarioInputSchema.parse(input.values);
+  const createRepository = input.createRepository ?? createDrizzlePlannedSessionRepository;
+  return withProfileFencedRepeatableReadSnapshot(input.db, input.profileId, (tx) =>
+    derivePlannedSessionScenario({
+      db: tx,
+      repository: createRepository(tx),
+      profileId: input.profileId,
+      values,
+      now: input.now,
+    }),
+  );
+}
+
+async function derivePlannedSessionScenario(input: {
   db: DrizzleQueryExecutor;
   repository: PlannedSessionRepositoryPort;
   profileId: string;
