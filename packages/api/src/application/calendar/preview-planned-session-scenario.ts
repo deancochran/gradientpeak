@@ -335,7 +335,7 @@ async function derivePlannedSessionScenario(input: {
         }),
         planningDate: session.planningDate,
         isUntimed: true,
-        activityCategory: plan.structure.activity_category,
+        activityCategory: result.manifest.resolved_structure.activity_category,
         commonLoad: result.manifest.prescription_estimate.common_load.value,
       });
     }
