@@ -1,3 +1,4 @@
+import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
 import {
   Card,
   CardContent,
@@ -5,35 +6,71 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
+import type { ThresholdHistoryPoint } from "@repo/ui/components/threshold-history";
+import {
+  formatThresholdDate,
+  formatThresholdValue,
+  groupThresholdHistory,
+  mergeThresholdHistoryPages,
+  ThresholdHistoryChart,
+  thresholdMetricLabel,
+} from "@repo/ui/components/threshold-history";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { api } from "../../lib/api/client";
 import { loadRouteQuery } from "../../lib/api/route-loading";
+
+type HistoryCursor = NonNullable<
+  inferRouterOutputs<AppRouter>["athleteIntelligence"]["getThresholdOverview"]["history"]["nextCursor"]
+>;
 
 export const Route = createFileRoute("/_protected/thresholds")({
   loader: ({ context }) =>
     loadRouteQuery(
-      () => context.apiUtils.athleteIntelligence.getThresholdOverview.getData({}),
-      () => context.apiUtils.athleteIntelligence.getThresholdOverview.fetch({}),
+      () =>
+        context.apiUtils.athleteIntelligence.getThresholdOverview.getData({ historyLimit: 100 }),
+      () => context.apiUtils.athleteIntelligence.getThresholdOverview.fetch({ historyLimit: 100 }),
     ),
   component: ThresholdsPage,
 });
 
-function formatThreshold(
-  value: number,
-  unit: "watts" | "meters_per_second" | "bpm",
-  category: "bike" | "run" | "swim",
-) {
-  if (unit === "watts") return `${Math.round(value)} W`;
-  if (unit === "bpm") return `${Math.round(value)} bpm`;
-  if (value <= 0) return "—";
-  const distance = category === "swim" ? 100 : 1_000;
-  const seconds = Math.round(distance / value);
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")} /${distance === 100 ? "100m" : "km"}`;
-}
-
 function ThresholdsPage() {
-  const overviewQuery = api.athleteIntelligence.getThresholdOverview.useQuery({});
+  const overviewQuery = api.athleteIntelligence.getThresholdOverview.useQuery({
+    historyLimit: 100,
+  });
   const overview = overviewQuery.data;
+  const sourceKey = `${overview?.publication?.publishedRevision ?? "none"}:${overview?.publication?.computedAt ?? "none"}`;
+  const [olderItems, setOlderItems] = useState<readonly ThresholdHistoryPoint[]>([]);
+  const [olderNextCursor, setOlderNextCursor] = useState<HistoryCursor | null>(null);
+  const [requestedCursor, setRequestedCursor] = useState<HistoryCursor | null>(null);
+  const [requestSourceKey, setRequestSourceKey] = useState<string | null>(null);
+  const olderQuery = api.athleteIntelligence.getThresholdOverview.useQuery(
+    { historyLimit: 100, ...(requestedCursor ? { historyCursor: requestedCursor } : {}) },
+    { enabled: requestedCursor !== null },
+  );
+  useEffect(() => {
+    setOlderItems([]);
+    setOlderNextCursor(null);
+    setRequestedCursor(null);
+    setRequestSourceKey(null);
+  }, [sourceKey]);
+  useEffect(() => {
+    if (!requestedCursor || !olderQuery.data || requestSourceKey !== sourceKey) return;
+    setOlderItems((items) => mergeThresholdHistoryPages(items, olderQuery.data.history.items));
+    setOlderNextCursor(olderQuery.data.history.nextCursor);
+    setRequestedCursor(null);
+  }, [olderQuery.data, requestSourceKey, requestedCursor, sourceKey]);
+  const historyItems = overview
+    ? mergeThresholdHistoryPages(overview.history.items, olderItems)
+    : [];
+  const nextHistoryCursor = olderItems.length
+    ? olderNextCursor
+    : (overview?.history.nextCursor ?? null);
+  const loadEarlier = () => {
+    if (!nextHistoryCursor) return;
+    setRequestSourceKey(sourceKey);
+    setRequestedCursor(nextHistoryCursor);
+  };
 
   return (
     <div className="space-y-6" data-testid="threshold-overview">
@@ -44,15 +81,44 @@ function ThresholdsPage() {
 
       {overviewQuery.isLoading ? (
         <p className="text-sm text-muted-foreground">Loading thresholds...</p>
-      ) : overviewQuery.isError ? (
+      ) : overviewQuery.isError && !overview ? (
         <Card role="alert">
           <CardHeader>
             <CardTitle>Thresholds unavailable</CardTitle>
             <CardDescription>Try again to load calculated thresholds.</CardDescription>
+            <button
+              className="w-fit text-sm font-medium underline"
+              onClick={() => void overviewQuery.refetch()}
+              type="button"
+            >
+              Try again
+            </button>
           </CardHeader>
         </Card>
       ) : overview ? (
         <>
+          {overviewQuery.isError ? (
+            <Card role="status">
+              <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
+                <p className="text-sm text-muted-foreground">
+                  Showing cached threshold data. The latest refresh failed.
+                </p>
+                <button
+                  className="text-sm font-medium underline"
+                  onClick={() => void overviewQuery.refetch()}
+                  type="button"
+                >
+                  Try again
+                </button>
+              </CardContent>
+            </Card>
+          ) : null}
+          {overview.publication ? (
+            <p className="text-xs capitalize text-muted-foreground">
+              Publication {overview.publication.status} · revision{" "}
+              {overview.publication.publishedRevision ?? "unavailable"}
+            </p>
+          ) : null}
           <section className="grid gap-4 md:grid-cols-3" aria-label="Current calculated thresholds">
             {(["bike", "run", "swim"] as const).map((activityCategory) => {
               const threshold = overview.current.thresholds[activityCategory];
@@ -62,14 +128,14 @@ function ThresholdsPage() {
                     <CardTitle className="capitalize">{activityCategory}</CardTitle>
                     <CardDescription>
                       {threshold.status === "available"
-                        ? `Effective ${new Date(threshold.effectiveAt).toLocaleDateString()}`
+                        ? `${threshold.freshness} · Effective ${formatThresholdDate(threshold.effectiveAt)}`
                         : "No calculated threshold"}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <p className="text-2xl font-semibold">
                       {threshold.status === "available"
-                        ? formatThreshold(threshold.value, threshold.unit, activityCategory)
+                        ? formatThresholdValue(threshold.value, threshold.unit, activityCategory)
                         : "—"}
                     </p>
                   </CardContent>
@@ -82,37 +148,93 @@ function ThresholdsPage() {
             <h2 className="text-xl font-semibold" id="threshold-history-heading">
               History
             </h2>
-            {overview.history.items.length === 0 ? (
+            {historyItems.length === 0 ? (
               <p className="mt-2 text-sm text-muted-foreground">
                 No calculated threshold changes yet.
               </p>
             ) : (
-              <div className="mt-3 space-y-3">
-                {overview.history.items.map((item) => (
-                  <Card key={item.thresholdId}>
-                    <CardContent className="flex items-center justify-between gap-4 p-4">
-                      <div>
-                        <p className="font-medium capitalize">{item.activityCategory}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {formatThreshold(item.value, item.unit, item.activityCategory)} ·{" "}
-                          {new Date(item.effectiveAt).toLocaleDateString()}
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap justify-end gap-2">
-                        {item.sourceActivities.map((activity) => (
-                          <Link
-                            className="text-sm font-medium underline"
-                            key={activity.id}
-                            params={{ activityId: activity.id }}
-                            to="/activities/$activityId"
+              <div className="mt-3 space-y-6">
+                {groupThresholdHistory(historyItems).map((series) => (
+                  <Card key={series.id}>
+                    <CardHeader>
+                      <CardTitle className="capitalize">
+                        {thresholdMetricLabel(series.activityCategory, series.metric)}
+                      </CardTitle>
+                      <CardDescription>
+                        Chronological calculated values on one {series.unit} scale.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <ThresholdHistoryChart
+                        emptyMessage="No values available for this threshold."
+                        series={series}
+                        testId={`threshold-history-${series.id}`}
+                      />
+                      <ol
+                        className="space-y-3"
+                        aria-label={`${thresholdMetricLabel(series.activityCategory, series.metric)} evidence`}
+                      >
+                        {series.points.map((item) => (
+                          <li
+                            className="flex flex-wrap items-start justify-between gap-3 border-t pt-3"
+                            key={item.thresholdId}
                           >
-                            {activity.name}
-                          </Link>
+                            <div>
+                              <p className="font-medium">
+                                {formatThresholdValue(item.value, item.unit, item.activityCategory)}
+                              </p>
+                              <p className="text-sm text-muted-foreground">
+                                Effective {formatThresholdDate(item.effectiveAt)} · {item.method} ·
+                                policy {item.policyVersion}
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {item.sourceActivities.map((activity) => (
+                                <Link
+                                  className="text-sm font-medium underline"
+                                  key={activity.id}
+                                  params={{ activityId: activity.id }}
+                                  to="/activities/$activityId"
+                                >
+                                  {activity.name}
+                                </Link>
+                              ))}
+                            </div>
+                          </li>
                         ))}
-                      </div>
+                      </ol>
                     </CardContent>
                   </Card>
                 ))}
+                {nextHistoryCursor ? (
+                  <div className="flex flex-wrap items-center gap-3" role="status">
+                    <p className="text-sm text-muted-foreground">
+                      Earlier calculated threshold history is available.
+                    </p>
+                    <button
+                      className="text-sm font-medium underline"
+                      disabled={requestedCursor !== null}
+                      onClick={loadEarlier}
+                      type="button"
+                    >
+                      {requestedCursor ? "Loading earlier history..." : "Load earlier history"}
+                    </button>
+                  </div>
+                ) : null}
+                {olderQuery.isError && requestedCursor ? (
+                  <div className="flex flex-wrap items-center gap-3" role="alert">
+                    <p className="text-sm text-muted-foreground">
+                      Earlier threshold history could not be loaded. Loaded history is unchanged.
+                    </p>
+                    <button
+                      className="text-sm font-medium underline"
+                      onClick={() => void olderQuery.refetch()}
+                      type="button"
+                    >
+                      Try again
+                    </button>
+                  </div>
+                ) : null}
               </div>
             )}
           </section>
