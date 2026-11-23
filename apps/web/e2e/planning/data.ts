@@ -1,4 +1,5 @@
 import type { TestInfo } from "@playwright/test";
+import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
 import {
   activities,
   activityPlans,
@@ -152,6 +153,7 @@ export async function withPlanningPathFixture(
           summary: {
             version: 1,
             timing: { timingCoverage: "complete", activeMs: 3_600_000, movingMs: 3_600_000 },
+            normalizedPowerResult: calculateCyclingNormalizedPower({ samples: [] }),
           },
           summary_version: 1,
           timing_coverage: "complete",
