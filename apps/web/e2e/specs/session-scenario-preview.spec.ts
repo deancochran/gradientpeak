@@ -51,6 +51,10 @@ test("a published bike baseline supports each read-only session scenario without
   ).toBeVisible();
 
   await expectNoHorizontalOverflow(athletePage);
+  await comparison.scrollIntoViewIfNeeded();
+  await athletePage.screenshot({
+    path: testInfo.outputPath("session-scenario-comparison-viewport.png"),
+  });
   await athletePage.screenshot({
     fullPage: true,
     path: testInfo.outputPath("session-scenario-preview.png"),
