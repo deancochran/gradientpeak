@@ -31,7 +31,7 @@ import { DetailOverflowMenu } from "@/components/shared/detail";
 import { RouteCard } from "@/components/shared/RouteCard";
 import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
 import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
-import { api } from "@/lib/api";
+import { api, getSafeApiErrorDiagnostic } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { getEventStatusLabel, getEventTitle } from "@/lib/calendar/eventPresentation";
 import { formatEventTime, getEventScheduledDate } from "@/lib/calendar/eventSchedule";
@@ -351,6 +351,37 @@ export default function EventDetailScreen() {
     { id: eventId },
     { enabled: isPlannedSession && !startsInCreateMode && !hasInvalidResource },
   );
+  const plannedSessionQueryEnabled = isPlannedSession && !startsInCreateMode && !hasInvalidResource;
+  useEffect(() => {
+    if (process.env.EXPO_PUBLIC_MAESTRO_E2E !== "1" || !isPlannedSession) return;
+    console.log(
+      "[planned-session-detail-diagnostic]",
+      JSON.stringify({
+        createMode: startsInCreateMode,
+        query: {
+          enabled: plannedSessionQueryEnabled,
+          error: plannedSessionQuery.error
+            ? getSafeApiErrorDiagnostic(plannedSessionQuery.error)
+            : null,
+          fetchStatus: plannedSessionQuery.fetchStatus,
+          isError: plannedSessionQuery.isError,
+          status: plannedSessionQuery.status,
+        },
+        resourceType: resourceType === "planned_session" ? "planned_session" : "other",
+        routeId: UUID_PATTERN.test(eventId) ? "uuid" : "invalid",
+      }),
+    );
+  }, [
+    eventId,
+    isPlannedSession,
+    plannedSessionQuery.error,
+    plannedSessionQuery.fetchStatus,
+    plannedSessionQuery.isError,
+    plannedSessionQuery.status,
+    plannedSessionQueryEnabled,
+    resourceType,
+    startsInCreateMode,
+  ]);
   const plannedActivityPlanQuery = api.activityPlans.getById.useQuery(
     { id: plannedSessionQuery.data?.activityPlanId ?? "", personalize: false },
     {

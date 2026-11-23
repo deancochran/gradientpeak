@@ -14,7 +14,7 @@ type ActivityPlanFixture = {
   activity_category: "run" | "bike" | "swim" | "strength" | "other";
   estimated_duration: number;
 };
-type EventQueryError = { data: { code: string }; message?: string };
+type EventQueryError = { data: { code: string; httpStatus?: number }; message?: string };
 function getHostByType(rendered: Awaited<ReturnType<typeof renderNative>>, type: string) {
   return rendered.container.queryAll((node) => node.type === type)[0] as ReactTestInstance;
 }
@@ -302,6 +302,25 @@ jest.mock("lucide-react-native", () => ({
 
 jest.mock("@/lib/api", () => ({
   __esModule: true,
+  getSafeApiErrorDiagnostic: (error: unknown) => {
+    const data =
+      error &&
+      typeof error === "object" &&
+      "data" in error &&
+      error.data &&
+      typeof error.data === "object"
+        ? error.data
+        : null;
+    return {
+      applicationErrorCode: null,
+      errorClass: "UnknownError",
+      httpStatus:
+        data && "httpStatus" in data && typeof data.httpStatus === "number"
+          ? data.httpStatus
+          : null,
+      trpcCode: data && "code" in data && typeof data.code === "string" ? data.code : null,
+    };
+  },
   api: {
     useUtils: () => ({
       events: { invalidate: jest.fn() },
@@ -344,11 +363,22 @@ jest.mock("@/lib/api", () => ({
           plannedQueryCalls.push(args);
           return {
             data: plannedSession,
+            fetchStatus: "idle",
             isLoading: false,
+            isError: Boolean(plannedSessionError),
             error: plannedSessionError,
             refetch: plannedSessionRefetchMock,
+            status: plannedSessionError ? "error" : plannedSession ? "success" : "pending",
           };
         },
+      },
+      previewScenario: {
+        useQuery: () => ({
+          data: null,
+          isError: false,
+          isLoading: false,
+          refetch: jest.fn(),
+        }),
       },
       completionCandidates: {
         useInfiniteQuery: () => ({
@@ -383,6 +413,21 @@ jest.mock("@/lib/api", () => ({
           isLoading: false,
           error: null,
           refetch: jest.fn(),
+        }),
+        useInfiniteQuery: () => ({
+          data: { pages: [{ items: [], nextCursor: null }] },
+          fetchNextPage: jest.fn(),
+          hasNextPage: false,
+          isError: false,
+          isFetchingNextPage: false,
+          refetch: jest.fn(),
+        }),
+      },
+    },
+    athleteIntelligence: {
+      getReadModel: {
+        useQuery: () => ({
+          data: { publishedState: { baseline: { stateRevision: 1 } } },
         }),
       },
     },
@@ -522,6 +567,51 @@ describe("event detail fallback screen", () => {
     expect(screen.queryByText("Planned session not found")).toBeNull();
     await fireEvent.press(screen.getByText("Retry"));
     expect(plannedSessionRefetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("emits only finite planned-session query lifecycle diagnostics for the Maestro fixture", async () => {
+    const originalE2E = process.env.EXPO_PUBLIC_MAESTRO_E2E;
+    process.env.EXPO_PUBLIC_MAESTRO_E2E = "1";
+    routeParams = {
+      id: "00000000-0000-4000-8000-000000000001",
+      resourceType: "planned_session",
+    };
+    plannedSessionError = {
+      data: { code: "INTERNAL_SERVER_ERROR", httpStatus: 500 },
+      message: "private failure detail",
+    };
+    const log = jest.spyOn(console, "log").mockImplementation();
+    try {
+      await renderNative(<EventDetailScreen />);
+      const calls = log.mock.calls.filter(
+        ([label]) => label === "[planned-session-detail-diagnostic]",
+      );
+      expect(calls).toHaveLength(1);
+      const record = JSON.parse(String(calls[0]?.[1]));
+      expect(record).toEqual({
+        createMode: false,
+        query: {
+          enabled: true,
+          error: {
+            applicationErrorCode: null,
+            errorClass: "UnknownError",
+            httpStatus: 500,
+            trpcCode: "INTERNAL_SERVER_ERROR",
+          },
+          fetchStatus: "idle",
+          isError: true,
+          status: "error",
+        },
+        resourceType: "planned_session",
+        routeId: "uuid",
+      });
+      expect(String(calls[0]?.[1])).not.toContain(routeParams.id);
+      expect(String(calls[0]?.[1])).not.toContain("private failure detail");
+    } finally {
+      log.mockRestore();
+      if (originalE2E === undefined) delete process.env.EXPO_PUBLIC_MAESTRO_E2E;
+      else process.env.EXPO_PUBLIC_MAESTRO_E2E = originalE2E;
+    }
   });
 
   it("renders planned-session not found only after a confirmed NOT_FOUND response", async () => {
