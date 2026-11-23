@@ -297,6 +297,38 @@ describe("withEphemeralTimedDuration", () => {
     ]);
   });
 
+  it("keeps a near-week repeat allocation exact and within every step bound", () => {
+    const { item, step } = repeatFixture();
+    const largeRepeatFixture = activityPlanStructureSchema.parse({
+      ...repeatedStructure,
+      items: Array.from({ length: 4 }, (_, index) => ({
+        ...item,
+        id: `33333333-3333-4333-8333-33333333333${index}`,
+        count: 2,
+        steps: [{ ...step, id: `44444444-4444-4444-8444-44444444444${index}` }],
+      })),
+    });
+    const result = withEphemeralTimedDuration({
+      structure: largeRepeatFixture,
+      targetDurationSeconds: ACTIVITY_PLAN_LIMITS.maxExplicitTimedDurationSeconds,
+    });
+    expect(result).toMatchObject({ status: "transformed" });
+    if (result.status !== "transformed") throw new Error("expected large repeat transform");
+    expect(totalDurationSeconds(result.structure)).toBe(
+      ACTIVITY_PLAN_LIMITS.maxExplicitTimedDurationSeconds,
+    );
+    expect(
+      result.structure.items
+        .flatMap((item) => (item.type === "step" ? [item] : item.steps))
+        .every(
+          (step) =>
+            step.duration.type === "time" &&
+            step.duration.seconds >= 1 &&
+            step.duration.seconds <= ACTIVITY_PLAN_LIMITS.maxStepDurationSeconds,
+        ),
+    ).toBe(true);
+  });
+
   it("returns unsupported instead of parsing an overlarge per-step duration", () => {
     expect(
       withEphemeralTimedDuration({

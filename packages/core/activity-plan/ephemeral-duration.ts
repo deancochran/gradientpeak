@@ -51,7 +51,9 @@ function allocateWeightedExtras(input: {
 }): number[] | undefined {
   const reachable = new Uint8Array(input.target + 1);
   reachable[0] = 1;
-  const selections: Uint16Array[] = [];
+  // A valid fallback can allocate up to 604,800 / 2 extra seconds to one
+  // repeat group, so Uint16Array would silently truncate reconstruction.
+  const selections: Uint32Array[] = [];
 
   for (const [groupIndex, group] of input.groups.entries()) {
     const capacity = Math.min(
@@ -75,7 +77,7 @@ function allocateWeightedExtras(input: {
         used[total] = (used[total - group.multiplier] ?? -1) + 1;
       }
     }
-    const selection = new Uint16Array(input.target + 1);
+    const selection = new Uint32Array(input.target + 1);
     for (let total = 0; total <= input.target; total += 1)
       if (next[total]) selection[total] = used[total] ?? 0;
     selections.push(selection);
@@ -313,6 +315,23 @@ export function withEphemeralTimedDuration(input: {
   }
 
   distributeGroupAdjustment({ amounts: additions, durations, fractions, groups, direction: "add" });
+  const transformedDurationSeconds = durations.reduce(
+    (sum, duration, durationIndex) =>
+      sum +
+      duration *
+        requiredAt(steps, durationIndex, "Timed duration transform lost a step").multiplier,
+    0,
+  );
+  if (
+    transformedDurationSeconds !== input.targetDurationSeconds ||
+    durations.some(
+      (duration) =>
+        !Number.isSafeInteger(duration) ||
+        duration < 1 ||
+        duration > ACTIVITY_PLAN_LIMITS.maxStepDurationSeconds,
+    )
+  )
+    return { status: "unsupported", reason: "target_out_of_range" };
   let index = 0;
   const items = input.structure.items.map((item) => {
     const apply = (step: ActivityPlanStep) => {
