@@ -356,7 +356,7 @@ describe("ActivityCard", () => {
     ["NaN elapsed duration", Number.NaN, "—"],
     ["infinite elapsed duration", Number.POSITIVE_INFINITY, "—"],
   ])("formats %s without reducing it to zero minutes", async (_name, value, expected) => {
-    const activity = {
+    const activity: ActivityDisplayModel = {
       ...createActivityDisplay(),
       metrics: [
         {
@@ -368,7 +368,7 @@ describe("ActivityCard", () => {
           reason: null,
         },
       ],
-    } as ActivityDisplayModel;
+    };
 
     await renderNative(<ProjectionActivityCard activity={activity} />);
 
@@ -377,7 +377,7 @@ describe("ActivityCard", () => {
   });
 
   it("keeps unavailable elapsed duration distinct from a recorded zero", async () => {
-    const activity = {
+    const activity: ActivityDisplayModel = {
       ...createActivityDisplay(),
       metrics: [
         {
@@ -389,7 +389,7 @@ describe("ActivityCard", () => {
           reason: "unavailable",
         },
       ],
-    } as ActivityDisplayModel;
+    };
 
     await renderNative(<ProjectionActivityCard activity={activity} />);
 
@@ -399,7 +399,7 @@ describe("ActivityCard", () => {
   });
 
   it("does not prefix invalid partial elapsed duration with an approximation marker", async () => {
-    const activity = {
+    const activity: ActivityDisplayModel = {
       ...createActivityDisplay(),
       metrics: [
         {
@@ -411,7 +411,7 @@ describe("ActivityCard", () => {
           reason: "partial",
         },
       ],
-    } as ActivityDisplayModel;
+    };
 
     await renderNative(<ProjectionActivityCard activity={activity} />);
 
@@ -420,19 +420,27 @@ describe("ActivityCard", () => {
   });
 
   it("does not let an unavailable status render a numeric elapsed duration", async () => {
-    const activity = {
+    const malformedUnavailableElapsedMetric: {
+      key: "elapsed_duration";
+      label: string;
+      status: "unavailable";
+      value: null;
+      unit: "seconds";
+      reason: "unavailable";
+    } = {
+      key: "elapsed_duration",
+      label: "Elapsed",
+      status: "unavailable",
+      value: null,
+      unit: "seconds",
+      reason: "unavailable",
+    };
+    // @ts-expect-error This runtime-boundary regression intentionally violates the unavailable metric contract.
+    malformedUnavailableElapsedMetric.value = 30;
+    const activity: ActivityDisplayModel = {
       ...createActivityDisplay(),
-      metrics: [
-        {
-          key: "elapsed_duration",
-          label: "Elapsed",
-          status: "unavailable",
-          value: 30,
-          unit: "seconds",
-          reason: "unavailable",
-        },
-      ],
-    } as ActivityDisplayModel;
+      metrics: [malformedUnavailableElapsedMetric],
+    };
 
     await renderNative(<ProjectionActivityCard activity={activity} />);
 
