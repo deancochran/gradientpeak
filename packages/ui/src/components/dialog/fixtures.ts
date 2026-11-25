@@ -1,5 +1,5 @@
 export const dialogFixtures = {
-  workoutDetails: {
+  activityDetails: {
     closeLabel: "Close",
     description: "Review the activity summary before publishing.",
     testId: "activity-details-dialog",

@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { defaultAthletePreferenceProfile } from "../../schemas/settings/profile_settings";
-import { buildGoalAnchoredProjectionPlan, canonicalizeMinimalTrainingPlanCreate } from "..";
+import { buildGoalAnchoredProjectionPlan, canonicalizeGoalProjectionInput } from "..";
 
 describe("buildGoalAnchoredProjectionPlan", () => {
   it("keeps a later A marathon out of a long global taper after an earlier B half marathon", () => {
     const plan = buildGoalAnchoredProjectionPlan({
-      minimalPlan: canonicalizeMinimalTrainingPlanCreate({
+      projectionInput: canonicalizeGoalProjectionInput({
         plan_start_date: "2026-04-12",
         goals: [
           {
@@ -36,7 +36,7 @@ describe("buildGoalAnchoredProjectionPlan", () => {
           },
         ],
       }),
-      startingCtl: 45,
+      startingLongTermLoad: 45,
     });
 
     const marathonTaper = plan.blocks.find(
@@ -52,14 +52,14 @@ describe("buildGoalAnchoredProjectionPlan", () => {
     expect((marathonTaper?.start_date ?? "") >= "2026-11-01").toBe(true);
     expect(marathonTaper?.end_date).toBe("2026-11-17");
     expect((marathonPeak?.end_date ?? "") < (marathonTaper?.start_date ?? "")).toBe(true);
-    expect(marathonPeak?.target_weekly_tss_range.max ?? 0).toBeGreaterThan(
-      halfPeak?.target_weekly_tss_range.max ?? 0,
+    expect(marathonPeak?.target_weekly_load_range.max ?? 0).toBeGreaterThan(
+      halfPeak?.target_weekly_load_range.max ?? 0,
     );
   });
 
   it("merges same-date goals into one shared event window", () => {
     const plan = buildGoalAnchoredProjectionPlan({
-      minimalPlan: canonicalizeMinimalTrainingPlanCreate({
+      projectionInput: canonicalizeGoalProjectionInput({
         plan_start_date: "2026-01-01",
         goals: [
           {
@@ -106,7 +106,7 @@ describe("buildGoalAnchoredProjectionPlan", () => {
 
   it("uses a micro taper for a lower-priority goal close before an A goal", () => {
     const plan = buildGoalAnchoredProjectionPlan({
-      minimalPlan: canonicalizeMinimalTrainingPlanCreate({
+      projectionInput: canonicalizeGoalProjectionInput({
         plan_start_date: "2026-01-01",
         goals: [
           {
@@ -150,7 +150,7 @@ describe("buildGoalAnchoredProjectionPlan", () => {
   });
 
   it("makes training preference sliders change phase shape and load targets", () => {
-    const minimalPlan = canonicalizeMinimalTrainingPlanCreate({
+    const projectionInput = canonicalizeGoalProjectionInput({
       plan_start_date: "2026-01-01",
       goals: [
         {
@@ -169,8 +169,8 @@ describe("buildGoalAnchoredProjectionPlan", () => {
       ],
     });
     const conservative = buildGoalAnchoredProjectionPlan({
-      minimalPlan,
-      startingCtl: 45,
+      projectionInput,
+      startingLongTermLoad: 45,
       preferenceProfile: {
         ...defaultAthletePreferenceProfile,
         dose_limits: {
@@ -195,8 +195,8 @@ describe("buildGoalAnchoredProjectionPlan", () => {
       },
     });
     const aggressive = buildGoalAnchoredProjectionPlan({
-      minimalPlan,
-      startingCtl: 45,
+      projectionInput,
+      startingLongTermLoad: 45,
       preferenceProfile: {
         ...defaultAthletePreferenceProfile,
         dose_limits: {
@@ -226,8 +226,8 @@ describe("buildGoalAnchoredProjectionPlan", () => {
     const conservativeBase = conservative.blocks.find((block) => block.phase === "base");
     const aggressiveBase = aggressive.blocks.find((block) => block.phase === "base");
 
-    expect(aggressivePeak?.target_weekly_tss_range.max ?? 0).toBeGreaterThan(
-      conservativePeak?.target_weekly_tss_range.max ?? 0,
+    expect(aggressivePeak?.target_weekly_load_range.max ?? 0).toBeGreaterThan(
+      conservativePeak?.target_weekly_load_range.max ?? 0,
     );
     expect(
       conservativeBase
@@ -248,7 +248,7 @@ describe("buildGoalAnchoredProjectionPlan", () => {
       },
     };
     const shortGoalPlan = buildGoalAnchoredProjectionPlan({
-      minimalPlan: canonicalizeMinimalTrainingPlanCreate({
+      projectionInput: canonicalizeGoalProjectionInput({
         plan_start_date: "2026-01-01",
         goals: [
           {
@@ -269,7 +269,7 @@ describe("buildGoalAnchoredProjectionPlan", () => {
       preferenceProfile: basePreferenceProfile,
     });
     const marathonPlan = buildGoalAnchoredProjectionPlan({
-      minimalPlan: canonicalizeMinimalTrainingPlanCreate({
+      projectionInput: canonicalizeGoalProjectionInput({
         plan_start_date: "2026-01-01",
         goals: [
           {

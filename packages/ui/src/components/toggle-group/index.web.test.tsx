@@ -7,8 +7,9 @@ import { ToggleGroup, ToggleGroupItem } from "./index.web";
 describe("ToggleGroup web", () => {
   it("maps normalized test props for the root and items", () => {
     const onValueChange = vi.fn();
-    const firstOption = toggleGroupFixtures.viewMode.options[0]!;
-    const secondOption = toggleGroupFixtures.viewMode.options[1]!;
+    const [firstOption, secondOption] = toggleGroupFixtures.viewMode.options;
+    if (!(firstOption && secondOption))
+      throw new Error("Toggle-group fixture requires two options");
 
     renderWeb(
       <ToggleGroup
