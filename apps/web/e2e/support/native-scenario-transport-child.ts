@@ -6,7 +6,10 @@ import {
   type ServerResponse,
   request as upstreamRequest,
 } from "node:http";
-import { requireNativeScenarioTransportGuard } from "./native-scenario-transport";
+import {
+  type NativeScenarioTransportObservation,
+  requireNativeScenarioTransportGuard,
+} from "./native-scenario-transport";
 
 const MAX_REQUEST_BYTES = 64 * 1024;
 const MAX_RESPONSE_BYTES = 1024 * 1024;
@@ -30,11 +33,32 @@ try {
   process.exit(1);
 }
 
-type Observation = {
-  dropped: boolean;
-  requests: Array<{ fingerprint: string; operationId: string }>;
+const MAX_ATTEMPTS = 8;
+const TRPC_ERROR_CODES = new Set([
+  "BAD_REQUEST",
+  "UNAUTHORIZED",
+  "FORBIDDEN",
+  "NOT_FOUND",
+  "METHOD_NOT_SUPPORTED",
+  "TIMEOUT",
+  "CONFLICT",
+  "PRECONDITION_FAILED",
+  "PAYLOAD_TOO_LARGE",
+  "UNPROCESSABLE_CONTENT",
+  "TOO_MANY_REQUESTS",
+  "CLIENT_CLOSED_REQUEST",
+  "INTERNAL_SERVER_ERROR",
+  "NOT_IMPLEMENTED",
+  "BAD_GATEWAY",
+  "SERVICE_UNAVAILABLE",
+  "GATEWAY_TIMEOUT",
+]);
+const observation: NativeScenarioTransportObservation = {
+  attempts: [],
+  dropped: false,
+  requests: [],
+  unmatchedApplyRequests: 0,
 };
-const observation: Observation = { dropped: false, requests: [] };
 
 function persistObservation() {
   writeFileSync(configuredObservationPath, JSON.stringify(observation), { flag: "w", mode: 0o600 });
@@ -81,6 +105,41 @@ function appliedResponse(statusCode: number, body: Buffer) {
   }
 }
 
+function trpcErrorCode(body: Buffer) {
+  try {
+    const parsed = JSON.parse(body.toString("utf8")) as Array<{
+      error?: { data?: { code?: unknown } };
+    }>;
+    const code = parsed[0]?.error?.data?.code;
+    return typeof code === "string" && TRPC_ERROR_CODES.has(code) ? code : undefined;
+  } catch {
+    return;
+  }
+}
+
+function recordAttempt(identity: NonNullable<ReturnType<typeof applyIdentity>>) {
+  if (observation.attempts.length >= MAX_ATTEMPTS) return;
+  const attempt = { ...identity };
+  observation.attempts.push(attempt);
+  persistObservation();
+  return attempt;
+}
+
+function finishAttempt(
+  attempt: NativeScenarioTransportObservation["attempts"][number] | undefined,
+  terminal: NonNullable<NativeScenarioTransportObservation["attempts"][number]["terminal"]>,
+) {
+  if (!attempt || attempt.terminal) return;
+  attempt.terminal = terminal;
+  persistObservation();
+}
+
+function upstreamErrorCode(error: NodeJS.ErrnoException) {
+  if (error.code === "ECONNREFUSED") return "connection-refused";
+  if (error.code === "ECONNRESET") return "connection-reset";
+  return "other";
+}
+
 function collect(request: IncomingMessage, limit: number) {
   return new Promise<Buffer | undefined>((resolve) => {
     const chunks: Buffer[] = [];
@@ -119,23 +178,36 @@ async function forward(request: IncomingMessage, response: ServerResponse) {
     response.end("Acceptance runner ownership is unavailable.");
     return;
   }
+  let isApplyRequest = false;
+  try {
+    isApplyRequest =
+      request.method === "POST" &&
+      new URL(request.url ?? "/", "http://loopback").pathname === APPLY_PATH;
+  } catch {
+    response.statusCode = 400;
+    response.end();
+    return;
+  }
   const body = await collect(request, MAX_REQUEST_BYTES);
   if (!body) {
+    if (isApplyRequest) {
+      observation.unmatchedApplyRequests++;
+      persistObservation();
+    }
     response.statusCode = 413;
     response.end();
     return;
   }
   let matching: ReturnType<typeof applyIdentity>;
-  try {
-    matching =
-      request.method === "POST" &&
-      new URL(request.url ?? "/", "http://loopback").pathname === APPLY_PATH
-        ? applyIdentity(body)
-        : undefined;
-  } catch {
-    response.statusCode = 400;
-    response.end();
-    return;
+  let attempt: NativeScenarioTransportObservation["attempts"][number] | undefined;
+  if (isApplyRequest) {
+    matching = applyIdentity(body);
+    if (!matching) {
+      observation.unmatchedApplyRequests++;
+      persistObservation();
+    } else {
+      attempt = recordAttempt(matching);
+    }
   }
   let upstream: ReturnType<typeof upstreamRequest>;
   try {
@@ -151,12 +223,17 @@ async function forward(request: IncomingMessage, response: ServerResponse) {
       async (upstreamResponse) => {
         const responseBody = await collect(upstreamResponse, MAX_RESPONSE_BYTES);
         if (!responseBody) {
+          if (matching)
+            finishAttempt(attempt, {
+              classification: "response-unavailable",
+              httpStatus: upstreamResponse.statusCode ?? 502,
+            });
           response.statusCode = 502;
           response.end();
           return;
         }
         if (matching) {
-          observation.requests.push(matching);
+          observation.requests.push({ ...matching });
           persistObservation();
         }
         if (
@@ -165,9 +242,23 @@ async function forward(request: IncomingMessage, response: ServerResponse) {
           appliedResponse(upstreamResponse.statusCode ?? 500, responseBody)
         ) {
           observation.dropped = true;
+          finishAttempt(attempt, {
+            classification: "response",
+            httpStatus: upstreamResponse.statusCode ?? 500,
+            relay: "dropped-after-upstream-applied",
+          });
           persistObservation();
           response.socket?.destroy();
           return;
+        }
+        if (matching) {
+          const errorCode = trpcErrorCode(responseBody);
+          finishAttempt(attempt, {
+            classification: "response",
+            httpStatus: upstreamResponse.statusCode ?? 502,
+            relay: "relayed",
+            ...(errorCode ? { trpcErrorCode: errorCode } : {}),
+          });
         }
         response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
         response.end(responseBody);
@@ -178,8 +269,16 @@ async function forward(request: IncomingMessage, response: ServerResponse) {
     response.end();
     return;
   }
-  upstream.on("timeout", () => upstream.destroy());
-  upstream.on("error", () => {
+  upstream.on("timeout", () => {
+    if (matching) finishAttempt(attempt, { classification: "upstream-timeout" });
+    upstream.destroy();
+  });
+  upstream.on("error", (error: NodeJS.ErrnoException) => {
+    if (matching)
+      finishAttempt(attempt, {
+        classification: "upstream-error",
+        upstreamErrorCode: upstreamErrorCode(error),
+      });
     if (!response.headersSent) {
       response.statusCode = 502;
       response.end();

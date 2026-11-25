@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   invalidations: {
     activityPlans: vi.fn(async () => undefined),
     calendar: vi.fn(async () => undefined),
+    ledger: vi.fn(async () => undefined),
     plannedSessions: vi.fn(async () => undefined),
     state: vi.fn(async () => undefined),
   },
@@ -36,6 +37,7 @@ vi.mock("../../lib/api/client", () => ({
       activityPlans: { invalidate: mocks.invalidations.activityPlans },
       calendar: { invalidate: mocks.invalidations.calendar },
       plannedSessions: { invalidate: mocks.invalidations.plannedSessions },
+      trainingPlans: { getPlanningLedger: { invalidate: mocks.invalidations.ledger } },
     }),
     activityPlans: {
       list: {
@@ -353,6 +355,17 @@ describe("SessionScenarioPreview", () => {
     expect(localStorage.getItem(actorAKey)).not.toBeNull();
   });
 
+  it("invalidates the mounted planning ledger after a durable apply", async () => {
+    mocks.previewResult.data = availablePreview();
+    mocks.apply.mockResolvedValue({ status: "applied", action: "repointed" });
+    renderPreview();
+    fireEvent.click(screen.getByRole("button", { name: "Apply this scenario" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm apply" }));
+
+    await screen.findByText(/Applied: repointed. The durable session result is now shown./i);
+    expect(mocks.invalidations.ledger).toHaveBeenCalledOnce();
+  });
+
   it("does not show actor A's stale result or refetch actor B's preview after invalidation", async () => {
     mocks.previewResult.data = availablePreview();
     mocks.apply.mockResolvedValue({ status: "stale", reason: "plan_revision" });
@@ -368,6 +381,7 @@ describe("SessionScenarioPreview", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm apply" }));
     fireEvent.click(screen.getByRole("button", { name: "Check or retry this change" }));
     await waitFor(() => expect(mocks.invalidations.activityPlans).toHaveBeenCalledOnce());
+    expect(mocks.invalidations.ledger).toHaveBeenCalledOnce();
 
     mocks.actorId = "00000000-0000-4000-8000-000000000002";
     rerender(

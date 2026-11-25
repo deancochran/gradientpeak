@@ -1,4 +1,8 @@
-import { getCalendarDateInIanaZone, scheduledDateTimeToIsoInstant } from "@repo/core/calendar";
+import {
+  formatIsoInstantInIanaZone,
+  getCalendarDateInIanaZone,
+  scheduledDateTimeToIsoInstant,
+} from "@repo/core/calendar";
 import { format } from "date-fns";
 
 export function getDetectedDeviceTimeZone(): string | null {
@@ -22,22 +26,6 @@ function getFormatter(timeZone: string, options: Intl.DateTimeFormatOptions) {
   } catch {
     return new Intl.DateTimeFormat("en-US", options);
   }
-}
-
-function getParts(instant: Date, timeZone: string) {
-  return Object.fromEntries(
-    getFormatter(timeZone, {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hourCycle: "h23",
-    })
-      .formatToParts(instant)
-      .filter((part) => part.type !== "literal")
-      .map((part) => [part.type, Number(part.value)]),
-  ) as Record<"year" | "month" | "day" | "hour" | "minute", number>;
 }
 
 export function getEventScheduledDate(event: {
@@ -73,10 +61,18 @@ export function eventDateForEditor(event: {
   if (!event.timezone) return instant;
 
   try {
-    const parts = getParts(instant, event.timezone);
-    return new Date(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, 0, 0);
+    const wallTime = formatIsoInstantInIanaZone(instant.toISOString(), event.timezone);
+    return dateKeyToLocalDate(
+      wallTime.slice(0, 10),
+      Number(wallTime.slice(11, 13)),
+      Number(wallTime.slice(14, 16)),
+    );
   } catch {
-    return instant;
+    return dateKeyToLocalDate(
+      format(instant, "yyyy-MM-dd"),
+      instant.getHours(),
+      instant.getMinutes(),
+    );
   }
 }
 

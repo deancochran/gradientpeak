@@ -8,6 +8,23 @@ import { requireDisposableAcceptanceEnvironment } from "./disposable-acceptance-
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const OBSERVATION_FILE = /^native-scenario-transport-\d+-[0-9a-f-]{36}\.json$/;
 
+export type NativeScenarioTransportObservation = {
+  attempts: Array<{
+    fingerprint: string;
+    operationId: string;
+    terminal?: {
+      classification: "response" | "response-unavailable" | "upstream-error" | "upstream-timeout";
+      httpStatus?: number;
+      relay?: "dropped-after-upstream-applied" | "relayed";
+      trpcErrorCode?: string;
+      upstreamErrorCode?: "connection-refused" | "connection-reset" | "other";
+    };
+  }>;
+  dropped: boolean;
+  requests: Array<{ fingerprint: string; operationId: string }>;
+  unmatchedApplyRequests: number;
+};
+
 export type NativeScenarioTransport = {
   origin: string;
   observationPath: string;

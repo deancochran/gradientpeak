@@ -228,6 +228,7 @@ function SessionScenarioPreviewContents({
             utils.plannedSessions.invalidate(),
             utils.activityPlans.invalidate(),
             utils.calendar.invalidate(),
+            utils.trainingPlans.getPlanningLedger.invalidate(),
             utils.athleteIntelligence.getReadModel.invalidate(),
           ]);
           if (!isCurrentSubmission()) return;
@@ -244,6 +245,7 @@ function SessionScenarioPreviewContents({
           utils.plannedSessions.invalidate(),
           utils.activityPlans.invalidate(),
           utils.calendar.invalidate(),
+          utils.trainingPlans.getPlanningLedger.invalidate(),
           utils.athleteIntelligence.getReadModel.invalidate(),
         ]).then(() => {
           if (!isCurrentSubmission()) return;
