@@ -238,6 +238,10 @@ test("coach reviews linked completion evidence and returns to the same athlete w
 
   const completedActivities = page.getByRole("list", { name: "Completed activities" });
   await expect(completedActivities.getByRole("listitem")).toHaveCount(2);
+  await expect(completedActivities.getByText("Completed in full")).toBeVisible();
+  await expect(completedActivities.getByText("Recorded completion")).toBeVisible();
+  await expect(completedActivities.getByText("Completed partially")).toBeVisible();
+  await expect(completedActivities.getByText("Manual completion")).toBeVisible();
   await expect(completedActivities).toContainText(`Planned ${recordedDate}`);
   await expect(completedActivities).toContainText(`Planned ${partialDate}`);
   await expect(completedActivities).toContainText("60 min");

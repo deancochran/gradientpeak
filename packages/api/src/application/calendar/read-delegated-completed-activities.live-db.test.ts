@@ -446,6 +446,7 @@ describe("delegated completed activities live DB projection", () => {
           id: missingCategoryActivityId,
           profile_id: athleteId,
           name: "Sensitive missing category name",
+          entry_provenance: "unsupported-source",
           started_at: new Date("2026-11-01T10:00:00.000Z"),
           finished_at: new Date("2026-11-01T11:00:00.000Z"),
           elapsed_ms: 3_600_000,
@@ -525,6 +526,10 @@ describe("delegated completed activities live DB projection", () => {
         profileId: athleteId,
       }),
     ]);
+    await db
+      .update(plannedSessions)
+      .set({ completion_outcome: "partial" })
+      .where(eq(plannedSessions.id, manualSessionId));
     await createSession({
       activityPlanId: athletePlanId,
       planningDate: "2026-10-31",
@@ -551,6 +556,8 @@ describe("delegated completed activities live DB projection", () => {
         {
           activityCategory: "run",
           activityId: importedRunId,
+          completionOutcome: "full",
+          completionSource: "recorded",
           distanceMeters: 10_000,
           evidenceVersion: expect.any(String),
           elapsedMs: 3_600_000,
@@ -560,6 +567,8 @@ describe("delegated completed activities live DB projection", () => {
         {
           activityCategory: "bike",
           activityId: importedBikeId,
+          completionOutcome: "full",
+          completionSource: "recorded",
           distanceMeters: 40_000,
           evidenceVersion: expect.any(String),
           elapsedMs: 7_200_000,
@@ -569,6 +578,8 @@ describe("delegated completed activities live DB projection", () => {
         {
           activityCategory: "strength",
           activityId: manualActivityId,
+          completionOutcome: "partial",
+          completionSource: "manual",
           distanceMeters: null,
           evidenceVersion: expect.any(String),
           elapsedMs: null,
@@ -578,6 +589,8 @@ describe("delegated completed activities live DB projection", () => {
         {
           activityCategory: null,
           activityId: missingCategoryActivityId,
+          completionOutcome: "full",
+          completionSource: "unavailable",
           distanceMeters: 5_000,
           evidenceVersion: expect.any(String),
           elapsedMs: 3_600_000,
@@ -589,6 +602,8 @@ describe("delegated completed activities live DB projection", () => {
     expect(Object.keys(response.items[0] ?? {}).sort()).toEqual([
       "activityCategory",
       "activityId",
+      "completionOutcome",
+      "completionSource",
       "distanceMeters",
       "elapsedMs",
       "evidenceVersion",
@@ -667,16 +682,23 @@ describe("delegated completed activities live DB projection", () => {
       items: [],
     });
 
-    // A completion relink uses the same athlete fence as acknowledgement, so
-    // an acknowledgement built from the old queue row is stale afterwards.
+    // A durable outcome/relink uses the same athlete fence as acknowledgement,
+    // so a review built from the old queue row is stale afterwards.
     await withProfileFencedRepeatableReadSnapshot(db, athleteId, async (tx) => {
       await tx
         .update(plannedSessions)
-        .set({ linked_at: new Date("2026-11-05T12:00:00.000Z") })
+        .set({
+          completion_outcome: "partial",
+          linked_at: new Date("2026-11-05T12:00:00.000Z"),
+        })
         .where(eq(plannedSessions.id, sessionId));
     });
     const changed = await coach.calendar.coachAthleteCompletedActivities(request);
     expect(changed.items).toHaveLength(1);
+    expect(changed.items[0]).toMatchObject({
+      completionOutcome: "partial",
+      completionSource: "recorded",
+    });
     const changedEvidenceVersion = changed.items[0]?.evidenceVersion;
     if (!changedEvidenceVersion) throw new Error("Expected requeued completion evidence");
     expect(changedEvidenceVersion).not.toEqual(evidenceVersion);
