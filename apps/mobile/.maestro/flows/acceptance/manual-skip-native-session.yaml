@@ -51,6 +51,10 @@ name: Open the visible scheduled session from Calendar and explicitly skip it wi
     visible:
       id: planning-ledger-screen
     timeout: 30000
+# The selected-day header is initially visible. Prove continuity before chart
+# scrolling changes the viewport, then retain that original ledger state.
+- assertVisible: ${MAESTRO_ACCEPTANCE_LEDGER_DATE}
+- takeScreenshot: planned-session-skip-return-ledger
 - scrollUntilVisible:
     element:
       id: planning-ledger-training-state
@@ -60,10 +64,6 @@ name: Open the visible scheduled session from Calendar and explicitly skip it wi
 - assertVisible: "—"
 - assertVisible: "Unavailable"
 - takeScreenshot: planning-ledger-no-evidence-training-state
-# The detail route returns to the original day ledger. Retain the proof before
-# the date-context assertion so a failed sentinel remains debuggable.
-- takeScreenshot: planned-session-skip-return-ledger
-- assertVisible: ${MAESTRO_ACCEPTANCE_LEDGER_DATE}
 - pressKey: back
 - extendedWaitUntil:
     visible:

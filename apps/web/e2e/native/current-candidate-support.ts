@@ -35,36 +35,55 @@ type PlanningLedgerTrainingState = {
   series: Array<{ actual: { fatigue: number; fitness: number; form: number } | null }>;
 };
 
-function trainingStateFrom(value: unknown): PlanningLedgerTrainingState | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const record = value as Record<string, unknown>;
-  if (record.contractVersion === "planning-ledger-v3" && record.trainingState) {
-    return record.trainingState as PlanningLedgerTrainingState;
+type PlanningLedgerResponse = {
+  anchorDate: string;
+  contractVersion: "planning-ledger-v3";
+  period: "day" | "month" | "week";
+  periodEnd: string;
+  periodStart: string;
+  trainingState: PlanningLedgerTrainingState;
+};
+
+function planningLedgerFrom(value: unknown): PlanningLedgerResponse {
+  if (!Array.isArray(value) || value.length !== 1)
+    throw new Error("Real planning ledger response was not a single tRPC result");
+  const json = (value[0] as { result?: { data?: { json?: unknown } } } | undefined)?.result?.data
+    ?.json;
+  if (!json || typeof json !== "object")
+    throw new Error("Real planning ledger response had no JSON result");
+  const ledger = json as Partial<PlanningLedgerResponse>;
+  if (
+    ledger.contractVersion !== "planning-ledger-v3" ||
+    !ledger.trainingState ||
+    typeof ledger.anchorDate !== "string" ||
+    typeof ledger.period !== "string" ||
+    typeof ledger.periodStart !== "string" ||
+    typeof ledger.periodEnd !== "string"
+  ) {
+    throw new Error("Real planning ledger response did not match the planning-ledger-v3 contract");
   }
-  for (const child of Object.values(record)) {
-    const found = trainingStateFrom(child);
-    if (found) return found;
-  }
-  return undefined;
+  return ledger as PlanningLedgerResponse;
 }
 
 async function expectNoTrainingStateEvidence(actor: AuthenticatedE2EActor, today: string) {
-  const page = await actor.createPage(`/calendar/day/${today}`);
-  try {
-    const ledgerResponse = page.waitForResponse((response) =>
-      response.url().includes("trainingPlans.getPlanningLedger"),
-    );
-    await page.reload();
-    const trainingState = trainingStateFrom(await (await ledgerResponse).json());
-    if (!trainingState) throw new Error("Real planning ledger response was unavailable");
-    expect(trainingState.actual).toEqual({
-      fatigue: { observedOn: null, source: null, status: "unavailable", value: null },
-      fitness: { observedOn: null, source: null, status: "unavailable", value: null },
-    });
-    expect(trainingState.series.every((point) => point.actual === null)).toBe(true);
-  } finally {
-    await page.close();
-  }
+  const request = { anchorDate: today, period: "day" } as const;
+  const input = encodeURIComponent(JSON.stringify({ 0: { json: request } }));
+  const response = await actor.request.get(
+    `/api/trpc/trainingPlans.getPlanningLedger?batch=1&input=${input}`,
+  );
+  expect(response.ok(), `Planning ledger request failed with HTTP ${response.status()}`).toBe(true);
+  const ledger = planningLedgerFrom(await response.json());
+  expect(ledger).toMatchObject({
+    anchorDate: today,
+    period: "day",
+    periodEnd: today,
+    periodStart: today,
+  });
+  expect(ledger.trainingState.actual).toEqual({
+    fatigue: { observedOn: null, source: null, status: "unavailable", value: null },
+    fitness: { observedOn: null, source: null, status: "unavailable", value: null },
+  });
+  expect(ledger.trainingState.series.every((point) => point.actual === null)).toBe(true);
 }
 
 export function preserveMaestroCaptures(testInfo: TestInfo, captures: readonly string[]) {
@@ -272,10 +291,8 @@ export async function completeManualNativeAcceptance({
     MAESTRO_ACCEPTANCE_SESSION_DAY: String(Number(today.slice(8, 10))),
     MAESTRO_ACCEPTANCE_SESSION_ID: manualSession.id,
   });
-  const [detailCaptured, completionCaptured, skipReturnCaptured] = preserveMaestroCaptures(
-    testInfo,
-    manualCaptures,
-  );
+  const [detailCaptured, completionCaptured, skipReturnCaptured, skipTrainingStateCaptured] =
+    preserveMaestroCaptures(testInfo, manualCaptures);
   writeFileSync(
     testInfo.outputPath("maestro-manual.log"),
     `${manualResult.stdout ?? ""}\n${manualResult.stderr ?? ""}`,
@@ -301,6 +318,10 @@ export async function completeManualNativeAcceptance({
   if (!completedSession) throw new Error("Native manual action did not retain its planned session");
   if (outcome === "skip") {
     expect(skipReturnCaptured, "Skip flow must retain its ledger-return capture").toBe(true);
+    expect(
+      skipTrainingStateCaptured,
+      "Skip flow must retain its unavailable training-state capture",
+    ).toBe(true);
     expect(completedSession).toMatchObject({
       status: "completed",
       completed_activity_id: null,
