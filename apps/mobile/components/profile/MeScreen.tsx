@@ -283,6 +283,15 @@ export default function MeScreen({ showHeader = true }: { showHeader?: boolean }
             testID="profile-tab-integrations"
           />
           <SettingItem
+            type="button"
+            label="Coaching permissions"
+            description="Choose which assigned coaches can add a copy of their activity plans to your schedule."
+            buttonLabel="Manage"
+            variant="outline"
+            onPress={() => navigateTo(ROUTES.COACHING_PERMISSIONS)}
+            testID="profile-tab-coaching-permissions"
+          />
+          <SettingItem
             type="toggle"
             label="Dark Mode"
             description="Use the dark app appearance."
