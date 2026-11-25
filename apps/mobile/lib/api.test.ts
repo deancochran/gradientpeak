@@ -1,4 +1,6 @@
 import { CONTRACT_EPOCH_HEADER, CURRENT_CONTRACT_EPOCH } from "@repo/api/client";
+import { createVanillaApiClient } from "@repo/api/react";
+import { TRPCClientError } from "@trpc/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { logMobileAction } from "@/lib/logging/mobile-action-log";
 import {
@@ -6,6 +8,7 @@ import {
   createMobileHeaders,
   fetchWithTimeout,
   getSafeApiErrorDiagnostic,
+  isTrustedNonJson503TransportError,
   reportMobileApiError,
 } from "./api";
 
@@ -68,6 +71,65 @@ describe("fetchWithTimeout", () => {
       "failure",
       expect.objectContaining({ classification: "local_timeout" }),
     );
+  });
+
+  it("marks only an actual non-JSON 503 before the tRPC batch decoder loses its response", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("gateway unavailable", {
+        status: 503,
+        headers: { "content-type": "text/plain" },
+      }),
+    );
+    const client = createVanillaApiClient({
+      url: "https://example.test/api/trpc",
+      fetch: fetchWithTimeout,
+    });
+    const result = await Promise.allSettled([
+      client.goals.getById.query({ id: "11111111-1111-4111-8111-111111111111" }),
+      client.athleteIntelligence.getGoalAssessment.query({
+        goalId: "11111111-1111-4111-8111-111111111111",
+      }),
+      client.athleteIntelligence.getGoalProgress.query({
+        goalId: "11111111-1111-4111-8111-111111111111",
+      }),
+      client.athleteIntelligence.getThresholdOverview.query({ historyLimit: 100 }),
+    ]);
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    for (const operation of result) {
+      expect(operation.status).toBe("rejected");
+      if (operation.status !== "rejected") continue;
+      expect(operation.reason).toBeInstanceOf(TRPCClientError);
+      expect(getSafeApiErrorDiagnostic(operation.reason)).toEqual({
+        applicationErrorCode: null,
+        errorClass: "TRPCClientError",
+        httpStatus: null,
+        trpcCode: null,
+      });
+      expect(isTrustedNonJson503TransportError(operation.reason)).toBe(true);
+    }
+  });
+
+  it("does not mark JSON 503 responses, forged markers, or plain syntax failures as trusted", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response('{"error":"not parsed here"}', {
+        status: 503,
+        headers: { "content-type": "application/json; charset=utf-8" },
+      }),
+    );
+
+    await expect(
+      fetchWithTimeout("https://example.test/api/trpc/goals.getById"),
+    ).resolves.toMatchObject({
+      status: 503,
+    });
+    expect(
+      isTrustedNonJson503TransportError({
+        name: "TRPCClientError",
+        cause: { httpStatus: 503, name: "TrustedNonJson503TransportError" },
+      }),
+    ).toBe(false);
+    expect(isTrustedNonJson503TransportError(TRPCClientError.from(new SyntaxError()))).toBe(false);
   });
 
   it("preserves the manually supplied auth cookie and omits native cookie-jar credentials", async () => {

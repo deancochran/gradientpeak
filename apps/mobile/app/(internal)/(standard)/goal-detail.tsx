@@ -30,7 +30,7 @@ import {
 } from "@/components/shared/detail";
 import { GoalCard } from "@/components/shared/GoalCard";
 import { ErrorState } from "@/components/shared/ScreenState";
-import { api, getSafeApiErrorDiagnostic } from "@/lib/api";
+import { api, getSafeApiErrorDiagnostic, isTrustedNonJson503TransportError } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { omitUndefined } from "@/lib/omitUndefined";
@@ -47,8 +47,8 @@ function isTransientGoalRefreshFailure(error: unknown) {
   const diagnostic = getSafeApiErrorDiagnostic(error);
   return (
     diagnostic.errorClass === "TRPCClientError" &&
-    diagnostic.httpStatus === 503 &&
-    diagnostic.trpcCode === "INTERNAL_SERVER_ERROR"
+    ((diagnostic.httpStatus === 503 && diagnostic.trpcCode === "INTERNAL_SERVER_ERROR") ||
+      isTrustedNonJson503TransportError(error))
   );
 }
 
@@ -194,7 +194,7 @@ export default function GoalDetailScreen() {
 
   if (goalQuery.isError && !retainsCachedGoalOnRefreshFailure) {
     return (
-      <DetailScaffold>
+      <DetailScaffold headerRight={() => null}>
         <ErrorState
           description="Check your connection and try again."
           onAction={() => void goalQuery.refetch()}

@@ -5,6 +5,7 @@ import { createServer, type IncomingMessage, type RequestListener, type Server }
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { createVanillaApiClient } from "@repo/api/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { createDisposableAcceptanceLease } from "./disposable-acceptance-lease";
 import { type NativeGoalTransport, startNativeGoalTransport } from "./native-goal-transport";
@@ -89,6 +90,38 @@ async function start(
   transports.push(transport);
   return transport;
 }
+
+function finiteTrpcDecode(error: unknown) {
+  const value = error && typeof error === "object" ? error : undefined;
+  const data =
+    value && "data" in value && value.data && typeof value.data === "object"
+      ? value.data
+      : undefined;
+  const meta =
+    value && "meta" in value && value.meta && typeof value.meta === "object"
+      ? value.meta
+      : undefined;
+  const response =
+    meta && "response" in meta && meta.response && typeof meta.response === "object"
+      ? meta.response
+      : undefined;
+  const cause =
+    value && "cause" in value && value.cause && typeof value.cause === "object"
+      ? value.cause
+      : undefined;
+  return {
+    errorClass: value?.constructor?.name ?? null,
+    dataCode: data && "code" in data && typeof data.code === "string" ? data.code : null,
+    dataHttpStatus:
+      data && "httpStatus" in data && typeof data.httpStatus === "number" ? data.httpStatus : null,
+    metaResponseStatus:
+      response && "status" in response && typeof response.status === "number"
+        ? response.status
+        : null,
+    causeClass: cause?.constructor?.name ?? null,
+  };
+}
+
 afterEach(async () => {
   await Promise.all(transports.splice(0).map((transport) => transport.stop()));
   await Promise.all(
@@ -210,6 +243,46 @@ describe("native goal transport", () => {
         hasThreshold: true,
         targetGoalMatched: true,
         status: 206,
+      },
+    ]);
+  });
+
+  it("shows the real client decoding of the strict plain-text Goal Detail 503", async () => {
+    const port = await upstream((_request, response) => response.end());
+    const transport = await start(port, env(), "detail-refresh");
+    const client = createVanillaApiClient({ url: `${transport.origin}/api/trpc` });
+
+    const results = await Promise.allSettled([
+      client.goals.getById.query({ id: goalId }),
+      client.athleteIntelligence.getGoalAssessment.query({ goalId }),
+      client.athleteIntelligence.getGoalProgress.query({ goalId }),
+      client.athleteIntelligence.getThresholdOverview.query({ historyLimit: 100 }),
+    ]);
+
+    expect(results).toHaveLength(4);
+    for (const result of results) {
+      expect(result.status).toBe("rejected");
+      if (result.status !== "rejected") continue;
+      expect(finiteTrpcDecode(result.reason)).toEqual({
+        errorClass: "TRPCClientError",
+        dataCode: null,
+        dataHttpStatus: null,
+        metaResponseStatus: null,
+        causeClass: "SyntaxError",
+      });
+    }
+    expect(await transport.observations()).toEqual({ blocked: 1, forwarded: 0 });
+    expect(await transport.trace()).toMatchObject([
+      {
+        procedures: [
+          "goals.getById",
+          "athleteIntelligence.getGoalAssessment",
+          "athleteIntelligence.getGoalProgress",
+          "athleteIntelligence.getThresholdOverview",
+        ],
+        batchSize: 4,
+        targetGoalMatched: true,
+        status: 503,
       },
     ]);
   });

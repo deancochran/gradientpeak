@@ -44,6 +44,20 @@ export class ApiRequestTimeoutError extends Error {
   }
 }
 
+class TrustedNonJson503TransportError extends Error {
+  readonly httpStatus = 503;
+
+  constructor() {
+    super("Non-JSON HTTP 503 response");
+    this.name = "TrustedNonJson503TransportError";
+  }
+}
+
+function isJsonContentType(contentType: string | null) {
+  const mediaType = contentType?.split(";", 1)[0]?.trim().toLowerCase();
+  return mediaType === "application/json" || mediaType?.endsWith("+json") === true;
+}
+
 function isNativeNetworkTimeoutError(error: unknown): error is TypeError {
   return error instanceof TypeError && error.message === "Network request timed out";
 }
@@ -112,6 +126,10 @@ export const fetchWithTimeout: TrpcCompatibleFetch = async (input, init) => {
         signal: controller.signal,
       }),
     );
+
+    if (response.status === 503 && !isJsonContentType(response.headers.get("content-type"))) {
+      throw new TrustedNonJson503TransportError();
+    }
 
     logMobileAction(action, response.ok ? "success" : "failure", {
       channel: "api",
@@ -214,6 +232,13 @@ export function getSafeApiErrorDiagnostic(error: unknown): SafeApiErrorDiagnosti
         : null,
     trpcCode: typeof code === "string" && SAFE_TRPC_ERROR_CODES.has(code) ? code : null,
   };
+}
+
+/** Identifies only the private non-JSON 503 marker emitted by fetchWithTimeout. */
+export function isTrustedNonJson503TransportError(error: unknown) {
+  if (!error || typeof error !== "object" || !("name" in error) || error.name !== "TRPCClientError")
+    return false;
+  return "cause" in error && error.cause instanceof TrustedNonJson503TransportError;
 }
 
 function isExpectedApiError(diagnostic: SafeApiErrorDiagnostic) {
