@@ -270,10 +270,18 @@ export function TrainingLoadPath({
                 />
               </div>
             </div>
+            <TrainingLoadChart
+              fitness={projection.fitness}
+              fitnessHistory={projection.fitnessHistory}
+              goalMarkers={projection.goalMarkers}
+              goalMarkersTruncated={projection.goalMarkersTruncated}
+              days={timeline.days}
+              {...(selectedDate === undefined ? {} : { selectedDate })}
+            />
             <details className="group rounded-xl border bg-muted/10">
               <summary className="cursor-pointer list-none px-3 py-2.5 text-sm font-medium [&::-webkit-details-marker]:hidden">
                 <span className="flex items-center justify-between gap-3">
-                  Timeline &amp; diagnostics
+                  Session history &amp; details
                   <span className="text-xs font-normal text-muted-foreground group-open:hidden">
                     Show details
                   </span>
@@ -283,7 +291,6 @@ export function TrainingLoadPath({
                 </span>
               </summary>
               <div className="space-y-3 border-t p-4">
-                <TrainingLoadChart fitness={projection.fitness} days={timeline.days} />
                 <ItemList
                   emptyMessage="No activities are scheduled in this window."
                   items={items}
