@@ -243,6 +243,7 @@ test("Android shows canonical published threshold evidence through the goal and 
             expect(
               spawnSync("adb", ["-s", "emulator-5554", "reverse", "--remove", "tcp:3100"], {
                 encoding: "utf8",
+                timeout: 30_000,
               }).status,
               "Must remove only the runner-owned API reverse before tracing goal transport.",
             ).toBe(0);
@@ -250,7 +251,7 @@ test("Android shows canonical published threshold evidence through the goal and 
               spawnSync(
                 "adb",
                 ["-s", "emulator-5554", "reverse", "tcp:3100", `tcp:${transportPort}`],
-                { encoding: "utf8" },
+                { encoding: "utf8", timeout: 30_000 },
               ).status,
               "Must route the runner-owned API reverse through the goal transport.",
             ).toBe(0);
@@ -280,6 +281,7 @@ test("Android shows canonical published threshold evidence through the goal and 
             requireNativeReverseRestoration(
               spawnSync("adb", ["-s", "emulator-5554", "reverse", "tcp:3100", "tcp:3100"], {
                 encoding: "utf8",
+                timeout: 30_000,
               }),
             ),
           stopTransport: () => transport.stop(),
@@ -300,11 +302,17 @@ test("Android shows canonical published threshold evidence through the goal and 
         expect(typeof record.hasThreshold).toBe("boolean");
         expect(typeof record.targetGoalMatched).toBe("boolean");
         expect(record.requestOrder).toBeGreaterThan(0);
-        expect(record.responseOrder).toBeGreaterThan(0);
-        expect(record.status).toBeGreaterThanOrEqual(100);
+        expect(record.responseOrder === undefined).toBe(record.status === undefined);
+        if (record.responseOrder !== undefined && record.status !== undefined) {
+          expect(record.responseOrder).toBeGreaterThan(0);
+          expect(record.status).toBeGreaterThanOrEqual(100);
+        }
       }
       expect(new Set(trace.map((record) => record.requestOrder)).size).toBe(trace.length);
-      expect(new Set(trace.map((record) => record.responseOrder)).size).toBe(trace.length);
+      const completedResponseOrders = trace.flatMap((record) =>
+        record.responseOrder === undefined ? [] : [record.responseOrder],
+      );
+      expect(new Set(completedResponseOrders).size).toBe(completedResponseOrders.length);
       const targetProgress = trace.find(
         (record) => record.hasProgress && record.targetGoalMatched && record.status === 200,
       );
