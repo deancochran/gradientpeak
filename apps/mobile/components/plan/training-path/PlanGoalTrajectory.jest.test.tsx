@@ -206,6 +206,44 @@ it("uses explicit unavailable labels for a returned progress result without curr
   expect(screen.getByText("Goal signals are unavailable")).toBeTruthy();
 });
 
+it("does not associate stale progress from another goal with the selected goal", async () => {
+  const onOpenGoal = jest.fn();
+  await renderNative(
+    <PlanGoalTrajectory
+      coherenceLabel="Goal signals may be stale"
+      onCreateGoal={jest.fn()}
+      onOpenGoal={onOpenGoal}
+      onOpenGoals={jest.fn()}
+      portfolioError={false}
+      portfolioLoading={false}
+      progress={{ ...bikeProgress, goalId: "goal-a" }}
+      progressError={false}
+      progressLoading={false}
+      selectedGoal={{
+        activityCategory: "bike",
+        id: "goal-b",
+        priority: 1,
+        targetDate: "2026-12-15",
+        title: "Selected goal B",
+      }}
+      totalGoalCount={1}
+    />,
+  );
+
+  expect(screen.getByText("Selected goal B")).toBeTruthy();
+  expect(screen.getByText("Target date: 2026-12-15")).toBeTruthy();
+  expect(screen.getByText("Readiness: unavailable")).toBeTruthy();
+  expect(screen.getByText("Goal signals may be stale")).toBeTruthy();
+  expect(screen.queryByTestId("plan-goal-evidence-summary")).toBeNull();
+  expect(screen.queryByText("Current: 285 W")).toBeNull();
+  const selectedGoal = screen.getByTestId("plan-selected-goal");
+  expect(selectedGoal.props.accessibilityLabel).not.toContain("Current 285 W");
+  expect(selectedGoal.props.accessibilityLabel).not.toContain("Target 300 W");
+  expect(selectedGoal.props.accessibilityLabel).not.toContain("Remaining gap 15 W");
+  await fireEvent.press(selectedGoal);
+  expect(onOpenGoal).toHaveBeenCalledWith("goal-b");
+});
+
 it.each([
   ["loading", true, false],
   ["error", false, true],

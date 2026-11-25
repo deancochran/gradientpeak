@@ -75,7 +75,11 @@ export function PlanGoalTrajectory({
       : "unavailable";
   const attention = attentionStatement(progress?.status);
   const evidenceSummary =
-    !progressLoading && !progressError && progress && progress.status !== "unsupported"
+    !progressLoading &&
+    !progressError &&
+    progress &&
+    progress.status !== "unsupported" &&
+    progress.goalId === selectedGoal?.id
       ? {
           current: progress.current
             ? formatPlanThresholdValue(progress.target.activityCategory, progress.current.value)
