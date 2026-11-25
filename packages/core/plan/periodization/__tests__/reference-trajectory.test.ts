@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { defaultAthletePreferenceProfile } from "../../../schemas/settings/profile_settings";
+import { requireFixtureValue } from "../../../testing/requireFixtureValue";
 import {
   assessFeasibility,
   fromProfileGoals,
@@ -10,7 +11,7 @@ import {
 } from "../index";
 
 function buildTrajectoryFixture(args: {
-  currentCtl: number;
+  currentLongTermLoad: number;
   startDate: string;
   endDate: string;
   goals: Parameters<typeof fromProfileGoals>[0];
@@ -21,11 +22,11 @@ function buildTrajectoryFixture(args: {
   const resolvedDemands = goals
     .map((goal) => resolveEventDemand(goal))
     .flatMap((result) => (result.status === "supported" ? [result.demand] : []));
-  const primarySport = resolvedDemands[0]?.sport ?? "run";
+  const primaryActivityCategory = resolvedDemands[0]?.activity_category ?? "run";
   const constraintProfile = resolveConstraintProfile({
     optimizationProfile: "balanced",
     preferenceProfile,
-    sport: primarySport,
+    activity_category: primaryActivityCategory,
   });
   const endGoalDate = goals[goals.length - 1]?.target_date ?? args.endDate;
   const weeksToPeak = Math.max(
@@ -36,7 +37,7 @@ function buildTrajectoryFixture(args: {
     ),
   );
   const { feasibility, mode } = assessFeasibility({
-    currentCtl: args.currentCtl,
+    currentLongTermLoad: args.currentLongTermLoad,
     weeksToPeak,
     goals,
     resolvedDemands,
@@ -47,7 +48,7 @@ function buildTrajectoryFixture(args: {
   return generateReferenceTrajectory({
     startDate: args.startDate,
     endDate: args.endDate,
-    currentCtl: args.currentCtl,
+    currentLongTermLoad: args.currentLongTermLoad,
     goals,
     resolvedDemands,
     preferenceProfile,
@@ -62,9 +63,11 @@ describe("generateReferenceTrajectory", () => {
     const goals = fromProfileGoals(
       periodizationScenarioFixtures.feasibleSingleAGoal.goals as never,
     );
-    const demandResult = resolveEventDemand(goals[0]!);
+    const demandResult = resolveEventDemand(
+      requireFixtureValue(goals[0], "expected feasible A-goal fixture"),
+    );
     const trajectory = buildTrajectoryFixture({
-      currentCtl: periodizationScenarioFixtures.feasibleSingleAGoal.currentCtl,
+      currentLongTermLoad: periodizationScenarioFixtures.feasibleSingleAGoal.currentLongTermLoad,
       startDate: "2026-03-12",
       endDate: "2026-04-12",
       goals: periodizationScenarioFixtures.feasibleSingleAGoal.goals as never,
@@ -79,12 +82,15 @@ describe("generateReferenceTrajectory", () => {
     const taperStartPoint = trajectory.points.find((point) => point.date === "2026-04-02");
 
     expect(trajectory.mode).toBe("target_seeking");
-    expect(taperStartPoint?.target_ctl).toBeCloseTo(demandResult.demand.required_peak_ctl, 1);
+    expect(taperStartPoint?.target_longTermLoad).toBeCloseTo(
+      demandResult.demand.required_peak_longTermLoad,
+      1,
+    );
   });
 
   it("returns a maintenance baseline when there are no goals", () => {
     const trajectory = buildTrajectoryFixture({
-      currentCtl: periodizationScenarioFixtures.noGoals.currentCtl,
+      currentLongTermLoad: periodizationScenarioFixtures.noGoals.currentLongTermLoad,
       startDate: "2026-03-12",
       endDate: "2026-03-30",
       goals: periodizationScenarioFixtures.noGoals.goals as never,
@@ -95,12 +101,14 @@ describe("generateReferenceTrajectory", () => {
     expect(new Set(trajectory.points.map((point) => point.phase))).toEqual(
       new Set(["maintenance"]),
     );
-    expect(trajectory.points[0]?.target_ctl).toBe(periodizationScenarioFixtures.noGoals.currentCtl);
+    expect(trajectory.points[0]?.target_longTermLoad).toBe(
+      periodizationScenarioFixtures.noGoals.currentLongTermLoad,
+    );
   });
 
   it("applies a 4-day micro-taper for a close B-before-A goal", () => {
     const trajectory = buildTrajectoryFixture({
-      currentCtl: periodizationScenarioFixtures.bBeforeA.currentCtl,
+      currentLongTermLoad: periodizationScenarioFixtures.bBeforeA.currentLongTermLoad,
       startDate: "2026-03-12",
       endDate: "2026-05-05",
       goals: periodizationScenarioFixtures.bBeforeA.goals as never,
@@ -115,12 +123,15 @@ describe("generateReferenceTrajectory", () => {
     expect(taperParameter?.effective).toBe(4);
     expect(taperParameter?.rationale_codes).toContain("close_b_or_c_before_a_micro_taper_applied");
     expect(tuneUpEvent?.goal_ids_in_effect).toContain("44444444-4444-4444-8444-444444444444");
-    expect(tuneUpEvent?.target_ctl).toBeCloseTo((preTaperPoint?.target_ctl ?? 0) * 0.95, 1);
+    expect(tuneUpEvent?.target_longTermLoad).toBeCloseTo(
+      (preTaperPoint?.target_longTermLoad ?? 0) * 0.95,
+      1,
+    );
   });
 
   it("maintains a sustained peak floor across two close A goals", () => {
     const trajectory = buildTrajectoryFixture({
-      currentCtl: periodizationScenarioFixtures.twoCloseAGoals.currentCtl,
+      currentLongTermLoad: periodizationScenarioFixtures.twoCloseAGoals.currentLongTermLoad,
       startDate: "2026-03-12",
       endDate: "2026-05-08",
       goals: periodizationScenarioFixtures.twoCloseAGoals.goals as never,
@@ -131,10 +142,12 @@ describe("generateReferenceTrajectory", () => {
     const betweenEvents = trajectory.points.filter(
       (point) => point.date >= "2026-04-21" && point.date <= "2026-05-03",
     );
-    const valleyFloor = (anchorPoint?.target_ctl ?? 0) * 0.9;
+    const valleyFloor = (anchorPoint?.target_longTermLoad ?? 0) * 0.9;
 
     expect(betweenEvents.length).toBeGreaterThan(0);
-    expect(betweenEvents.every((point) => point.target_ctl >= valleyFloor - 0.2)).toBe(true);
+    expect(betweenEvents.every((point) => point.target_longTermLoad >= valleyFloor - 0.2)).toBe(
+      true,
+    );
     expect(
       trajectory.points.find((point) => point.date === "2026-05-04")?.goal_ids_in_effect,
     ).toEqual(["66666666-6666-4666-8666-666666666666", "77777777-7777-4777-8777-777777777777"]);
@@ -149,7 +162,7 @@ describe("generateReferenceTrajectory", () => {
       (demand) => demand.goal_id === "88888888-8888-4888-8888-888888888888",
     );
     const trajectory = buildTrajectoryFixture({
-      currentCtl: periodizationScenarioFixtures.sameDayAB.currentCtl,
+      currentLongTermLoad: periodizationScenarioFixtures.sameDayAB.currentLongTermLoad,
       startDate: "2026-03-12",
       endDate: "2026-04-30",
       goals: periodizationScenarioFixtures.sameDayAB.goals as never,
@@ -162,22 +175,28 @@ describe("generateReferenceTrajectory", () => {
       "88888888-8888-4888-8888-888888888888",
       "99999999-9999-4999-8999-999999999999",
     ]);
-    expect(eventPoint?.target_ctl).toBeCloseTo((aDemand?.required_peak_ctl ?? 0) * 0.94, 1);
+    expect(eventPoint?.target_longTermLoad).toBeCloseTo(
+      (aDemand?.required_peak_longTermLoad ?? 0) * 0.94,
+      1,
+    );
   });
 
   it("caps infeasible plans in capacity-bounded mode", () => {
     const trajectory = buildTrajectoryFixture({
-      currentCtl: periodizationScenarioFixtures.infeasibleBeginnerStretch.currentCtl,
+      currentLongTermLoad:
+        periodizationScenarioFixtures.infeasibleBeginnerStretch.currentLongTermLoad,
       startDate: "2026-03-12",
       endDate: "2026-03-30",
       goals: periodizationScenarioFixtures.infeasibleBeginnerStretch.goals as never,
       preferenceProfile: periodizationScenarioFixtures.infeasibleBeginnerStretch.preferenceProfile,
     });
-    const peakCtl = Math.max(...trajectory.points.map((point) => point.target_ctl));
+    const peakLongTermLoad = Math.max(
+      ...trajectory.points.map((point) => point.target_longTermLoad),
+    );
 
     expect(trajectory.mode).toBe("capacity_bounded");
-    expect(peakCtl).toBeLessThanOrEqual(
-      trajectory.feasibility.achievable_peak_ctl ?? Number.POSITIVE_INFINITY,
+    expect(peakLongTermLoad).toBeLessThanOrEqual(
+      trajectory.feasibility.achievable_peak_longTermLoad ?? Number.POSITIVE_INFINITY,
     );
   });
 });
