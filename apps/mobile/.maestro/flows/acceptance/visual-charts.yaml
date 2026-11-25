@@ -26,14 +26,29 @@ name: Render shared scenario and threshold charts on the current Android candida
 - takeScreenshot: visual-charts-scenario-comparison
 - scrollUntilVisible:
     element:
-      id: ui-preview-threshold-history
+      id: ui-preview-threshold-bike-power
     direction: DOWN
 - assertVisible:
     text: "Threshold history"
 - assertVisible:
     text: "Mar 10, 2026"
 - assertVisible:
-    text: "Apr 10, 2026"
+    text: "May 10, 2026"
 - assertVisible:
-    text: "bike power history with 2 chronological records. Latest 260 W on Apr 10, 2026."
+    text: "bike power · watts"
+- assertVisible:
+    text: "bike power history with 3 chronological records. Latest 260 W on May 10, 2026."
 - takeScreenshot: visual-charts-threshold-history
+- scrollUntilVisible:
+    element:
+      id: ui-preview-threshold-run-pace
+    direction: DOWN
+- assertVisible:
+    text: "run pace · pace (/km)"
+- assertVisible:
+    text: "Mar 12, 2026"
+- assertVisible:
+    text: "Apr 12, 2026"
+- assertVisible:
+    text: "run pace history with 2 chronological records. Latest 4:10 /km on Apr 12, 2026."
+- takeScreenshot: visual-charts-threshold-run-pace

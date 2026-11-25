@@ -439,7 +439,7 @@
     }
   },
   "threshold-history": {
-    "bikePower": {
+    "bikePowerWithPolicyGap": {
       "id": "bike:power:watts",
       "points": [
         {
@@ -449,8 +449,28 @@
         },
         {
           "confidence": 0.8,
+          "thresholdId": "bike-power-before-policy-change",
+          "value": 250
+        },
+        {
+          "confidence": 0.8,
           "thresholdId": "bike-power-latest",
           "value": 260
+        }
+      ]
+    },
+    "runPace": {
+      "id": "run:speed:meters_per_second",
+      "points": [
+        {
+          "confidence": 0.8,
+          "thresholdId": "run-pace-early",
+          "value": 3.8
+        },
+        {
+          "confidence": 0.8,
+          "thresholdId": "run-pace-latest",
+          "value": 4
         }
       ]
     }

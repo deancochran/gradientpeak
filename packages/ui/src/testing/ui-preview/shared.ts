@@ -34,7 +34,10 @@ export const uiPreviewFixtures = {
     visual: trainingStateChartFixtures.mixedSeries,
   } satisfies TrainingStateChartProps,
   sessionScenarioComparison: sessionScenarioComparisonFixtures.aligned,
-  thresholdHistory: thresholdHistoryFixtures.bikePower,
+  thresholdHistory: {
+    bikePower: thresholdHistoryFixtures.bikePowerWithPolicyGap,
+    runPace: thresholdHistoryFixtures.runPace,
+  },
   button: buttonFixtures.save,
   card: cardFixtures,
   checkbox: checkboxFixtures.terms,

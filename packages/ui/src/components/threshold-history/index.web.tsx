@@ -5,6 +5,7 @@ import {
   formatThresholdValue,
   type ThresholdHistoryChartProps,
   thresholdMetricLabel,
+  thresholdUnitLabel,
 } from "./shared";
 
 function ThresholdHistoryChart({ emptyMessage, series, testId }: ThresholdHistoryChartProps) {
@@ -28,6 +29,10 @@ function ThresholdHistoryChart({ emptyMessage, series, testId }: ThresholdHistor
   const label = `${thresholdMetricLabel(series.activityCategory, series.metric)} history. ${series.points.length} chronological records. Latest ${last ? formatThresholdValue(last.value, last.unit, last.activityCategory) : "unavailable"} on ${last ? formatThresholdDate(last.effectiveAt) : "unknown date"}.`;
   return (
     <div aria-label={label} className="relative h-44 w-full" data-testid={testId} role="img">
+      <span className="absolute left-0 top-0 text-sm font-medium text-foreground">
+        {thresholdMetricLabel(series.activityCategory, series.metric)} ·{" "}
+        {thresholdUnitLabel(series.unit, series.activityCategory)}
+      </span>
       <svg
         aria-hidden="true"
         className="absolute inset-0 h-full w-full overflow-visible"
