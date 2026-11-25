@@ -130,6 +130,12 @@ test("a confirmed scenario applies one selected occurrence and retries a lost ac
   await expect(
     athletePage.getByText(/could not confirm whether the change was applied/i),
   ).toBeVisible();
+  await expect(
+    athletePage.getByText(/could not confirm whether the change was applied/i),
+  ).toBeInViewport();
+  await expect(
+    athletePage.getByRole("button", { name: "Check or retry this change" }),
+  ).toBeInViewport();
   await athletePage.screenshot({
     path: testInfo.outputPath("session-scenario-unknown-result.png"),
   });

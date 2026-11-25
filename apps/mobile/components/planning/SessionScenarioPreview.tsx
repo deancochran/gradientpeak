@@ -338,7 +338,7 @@ function SessionScenarioPreviewContents({
               </Button>
             </>
           ) : null}
-          {visibleOutcome ? (
+          {visibleOutcome && !applyMutation.isPending ? (
             <Text accessibilityLiveRegion="polite" className="text-sm text-muted-foreground">
               {visibleOutcome}
             </Text>

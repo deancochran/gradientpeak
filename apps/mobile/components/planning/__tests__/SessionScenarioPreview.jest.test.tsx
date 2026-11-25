@@ -491,6 +491,54 @@ describe("SessionScenarioPreview", () => {
     await waitFor(() => expect(recovered.getByText("Applied: repointed.")).toBeTruthy());
   });
 
+  it("replaces an unknown outcome with one pending recovery announcement until retry settles", async () => {
+    let resolveRetry!: (result: { action: string; status: "applied" }) => void;
+    const retryResult = new Promise<{ action: string; status: "applied" }>((resolve) => {
+      resolveRetry = resolve;
+    });
+    mocks.preview = {
+      data: availablePreview(),
+      isError: false,
+      isLoading: false,
+      refetch: jest.fn(),
+    };
+    mocks.apply
+      .mockRejectedValueOnce(new Error("response lost"))
+      .mockImplementationOnce(() => retryResult);
+    const screen = await renderNative(<SessionScenarioPreview {...props} />);
+    await waitFor(() =>
+      expect(screen.getByTestId("session-scenario-apply").props.disabled).toBe(false),
+    );
+    await act(async () => screen.getByTestId("session-scenario-apply").props.onPress());
+    await act(async () => screen.getByTestId("session-scenario-confirm-apply").props.onPress());
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "We could not confirm the result. Check or retry with the same operation.",
+        ),
+      ).toBeTruthy(),
+    );
+
+    await act(async () => screen.getByTestId("session-scenario-retry-apply").props.onPress());
+    mocks.applyPending = true;
+    await act(async () => screen.rerender(<SessionScenarioPreview {...props} />));
+    const pendingStatus = screen.getByText(
+      "Checking the saved change now. Wait for its result before trying anything else. The comparison below is read-only.",
+    );
+    expect(pendingStatus.props.accessibilityLiveRegion).toBe("polite");
+    expect(
+      screen.queryByText(
+        "We could not confirm the result. Check or retry with the same operation.",
+      ),
+    ).toBeNull();
+    expect(screen.getByTestId("session-scenario-retry-apply").props.disabled).toBe(true);
+
+    mocks.applyPending = false;
+    await act(async () => resolveRetry({ status: "applied", action: "repointed" }));
+    await act(async () => screen.rerender(<SessionScenarioPreview {...props} />));
+    await waitFor(() => expect(screen.getByText("Applied: repointed.")).toBeTruthy());
+  });
+
   it("records a guarded E2E retry boundary without dispatching a second pending submission", async () => {
     const recoveredSessionId = "00000000-0000-4000-8000-000000000010";
     const receipt = freezePlannedSessionScenarioOperation({
