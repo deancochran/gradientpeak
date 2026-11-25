@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { skipToken } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { randomUUID } from "expo-crypto";
 import React from "react";
@@ -109,6 +110,7 @@ const scenarioInvalidations = {
 };
 let scenarioActorId = "00000000-0000-4000-8000-000000000004";
 let scenarioPreview: unknown = null;
+let scenarioStateRevision: number | null = 1;
 let mockScenarioPreviewProps: unknown = null;
 let plannedActivityPlanDetail: {
   activityCategory: "run";
@@ -154,6 +156,7 @@ jest.mock("@/components/planning/SessionScenarioPreview", () => {
 });
 const eventQueryCalls: unknown[][] = [];
 const plannedQueryCalls: unknown[][] = [];
+const scenarioPreviewQueryCalls: unknown[][] = [];
 let routeParams: Record<string, string> = { id: "event-1" };
 let plannedSession: unknown = null;
 let plannedSessionError: EventQueryError | null = null;
@@ -452,12 +455,15 @@ jest.mock("@/lib/api", () => ({
         },
       },
       previewScenario: {
-        useQuery: () => ({
-          data: scenarioPreview,
-          isError: false,
-          isLoading: false,
-          refetch: jest.fn(),
-        }),
+        useQuery: (...args: unknown[]) => {
+          scenarioPreviewQueryCalls.push(args);
+          return {
+            data: scenarioPreview,
+            isError: false,
+            isLoading: false,
+            refetch: jest.fn(),
+          };
+        },
       },
       applyScenario: { useMutation: () => ({ isPending: false, mutateAsync: scenarioApplyMock }) },
       completionCandidates: {
@@ -507,7 +513,12 @@ jest.mock("@/lib/api", () => ({
     athleteIntelligence: {
       getReadModel: {
         useQuery: () => ({
-          data: { publishedState: { baseline: { stateRevision: 1 } } },
+          data: {
+            publishedState:
+              scenarioStateRevision === null
+                ? null
+                : { baseline: { stateRevision: scenarioStateRevision } },
+          },
           isSuccess: true,
         }),
       },
@@ -552,6 +563,7 @@ describe("event detail fallback screen", () => {
     plannedSessionMutationOptions = undefined;
     scenarioActorId = "00000000-0000-4000-8000-000000000004";
     scenarioPreview = null;
+    scenarioStateRevision = 1;
     mockScenarioPreviewProps = null;
     scenarioApplyMock.mockReset();
     Object.values(scenarioInvalidations).forEach((invalidate) => {
@@ -567,6 +579,7 @@ describe("event detail fallback screen", () => {
     completionCandidates = { canAssociate: true, items: [], nextCursor: null };
     eventQueryCalls.length = 0;
     plannedQueryCalls.length = 0;
+    scenarioPreviewQueryCalls.length = 0;
     eventQueryState.data = eventDetailData;
     eventQueryState.error = null;
     eventQueryState.isLoading = false;
@@ -892,6 +905,7 @@ describe("event detail fallback screen", () => {
       },
     };
     completePlannedMock.mockRejectedValueOnce(new Error("Request status is unknown"));
+    scenarioStateRevision = null;
     await renderNative(<EventDetailScreen />);
     expect(eventQueryCalls[0]?.[1]).toMatchObject({ enabled: false });
     expect(plannedQueryCalls[0]?.[1]).toMatchObject({
@@ -899,6 +913,14 @@ describe("event detail fallback screen", () => {
       networkMode: "always",
       retry: false,
     });
+    expect(screen.getByTestId("session-scenario-preview")).toBeTruthy();
+    expect(
+      screen.getByText("A published athlete state is required before a scenario can be compared."),
+    ).toBeTruthy();
+    expect(scenarioPreviewQueryCalls).not.toHaveLength(0);
+    for (const queryCall of scenarioPreviewQueryCalls) {
+      expect(queryCall).toEqual([skipToken, { enabled: false, retry: false }]);
+    }
     await fireEvent.press(screen.getByTestId("planned-session-actual-details-toggle"));
     const duration = screen.getByLabelText("Actual duration (minutes, optional)");
     await fireEvent(duration, "changeText", "30");
