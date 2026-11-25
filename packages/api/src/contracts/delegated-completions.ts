@@ -19,6 +19,10 @@ export const delegatedCompletedActivitiesResponseSchema = z
             // segment is unknown, never an invented "other" classification.
             activityCategory: z.enum(["run", "bike", "swim", "strength", "other"]).nullable(),
             activityId: z.string().uuid(),
+            completionOutcome: z.enum(["full", "partial"]),
+            // Only the durable manual provenance and an absent provenance with
+            // recorded timestamps have a coach-safe label. Other values stay unknown.
+            completionSource: z.enum(["manual", "recorded", "unavailable"]),
             distanceMeters: z.number().nullable(),
             evidenceVersion: z.string().min(1),
             elapsedMs: z.number().nullable(),
