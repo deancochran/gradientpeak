@@ -24,6 +24,11 @@ name: Reopen and explicitly retry a retained scenario operation
     id: e2e-session-scenario-retry-boundary-idle
 - tapOn:
     id: session-scenario-retry-apply
+- scrollUntilVisible:
+    element:
+      id: e2e-session-scenario-retry-boundary-dispatched
+    direction: DOWN
+    timeout: 30000
 - assertVisible:
     id: e2e-session-scenario-retry-boundary-dispatched
 - takeScreenshot: session-scenario-lost-ack-dispatched
