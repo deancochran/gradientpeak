@@ -77,7 +77,13 @@ function SessionScenarioPreviewContents({
   const submittingRef = useRef(false);
   const applyButtonRef = useRef<HTMLButtonElement>(null);
   const confirmButtonRef = useRef<HTMLButtonElement>(null);
+  const recoveryRef = useRef<HTMLDivElement>(null);
+  const recoveryActionRef = useRef<HTMLButtonElement>(null);
   const generationRef = useRef(0);
+  const [revealRecoveryFor, setRevealRecoveryFor] = useState<{
+    actorId: string;
+    operationId: string;
+  } | null>(null);
   const { user } = useAuth();
   const actorId = user?.id ?? null;
   const actorRef = useRef(actorId);
@@ -156,6 +162,24 @@ function SessionScenarioPreviewContents({
     if (confirmationOpen) confirmButtonRef.current?.focus();
   }, [confirmationOpen]);
 
+  useEffect(() => {
+    if (!revealRecoveryFor) return;
+    if (
+      actorId !== revealRecoveryFor.actorId ||
+      operation?.request.operationId !== revealRecoveryFor.operationId
+    ) {
+      setRevealRecoveryFor(null);
+      return;
+    }
+    const retryAction = recoveryActionRef.current;
+    if (!retryAction || retryAction.disabled) return;
+    if (typeof recoveryRef.current?.scrollIntoView === "function") {
+      recoveryRef.current.scrollIntoView({ block: "start" });
+    }
+    retryAction.focus();
+    setRevealRecoveryFor(null);
+  }, [actorId, operation, revealRecoveryFor]);
+
   const persistOperation = (next: FrozenPlannedSessionScenarioOperation | null) => {
     try {
       if (next) window.localStorage.setItem(storageKey, JSON.stringify(next));
@@ -194,9 +218,12 @@ function SessionScenarioPreviewContents({
     }
     setConfirmationOpen(false);
     setOutcome(null);
-    void submitOperation(next);
+    void submitOperation(next, { revealUnknownRecovery: true });
   };
-  const submitOperation = async (operationToSubmit = operation) => {
+  const submitOperation = async (
+    operationToSubmit = operation,
+    { revealUnknownRecovery = false }: { revealUnknownRecovery?: boolean } = {},
+  ) => {
     if (
       !operationToSubmit ||
       !actorId ||
@@ -260,6 +287,12 @@ function SessionScenarioPreviewContents({
       setOutcome(
         "We could not confirm whether the change was applied. Check or retry using the same operation; do not create a new request.",
       );
+      if (revealUnknownRecovery) {
+        setRevealRecoveryFor({
+          actorId: submittedActor,
+          operationId: operationToSubmit.request.operationId,
+        });
+      }
     } finally {
       submittingRef.current = false;
     }
@@ -279,6 +312,45 @@ function SessionScenarioPreviewContents({
           This comparison is read-only. It does not change this session or its activity plan.
         </p>
       </div>
+      {operation || outcome || storageUnavailable ? (
+        <div className="space-y-2" data-testid="session-scenario-recovery" ref={recoveryRef}>
+          <h3 className="font-medium">
+            {operation
+              ? applyMutation.isPending
+                ? "Checking saved change"
+                : "Previous change needs confirmation"
+              : "Change status"}
+          </h3>
+          {operation ? (
+            <>
+              <p className="text-sm text-muted-foreground" role="status">
+                {applyMutation.isPending
+                  ? "Checking the saved change now. Wait for its result before trying anything else. The comparison below is read-only."
+                  : "This saved change may already have been applied. Check or retry it before starting another change. The comparison below is read-only."}
+              </p>
+              <Button
+                disabled={applyMutation.isPending}
+                onClick={() => void submitOperation()}
+                ref={recoveryActionRef}
+                type="button"
+              >
+                {applyMutation.isPending ? "Applying…" : "Check or retry this change"}
+              </Button>
+            </>
+          ) : null}
+          {outcome ? (
+            <p aria-live="polite" className="text-sm text-muted-foreground">
+              {outcome}
+            </p>
+          ) : null}
+          {storageUnavailable ? (
+            <p role="alert" className="text-sm text-destructive">
+              Recovery storage is unavailable. Keep this screen open while checking or retrying this
+              operation.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       <fieldset className="flex flex-wrap gap-2">
         <legend className="sr-only">Scenario</legend>
         {(["as_planned", "less", "more", "substitute", "skip"] as const).map((value) => (
@@ -402,15 +474,6 @@ function SessionScenarioPreviewContents({
           ) : null}
         </div>
       ) : null}
-      {operation ? (
-        <Button
-          disabled={applyMutation.isPending}
-          onClick={() => void submitOperation()}
-          type="button"
-        >
-          {applyMutation.isPending ? "Applying…" : "Check or retry this change"}
-        </Button>
-      ) : null}
       {confirmationOpen && previewQuery.data?.status === "available" ? (
         <div
           className="space-y-3 rounded-md border p-3"
@@ -453,17 +516,6 @@ function SessionScenarioPreviewContents({
             </Button>
           </div>
         </div>
-      ) : null}
-      {outcome ? (
-        <p aria-live="polite" className="text-sm text-muted-foreground">
-          {outcome}
-        </p>
-      ) : null}
-      {storageUnavailable ? (
-        <p role="alert" className="text-sm text-destructive">
-          Recovery storage is unavailable. Keep this screen open while checking or retrying this
-          operation.
-        </p>
       ) : null}
     </section>
   );

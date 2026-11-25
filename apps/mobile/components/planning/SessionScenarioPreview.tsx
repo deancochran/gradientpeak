@@ -310,6 +310,46 @@ function SessionScenarioPreviewContents({
           This comparison is read-only and does not change the session.
         </Text>
       </View>
+      {displayableOperation || visibleOutcome || storageUnavailable ? (
+        <View className="gap-2" testID="session-scenario-recovery">
+          <Text className="font-medium text-foreground">
+            {displayableOperation
+              ? applyMutation.isPending
+                ? "Checking saved change"
+                : "Previous change needs confirmation"
+              : "Change status"}
+          </Text>
+          {displayableOperation ? (
+            <>
+              <Text accessibilityLiveRegion="polite" className="text-sm text-muted-foreground">
+                {applyMutation.isPending
+                  ? "Checking the saved change now. Wait for its result before trying anything else. The comparison below is read-only."
+                  : "This saved change may already have been applied. Check or retry it before starting another change. The comparison below is read-only."}
+              </Text>
+              <Button
+                disabled={applyMutation.isPending}
+                onPress={() => {
+                  recordE2ERetryBoundary("received");
+                  void submitOperation(displayableOperation, true);
+                }}
+                testID="session-scenario-retry-apply"
+              >
+                <Text>{applyMutation.isPending ? "Applying…" : "Check or retry this change"}</Text>
+              </Button>
+            </>
+          ) : null}
+          {visibleOutcome && !applyMutation.isPending ? (
+            <Text accessibilityLiveRegion="polite" className="text-sm text-muted-foreground">
+              {visibleOutcome}
+            </Text>
+          ) : null}
+          {storageUnavailable ? (
+            <Text accessibilityRole="alert" className="text-sm text-destructive">
+              Recovery storage is unavailable. Keep this screen open while checking or retrying.
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
       <View className="flex-row flex-wrap gap-2">
         {(["as_planned", "less", "more", "substitute", "skip"] as const).map((value) => (
           <Button
@@ -422,18 +462,6 @@ function SessionScenarioPreviewContents({
           ) : null}
         </View>
       ) : null}
-      {displayableOperation ? (
-        <Button
-          disabled={applyMutation.isPending}
-          onPress={() => {
-            recordE2ERetryBoundary("received");
-            void submitOperation(displayableOperation, true);
-          }}
-          testID="session-scenario-retry-apply"
-        >
-          <Text>{applyMutation.isPending ? "Applying…" : "Check or retry this change"}</Text>
-        </Button>
-      ) : null}
       {isE2ERetryBoundaryEnabled() ? (
         <View
           pointerEvents="none"
@@ -485,16 +513,6 @@ function SessionScenarioPreviewContents({
             </Button>
           </View>
         </View>
-      ) : null}
-      {visibleOutcome ? (
-        <Text accessibilityLiveRegion="polite" className="text-sm text-muted-foreground">
-          {visibleOutcome}
-        </Text>
-      ) : null}
-      {storageUnavailable ? (
-        <Text accessibilityRole="alert" className="text-sm text-destructive">
-          Recovery storage is unavailable. Keep this screen open while checking or retrying.
-        </Text>
       ) : null}
     </View>
   );
