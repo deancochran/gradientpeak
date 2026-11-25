@@ -731,29 +731,27 @@ function dateKeys(startDate: string, endDate: string) {
   return result;
 }
 
-function toProjectionDay(summary: z.infer<typeof planTabLoadSummarySchema>, date: string) {
-  if (summary.remainingLoadStatus === "complete" && summary.remainingLoad !== null) {
-    return { date, state: "available" as const, load: summary.remainingLoad };
+function toProjectionDay(
+  summary: z.infer<typeof planTabLoadSummarySchema> | undefined,
+  date: string,
+  source: "completed" | "remaining" | null,
+): CommonLoadTrendProjectionDay {
+  if (!summary || !source) {
+    return { date, state: "unavailable", reason: "unavailable" };
   }
-  if (summary.remainingLoadStatus === "partial" && summary.remainingLoad !== null) {
-    return { date, state: "available" as const, load: summary.remainingLoad };
+  const status = source === "completed" ? summary.completedLoadStatus : summary.remainingLoadStatus;
+  const load = source === "completed" ? summary.completedLoad : summary.remainingLoad;
+  if (status === "complete" && load !== null) {
+    return { date, state: "available" as const, load };
   }
-  if (summary.remainingLoadStatus === "known_zero") {
+  if (status === "known_zero") {
     return { date, state: "known_zero" as const };
   }
-  if (
-    summary.knownScheduledLoadSubtotal !== null &&
-    summary.knownScheduledLoadSubtotal !== undefined
-  ) {
-    return { date, state: "available" as const, load: summary.knownScheduledLoadSubtotal };
-  }
-  // A missing planned Load is a zero-Load trajectory assumption, not a reason
-  // to remove every later Fitness/Fatigue/Form point from the chart.
-  return { date, state: "known_zero" as const };
-}
-
-function assumedCompletedLoad(summary: z.infer<typeof planTabLoadSummarySchema> | undefined) {
-  return summary?.completedLoad ?? summary?.knownCompletedLoadSubtotal ?? 0;
+  return {
+    date,
+    state: "unavailable",
+    reason: status === "partial" ? "partial" : "unavailable",
+  };
 }
 
 function recommendationProjectionDays(recommendation: CommonLoadRecommendation | undefined) {
@@ -799,7 +797,6 @@ function buildFitness(input: {
       : null;
   const requestedDates = Object.keys(input.dayLoads).sort();
   const firstRequestedDate = requestedDates[0];
-  const lastRequestedDate = requestedDates.at(-1);
   let actual = historyPoints
     .map((point) => ({
       date: point.date,
@@ -815,85 +812,10 @@ function buildFitness(input: {
         left.date.localeCompare(right.date),
       );
     }
-  } else if (actual.length === 0) {
-    const requestedActualDates = requestedDates.filter((date) => !today || date <= today);
-    const firstActualDate = requestedActualDates[0];
-    if (firstActualDate) {
-      const seedDate = addDaysDateKey(firstActualDate, -1);
-      actual = projectCommonLoadTrend({
-        baseline: { date: seedDate, longTermLoad: 0, recentLoad: 0 },
-        days: requestedActualDates.map((date) => ({
-          date,
-          state: "available" as const,
-          load: assumedCompletedLoad(input.dayLoads[date]),
-        })),
-      }).points.filter((point) => point.date !== seedDate);
-    }
-    if (currentBaselinePoint && Object.hasOwn(input.dayLoads, currentBaselinePoint.date)) {
-      actual = [
-        ...actual.filter((point) => point.date !== currentBaselinePoint.date),
-        currentBaselinePoint,
-      ].sort((left, right) => left.date.localeCompare(right.date));
-    } else if (actual.length === 0 && currentBaselinePoint) {
-      actual = [currentBaselinePoint];
-    }
+  } else if (actual.length === 0 && currentBaselinePoint) {
+    actual = [currentBaselinePoint];
   }
-
-  const firstActual = actual[0];
-  if (firstRequestedDate && firstActual && firstRequestedDate < firstActual.date) {
-    const assumedPrefix = projectCommonLoadTrend({
-      baseline: {
-        date: addDaysDateKey(firstRequestedDate, -1),
-        longTermLoad: 0,
-        recentLoad: 0,
-      },
-      days: requestedDates
-        .filter((date) => date < firstActual.date && (!today || date <= today))
-        .map((date) => ({
-          date,
-          state: "available" as const,
-          load: assumedCompletedLoad(input.dayLoads[date]),
-        })),
-    });
-    actual = [
-      ...assumedPrefix.points.filter((point) => point.date >= firstRequestedDate),
-      ...actual,
-    ];
-  }
-
-  const lastActual = actual.at(-1);
-  const lastRequestedActualDate = requestedDates.filter((date) => !today || date <= today).at(-1);
-  if (lastActual && lastRequestedActualDate && lastActual.date < lastRequestedActualDate) {
-    const useExistingState =
-      diffDateOnlyUtcDays(lastActual.date, lastRequestedActualDate) <= MAX_PLANNING_RANGE_DAYS;
-    const extensionBaseline = useExistingState
-      ? lastActual
-      : {
-          date: addDaysDateKey(firstRequestedDate ?? lastRequestedActualDate, -1),
-          longTermLoad: 0,
-          recentLoad: 0,
-        };
-    const extension = projectCommonLoadTrend({
-      baseline: extensionBaseline,
-      days: dateKeys(addDaysDateKey(extensionBaseline.date, 1), lastRequestedActualDate).map(
-        (date) => ({
-          date,
-          state: "available" as const,
-          load: assumedCompletedLoad(input.dayLoads[date]),
-        }),
-      ),
-    });
-    actual = [
-      ...actual,
-      ...extension.points.filter(
-        (point) =>
-          point.date > lastActual.date &&
-          point.date >= (firstRequestedDate ?? point.date) &&
-          point.date <= lastRequestedActualDate,
-      ),
-    ];
-  }
-  if (currentBaselinePoint && Object.hasOwn(input.dayLoads, currentBaselinePoint.date)) {
+  if (currentBaselinePoint && actual.length > 0) {
     actual = [
       ...actual.filter((point) => point.date !== currentBaselinePoint.date),
       currentBaselinePoint,
@@ -907,51 +829,29 @@ function buildFitness(input: {
       : undefined) ??
     actual.at(-1);
   if (!baseline) {
-    if (!firstRequestedDate || !lastRequestedDate) {
-      return { actual, scheduled: [], recommended: [] };
-    }
-    const seedDate = addDaysDateKey(firstRequestedDate, -1);
-    const trajectory = projectCommonLoadTrend({
-      baseline: { date: seedDate, longTermLoad: 0, recentLoad: 0 },
-      days: requestedDates.map((date) => {
-        const summary = input.dayLoads[date];
-        if (today && date <= today) {
-          return { date, state: "available" as const, load: assumedCompletedLoad(summary) };
-        }
-        return summary ? toProjectionDay(summary, date) : { date, state: "known_zero" as const };
-      }),
-    }).points.filter((point) => point.date !== seedDate);
-    return {
-      actual: today ? trajectory.filter((point) => point.date <= today) : [],
-      scheduled: today ? trajectory.filter((point) => point.date >= today) : trajectory,
-      recommended: [],
-    };
+    return { actual, scheduled: [], recommended: [] };
   }
   const futureDates = Object.keys(input.dayLoads)
     .filter((date) => date > baseline.date)
     .sort();
   const lastFutureDate = futureDates.at(-1);
-  const projectionBaseline =
-    firstRequestedDate &&
-    lastFutureDate &&
-    diffDateOnlyUtcDays(baseline.date, lastFutureDate) > MAX_PLANNING_RANGE_DAYS
-      ? { date: addDaysDateKey(firstRequestedDate, -1), longTermLoad: 0, recentLoad: 0 }
-      : baseline;
+  const projectionBaseline = baseline;
+  const isBeyondProjectionHorizon =
+    lastFutureDate !== undefined &&
+    diffDateOnlyUtcDays(baseline.date, lastFutureDate) > MAX_PLANNING_RANGE_DAYS;
   const scheduledProjection = projectCommonLoadTrend({
     baseline: projectionBaseline,
-    days: lastFutureDate
-      ? dateKeys(addDaysDateKey(projectionBaseline.date, 1), lastFutureDate).map((date) => {
-          const summary = input.dayLoads[date];
-          if (today && date <= today) {
-            return {
+    days:
+      lastFutureDate && !isBeyondProjectionHorizon
+        ? dateKeys(addDaysDateKey(projectionBaseline.date, 1), lastFutureDate).map((date) => {
+            const summary = input.dayLoads[date];
+            return toProjectionDay(
+              summary,
               date,
-              state: "available" as const,
-              load: assumedCompletedLoad(summary),
-            };
-          }
-          return summary ? toProjectionDay(summary, date) : { date, state: "known_zero" as const };
-        })
-      : [],
+              today === null ? null : date <= today ? "completed" : "remaining",
+            );
+          })
+        : [],
   });
   const recommendedProjection = projectCommonLoadTrend({
     baseline,
@@ -966,21 +866,6 @@ function buildFitness(input: {
       recentLoad: point.recentLoad,
       loadBalance: point.loadBalance,
     }));
-  const actualExtension = scheduledProjection.points.filter(
-    (point) =>
-      projectionBaseline.date === baseline.date &&
-      today &&
-      point.date > baseline.date &&
-      point.date <= today,
-  );
-  if (actualExtension.length > 0) {
-    actual = [
-      ...actual,
-      ...mapProjection(actualExtension).filter(
-        (point) => !actual.some((actualPoint) => actualPoint.date === point.date),
-      ),
-    ].sort((left, right) => left.date.localeCompare(right.date));
-  }
   const scheduledStartDate =
     today && firstRequestedDate && today > firstRequestedDate ? today : firstRequestedDate;
   const scheduledPoints =
