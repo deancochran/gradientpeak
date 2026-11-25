@@ -3,6 +3,10 @@ name: Confirm a selected planned-session scenario and return to its day
 ---
 - tapOn:
     id: session-scenario-apply
+- scrollUntilVisible:
+    element:
+      id: session-scenario-confirm-apply
+    direction: DOWN
 - tapOn:
     id: session-scenario-confirm-apply
 - extendedWaitUntil:
