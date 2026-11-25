@@ -200,7 +200,12 @@ describe("server-config", () => {
 
     try {
       expect(module.isLocalDevelopmentApiEndpoint()).toBe(false);
-      expect(hostedObserver.getCurrentResult().fetchStatus).toBe("paused");
+      expect(hostedObserver.getCurrentResult()).toMatchObject({
+        fetchStatus: "paused",
+        isLoading: false,
+        isPending: true,
+        status: "pending",
+      });
       expect(hostedRequest).not.toHaveBeenCalled();
 
       await module.setServerUrlOverride("http://10.0.2.2:3000");
