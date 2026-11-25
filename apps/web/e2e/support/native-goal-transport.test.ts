@@ -304,6 +304,24 @@ describe("native goal transport", () => {
     ]);
   });
 
+  it("keeps the child alive when an untraceable malformed target reaches the existing guard", async () => {
+    const port = await upstream((_request, response) => response.end("relay"));
+    const transport = await start(port);
+    const socket = createConnection({
+      host: "127.0.0.1",
+      port: Number(new URL(transport.origin).port),
+    });
+    const chunks: Buffer[] = [];
+    socket.on("data", (chunk: Buffer) => chunks.push(chunk));
+    await once(socket, "connect");
+    socket.end("GET http://% HTTP/1.1\r\nHost: loopback\r\nConnection: close\r\n\r\n");
+    await once(socket, "close");
+    expect(Buffer.concat(chunks).toString("utf8")).toContain("503");
+    await transport.allowProgressReads();
+    await expect(fetch(`${transport.origin}${goalPath()}`)).resolves.toMatchObject({ status: 200 });
+    expect(await transport.trace()).toMatchObject([{ hasProgress: true, status: 200 }]);
+  });
+
   it("closes a trickling incomplete request at its absolute body deadline", async () => {
     const port = await upstream((_request, response) => response.end("unexpected"));
     const transport = await start(port);

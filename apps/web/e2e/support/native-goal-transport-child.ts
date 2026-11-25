@@ -135,7 +135,12 @@ function body(
   );
 }
 function traceRequest(request: IncomingMessage) {
-  const url = new URL(request.url ?? "/", "http://loopback");
+  let url: URL;
+  try {
+    url = new URL(request.url ?? "/", "http://loopback");
+  } catch {
+    return;
+  }
   const prefix = "/api/trpc/";
   if (!url.pathname.startsWith(prefix)) return;
   const allProcedures = url.pathname.slice(prefix.length).split(",");
