@@ -1,5 +1,12 @@
-export type ThresholdActivityCategory = "bike" | "run" | "swim";
-export type ThresholdMetric = "power" | "speed" | "lthr";
+import type {
+  ThresholdActivityCategory,
+  ThresholdMetric,
+} from "@repo/core/performance-calibration";
+
+export type {
+  ThresholdActivityCategory,
+  ThresholdMetric,
+} from "@repo/core/performance-calibration";
 export type ThresholdUnit = "watts" | "meters_per_second" | "bpm";
 
 /** A presentation-safe subset of the threshold overview transport contract. */
