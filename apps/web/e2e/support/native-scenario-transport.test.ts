@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDisposableAcceptanceLease } from "./disposable-acceptance-lease";
 import {
   type NativeScenarioTransport,
+  type NativeScenarioTransportObservation,
   startNativeScenarioTransport,
   stopNativeScenarioTransportChild,
 } from "./native-scenario-transport";
@@ -138,14 +139,29 @@ describe("native scenario transport", () => {
     expect(retry.status).toBe(200);
     expect(await retry.json()).toEqual(appliedResponse());
     expect(received).toEqual([body, body]);
-    expect(JSON.parse(readFileSync(transport.observationPath, "utf8"))).toEqual({
-      dropped: true,
-      requests: [
-        { fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/), operationId: "a".repeat(32) },
-        { fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/), operationId: "a".repeat(32) },
-      ],
-    });
-    const [first, second] = JSON.parse(readFileSync(transport.observationPath, "utf8")).requests;
+    const observation = JSON.parse(
+      readFileSync(transport.observationPath, "utf8"),
+    ) as NativeScenarioTransportObservation;
+    expect(observation.dropped).toBe(true);
+    expect(observation.unmatchedApplyRequests).toBe(0);
+    expect(observation.requests).toEqual([
+      { fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/), operationId: "a".repeat(32) },
+      { fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/), operationId: "a".repeat(32) },
+    ]);
+    expect(observation.attempts).toEqual([
+      expect.objectContaining({
+        terminal: {
+          classification: "response",
+          httpStatus: 200,
+          relay: "dropped-after-upstream-applied",
+        },
+      }),
+      expect.objectContaining({
+        terminal: { classification: "response", httpStatus: 200, relay: "relayed" },
+      }),
+    ]);
+    const [first, second] = observation.requests;
+    if (!first || !second) throw new Error("Expected two retained matching requests.");
     expect(first.fingerprint).toBe(second.fingerprint);
   });
 
@@ -168,11 +184,99 @@ describe("native scenario transport", () => {
         applyBody(sessionId),
       ),
     ).resolves.toMatchObject({ status: 500 });
-    expect(JSON.parse(readFileSync(transport.observationPath, "utf8"))).toEqual({
+    const observation = JSON.parse(
+      readFileSync(transport.observationPath, "utf8"),
+    ) as NativeScenarioTransportObservation;
+    expect(observation.dropped).toBe(false);
+    expect(observation.unmatchedApplyRequests).toBe(1);
+    expect(observation.requests).toEqual([
+      { fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/), operationId: "a".repeat(32) },
+    ]);
+    expect(observation.attempts).toEqual([
+      expect.objectContaining({
+        terminal: { classification: "response", httpStatus: 500, relay: "relayed" },
+      }),
+    ]);
+  });
+
+  it("retains matching request start when the upstream fails before responding", async () => {
+    const port = await upstream((request) => request.socket.destroy());
+    const transport = await start(sessionId, environment(), port);
+
+    await expect(
+      post(
+        transport.origin,
+        "/api/trpc/plannedSessions.applyScenario?batch=1",
+        applyBody(sessionId),
+      ),
+    ).resolves.toMatchObject({ status: 502 });
+
+    const observation = JSON.parse(
+      readFileSync(transport.observationPath, "utf8"),
+    ) as NativeScenarioTransportObservation;
+    expect(observation).toMatchObject({
       dropped: false,
-      requests: [
-        { fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/), operationId: "a".repeat(32) },
-      ],
+      requests: [],
+      unmatchedApplyRequests: 0,
+    });
+    expect(observation.attempts).toEqual([
+      expect.objectContaining({
+        fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+        operationId: "a".repeat(32),
+        terminal: expect.objectContaining({ classification: "upstream-error" }),
+      }),
+    ]);
+  });
+
+  it("retains matching request start when the upstream stalls", async () => {
+    const port = await upstream(() => {});
+    const transport = await start(sessionId, environment(), port);
+
+    await expect(
+      post(
+        transport.origin,
+        "/api/trpc/plannedSessions.applyScenario?batch=1",
+        applyBody(sessionId),
+      ),
+    ).rejects.toThrow();
+
+    const observation = JSON.parse(
+      readFileSync(transport.observationPath, "utf8"),
+    ) as NativeScenarioTransportObservation;
+    expect(observation).toMatchObject({
+      dropped: false,
+      requests: [],
+      unmatchedApplyRequests: 0,
+    });
+    expect(observation.attempts).toEqual([
+      expect.objectContaining({
+        fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+        operationId: "a".repeat(32),
+        terminal: { classification: "upstream-timeout" },
+      }),
+    ]);
+  }, 15_000);
+
+  it("records a closed-code tRPC error without storing response content", async () => {
+    const port = await upstream((_request, response) => {
+      response.statusCode = 409;
+      response.end(JSON.stringify([{ error: { data: { code: "CONFLICT" }, message: "private" } }]));
+    });
+    const transport = await start(sessionId, environment(), port);
+    const response = await post(
+      transport.origin,
+      "/api/trpc/plannedSessions.applyScenario?batch=1",
+      applyBody(sessionId),
+    );
+    expect(response.status).toBe(409);
+    const observation = JSON.parse(
+      readFileSync(transport.observationPath, "utf8"),
+    ) as NativeScenarioTransportObservation;
+    expect(observation.attempts[0]?.terminal).toEqual({
+      classification: "response",
+      httpStatus: 409,
+      relay: "relayed",
+      trpcErrorCode: "CONFLICT",
     });
   });
 

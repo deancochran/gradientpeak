@@ -8,7 +8,10 @@ import {
   requireNativeReverseRestoration,
   runWithNativeScenarioCleanup,
 } from "../support/native-scenario-cleanup";
-import { startNativeScenarioTransport } from "../support/native-scenario-transport";
+import {
+  type NativeScenarioTransportObservation,
+  startNativeScenarioTransport,
+} from "../support/native-scenario-transport";
 import { createSessionScenarioFixture } from "../support/scenario-fixture";
 
 function requireRow<Row>(row: Row | undefined, message: string): Row {
@@ -287,37 +290,47 @@ test("native athlete explicitly retries the same scenario request after its comm
 
   const transport = await startNativeScenarioTransport({ sessionId: fixture.sessionId });
   const transportPort = new URL(transport.origin).port;
-  await runWithNativeScenarioCleanup(
-    async () => {
-      expect(
-        runAdb("reverse", "--remove", "tcp:3100").status,
-        "Must remove only the runner-owned API reverse before fault injection.",
-      ).toBe(0);
-      expect(
-        runAdb("reverse", "tcp:3100", `tcp:${transportPort}`).status,
-        "Must route the runner-owned API reverse through the leased local transport.",
-      ).toBe(0);
-      runFlow("session-scenario-lost-ack-apply.yaml", [
-        "session-scenario-lost-ack-uncertain.png",
-        "session-scenario-lost-ack-returned-ledger.png",
-      ]);
-      runFlow("session-scenario-lost-ack-retry.yaml", [
-        "session-scenario-lost-ack-reopened.png",
-        "session-scenario-lost-ack-recovered.png",
-      ]);
-    },
-    {
-      restoreReverse: () => {
-        requireNativeReverseRestoration(runAdb("reverse", "tcp:3100", "tcp:3100"));
+  let transportObservation: NativeScenarioTransportObservation | undefined;
+  try {
+    await runWithNativeScenarioCleanup(
+      async () => {
+        expect(
+          runAdb("reverse", "--remove", "tcp:3100").status,
+          "Must remove only the runner-owned API reverse before fault injection.",
+        ).toBe(0);
+        expect(
+          runAdb("reverse", "tcp:3100", `tcp:${transportPort}`).status,
+          "Must route the runner-owned API reverse through the leased local transport.",
+        ).toBe(0);
+        runFlow("session-scenario-lost-ack-apply.yaml", [
+          "session-scenario-lost-ack-uncertain.png",
+          "session-scenario-lost-ack-returned-ledger.png",
+        ]);
+        runFlow("session-scenario-lost-ack-retry.yaml", [
+          "session-scenario-lost-ack-reopened.png",
+          "session-scenario-lost-ack-recovered.png",
+        ]);
       },
-      stopTransport: () => transport.stop(),
-    },
-  );
-
-  const transportObservation = JSON.parse(readFileSync(transport.observationPath, "utf8")) as {
-    dropped: boolean;
-    requests: Array<{ fingerprint: string; operationId: string }>;
-  };
+      {
+        restoreReverse: () => {
+          requireNativeReverseRestoration(runAdb("reverse", "tcp:3100", "tcp:3100"));
+        },
+        stopTransport: () => transport.stop(),
+      },
+    );
+  } finally {
+    const observationContents = readFileSync(transport.observationPath, "utf8");
+    writeFileSync(
+      testInfo.outputPath("native-scenario-transport-observation.json"),
+      observationContents,
+      {
+        mode: 0o600,
+      },
+    );
+    transportObservation = JSON.parse(observationContents) as NativeScenarioTransportObservation;
+  }
+  if (!transportObservation)
+    throw new Error("Native scenario transport observation was not retained.");
   expect(transportObservation.dropped).toBe(true);
   expect(transportObservation.requests).toHaveLength(2);
   const [firstRequest, retriedRequest] = transportObservation.requests;
