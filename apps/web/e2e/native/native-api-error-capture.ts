@@ -123,7 +123,7 @@ export function captureNativePlannedSessionErrors(pid: string, options: CaptureO
         });
         child.kill("SIGTERM");
         if (child.exitCode !== null)
-          queueMicrotask(() => finish(failure ? "capture_failed" : "no_safe_error"));
+          setImmediate(() => finish(failure ? "capture_failed" : "no_safe_error"));
       }),
   };
 }

@@ -278,7 +278,7 @@ export async function completeManualNativeAcceptance({
       testInfo.outputPath("planned-session-get-by-id-native-errors.json"),
       JSON.stringify(
         {
-          ...nativeCapture,
+          ...(nativeCapture ?? { records: [], status: "capture_failed" }),
           source: nativeErrorCapture ? "owned-app-pid-logcat" : "app-pid-unavailable",
         },
         null,
