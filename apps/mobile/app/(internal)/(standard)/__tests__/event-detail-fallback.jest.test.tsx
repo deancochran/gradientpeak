@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { format } from "date-fns";
+import { randomUUID } from "expo-crypto";
 import React from "react";
 import type { TestInstance as ReactTestInstance } from "test-renderer";
 import { ROUTES } from "@/lib/constants/routes";
@@ -543,6 +544,10 @@ describe("event detail fallback screen", () => {
     };
   });
 
+  afterEach(async () => {
+    await AsyncStorage.clear();
+  });
+
   function enableScenarioRoute() {
     routeParams = {
       id: "00000000-0000-4000-8000-000000000001",
@@ -628,6 +633,40 @@ describe("event detail fallback screen", () => {
     await act(async () => resolveSecondApply({ status: "applied", action: "unchanged" }));
   });
 
+  it("keeps a newly armed operation as the only recovery after an older refresh rejects", async () => {
+    enableScenarioRoute();
+    let rejectFirstRefresh: (error: Error) => void = () => undefined;
+    scenarioInvalidations.calendar.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectFirstRefresh = reject;
+        }),
+    );
+    scenarioApplyMock
+      .mockResolvedValueOnce({ status: "applied", action: "repointed" })
+      .mockResolvedValueOnce({ status: "applied", action: "unchanged" });
+    jest
+      .mocked(randomUUID)
+      .mockReturnValueOnce("00000000-0000-4000-8000-000000000001")
+      .mockReturnValueOnce("00000000-0000-4000-8000-000000000002");
+    await renderNative(<EventDetailScreen />);
+
+    await confirmScenarioApply();
+    await waitFor(() => expect(scenarioInvalidations.calendar).toHaveBeenCalledTimes(1));
+    await confirmScenarioApply();
+    await waitFor(() => expect(screen.getByTestId("session-scenario-retry-apply")).toBeTruthy());
+
+    await act(async () => rejectFirstRefresh(new Error("first refresh failed")));
+    expect(
+      screen.queryByText("Applied: repointed. The screen refresh failed; reopen this session."),
+    ).toBeNull();
+    expect(screen.queryByText("Applied: repointed.")).toBeNull();
+    expect(screen.getByTestId("session-scenario-retry-apply")).toBeTruthy();
+
+    await fireEvent.press(screen.getByTestId("session-scenario-retry-apply"));
+    await waitFor(() => expect(screen.getByText("Applied: unchanged.")).toBeTruthy());
+  });
+
   it("retains refresh-failure reopen guidance through the plan query gap", async () => {
     enableScenarioRoute();
     scenarioApplyMock.mockResolvedValueOnce({ status: "applied", action: "repointed" });
@@ -669,7 +708,7 @@ describe("event detail fallback screen", () => {
     scenarioActorId = "00000000-0000-4000-8000-000000000005";
     await rendered.rerender(<EventDetailScreen />);
 
-    await waitFor(() => expect(screen.queryByTestId("session-scenario-retry-apply")).toBeNull());
+    expect(screen.queryByTestId("session-scenario-retry-apply")).toBeNull();
     expect(screen.queryByText(/Applied:/)).toBeNull();
     await act(async () => resolveApply({ status: "applied", action: "repointed" }));
   });
