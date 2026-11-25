@@ -646,6 +646,60 @@ describe("event detail fallback screen", () => {
     await waitFor(() => expect(screen.getByText("Applied: repointed.")).toBeTruthy());
   });
 
+  it("retains the current retry marker generation through its replacement plan query gap", async () => {
+    const previousMaestroE2E = process.env.EXPO_PUBLIC_MAESTRO_E2E;
+    process.env.EXPO_PUBLIC_MAESTRO_E2E = "1";
+    try {
+      enableScenarioRoute();
+      const rendered = await renderNative(<EventDetailScreen />);
+      await waitFor(() => expect(getScenarioPreviewProps(rendered).e2eRetryBoundary).toBeTruthy());
+      const initial = getScenarioPreviewProps(rendered);
+      const generation = initial.e2eRetryBoundaryGeneration;
+      if (generation === undefined) throw new Error("expected an initial E2E marker generation");
+      const dispatch = {
+        actorId: scenarioActorId,
+        boundary: "dispatched" as const,
+        generation,
+        sessionId: routeParams.id,
+      };
+      await act(async () => initial.onE2ERetryBoundaryChange?.(dispatch));
+      await waitFor(() =>
+        expect(screen.getByTestId("e2e-session-scenario-retry-boundary-dispatched")).toBeTruthy(),
+      );
+
+      plannedSession = {
+        ...(plannedSession as Record<string, unknown>),
+        activityPlanId: "00000000-0000-4000-8000-000000000009",
+      };
+      plannedActivityPlanDetail = null;
+      await rendered.rerender(<EventDetailScreen />);
+      expect(screen.getByText("Activity plan unavailable")).toBeTruthy();
+
+      plannedActivityPlanDetail = { activityCategory: "run", activityPlanRevision: 6 };
+      await rendered.rerender(<EventDetailScreen />);
+      await waitFor(() => {
+        const restored = getScenarioPreviewProps(rendered);
+        expect(restored.e2eRetryBoundaryGeneration).toBe(generation);
+        expect(restored.e2eRetryBoundary).toEqual(dispatch);
+        expect(screen.getByTestId("e2e-session-scenario-retry-boundary-dispatched")).toBeTruthy();
+      });
+
+      await act(async () =>
+        initial.onE2ERetryBoundaryChange?.({ ...dispatch, generation: generation - 1 }),
+      );
+      await act(async () =>
+        initial.onE2ERetryBoundaryChange?.({
+          ...dispatch,
+          actorId: "00000000-0000-4000-8000-000000000099",
+        }),
+      );
+      expect(getScenarioPreviewProps(rendered).e2eRetryBoundary).toEqual(dispatch);
+    } finally {
+      if (previousMaestroE2E === undefined) delete process.env.EXPO_PUBLIC_MAESTRO_E2E;
+      else process.env.EXPO_PUBLIC_MAESTRO_E2E = previousMaestroE2E;
+    }
+  });
+
   it("rejects a late retry-boundary callback after actor A returns through actor B", async () => {
     const previousMaestroE2E = process.env.EXPO_PUBLIC_MAESTRO_E2E;
     process.env.EXPO_PUBLIC_MAESTRO_E2E = "1";
