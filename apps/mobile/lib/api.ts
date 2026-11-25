@@ -1,4 +1,8 @@
-import { CONTRACT_EPOCH_HEADER, CURRENT_CONTRACT_EPOCH } from "@repo/api/client";
+import {
+  CONTRACT_EPOCH_HEADER,
+  CURRENT_CONTRACT_EPOCH,
+  type SafeApiErrorDiagnostic,
+} from "@repo/api/client";
 import {
   type AppRouter,
   api,
@@ -15,6 +19,7 @@ import { omitUndefined } from "@/lib/omitUndefined";
 import { getServerConfig } from "@/lib/server-config";
 import { captureException } from "@/lib/services/sentry";
 
+export type { SafeApiErrorDiagnostic } from "@repo/api/client";
 export { api };
 
 const API_REQUEST_TIMEOUT_MS = 30000;
@@ -37,6 +42,20 @@ export class ApiRequestTimeoutError extends Error {
     this.name = "ApiRequestTimeoutError";
     this.timeoutMs = timeoutMs;
   }
+}
+
+class TrustedNonJson503TransportError extends Error {
+  readonly httpStatus = 503;
+
+  constructor() {
+    super("Non-JSON HTTP 503 response");
+    this.name = "TrustedNonJson503TransportError";
+  }
+}
+
+function isJsonContentType(contentType: string | null) {
+  const mediaType = contentType?.split(";", 1)[0]?.trim().toLowerCase();
+  return mediaType === "application/json" || mediaType?.endsWith("+json") === true;
 }
 
 function isNativeNetworkTimeoutError(error: unknown): error is TypeError {
@@ -107,6 +126,10 @@ export const fetchWithTimeout: TrpcCompatibleFetch = async (input, init) => {
         signal: controller.signal,
       }),
     );
+
+    if (response.status === 503 && !isJsonContentType(response.headers.get("content-type"))) {
+      throw new TrustedNonJson503TransportError();
+    }
 
     logMobileAction(action, response.ok ? "success" : "failure", {
       channel: "api",
@@ -179,13 +202,6 @@ const SAFE_ERROR_CLASSES = new Set([
   "TypeError",
 ]);
 
-export type SafeApiErrorDiagnostic = {
-  applicationErrorCode: string | null;
-  errorClass: string;
-  httpStatus: number | null;
-  trpcCode: string | null;
-};
-
 /** Returns only finite transport metadata; never use an error message as diagnostics. */
 export function getSafeApiErrorDiagnostic(error: unknown): SafeApiErrorDiagnostic {
   const candidate = error && typeof error === "object" ? error : null;
@@ -216,6 +232,13 @@ export function getSafeApiErrorDiagnostic(error: unknown): SafeApiErrorDiagnosti
         : null,
     trpcCode: typeof code === "string" && SAFE_TRPC_ERROR_CODES.has(code) ? code : null,
   };
+}
+
+/** Identifies only the private non-JSON 503 marker emitted by fetchWithTimeout. */
+export function isTrustedNonJson503TransportError(error: unknown) {
+  if (!error || typeof error !== "object" || !("name" in error) || error.name !== "TRPCClientError")
+    return false;
+  return "cause" in error && error.cause instanceof TrustedNonJson503TransportError;
 }
 
 function isExpectedApiError(diagnostic: SafeApiErrorDiagnostic) {

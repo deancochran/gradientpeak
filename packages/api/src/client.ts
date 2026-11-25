@@ -1,5 +1,6 @@
 export type { inferRouterOutputs } from "@trpc/server";
 export { CONTRACT_EPOCH_HEADER, CURRENT_CONTRACT_EPOCH } from "./contract-epoch";
+export type { SafeApiErrorDiagnostic } from "./contracts/api-error-diagnostic";
 export type {
   CreatePlannedSessionDtoRequest,
   PlannedSessionDto,

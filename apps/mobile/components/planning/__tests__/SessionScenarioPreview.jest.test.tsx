@@ -2,8 +2,10 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { freezePlannedSessionScenarioOperation } from "@repo/api/client";
 import { randomUUID } from "expo-crypto";
 import React from "react";
-import { act, renderNative, waitFor } from "../../../test/render-native";
+import { act, cleanup, renderNative, waitFor } from "../../../test/render-native";
 import { SessionScenarioPreview } from "../SessionScenarioPreview";
+
+const initialMaestroE2E = process.env.EXPO_PUBLIC_MAESTRO_E2E;
 
 const mocks = {
   actorId: "00000000-0000-4000-8000-000000000001",
@@ -18,6 +20,7 @@ const mocks = {
   previewInputs: [] as unknown[],
   preview: { data: undefined as unknown, isError: false, isLoading: false, refetch: jest.fn() },
   apply: jest.fn(),
+  applyPending: false,
 };
 
 jest.mock("@/lib/api", () => ({
@@ -58,7 +61,7 @@ jest.mock("@/lib/api", () => ({
         },
       },
       applyScenario: {
-        useMutation: () => ({ isPending: false, mutateAsync: mocks.apply }),
+        useMutation: () => ({ isPending: mocks.applyPending, mutateAsync: mocks.apply }),
       },
     },
   },
@@ -97,6 +100,7 @@ describe("SessionScenarioPreview", () => {
       refetch: jest.fn(),
     };
     mocks.apply = jest.fn();
+    mocks.applyPending = false;
     mocks.actorId = "00000000-0000-4000-8000-000000000001";
     Object.values(mocks.invalidations).forEach((invalidate) => {
       invalidate.mockReset();
@@ -109,6 +113,13 @@ describe("SessionScenarioPreview", () => {
     jest.mocked(AsyncStorage.removeItem).mockClear();
     await AsyncStorage.clear();
     jest.mocked(randomUUID).mockReturnValue("00000000-0000-4000-8000-000000000001");
+    delete process.env.EXPO_PUBLIC_MAESTRO_E2E;
+  });
+
+  afterEach(async () => {
+    await cleanup();
+    if (initialMaestroE2E === undefined) delete process.env.EXPO_PUBLIC_MAESTRO_E2E;
+    else process.env.EXPO_PUBLIC_MAESTRO_E2E = initialMaestroE2E;
   });
 
   function availablePreview(revision = 5) {
@@ -328,10 +339,249 @@ describe("SessionScenarioPreview", () => {
       <SessionScenarioPreview {...props} session={{ ...props.session, id: recoveredSessionId }} />,
     );
     await waitFor(() => expect(screen.getByTestId("session-scenario-retry-apply")).toBeTruthy());
+    expect(screen.getByText("Previous change needs confirmation")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "This saved change may already have been applied. Check or retry it before starting another change. The comparison below is read-only.",
+      ),
+    ).toBeTruthy();
+    const previewChildren = screen.getByTestId("session-scenario-preview").children;
+    const scenarioChoices = screen.getByTestId("session-scenario-as_planned").parent;
+    if (!scenarioChoices) throw new Error("Scenario choices must have a parent.");
+    expect(previewChildren.indexOf(screen.getByTestId("session-scenario-recovery"))).toBeLessThan(
+      previewChildren.indexOf(scenarioChoices),
+    );
     expect(mocks.apply).not.toHaveBeenCalled();
     await act(async () => screen.getByTestId("session-scenario-retry-apply").props.onPress());
     await waitFor(() => expect(mocks.apply).toHaveBeenCalledTimes(1));
     expect(mocks.apply).toHaveBeenLastCalledWith(receipt.request);
+  });
+
+  it("announces a hydrated pending saved change without offering another retry", async () => {
+    const recoveredSessionId = "00000000-0000-4000-8000-000000000010";
+    const receipt = freezePlannedSessionScenarioOperation({
+      actorId: "00000000-0000-4000-8000-000000000001",
+      expectedPreviewFingerprint: `v1:sha256:${"b".repeat(64)}`,
+      operationId: "00000000000040008000000000000009",
+      preview: {
+        expectedPlanRevision: 5,
+        expectedSessionRevision: 3,
+        expectedStateRevision: 7,
+        scenario: { kind: "less", targetDurationSeconds: 1200 },
+        sessionId: recoveredSessionId,
+      },
+    });
+    mocks.preview = {
+      data: { status: "unavailable", reason: "session_not_scheduled" },
+      isError: false,
+      isLoading: false,
+      refetch: jest.fn(),
+    };
+    mocks.applyPending = true;
+    jest.mocked(AsyncStorage.getItem).mockResolvedValue(JSON.stringify(receipt));
+
+    const screen = await renderNative(
+      <SessionScenarioPreview {...props} session={{ ...props.session, id: recoveredSessionId }} />,
+    );
+    await waitFor(() => expect(screen.getByText("Checking saved change")).toBeTruthy());
+    const status = screen.getByText(
+      "Checking the saved change now. Wait for its result before trying anything else. The comparison below is read-only.",
+    );
+    expect(status.props.accessibilityLiveRegion).toBe("polite");
+    expect(screen.getByTestId("session-scenario-retry-apply").props.disabled).toBe(true);
+    expect(screen.queryByText("Check or retry this change")).toBeNull();
+    expect(mocks.apply).not.toHaveBeenCalled();
+  });
+
+  it("does not render the retry boundary marker when E2E mode is disabled", async () => {
+    const recoveredSessionId = "00000000-0000-4000-8000-000000000010";
+    const receipt = freezePlannedSessionScenarioOperation({
+      actorId: "00000000-0000-4000-8000-000000000001",
+      expectedPreviewFingerprint: `v1:sha256:${"b".repeat(64)}`,
+      operationId: "00000000000040008000000000000009",
+      preview: {
+        expectedPlanRevision: 5,
+        expectedSessionRevision: 3,
+        expectedStateRevision: 7,
+        scenario: { kind: "less", targetDurationSeconds: 1200 },
+        sessionId: recoveredSessionId,
+      },
+    });
+    mocks.preview = {
+      data: { status: "unavailable", reason: "session_not_scheduled" },
+      isError: false,
+      isLoading: false,
+      refetch: jest.fn(),
+    };
+    jest.mocked(AsyncStorage.getItem).mockResolvedValue(JSON.stringify(receipt));
+
+    const screen = await renderNative(
+      <SessionScenarioPreview {...props} session={{ ...props.session, id: recoveredSessionId }} />,
+    );
+    await waitFor(() => expect(screen.getByTestId("session-scenario-retry-apply")).toBeTruthy());
+    expect(screen.queryByTestId("e2e-session-scenario-retry-boundary-idle")).toBeNull();
+  });
+
+  it("retries the same recovered operation after a lost acknowledgement without auto-submitting", async () => {
+    const recoveredSession = {
+      ...props.session,
+      id: "00000000-0000-4000-8000-000000000010",
+    };
+    mocks.preview = {
+      data: availablePreview(),
+      isError: false,
+      isLoading: false,
+      refetch: jest.fn(),
+    };
+    const stored = new Map<string, string>();
+    jest.mocked(AsyncStorage.setItem).mockImplementation(async (key, value) => {
+      stored.set(key, value);
+    });
+    jest.mocked(AsyncStorage.getItem).mockImplementation(async (key) => stored.get(key) ?? null);
+    jest.mocked(AsyncStorage.removeItem).mockImplementation(async (key) => {
+      stored.delete(key);
+    });
+    mocks.apply
+      .mockRejectedValueOnce(new Error("response lost"))
+      .mockResolvedValueOnce({ status: "applied", action: "repointed" });
+    process.env.EXPO_PUBLIC_MAESTRO_E2E = "1";
+    const initial = await renderNative(
+      <SessionScenarioPreview {...props} session={recoveredSession} />,
+    );
+    await waitFor(() =>
+      expect(initial.getByTestId("session-scenario-apply").props.disabled).toBe(false),
+    );
+    await act(async () => initial.getByTestId("session-scenario-apply").props.onPress());
+    await act(async () => initial.getByTestId("session-scenario-confirm-apply").props.onPress());
+    await waitFor(() => expect(initial.getByTestId("session-scenario-retry-apply")).toBeTruthy());
+    expect(
+      initial.getByText("We could not confirm the result. Check or retry with the same operation."),
+    ).toBeTruthy();
+    const firstRequest = mocks.apply.mock.calls[0]?.[0];
+    expect(firstRequest).toMatchObject({
+      expectedPreviewFingerprint: `v1:sha256:${"a".repeat(64)}`,
+      operationId: "00000000000040008000000000000001",
+      preview: { sessionId: recoveredSession.id },
+    });
+    expect([...stored.values()]).toEqual([
+      expect.stringContaining(`"operationId":"${firstRequest?.operationId}"`),
+    ]);
+
+    await act(async () => initial.unmount());
+    mocks.preview = {
+      data: { status: "unavailable", reason: "session_not_scheduled" },
+      isError: false,
+      isLoading: false,
+      refetch: jest.fn(),
+    };
+    const recovered = await renderNative(
+      <SessionScenarioPreview {...props} session={recoveredSession} />,
+    );
+    await waitFor(() => expect(recovered.getByTestId("session-scenario-retry-apply")).toBeTruthy());
+    expect(recovered.getByTestId("session-scenario-retry-apply").props.disabled).toBe(false);
+    expect(recovered.getByTestId("e2e-session-scenario-retry-boundary-idle")).toBeTruthy();
+    expect(mocks.apply).toHaveBeenCalledTimes(1);
+
+    await act(async () => recovered.getByTestId("session-scenario-retry-apply").props.onPress());
+    await waitFor(() =>
+      expect(recovered.getByTestId("e2e-session-scenario-retry-boundary-dispatched")).toBeTruthy(),
+    );
+    await waitFor(() => expect(mocks.apply).toHaveBeenCalledTimes(2));
+    expect(mocks.apply).toHaveBeenLastCalledWith(firstRequest);
+    await waitFor(() => expect(recovered.getByText("Applied: repointed.")).toBeTruthy());
+  });
+
+  it("replaces an unknown outcome with one pending recovery announcement until retry settles", async () => {
+    let resolveRetry!: (result: { action: string; status: "applied" }) => void;
+    const retryResult = new Promise<{ action: string; status: "applied" }>((resolve) => {
+      resolveRetry = resolve;
+    });
+    mocks.preview = {
+      data: availablePreview(),
+      isError: false,
+      isLoading: false,
+      refetch: jest.fn(),
+    };
+    mocks.apply
+      .mockRejectedValueOnce(new Error("response lost"))
+      .mockImplementationOnce(() => retryResult);
+    const screen = await renderNative(<SessionScenarioPreview {...props} />);
+    await waitFor(() =>
+      expect(screen.getByTestId("session-scenario-apply").props.disabled).toBe(false),
+    );
+    await act(async () => screen.getByTestId("session-scenario-apply").props.onPress());
+    await act(async () => screen.getByTestId("session-scenario-confirm-apply").props.onPress());
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "We could not confirm the result. Check or retry with the same operation.",
+        ),
+      ).toBeTruthy(),
+    );
+
+    await act(async () => screen.getByTestId("session-scenario-retry-apply").props.onPress());
+    mocks.applyPending = true;
+    await act(async () => screen.rerender(<SessionScenarioPreview {...props} />));
+    const pendingStatus = screen.getByText(
+      "Checking the saved change now. Wait for its result before trying anything else. The comparison below is read-only.",
+    );
+    expect(pendingStatus.props.accessibilityLiveRegion).toBe("polite");
+    expect(
+      screen.queryByText(
+        "We could not confirm the result. Check or retry with the same operation.",
+      ),
+    ).toBeNull();
+    expect(screen.getByTestId("session-scenario-retry-apply").props.disabled).toBe(true);
+
+    mocks.applyPending = false;
+    await act(async () => resolveRetry({ status: "applied", action: "repointed" }));
+    await act(async () => screen.rerender(<SessionScenarioPreview {...props} />));
+    await waitFor(() => expect(screen.getByText("Applied: repointed.")).toBeTruthy());
+  });
+
+  it("records a guarded E2E retry boundary without dispatching a second pending submission", async () => {
+    const recoveredSessionId = "00000000-0000-4000-8000-000000000010";
+    const receipt = freezePlannedSessionScenarioOperation({
+      actorId: "00000000-0000-4000-8000-000000000001",
+      expectedPreviewFingerprint: `v1:sha256:${"b".repeat(64)}`,
+      operationId: "00000000000040008000000000000009",
+      preview: {
+        expectedPlanRevision: 5,
+        expectedSessionRevision: 3,
+        expectedStateRevision: 7,
+        scenario: { kind: "less", targetDurationSeconds: 1200 },
+        sessionId: recoveredSessionId,
+      },
+    });
+    let resolveApply: (value: { status: "applied"; action: "repointed" }) => void = () => undefined;
+    mocks.preview = {
+      data: { status: "unavailable", reason: "session_not_scheduled" },
+      isError: false,
+      isLoading: false,
+      refetch: jest.fn(),
+    };
+    jest.mocked(AsyncStorage.getItem).mockResolvedValue(JSON.stringify(receipt));
+    mocks.apply.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveApply = resolve;
+        }),
+    );
+    process.env.EXPO_PUBLIC_MAESTRO_E2E = "1";
+
+    const screen = await renderNative(
+      <SessionScenarioPreview {...props} session={{ ...props.session, id: recoveredSessionId }} />,
+    );
+    await waitFor(() => expect(screen.getByTestId("session-scenario-retry-apply")).toBeTruthy());
+    await act(async () => screen.getByTestId("session-scenario-retry-apply").props.onPress());
+    await waitFor(() => expect(mocks.apply).toHaveBeenCalledTimes(1));
+    await act(async () => screen.getByTestId("session-scenario-retry-apply").props.onPress());
+    await waitFor(() =>
+      expect(screen.getByTestId("e2e-session-scenario-retry-boundary-guarded")).toBeTruthy(),
+    );
+    expect(mocks.apply).toHaveBeenCalledTimes(1);
+
+    await act(async () => resolveApply({ status: "applied", action: "repointed" }));
   });
 
   it("hands a durable outcome to a stable boundary for a same-actor remount", async () => {

@@ -15,9 +15,16 @@ export type NativeGoalTransport = {
   stop: () => Promise<void>;
 };
 
+/**
+ * `initial-pair` preserves the historical initial navigation fault contract.
+ * `detail-refresh` is the separately observed four-query Goal Detail refresh.
+ */
+export type NativeGoalTransportFaultMode = "initial-pair" | "detail-refresh";
+
 export type NativeGoalTransportTrace = {
   method: string;
   procedures: Array<
+    | "goals.getById"
     | "athleteIntelligence.getGoalAssessment"
     | "athleteIntelligence.getGoalProgress"
     | "athleteIntelligence.getThresholdOverview"
@@ -34,10 +41,12 @@ export type NativeGoalTransportTrace = {
 export async function startNativeGoalTransport({
   goalId,
   environment = process.env,
+  faultMode = "initial-pair",
   upstreamPort = 3100,
 }: {
   goalId: string;
   environment?: NodeJS.ProcessEnv;
+  faultMode?: NativeGoalTransportFaultMode;
   upstreamPort?: number;
 }): Promise<NativeGoalTransport> {
   const { artifacts } = requireNativeScenarioTransportGuard({
@@ -59,6 +68,7 @@ export async function startNativeGoalTransport({
       goalId,
       observationPath,
       String(upstreamPort),
+      faultMode,
     ],
     { env: environment, stdio: ["ignore", "ignore", "ignore", "ipc"] },
   );

@@ -4,17 +4,26 @@ import { createHost as mockCreateHost } from "../../../../test/mock-components";
 import { act, fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 
 const navigateMock = jest.fn();
-const assessmentUseQueryMock = jest.fn(() => ({
-  data: undefined,
-  isLoading: false,
-  refetch: jest.fn(async () => undefined),
-}));
+const goalUseQueryMock = jest.fn();
+const assessmentUseQueryMock = jest.fn(
+  (): Record<string, unknown> => ({
+    data: undefined,
+    isLoading: false,
+    refetch: jest.fn(async () => undefined),
+  }),
+);
 const progressUseQueryMock = jest.fn();
 const thresholdUseQueryMock = jest.fn();
 const mockRecordedMount = jest.fn();
 const mockScaffoldProps = jest.fn();
 const mockProgressInsightProps = jest.fn();
+let mergedStackOptions: NonNullable<StackScreenProps["options"]> = {};
 let mockGoalObjective: Record<string, unknown> = {};
+let mockGoalId = "goal-1";
+let mockAuthProfile: { id: string; planning_timezone: string } | null = {
+  id: "22222222-2222-4222-8222-222222222222",
+  planning_timezone: "America/Los_Angeles",
+};
 const originalDateTimeFormat = Intl.DateTimeFormat;
 
 type StackScreenProps = {
@@ -60,14 +69,18 @@ jest.mock("react-native", () => ({
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: {
-    Screen: (props: StackScreenProps) =>
-      React.createElement(
+    Screen: (props: StackScreenProps) => {
+      mergedStackOptions = { ...mergedStackOptions, ...props.options };
+      return React.createElement(
         "StackScreen",
         props,
-        typeof props.options?.headerRight === "function" ? props.options.headerRight() : null,
-      ),
+        typeof mergedStackOptions.headerRight === "function"
+          ? mergedStackOptions.headerRight()
+          : null,
+      );
+    },
   },
-  useLocalSearchParams: () => ({ id: "goal-1" }),
+  useLocalSearchParams: () => ({ id: mockGoalId }),
   useRouter: () => ({ back: jest.fn(), navigate: navigateMock }),
 }));
 
@@ -198,29 +211,8 @@ jest.mock("@/components/plan/insights/PlanProgressInsight", () => ({
   },
 }));
 jest.mock("@repo/api/client", () => ({
-  selectPublishedGoalProgressHistory: (
-    progress: { publication?: { publishedRevision?: number | null } } | undefined,
-    overview:
-      | {
-          publication?: { publishedRevision?: number | null };
-          history: { items: unknown[]; nextCursor: unknown | null };
-        }
-      | undefined,
-  ) => {
-    const progressRevision = progress?.publication?.publishedRevision;
-    const overviewRevision = overview?.publication?.publishedRevision;
-    const matches =
-      progressRevision !== null &&
-      progressRevision !== undefined &&
-      overviewRevision !== null &&
-      overviewRevision !== undefined &&
-      progressRevision === overviewRevision;
-    return {
-      history: matches ? (overview?.history.items ?? []) : [],
-      historyLimited: matches && overview?.history.nextCursor !== null,
-      publicationMismatch: Boolean(overview && !matches),
-    };
-  },
+  selectPublishedGoalProgressHistory: jest.requireActual("@repo/api/goal-progress-client")
+    .selectPublishedGoalProgressHistory,
 }));
 jest.mock("@/components/plan/training-path/planDashboardPresentation", () => ({
   __esModule: true,
@@ -242,6 +234,10 @@ jest.mock("@/components/goals/RecordedGoalHistory", () => ({
     });
   },
 }));
+jest.mock("@/components/goals/GoalIntelligenceCard", () => ({
+  GoalIntelligenceCard: (props: HostProps) =>
+    React.createElement(mockCreateHost("GoalIntelligenceCard"), props),
+}));
 jest.mock("@/components/shared/detail", () => {
   const actual = jest.requireActual("@/components/shared/detail");
   return {
@@ -261,7 +257,7 @@ jest.mock("@/lib/navigation/useAppNavigate", () => ({
   useAppNavigate: () => jest.fn(),
 }));
 jest.mock("@/lib/hooks/useAuth", () => ({
-  useAuth: () => ({ profile: { planning_timezone: "America/Los_Angeles" } }),
+  useAuth: () => ({ profile: mockAuthProfile }),
 }));
 
 jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
@@ -291,25 +287,23 @@ jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
 
 jest.mock("@/lib/api", () => ({
   __esModule: true,
+  getSafeApiErrorDiagnostic: (
+    error: { name?: string; data?: { code?: string; httpStatus?: number } } | undefined,
+  ) => ({
+    applicationErrorCode: null,
+    errorClass: error?.name === "TRPCClientError" ? "TRPCClientError" : "UnknownError",
+    httpStatus: error?.data?.httpStatus ?? null,
+    trpcCode: error?.data?.code ?? null,
+  }),
+  isTrustedNonJson503TransportError: (error: { trustedNonJson503?: boolean } | undefined) =>
+    error?.trustedNonJson503 === true,
   api: {
     useUtils: () => ({
       goals: { list: { invalidate: jest.fn() }, getById: { invalidate: jest.fn() } },
     }),
     goals: {
       getById: {
-        useQuery: () => ({
-          data: {
-            id: "goal-1",
-            profile_id: "22222222-2222-4222-8222-222222222222",
-            target_date: "2026-06-01",
-            title: "Spring 5K",
-            priority: 8,
-            activity_category: "run",
-            target_payload: mockGoalObjective,
-          },
-          isLoading: false,
-          refetch: jest.fn(async () => undefined),
-        }),
+        useQuery: () => goalUseQueryMock(),
       },
       delete: { useMutation: () => ({ isPending: false, mutate: jest.fn() }) },
     },
@@ -333,6 +327,27 @@ const GoalDetailScreen = require("../goal-detail").default;
 describe("goal detail persistence", () => {
   beforeEach(() => {
     navigateMock.mockClear();
+    mockGoalId = "goal-1";
+    mergedStackOptions = {};
+    mockAuthProfile = {
+      id: "22222222-2222-4222-8222-222222222222",
+      planning_timezone: "America/Los_Angeles",
+    };
+    mockGoalObjective = { type: "threshold", metric: "pace", value: 4, activity_category: "run" };
+    goalUseQueryMock.mockImplementation(() => ({
+      data: {
+        id: "goal-1",
+        profile_id: "22222222-2222-4222-8222-222222222222",
+        target_date: "2026-06-01",
+        title: "Spring 5K",
+        priority: 8,
+        activity_category: "run",
+        target_payload: mockGoalObjective,
+      },
+      isError: false,
+      isLoading: false,
+      refetch: jest.fn(async () => undefined),
+    }));
     assessmentUseQueryMock.mockClear();
     progressUseQueryMock.mockReturnValue({
       data: undefined,
@@ -349,7 +364,6 @@ describe("goal detail persistence", () => {
     mockRecordedMount.mockClear();
     mockScaffoldProps.mockClear();
     mockProgressInsightProps.mockClear();
-    mockGoalObjective = { type: "threshold", metric: "pace", value: 4, activity_category: "run" };
     Object.defineProperty(Intl, "DateTimeFormat", {
       configurable: true,
       value: function DateTimeFormat() {
@@ -513,6 +527,310 @@ describe("goal detail persistence", () => {
     expect(retry).toHaveBeenCalled();
   });
 
+  it("keeps the same actor's cached goal context through a transient full refresh failure", async () => {
+    const goalRefetch = jest.fn(async () => undefined);
+    const assessmentRefetch = jest.fn(async () => undefined);
+    const progressRefetch = jest.fn(async () => undefined);
+    const thresholdRefetch = jest.fn(async () => undefined);
+    const transientFailure = {
+      name: "TRPCClientError",
+      data: { code: "INTERNAL_SERVER_ERROR", httpStatus: 503 },
+    };
+    goalUseQueryMock.mockReturnValue({
+      data: {
+        id: "goal-1",
+        profile_id: "22222222-2222-4222-8222-222222222222",
+        target_date: "2026-06-01",
+        title: "Spring 5K",
+        priority: 8,
+        activity_category: "run",
+        target_payload: mockGoalObjective,
+      },
+      error: transientFailure,
+      isError: true,
+      isLoading: false,
+      refetch: goalRefetch,
+    });
+    assessmentUseQueryMock.mockReturnValue({
+      data: { freshness: "fresh", stateRevision: 4 },
+      error: transientFailure,
+      isError: true,
+      isLoading: false,
+      refetch: assessmentRefetch,
+    });
+    progressUseQueryMock.mockReturnValue({
+      data: {
+        publication: { publishedRevision: 4, status: "available" },
+        result: {
+          status: "current",
+          target: { activityCategory: "bike", metric: "power", unit: "watts" },
+          deadlineAt: "2026-06-01T00:00:00Z",
+          current: { value: 285, unit: "watts" },
+        },
+      },
+      error: transientFailure,
+      isError: true,
+      isLoading: false,
+      refetch: progressRefetch,
+    });
+    thresholdUseQueryMock.mockReturnValue({
+      data: {
+        history: { items: [], nextCursor: null },
+        publication: { publishedRevision: 4, status: "available" },
+      },
+      error: transientFailure,
+      isError: true,
+      isLoading: false,
+      refetch: thresholdRefetch,
+    });
+
+    await renderNative(<GoalDetailScreen />);
+
+    expect(screen.getByTestId("goal-detail-goal-refresh-warning")).toBeTruthy();
+    expect(screen.getByTestId("goal-detail-progress-refresh-warning")).toBeTruthy();
+    expect(screen.queryByText("Goal could not be loaded")).toBeNull();
+    await fireEvent.press(screen.getByText("Retry progress"));
+    expect(goalRefetch).toHaveBeenCalledTimes(1);
+    expect(assessmentRefetch).toHaveBeenCalledTimes(1);
+    expect(progressRefetch).toHaveBeenCalledTimes(1);
+    expect(thresholdRefetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps authorized cached goal context for the trusted non-JSON transport 503 marker", async () => {
+    goalUseQueryMock.mockReturnValue({
+      data: {
+        id: "goal-1",
+        profile_id: "22222222-2222-4222-8222-222222222222",
+        target_date: "2026-06-01",
+        title: "Spring 5K",
+        priority: 8,
+        activity_category: "run",
+        target_payload: mockGoalObjective,
+      },
+      error: { name: "TRPCClientError", trustedNonJson503: true },
+      isError: true,
+      isLoading: false,
+      refetch: jest.fn(async () => undefined),
+    });
+
+    await renderNative(<GoalDetailScreen />);
+
+    expect(screen.getByTestId("goal-detail-goal-refresh-warning")).toBeTruthy();
+    expect(screen.queryByText("Goal could not be loaded")).toBeNull();
+  });
+
+  it("clears cached refresh warnings after Retry refreshes all four goal queries", async () => {
+    let failed = true;
+    const retryAll = jest.fn(async () => {
+      failed = false;
+    });
+    const transientFailure = {
+      name: "TRPCClientError",
+      data: { code: "INTERNAL_SERVER_ERROR", httpStatus: 503 },
+    };
+    goalUseQueryMock.mockImplementation(() => ({
+      data: {
+        id: "goal-1",
+        profile_id: "22222222-2222-4222-8222-222222222222",
+        target_date: "2026-06-01",
+        title: "Spring 5K",
+        priority: 8,
+        activity_category: "run",
+        target_payload: mockGoalObjective,
+      },
+      error: failed ? transientFailure : undefined,
+      isError: failed,
+      isLoading: false,
+      refetch: retryAll,
+    }));
+    assessmentUseQueryMock.mockImplementation(() => ({
+      data: { freshness: "fresh", stateRevision: 4 },
+      error: failed ? transientFailure : undefined,
+      isError: failed,
+      isLoading: false,
+      refetch: retryAll,
+    }));
+    progressUseQueryMock.mockImplementation(() => ({
+      data: {
+        publication: { publishedRevision: 4, status: "available" },
+        result: {
+          status: "current",
+          target: { activityCategory: "bike", metric: "power", unit: "watts" },
+          deadlineAt: "2026-06-01T00:00:00Z",
+          current: { value: 285, unit: "watts" },
+        },
+      },
+      error: failed ? transientFailure : undefined,
+      isError: failed,
+      isLoading: false,
+      refetch: retryAll,
+    }));
+    thresholdUseQueryMock.mockImplementation(() => ({
+      data: {
+        history: { items: [], nextCursor: null },
+        publication: { publishedRevision: 4, status: "available" },
+      },
+      error: failed ? transientFailure : undefined,
+      isError: failed,
+      isLoading: false,
+      refetch: retryAll,
+    }));
+
+    await renderNative(<GoalDetailScreen />);
+
+    expect(screen.getByTestId("goal-detail-goal-refresh-warning")).toBeTruthy();
+    await fireEvent.press(screen.getByText("Retry progress"));
+    await waitFor(() => {
+      expect(retryAll).toHaveBeenCalledTimes(4);
+      expect(screen.queryByTestId("goal-detail-goal-refresh-warning")).toBeNull();
+      expect(screen.queryByTestId("goal-detail-progress-refresh-warning")).toBeNull();
+    });
+  });
+
+  it.each([
+    {
+      name: "denied",
+      error: { name: "TRPCClientError", data: { code: "FORBIDDEN", httpStatus: 403 } },
+    },
+    { name: "unknown", error: { name: "Error" } },
+  ])("clears merged management header actions after a ready goal becomes a $name route error", async ({
+    error,
+  }) => {
+    const view = await renderNative(<GoalDetailScreen />);
+    expect(mergedStackOptions.headerRight?.()).not.toBeNull();
+
+    goalUseQueryMock.mockReturnValue({
+      data: {
+        id: "goal-1",
+        profile_id: "22222222-2222-4222-8222-222222222222",
+        target_date: "2026-06-01",
+        title: "Spring 5K",
+        priority: 8,
+        activity_category: "run",
+        target_payload: mockGoalObjective,
+      },
+      error,
+      isError: true,
+      isLoading: false,
+      refetch: jest.fn(async () => undefined),
+    });
+
+    await view.rerender(<GoalDetailScreen />);
+
+    expect(screen.getByText("Goal could not be loaded")).toBeTruthy();
+    expect(mergedStackOptions.headerRight?.()).toBeNull();
+  });
+
+  it.each([
+    {
+      name: "cold transient failure without cached goal",
+      data: undefined,
+      error: { name: "TRPCClientError", data: { code: "INTERNAL_SERVER_ERROR", httpStatus: 503 } },
+      profile: mockAuthProfile,
+      routeId: "goal-1",
+    },
+    {
+      name: "cached authorization denial",
+      data: {
+        id: "goal-1",
+        profile_id: "22222222-2222-4222-8222-222222222222",
+        target_date: "2026-06-01",
+        title: "Spring 5K",
+        priority: 8,
+        activity_category: "run",
+        target_payload: mockGoalObjective,
+      },
+      error: { name: "TRPCClientError", data: { code: "FORBIDDEN", httpStatus: 403 } },
+      profile: mockAuthProfile,
+      routeId: "goal-1",
+    },
+    {
+      name: "cached goal for a different route",
+      data: {
+        id: "goal-1",
+        profile_id: "22222222-2222-4222-8222-222222222222",
+        target_date: "2026-06-01",
+        title: "Spring 5K",
+        priority: 8,
+        activity_category: "run",
+        target_payload: mockGoalObjective,
+      },
+      error: { name: "TRPCClientError", data: { code: "INTERNAL_SERVER_ERROR", httpStatus: 503 } },
+      profile: {
+        id: "22222222-2222-4222-8222-222222222222",
+        planning_timezone: "America/Los_Angeles",
+      },
+      routeId: "other-goal",
+    },
+    {
+      name: "cached goal for a different actor",
+      data: {
+        id: "goal-1",
+        profile_id: "22222222-2222-4222-8222-222222222222",
+        target_date: "2026-06-01",
+        title: "Spring 5K",
+        priority: 8,
+        activity_category: "run",
+        target_payload: mockGoalObjective,
+      },
+      error: { name: "TRPCClientError", data: { code: "INTERNAL_SERVER_ERROR", httpStatus: 503 } },
+      profile: {
+        id: "33333333-3333-4333-8333-333333333333",
+        planning_timezone: "America/Los_Angeles",
+      },
+      routeId: "goal-1",
+    },
+    {
+      name: "missing authenticated profile",
+      data: {
+        id: "goal-1",
+        profile_id: "22222222-2222-4222-8222-222222222222",
+        target_date: "2026-06-01",
+        title: "Spring 5K",
+        priority: 8,
+        activity_category: "run",
+        target_payload: mockGoalObjective,
+      },
+      error: { name: "TRPCClientError", data: { code: "INTERNAL_SERVER_ERROR", httpStatus: 503 } },
+      profile: null,
+      routeId: "goal-1",
+    },
+    {
+      name: "untyped error with copied transient metadata",
+      data: {
+        id: "goal-1",
+        profile_id: "22222222-2222-4222-8222-222222222222",
+        target_date: "2026-06-01",
+        title: "Spring 5K",
+        priority: 8,
+        activity_category: "run",
+        target_payload: mockGoalObjective,
+      },
+      error: { name: "Error", data: { code: "INTERNAL_SERVER_ERROR", httpStatus: 503 } },
+      profile: {
+        id: "22222222-2222-4222-8222-222222222222",
+        planning_timezone: "America/Los_Angeles",
+      },
+      routeId: "goal-1",
+    },
+  ])("fails closed for $name", async ({ data, error, profile, routeId }) => {
+    mockAuthProfile = profile;
+    mockGoalId = routeId;
+    goalUseQueryMock.mockReturnValue({
+      data,
+      error,
+      isError: true,
+      isLoading: false,
+      refetch: jest.fn(async () => undefined),
+    });
+
+    await renderNative(<GoalDetailScreen />);
+
+    expect(screen.getByText("Goal could not be loaded")).toBeTruthy();
+    expect(screen.queryByTestId("goal-detail-goal-refresh-warning")).toBeNull();
+    expect(screen.queryByTestId("goal-detail-options-trigger")).toBeNull();
+  });
+
   it.each([
     {
       progressError: false,
@@ -592,7 +910,41 @@ describe("goal detail persistence", () => {
     expect(presentation.mergeGoalProgressThresholdEvidence).toHaveBeenCalledWith([], undefined);
   });
 
+  it("does not label unknown publications as separately updated history", async () => {
+    const presentation = require("@/components/plan/training-path/planDashboardPresentation");
+    presentation.mergeGoalProgressThresholdEvidence.mockClear();
+    progressUseQueryMock.mockReturnValue({
+      data: {
+        publication: { publishedRevision: null },
+        result: {
+          status: "current",
+          target: { activityCategory: "bike", metric: "power", unit: "watts" },
+          deadlineAt: "2026-06-01T00:00:00Z",
+        },
+      },
+      isError: false,
+      isLoading: false,
+      refetch: jest.fn(),
+    });
+    thresholdUseQueryMock.mockReturnValue({
+      data: {
+        publication: { publishedRevision: null },
+        history: { items: [{ value: 999 }], nextCursor: null },
+      },
+      isError: false,
+      isLoading: false,
+      refetch: jest.fn(),
+    });
+
+    await renderNative(<GoalDetailScreen />);
+
+    expect(screen.queryByTestId("goal-detail-history-mismatch")).toBeNull();
+    expect(presentation.mergeGoalProgressThresholdEvidence).toHaveBeenCalledWith([], undefined);
+  });
+
   it("discloses when matching threshold history is bounded", async () => {
+    const presentation = require("@/components/plan/training-path/planDashboardPresentation");
+    presentation.mergeGoalProgressThresholdEvidence.mockClear();
     progressUseQueryMock.mockReturnValue({
       data: {
         publication: { publishedRevision: 4 },
@@ -609,7 +961,7 @@ describe("goal detail persistence", () => {
     thresholdUseQueryMock.mockReturnValue({
       data: {
         publication: { publishedRevision: 4 },
-        history: { items: [], nextCursor: "more-history" },
+        history: { items: [{ value: 275 }], nextCursor: "more-history" },
       },
       isError: false,
       isLoading: false,
@@ -620,5 +972,9 @@ describe("goal detail persistence", () => {
 
     expect(screen.getByTestId("goal-detail-history-limited")).toBeTruthy();
     expect(screen.queryByTestId("goal-detail-history-mismatch")).toBeNull();
+    expect(presentation.mergeGoalProgressThresholdEvidence).toHaveBeenCalledWith(
+      [{ value: 275 }],
+      undefined,
+    );
   });
 });

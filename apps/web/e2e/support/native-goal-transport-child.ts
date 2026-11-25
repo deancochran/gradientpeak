@@ -3,9 +3,15 @@ import { createServer, type IncomingMessage, request as upstreamRequest } from "
 import { basename, dirname } from "node:path";
 import { requireNativeScenarioTransportGuard } from "./native-scenario-transport";
 
-const [goalId, observationPath, portText] = process.argv.slice(2);
+const [goalId, observationPath, portText, faultMode] = process.argv.slice(2);
 const upstreamPort = Number(portText);
-if (!goalId || !observationPath || !Number.isInteger(upstreamPort)) process.exit(1);
+if (
+  !goalId ||
+  !observationPath ||
+  !Number.isInteger(upstreamPort) ||
+  (faultMode !== "initial-pair" && faultMode !== "detail-refresh")
+)
+  process.exit(1);
 try {
   const { artifacts } = requireNativeScenarioTransportGuard({ sessionId: goalId, upstreamPort });
   if (
@@ -27,11 +33,13 @@ const UPSTREAM_INACTIVITY_TIMEOUT_MS = 10_000;
 const UPSTREAM_ABSOLUTE_TIMEOUT_MS = 15_000;
 const MAX_TRACE_RECORDS = 32;
 const GOAL_PROCEDURES = new Set([
+  "goals.getById",
   "athleteIntelligence.getGoalAssessment",
   "athleteIntelligence.getGoalProgress",
   "athleteIntelligence.getThresholdOverview",
 ]);
 type GoalProcedure =
+  | "goals.getById"
   | "athleteIntelligence.getGoalAssessment"
   | "athleteIntelligence.getGoalProgress"
   | "athleteIntelligence.getThresholdOverview";
@@ -64,20 +72,46 @@ function matches(request: IncomingMessage) {
   const input = url.searchParams.get("input");
   if (!input) return false;
   try {
-    const parsed = JSON.parse(input) as Record<string, { json?: { goalId?: unknown } }>;
+    const parsed = JSON.parse(input) as unknown;
+    if (!isRecord(parsed) || Array.isArray(parsed)) return false;
+    if (faultMode === "detail-refresh")
+      return (
+        url.pathname ===
+          "/api/trpc/goals.getById,athleteIntelligence.getGoalAssessment,athleteIntelligence.getGoalProgress,athleteIntelligence.getThresholdOverview" &&
+        exactEntries(parsed, ["0", "1", "2", "3"]) &&
+        exactJson(parsed["0"], { id: goalId }) &&
+        exactJson(parsed["1"], { goalId }) &&
+        exactJson(parsed["2"], { goalId }) &&
+        exactJson(parsed["3"], { historyLimit: 100 })
+      );
     if (Array.isArray(parsed)) return false;
     if (url.pathname === "/api/trpc/athleteIntelligence.getGoalProgress")
-      return Object.keys(parsed).length === 1 && parsed[0]?.json?.goalId === goalId;
+      return exactEntries(parsed, ["0"]) && exactJson(parsed["0"], { goalId });
     return (
       url.pathname ===
         "/api/trpc/athleteIntelligence.getGoalAssessment,athleteIntelligence.getGoalProgress" &&
-      Object.keys(parsed).length === 2 &&
-      parsed[0]?.json?.goalId === goalId &&
-      parsed[1]?.json?.goalId === goalId
+      exactEntries(parsed, ["0", "1"]) &&
+      exactJson(parsed["0"], { goalId }) &&
+      exactJson(parsed["1"], { goalId })
     );
   } catch {
     return false;
   }
+}
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+function exactEntries(value: Record<string, unknown>, keys: string[]) {
+  return Object.keys(value).length === keys.length && keys.every((key) => key in value);
+}
+function exactJson(value: unknown, expected: Record<string, unknown>) {
+  if (!isRecord(value) || !exactEntries(value, ["json"])) return false;
+  const json = value.json;
+  if (!isRecord(json)) return false;
+  return (
+    Object.keys(json).length === Object.keys(expected).length &&
+    Object.entries(expected).every(([key, expectedValue]) => json[key] === expectedValue)
+  );
 }
 function body(
   request: IncomingMessage,

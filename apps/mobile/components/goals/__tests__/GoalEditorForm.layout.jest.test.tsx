@@ -274,6 +274,217 @@ describe("GoalEditorForm layout", () => {
   });
 });
 
+describe("GoalEditorForm target submission contract", () => {
+  const completeDraft = {
+    ...createEmptyGoalDraft(),
+    title: "Target contract",
+    targetDate: "2026-12-20",
+  };
+
+  it.each([
+    {
+      label: "race time positive duration",
+      draft: {
+        goalType: "race_performance",
+        raceTargetMode: "time",
+        raceDistanceKm: 5,
+        targetDuration: "25:00",
+      },
+      submits: true,
+    },
+    {
+      label: "race time zero distance",
+      draft: {
+        goalType: "race_performance",
+        raceTargetMode: "time",
+        raceDistanceKm: 0,
+        targetDuration: "25:00",
+      },
+      submits: false,
+    },
+    {
+      label: "race time null distance",
+      draft: {
+        goalType: "race_performance",
+        raceTargetMode: "time",
+        raceDistanceKm: null,
+        targetDuration: "25:00",
+      },
+      submits: false,
+    },
+    {
+      label: "race time blank duration",
+      draft: {
+        goalType: "race_performance",
+        raceTargetMode: "time",
+        raceDistanceKm: 5,
+        targetDuration: "",
+      },
+      submits: false,
+    },
+    {
+      label: "race pace positive distance",
+      draft: {
+        goalType: "race_performance",
+        raceTargetMode: "pace",
+        raceDistanceKm: 5,
+        targetPace: "5:00",
+      },
+      submits: true,
+    },
+    {
+      label: "race pace zero distance",
+      draft: {
+        goalType: "race_performance",
+        raceTargetMode: "pace",
+        raceDistanceKm: 0,
+        targetPace: "5:00",
+      },
+      submits: false,
+    },
+    {
+      label: "race pace null distance",
+      draft: {
+        goalType: "race_performance",
+        raceTargetMode: "pace",
+        raceDistanceKm: null,
+        targetPace: "5:00",
+      },
+      submits: false,
+    },
+    {
+      label: "race pace blank pace",
+      draft: {
+        goalType: "race_performance",
+        raceTargetMode: "pace",
+        raceDistanceKm: 5,
+        targetPace: "",
+      },
+      submits: false,
+    },
+    {
+      label: "completion positive distance",
+      draft: { goalType: "completion", raceDistanceKm: 5 },
+      submits: true,
+    },
+    {
+      label: "completion zero distance",
+      draft: { goalType: "completion", raceDistanceKm: 0 },
+      submits: false,
+    },
+    {
+      label: "completion null distance",
+      draft: { goalType: "completion", raceDistanceKm: null },
+      submits: false,
+    },
+    {
+      label: "completion blank duration",
+      draft: { goalType: "completion", raceDistanceKm: null, targetDuration: "" },
+      submits: false,
+    },
+    {
+      label: "completion duration",
+      draft: { goalType: "completion", raceDistanceKm: null, targetDuration: "30:00" },
+      submits: true,
+    },
+    {
+      label: "pace threshold",
+      draft: { goalType: "pace_threshold", targetPace: "5:00" },
+      submits: true,
+    },
+    {
+      label: "pace threshold blank",
+      draft: { goalType: "pace_threshold", targetPace: "" },
+      submits: false,
+    },
+    {
+      label: "power threshold positive",
+      draft: { goalType: "power_threshold", targetWatts: 250 },
+      submits: true,
+    },
+    {
+      label: "power threshold zero",
+      draft: { goalType: "power_threshold", targetWatts: 0 },
+      submits: false,
+    },
+    {
+      label: "power threshold null",
+      draft: { goalType: "power_threshold", targetWatts: null },
+      submits: false,
+    },
+    {
+      label: "heart-rate threshold positive",
+      draft: { goalType: "hr_threshold", targetBpm: 170 },
+      submits: true,
+    },
+    {
+      label: "heart-rate threshold zero",
+      draft: { goalType: "hr_threshold", targetBpm: 0 },
+      submits: false,
+    },
+    {
+      label: "heart-rate threshold null",
+      draft: { goalType: "hr_threshold", targetBpm: null },
+      submits: false,
+    },
+    {
+      label: "consistency positive sessions",
+      draft: { goalType: "consistency", consistencySessionsPerWeek: 3, consistencyWeeks: null },
+      submits: true,
+    },
+    {
+      label: "consistency positive weeks",
+      draft: { goalType: "consistency", consistencySessionsPerWeek: null, consistencyWeeks: 8 },
+      submits: true,
+    },
+    {
+      label: "consistency zero targets",
+      draft: { goalType: "consistency", consistencySessionsPerWeek: 0, consistencyWeeks: 0 },
+      submits: false,
+    },
+    {
+      label: "consistency null targets",
+      draft: { goalType: "consistency", consistencySessionsPerWeek: null, consistencyWeeks: null },
+      submits: false,
+    },
+  ] satisfies Array<{
+    label: string;
+    draft: Partial<GoalEditorDraft>;
+    submits: boolean;
+  }>)("matches the Core target contract for $label", async ({ draft, submits }) => {
+    const onSubmit = jest.fn<void, [GoalEditorDraft]>();
+    await renderNative(
+      <GoalEditorForm initialValue={{ ...completeDraft, ...draft }} onSubmit={onSubmit} />,
+    );
+    const saveAction = screen.getByText("Save Goal").parent;
+    if (!saveAction) throw new Error("Expected Save Goal action");
+
+    expect(saveAction.props.disabled).toBe(!submits);
+    await fireEvent.press(saveAction);
+
+    expect(onSubmit).toHaveBeenCalledTimes(submits ? 1 : 0);
+  });
+
+  it("allows a complete past-date goal to save while it remains unsuitable for plan guidance", async () => {
+    const onSubmit = jest.fn<void, [GoalEditorDraft]>();
+    const pastDateDraft = {
+      ...completeDraft,
+      targetDate: "2000-01-01",
+      goalType: "completion" as const,
+      raceDistanceKm: 5,
+    };
+    await renderNative(<GoalEditorForm initialValue={pastDateDraft} onSubmit={onSubmit} />);
+    const saveAction = screen.getByText("Save Goal").parent;
+    if (!saveAction) throw new Error("Expected Save Goal action");
+
+    expect(screen.getByTestId("goal-quality-feedback")).toBeTruthy();
+    expect(saveAction.props.disabled).toBe(false);
+    await fireEvent.press(saveAction);
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining(pastDateDraft));
+  });
+});
+
 describe("GoalEditorForm draft observation", () => {
   it("emits the initial draft and current edits without duplicating a controlled reset", async () => {
     const initialValue = {

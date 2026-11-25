@@ -16,11 +16,22 @@ name: Reopen and explicitly retry a retained scenario operation
       id: session-scenario-retry-apply
     direction: DOWN
     timeout: 30000
+    centerElement: true
 - takeScreenshot: session-scenario-lost-ack-reopened
 - assertVisible:
     id: session-scenario-retry-apply
+- assertVisible:
+    id: e2e-session-scenario-retry-boundary-idle
 - tapOn:
     id: session-scenario-retry-apply
+- scrollUntilVisible:
+    element:
+      id: e2e-session-scenario-retry-boundary-dispatched
+    direction: DOWN
+    timeout: 30000
+- assertVisible:
+    id: e2e-session-scenario-retry-boundary-dispatched
+- takeScreenshot: session-scenario-lost-ack-dispatched
 - scrollUntilVisible:
     element:
       text: "Applied: repointed."

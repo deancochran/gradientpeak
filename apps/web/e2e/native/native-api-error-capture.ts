@@ -1,5 +1,8 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
+import type { SafeApiErrorDiagnostic as NativePlannedSessionErrorDiagnostic } from "@repo/api/client";
+
+export type { SafeApiErrorDiagnostic as NativePlannedSessionErrorDiagnostic } from "@repo/api/client";
 
 const MAX_CAPTURED_RECORDS = 2;
 const MAX_LINE_BYTES = 1024;
@@ -24,13 +27,6 @@ const SAFE_TRPC_CODES = new Set([
   "TOO_MANY_REQUESTS",
   "INTERNAL_SERVER_ERROR",
 ]);
-
-export type NativePlannedSessionErrorDiagnostic = {
-  applicationErrorCode: string | null;
-  errorClass: string;
-  httpStatus: number | null;
-  trpcCode: string | null;
-};
 
 type CaptureStatus =
   | "captured"
