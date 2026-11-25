@@ -1,6 +1,13 @@
 import { z } from "zod";
-
 import type { profileQuickUpdateSchema } from "../schemas";
+import { preferredUnitSystemSchema } from "../units";
+
+export {
+  calculateDateOfBirthAge,
+  formatDateOfBirth,
+  isValidDateOfBirth,
+  parseDateOfBirth,
+} from "./date-of-birth";
 
 export interface ProfileWithDob {
   dob: string | null;
@@ -25,18 +32,14 @@ export type ProfileSummary = z.infer<typeof profileSummarySchema>;
 export const profileSettingsViewSchema = z
   .object({
     avatar_url: z.string().nullable().optional(),
-    ftp: z.number().nullable().optional(),
     is_public: z.boolean().nullable().optional(),
-    threshold_hr: z.number().nullable().optional(),
     username: z.string().nullable().optional(),
     weight_kg: z.number().nullable().optional(),
   })
   .passthrough()
   .transform((value) => ({
     avatar_url: value.avatar_url ?? null,
-    ftp: value.ftp ?? null,
     is_public: value.is_public ?? false,
-    threshold_hr: value.threshold_hr ?? null,
     username: value.username ?? null,
     weight_kg: value.weight_kg ?? null,
   }));
@@ -53,7 +56,7 @@ export const publicProfileViewSchema = z.object({
   id: z.string().uuid(),
   is_public: z.boolean().nullable().optional(),
   language: z.string().nullable(),
-  preferred_units: z.string().nullable(),
+  preferred_units: preferredUnitSystemSchema.nullable(),
   username: z.string().nullable(),
 });
 
@@ -78,9 +81,7 @@ export function getProfileQuickUpdateDefaults(
   profile: ProfileSettingsView | null | undefined,
 ): z.input<typeof profileQuickUpdateSchema> {
   return {
-    ftp: profile?.ftp ?? undefined,
     is_public: profile?.is_public ?? false,
-    threshold_hr: profile?.threshold_hr ?? undefined,
     username: profile?.username ?? "",
     weight_kg: profile?.weight_kg ?? undefined,
   };

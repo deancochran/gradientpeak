@@ -1,5 +1,6 @@
 import { act } from "@testing-library/react-native";
 import React from "react";
+import { createActivityPlanSummary } from "../../../../test/activity-plan-projection-fixture";
 import {
   createFormComponentMocks as mockCreateFormComponentMocks,
   createHost as mockCreateHost,
@@ -9,6 +10,12 @@ import EventDetailUpdateScreen from "../event-detail-update";
 
 const updateEventMutateMock = jest.fn();
 const createEventMutateMock = jest.fn();
+const dismissToMock = jest.fn();
+const replaceMock = jest.fn();
+const refreshScheduleViewsMock = jest.fn<Promise<void>, [unknown, unknown]>(async () => undefined);
+let updateMutationOptions:
+  | { onSuccess?: (event: { id: string }) => Promise<void> | void }
+  | undefined;
 const mockActivityPlansListUseQuery: jest.Mock = jest.fn(() => ({
   data: { items: [] },
   isLoading: false,
@@ -16,16 +23,45 @@ const mockActivityPlansListUseQuery: jest.Mock = jest.fn(() => ({
   refetch: jest.fn(),
 }));
 
-const eventDetailData = {
+type ActivityPlanFixture = ReturnType<typeof createActivityPlanSummary>;
+type EventEditorInput = { starts_at: string; recurrence_rule?: string | null };
+type StackScreenProps = Record<string, unknown> & {
+  options?: { headerRight?: () => React.ReactNode };
+};
+type ResourcePickerProps = {
+  onSelect: (item: Record<string, unknown>) => void;
+  scope: "activityPlans" | "routes";
+  visible: boolean;
+};
+
+const eventDetailData: {
+  id: string;
+  event_type: string;
+  title: string;
+  starts_at: string;
+  timezone: string;
+  ends_at: string | null;
+  all_day: boolean;
+  notes: string;
+  activity_plan_id: string | null;
+  activityPlanSummary: ActivityPlanFixture | null;
+  route_id?: string | null;
+  route?: { id: string; name: string } | null;
+  recurrence_rule: string | null;
+  series_id: string | null;
+  occurrence_key: string | null;
+  original_starts_at: string | null;
+} = {
   id: "event-1",
   event_type: "custom" as string,
   title: "Tempo Builder",
   starts_at: "2026-03-23T09:00:00.000Z",
+  timezone: "UTC",
   ends_at: null as string | null,
   all_day: false,
   notes: "Bring gels",
   activity_plan_id: null as string | null,
-  activity_plan: null,
+  activityPlanSummary: null,
   recurrence_rule: null as string | null,
   series_id: null as string | null,
   occurrence_key: null as string | null,
@@ -51,7 +87,7 @@ jest.mock("react-native", () => ({
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: {
-    Screen: (props: any) =>
+    Screen: (props: StackScreenProps) =>
       React.createElement(
         "StackScreen",
         props,
@@ -59,11 +95,13 @@ jest.mock("expo-router", () => ({
       ),
   },
   useLocalSearchParams: () => ({ id: "event-1" }),
+  useNavigation: () => ({ dispatch: jest.fn() }),
   useRouter: () => ({
     back: jest.fn(),
+    dismissTo: dismissToMock,
     navigate: jest.fn(),
     push: jest.fn(),
-    replace: jest.fn(),
+    replace: replaceMock,
   }),
 }));
 
@@ -103,6 +141,14 @@ jest.mock("@/components/shared/ActivityPlanCard", () => ({
   __esModule: true,
   ActivityPlanCard: mockCreateHost("ActivityPlanCard"),
 }));
+jest.mock("@/components/shared/RouteCard", () => ({
+  __esModule: true,
+  RouteCard: mockCreateHost("RouteCard"),
+}));
+jest.mock("@/components/shared/AppFormModal", () => ({
+  __esModule: true,
+  AppFormModal: mockCreateHost("AppFormModal"),
+}));
 
 jest.mock("@react-native-community/datetimepicker", () => ({
   __esModule: true,
@@ -120,33 +166,46 @@ jest.mock("@/components/event/EventEditorCard", () => ({
           rule: `FREQ=${frequency.toUpperCase()};UNTIL=${endDate.replace(/-/g, "")}T235959Z`,
           timezone: "UTC",
         },
-  parseEventDateForEditor: (event: any) => new Date(event.starts_at),
-  parseRecurrenceEndDate: (event: any) => {
+  parseEventDateForEditor: (event: EventEditorInput) => new Date(event.starts_at),
+  parseRecurrenceEndDate: (event: EventEditorInput) => {
     const match = event.recurrence_rule?.match(/UNTIL=(\d{4})(\d{2})(\d{2})/);
     return match ? `${match[1]}-${match[2]}-${match[3]}` : null;
   },
-  parseRecurrenceFrequency: (event: any) =>
+  parseRecurrenceFrequency: (event: EventEditorInput) =>
     event.recurrence_rule?.includes("FREQ=WEEKLY") ? "weekly" : "none",
 }));
 
 jest.mock("@/components/shared/resource-picker", () => ({
   __esModule: true,
-  ResourcePickerModal: ({ onSelect, visible }: any) => {
+  ResourcePickerModal: ({ onSelect, scope, visible }: ResourcePickerProps) => {
     if (!visible) return null;
     const React = require("react");
-    const items = mockActivityPlansListUseQuery().data?.items ?? [];
+    const items =
+      scope === "routes"
+        ? [{ id: "route-1", name: "River Loop" }]
+        : (mockActivityPlansListUseQuery().data?.items ?? []);
     return React.createElement(
       "ResourcePickerModal",
       { visible },
-      ...items.map((item: any) =>
+      ...items.map((item: { id: string; name: string }) =>
         React.createElement(
           "Button",
           {
             key: item.id,
-            onPress: () => onSelect(item),
-            testID: `event-detail-update-activity-plan-option-${item.id}`,
+            onPress: () =>
+              onSelect(
+                scope === "routes"
+                  ? { kind: "route", id: item.id, label: item.name, route: item }
+                  : {
+                      kind: "activityPlan",
+                      id: item.id,
+                      label: item.name,
+                      activityPlan: item,
+                    },
+              ),
+            testID: `event-detail-update-${scope === "routes" ? "route" : "activity-plan"}-option-${item.id}`,
           },
-          item.name,
+          React.createElement("Text", null, item.name),
         ),
       ),
     );
@@ -155,6 +214,8 @@ jest.mock("@/components/shared/resource-picker", () => ({
 
 jest.mock("@/lib/scheduling/refreshScheduleViews", () => ({
   __esModule: true,
+  refreshScheduleViews: (queryClient: unknown, scope: unknown) =>
+    refreshScheduleViewsMock(queryClient, scope),
   refreshScheduleWithCallbacks: jest.fn(async () => undefined),
 }));
 
@@ -176,10 +237,13 @@ jest.mock("@/lib/api", () => ({
         }),
       },
       update: {
-        useMutation: () => ({
-          isPending: false,
-          mutate: updateEventMutateMock,
-        }),
+        useMutation: (options?: typeof updateMutationOptions) => {
+          updateMutationOptions = options;
+          return {
+            isPending: false,
+            mutate: updateEventMutateMock,
+          };
+        },
       },
       create: {
         useMutation: () => ({
@@ -187,6 +251,10 @@ jest.mock("@/lib/api", () => ({
           mutate: createEventMutateMock,
         }),
       },
+    },
+    plannedSessions: {
+      create: { useMutation: () => ({ isPending: false, mutate: createEventMutateMock }) },
+      recordingLaunch: { useMutation: () => ({ mutateAsync: jest.fn() }) },
     },
     activityPlans: {
       list: {
@@ -200,20 +268,21 @@ jest.mock("@/lib/api", () => ({
 }));
 
 describe("event detail update screen", () => {
-  function getDateInput(rendered: any, id: string) {
-    return rendered.UNSAFE_getAllByType("DateInput").find((node: any) => node.props.id === id);
-  }
-
   beforeEach(() => {
+    process.env.EXPO_PUBLIC_MAESTRO_E2E = "1";
     jest.clearAllMocks();
     eventDetailData.recurrence_rule = null;
     eventDetailData.ends_at = null;
     eventDetailData.event_type = "custom";
     eventDetailData.activity_plan_id = null;
-    eventDetailData.activity_plan = null;
+    eventDetailData.activityPlanSummary = null;
+    eventDetailData.route_id = null;
+    eventDetailData.route = null;
     eventDetailData.series_id = null;
     eventDetailData.occurrence_key = null;
     eventDetailData.original_starts_at = null;
+    updateMutationOptions = undefined;
+    refreshScheduleViewsMock.mockResolvedValue(undefined);
     mockActivityPlansListUseQuery.mockReturnValue({
       data: { items: [] },
       isLoading: false,
@@ -222,14 +291,34 @@ describe("event detail update screen", () => {
     });
   });
 
-  it("saves edits from the dedicated update route", async () => {
-    renderNative(<EventDetailUpdateScreen />);
+  it("keeps save and cancel actions inside the update form", async () => {
+    await renderNative(<EventDetailUpdateScreen />);
 
-    fireEvent(screen.getByTestId("event-detail-update-title-input"), "changeText", "Updated Event");
-    fireEvent(screen.getByTestId("event-detail-update-notes-input"), "changeText", "Updated notes");
+    expect(screen.getByTestId("event-detail-update-scroll")).toBeTruthy();
+    expect(screen.getByTestId("event-detail-update-cancel-button")).toBeTruthy();
+    expect(screen.getByTestId("event-detail-update-save-button")).toBeTruthy();
+  });
+
+  it("saves edits from the dedicated update route", async () => {
+    await renderNative(<EventDetailUpdateScreen />);
+
+    expect(screen.getByTestId("event-detail-update-title-input").props.selectTextOnFocus).toBe(
+      true,
+    );
+
+    await fireEvent(
+      screen.getByTestId("event-detail-update-title-input"),
+      "changeText",
+      "Updated Event",
+    );
+    await fireEvent(
+      screen.getByTestId("event-detail-update-notes-input"),
+      "changeText",
+      "Updated notes",
+    );
 
     await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
+      await fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
     });
 
     await waitFor(() => {
@@ -246,26 +335,28 @@ describe("event detail update screen", () => {
     });
   });
 
-  it("asks for recurring save scope before mutating", async () => {
-    eventDetailData.recurrence_rule = "FREQ=WEEKLY;UNTIL=20260530T235959Z";
+  it("asks for an update scope before saving a recurring event", async () => {
+    eventDetailData.recurrence_rule = "FREQ=WEEKLY";
 
-    const rendered = renderNative(<EventDetailUpdateScreen />);
+    await renderNative(<EventDetailUpdateScreen />);
 
-    fireEvent(screen.getByTestId("event-detail-update-title-input"), "changeText", "Updated Event");
+    await fireEvent(
+      screen.getByTestId("event-detail-update-title-input"),
+      "changeText",
+      "Updated Event",
+    );
+    expect(screen.queryByTestId("event-detail-update-repeat-row")).toBeNull();
     await act(async () => {
-      getDateInput(rendered, "event-detail-update-start-date").props.onChange("2026-04-30");
-    });
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
+      await fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
     });
 
-    await waitFor(() => {
-      expect(screen.getByTestId("event-detail-update-scope-modal")).toBeTruthy();
-    });
     expect(updateEventMutateMock).not.toHaveBeenCalled();
+    expect(screen.getByText("This event only")).toBeTruthy();
+    expect(screen.getByText("This and future events")).toBeTruthy();
+    expect(screen.getByText("Entire series")).toBeTruthy();
 
     await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-scope-future"));
+      await fireEvent.press(screen.getByTestId("event-detail-update-scope-future"));
     });
 
     await waitFor(() => {
@@ -273,82 +364,75 @@ describe("event detail update screen", () => {
         expect.objectContaining({
           id: "event-1",
           scope: "future",
-          patch: expect.objectContaining({
+          patch: {
+            notes: "Bring gels",
             title: "Updated Event",
-          }),
+          },
         }),
       );
     });
   });
 
-  it("passes the selected entire-series scope for recurring edits", async () => {
-    eventDetailData.recurrence_rule = "FREQ=WEEKLY;UNTIL=20260530T235959Z";
-
-    renderNative(<EventDetailUpdateScreen />);
-
-    fireEvent(screen.getByTestId("event-detail-update-title-input"), "changeText", "Series Title");
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
-    });
-
-    expect(updateEventMutateMock).not.toHaveBeenCalled();
-
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-scope-series"));
-    });
-
-    await waitFor(() => {
-      expect(updateEventMutateMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          id: "event-1",
-          scope: "series",
-          patch: expect.objectContaining({
-            title: "Series Title",
-          }),
+  it("navigates to the updated event before schedule refresh settles", async () => {
+    let finishRefresh: () => void = () => undefined;
+    refreshScheduleViewsMock.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishRefresh = resolve;
         }),
-      );
-    });
+    );
+    await renderNative(<EventDetailUpdateScreen />);
+
+    const completion = updateMutationOptions?.onSuccess?.({ id: "event-1" });
+    await Promise.resolve();
+
+    expect(replaceMock).toHaveBeenCalledWith("/event-detail?id=event-1");
+    expect(dismissToMock).not.toHaveBeenCalled();
+
+    finishRefresh();
+    await completion;
   });
 
-  it("requires an end date before saving a recurring series", async () => {
-    renderNative(<EventDetailUpdateScreen />);
-
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-repeat-row"));
-    });
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-recurrence-weekly"));
-    });
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-repeat-done-button"));
-    });
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
-    });
-
-    expect(screen.getByText("Choose when this repeating series should end.")).toBeTruthy();
+  it.each([
+    "future",
+    "series",
+  ])("does not drop a changed start time when saving scope %s", async (scope) => {
+    eventDetailData.recurrence_rule = "FREQ=WEEKLY";
+    await renderNative(<EventDetailUpdateScreen />);
+    await fireEvent(screen.getByTestId("event-detail-update-start-time-button"), "change", "10:30");
+    await fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
+    await fireEvent.press(screen.getByTestId(`event-detail-update-scope-${scope}`));
     expect(updateEventMutateMock).not.toHaveBeenCalled();
+    expect(screen.getByText(/Save schedule or route changes to this event only/)).toBeTruthy();
+
+    // The same draft remains editable and can be saved to the supported scope.
+    await fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
+    await fireEvent.press(screen.getByTestId("event-detail-update-scope-single"));
+    expect(updateEventMutateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scope: "single",
+        patch: expect.objectContaining({ starts_at: expect.stringContaining("10:30") }),
+      }),
+    );
   });
 
-  it("saves recurrence presets through the event editor", async () => {
-    const rendered = renderNative(<EventDetailUpdateScreen />);
+  it("edits a materialized occurrence override with single-occurrence scope", async () => {
+    eventDetailData.series_id = "series-1";
+    eventDetailData.occurrence_key = "2026-03-23";
+    eventDetailData.original_starts_at = "2026-03-23T09:00:00.000Z";
 
+    await renderNative(<EventDetailUpdateScreen />);
+
+    await fireEvent(
+      screen.getByTestId("event-detail-update-title-input"),
+      "changeText",
+      "Override Title",
+    );
     await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-repeat-row"));
+      await fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
     });
     await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-recurrence-weekly"));
-    });
-    await act(async () => {
-      getDateInput(rendered, "event-detail-update-recurrence-end-date").props.onChange(
-        "2026-04-30",
-      );
-    });
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-repeat-done-button"));
-    });
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
+      await fireEvent.press(screen.getByTestId("event-detail-update-scope-single"));
     });
 
     await waitFor(() => {
@@ -357,47 +441,6 @@ describe("event detail update screen", () => {
           id: "event-1",
           scope: "single",
           patch: expect.objectContaining({
-            recurrence: {
-              rule: "FREQ=WEEKLY;UNTIL=20260430T235959Z",
-              timezone: "UTC",
-            },
-          }),
-        }),
-      );
-    });
-  });
-
-  it("asks for save scope when editing a materialized occurrence override without its own recurrence rule", async () => {
-    eventDetailData.series_id = "series-1";
-    eventDetailData.occurrence_key = "2026-03-23";
-    eventDetailData.original_starts_at = "2026-03-23T09:00:00.000Z";
-
-    renderNative(<EventDetailUpdateScreen />);
-
-    fireEvent(
-      screen.getByTestId("event-detail-update-title-input"),
-      "changeText",
-      "Override Title",
-    );
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
-    });
-
-    await waitFor(() => {
-      expect(screen.getByTestId("event-detail-update-scope-modal")).toBeTruthy();
-    });
-    expect(updateEventMutateMock).not.toHaveBeenCalled();
-
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-scope-series"));
-    });
-
-    await waitFor(() => {
-      expect(updateEventMutateMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          id: "event-1",
-          scope: "series",
-          patch: expect.objectContaining({
             title: "Override Title",
           }),
         }),
@@ -405,65 +448,56 @@ describe("event detail update screen", () => {
     });
   });
 
-  it("attaches and detaches activity plans through the same update editor", async () => {
+  it("does not attach executable activity plans through a generic event update", async () => {
     mockActivityPlansListUseQuery.mockReturnValue({
       data: {
-        items: [{ id: "11111111-1111-4111-8111-111111111111", name: "Tempo Run" }],
+        items: [
+          createActivityPlanSummary({
+            id: "11111111-1111-4111-8111-111111111111",
+            name: "Tempo Run",
+            activityCategory: "run",
+          }),
+        ],
       },
       isLoading: false,
       error: null,
       refetch: jest.fn(),
     });
 
-    renderNative(<EventDetailUpdateScreen />);
+    await renderNative(<EventDetailUpdateScreen />);
 
-    fireEvent.press(screen.getByTestId("event-detail-update-type-planned"));
-    fireEvent.press(screen.getByTestId("event-detail-update-change-activity-plan-button"));
-    fireEvent.press(
+    await fireEvent.press(screen.getByTestId("event-detail-update-type-planned"));
+    await fireEvent.press(screen.getByTestId("event-detail-update-change-activity-plan-button"));
+    await fireEvent.press(
       screen.getByTestId(
         "event-detail-update-activity-plan-option-11111111-1111-4111-8111-111111111111",
       ),
     );
 
     await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
+      await fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
     });
 
-    await waitFor(() => {
-      expect(updateEventMutateMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          patch: expect.objectContaining({
-            activity_plan_id: "11111111-1111-4111-8111-111111111111",
-            event_type: "planned",
-          }),
-        }),
-      );
-    });
+    expect(updateEventMutateMock).not.toHaveBeenCalled();
+  });
 
+  it("does not detach executable activity plans through a generic event update", async () => {
     eventDetailData.event_type = "planned";
     eventDetailData.activity_plan_id = "11111111-1111-4111-8111-111111111111";
-    eventDetailData.activity_plan = {
+    eventDetailData.route_id = "route-1";
+    eventDetailData.route = { id: "route-1", name: "River Loop" };
+    eventDetailData.activityPlanSummary = createActivityPlanSummary({
       id: "11111111-1111-4111-8111-111111111111",
       name: "Tempo Run",
-    } as any;
-    updateEventMutateMock.mockClear();
-
-    renderNative(<EventDetailUpdateScreen />);
-    fireEvent.press(screen.getByTestId("event-detail-update-remove-activity-plan-button"));
+      activityCategory: "run",
+    });
+    await renderNative(<EventDetailUpdateScreen />);
+    await fireEvent.press(screen.getByTestId("event-detail-update-remove-activity-plan-button"));
 
     await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
+      await fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
     });
 
-    await waitFor(() => {
-      expect(updateEventMutateMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          patch: expect.objectContaining({
-            activity_plan_id: null,
-            event_type: "custom",
-          }),
-        }),
-      );
-    });
+    expect(updateEventMutateMock).not.toHaveBeenCalled();
   });
 });

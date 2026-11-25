@@ -32,6 +32,8 @@ const seriesRootEvent = {
   is_recurring_series: true,
 };
 
+type GroupEventSummary = { id: string; title: string };
+
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
@@ -58,18 +60,23 @@ jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHos
 jest.mock("@/components/shared/detail", () => ({
   __esModule: true,
   DetailOverflowMenu: createHost("DetailOverflowMenu"),
-  DetailScaffold: ({ children, screenTestID }: any) =>
+  DetailScaffold: ({
+    children,
+    screenTestID,
+  }: React.PropsWithChildren<{ screenTestID?: string }>) =>
     React.createElement("View", { testID: screenTestID }, children),
 }));
 
 jest.mock("@/components/groups", () => ({
   __esModule: true,
-  CurrentGroupEventPlanCard: ({ event }: any) =>
-    React.createElement("View", { testID: `current-event-${event.id}` }, event.title),
   GroupAccessLevelBadge: createHost("GroupAccessLevelBadge"),
-  GroupEventCard: ({ event }: any) =>
-    React.createElement("View", { testID: `group-event-card-${event.id}` }, event.title),
-  GroupEventEmptyState: ({ title }: any) => React.createElement("Text", null, title),
+  GroupEventCard: ({ event }: { event: GroupEventSummary }) =>
+    React.createElement(
+      "View",
+      { testID: `group-event-card-${event.id}` },
+      React.createElement("Text", null, event.title),
+    ),
+  GroupEventEmptyState: ({ title }: { title: string }) => React.createElement("Text", null, title),
   GroupEventListSkeleton: createHost("GroupEventListSkeleton"),
   GroupJoinPolicyBadge: createHost("GroupJoinPolicyBadge"),
   GroupMembersOnlyLockedState: createHost("GroupMembersOnlyLockedState"),
@@ -127,11 +134,11 @@ jest.mock("@/lib/groups", () => ({
 const GroupDetailScreen = require("../group-detail").default;
 
 describe("group detail events", () => {
-  it("does not repeat the current event in the upcoming event list", () => {
-    renderNative(<GroupDetailScreen />);
+  it("shows upcoming concrete events without a separate current-plan panel", async () => {
+    await renderNative(<GroupDetailScreen />);
 
-    expect(screen.getByTestId("current-event-event-current")).toBeTruthy();
-    expect(screen.queryByTestId("group-event-card-event-current")).toBeNull();
+    expect(screen.queryByTestId("current-event-event-current")).toBeNull();
+    expect(screen.getByTestId("group-event-card-event-current")).toBeTruthy();
     expect(screen.queryByTestId("group-event-card-event-series-root")).toBeNull();
     expect(screen.getByTestId("group-event-card-event-other")).toBeTruthy();
   });

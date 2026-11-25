@@ -1,11 +1,10 @@
+import type { SocialLikeEntityType } from "@repo/core";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 
-export type ResourceLikeEntityType = "activity" | "activity_plan" | "route" | "training_plan";
-
 type UseResourceLikeOptions = {
   entityId: string;
-  entityType: ResourceLikeEntityType;
+  entityType: SocialLikeEntityType;
   initialCount?: number | null;
   initialLiked?: boolean | null;
   onToggle?: (liked: boolean) => void;
