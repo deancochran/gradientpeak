@@ -21,6 +21,17 @@ name: Reopen the exact manual completion from its selected Calendar day
     visible:
       id: calendar-screen-ready
     timeout: 30000
+# The completion belongs to the onboarded athlete's Today. Reset a retained
+# Calendar selection before confirming the exact fixture date through the
+# native picker.
+- tapOn:
+    id: calendar-reset-today-entry
+- extendedWaitUntil:
+    notVisible:
+      id: calendar-date-jump-loading
+    timeout: 30000
+- assertVisible:
+    id: calendar-day-select-${MAESTRO_ACCEPTANCE_SESSION_DATE}
 - tapOn:
     id: calendar-date-jump-entry
 - tapOn: ${MAESTRO_ACCEPTANCE_SESSION_DAY}

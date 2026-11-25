@@ -10,6 +10,17 @@ name: Open the visible scheduled session from Calendar and report completion wit
     visible:
       id: calendar-screen-ready
     timeout: 30000
+# The Calendar retains its last selected month across native journeys. This
+# session is scheduled for the onboarded athlete's Today, so restore the
+# visible Calendar to that user-facing anchor before opening Android's picker.
+- tapOn:
+    id: calendar-reset-today-entry
+- extendedWaitUntil:
+    notVisible:
+      id: calendar-date-jump-loading
+    timeout: 30000
+- assertVisible:
+    id: calendar-day-select-${MAESTRO_ACCEPTANCE_SESSION_DATE}
 - tapOn:
     id: calendar-date-jump-entry
 - tapOn: ${MAESTRO_ACCEPTANCE_SESSION_DAY}
