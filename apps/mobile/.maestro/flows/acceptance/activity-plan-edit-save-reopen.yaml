@@ -1,0 +1,66 @@
+appId: com.deancochran.gradientpeak.dev
+name: Athlete saves metadata-only activity-plan edits, reopens the library record, and returns Home
+---
+# This flow continues the retained metadata draft from the prior cancel flow.
+# Select the native semantic field's whole value before clearing. eraseText
+# otherwise backspaces from its current cursor and can retain a suffix.
+- longPressOn: "Description"
+- tapOn: "Select all"
+- eraseText: 1
+- tapOn: "Save"
+# The edited name remains visible in the composer draft, so it cannot establish
+# that the async update completed. Wait for the detail-only overflow control
+# and for the composer-only step action to leave before taking saved evidence
+# or navigating back to the library.
+- extendedWaitUntil:
+    visible:
+      id: activity-plan-options-trigger
+    timeout: 30000
+- extendedWaitUntil:
+    notVisible:
+      id: activity-plan-add-step
+    timeout: 30000
+- assertVisible: ${MAESTRO_ACCEPTANCE_EDITED_PLAN_NAME}
+- takeScreenshot: activity-plan-edit-saved
+# Rediscover through the library after the route-level save, not from cached
+# composer text or an activity-plan deeplink.
+- pressKey: back
+- extendedWaitUntil:
+    visible:
+      id: activity-plans-list-screen
+    timeout: 30000
+- tapOn: ${MAESTRO_ACCEPTANCE_EDITED_PLAN_NAME}
+- extendedWaitUntil:
+    visible:
+      id: activity-plan-options-trigger
+    timeout: 30000
+- assertVisible: ${MAESTRO_ACCEPTANCE_EDITED_PLAN_NAME}
+- takeScreenshot: activity-plan-edit-reopened
+# The standard-stack detail returns to its library, the library returns to the
+# Me route that opened it, and Me returns to the initiating Home tab. Each
+# semantic header Back has a route-owned destination assertion.
+- tapOn:
+    id: standard-header-back
+- extendedWaitUntil:
+    visible:
+      id: activity-plans-list-screen
+    timeout: 30000
+- tapOn:
+    id: standard-header-back
+- extendedWaitUntil:
+    visible:
+      id: profile-tab-screen
+    timeout: 30000
+- tapOn:
+    id: standard-header-back
+- extendedWaitUntil:
+    visible:
+      id: home-training-workspace
+    timeout: 30000
+# The selected day context is asserted by the same scheduled-session identity,
+# rather than inventing a plan snapshot/revision semantic for metadata edits.
+- assertVisible:
+    id: plan-selected-day
+- assertVisible:
+    id: plan-selected-day-planned-activity-card-${MAESTRO_ACCEPTANCE_SESSION_ID}
+- takeScreenshot: activity-plan-edit-home

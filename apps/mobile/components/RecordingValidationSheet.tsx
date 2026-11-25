@@ -48,9 +48,9 @@ export function RecordingValidationSheet({
               <Icon as={XCircle} size={20} className="text-destructive" />
               <Text className="text-lg font-semibold text-destructive">Errors</Text>
             </View>
-            {errors.map((error, index) => (
+            {errors.map((error) => (
               <View
-                key={index}
+                key={error}
                 className="bg-destructive/10 p-3 rounded-lg mb-2 border border-destructive/20"
               >
                 <Text className="text-sm text-destructive">{error}</Text>
@@ -66,9 +66,9 @@ export function RecordingValidationSheet({
               <Icon as={AlertTriangle} size={20} className="text-yellow-600" />
               <Text className="text-lg font-semibold text-yellow-600">Warnings</Text>
             </View>
-            {warnings.map((warning, index) => (
+            {warnings.map((warning) => (
               <View
-                key={index}
+                key={warning}
                 className="bg-yellow-500/10 p-3 rounded-lg mb-2 border border-yellow-500/20"
               >
                 <Text className="text-sm text-yellow-600">{warning}</Text>
