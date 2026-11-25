@@ -12,3 +12,4 @@ name: Make one explicit UI retry after the runner restores its API reverse
     visible:
       id: home-screen
     timeout: 60000
+- takeScreenshot: recording-retry-saved
