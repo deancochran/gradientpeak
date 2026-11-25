@@ -429,6 +429,7 @@ describe("SessionScenarioPreview", () => {
     );
     await waitFor(() => expect(recovered.getByTestId("session-scenario-retry-apply")).toBeTruthy());
     expect(recovered.getByTestId("session-scenario-retry-apply").props.disabled).toBe(false);
+    expect(recovered.getByTestId("e2e-session-scenario-retry-boundary-idle")).toBeTruthy();
     expect(mocks.apply).toHaveBeenCalledTimes(1);
 
     await act(async () => recovered.getByTestId("session-scenario-retry-apply").props.onPress());

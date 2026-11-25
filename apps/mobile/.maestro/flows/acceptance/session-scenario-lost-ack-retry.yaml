@@ -20,6 +20,8 @@ name: Reopen and explicitly retry a retained scenario operation
 - takeScreenshot: session-scenario-lost-ack-reopened
 - assertVisible:
     id: session-scenario-retry-apply
+- assertVisible:
+    id: e2e-session-scenario-retry-boundary-idle
 - tapOn:
     id: session-scenario-retry-apply
 - assertVisible:
