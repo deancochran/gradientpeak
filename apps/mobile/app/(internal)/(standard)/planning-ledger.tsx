@@ -2,6 +2,7 @@ import { addDaysDateKey, planningLedgerRequestSchema } from "@repo/core";
 import type { PlannedSessionComparison } from "@repo/core/calendar";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { ScrollView, View } from "react-native";
+import { completedPlannedSessionsForLedger } from "@/components/plan/ledger/completedPlannedSessions";
 import type { LedgerNavigationTarget } from "@/components/plan/ledger/LedgerEntries";
 import { PlanningLedgerView } from "@/components/plan/ledger/PlanningLedgerView";
 import { ErrorState, LoadingState } from "@/components/shared/ScreenState";
@@ -33,16 +34,21 @@ export default function PlanningLedgerScreen() {
       : { startDate: "1970-01-01", endDateExclusive: "1970-01-02", limit: 500 },
     { enabled: request !== null && query.data !== undefined },
   );
+  const calendarItems =
+    calendarQuery.isLoading || calendarQuery.isError ? [] : (calendarQuery.data?.items ?? []);
   const completedActivities = Array.from(
     new Map(
-      (calendarQuery.data?.items ?? []).flatMap((item) =>
+      calendarItems.flatMap((item) =>
         item.activity ? [[item.activity.id, item.activity] as const] : [],
       ),
     ).values(),
   );
-  const plannedActuals: PlannedSessionComparison[] = (calendarQuery.data?.items ?? []).flatMap(
-    (item) => (item.plannedActual ? [item.plannedActual] : []),
+  const plannedActuals: PlannedSessionComparison[] = calendarItems.flatMap((item) =>
+    item.plannedActual ? [item.plannedActual] : [],
   );
+  const completedPlannedSessions = query.data
+    ? completedPlannedSessionsForLedger(calendarItems, query.data)
+    : [];
 
   const openEntry = (target: LedgerNavigationTarget) => {
     const route =
@@ -81,6 +87,7 @@ export default function PlanningLedgerScreen() {
         <ScrollView className="flex-1" contentContainerStyle={{ flexGrow: 1 }}>
           <PlanningLedgerView
             completedActivities={completedActivities}
+            completedPlannedSessions={completedPlannedSessions}
             ledger={query.data}
             onOpenEntry={openEntry}
             plannedActuals={plannedActuals}

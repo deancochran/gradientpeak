@@ -56,7 +56,6 @@ function matches(request: IncomingMessage) {
   if (request.method !== "GET") return false;
   const url = new URL(request.url ?? "/", "http://loopback");
   if (
-    url.pathname !== "/api/trpc/athleteIntelligence.getGoalProgress" ||
     url.searchParams.get("batch") !== "1" ||
     url.searchParams.getAll("batch").length !== 1 ||
     url.searchParams.getAll("input").length !== 1
@@ -65,11 +64,16 @@ function matches(request: IncomingMessage) {
   const input = url.searchParams.get("input");
   if (!input) return false;
   try {
-    const parsed = JSON.parse(input) as { 0?: { json?: { goalId?: unknown } } };
+    const parsed = JSON.parse(input) as Record<string, { json?: { goalId?: unknown } }>;
+    if (Array.isArray(parsed)) return false;
+    if (url.pathname === "/api/trpc/athleteIntelligence.getGoalProgress")
+      return Object.keys(parsed).length === 1 && parsed[0]?.json?.goalId === goalId;
     return (
-      !Array.isArray(parsed) &&
-      Object.keys(parsed).length === 1 &&
-      parsed[0]?.json?.goalId === goalId
+      url.pathname ===
+        "/api/trpc/athleteIntelligence.getGoalAssessment,athleteIntelligence.getGoalProgress" &&
+      Object.keys(parsed).length === 2 &&
+      parsed[0]?.json?.goalId === goalId &&
+      parsed[1]?.json?.goalId === goalId
     );
   } catch {
     return false;

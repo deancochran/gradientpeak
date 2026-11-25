@@ -388,6 +388,106 @@ it("keeps an unhydrated completed ledger entry visible and tappable", async () =
   expect(openEntryMock).toHaveBeenCalledWith({ id: "activity-1", target: "activity" });
 });
 
+it("keeps a completed session card alongside its linked activity and opens each canonical route", async () => {
+  await renderNative(
+    <PlanningLedgerView
+      completedActivities={[createActivityDisplay({ id: "activity-1", title: "Morning run" })]}
+      completedPlannedSessions={[
+        {
+          calendarDate: "2026-04-15",
+          id: "session-1",
+          metrics: [],
+          plan: null,
+          status: "completed",
+          subtitle: null,
+          title: "Tempo Builder",
+        },
+      ]}
+      ledger={{
+        ...ledgerFixture,
+        dailyBreakdown: [],
+        period: "day",
+        periodEnd: "2026-04-15",
+        periodStart: "2026-04-15",
+      }}
+      onOpenEntry={openEntryMock}
+      trainingComposition={trainingCompositionFixture}
+    />,
+  );
+
+  const activity = screen.getByTestId("planning-ledger-entry-completed-activity-1");
+  const session = screen.getByTestId("planning-ledger-completed-session-session-1");
+  expect(session.props.plannedActivity).toMatchObject({
+    calendarDate: "2026-04-15",
+    id: "session-1",
+    status: "completed",
+    title: "Tempo Builder",
+  });
+  await fireEvent.press(activity);
+  expect(openEntryMock).toHaveBeenLastCalledWith({ id: "activity-1", target: "activity" });
+  await fireEvent.press(session);
+  expect(openEntryMock).toHaveBeenLastCalledWith({ id: "session-1", target: "planned_session" });
+});
+
+it("enriches a retained planned ledger row with its completed skip lifecycle without duplicating it", async () => {
+  await renderNative(
+    <PlanningLedgerView
+      completedActivities={[]}
+      completedPlannedSessions={[
+        {
+          calendarDate: "2026-04-15",
+          id: "skip-session-1",
+          metrics: [],
+          plan: null,
+          status: "completed",
+          subtitle: null,
+          title: "Skipped session",
+        },
+      ]}
+      ledger={{
+        ...ledgerFixture,
+        dailyBreakdown: [],
+        entries: [
+          {
+            contributingDurationSeconds: unavailable,
+            date: "2026-04-15",
+            id: "skip-session-1",
+            intensity: unavailable,
+            kind: "planned",
+            load: { status: "known_zero", value: 0 },
+            navigation: { id: "skip-session-1", target: "event" },
+            startsAt: null,
+            status: "Planned",
+            title: "Skipped session",
+          },
+        ],
+        period: "day",
+        periodEnd: "2026-04-15",
+        periodStart: "2026-04-15",
+      }}
+      onOpenEntry={openEntryMock}
+      trainingComposition={trainingCompositionFixture}
+    />,
+  );
+
+  expect(screen.queryByTestId("planning-ledger-entry-planned-skip-session-1")).toBeNull();
+  const session = screen.getByTestId("planning-ledger-completed-session-skip-session-1");
+  expect(session.props.plannedActivity).toMatchObject({
+    id: "skip-session-1",
+    status: "completed",
+    title: "Skipped session",
+  });
+  expect(session.props.plannedActivity.metrics).toEqual(
+    expect.arrayContaining([expect.objectContaining({ status: "available", value: 0 })]),
+  );
+  expect(screen.getAllByTestId("planning-ledger-completed-session-skip-session-1")).toHaveLength(1);
+  await fireEvent.press(session);
+  expect(openEntryMock).toHaveBeenLastCalledWith({
+    id: "skip-session-1",
+    target: "planned_session",
+  });
+});
+
 it("renders the daily load, state, duration, intensity, and activity flow without weekly controls", async () => {
   await renderNative(
     <PlanningLedgerView

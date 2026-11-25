@@ -20,7 +20,9 @@ name: Open the completed session from Calendar and replace it with the named sav
     visible:
       id: planning-ledger-screen
     timeout: 30000
-- assertVisible: ${MAESTRO_ACCEPTANCE_PLAN_NAME}
+- scrollUntilVisible:
+    element: ${MAESTRO_ACCEPTANCE_PLAN_NAME}
+    direction: DOWN
 - tapOn: ${MAESTRO_ACCEPTANCE_PLAN_NAME}
 - extendedWaitUntil:
     visible:
