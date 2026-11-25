@@ -189,6 +189,7 @@ vi.mock("../../../../lib/api/client", () => ({
         completionCandidates: { invalidate: vi.fn() },
         getById: { invalidate: vi.fn() },
       },
+      trainingPlans: { getPlanningLedger: { invalidate: vi.fn() } },
     }),
     routes: {
       get: {

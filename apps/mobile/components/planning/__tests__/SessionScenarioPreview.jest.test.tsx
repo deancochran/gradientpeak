@@ -10,6 +10,7 @@ const mocks = {
   invalidations: {
     activityPlans: jest.fn(),
     calendar: jest.fn(),
+    ledger: jest.fn(),
     plannedSessions: jest.fn(),
     state: jest.fn(),
   },
@@ -26,6 +27,7 @@ jest.mock("@/lib/api", () => ({
       activityPlans: { invalidate: mocks.invalidations.activityPlans },
       calendar: { invalidate: mocks.invalidations.calendar },
       plannedSessions: { invalidate: mocks.invalidations.plannedSessions },
+      trainingPlans: { getPlanningLedger: { invalidate: mocks.invalidations.ledger } },
     }),
     activityPlans: {
       list: {
@@ -413,7 +415,10 @@ describe("SessionScenarioPreview", () => {
     await act(async () => resolveApply({ status: "applied", action: "repointed" }));
   });
 
-  it("updates the stable known outcome when refresh invalidation fails", async () => {
+  it.each([
+    "calendar",
+    "ledger",
+  ] as const)("updates the stable known outcome when %s refresh invalidation fails", async (cache) => {
     mocks.preview = {
       data: availablePreview(),
       isError: false,
@@ -421,7 +426,7 @@ describe("SessionScenarioPreview", () => {
       refetch: jest.fn(),
     };
     mocks.apply.mockResolvedValue({ status: "applied", action: "repointed" });
-    mocks.invalidations.calendar.mockRejectedValueOnce(new Error("refresh unavailable"));
+    mocks.invalidations[cache].mockRejectedValueOnce(new Error("refresh unavailable"));
     const onKnownOutcomeChange = jest.fn();
     const screen = await renderNative(
       <SessionScenarioPreview {...props} onKnownOutcomeChange={onKnownOutcomeChange} />,
@@ -530,6 +535,7 @@ describe("SessionScenarioPreview", () => {
     await act(async () => screen.getByTestId("session-scenario-apply").props.onPress());
     await act(async () => screen.getByTestId("session-scenario-confirm-apply").props.onPress());
     await waitFor(() => expect(mocks.invalidations.activityPlans).toHaveBeenCalledTimes(1));
+    expect(mocks.invalidations.ledger).toHaveBeenCalledTimes(1);
 
     mocks.preview = {
       data: availablePreview(2),

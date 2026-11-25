@@ -103,6 +103,7 @@ const scenarioApplyMock = jest.fn();
 const scenarioInvalidations = {
   activityPlans: jest.fn(async () => undefined),
   calendar: jest.fn(async () => undefined),
+  ledger: jest.fn(async () => undefined),
   plannedSessions: jest.fn(async () => undefined),
   state: jest.fn(async () => undefined),
 };
@@ -361,6 +362,7 @@ jest.mock("@/lib/api", () => ({
       athleteIntelligence: { getReadModel: { invalidate: scenarioInvalidations.state } },
       calendar: { invalidate: scenarioInvalidations.calendar },
       plannedSessions: { invalidate: scenarioInvalidations.plannedSessions },
+      trainingPlans: { getPlanningLedger: { invalidate: scenarioInvalidations.ledger } },
     }),
     events: {
       getById: {
@@ -653,6 +655,7 @@ describe("event detail fallback screen", () => {
 
     await confirmScenarioApply();
     await waitFor(() => expect(scenarioInvalidations.calendar).toHaveBeenCalledTimes(1));
+    expect(scenarioInvalidations.ledger).toHaveBeenCalledTimes(1);
     await confirmScenarioApply();
     await waitFor(() => expect(screen.getByTestId("session-scenario-retry-apply")).toBeTruthy());
 
