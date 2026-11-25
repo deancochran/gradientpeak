@@ -51,6 +51,15 @@ name: Open the visible scheduled session from Calendar and explicitly skip it wi
     visible:
       id: planning-ledger-screen
     timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: planning-ledger-training-state
+    direction: DOWN
+- assertVisible: "Seven-day training state"
+- assertVisible: "Training state is unavailable for this period."
+- assertVisible: "—"
+- assertVisible: "Unavailable"
+- takeScreenshot: planning-ledger-no-evidence-training-state
 # The detail route returns to the original day ledger. Retain the proof before
 # the date-context assertion so a failed sentinel remains debuggable.
 - takeScreenshot: planned-session-skip-return-ledger
