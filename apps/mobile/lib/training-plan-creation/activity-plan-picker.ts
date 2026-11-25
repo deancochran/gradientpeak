@@ -1,8 +1,5 @@
-import {
-  type ActivityPlanPlanningEstimate,
-  type AthletePlanningContext,
-  estimatePlanningActivityPlanForAthlete,
-} from "@repo/core";
+import type { ActivityPrescriptionQuantificationBundle, AthletePlanningContext } from "@repo/core";
+import { getActivityPlanQuantitySummary } from "@/lib/activityPlanMetrics";
 import { type ActivityPlanFitSummary, scoreActivityPlanFit } from "./activity-plan-fit";
 import type { UseTrainingPlanCreationServiceOptions } from "./service-types";
 import type { TrainingPlanBuilderSession } from "./types";
@@ -14,14 +11,10 @@ export type ActivityPlanPickerSort = NonNullable<
 export type ActivityPlanPickerItem = {
   id: string;
   name: string;
-  created_at?: string | null;
-  authoritative_metrics?: {
-    estimated_tss?: number | null;
-    estimated_duration?: number | null;
-    intensity_factor?: number | null;
-  } | null;
-  activity_category?: string | null;
-  structure?: unknown;
+  created_at?: string | null | undefined;
+  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null | undefined;
+  activity_category?: string | null | undefined;
+  structure?: unknown | undefined;
 };
 
 export type ActivityPlanPickerPage<TItem extends ActivityPlanPickerItem = ActivityPlanPickerItem> =
@@ -33,12 +26,12 @@ export type ActivityPlanPickerState<TItem extends ActivityPlanPickerItem = Activ
   {
     activityPlanItems: TItem[];
     activityPlanFitById: Map<string, ActivityPlanFitSummary>;
-    activityPlanEstimateById: Map<string, ActivityPlanPlanningEstimate>;
+    activityPlanEstimateById: Map<string, never>;
   };
 
 export function deriveActivityPlanPickerState<TItem extends ActivityPlanPickerItem>({
   pages,
-  athleteContext,
+  athleteContext: _athleteContext,
   selectedSessionId,
   sessions,
   sort = "newest",
@@ -56,27 +49,18 @@ export function deriveActivityPlanPickerState<TItem extends ActivityPlanPickerIt
   const fitById = new Map(
     items.flatMap((item) => {
       const fit = scoreActivityPlanFit({
-        intent: selectedSession?.intent,
-        estimatedTss: item.authoritative_metrics?.estimated_tss ?? null,
-        estimatedDurationSeconds: item.authoritative_metrics?.estimated_duration ?? null,
+        demand: selectedSession?.demand,
+        estimatedCommonLoad: getActivityPlanQuantitySummary(item).commonLoad,
+        estimatedDurationSeconds: getActivityPlanQuantitySummary(item).durationSeconds,
       });
       return fit ? [[item.id, fit] as const] : [];
     }),
   );
-  const estimateById = new Map(
-    athleteContext
-      ? items.map(
-          (item) =>
-            [
-              item.id,
-              estimatePlanningActivityPlanForAthlete({ activityPlan: item, athleteContext }),
-            ] as const,
-        )
-      : [],
-  );
+  // Candidate estimates are resolver-owned; the picker only ranks static fit.
+  const estimateById = new Map<string, never>();
 
   const sortedItems = [...items].sort((left, right) => {
-    if (selectedSession?.intent) {
+    if (selectedSession?.demand) {
       const fitDiff = (fitById.get(right.id)?.score ?? 0) - (fitById.get(left.id)?.score ?? 0);
       if (fitDiff !== 0) {
         return fitDiff;

@@ -1,9 +1,10 @@
 import { Text } from "@repo/ui/components/text";
 import { Stack } from "expo-router";
 import { useState } from "react";
-import { Pressable, View } from "react-native";
+import { View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
+import { HeaderTextAction } from "@/components/shared/HeaderAction";
 import { IndexFilterSheet } from "@/components/shared/IndexFilterSheet";
 import {
   FilterChip,
@@ -24,29 +25,27 @@ function ActivityPlansListScreen() {
   >(null);
   const [draftCategoryFilter, setDraftCategoryFilter] = useState<typeof categoryFilter>(null);
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
-  const { data, isLoading, error } = api.activityPlans.list.useQuery({
+  const { data, isFetching, isLoading, error, refetch } = api.activityPlans.list.useQuery({
     ownerScope: "own",
-    includeOwnOnly: true,
-    includeSystemTemplates: false,
     search: searchQuery.trim() || undefined,
     activityCategories: categoryFilter ? [categoryFilter] : undefined,
     limit: 100,
   });
 
   const plans = data?.items ?? [];
+  const hasActiveQuery = searchQuery.trim().length > 0 || categoryFilter !== null;
 
   return (
     <View className="flex-1 bg-background" testID="activity-plans-list-screen">
       <Stack.Screen
         options={{
           headerRight: () => (
-            <Pressable
-              onPress={() => navigateTo(ROUTES.PLAN.CREATE_ACTIVITY_PLAN.INDEX as any)}
-              className="mr-2 rounded-full px-2 py-1"
+            <HeaderTextAction
+              accessibilityLabel="Create activity plan"
+              label="Create"
+              onPress={() => navigateTo(ROUTES.PLAN.CREATE_ACTIVITY_PLAN.INDEX)}
               testID="activity-plans-list-create-trigger"
-            >
-              <Text className="text-sm font-medium text-primary">Create</Text>
-            </Pressable>
+            />
           ),
         }}
       />
@@ -69,6 +68,7 @@ function ActivityPlansListScreen() {
         ListHeaderComponent={
           <IndexResultsSummary
             count={plans.length}
+            countKind="loaded"
             singularLabel="activity plan"
             pluralLabel="activity plans"
           />
@@ -81,16 +81,18 @@ function ActivityPlansListScreen() {
             </Text>
           </View>
         }
-        errorDescription={error?.message}
+        errorDescription={error?.message ?? "Please try again."}
         errorTitle="Unable to load activity plans"
         isError={Boolean(error)}
         isLoading={isLoading}
+        isEmptyFiltered={hasActiveQuery}
+        isRetrying={isFetching}
+        onRetry={refetch}
         renderItem={(item) => (
           <ActivityPlanCard
-            activityPlan={item as any}
-            onPress={() => navigateTo(ROUTES.PLAN.PLAN_DETAIL(item.id) as any)}
+            plan={item}
+            onPress={() => navigateTo(ROUTES.PLAN.PLAN_DETAIL(item.id))}
             testID={`activity-plan-list-item-${item.id}`}
-            variant="compact"
           />
         )}
       />
@@ -99,7 +101,9 @@ function ActivityPlansListScreen() {
         title="Activity Plan Filters"
         description="Refine your activity plans list."
         isResetDisabled={draftCategoryFilter === null}
-        onReset={() => setDraftCategoryFilter(null)}
+        onReset={() => {
+          setDraftCategoryFilter(null);
+        }}
         onApply={() => {
           setCategoryFilter(draftCategoryFilter);
           setIsFilterSheetOpen(false);
@@ -122,10 +126,12 @@ function ActivityPlansListScreen() {
                 isActive={draftCategoryFilter === option.id}
                 onPress={() =>
                   setDraftCategoryFilter(
-                    draftCategoryFilter === option.id ? null : (option.id as any),
+                    draftCategoryFilter === option.id
+                      ? null
+                      : (option.id as NonNullable<typeof categoryFilter>),
                   )
                 }
-                testID={`activity-plans-list-filter-category-${option.id}`}
+                testID={`activity-plans-list-filter-activity_category-${option.id}`}
               />
             ))}
           </View>
