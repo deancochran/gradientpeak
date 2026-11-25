@@ -1,5 +1,7 @@
 import mockReact from "react";
 import { renderNative } from "../../test/render-native";
+import { sessionScenarioComparisonFixtures } from "../session-scenario-comparison/fixtures";
+import { toSessionScenarioComparisonVisual } from "../session-scenario-comparison/shared";
 import { trainingStateChartFixtures } from "./fixtures";
 import { TrainingStateChart } from "./index.native";
 
@@ -200,5 +202,28 @@ describe("TrainingStateChart native", () => {
     const dashEffects = getAllByTestId("skia-dash-path-effect");
     expect(dashEffects).toHaveLength(1);
     expect(dashEffects[0]?.props.intervals).toEqual([6, 4]);
+  });
+
+  it("uses elapsed planning-day geometry for the irregular scenario preview fixture", async () => {
+    const visual = toSessionScenarioComparisonVisual(
+      sessionScenarioComparisonFixtures.irregularThreeDateHorizon,
+    );
+    const { getByTestId, getByText } = await renderNative(
+      <TrainingStateChart
+        emptyMessage="No scenario projection"
+        series={[
+          { metric: "fitness", source: "recorded" },
+          { metric: "fitness", source: "projected" },
+        ]}
+        testId="irregular-scenario-chart"
+        visual={visual}
+      />,
+    );
+
+    const chart = getByTestId("victory-cartesian-chart");
+    expect(chart.props.xKey).toBe("index");
+    expect(chart.props.data.map((datum: { index: number }) => datum.index)).toEqual([0, 2, 7]);
+    expect(getByText("Nov 23")).toBeTruthy();
+    expect(getByText("Nov 30")).toBeTruthy();
   });
 });

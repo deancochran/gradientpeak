@@ -33,7 +33,8 @@ export const uiPreviewFixtures = {
     title: "Recorded and projected training state",
     visual: trainingStateChartFixtures.mixedSeries,
   } satisfies TrainingStateChartProps,
-  sessionScenarioComparison: sessionScenarioComparisonFixtures.aligned,
+  // Synthetic developer-preview data only; it is never published athlete evidence.
+  sessionScenarioComparison: sessionScenarioComparisonFixtures.irregularThreeDateHorizon,
   thresholdHistory: {
     bikePower: thresholdHistoryFixtures.bikePowerWithPolicyGap,
     runPace: thresholdHistoryFixtures.runPace,
