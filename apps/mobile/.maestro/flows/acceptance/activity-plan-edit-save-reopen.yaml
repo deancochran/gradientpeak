@@ -7,9 +7,19 @@ name: Athlete saves metadata-only activity-plan edits, reopens the library recor
 - eraseText: 200
 - hideKeyboard
 - tapOn: "Save"
+# The edited name remains visible in the composer draft, so it cannot establish
+# that the async update completed. Wait for the detail-only overflow control
+# and for the composer-only step action to leave before taking saved evidence
+# or navigating back to the library.
 - extendedWaitUntil:
-    visible: ${MAESTRO_ACCEPTANCE_EDITED_PLAN_NAME}
+    visible:
+      id: activity-plan-options-trigger
     timeout: 30000
+- extendedWaitUntil:
+    notVisible:
+      id: activity-plan-add-step
+    timeout: 30000
+- assertVisible: ${MAESTRO_ACCEPTANCE_EDITED_PLAN_NAME}
 - takeScreenshot: activity-plan-edit-saved
 # Rediscover through the library after the route-level save, not from cached
 # composer text or an activity-plan deeplink.
