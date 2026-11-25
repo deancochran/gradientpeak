@@ -5,10 +5,15 @@ import { createServer, type IncomingMessage, type RequestListener, type Server }
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { gzipSync } from "node:zlib";
 import { createVanillaApiClient } from "@repo/api/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { createDisposableAcceptanceLease } from "./disposable-acceptance-lease";
-import { type NativeGoalTransport, startNativeGoalTransport } from "./native-goal-transport";
+import {
+  type NativeGoalTransport,
+  type NativeGoalTransportFaultMode,
+  startNativeGoalTransport,
+} from "./native-goal-transport";
 
 const goalId = "11111111-1111-4111-8111-111111111111";
 const dirs: string[] = [];
@@ -76,10 +81,25 @@ function detailRefreshPath({
 } = {}) {
   return `/api/trpc/${order.join(",")}?batch=1&input=${encodeURIComponent(JSON.stringify(input))}`;
 }
+function successfulDetailBatch(revision: number) {
+  return [
+    { result: { data: { json: { goal: { revision } }, meta: { member: "goal" } } } },
+    { result: { data: { json: { assessment: { revision } }, meta: { member: "assessment" } } } },
+    { result: { data: { json: { progress: { revision } }, meta: { member: "progress" } } } },
+    {
+      result: {
+        data: {
+          json: { history: [{ revision, source: `activity-${revision}` }] },
+          meta: { member: "history", revision },
+        },
+      },
+    },
+  ];
+}
 async function start(
   port: number,
   environment = env(),
-  faultMode: "initial-pair" | "detail-refresh" = "initial-pair",
+  faultMode: NativeGoalTransportFaultMode = "initial-pair",
 ) {
   const transport = await startNativeGoalTransport({
     environment,
@@ -386,6 +406,93 @@ describe("native goal transport", () => {
       expect(Buffer.from(await response.arrayBuffer())).toEqual(body);
     }
     expect(await transport.observations()).toEqual({ blocked: 0, forwarded: 0 });
+  });
+
+  it("replays only a captured real history envelope into a later successful target batch", async () => {
+    const oldBatch = successfulDetailBatch(1);
+    const newBatch = successfulDetailBatch(2);
+    let requests = 0;
+    const port = await upstream((_request, response) => {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(++requests === 1 ? oldBatch : newBatch));
+    });
+    const transport = await start(port, env(), "replay-stale-history");
+    await transport.captureStaleHistory();
+    const captured = await fetch(`${transport.origin}${detailRefreshPath()}`, {
+      headers: { cookie: "actor=one" },
+    });
+    expect(captured.status).toBe(200);
+    expect(await captured.json()).toEqual(oldBatch);
+
+    await transport.replayStaleHistory();
+    const replayed = await fetch(`${transport.origin}${detailRefreshPath()}`, {
+      headers: { cookie: "actor=one" },
+    });
+    expect(replayed.status).toBe(200);
+    const replayedBatch = (await replayed.json()) as unknown[];
+    expect(replayedBatch.slice(0, 3)).toEqual(newBatch.slice(0, 3));
+    expect(replayedBatch[3]).toEqual(oldBatch[3]);
+    expect(await transport.trace()).toMatchObject([
+      { status: 200, captureSequence: 1 },
+      { status: 200, captureSequence: 1, replayedHistory: true },
+    ]);
+
+    await transport.releaseStaleHistory();
+    const released = await fetch(`${transport.origin}${detailRefreshPath()}`, {
+      headers: { cookie: "actor=one" },
+    });
+    expect(await released.json()).toEqual(newBatch);
+  });
+
+  it("fails closed by forwarding unsupported, malformed, missing, or other-actor replay candidates", async () => {
+    const oldBatch = successfulDetailBatch(1);
+    const newBatch = successfulDetailBatch(2);
+    let requests = 0;
+    const port = await upstream((_request, response) => {
+      requests++;
+      if (requests === 1) {
+        response.setHeader("content-encoding", "gzip");
+        response.end(gzipSync(JSON.stringify(oldBatch)));
+        return;
+      }
+      if (requests === 2) {
+        response.end("{not-json");
+        return;
+      }
+      response.end(JSON.stringify(newBatch));
+    });
+    const transport = await start(port, env(), "replay-stale-history");
+    await transport.replayStaleHistory();
+    expect(await (await fetch(`${transport.origin}${detailRefreshPath()}`)).text()).toBe(
+      JSON.stringify(oldBatch),
+    );
+
+    await transport.captureStaleHistory();
+    expect(await (await fetch(`${transport.origin}${detailRefreshPath()}`)).text()).toBe(
+      "{not-json",
+    );
+    await transport.replayStaleHistory();
+    expect(await (await fetch(`${transport.origin}${detailRefreshPath()}`)).json()).toEqual(
+      newBatch,
+    );
+
+    await transport.captureStaleHistory();
+    expect(
+      await (
+        await fetch(`${transport.origin}${detailRefreshPath()}`, {
+          headers: { cookie: "actor=one" },
+        })
+      ).json(),
+    ).toEqual(newBatch);
+    await transport.replayStaleHistory();
+    expect(
+      await (
+        await fetch(`${transport.origin}${detailRefreshPath()}`, {
+          headers: { cookie: "actor=two" },
+        })
+      ).json(),
+    ).toEqual(newBatch);
+    expect((await transport.trace()).some((record) => record.replayedHistory)).toBe(false);
   });
 
   it("forwards a non-matching POST body exactly and returns an upstream refusal as 502", async () => {

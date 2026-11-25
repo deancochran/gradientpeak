@@ -1,0 +1,20 @@
+appId: com.deancochran.gradientpeak.dev
+name: Matching fresh history clears the mismatch disclosure
+---
+- swipe:
+    from:
+      id: goal-detail-card
+    direction: DOWN
+- extendedWaitUntil:
+    notVisible:
+      id: goal-detail-history-mismatch
+    timeout: 30000
+- assertNotVisible:
+    id: goal-detail-progress-refresh-warning
+- assertVisible: ${MAESTRO_ACCEPTANCE_NEW_CURRENT_LABEL}
+- scrollUntilVisible:
+    element:
+      id: plan-progress-source-${MAESTRO_ACCEPTANCE_NEW_SOURCE_ACTIVITY_ID}
+    direction: DOWN
+- assertVisible: ${MAESTRO_ACCEPTANCE_NEW_SOURCE_ACTIVITY_NAME}
+- takeScreenshot: goal-progress-revision-recovered

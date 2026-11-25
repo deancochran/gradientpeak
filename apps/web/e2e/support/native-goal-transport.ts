@@ -10,6 +10,9 @@ import {
 export type NativeGoalTransport = {
   origin: string;
   allowProgressReads: () => Promise<void>;
+  captureStaleHistory: () => Promise<void>;
+  replayStaleHistory: () => Promise<void>;
+  releaseStaleHistory: () => Promise<void>;
   observations: () => Promise<{ blocked: number; forwarded: number }>;
   trace: () => Promise<NativeGoalTransportTrace[]>;
   stop: () => Promise<void>;
@@ -19,7 +22,10 @@ export type NativeGoalTransport = {
  * `initial-pair` preserves the historical initial navigation fault contract.
  * `detail-refresh` is the separately observed four-query Goal Detail refresh.
  */
-export type NativeGoalTransportFaultMode = "initial-pair" | "detail-refresh";
+export type NativeGoalTransportFaultMode =
+  | "initial-pair"
+  | "detail-refresh"
+  | "replay-stale-history";
 
 export type NativeGoalTransportTrace = {
   method: string;
@@ -36,6 +42,8 @@ export type NativeGoalTransportTrace = {
   requestOrder: number;
   responseOrder?: number;
   status?: number;
+  captureSequence?: number;
+  replayedHistory?: boolean;
 };
 
 export async function startNativeGoalTransport({
@@ -78,7 +86,17 @@ export async function startNativeGoalTransport({
     throw new Error("Native goal transport did not become ready.");
   }
   let commandTail = Promise.resolve();
-  const command = <T extends "allow" | "observations" | "trace">(type: T) => {
+  const command = <
+    T extends
+      | "allow"
+      | "capture-stale-history"
+      | "replay-stale-history"
+      | "release-stale-history"
+      | "observations"
+      | "trace",
+  >(
+    type: T,
+  ) => {
     const run = async () => {
       try {
         requireNativeScenarioTransportGuard({ environment, sessionId: goalId, upstreamPort });
@@ -103,6 +121,9 @@ export async function startNativeGoalTransport({
   return {
     origin: `http://127.0.0.1:${ready.port}`,
     allowProgressReads: async () => void (await command("allow")),
+    captureStaleHistory: async () => void (await command("capture-stale-history")),
+    replayStaleHistory: async () => void (await command("replay-stale-history")),
+    releaseStaleHistory: async () => void (await command("release-stale-history")),
     observations: async () => {
       const result = await command("observations");
       return { blocked: Number(result.blocked), forwarded: Number(result.forwarded) };
