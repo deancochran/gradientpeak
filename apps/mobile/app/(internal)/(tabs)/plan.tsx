@@ -1,3 +1,4 @@
+import type { CalendarProjectionItem } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Tabs, TabsList, TabsTrigger } from "@repo/ui/components/tabs";
 import { Text } from "@repo/ui/components/text";
@@ -8,6 +9,7 @@ import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { PlanDashboardContent } from "@/components/plan/training-path/PlanDashboardContent";
 import { usePlanTrainingPathData } from "@/components/plan/training-path/usePlanTrainingPathData";
 import { AppHeader } from "@/components/shared";
+import { buildCalendarItemRoute } from "@/lib/calendar/calendarItemRouting";
 import { ROUTES } from "@/lib/constants/routes";
 import { usePerformanceScreenReady } from "@/lib/performance";
 
@@ -111,6 +113,14 @@ function PlanOverview({
           onCreateGoal={() => router.navigate(ROUTES.GOALS.CREATE as never)}
           onOpenGoal={(goalId) => router.navigate(ROUTES.GOALS.DETAIL(goalId) as never)}
           onOpenGoals={() => router.navigate(ROUTES.GOALS.LIST as never)}
+          onOpenPlannedSession={(sessionId) =>
+            router.navigate(
+              buildCalendarItemRoute({
+                id: sessionId,
+                kind: "planned_activity",
+              } as CalendarProjectionItem) as never,
+            )
+          }
           onOpenSourceActivity={(activityId) =>
             router.navigate(ROUTES.ACTIVITIES.DETAIL(activityId) as never)
           }

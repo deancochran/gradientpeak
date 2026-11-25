@@ -27,6 +27,7 @@ export function PlanUnifiedTrendDashboard({
   model,
   onGoalPress,
   onOpenCompletedActivity,
+  onOpenPlannedSession,
   onPeriodShift,
   onRangeChange,
   onRangeToday,
@@ -44,6 +45,7 @@ export function PlanUnifiedTrendDashboard({
   model: TrainingPathViewModel;
   onGoalPress: (goalId: string) => void;
   onOpenCompletedActivity: (activityId: string) => void;
+  onOpenPlannedSession: (sessionId: string) => void;
   onPeriodShift: (direction: -1 | 1) => void;
   onRangeChange: (period: PlanAnalysisWindowPeriod) => void;
   onRangeToday: () => void;
@@ -126,6 +128,7 @@ export function PlanUnifiedTrendDashboard({
           onOpenCompletedActivity={onOpenCompletedActivity}
           onOpenDayDetails={(date) => onViewDetails(date, "day")}
           onOpenGoal={onGoalPress}
+          onOpenPlannedSession={onOpenPlannedSession}
           onRetryCompletedActivities={() => void selectedDayCalendarQuery.refetch()}
           point={selectedPoint}
           selectedDate={selectedDate}

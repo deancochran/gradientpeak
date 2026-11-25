@@ -14,7 +14,7 @@ type ActivityPlanFixture = {
   activity_category: "run" | "bike" | "swim" | "strength" | "other";
   estimated_duration: number;
 };
-type EventQueryError = { data: { code: string }; message?: string };
+type EventQueryError = { data: { code: string; httpStatus?: number }; message?: string };
 function getHostByType(rendered: Awaited<ReturnType<typeof renderNative>>, type: string) {
   return rendered.container.queryAll((node) => node.type === type)[0] as ReactTestInstance;
 }
@@ -302,6 +302,25 @@ jest.mock("lucide-react-native", () => ({
 
 jest.mock("@/lib/api", () => ({
   __esModule: true,
+  getSafeApiErrorDiagnostic: (error: unknown) => {
+    const data =
+      error &&
+      typeof error === "object" &&
+      "data" in error &&
+      error.data &&
+      typeof error.data === "object"
+        ? error.data
+        : null;
+    return {
+      applicationErrorCode: null,
+      errorClass: "UnknownError",
+      httpStatus:
+        data && "httpStatus" in data && typeof data.httpStatus === "number"
+          ? data.httpStatus
+          : null,
+      trpcCode: data && "code" in data && typeof data.code === "string" ? data.code : null,
+    };
+  },
   api: {
     useUtils: () => ({
       events: { invalidate: jest.fn() },
@@ -344,11 +363,22 @@ jest.mock("@/lib/api", () => ({
           plannedQueryCalls.push(args);
           return {
             data: plannedSession,
+            fetchStatus: "idle",
             isLoading: false,
+            isError: Boolean(plannedSessionError),
             error: plannedSessionError,
             refetch: plannedSessionRefetchMock,
+            status: plannedSessionError ? "error" : plannedSession ? "success" : "pending",
           };
         },
+      },
+      previewScenario: {
+        useQuery: () => ({
+          data: null,
+          isError: false,
+          isLoading: false,
+          refetch: jest.fn(),
+        }),
       },
       completionCandidates: {
         useInfiniteQuery: () => ({
@@ -383,6 +413,21 @@ jest.mock("@/lib/api", () => ({
           isLoading: false,
           error: null,
           refetch: jest.fn(),
+        }),
+        useInfiniteQuery: () => ({
+          data: { pages: [{ items: [], nextCursor: null }] },
+          fetchNextPage: jest.fn(),
+          hasNextPage: false,
+          isError: false,
+          isFetchingNextPage: false,
+          refetch: jest.fn(),
+        }),
+      },
+    },
+    athleteIntelligence: {
+      getReadModel: {
+        useQuery: () => ({
+          data: { publishedState: { baseline: { stateRevision: 1 } } },
         }),
       },
     },
