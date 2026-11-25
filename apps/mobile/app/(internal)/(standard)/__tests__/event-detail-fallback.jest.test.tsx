@@ -220,6 +220,11 @@ jest.mock("@/lib/hooks/useAuth", () => ({
   __esModule: true,
   useAuth: () => ({ user: scenarioActorId ? { id: scenarioActorId } : null }),
 }));
+jest.mock("@/lib/stores/auth-store", () => ({
+  __esModule: true,
+  useAuthStore: (selector: (state: { user: { id: string } | null }) => unknown) =>
+    selector({ user: scenarioActorId ? { id: scenarioActorId } : null }),
+}));
 
 jest.mock("@/lib/server-config", () => ({
   __esModule: true,
