@@ -991,7 +991,7 @@ export default function EventDetailScreen() {
               activityPlanRevision={activityPlan.activityPlanRevision}
               knownOutcome={scenarioOutcome?.sessionId === session.id ? scenarioOutcome : null}
               onKnownOutcomeChange={(outcome) =>
-                setScenarioOutcome({ ...outcome, sessionId: session.id })
+                setScenarioOutcome(outcome ? { ...outcome, sessionId: session.id } : null)
               }
               session={session}
               timeZone={timezone}
