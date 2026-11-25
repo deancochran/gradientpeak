@@ -155,6 +155,9 @@ it("uses training-state series and intensity distribution in chart-ready models"
   ]);
   expect(model.state.latestSource).toBe("Recorded");
   expect(model.state.sourceStatus).toBe("recorded");
+  expect(model.state.fitnessDirection).toBe("Unavailable");
+  expect(model.state.fatigueDirection).toBe("Unavailable");
+  expect(model.state.formDirection).toBe("Unavailable");
   expect(model.state.timeZone).toBe("UTC");
   expect(model.state.unitLabel).toBe("Common Load points");
   expect(model.intensity.bands).toEqual([

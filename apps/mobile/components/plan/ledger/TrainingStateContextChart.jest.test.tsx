@@ -91,3 +91,24 @@ it.each([
   expect([...new Set(series.map((entry) => entry.source))]).toEqual(sources);
   expect([...new Set(series.map((entry) => entry.metric))]).toEqual(["fitness", "fatigue", "form"]);
 });
+
+it("renders unavailable values and direction accessibly without a training-state trajectory", async () => {
+  await renderNative(
+    <TrainingStateContextChart
+      state={{
+        ...createState("unavailable"),
+        fatigueDirection: "Unavailable",
+        fitnessDirection: "Unavailable",
+        formDirection: "Unavailable",
+        latestFatigueLabel: "—",
+        latestFitnessLabel: "—",
+        latestFormLabel: "—",
+        points: [],
+      }}
+    />,
+  );
+
+  expect(screen.getByText("Training state is unavailable for this period.")).toBeTruthy();
+  expect(screen.getByLabelText("Fitness direction: Unavailable")).toBeTruthy();
+  expect(screen.getAllByText("—")).toHaveLength(3);
+});

@@ -699,7 +699,7 @@ describe("readPlanTabProjection", () => {
     });
   });
 
-  it("returns a zero-seeded trend value for every requested day without a published baseline", async () => {
+  it("returns unavailable fitness trajectories without published history or a baseline", async () => {
     const deps = dependencies();
     const readModel = deps.readModel;
     deps.readModel = vi.fn(async (input) => {
@@ -718,17 +718,38 @@ describe("readPlanTabProjection", () => {
       dependencies: deps,
     });
 
-    expect(result.fitness.actual.map((point) => point.date)).toEqual(["2026-04-06"]);
-    expect(result.fitness.scheduled.map((point) => point.date)).toEqual([
-      "2026-04-06",
-      "2026-04-07",
-      "2026-04-08",
+    expect(result.fitness).toEqual({ actual: [], scheduled: [], recommended: [] });
+  });
+
+  it("keeps an authoritative zero-valued baseline visible", async () => {
+    const deps = dependencies();
+    const readModel = deps.readModel;
+    deps.readModel = vi.fn(async (input) => {
+      const model = await readModel(input);
+      if (!model.currentBaseline) throw new Error("Expected a baseline fixture");
+      return {
+        ...model,
+        currentBaseline: {
+          ...model.currentBaseline,
+          baseline: { longTermLoad: 0, recentLoad: 0, loadBalance: 0 },
+        },
+      } as never;
+    });
+
+    const result = await readPlanTabProjection({
+      db: {
+        $client: {},
+        transaction: async (operation: (tx: unknown) => unknown) => operation({}),
+      } as never,
+      profileId,
+      request: { startDate: "2026-04-06", endDate: "2026-04-06" },
+      asOf,
+      dependencies: deps,
+    });
+
+    expect(result.fitness.actual).toEqual([
+      { date: "2026-04-06", longTermLoad: 0, recentLoad: 0, loadBalance: 0 },
     ]);
-    expect(result.fitness.scheduled).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ longTermLoad: 0, recentLoad: 0, loadBalance: 0 }),
-      ]),
-    );
   });
 
   it("returns recorded fitness history before the planned forecast begins", async () => {
@@ -798,7 +819,7 @@ describe("readPlanTabProjection", () => {
     });
   });
 
-  it("labels historical evidence while extending the trajectory through assumed zero-Load days", async () => {
+  it("keeps historical evidence exact without filling its missing dates", async () => {
     const deps = dependencies();
     const readModel = deps.readModel;
     const verifiedThrough = "2026-03-31";
@@ -863,7 +884,7 @@ describe("readPlanTabProjection", () => {
       verifiedThrough,
       maturity: "establishing_baseline",
     });
-    expect(result.fitness.actual).toHaveLength(86);
+    expect(result.fitness.actual).toHaveLength(85);
     expect(result.fitness.actual.at(-1)?.date).toBe("2026-04-06");
     expect(result.fitness.actual.find((point) => point.date === verifiedThrough)).toMatchObject({
       longTermLoad: points.at(-1)?.longTermLoad,
@@ -871,7 +892,7 @@ describe("readPlanTabProjection", () => {
     });
   });
 
-  it("keeps a complete trajectory across partial completed Load without changing Load truth", async () => {
+  it("does not turn partial completed Load into recorded state", async () => {
     const deps = dependencies();
     const readEffectiveLoad = deps.readEffectiveLoad;
     deps.readEffectiveLoad = vi.fn(async (input) => {
@@ -932,12 +953,7 @@ describe("readPlanTabProjection", () => {
       completedLoadStatus: "partial",
       completedLoad: 100,
     });
-    expect(result.fitness.actual.map((point) => point.date)).toEqual([
-      "2026-04-03",
-      "2026-04-04",
-      "2026-04-05",
-      "2026-04-06",
-    ]);
+    expect(result.fitness.actual.map((point) => point.date)).toEqual(["2026-04-06"]);
     expect(result.fitness.actual.at(-1)).toMatchObject({
       date: "2026-04-06",
       longTermLoad: 40,
@@ -949,7 +965,7 @@ describe("readPlanTabProjection", () => {
     expect(result.fitness.scheduled.at(-1)?.longTermLoad).toBeGreaterThan(40);
   });
 
-  it("keeps a bounded trajectory for past and future ranges without recorded Load", async () => {
+  it("uses the authoritative baseline without creating past recorded points", async () => {
     const db = {
       $client: {},
       transaction: async (operation: (tx: unknown) => unknown) => operation({}),
@@ -969,9 +985,9 @@ describe("readPlanTabProjection", () => {
       dependencies: dependencies(),
     });
 
-    expect(past.fitness.actual.map((point) => point.date)).toEqual(["2026-04-04", "2026-04-05"]);
-    expect(past.fitness.actual.every((point) => point.longTermLoad === 0)).toBe(true);
-    expect(past.fitness.actual.every((point) => point.recentLoad === 0)).toBe(true);
+    expect(past.fitness.actual).toEqual([
+      expect.objectContaining({ date: "2026-04-06", longTermLoad: 40, recentLoad: 35 }),
+    ]);
     expect(past.fitness.scheduled).toEqual([]);
     expect(future.fitness.actual.map((point) => point.date)).toEqual(["2026-04-06"]);
     expect(future.fitness.scheduled.map((point) => point.date)).toEqual([
@@ -981,7 +997,7 @@ describe("readPlanTabProjection", () => {
     expect(future.fitness.scheduled.at(-1)?.recentLoad).toBeLessThan(35);
   });
 
-  it("zero-seeds a complete requested trajectory beyond the bounded baseline horizon", async () => {
+  it("keeps forecast unavailable beyond the authoritative baseline horizon", async () => {
     const result = await readPlanTabProjection({
       db: {
         $client: {},
@@ -993,16 +1009,7 @@ describe("readPlanTabProjection", () => {
       dependencies: dependencies(),
     });
 
-    expect(result.fitness.scheduled.map((point) => point.date)).toEqual([
-      "2028-04-06",
-      "2028-04-07",
-      "2028-04-08",
-    ]);
-    expect(result.fitness.scheduled).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ longTermLoad: 0, recentLoad: 0, loadBalance: 0 }),
-      ]),
-    );
+    expect(result.fitness.scheduled).toEqual([]);
   });
 
   it("retains the authoritative baseline through the exact 366-day projection horizon", async () => {
