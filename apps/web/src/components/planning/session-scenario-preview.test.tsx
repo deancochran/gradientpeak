@@ -263,7 +263,7 @@ describe("SessionScenarioPreview", () => {
     };
     mocks.apply
       .mockRejectedValueOnce(new Error("lost acknowledgement"))
-      .mockResolvedValueOnce({ status: "applied", action: "unchanged" });
+      .mockRejectedValueOnce(new Error("retry acknowledgement lost"));
     const { rerender } = renderPreview();
 
     fireEvent.click(screen.getByRole("button", { name: "Apply this scenario" }));
@@ -288,11 +288,12 @@ describe("SessionScenarioPreview", () => {
       recovery.compareDocumentPosition(screen.getByRole("button", { name: "as planned" })) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-    expect(retryAction).toBeTruthy();
+    const scenarioChoice = screen.getByRole("button", { name: "as planned" });
+    scenarioChoice.focus();
     fireEvent.click(retryAction);
-    await screen.findByText(/Applied: unchanged/i);
+    await waitFor(() => expect(mocks.apply).toHaveBeenCalledTimes(2));
     expect(scrollIntoView).toHaveBeenCalledOnce();
-    expect(mocks.apply).toHaveBeenCalledTimes(2);
+    expect(document.activeElement).toBe(scenarioChoice);
     const firstRequest = mocks.apply.mock.calls[0]?.[0];
     const retryRequest = mocks.apply.mock.calls[1]?.[0];
     if (!firstRequest || !retryRequest) throw new Error("Expected both apply attempts.");
@@ -336,6 +337,38 @@ describe("SessionScenarioPreview", () => {
       true,
     );
     expect(screen.queryByRole("button", { name: "Check or retry this change" })).toBeNull();
+    expect(mocks.apply).not.toHaveBeenCalled();
+  });
+
+  it("does not reveal or focus an enabled hydrated retained operation", async () => {
+    const recoveredSession = {
+      ...session,
+      id: "00000000-0000-4000-8000-000000000011",
+    };
+    const receipt = freezePlannedSessionScenarioOperation({
+      actorId: mocks.actorId,
+      expectedPreviewFingerprint: `v1:sha256:${"c".repeat(64)}`,
+      operationId: "00000000000040008000000000000010",
+      preview: {
+        expectedPlanRevision: 5,
+        expectedSessionRevision: 3,
+        expectedStateRevision: 7,
+        scenario: { kind: "less", targetDurationSeconds: 1200 },
+        sessionId: recoveredSession.id,
+      },
+    });
+    localStorage.setItem(
+      `gradientpeak:planned-session-scenario:v1:${recoveredSession.profileId}:${recoveredSession.id}`,
+      JSON.stringify(receipt),
+    );
+    mocks.previewResult.data = { status: "unavailable", reason: "session_not_scheduled" };
+
+    renderPreview(recoveredSession);
+
+    const retryAction = await screen.findByRole("button", { name: "Check or retry this change" });
+    expect((retryAction as HTMLButtonElement).disabled).toBe(false);
+    expect(scrollIntoView).not.toHaveBeenCalled();
+    expect(document.activeElement).not.toBe(retryAction);
     expect(mocks.apply).not.toHaveBeenCalled();
   });
 

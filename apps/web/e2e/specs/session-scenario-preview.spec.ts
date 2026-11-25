@@ -140,7 +140,7 @@ test("a confirmed scenario applies one selected occurrence and retries a lost ac
     athletePage.getByRole("button", { name: "Check or retry this change" }),
   ).toBeFocused();
   const [headerBox, recoveryHeadingBox] = await Promise.all([
-    athletePage.locator("header").first().boundingBox(),
+    athletePage.locator("header.sticky").boundingBox(),
     athletePage.getByText("Previous change needs confirmation").boundingBox(),
   ]);
   if (!headerBox || !recoveryHeadingBox)
