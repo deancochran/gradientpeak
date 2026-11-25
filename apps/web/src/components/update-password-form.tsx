@@ -1,12 +1,13 @@
-import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormTextField } from "@repo/ui/components/form";
 import { LoadingButton } from "@repo/ui/components/loading";
+import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { cn } from "@repo/ui/lib/cn";
 import { useServerFn } from "@tanstack/react-start";
-import { useForm } from "react-hook-form";
+import { useState } from "react";
 import { getUpdatePasswordFormError } from "../lib/auth/form-errors";
 import { type UpdatePasswordFormValues, updatePasswordFormSchema } from "../lib/auth/form-schemas";
 import { resetPasswordAction } from "../lib/auth/server-actions";
+import { contractEpochFormInputProps } from "../lib/contract-epoch";
 import { AuthCardShell } from "./auth-card-shell";
 
 export function UpdatePasswordForm({
@@ -15,39 +16,51 @@ export function UpdatePasswordForm({
   ...props
 }: React.ComponentPropsWithoutRef<"div"> & { token?: string }) {
   const resetPassword = useServerFn(resetPasswordAction);
-  const form = useForm<UpdatePasswordFormValues>({
-    resolver: zodResolver(updatePasswordFormSchema),
+  const [rejectedToken, setRejectedToken] = useState<string | null>(null);
+  const invalidToken = !token || rejectedToken === token;
+  const form = useZodForm<UpdatePasswordFormValues>({
+    schema: updatePasswordFormSchema,
     defaultValues: {
       confirmPassword: "",
       password: "",
     },
   });
 
-  const handleSubmit = form.handleSubmit(async (values) => {
-    form.clearErrors();
+  const submit = useZodFormSubmit<UpdatePasswordFormValues>({
+    form,
+    shouldRethrow: false,
+    submittingLabel: "Saving...",
+    onSubmit: async (values) => {
+      form.clearErrors();
 
-    if (!token) {
-      form.setError("root", { message: "Missing or invalid reset token" });
-      return;
-    }
-
-    try {
-      await resetPassword({
-        data: {
-          ...values,
-          token,
-        },
-      });
-    } catch (error: unknown) {
-      const formError = getUpdatePasswordFormError(error);
-
-      if (formError.target === "root") {
-        form.setError("root", { message: formError.message });
+      if (invalidToken) {
+        form.setError("root", {
+          message: "This reset link is missing or invalid. Request a new link and try again.",
+        });
         return;
       }
 
-      form.setError("password", { message: formError.message });
-    }
+      try {
+        await resetPassword({
+          data: {
+            ...values,
+            token,
+          },
+        });
+      } catch (error: unknown) {
+        const formError = getUpdatePasswordFormError(error);
+        if (/invalid.*token|token.*(?:invalid|expired)|expired.*token/i.test(formError.message)) {
+          setRejectedToken(token ?? null);
+        }
+
+        if (formError.target === "root") {
+          form.setError("root", { message: formError.message });
+          return;
+        }
+
+        form.setError("password", { message: formError.message });
+      }
+    },
   });
 
   return (
@@ -57,9 +70,18 @@ export function UpdatePasswordForm({
         description="Please enter your new password below."
       >
         <Form {...form}>
-          <form action={resetPasswordAction.url} method="post" onSubmit={handleSubmit}>
+          <form action={resetPasswordAction.url} method="post" onSubmit={submit.handleSubmit}>
+            <input {...contractEpochFormInputProps} />
             <input type="hidden" name="token" value={token ?? ""} />
             <div className="flex flex-col gap-6">
+              {invalidToken ? (
+                <p className="text-destructive text-sm" role="alert">
+                  This reset link is missing or invalid. Request a new link to continue.{" "}
+                  <a className="underline" href="/auth/forgot-password">
+                    Request a new reset link
+                  </a>
+                </p>
+              ) : null}
               <FormTextField
                 autoComplete="new-password"
                 control={form.control}
@@ -82,12 +104,14 @@ export function UpdatePasswordForm({
               />
 
               {form.formState.errors.root ? (
-                <p className="text-destructive text-sm">{form.formState.errors.root.message}</p>
+                <p className="text-destructive text-sm" role="alert">
+                  {form.formState.errors.root.message}
+                </p>
               ) : null}
 
               <LoadingButton
-                disabled={form.formState.isSubmitting || !token}
-                loading={form.formState.isSubmitting}
+                disabled={submit.isSubmitting || invalidToken}
+                loading={submit.isSubmitting}
                 loadingLabel="Saving..."
                 type="submit"
               >
