@@ -46,6 +46,12 @@ function formatMetric(
   preferredUnitSystem: ReturnType<typeof usePreferredUnitSystem>,
 ) {
   if (metric.status === "unavailable") return "—";
+  if (
+    metric.unit === "seconds" &&
+    (typeof metric.value !== "number" || !Number.isFinite(metric.value) || metric.value < 0)
+  ) {
+    return "—";
+  }
   const approximationPrefix = metric.status === "partial" ? "~" : "";
   if (metric.unit === "meters") {
     return `${approximationPrefix}${formatDistanceMeters(metric.value, { preferredUnitSystem })}`;

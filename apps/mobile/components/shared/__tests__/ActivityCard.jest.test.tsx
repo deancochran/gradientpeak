@@ -352,8 +352,9 @@ describe("ActivityCard", () => {
     ["long elapsed duration", 3660, "1 hr 1 min"],
     ["zero elapsed duration", 0, "0 sec"],
     ["sub-second elapsed duration", 0.25, "<1 sec"],
-    ["negative elapsed duration", -1, "--"],
-    ["non-finite elapsed duration", Number.NaN, "--"],
+    ["negative elapsed duration", -1, "—"],
+    ["NaN elapsed duration", Number.NaN, "—"],
+    ["infinite elapsed duration", Number.POSITIVE_INFINITY, "—"],
   ])("formats %s without reducing it to zero minutes", async (_name, value, expected) => {
     const activity = {
       ...createActivityDisplay(),
@@ -395,6 +396,48 @@ describe("ActivityCard", () => {
     expect(screen.getByText("Elapsed")).toBeTruthy();
     expect(screen.getByText("—")).toBeTruthy();
     expect(screen.queryByText("0 sec")).toBeNull();
+  });
+
+  it("does not prefix invalid partial elapsed duration with an approximation marker", async () => {
+    const activity = {
+      ...createActivityDisplay(),
+      metrics: [
+        {
+          key: "elapsed_duration",
+          label: "Elapsed",
+          status: "partial",
+          value: Number.NaN,
+          unit: "seconds",
+          reason: "partial",
+        },
+      ],
+    } as ActivityDisplayModel;
+
+    await renderNative(<ProjectionActivityCard activity={activity} />);
+
+    expect(screen.getByText("—")).toBeTruthy();
+    expect(screen.queryByText("~—")).toBeNull();
+  });
+
+  it("does not let an unavailable status render a numeric elapsed duration", async () => {
+    const activity = {
+      ...createActivityDisplay(),
+      metrics: [
+        {
+          key: "elapsed_duration",
+          label: "Elapsed",
+          status: "unavailable",
+          value: 30,
+          unit: "seconds",
+          reason: "unavailable",
+        },
+      ],
+    } as ActivityDisplayModel;
+
+    await renderNative(<ProjectionActivityCard activity={activity} />);
+
+    expect(screen.getByText("—")).toBeTruthy();
+    expect(screen.queryByText("30 sec")).toBeNull();
   });
 
   it("marks partial Load and Intensity values as estimates", async () => {
