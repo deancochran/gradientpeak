@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { chmodSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, request as upstreamRequest } from "node:http";
 import { basename, dirname } from "node:path";
@@ -9,7 +10,9 @@ if (
   !goalId ||
   !observationPath ||
   !Number.isInteger(upstreamPort) ||
-  (faultMode !== "initial-pair" && faultMode !== "detail-refresh")
+  (faultMode !== "initial-pair" &&
+    faultMode !== "detail-refresh" &&
+    faultMode !== "replay-stale-history")
 )
   process.exit(1);
 try {
@@ -23,6 +26,9 @@ try {
   process.exit(1);
 }
 let allowed = false;
+let staleHistoryState: "idle" | "capture" | "replay" = "idle";
+let capturedHistory: { actorHash: string; member: unknown; sequence: number } | undefined;
+let captureSequence = 0;
 const counts = { blocked: 0, forwarded: 0 };
 const sockets = new Set<import("node:net").Socket>();
 const MAX_REQUEST_BYTES = 64 * 1024;
@@ -53,6 +59,8 @@ type Trace = {
   requestOrder: number;
   responseOrder?: number;
   status?: number;
+  captureSequence?: number;
+  replayedHistory?: boolean;
 };
 const trace: Trace[] = [];
 let eventOrder = 0;
@@ -96,6 +104,72 @@ function matches(request: IncomingMessage) {
     );
   } catch {
     return false;
+  }
+}
+function matchesDetailRefresh(request: IncomingMessage) {
+  if (request.method !== "GET") return false;
+  const url = new URL(request.url ?? "/", "http://loopback");
+  if (
+    url.searchParams.get("batch") !== "1" ||
+    url.searchParams.getAll("batch").length !== 1 ||
+    url.searchParams.getAll("input").length !== 1 ||
+    url.pathname !==
+      "/api/trpc/goals.getById,athleteIntelligence.getGoalAssessment,athleteIntelligence.getGoalProgress,athleteIntelligence.getThresholdOverview"
+  )
+    return false;
+  const input = url.searchParams.get("input");
+  if (!input) return false;
+  try {
+    const parsed = JSON.parse(input) as unknown;
+    return (
+      isRecord(parsed) &&
+      !Array.isArray(parsed) &&
+      exactEntries(parsed, ["0", "1", "2", "3"]) &&
+      exactJson(parsed["0"], { id: goalId }) &&
+      exactJson(parsed["1"], { goalId }) &&
+      exactJson(parsed["2"], { goalId }) &&
+      exactJson(parsed["3"], { historyLimit: 100 })
+    );
+  } catch {
+    return false;
+  }
+}
+function actorHash(request: IncomingMessage) {
+  // Bind replay to the material auth context without retaining credentials.
+  return createHash("sha256")
+    .update(request.headers.cookie ?? "")
+    .update("\n")
+    .update(request.headers.authorization ?? "")
+    .digest("hex");
+}
+function isSuccessfulTrpcBatch(value: unknown): value is unknown[] {
+  return (
+    Array.isArray(value) &&
+    value.length === 4 &&
+    value.every(
+      (member) =>
+        isRecord(member) &&
+        exactEntries(member, ["result"]) &&
+        isRecord(member.result) &&
+        isRecord(member.result.data),
+    )
+  );
+}
+function parseReplayableBatch(
+  response: import("node:http").IncomingMessage,
+  value: Buffer,
+): unknown[] | undefined {
+  const contentEncoding = response.headers["content-encoding"];
+  if (
+    response.statusCode !== 200 ||
+    (contentEncoding !== undefined && contentEncoding !== "identity")
+  )
+    return undefined;
+  try {
+    const parsed = JSON.parse(value.toString("utf8")) as unknown;
+    return isSuccessfulTrpcBatch(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
   }
 }
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -282,6 +356,40 @@ const server = createServer(async (request, response) => {
         finish(502);
         return;
       }
+      const targetRefresh = faultMode === "replay-stale-history" && matchesDetailRefresh(request);
+      const parsed = targetRefresh
+        ? parseReplayableBatch(upstreamResponse, responseBody.body)
+        : undefined;
+      if (targetRefresh && staleHistoryState === "capture") {
+        if (parsed) {
+          capturedHistory = {
+            actorHash: actorHash(request),
+            member: parsed[3],
+            sequence: ++captureSequence,
+          };
+          if (requestTrace) requestTrace.captureSequence = capturedHistory.sequence;
+          staleHistoryState = "idle";
+        }
+        finish(upstreamResponse.statusCode ?? 502, upstreamResponse.headers, responseBody.body);
+        return;
+      }
+      if (targetRefresh && staleHistoryState === "replay" && capturedHistory && parsed) {
+        if (capturedHistory.actorHash === actorHash(request)) {
+          const replacement = [...parsed];
+          replacement[3] = capturedHistory.member;
+          const replayed = Buffer.from(JSON.stringify(replacement));
+          const headers = {
+            ...upstreamResponse.headers,
+            "content-length": String(replayed.length),
+          };
+          if (requestTrace) {
+            requestTrace.captureSequence = capturedHistory.sequence;
+            requestTrace.replayedHistory = true;
+          }
+          finish(200, headers, replayed);
+          return;
+        }
+      }
       finish(upstreamResponse.statusCode ?? 502, upstreamResponse.headers, responseBody.body);
     },
   );
@@ -323,6 +431,20 @@ process.on("message", (message: { type?: string }) => {
     requireNativeScenarioTransportGuard({ sessionId: goalId, upstreamPort });
     if (message.type === "allow") allowed = true;
     if (message.type === "allow") process.send?.({ type: "allow", ok: true });
+    if (message.type === "capture-stale-history" && faultMode === "replay-stale-history") {
+      capturedHistory = undefined;
+      staleHistoryState = "capture";
+      process.send?.({ type: message.type, ok: true });
+    }
+    if (message.type === "replay-stale-history" && faultMode === "replay-stale-history") {
+      staleHistoryState = "replay";
+      process.send?.({ type: message.type, ok: true });
+    }
+    if (message.type === "release-stale-history" && faultMode === "replay-stale-history") {
+      staleHistoryState = "idle";
+      capturedHistory = undefined;
+      process.send?.({ type: message.type, ok: true });
+    }
     if (message.type === "observations")
       process.send?.({ type: "observations", ok: true, ...counts });
     if (message.type === "trace") process.send?.({ type: "trace", ok: true, records: trace });
