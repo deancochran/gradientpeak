@@ -1,0 +1,37 @@
+appId: com.deancochran.gradientpeak.dev
+name: Athlete retries blocked goal progress and preserves source/back context
+---
+- tapOn: Retry progress
+- extendedWaitUntil:
+    visible:
+      id: goal-detail-progress
+    timeout: 30000
+- assertNotVisible:
+    id: goal-detail-progress-refresh-warning
+- assertVisible: "Current: 285 W"
+- assertVisible: "Target: 300 W"
+- assertVisible: "Remaining gap: 15 W"
+- takeScreenshot: goal-progress-retry-recovered
+- scrollUntilVisible:
+    element:
+      id: plan-progress-source-${MAESTRO_ACCEPTANCE_SOURCE_ACTIVITY_ID}
+    direction: DOWN
+- assertVisible: ${MAESTRO_ACCEPTANCE_SOURCE_ACTIVITY_NAME}
+- takeScreenshot: goal-progress-retry-source
+- tapOn:
+    id: plan-progress-source-${MAESTRO_ACCEPTANCE_SOURCE_ACTIVITY_ID}
+- extendedWaitUntil:
+    visible:
+      id: activity-detail-screen
+    timeout: 30000
+- pressKey: back
+- extendedWaitUntil:
+    visible:
+      id: goal-detail-progress
+    timeout: 30000
+- pressKey: back
+- extendedWaitUntil:
+    visible:
+      id: planning-ledger-milestone-${MAESTRO_ACCEPTANCE_GOAL_ID}
+    timeout: 30000
+- takeScreenshot: goal-progress-retry-back
