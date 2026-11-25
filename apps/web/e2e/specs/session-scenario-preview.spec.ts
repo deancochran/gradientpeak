@@ -2,6 +2,13 @@ import { expect, test } from "../fixtures";
 import { expectNoHorizontalOverflow } from "../pages";
 import { createSessionScenarioFixture } from "../support/scenario-fixture";
 
+async function setScenarioViewport(
+  page: Parameters<typeof expectNoHorizontalOverflow>[0],
+  projectName: string,
+) {
+  if (projectName === "Desktop Chrome") await page.setViewportSize({ width: 1440, height: 1000 });
+}
+
 function applyScenarioRequest(body: unknown) {
   const candidate = body as { 0?: { json?: unknown } };
   if (!candidate[0]?.json) throw new Error("Expected a batched apply-scenario request.");
@@ -20,6 +27,7 @@ test("a published bike baseline supports each read-only session scenario without
   e2eIdentity,
 }, testInfo) => {
   test.setTimeout(90_000);
+  await setScenarioViewport(athletePage, testInfo.project.name);
   const fixture = await createSessionScenarioFixture({
     actor: athleteActor,
     database: e2eDatabase,
@@ -87,6 +95,7 @@ test("a confirmed scenario applies one selected occurrence and retries a lost ac
   e2eIdentity,
 }, testInfo) => {
   test.setTimeout(90_000);
+  await setScenarioViewport(athletePage, testInfo.project.name);
   const fixture = await createSessionScenarioFixture({
     actor: athleteActor,
     database: e2eDatabase,
