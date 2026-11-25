@@ -198,29 +198,8 @@ jest.mock("@/components/plan/insights/PlanProgressInsight", () => ({
   },
 }));
 jest.mock("@repo/api/client", () => ({
-  selectPublishedGoalProgressHistory: (
-    progress: { publication?: { publishedRevision?: number | null } } | undefined,
-    overview:
-      | {
-          publication?: { publishedRevision?: number | null };
-          history: { items: unknown[]; nextCursor: unknown | null };
-        }
-      | undefined,
-  ) => {
-    const progressRevision = progress?.publication?.publishedRevision;
-    const overviewRevision = overview?.publication?.publishedRevision;
-    const matches =
-      progressRevision !== null &&
-      progressRevision !== undefined &&
-      overviewRevision !== null &&
-      overviewRevision !== undefined &&
-      progressRevision === overviewRevision;
-    return {
-      history: matches ? (overview?.history.items ?? []) : [],
-      historyLimited: matches && overview?.history.nextCursor !== null,
-      publicationMismatch: Boolean(overview && !matches),
-    };
-  },
+  selectPublishedGoalProgressHistory: jest.requireActual("@repo/api/goal-progress-client")
+    .selectPublishedGoalProgressHistory,
 }));
 jest.mock("@/components/plan/training-path/planDashboardPresentation", () => ({
   __esModule: true,
@@ -592,7 +571,41 @@ describe("goal detail persistence", () => {
     expect(presentation.mergeGoalProgressThresholdEvidence).toHaveBeenCalledWith([], undefined);
   });
 
+  it("does not label unknown publications as separately updated history", async () => {
+    const presentation = require("@/components/plan/training-path/planDashboardPresentation");
+    presentation.mergeGoalProgressThresholdEvidence.mockClear();
+    progressUseQueryMock.mockReturnValue({
+      data: {
+        publication: { publishedRevision: null },
+        result: {
+          status: "current",
+          target: { activityCategory: "bike", metric: "power", unit: "watts" },
+          deadlineAt: "2026-06-01T00:00:00Z",
+        },
+      },
+      isError: false,
+      isLoading: false,
+      refetch: jest.fn(),
+    });
+    thresholdUseQueryMock.mockReturnValue({
+      data: {
+        publication: { publishedRevision: null },
+        history: { items: [{ value: 999 }], nextCursor: null },
+      },
+      isError: false,
+      isLoading: false,
+      refetch: jest.fn(),
+    });
+
+    await renderNative(<GoalDetailScreen />);
+
+    expect(screen.queryByTestId("goal-detail-history-mismatch")).toBeNull();
+    expect(presentation.mergeGoalProgressThresholdEvidence).toHaveBeenCalledWith([], undefined);
+  });
+
   it("discloses when matching threshold history is bounded", async () => {
+    const presentation = require("@/components/plan/training-path/planDashboardPresentation");
+    presentation.mergeGoalProgressThresholdEvidence.mockClear();
     progressUseQueryMock.mockReturnValue({
       data: {
         publication: { publishedRevision: 4 },
@@ -609,7 +622,7 @@ describe("goal detail persistence", () => {
     thresholdUseQueryMock.mockReturnValue({
       data: {
         publication: { publishedRevision: 4 },
-        history: { items: [], nextCursor: "more-history" },
+        history: { items: [{ value: 275 }], nextCursor: "more-history" },
       },
       isError: false,
       isLoading: false,
@@ -620,5 +633,9 @@ describe("goal detail persistence", () => {
 
     expect(screen.getByTestId("goal-detail-history-limited")).toBeTruthy();
     expect(screen.queryByTestId("goal-detail-history-mismatch")).toBeNull();
+    expect(presentation.mergeGoalProgressThresholdEvidence).toHaveBeenCalledWith(
+      [{ value: 275 }],
+      undefined,
+    );
   });
 });

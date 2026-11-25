@@ -23,10 +23,16 @@ export function selectPublishedGoalProgressHistory<History>(
     overviewRevision !== null &&
     overviewRevision !== undefined &&
     progressRevision === overviewRevision;
+  const publicationMismatch =
+    progressRevision !== null &&
+    progressRevision !== undefined &&
+    overviewRevision !== null &&
+    overviewRevision !== undefined &&
+    progressRevision !== overviewRevision;
 
   return {
     history: matches ? (overview?.history.items ?? []) : [],
     historyLimited: matches && overview?.history.nextCursor !== null,
-    publicationMismatch: Boolean(overview && !matches),
+    publicationMismatch,
   };
 }
