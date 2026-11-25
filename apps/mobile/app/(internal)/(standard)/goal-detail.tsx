@@ -30,7 +30,7 @@ import {
 } from "@/components/shared/detail";
 import { GoalCard } from "@/components/shared/GoalCard";
 import { ErrorState } from "@/components/shared/ScreenState";
-import { api } from "@/lib/api";
+import { api, getSafeApiErrorDiagnostic } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { omitUndefined } from "@/lib/omitUndefined";
@@ -40,6 +40,15 @@ function SectionCard({ children, testID }: { children: React.ReactNode; testID?:
     <Card className="rounded-3xl border border-border bg-card" testID={testID}>
       <CardContent className="gap-4 p-4">{children}</CardContent>
     </Card>
+  );
+}
+
+function isTransientGoalRefreshFailure(error: unknown) {
+  const diagnostic = getSafeApiErrorDiagnostic(error);
+  return (
+    diagnostic.errorClass === "TRPCClientError" &&
+    diagnostic.httpStatus === 503 &&
+    diagnostic.trpcCode === "INTERNAL_SERVER_ERROR"
   );
 }
 
@@ -79,6 +88,12 @@ export default function GoalDetailScreen() {
       return null;
     }
   }, [goal]);
+  const retainsCachedGoalOnRefreshFailure =
+    goalQuery.isError &&
+    isTransientGoalRefreshFailure(goalQuery.error) &&
+    goal?.id === goalId &&
+    typeof profile?.id === "string" &&
+    goal.profile_id === profile.id;
 
   const deleteGoalMutation = api.goals.delete.useMutation({
     onSuccess: async () => {
@@ -177,9 +192,9 @@ export default function GoalDetailScreen() {
     />
   );
 
-  if (goalQuery.isError) {
+  if (goalQuery.isError && !retainsCachedGoalOnRefreshFailure) {
     return (
-      <DetailScaffold headerRight={renderHeaderActions}>
+      <DetailScaffold>
         <ErrorState
           description="Check your connection and try again."
           onAction={() => void goalQuery.refetch()}
@@ -225,6 +240,11 @@ export default function GoalDetailScreen() {
         ) : null
       }
     >
+      {retainsCachedGoalOnRefreshFailure ? (
+        <Text className="text-sm text-muted-foreground" testID="goal-detail-goal-refresh-warning">
+          Could not refresh goal details. Showing the last available goal context.
+        </Text>
+      ) : null}
       <GoalCard
         goal={{
           id: goalRecord.id,
