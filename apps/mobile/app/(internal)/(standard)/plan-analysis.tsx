@@ -1,3 +1,4 @@
+import { selectPublishedGoalProgressHistory } from "@repo/api/client";
 import { PLAN_ANALYSIS_WINDOW_PERIODS, type PlanAnalysisWindowPeriod } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Tabs, TabsList, TabsTrigger } from "@repo/ui/components/tabs";
@@ -126,8 +127,12 @@ function PlanAnalysisContent({
     );
   }
   const progress = progressQuery.data?.result;
+  const thresholdEvidence = selectPublishedGoalProgressHistory(
+    progressQuery.data,
+    thresholdQuery.data,
+  );
   const progressEvidence = mergeGoalProgressThresholdEvidence(
-    thresholdQuery.data?.history.items ?? [],
+    thresholdEvidence.history,
     progressQuery.data?.provenance,
   );
   const trend = buildComparableThresholdTrend(
@@ -285,11 +290,11 @@ function PlanAnalysisContent({
             selectedRange={progressRange}
             testID="plan-analysis-progress-controls"
           />
-          {progressQuery.isLoading || thresholdQuery.isLoading ? (
+          {progressQuery.isLoading && !progress ? (
             <View className="h-44 items-center justify-center rounded-2xl bg-card">
               <Text className="text-sm text-muted-foreground">Loading progress analysis…</Text>
             </View>
-          ) : progressQuery.isError || thresholdQuery.isError ? (
+          ) : (progressQuery.isError || thresholdQuery.isError) && !progress ? (
             <View
               accessibilityRole="alert"
               className="rounded-2xl border border-destructive/40 bg-card p-4"
@@ -299,20 +304,55 @@ function PlanAnalysisContent({
               </Text>
             </View>
           ) : (
-            <PlanProgressInsight
-              deadlineDate={
-                progress && progress.status !== "unsupported"
-                  ? progress.deadlineAt.slice(0, 10)
-                  : (selectedGoal?.targetDate ?? null)
-              }
-              onOpenSourceActivity={(activityId) =>
-                router.navigate(ROUTES.ACTIVITIES.DETAIL(activityId) as never)
-              }
-              progress={progress}
-              todayKey={trainingPath.trainingPath.todayKey}
-              trend={trend}
-              window={progressWindow}
-            />
+            <>
+              {progress && (progressQuery.isError || thresholdQuery.isError) ? (
+                <View className="gap-1" testID="plan-analysis-progress-refresh-warning">
+                  <Text className="text-sm text-muted-foreground">
+                    Showing the last available progress while signals refresh.
+                  </Text>
+                  <Text
+                    accessibilityRole="button"
+                    className="self-start py-1 font-semibold text-primary"
+                    onPress={() => {
+                      void progressQuery.refetch();
+                      void thresholdQuery.refetch();
+                    }}
+                  >
+                    Retry progress
+                  </Text>
+                </View>
+              ) : null}
+              {thresholdEvidence.publicationMismatch ? (
+                <Text
+                  className="text-sm text-muted-foreground"
+                  testID="plan-analysis-history-mismatch"
+                >
+                  Threshold history was updated separately and is not shown with this progress.
+                </Text>
+              ) : null}
+              {thresholdEvidence.historyLimited ? (
+                <Text
+                  className="text-sm text-muted-foreground"
+                  testID="plan-analysis-history-limited"
+                >
+                  Threshold history is limited to the most recent measurements.
+                </Text>
+              ) : null}
+              <PlanProgressInsight
+                deadlineDate={
+                  progress && progress.status !== "unsupported"
+                    ? progress.deadlineAt.slice(0, 10)
+                    : (selectedGoal?.targetDate ?? null)
+                }
+                onOpenSourceActivity={(activityId) =>
+                  router.navigate(ROUTES.ACTIVITIES.DETAIL(activityId) as never)
+                }
+                progress={progress}
+                todayKey={trainingPath.trainingPath.todayKey}
+                trend={trend}
+                window={progressWindow}
+              />
+            </>
           )}
         </>
       ) : (

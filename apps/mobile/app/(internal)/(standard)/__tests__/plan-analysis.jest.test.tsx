@@ -7,20 +7,31 @@ import { renderNative, screen } from "../../../../test/render-native";
 const replace = jest.fn();
 const navigate = jest.fn();
 const trainingInsightProps = jest.fn();
+const progressInsightProps = jest.fn();
 const captureProductAnalytics = jest.fn();
 let planningTimezoneState = "ready";
 let timezoneSetupError: string | null = null;
 const retryTimezoneInitialization = jest.fn();
-const getGoalProgressQuery = jest.fn((_input?: unknown, _options?: unknown) => ({
-  data: undefined,
-  isError: false,
-  isLoading: false,
-}));
-const getThresholdOverviewQuery = jest.fn((_input?: unknown, _options?: unknown) => ({
-  data: undefined,
-  isError: false,
-  isLoading: false,
-}));
+type QueryResult = {
+  data: unknown;
+  isError: boolean;
+  isLoading: boolean;
+  refetch?: () => Promise<unknown>;
+};
+const getGoalProgressQuery = jest.fn(
+  (_input?: unknown, _options?: unknown): QueryResult => ({
+    data: undefined,
+    isError: false,
+    isLoading: false,
+  }),
+);
+const getThresholdOverviewQuery = jest.fn(
+  (_input?: unknown, _options?: unknown): QueryResult => ({
+    data: undefined,
+    isError: false,
+    isLoading: false,
+  }),
+);
 let mockParams = {
   anchorDate: "2026-04-15",
   goalId: "55555555-5555-4555-8555-555555555555",
@@ -60,6 +71,31 @@ jest.mock("@/lib/api", () => ({
     },
   },
 }));
+jest.mock("@repo/api/client", () => ({
+  selectPublishedGoalProgressHistory: (
+    progress: { publication?: { publishedRevision?: number | null } } | undefined,
+    overview:
+      | {
+          publication?: { publishedRevision?: number | null };
+          history: { items: unknown[]; nextCursor: unknown | null };
+        }
+      | undefined,
+  ) => {
+    const progressRevision = progress?.publication?.publishedRevision;
+    const overviewRevision = overview?.publication?.publishedRevision;
+    const matches =
+      progressRevision !== null &&
+      progressRevision !== undefined &&
+      overviewRevision !== null &&
+      overviewRevision !== undefined &&
+      progressRevision === overviewRevision;
+    return {
+      history: matches ? (overview?.history.items ?? []) : [],
+      historyLimited: matches && overview?.history.nextCursor !== null,
+      publicationMismatch: Boolean(overview && !matches),
+    };
+  },
+}));
 jest.mock("@/components/plan/training-path/usePlanTrainingPathData", () => ({
   usePlanTrainingPathData: () => ({
     planningTimezoneState,
@@ -88,7 +124,10 @@ jest.mock("@/components/plan/training-path/usePlanTrainingPathData", () => ({
   }),
 }));
 jest.mock("@/components/plan/insights/PlanProgressInsight", () => ({
-  PlanProgressInsight: () => React.createElement("View", { testID: "progress-insight" }),
+  PlanProgressInsight: (props: Record<string, unknown>) => {
+    progressInsightProps(props);
+    return React.createElement("View", { testID: "progress-insight" });
+  },
 }));
 jest.mock("@/components/plan/insights/PlanTrainingInsight", () => ({
   PlanTrainingInsight: (props: Record<string, unknown>) => {
@@ -101,6 +140,7 @@ const PlanAnalysis = require("../plan-analysis").default;
 
 beforeEach(() => {
   jest.clearAllMocks();
+  progressInsightProps.mockClear();
   planningTimezoneState = "ready";
   timezoneSetupError = null;
   mockParams = {
@@ -186,6 +226,92 @@ it("renders a progress month range without evaluating a week range as months", a
     selected: true,
   });
   expect(screen.getByTestId("progress-insight")).toBeTruthy();
+});
+
+it("retains cached progress, excludes mismatched history, and retries without changing the route", async () => {
+  const retryProgress = jest.fn(async () => undefined);
+  const retryHistory = jest.fn(async () => undefined);
+  mockParams = {
+    anchorDate: "2026-04-15",
+    goalId: "55555555-5555-4555-8555-555555555555",
+    metric: "threshold",
+    range: "3m",
+    view: "progress",
+  };
+  getGoalProgressQuery.mockReturnValue({
+    data: {
+      publication: { publishedRevision: 4 },
+      result: {
+        status: "current",
+        target: { activityCategory: "bike", metric: "power", unit: "watts" },
+        deadlineAt: "2026-05-20T00:00:00Z",
+        current: { value: 285, unit: "watts" },
+      },
+    },
+    isError: true,
+    isLoading: false,
+    refetch: retryProgress,
+  });
+  getThresholdOverviewQuery.mockReturnValue({
+    data: {
+      publication: { publishedRevision: 5 },
+      history: { items: [{ value: 999 }], nextCursor: null },
+    },
+    isError: false,
+    isLoading: false,
+    refetch: retryHistory,
+  });
+
+  await renderNative(<PlanAnalysis />);
+
+  expect(screen.getByTestId("plan-analysis-progress-refresh-warning")).toBeTruthy();
+  expect(screen.getByTestId("plan-analysis-history-mismatch")).toBeTruthy();
+  expect(progressInsightProps).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      progress: expect.objectContaining({ current: { value: 285, unit: "watts" } }),
+    }),
+  );
+  await fireEvent.press(screen.getByText("Retry progress"));
+  expect(retryProgress).toHaveBeenCalled();
+  expect(retryHistory).toHaveBeenCalled();
+  expect(replace).not.toHaveBeenCalled();
+});
+
+it("discloses bounded history only when the publications match", async () => {
+  mockParams = {
+    anchorDate: "2026-04-15",
+    goalId: "55555555-5555-4555-8555-555555555555",
+    metric: "threshold",
+    range: "3m",
+    view: "progress",
+  };
+  getGoalProgressQuery.mockReturnValue({
+    data: {
+      publication: { publishedRevision: 4 },
+      result: {
+        status: "current",
+        target: { activityCategory: "bike", metric: "power", unit: "watts" },
+        deadlineAt: "2026-05-20T00:00:00Z",
+      },
+    },
+    isError: false,
+    isLoading: false,
+    refetch: jest.fn(),
+  });
+  getThresholdOverviewQuery.mockReturnValue({
+    data: {
+      publication: { publishedRevision: 4 },
+      history: { items: [], nextCursor: "more-history" },
+    },
+    isError: false,
+    isLoading: false,
+    refetch: jest.fn(),
+  });
+
+  await renderNative(<PlanAnalysis />);
+
+  expect(screen.getByTestId("plan-analysis-history-limited")).toBeTruthy();
+  expect(screen.queryByTestId("plan-analysis-history-mismatch")).toBeNull();
 });
 
 it.each([
