@@ -47,8 +47,7 @@ type Trace = {
   status?: number;
 };
 const trace: Trace[] = [];
-let requestOrder = 0;
-let responseOrder = 0;
+let eventOrder = 0;
 const persist = () => {
   writeFileSync(observationPath, JSON.stringify(counts), { flag: "w", mode: 0o600 });
   chmodSync(observationPath, 0o600);
@@ -166,7 +165,7 @@ function traceRequest(request: IncomingMessage) {
     hasProgress: procedures.includes("athleteIntelligence.getGoalProgress"),
     hasThreshold: procedures.includes("athleteIntelligence.getThresholdOverview"),
     targetGoalMatched,
-    requestOrder: ++requestOrder,
+    requestOrder: ++eventOrder,
   };
   if (trace.length === MAX_TRACE_RECORDS) trace.shift();
   trace.push(record);
@@ -176,7 +175,7 @@ const server = createServer(async (request, response) => {
   const requestTrace = traceRequest(request);
   const finishTrace = (status: number) => {
     if (!requestTrace || requestTrace.responseOrder !== undefined) return;
-    requestTrace.responseOrder = ++responseOrder;
+    requestTrace.responseOrder = ++eventOrder;
     requestTrace.status = status;
   };
   const respond = (

@@ -250,7 +250,7 @@ describe("native goal transport", () => {
         hasThreshold: false,
         targetGoalMatched: true,
         requestOrder: 1,
-        responseOrder: 1,
+        responseOrder: 2,
         status: 200,
       },
       {
@@ -260,13 +260,48 @@ describe("native goal transport", () => {
         hasProgress: false,
         hasThreshold: true,
         targetGoalMatched: false,
-        requestOrder: 2,
-        responseOrder: 2,
+        requestOrder: 3,
+        responseOrder: 4,
         status: 200,
       },
     ]);
     await fetch(`${transport.origin}/api/trpc/unknown?batch=1`);
     expect((await transport.trace()).length).toBe(2);
+  });
+
+  it("orders overlapping request starts before their independently completed responses", async () => {
+    let releaseFirst: (() => void) | undefined;
+    let firstStarted: (() => void) | undefined;
+    const held = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      firstStarted = resolve;
+    });
+    const port = await upstream(async (request, response) => {
+      if (request.url?.includes("getGoalProgress")) {
+        firstStarted?.();
+        await held;
+        response.end("first");
+        return;
+      }
+      response.end("second");
+    });
+    const transport = await start(port);
+    await transport.allowProgressReads();
+    const first = fetch(`${transport.origin}${goalPath()}`);
+    await started;
+    expect(
+      await (
+        await fetch(`${transport.origin}/api/trpc/athleteIntelligence.getThresholdOverview?batch=1`)
+      ).text(),
+    ).toBe("second");
+    releaseFirst?.();
+    expect(await (await first).text()).toBe("first");
+    expect(await transport.trace()).toMatchObject([
+      { hasProgress: true, requestOrder: 1, responseOrder: 4, status: 200 },
+      { hasThreshold: true, requestOrder: 2, responseOrder: 3, status: 200 },
+    ]);
   });
 
   it("closes a trickling incomplete request at its absolute body deadline", async () => {
