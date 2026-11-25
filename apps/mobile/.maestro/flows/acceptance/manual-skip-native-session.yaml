@@ -1,0 +1,62 @@
+appId: com.deancochran.gradientpeak.dev
+name: Open the visible scheduled session from Calendar and explicitly skip it without creating an activity
+---
+# A skip is a durable terminal session outcome, not missing activity evidence.
+- tapOn:
+    id: tab-button-plan
+- tapOn:
+    id: plan-view-calendar
+- extendedWaitUntil:
+    visible:
+      id: calendar-screen-ready
+    timeout: 30000
+- tapOn:
+    id: calendar-date-jump-entry
+- tapOn: ${MAESTRO_ACCEPTANCE_SESSION_DAY}
+- tapOn: "OK"
+- extendedWaitUntil:
+    notVisible:
+      id: calendar-date-jump-loading
+    timeout: 30000
+- tapOn:
+    id: calendar-day-select-${MAESTRO_ACCEPTANCE_SESSION_DATE}
+- extendedWaitUntil:
+    visible:
+      id: planning-ledger-screen
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: planning-ledger-entry-planned-${MAESTRO_ACCEPTANCE_SESSION_ID}
+    direction: DOWN
+- tapOn:
+    id: planning-ledger-entry-planned-${MAESTRO_ACCEPTANCE_SESSION_ID}
+- extendedWaitUntil:
+    visible:
+      id: planned-session-detail-screen
+    timeout: 30000
+- takeScreenshot: planned-session-detail-before-completion
+- scrollUntilVisible:
+    element:
+      id: planned-session-skip
+    direction: DOWN
+- tapOn:
+    id: planned-session-skip
+- extendedWaitUntil:
+    visible: "completed"
+    timeout: 30000
+- assertVisible: "Actual: Not performed"
+- takeScreenshot: planned-session-skip-completion
+- pressKey: back
+- extendedWaitUntil:
+    visible:
+      id: planning-ledger-screen
+    timeout: 30000
+# The detail route returns to the original day ledger. Retain the proof before
+# the date-context assertion so a failed sentinel remains debuggable.
+- takeScreenshot: planned-session-skip-return-ledger
+- assertVisible: ${MAESTRO_ACCEPTANCE_LEDGER_DATE}
+- pressKey: back
+- extendedWaitUntil:
+    visible:
+      id: tab-button-plan
+    timeout: 30000

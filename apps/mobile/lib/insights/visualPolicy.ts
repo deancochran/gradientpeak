@@ -1,7 +1,7 @@
 /**
  * Central policy for insight data source and chart-shape selection.
  * Add new mobile insight metrics here first so compact cards, detail views,
- * and accessibility metadata do not drift across Plan and Trends screens.
+ * and accessibility metadata do not drift across planning screens.
  */
 export type InsightSource = "profileMetric" | "activityAnalysis" | "planForecast";
 
@@ -77,7 +77,7 @@ const activityInsightPolicies = {
     visualType: "loadMultiLine",
     compactLayout: "visualFirst",
     rationale:
-      "Training load is modeled from completed activities and needs CTL, ATL, and TSB trajectories.",
+      "Training load is modeled from completed activities and needs Fitness, Fatigue, and Form trajectories.",
   },
   consistency: {
     source: "activityAnalysis",
