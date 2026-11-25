@@ -166,6 +166,10 @@ jest.mock("@/lib/navigation/useAppNavigate", () => ({
   __esModule: true,
   useAppNavigate: () => navigateToMock,
 }));
+jest.mock("@/lib/hooks/useAuth", () => ({
+  __esModule: true,
+  useAuth: () => ({ user: { id: "00000000-0000-4000-8000-000000000004" } }),
+}));
 
 jest.mock("@/lib/server-config", () => ({
   __esModule: true,
@@ -330,6 +334,10 @@ jest.mock("@/lib/api", () => ({
   api: {
     useUtils: () => ({
       events: { invalidate: jest.fn() },
+      activityPlans: { invalidate: jest.fn() },
+      athleteIntelligence: { getReadModel: { invalidate: jest.fn() } },
+      calendar: { invalidate: jest.fn() },
+      plannedSessions: { invalidate: jest.fn() },
     }),
     events: {
       getById: {
@@ -386,6 +394,7 @@ jest.mock("@/lib/api", () => ({
           refetch: jest.fn(),
         }),
       },
+      applyScenario: { useMutation: () => ({ isPending: false, mutateAsync: jest.fn() }) },
       completionCandidates: {
         useInfiniteQuery: () => ({
           data: { pages: [completionCandidates] },
