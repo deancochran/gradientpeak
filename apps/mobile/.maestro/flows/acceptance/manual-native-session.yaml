@@ -38,6 +38,7 @@ name: Open the visible scheduled session from Calendar and report completion wit
     visible:
       id: planned-session-detail-screen
     timeout: 30000
+- takeScreenshot: planned-session-detail-before-completion
 - scrollUntilVisible:
     element:
       id: planned-session-complete-full
@@ -50,3 +51,4 @@ name: Open the visible scheduled session from Calendar and report completion wit
     timeout: 30000
 - assertVisible: "completed"
 - assertVisible: "View completed activity"
+- takeScreenshot: planned-session-full-completion

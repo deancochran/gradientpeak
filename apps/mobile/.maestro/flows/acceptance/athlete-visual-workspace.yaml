@@ -16,6 +16,7 @@ name: Athlete returns from a selected Home training session without losing the s
     timeout: 30000
 - assertVisible:
     id: plan-selected-day-planned-activity-card-${MAESTRO_ACCEPTANCE_SESSION_ID}
+- takeScreenshot: athlete-workspace-selected-session
 - tapOn:
     id: plan-selected-day-planned-activity-card-${MAESTRO_ACCEPTANCE_SESSION_ID}
 - extendedWaitUntil:
