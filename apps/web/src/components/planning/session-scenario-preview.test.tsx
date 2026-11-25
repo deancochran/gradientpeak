@@ -234,4 +234,37 @@ describe("SessionScenarioPreview", () => {
     if (!firstRequest || !retryRequest) throw new Error("Expected both apply attempts.");
     expect(firstRequest).toEqual(retryRequest);
   });
+
+  it("fails closed when browser recovery storage cannot durably arm an operation", async () => {
+    mocks.previewResult.data = {
+      status: "available",
+      previewFingerprint: `v1:sha256:${"a".repeat(64)}`,
+      selectedSession: { id: "session-a", sessionRevision: 3, planningDate: "2026-11-26" },
+      stateRevision: 7,
+      freshness: "fresh",
+      horizon: {
+        startDate: "2026-11-26",
+        simulationAt: "2026-11-25T00:00:00.000Z",
+        sessionCount: 2,
+      },
+      scenario: { kind: "as_planned" },
+      baseline: {},
+      alternative: {},
+      provenance: {
+        resolution: "current_activity_plan",
+        selectedPlan: { id: "current-plan", revision: 5 },
+        historicalSnapshots: "provenance_only",
+        selectedAlternative: null,
+      },
+    };
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("quota exceeded");
+    });
+    renderPreview();
+    fireEvent.click(screen.getByRole("button", { name: "Apply this scenario" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm apply" }));
+    expect(screen.getByText(/Unable to save safe recovery/i)).toBeTruthy();
+    expect(mocks.apply).not.toHaveBeenCalled();
+    setItem.mockRestore();
+  });
 });

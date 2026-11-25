@@ -107,6 +107,10 @@ test("a confirmed scenario applies one selected occurrence and retries a lost ac
     athletePage.getByText(/could not confirm whether the change was applied/i),
   ).toBeVisible();
   await athletePage.unroute("**/api/trpc/plannedSessions.applyScenario?batch=1");
+  await athletePage.reload();
+  await expect(
+    athletePage.getByRole("button", { name: "Check or retry this change" }),
+  ).toBeVisible();
   await athletePage.getByRole("button", { name: "Check or retry this change" }).click();
   await expect(athletePage.getByText(/Applied: repointed/i)).toBeVisible();
 
