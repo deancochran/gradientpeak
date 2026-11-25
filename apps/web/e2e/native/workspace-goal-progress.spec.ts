@@ -16,7 +16,16 @@ test("Android shows canonical published threshold evidence through the goal and 
   test.setTimeout(600_000);
   const actor = await actorFactory.create("athlete", { label: "native-goal-progress-athlete" });
   const targetDate = new Date(Date.now() + 60 * 86_400_000).toISOString().slice(0, 10);
+  const targetMonthDelta =
+    (Number(targetDate.slice(0, 4)) - new Date().getUTCFullYear()) * 12 +
+    Number(targetDate.slice(5, 7)) -
+    (new Date().getUTCMonth() + 1);
   const title = e2eIdentity.name("Native observed bike threshold goal");
+  const runtimeSentinel = process.env.MAESTRO_ACCEPTANCE_RUNTIME_SENTINEL?.trim();
+  if (!runtimeSentinel)
+    throw new Error(
+      "Native goal-progress proof requires the runner-provided MAESTRO_ACCEPTANCE_RUNTIME_SENTINEL.",
+    );
   const runMaestro = (flow: string, environment: Record<string, string>) =>
     spawnSync(
       "maestro",
@@ -91,10 +100,10 @@ test("Android shows canonical published threshold evidence through the goal and 
         MAESTRO_ACCEPTANCE_GOAL_ID: goalId,
         MAESTRO_ACCEPTANCE_GOAL_TITLE: title,
         MAESTRO_ACCEPTANCE_PASSWORD: actor.password,
-        MAESTRO_ACCEPTANCE_RUNTIME_SENTINEL: "GradientPeak current candidate",
         MAESTRO_ACCEPTANCE_SOURCE_ACTIVITY_ID: evidence.activityId,
         MAESTRO_ACCEPTANCE_SOURCE_ACTIVITY_NAME: evidence.activityName,
         MAESTRO_ACCEPTANCE_TARGET_DATE: targetDate,
+        MAESTRO_ACCEPTANCE_TARGET_MONTH_DELTA: String(targetMonthDelta),
       };
       runFlow("goal-progress-sign-in.yaml", environment, "maestro-goal-progress-sign-in.log");
       runFlow("goal-progress-workspace.yaml", environment, "maestro-goal-progress-workspace.log");
