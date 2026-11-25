@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   freezePlannedSessionScenarioOperation,
   isCurrentPlannedSessionScenarioOperation,
+  parseFrozenPlannedSessionScenarioOperation,
   requiresFreshPlannedSessionScenarioPreview,
 } from "./planned-session-scenario-client";
 
@@ -52,5 +53,23 @@ describe("planned-session scenario client", () => {
         currentStateRevision: 4,
       }),
     ).toBe(true);
+  });
+
+  it("rejects malformed or nested-session-mismatched recovery records", () => {
+    const operation = freezePlannedSessionScenarioOperation({
+      actorId: "00000000-0000-4000-8000-000000000001",
+      expectedPreviewFingerprint: `v1:sha256:${"a".repeat(64)}`,
+      operationId: "a".repeat(32),
+      preview,
+    });
+    expect(
+      parseFrozenPlannedSessionScenarioOperation({
+        ...operation,
+        sessionId: "00000000-0000-4000-8000-000000000002",
+      }),
+    ).toBeNull();
+    expect(
+      parseFrozenPlannedSessionScenarioOperation({ ...operation, actorId: "not-a-uuid" }),
+    ).toBeNull();
   });
 });

@@ -2,6 +2,7 @@ import {
   type FrozenPlannedSessionScenarioOperation,
   freezePlannedSessionScenarioOperation,
   isCurrentPlannedSessionScenarioOperation,
+  parseFrozenPlannedSessionScenarioOperation,
 } from "@repo/api/client";
 import { Button } from "@repo/ui/components/button";
 import { Input } from "@repo/ui/components/input";
@@ -9,6 +10,7 @@ import { SessionScenarioComparison } from "@repo/ui/components/session-scenario-
 import { skipToken } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../lib/api/client";
+import { useAuth } from "../providers/auth-provider";
 
 type ScenarioKind = "as_planned" | "less" | "more" | "substitute" | "skip";
 
@@ -70,7 +72,13 @@ function SessionScenarioPreviewContents({
   const [operation, setOperation] = useState<FrozenPlannedSessionScenarioOperation | null>(null);
   const [outcome, setOutcome] = useState<string | null>(null);
   const [storageUnavailable, setStorageUnavailable] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
   const operationRef = useRef<FrozenPlannedSessionScenarioOperation | null>(null);
+  const generationRef = useRef(0);
+  const { user } = useAuth();
+  const actorId = user?.id ?? null;
+  const actorRef = useRef(actorId);
+  actorRef.current = actorId;
   const utils = api.useUtils();
   const stateQuery = api.athleteIntelligence.getReadModel.useQuery(
     {
@@ -113,71 +121,96 @@ function SessionScenarioPreviewContents({
   const storageKey = operationStorageKey(session.profileId, session.id);
 
   useEffect(() => {
+    const generation = ++generationRef.current;
     operationRef.current = null;
     setOperation(null);
+    setHydrated(false);
     try {
       const raw = window.localStorage.getItem(storageKey);
-      if (!raw) return;
-      const recovered = JSON.parse(raw) as FrozenPlannedSessionScenarioOperation;
+      const recovered = raw ? parseFrozenPlannedSessionScenarioOperation(JSON.parse(raw)) : null;
       if (
+        recovered &&
+        actorId &&
         isCurrentPlannedSessionScenarioOperation(recovered, {
-          actorId: session.profileId,
+          actorId,
           sessionId: session.id,
         })
       ) {
+        if (generation !== generationRef.current) return;
         operationRef.current = recovered;
         setOperation(recovered);
-      } else window.localStorage.removeItem(storageKey);
+      }
     } catch {
       setStorageUnavailable(true);
+    } finally {
+      if (generation === generationRef.current) setHydrated(true);
     }
-  }, [session.id, session.profileId, storageKey]);
+  }, [actorId, session.id, storageKey]);
 
   const persistOperation = (next: FrozenPlannedSessionScenarioOperation | null) => {
-    operationRef.current = next;
-    setOperation(next);
     try {
       if (next) window.localStorage.setItem(storageKey, JSON.stringify(next));
       else window.localStorage.removeItem(storageKey);
+      operationRef.current = next;
+      setOperation(next);
+      return true;
     } catch {
       setStorageUnavailable(true);
+      return false;
     }
   };
   const confirmApply = () => {
-    if (!input || previewQuery.data?.status !== "available" || operationRef.current) return;
+    if (
+      !actorId ||
+      !hydrated ||
+      !input ||
+      previewQuery.data?.status !== "available" ||
+      operationRef.current
+    )
+      return;
     const id = globalThis.crypto?.randomUUID?.().replaceAll("-", "") ?? "";
     if (id.length < 32) {
       setOutcome("We could not create a safe operation identity. Try again.");
       return;
     }
-    persistOperation(
-      freezePlannedSessionScenarioOperation({
-        actorId: session.profileId,
-        expectedPreviewFingerprint: previewQuery.data.previewFingerprint,
-        operationId: id,
-        preview: input,
-      }),
-    );
+    if (
+      !persistOperation(
+        freezePlannedSessionScenarioOperation({
+          actorId,
+          expectedPreviewFingerprint: previewQuery.data.previewFingerprint,
+          operationId: id,
+          preview: input,
+        }),
+      )
+    ) {
+      setOutcome("Unable to save safe recovery. Check browser storage and try again.");
+      return;
+    }
     setConfirmationOpen(false);
     setOutcome(null);
   };
   const submitOperation = async () => {
     if (
       !operation ||
+      !actorId ||
       !isCurrentPlannedSessionScenarioOperation(operation, {
-        actorId: session.profileId,
+        actorId,
         sessionId: session.id,
       })
     )
       return;
     setOutcome(null);
+    const generation = generationRef.current;
+    const submittedActor = actorId;
     try {
       const result = await applyMutation.mutateAsync(operation.request);
       if (
         !isCurrentPlannedSessionScenarioOperation(operation, {
-          actorId: session.profileId,
+          actorId: submittedActor,
           sessionId: session.id,
-        })
+        }) ||
+        generation !== generationRef.current ||
+        actorRef.current !== submittedActor
       )
         return;
       if (result.status === "applied") {
@@ -199,7 +232,11 @@ function SessionScenarioPreviewContents({
         setOutcome(
           "This preview is no longer current. Your draft is preserved; refresh the preview and confirm again.",
         );
-        void previewQuery.refetch();
+        void Promise.all([
+          utils.plannedSessions.invalidate(),
+          utils.calendar.invalidate(),
+          utils.athleteIntelligence.getReadModel.invalidate(),
+        ]).then(() => previewQuery.refetch());
       }
     } catch {
       setOutcome(
@@ -334,7 +371,11 @@ function SessionScenarioPreviewContents({
             {previewQuery.data.horizon.sessionCount} sessions in the shared horizon.
           </p>
           {!operation ? (
-            <Button onClick={() => setConfirmationOpen(true)} type="button">
+            <Button
+              disabled={!hydrated || !actorId}
+              onClick={() => setConfirmationOpen(true)}
+              type="button"
+            >
               Apply this scenario
             </Button>
           ) : (

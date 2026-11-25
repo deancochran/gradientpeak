@@ -3,6 +3,7 @@ import {
   type FrozenPlannedSessionScenarioOperation,
   freezePlannedSessionScenarioOperation,
   isCurrentPlannedSessionScenarioOperation,
+  parseFrozenPlannedSessionScenarioOperation,
 } from "@repo/api/client";
 import { Button } from "@repo/ui/components/button";
 import { SessionScenarioComparison } from "@repo/ui/components/session-scenario-comparison";
@@ -13,6 +14,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { TextInput, View } from "react-native";
 import { ActivitySelector } from "@/components/training-plan/modals/components/ActivitySelector";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/hooks/useAuth";
 
 type ScenarioKind = "as_planned" | "less" | "more" | "substitute" | "skip";
 
@@ -46,7 +48,13 @@ function SessionScenarioPreviewContents({
   const [operation, setOperation] = useState<FrozenPlannedSessionScenarioOperation | null>(null);
   const [outcome, setOutcome] = useState<string | null>(null);
   const [storageUnavailable, setStorageUnavailable] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
   const operationRef = useRef<FrozenPlannedSessionScenarioOperation | null>(null);
+  const generationRef = useRef(0);
+  const { user } = useAuth();
+  const actorId = user?.id ?? null;
+  const actorRef = useRef(actorId);
+  actorRef.current = actorId;
   const utils = api.useUtils();
   const stateQuery = api.athleteIntelligence.getReadModel.useQuery(
     { profileId: session.profileId, sections: { publishedState: true, status: true } },
@@ -86,34 +94,42 @@ function SessionScenarioPreviewContents({
 
   useEffect(() => {
     let active = true;
+    const generation = ++generationRef.current;
     operationRef.current = null;
     setOperation(null);
+    setHydrated(false);
     void AsyncStorage.getItem(storageKey)
       .then((raw) => {
         if (!raw || !active) return;
-        const recovered = JSON.parse(raw) as FrozenPlannedSessionScenarioOperation;
+        const recovered = parseFrozenPlannedSessionScenarioOperation(JSON.parse(raw));
         if (
+          recovered &&
+          actorId &&
           isCurrentPlannedSessionScenarioOperation(recovered, {
-            actorId: session.profileId,
+            actorId,
             sessionId: session.id,
           })
         ) {
+          if (generation !== generationRef.current) return;
           operationRef.current = recovered;
           setOperation(recovered);
-        } else void AsyncStorage.removeItem(storageKey);
+        }
       })
-      .catch(() => active && setStorageUnavailable(true));
+      .catch(() => active && setStorageUnavailable(true))
+      .finally(() => {
+        if (active && generation === generationRef.current) setHydrated(true);
+      });
     return () => {
       active = false;
     };
-  }, [session.id, session.profileId, storageKey]);
+  }, [actorId, session.id, storageKey]);
 
   const persistOperation = async (next: FrozenPlannedSessionScenarioOperation | null) => {
-    operationRef.current = next;
-    setOperation(next);
     try {
       if (next) await AsyncStorage.setItem(storageKey, JSON.stringify(next));
       else await AsyncStorage.removeItem(storageKey);
+      operationRef.current = next;
+      setOperation(next);
       return true;
     } catch {
       setStorageUnavailable(true);
@@ -121,9 +137,16 @@ function SessionScenarioPreviewContents({
     }
   };
   const confirmApply = async () => {
-    if (!input || previewQuery.data?.status !== "available" || operationRef.current) return;
+    if (
+      !actorId ||
+      !hydrated ||
+      !input ||
+      previewQuery.data?.status !== "available" ||
+      operationRef.current
+    )
+      return;
     const next = freezePlannedSessionScenarioOperation({
-      actorId: session.profileId,
+      actorId,
       expectedPreviewFingerprint: previewQuery.data.previewFingerprint,
       operationId: randomUUID().replaceAll("-", ""),
       preview: input,
@@ -138,14 +161,26 @@ function SessionScenarioPreviewContents({
   const submitOperation = async () => {
     if (
       !operation ||
+      !actorId ||
       !isCurrentPlannedSessionScenarioOperation(operation, {
-        actorId: session.profileId,
+        actorId,
         sessionId: session.id,
       })
     )
       return;
     try {
+      const generation = generationRef.current;
+      const submittedActor = actorId;
       const result = await applyMutation.mutateAsync(operation.request);
+      if (
+        generation !== generationRef.current ||
+        actorRef.current !== submittedActor ||
+        !isCurrentPlannedSessionScenarioOperation(operation, {
+          actorId: submittedActor,
+          sessionId: session.id,
+        })
+      )
+        return;
       if (result.status === "applied") {
         await persistOperation(null);
         try {
@@ -163,7 +198,11 @@ function SessionScenarioPreviewContents({
         setOutcome(
           "This preview is no longer current. Refresh it, then confirm again; your draft remains visible.",
         );
-        void previewQuery.refetch();
+        void Promise.all([
+          utils.plannedSessions.invalidate(),
+          utils.calendar.invalidate(),
+          utils.athleteIntelligence.getReadModel.invalidate(),
+        ]).then(() => previewQuery.refetch());
       }
     } catch {
       setOutcome("We could not confirm the result. Check or retry with the same operation.");
@@ -279,7 +318,11 @@ function SessionScenarioPreviewContents({
             {previewQuery.data.horizon.sessionCount} sessions.
           </Text>
           {!operation ? (
-            <Button onPress={() => setConfirming(true)} testID="session-scenario-apply">
+            <Button
+              disabled={!hydrated || !actorId}
+              onPress={() => setConfirming(true)}
+              testID="session-scenario-apply"
+            >
               <Text>Apply this scenario</Text>
             </Button>
           ) : (

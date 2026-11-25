@@ -41,6 +41,7 @@ export type { FrozenPlannedSessionScenarioOperation } from "./planned-session-sc
 export {
   freezePlannedSessionScenarioOperation,
   isCurrentPlannedSessionScenarioOperation,
+  parseFrozenPlannedSessionScenarioOperation,
   requiresFreshPlannedSessionScenarioPreview,
 } from "./planned-session-scenario-client";
 export type { SchedulingRefreshScope } from "./query-client";

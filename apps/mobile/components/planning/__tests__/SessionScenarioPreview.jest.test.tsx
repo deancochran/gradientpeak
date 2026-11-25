@@ -51,6 +51,10 @@ jest.mock("@/lib/api", () => ({
   },
 }));
 
+jest.mock("@/lib/hooks/useAuth", () => ({
+  useAuth: () => ({ user: { id: "00000000-0000-4000-8000-000000000001" } }),
+}));
+
 jest.mock("@repo/ui/components/session-scenario-comparison", () => ({
   SessionScenarioComparison: () => React.createElement("ScenarioChart"),
 }));
