@@ -20,6 +20,7 @@ import {
   FormTextareaField,
   FormTextField,
 } from "../../components/form/index.native";
+import { IdentitySummary } from "../../components/identity-summary/index.native";
 import { Input } from "../../components/input/index.native";
 import { Label } from "../../components/label/index.native";
 import { ChartSkeleton, ListSkeleton } from "../../components/loading-skeletons/index.native";
@@ -32,15 +33,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../components/select/index.native";
+import { SessionScenarioComparison } from "../../components/session-scenario-comparison/index.native";
 import { Switch } from "../../components/switch/index.native";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/tabs/index.native";
 import { Text } from "../../components/text/index.native";
+import {
+  TrainingStateChart,
+  TrainingStateLegend,
+} from "../../components/training-state-chart/index.native";
 import { uiPreviewContract, uiPreviewFixtures, uiPreviewFormFields } from "./shared";
 
 type UiPreviewFormValues = {
   bio: string;
   is_public: boolean;
-  sport: string;
+  activityCategory: string;
   username: string;
 };
 
@@ -58,14 +64,16 @@ function UiPreviewSurface() {
     defaultValues: {
       bio: "Prefers steady aerobic progression with one hard session each week.",
       is_public: true,
-      sport: uiPreviewFixtures.radioGroup.value,
+      activityCategory: uiPreviewFixtures.radioGroup.value,
       username: "dean_peak",
     },
   });
   const [isChecked, setIsChecked] = useState(true);
   const [isSwitchEnabled, setIsSwitchEnabled] = useState(true);
-  const [selectedSport, setSelectedSport] = useState<string>(uiPreviewFixtures.radioGroup.value);
-  const [selectedWorkoutType, setSelectedWorkoutType] = useState<
+  const [selectedActivityCategory, setSelectedActivityCategory] = useState<string>(
+    uiPreviewFixtures.radioGroup.value,
+  );
+  const [selectedSessionFocus, setSelectedSessionFocus] = useState<
     (typeof uiPreviewFixtures.select.options)[number] | undefined
   >(
     uiPreviewFixtures.select.options.find(
@@ -87,6 +95,30 @@ function UiPreviewSurface() {
         </Text>
         <Text className="text-3xl font-semibold">{uiPreviewContract.mobileTitle}</Text>
         <Text className="text-sm text-muted-foreground">{uiPreviewContract.description}</Text>
+      </View>
+
+      <View className="gap-4" testID={uiPreviewContract.scenarios.trainingState.testId}>
+        <ScenarioHeader
+          description={uiPreviewContract.scenarios.trainingState.description}
+          title={uiPreviewContract.scenarios.trainingState.title}
+        />
+        <TrainingStateChart {...uiPreviewFixtures.trainingState} />
+        <TrainingStateLegend sources={["recorded", "projected"]} />
+      </View>
+      <View className="gap-4" testID={uiPreviewContract.scenarios.sessionScenarioComparison.testId}>
+        <ScenarioHeader
+          description={uiPreviewContract.scenarios.sessionScenarioComparison.description}
+          title={uiPreviewContract.scenarios.sessionScenarioComparison.title}
+        />
+        <SessionScenarioComparison {...uiPreviewFixtures.sessionScenarioComparison} />
+      </View>
+
+      <View className="gap-4" testID={uiPreviewContract.scenarios.identitySummary.testId}>
+        <ScenarioHeader
+          description={uiPreviewContract.scenarios.identitySummary.description}
+          title={uiPreviewContract.scenarios.identitySummary.title}
+        />
+        <IdentitySummary {...uiPreviewFixtures.identitySummary} />
       </View>
 
       <View className="gap-4" testID={uiPreviewContract.scenarios.accountControls.testId}>
@@ -217,10 +249,10 @@ function UiPreviewSurface() {
             />
           </View>
           <View className="gap-2">
-            <Label htmlFor={uiPreviewFixtures.select.id}>Activity type</Label>
+            <Label htmlFor={uiPreviewFixtures.select.id}>Session focus</Label>
             <Select
-              onValueChange={(nextValue) => setSelectedWorkoutType(nextValue)}
-              value={selectedWorkoutType}
+              onValueChange={(nextValue) => setSelectedSessionFocus(nextValue)}
+              value={selectedSessionFocus}
             >
               <SelectTrigger
                 id={uiPreviewFixtures.select.id}
@@ -238,12 +270,12 @@ function UiPreviewSurface() {
             </Select>
           </View>
           <View className="gap-2">
-            <Label htmlFor={uiPreviewFixtures.radioGroup.id}>Preferred sport</Label>
+            <Label htmlFor={uiPreviewFixtures.radioGroup.id}>Preferred activity category</Label>
             <RadioGroup
               id={uiPreviewFixtures.radioGroup.id}
-              onValueChange={(nextValue) => setSelectedSport(nextValue)}
+              onValueChange={(nextValue) => setSelectedActivityCategory(nextValue)}
               testID={uiPreviewFixtures.radioGroup.testId}
-              value={selectedSport}
+              value={selectedActivityCategory}
             >
               {uiPreviewFixtures.radioGroup.options.map((option) => (
                 <View key={option.value} className="flex-row items-center gap-2">
@@ -274,17 +306,18 @@ function UiPreviewSurface() {
                 label="Username"
                 name="username"
                 rules={{ required: "Username is required." }}
+                selectTextOnFocus
                 testId={uiPreviewFormFields.usernameTestId}
               />
               <FormSelectField
                 control={form.control}
-                label="Preferred sport"
-                name="sport"
+                label="Preferred activity category"
+                name="activityCategory"
                 options={uiPreviewFixtures.radioGroup.options.map((option) => ({
                   label: option.label,
                   value: option.value,
                 }))}
-                testId={uiPreviewFormFields.sportTestId}
+                testId={uiPreviewFormFields.activityCategoryTestId}
               />
               <FormTextareaField
                 control={form.control}

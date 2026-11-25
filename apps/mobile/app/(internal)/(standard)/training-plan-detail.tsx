@@ -1,27 +1,20 @@
+import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
 import { invalidateTrainingPlanQueries } from "@repo/api/react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@repo/ui/components/dropdown-menu";
-import { Icon } from "@repo/ui/components/icon";
+import { type ActivityPlanSummary, canonicalTrainingPlanStructureSchema } from "@repo/core";
+import { Button } from "@repo/ui/components/button";
+import { Tabs, TabsList, TabsTrigger } from "@repo/ui/components/tabs";
 import { Text } from "@repo/ui/components/text";
+import { useReadOnlyPreview } from "@repo/ui/hooks";
 import { skipToken, useQueryClient } from "@tanstack/react-query";
+import { randomUUID } from "expo-crypto";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Ellipsis } from "lucide-react-native";
 import React, { useCallback, useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { RefreshControl, ScrollView, View } from "react-native";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { AppConfirmModal } from "@/components/shared/AppFormModal";
-import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
+import { DetailOverflowMenu, type DetailOverflowMenuAction } from "@/components/shared/detail";
+import { ErrorState, LoadingState } from "@/components/shared/ScreenState";
+import { useEntityCommentsSheet } from "@/components/social/EntityCommentsSheetProvider";
 import { TrainingPlanDetailFocusBanner } from "@/components/training-plan/TrainingPlanDetailFocusBanner";
 import { TrainingPlanDetailHeaderActionsSection } from "@/components/training-plan/TrainingPlanDetailHeaderActionsSection";
 import { TrainingPlanNoPlanEmptyState } from "@/components/training-plan/TrainingPlanNoPlanEmptyState";
@@ -29,7 +22,7 @@ import { TrainingPlanStructureSection } from "@/components/training-plan/Trainin
 import { TrainingPlanTemplateSchedulingDialog } from "@/components/training-plan/TrainingPlanTemplateSchedulingDialog";
 import { useTrainingPlanHeaderSocialActions } from "@/components/training-plan/useTrainingPlanHeaderSocialActions";
 import { useTrainingPlanTemplateSchedulingController } from "@/components/training-plan/useTrainingPlanTemplateSchedulingController";
-import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
+import { getActivityPlanQuantitySummary } from "@/lib/activityPlanMetrics";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import {
@@ -49,26 +42,16 @@ type StructureSessionRow = {
   title: string;
   activityPlanId: string | null;
   dayOffset: number;
-  sourcePath: Array<string | number>;
 };
 
-type ActivityPlanListItem = {
-  id: string;
-  name: string;
-  activity_category?: string | null;
-  route_id?: string | null;
-  authoritative_metrics?: {
-    estimated_tss?: number | null;
-    intensity_factor?: number | null;
-    estimated_duration?: number | null;
-  } | null;
-  route?: {
-    distance?: number | null;
-    ascent?: number | null;
-    descent?: number | null;
-  } | null;
-  description?: string | null;
-  structure?: unknown;
+type ActivityPlanListItem = ActivityPlanSummary;
+
+type ScheduledRemovalReview = {
+  applicationId: string;
+  affected: Array<unknown>;
+  cutoffDate: string;
+  operationId: string;
+  previewFingerprint: string;
 };
 
 type GroupedMicrocycleSessions = {
@@ -79,14 +62,24 @@ type GroupedMicrocycleSessions = {
   }>;
 };
 
+type TrainingPlanDetail = inferRouterOutputs<AppRouter>["trainingPlans"]["get"];
+
+function isTrainingPlanDetail(value: unknown): value is TrainingPlanDetail {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.id === "string" &&
+    typeof record.name === "string" &&
+    typeof record.structure_hash === "string" &&
+    "structure" in record &&
+    (typeof record.created_at === "string" || record.created_at instanceof Date)
+  );
+}
+
 const weekDayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 function readNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function readText(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
 }
 
 function readFiniteNumber(value: unknown): number {
@@ -129,24 +122,6 @@ function countSteps(structure: unknown): number {
   }, 0);
 }
 
-function hasRouteAttached(activityPlan: ActivityPlanListItem): boolean {
-  if (activityPlan.route_id) {
-    return true;
-  }
-
-  if (activityPlan.route) {
-    return true;
-  }
-
-  if (!activityPlan.structure || typeof activityPlan.structure !== "object") {
-    return false;
-  }
-
-  const routeId = (activityPlan.structure as Record<string, unknown>).route_id;
-  const route = (activityPlan.structure as Record<string, unknown>).route;
-  return typeof routeId === "string" || (!!route && typeof route === "object");
-}
-
 function formatMinutesLabel(value: number): string {
   if (!Number.isFinite(value) || value <= 0) {
     return "0 min";
@@ -180,111 +155,22 @@ function formatDateLabel(value: string | undefined): string | null {
 }
 
 function extractSessionRows(structure: unknown): StructureSessionRow[] {
-  if (!structure || typeof structure !== "object") {
+  const parsed = canonicalTrainingPlanStructureSchema.safeParse(structure);
+  if (!parsed.success) {
     return [];
   }
 
-  const rows: StructureSessionRow[] = [];
-  const root = structure as Record<string, unknown>;
-
-  const pushSession = (
-    session: Record<string, unknown>,
-    index: number,
-    sourcePath: Array<string | number>,
-    inheritedTitle?: string,
-    inheritedOffsetDays = 0,
-  ) => {
-    const sessionOffset = readNumber(session.offset_days) ?? readNumber(session.day_offset);
-    if (sessionOffset === undefined) {
-      return;
-    }
-
-    const dayOffset = inheritedOffsetDays + sessionOffset;
-    const activityPlanId = readText(session.activity_plan_id) ?? null;
-    const overrideTitle = readText(session.event_title_override);
-    const legacyTitle = readText(session.title) ?? readText(session.name);
-    const title =
-      activityPlanId === null
-        ? (overrideTitle ?? legacyTitle ?? inheritedTitle ?? `Session ${index + 1}`)
-        : (overrideTitle ?? inheritedTitle ?? legacyTitle ?? `Session ${index + 1}`);
-
-    rows.push({
-      key: `${dayOffset}-${title}-${index}`,
-      title,
-      activityPlanId,
-      dayOffset,
-      sourcePath,
-    });
-  };
-
-  const traverse = (
-    node: Record<string, unknown>,
-    basePath: Array<string | number>,
-    inheritedTitle?: string,
-    inheritedOffsetDays = 0,
-  ) => {
-    const sessions = Array.isArray(node.sessions)
-      ? (node.sessions as Record<string, unknown>[])
-      : [];
-    sessions.forEach((session, sessionIndex) => {
-      pushSession(
-        session,
-        sessionIndex,
-        [...basePath, "sessions", sessionIndex],
-        inheritedTitle,
-        inheritedOffsetDays,
-      );
-    });
-
-    const blocks = Array.isArray(node.blocks) ? (node.blocks as Record<string, unknown>[]) : [];
-
-    blocks.forEach((block, blockIndex) => {
-      const blockOffset = readNumber(block.offset_days) ?? readNumber(block.day_offset) ?? 0;
-      const blockTitle = readText(block.name) ?? inheritedTitle;
-      traverse(
-        block,
-        [...basePath, "blocks", blockIndex],
-        blockTitle,
-        inheritedOffsetDays + blockOffset,
-      );
-    });
-  };
-
-  traverse(root, []);
-
-  return rows.sort((a, b) => a.dayOffset - b.dayOffset);
-}
-
-function cloneStructure(structure: unknown): Record<string, unknown> | null {
-  if (!structure || typeof structure !== "object") {
-    return null;
-  }
-
-  return JSON.parse(JSON.stringify(structure)) as Record<string, unknown>;
-}
-
-function readSessionFromPath(
-  structure: Record<string, unknown>,
-  sourcePath: Array<string | number>,
-): Record<string, unknown> | null {
-  let current: unknown = structure;
-
-  for (const segment of sourcePath) {
-    if (typeof segment === "number") {
-      if (!Array.isArray(current) || !current[segment]) {
-        return null;
-      }
-      current = current[segment];
-      continue;
-    }
-
-    if (!current || typeof current !== "object") {
-      return null;
-    }
-    current = (current as Record<string, unknown>)[segment];
-  }
-
-  return current && typeof current === "object" ? (current as Record<string, unknown>) : null;
+  return parsed.data.sessions
+    .map((session, index) => {
+      const title = session.event_overrides?.title ?? `Session ${index + 1}`;
+      return {
+        key: `${session.offset_days}-${title}-${index}`,
+        title,
+        activityPlanId: session.activity_plan_id,
+        dayOffset: session.offset_days,
+      };
+    })
+    .sort((a, b) => a.dayOffset - b.dayOffset);
 }
 
 function groupSessionsByMicrocycle(sessions: StructureSessionRow[]): GroupedMicrocycleSessions[] {
@@ -332,33 +218,37 @@ export default function TrainingPlanOverview() {
 
   const isSystemTemplateId = !!id?.startsWith("00000000-0000-0000-0000-00000000");
 
-  const { data: templatePlan, isLoading: isLoadingTemplate } =
-    api.trainingPlans.getTemplate.useQuery(isSystemTemplateId && id ? { id } : skipToken, {
-      enabled: isSystemTemplateId && !!id,
-    });
+  const {
+    data: templatePlan,
+    isLoading: isLoadingTemplate,
+    error: templateError,
+    refetch: refetchTemplate,
+  } = api.trainingPlans.getTemplate.useQuery(isSystemTemplateId && id ? { id } : skipToken, {
+    enabled: isSystemTemplateId && !!id,
+  });
 
   const normalizedNextStepIntent = normalizeTrainingPlanNextStep(nextStep);
 
   const snapshot = useTrainingPlanSnapshot({
-    planId: isSystemTemplateId ? undefined : id,
+    ...(isSystemTemplateId || id === undefined ? {} : { planId: id }),
     includeStatus: false,
     includeWeeklySummaries: false,
   });
 
-  const plan = (isSystemTemplateId ? templatePlan : snapshot.plan) as any;
+  const planCandidate = isSystemTemplateId ? templatePlan : snapshot.plan;
+  const plan = isTrainingPlanDetail(planCandidate) ? planCandidate : undefined;
   const loadingPlan = isSystemTemplateId ? isLoadingTemplate : snapshot.isLoadingSharedDependencies;
   const isOwnedByUser = plan?.profile_id === profile?.id;
-
   const [refreshing, setRefreshing] = React.useState(false);
-  const [showActivityPicker, setShowActivityPicker] = React.useState(false);
-  const [selectedSessionRow, setSelectedSessionRow] = React.useState<StructureSessionRow | null>(
-    null,
-  );
   const [activeMicrocycle, setActiveMicrocycle] = useState<number | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showRemoveScheduledConfirm, setShowRemoveScheduledConfirm] = useState(false);
-  const [pendingActivityRemovalSession, setPendingActivityRemovalSession] =
-    useState<StructureSessionRow | null>(null);
+  const [retainedRemoval, setRetainedRemoval] = useState<{
+    context: string;
+    review: ScheduledRemovalReview;
+  } | null>(null);
+  const removalMutationGuard = React.useRef(false);
+  const [removalPending, setRemovalPending] = useState(false);
   const [statusModal, setStatusModal] = useState<null | {
     title: string;
     description: string;
@@ -366,23 +256,54 @@ export default function TrainingPlanOverview() {
   }>(null);
 
   const handleOpenCalendar = useCallback(() => {
-    router.navigate(ROUTES.CALENDAR as any);
+    router.navigate(ROUTES.CALENDAR);
   }, [router]);
 
   const scheduling = useTrainingPlanTemplateSchedulingController({
     handleOpenCalendar,
-    planId: plan?.id,
+    ...(profile?.id ? { profileId: profile.id } : {}),
+    sourceRevision: JSON.stringify([plan?.editor?.revision, plan?.structure_hash]),
+    ...(id ? { routePlanId: id } : {}),
+    ...(plan?.id === undefined ? {} : { planId: plan.id }),
     queryClient,
     router,
     utils,
   });
-  const isCurrentScheduledPlan = !!plan?.id && scheduling.activePlan?.id === plan.id;
+  const removalContext = JSON.stringify([profile?.id, id, plan?.id]);
+  const removalContextRef = React.useRef(removalContext);
+  removalContextRef.current = removalContext;
+  const removalDispatchedContext = React.useRef(removalContext);
+  const removalPreview = useReadOnlyPreview<ScheduledRemovalReview>(
+    JSON.stringify([
+      removalContext,
+      plan?.editor?.revision,
+      plan?.structure_hash,
+      scheduling.selectedApplication,
+      scheduling.templateAnchorDate,
+      scheduling.scheduleAnchorMode,
+      scheduling.scheduleApplicationMode,
+    ]),
+  );
+  const scheduledRemovalReview =
+    retainedRemoval?.context === removalContext ? retainedRemoval.review : removalPreview.data;
+  const isScheduledPlan = Boolean(
+    scheduling.selectedApplication || retainedRemoval?.context === removalContext,
+  );
+  const setScheduledRemovalReview = (_value: null) => {
+    setRetainedRemoval(null);
+    removalPreview.clear();
+  };
+  const canSchedulePlan = isOwnedByUser || plan?.is_system_template === true;
   const headerActions = useTrainingPlanHeaderSocialActions({
-    plan,
+    plan: plan ?? null,
     router,
     utils,
   });
-  const comments = useEntityCommentsController({ entityId: plan?.id, entityType: "training_plan" });
+  const comments = useEntityCommentsController({
+    ...(plan?.id === undefined ? {} : { entityId: plan.id }),
+    entityType: "training_plan",
+  });
+  const entityCommentsSheet = useEntityCommentsSheet();
 
   const deletePlanMutation = useReliableMutation(api.trainingPlans.delete, {
     invalidate: [utils.trainingPlans],
@@ -394,47 +315,67 @@ export default function TrainingPlanOverview() {
         onClose: () => router.navigate(ROUTES.PLAN.INDEX),
       });
     },
-    onError: (error) => {
+    onError: async (error) => {
+      if (error.data?.code === "CONFLICT") await snapshot.refetchAll();
       setStatusModal({
         title: "Delete Failed",
         description: error.message || "Failed to delete plan.",
       });
     },
   });
-  const removeScheduledPlanMutation = api.trainingPlans.updateActivePlanStatus.useMutation({
-    onSuccess: async (result) => {
-      await Promise.all([
+  const removeScheduledPlanMutation = api.trainingPlans.removeAppliedSchedule.useMutation({
+    onSuccess: async () => {
+      removalMutationGuard.current = false;
+      setRemovalPending(false);
+      if (removalDispatchedContext.current !== removalContextRef.current) return;
+      const removedCount = scheduledRemovalReview?.affected.length;
+      setScheduledRemovalReview(null);
+      setShowRemoveScheduledConfirm(false);
+      await Promise.allSettled([
         invalidateTrainingPlanQueries(utils),
+        plan?.id
+          ? utils.trainingPlans.getAppliedSchedule.invalidate({ training_plan_id: plan.id })
+          : Promise.resolve(),
         snapshot.refetchAll(),
         refreshScheduleViews(queryClient, "trainingPlanSchedulingMutation"),
       ]);
-      setShowRemoveScheduledConfirm(false);
+      if (removalDispatchedContext.current !== removalContextRef.current) return;
       setStatusModal({
         title: "Scheduled sessions removed",
-        description: `Removed ${result.scheduled_sessions_removed} scheduled session${result.scheduled_sessions_removed === 1 ? "" : "s"}. Completed sessions remain in history.`,
+        description:
+          removedCount === undefined
+            ? "Scheduled sessions were removed. Completed sessions remain in history."
+            : `Removed ${removedCount} scheduled session${removedCount === 1 ? "" : "s"}. Completed sessions remain in history.`,
       });
     },
     onError: (error) => {
+      removalMutationGuard.current = false;
+      setRemovalPending(false);
+      if (removalDispatchedContext.current !== removalContextRef.current) return;
+      if (error.data?.code === "NOT_FOUND") {
+        setShowRemoveScheduledConfirm(false);
+        setScheduledRemovalReview(null);
+        setStatusModal({
+          title: "Scheduled application unavailable",
+          description: "This scheduled application no longer has future sessions to remove.",
+        });
+        return;
+      }
+      if (error.data?.code === "CONFLICT") {
+        setShowRemoveScheduledConfirm(false);
+        setScheduledRemovalReview(null);
+        setStatusModal({
+          title: "Removal review expired",
+          description: "The schedule changed. Review the removal again before confirming.",
+        });
+        return;
+      }
       setStatusModal({
         title: "Remove failed",
         description: error.message || "Could not remove the scheduled sessions.",
       });
     },
   });
-
-  const {
-    data: activityPlansData,
-    isLoading: isLoadingActivityPlans,
-    refetch: refetchActivityPlans,
-  } = api.activityPlans.list.useQuery(
-    {
-      ownerScope: "own",
-      limit: 100,
-    },
-    {
-      enabled: !!plan?.id && !!isOwnedByUser,
-    },
-  );
 
   const structureSessionRows = useMemo(
     () => extractSessionRows(plan?.structure),
@@ -452,45 +393,35 @@ export default function TrainingPlanOverview() {
     [structureSessionRows],
   );
 
-  const { data: linkedActivityPlansData, isLoading: isLoadingLinkedPlans } =
-    api.activityPlans.getManyByIds.useQuery(
-      linkedActivityPlanIds.length > 0
-        ? {
-            ids: linkedActivityPlanIds,
-          }
-        : skipToken,
-      {
-        enabled: linkedActivityPlanIds.length > 0,
-      },
-    );
-
-  const updatePlanStructureMutation = api.trainingPlans.update.useMutation({
-    onSuccess: async () => {
-      await Promise.all([invalidateTrainingPlanQueries(utils), snapshot.refetchAll()]);
-      setStatusModal({
-        title: "Session updated",
-        description: "Training plan structure was saved.",
-      });
-      setShowActivityPicker(false);
-      setSelectedSessionRow(null);
+  const {
+    data: linkedActivityPlansData,
+    isLoading: isLoadingLinkedPlans,
+    error: linkedPlansError,
+    refetch: refetchLinkedPlans,
+  } = api.activityPlans.getManyByIds.useQuery(
+    linkedActivityPlanIds.length > 0
+      ? {
+          ids: linkedActivityPlanIds,
+        }
+      : skipToken,
+    {
+      enabled: linkedActivityPlanIds.length > 0,
     },
-    onError: (error) => {
-      setStatusModal({
-        title: "Update failed",
-        description: error.message || "Could not update this session assignment.",
-      });
-    },
-  });
+  );
 
   const handleOpenActivity = useCallback(() => {
     if (typeof activityId !== "string") return;
-    navigateTo(ROUTES.PLAN.ACTIVITY_DETAIL(activityId) as any);
+    navigateTo(ROUTES.PLAN.ACTIVITY_DETAIL(activityId));
   }, [activityId, navigateTo]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await snapshot.refetchAll();
-    setRefreshing(false);
+    try {
+      if (isSystemTemplateId) await refetchTemplate();
+      else await snapshot.refetchAll();
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const handleCreatePlan = () => {
@@ -508,7 +439,7 @@ export default function TrainingPlanOverview() {
     navigateTo({
       pathname: ROUTES.PLAN.TRAINING_PLAN.EDIT,
       params: { id: plan?.id, initialTab: "plan" },
-    } as any);
+    });
   }, [isOwnedByUser, navigateTo, plan?.id]);
 
   const handleDeletePlan = useCallback(() => {
@@ -517,23 +448,48 @@ export default function TrainingPlanOverview() {
   }, [plan]);
 
   const handleRemoveScheduledSessions = useCallback(() => {
-    if (!plan?.id) {
+    if (retainedRemoval?.context === removalContext) {
+      setShowRemoveScheduledConfirm(true);
+      return;
+    }
+    const schedule = scheduling.selectedApplication;
+    if (!schedule) {
+      setStatusModal({
+        title: "Removal unavailable",
+        description: "Refresh the scheduled plan before removing its sessions.",
+      });
       return;
     }
 
     setShowRemoveScheduledConfirm(true);
-  }, [plan?.id]);
+    void removalPreview.run(async () => {
+      const preview = await utils.trainingPlans.previewRemoveAppliedSchedule.fetch({
+        applicationId: schedule.application_id,
+      });
+      return {
+        applicationId: preview.applicationId,
+        affected: preview.affected,
+        cutoffDate: preview.cutoffDate,
+        operationId: randomUUID(),
+        previewFingerprint: preview.previewFingerprint,
+      };
+    });
+  }, [
+    scheduling.selectedApplication,
+    utils.trainingPlans.previewRemoveAppliedSchedule,
+    removalPreview,
+    retainedRemoval,
+    removalContext,
+  ]);
 
   const handleOpenLinkedActivityPlan = useCallback(
     (activityPlanId: string) => {
-      navigateTo(ROUTES.PLAN.PLAN_DETAIL(activityPlanId) as any);
+      navigateTo(ROUTES.PLAN.PLAN_DETAIL(activityPlanId));
     },
     [navigateTo],
   );
 
-  const activityPlanItems = ((activityPlansData?.items ?? []) as ActivityPlanListItem[]) ?? [];
-  const linkedActivityPlanItems =
-    ((linkedActivityPlansData?.items ?? []) as ActivityPlanListItem[]) ?? [];
+  const linkedActivityPlanItems = linkedActivityPlansData?.items ?? [];
   const linkedActivityPlanById = useMemo(
     () => new Map(linkedActivityPlanItems.map((item) => [item.id, item])),
     [linkedActivityPlanItems],
@@ -543,11 +499,8 @@ export default function TrainingPlanOverview() {
     linkedActivityPlanItems.forEach((item) => {
       map.set(item.id, item.name);
     });
-    activityPlanItems.forEach((item) => {
-      map.set(item.id, item.name);
-    });
     return map;
-  }, [activityPlanItems, linkedActivityPlanItems]);
+  }, [linkedActivityPlanItems]);
   const groupedStructureSessions = useMemo(
     () => groupSessionsByMicrocycle(structureSessionRows),
     [structureSessionRows],
@@ -556,17 +509,20 @@ export default function TrainingPlanOverview() {
   const weeklyLoadSummary = useMemo(
     () =>
       groupedStructureSessions.map((microcycle) => {
-        const estimatedTss = microcycle.days.reduce((weekTotal, day) => {
+        let hasUnavailableLoad = false;
+        const weeklyLoad = microcycle.days.reduce((weekTotal, day) => {
           const dayTotal = day.sessions.reduce((sessionTotal, session) => {
             if (!session.activityPlanId) {
               return sessionTotal;
             }
 
             const linkedPlan = linkedActivityPlanById.get(session.activityPlanId);
-            return (
-              sessionTotal +
-              readFiniteNumber(getAuthoritativeActivityPlanMetrics(linkedPlan).estimated_tss)
-            );
+            const load = getActivityPlanQuantitySummary(linkedPlan).commonLoad;
+            if (load === null) {
+              hasUnavailableLoad = true;
+              return sessionTotal;
+            }
+            return sessionTotal + load;
           }, 0);
 
           return weekTotal + dayTotal;
@@ -574,7 +530,7 @@ export default function TrainingPlanOverview() {
 
         return {
           microcycle: microcycle.microcycle,
-          estimatedTss,
+          weeklyLoad: hasUnavailableLoad ? null : weeklyLoad,
         };
       }),
     [groupedStructureSessions, linkedActivityPlanById],
@@ -598,27 +554,24 @@ export default function TrainingPlanOverview() {
     });
     return usage;
   }, [structureSessionRows]);
-  const linkedWorkoutCards = useMemo(
+  const linkedActivityCards = useMemo(
     () =>
       uniqueLinkedActivityPlans.map((linkedPlan) => ({
         ...linkedPlan,
-        estimatedTss: Math.round(
-          readFiniteNumber(getAuthoritativeActivityPlanMetrics(linkedPlan).estimated_tss),
-        ),
-        intensityFactor:
-          readNumber(getAuthoritativeActivityPlanMetrics(linkedPlan).intensity_factor) ?? null,
         estimatedDurationMinutes: Math.round(
-          readFiniteNumber(getAuthoritativeActivityPlanMetrics(linkedPlan).estimated_duration) / 60,
+          readFiniteNumber(getActivityPlanQuantitySummary(linkedPlan).durationSeconds) / 60,
         ),
         usageCount: activityUsageCountById.get(linkedPlan.id) ?? 0,
         stepCount: countSteps(linkedPlan.structure),
-        hasRoute: hasRouteAttached(linkedPlan),
         includesIntervals: hasIntervals(linkedPlan.structure),
       })),
     [activityUsageCountById, uniqueLinkedActivityPlans],
   );
-  const totalPlannedTss = useMemo(
-    () => weeklyLoadSummary.reduce((sum, week) => sum + week.estimatedTss, 0),
+  const totalPlannedLoad = useMemo(
+    () =>
+      weeklyLoadSummary.some((week) => week.weeklyLoad === null)
+        ? null
+        : weeklyLoadSummary.reduce((sum, week) => sum + (week.weeklyLoad ?? 0), 0),
     [weeklyLoadSummary],
   );
   const totalPlannedMinutes = useMemo(
@@ -631,19 +584,27 @@ export default function TrainingPlanOverview() {
         return (
           sum +
           readFiniteNumber(
-            getAuthoritativeActivityPlanMetrics(linkedActivityPlanById.get(session.activityPlanId))
-              .estimated_duration,
-          )
+            getActivityPlanQuantitySummary(linkedActivityPlanById.get(session.activityPlanId))
+              .durationSeconds,
+          ) /
+            60
         );
       }, 0),
     [linkedActivityPlanById, structureSessionRows],
   );
-  const routeBackedWorkoutCards = useMemo(
-    () => linkedWorkoutCards.filter((planItem) => planItem.hasRoute),
-    [linkedWorkoutCards],
-  );
+  const planStructureRecord =
+    plan?.structure && typeof plan.structure === "object"
+      ? (plan.structure as Record<string, unknown>)
+      : null;
+  const periodizationTemplate =
+    planStructureRecord?.periodization_template &&
+    typeof planStructureRecord.periodization_template === "object"
+      ? (planStructureRecord.periodization_template as Record<string, unknown>)
+      : null;
   const periodizationTargetDate = formatDateLabel(
-    plan?.structure?.periodization_template?.target_date,
+    typeof periodizationTemplate?.target_date === "string"
+      ? periodizationTemplate.target_date
+      : undefined,
   );
 
   React.useEffect(() => {
@@ -664,6 +625,7 @@ export default function TrainingPlanOverview() {
     () => groupedStructureSessions.find((group) => group.microcycle === activeMicrocycle) ?? null,
     [activeMicrocycle, groupedStructureSessions],
   );
+  const activeMicrocycleValue = activeMicrocycle?.toString() ?? "";
   const selectedMicrocycleSessionCount = useMemo(
     () => selectedMicrocycleGroup?.days.reduce((count, day) => count + day.sessions.length, 0) ?? 0,
     [selectedMicrocycleGroup],
@@ -681,116 +643,28 @@ export default function TrainingPlanOverview() {
 
     return ids;
   }, [selectedMicrocycleGroup]);
-  const selectedMicrocycleWorkoutCards = useMemo(
+  const selectedMicrocycleActivityCards = useMemo(
     () =>
-      linkedWorkoutCards.filter((planItem) => selectedMicrocycleActivityPlanIds.has(planItem.id)),
-    [linkedWorkoutCards, selectedMicrocycleActivityPlanIds],
+      linkedActivityCards.filter((planItem) => selectedMicrocycleActivityPlanIds.has(planItem.id)),
+    [linkedActivityCards, selectedMicrocycleActivityPlanIds],
   );
-  const selectedMicrocycleWorkoutById = useMemo(
-    () => new Map(selectedMicrocycleWorkoutCards.map((planItem) => [planItem.id, planItem])),
-    [selectedMicrocycleWorkoutCards],
+  const selectedMicrocycleActivityById = useMemo(
+    () => new Map(selectedMicrocycleActivityCards.map((planItem) => [planItem.id, planItem])),
+    [selectedMicrocycleActivityCards],
   );
   const selectedMicrocycleMinutes = useMemo(
     () =>
-      selectedMicrocycleWorkoutCards.reduce(
+      selectedMicrocycleActivityCards.reduce(
         (sum, planItem) => sum + Math.max(0, planItem.estimatedDurationMinutes || 0),
         0,
       ),
-    [selectedMicrocycleWorkoutCards],
-  );
-  const selectedMicrocycleRouteCount = useMemo(
-    () => selectedMicrocycleWorkoutCards.filter((planItem) => planItem.hasRoute).length,
-    [selectedMicrocycleWorkoutCards],
+    [selectedMicrocycleActivityCards],
   );
   const selectedMicrocycleLoad = useMemo(
-    () => weeklyLoadSummary.find((week) => week.microcycle === activeMicrocycle)?.estimatedTss ?? 0,
+    () =>
+      weeklyLoadSummary.find((week) => week.microcycle === activeMicrocycle)?.weeklyLoad ?? null,
     [activeMicrocycle, weeklyLoadSummary],
   );
-
-  const commitSessionActivityPlan = useCallback(
-    async (
-      sessionRow: StructureSessionRow,
-      nextActivityPlanId: string | null,
-      fallbackSessionTitle?: string,
-    ) => {
-      if (!plan?.id || !plan?.structure) {
-        setStatusModal({
-          title: "Update failed",
-          description: "Training plan structure is unavailable.",
-        });
-        return;
-      }
-
-      const nextStructure = cloneStructure(plan.structure);
-      if (!nextStructure) {
-        setStatusModal({
-          title: "Update failed",
-          description: "Training plan structure is invalid.",
-        });
-        return;
-      }
-
-      const targetSession = readSessionFromPath(nextStructure, sessionRow.sourcePath);
-      if (!targetSession) {
-        setStatusModal({
-          title: "Update failed",
-          description: "Could not locate the selected session.",
-        });
-        return;
-      }
-
-      targetSession.activity_plan_id = nextActivityPlanId;
-      if (nextActivityPlanId) {
-        delete targetSession.event_title_override;
-        delete targetSession.title;
-        delete targetSession.name;
-      } else if (!readText(targetSession.title) && fallbackSessionTitle) {
-        targetSession.title = fallbackSessionTitle;
-      }
-
-      if (
-        typeof targetSession.day_offset === "number" &&
-        typeof targetSession.offset_days !== "number"
-      ) {
-        targetSession.offset_days = targetSession.day_offset;
-      }
-      delete targetSession.day_offset;
-
-      if (
-        typeof targetSession.week_offset === "number" &&
-        typeof targetSession.offset_weeks !== "number"
-      ) {
-        targetSession.offset_weeks = targetSession.week_offset;
-      }
-      delete targetSession.week_offset;
-
-      await updatePlanStructureMutation.mutateAsync({
-        id: plan.id,
-        structure: nextStructure as any,
-      });
-    },
-    [plan?.id, plan?.structure, updatePlanStructureMutation],
-  );
-
-  const handleOpenActivityPickerForSession = useCallback((sessionRow: StructureSessionRow) => {
-    setSelectedSessionRow(sessionRow);
-    setShowActivityPicker(true);
-  }, []);
-
-  const handleSelectActivityForSession = useCallback(
-    async (activityPlan: ActivityPlanListItem) => {
-      if (!selectedSessionRow) {
-        return;
-      }
-
-      await commitSessionActivityPlan(selectedSessionRow, activityPlan.id, activityPlan.name);
-    },
-    [commitSessionActivityPlan, selectedSessionRow],
-  );
-
-  const handleRemoveActivityFromSession = useCallback((sessionRow: StructureSessionRow) => {
-    setPendingActivityRemovalSession(sessionRow);
-  }, []);
 
   const focusContext = useMemo(() => {
     if (normalizedNextStepIntent === TPV_NEXT_STEP_INTENTS.REFINE && isOwnedByUser) {
@@ -798,7 +672,7 @@ export default function TrainingPlanOverview() {
         title: "Refine Plan",
         description:
           "Your plan is ready. Open edit to adjust constraints, targets, and plan details.",
-        ctaLabel: "Structure",
+        ctaLabel: "Edit plan",
         onPress: handleEditStructure,
       };
     }
@@ -807,7 +681,7 @@ export default function TrainingPlanOverview() {
         title: "Edit Plan Structure",
         description:
           "Tune weekly targets and constraints in edit mode before your next scheduling cycle.",
-        ctaLabel: "Structure",
+        ctaLabel: "Edit plan",
         onPress: handleEditStructure,
       };
     }
@@ -816,7 +690,7 @@ export default function TrainingPlanOverview() {
         title: "Manage Plan",
         description:
           "Review status, activation, and defaults in edit so the execution tab stays focused.",
-        ctaLabel: "Manage Plan",
+        ctaLabel: "Edit plan",
         onPress: handleEditStructure,
       };
     }
@@ -842,32 +716,26 @@ export default function TrainingPlanOverview() {
 
   React.useEffect(() => {
     if (!loadingPlan && !plan && !id) {
-      router.replace(ROUTES.PLAN.TRAINING_PLAN.CREATE as any);
+      router.replace(ROUTES.PLAN.TRAINING_PLAN.CREATE);
     }
   }, [id, loadingPlan, plan, router]);
 
   if (loadingPlan) {
     return (
       <View className="flex-1 bg-background items-center justify-center">
-        <ActivityIndicator size="large" />
-        <Text className="text-muted-foreground mt-4">Loading training plan...</Text>
+        <LoadingState message="Loading training plan..." />
       </View>
     );
   }
 
-  if (snapshot.hasSharedDependencyError) {
+  if (isSystemTemplateId ? Boolean(templateError) : snapshot.hasSharedDependencyError) {
     return (
       <View className="flex-1 bg-background items-center justify-center px-6 gap-3">
-        <Text className="text-muted-foreground text-center">
-          Unable to load training plan right now.
-        </Text>
-        <TouchableOpacity
-          onPress={() => void snapshot.refetch()}
-          className="px-4 py-2 rounded-full border border-border bg-card"
-          activeOpacity={0.8}
-        >
-          <Text className="text-foreground">Retry</Text>
-        </TouchableOpacity>
+        <ErrorState
+          description="Unable to load training plan right now."
+          onAction={() => void (isSystemTemplateId ? refetchTemplate() : snapshot.refetch())}
+          title="Training plan unavailable"
+        />
       </View>
     );
   }
@@ -876,8 +744,7 @@ export default function TrainingPlanOverview() {
     if (!id) {
       return (
         <View className="flex-1 bg-background items-center justify-center">
-          <ActivityIndicator size="large" />
-          <Text className="text-muted-foreground mt-4">Opening plan creation...</Text>
+          <LoadingState message="Opening plan creation..." />
         </View>
       );
     }
@@ -891,53 +758,54 @@ export default function TrainingPlanOverview() {
     );
   }
 
-  const renderHeaderActions = () => (
-    <DropdownMenu>
-      <DropdownMenuTrigger testID="training-plan-options-trigger">
-        <View className="rounded-full p-2">
-          <Icon as={Ellipsis} size={18} className="text-foreground" />
-        </View>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" sideOffset={6}>
-        {isOwnedByUser ? (
-          <DropdownMenuItem onPress={handleEditStructure} testID="training-plan-options-edit">
-            <Text>Edit Plan</Text>
-          </DropdownMenuItem>
-        ) : null}
-        <DropdownMenuItem
-          onPress={headerActions.handleDuplicate}
-          disabled={headerActions.duplicatePending}
-          testID="training-plan-options-duplicate"
-        >
-          <Text>{headerActions.duplicatePending ? "Duplicating..." : "Duplicate"}</Text>
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onPress={() => scheduling.setShowApplyModal(true)}
-          testID="training-plan-options-schedule"
-        >
-          <Text>Schedule</Text>
-        </DropdownMenuItem>
-        {isCurrentScheduledPlan ? (
-          <DropdownMenuItem
-            onPress={handleRemoveScheduledSessions}
-            variant="destructive"
-            testID="training-plan-options-remove-scheduled"
-          >
-            <Text>Remove Scheduled Sessions</Text>
-          </DropdownMenuItem>
-        ) : null}
-        {isOwnedByUser ? (
-          <DropdownMenuItem
-            onPress={handleDeletePlan}
-            variant="destructive"
-            testID="training-plan-options-delete"
-          >
-            <Text>Delete Plan</Text>
-          </DropdownMenuItem>
-        ) : null}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
+  const renderHeaderActions = () => {
+    const actions: DetailOverflowMenuAction[] = [];
+
+    if (isOwnedByUser) {
+      actions.push({
+        label: "Edit Plan",
+        onPress: handleEditStructure,
+        testID: "training-plan-options-edit",
+      });
+    }
+    actions.push({
+      disabled: headerActions.duplicatePending,
+      label: headerActions.duplicatePending ? "Duplicating..." : "Duplicate training plan",
+      onPress: headerActions.handleDuplicate,
+      testID: "training-plan-options-duplicate",
+    });
+    if (canSchedulePlan) {
+      actions.push({
+        label: "Schedule training plan",
+        onPress: () => scheduling.setShowApplyModal(true),
+        testID: "training-plan-options-schedule",
+      });
+    }
+    if (isScheduledPlan) {
+      actions.push({
+        label: "Remove Scheduled Sessions",
+        onPress: handleRemoveScheduledSessions,
+        testID: "training-plan-options-remove-scheduled",
+        variant: "destructive",
+      });
+    }
+    if (isOwnedByUser) {
+      actions.push({
+        label: "Delete Plan",
+        onPress: handleDeletePlan,
+        testID: "training-plan-options-delete",
+        variant: "destructive",
+      });
+    }
+
+    return (
+      <DetailOverflowMenu
+        accessibilityLabel="Open training plan actions"
+        actions={actions}
+        testID="training-plan-options-trigger"
+      />
+    );
+  };
 
   return (
     <>
@@ -958,49 +826,68 @@ export default function TrainingPlanOverview() {
 
           <TrainingPlanDetailHeaderActionsSection
             handleToggleLike={headerActions.handleToggleLike}
-            isCurrentScheduledPlan={isCurrentScheduledPlan}
+            handleShare={headerActions.handleShare}
+            isScheduledPlan={isScheduledPlan}
             isLiked={headerActions.isLiked}
             likesCount={headerActions.likesCount}
-            overview={{
-              linkedWorkouts: linkedWorkoutCards.length,
-              microcycles: groupedStructureSessions.length || 0,
-              plannedTime: markEstimated(formatMinutesLabel(totalPlannedMinutes)) ?? "0 min",
-              plannedTss: Math.round(totalPlannedTss),
-              routeBacked: routeBackedWorkoutCards.length,
-              sessions: structureSessionRows.length,
+            commentCount={comments.commentCount}
+            onCommentsPress={() => {
+              if (plan?.id) {
+                entityCommentsSheet?.openEntityComments({
+                  entityId: plan.id,
+                  entityType: "training_plan",
+                });
+              }
             }}
+            {...(totalPlannedLoad === null
+              ? {}
+              : {
+                  overview: {
+                    linkedActivities: linkedActivityCards.length,
+                    microcycles: groupedStructureSessions.length || 0,
+                    plannedTime: markEstimated(formatMinutesLabel(totalPlannedMinutes)) ?? "0 min",
+                    plannedLoad: Math.round(totalPlannedLoad),
+                    sessions: structureSessionRows.length,
+                  },
+                })}
             plan={plan}
           />
 
           <View className="gap-4">
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerClassName="gap-2 pr-2"
-              accessibilityRole="tablist"
+            <Tabs
               accessibilityLabel="Training plan weeks"
+              onValueChange={(value) => setActiveMicrocycle(Number(value))}
+              value={activeMicrocycleValue}
             >
-              {groupedStructureSessions.map((group) => {
-                const isActive = group.microcycle === activeMicrocycle;
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerClassName="pr-2"
+              >
+                <TabsList className="mr-0 h-auto flex-row gap-2 bg-transparent p-0">
+                  {groupedStructureSessions.map((group) => {
+                    const isActive = group.microcycle === activeMicrocycle;
 
-                return (
-                  <Pressable
-                    key={`training-plan-week-tab-${group.microcycle}`}
-                    onPress={() => setActiveMicrocycle(group.microcycle)}
-                    testID={`training-plan-detail-tab-week-${group.microcycle}`}
-                    className={`border-b-2 px-1.5 py-2 ${isActive ? "border-primary" : "border-transparent"}`}
-                    accessibilityRole="tab"
-                    accessibilityState={{ selected: isActive }}
-                  >
-                    <Text
-                      className={`text-sm ${isActive ? "font-semibold text-foreground" : "text-muted-foreground"}`}
-                    >
-                      Week {group.microcycle}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
+                    return (
+                      <TabsTrigger
+                        accessibilityState={{ selected: isActive }}
+                        className={`h-auto border-b-2 px-1.5 py-2 ${isActive ? "border-primary" : "border-transparent"}`}
+                        key={`training-plan-week-tab-${group.microcycle}`}
+                        onPress={() => setActiveMicrocycle(group.microcycle)}
+                        testId={`training-plan-detail-tab-week-${group.microcycle}`}
+                        value={group.microcycle.toString()}
+                      >
+                        <Text
+                          className={`text-sm ${isActive ? "font-semibold text-foreground" : "text-muted-foreground"}`}
+                        >
+                          Week {group.microcycle}
+                        </Text>
+                      </TabsTrigger>
+                    );
+                  })}
+                </TabsList>
+              </ScrollView>
+            </Tabs>
 
             {selectedMicrocycleGroup ? (
               <View className="rounded-3xl border border-border bg-card p-4 gap-4">
@@ -1018,15 +905,15 @@ export default function TrainingPlanOverview() {
                   <SummaryMetricCard label="Sessions" value={`${selectedMicrocycleSessionCount}`} />
                   <SummaryMetricCard
                     label="Linked activities"
-                    value={`${selectedMicrocycleWorkoutCards.length}`}
+                    value={`${selectedMicrocycleActivityCards.length}`}
                   />
                   <SummaryMetricCard
-                    label="Route-backed"
-                    value={`${selectedMicrocycleRouteCount}`}
-                  />
-                  <SummaryMetricCard
-                    label="Planned TSS"
-                    value={markEstimated(`${Math.round(selectedMicrocycleLoad)}`) ?? "0"}
+                    label="Planned Load"
+                    value={
+                      selectedMicrocycleLoad === null
+                        ? "—"
+                        : (markEstimated(`${Math.round(selectedMicrocycleLoad)}`) ?? "—")
+                    }
                   />
                   <SummaryMetricCard
                     label="Planned time"
@@ -1036,31 +923,17 @@ export default function TrainingPlanOverview() {
                   />
                 </View>
                 <TrainingPlanStructureSection
-                  activityPlanItems={activityPlanItems}
                   activityPlanNameById={activityPlanNameById}
                   embedded
                   formatCompactDayLabel={formatCompactDayLabel}
                   groupedStructureSessions={[selectedMicrocycleGroup]}
                   hideMicrocycleHeaders
-                  isLoadingActivityPlans={isLoadingActivityPlans}
-                  isOwnedByUser={isOwnedByUser}
-                  onActivityPickerOpenChange={(open) => {
-                    setShowActivityPicker(open);
-                    if (!open) {
-                      setSelectedSessionRow(null);
-                    }
-                  }}
-                  onOpenActivityPickerForSession={handleOpenActivityPickerForSession}
-                  onRefreshActivityPlans={() => {
-                    void refetchActivityPlans();
-                  }}
-                  onRemoveActivityFromSession={handleRemoveActivityFromSession}
                   renderSessionActivityContent={(session) => {
                     if (!session.activityPlanId) {
                       return null;
                     }
 
-                    const linkedPlan = selectedMicrocycleWorkoutById.get(session.activityPlanId);
+                    const linkedPlan = selectedMicrocycleActivityById.get(session.activityPlanId);
                     if (!linkedPlan) {
                       return null;
                     }
@@ -1074,18 +947,20 @@ export default function TrainingPlanOverview() {
                       </View>
                     );
                   }}
-                  onSelectActivityForSession={(activityPlan) => {
-                    void handleSelectActivityForSession(activityPlan);
-                  }}
-                  selectedSessionRow={selectedSessionRow}
-                  showActivityPicker={showActivityPicker}
                   title="Sessions"
-                  updatePlanStructurePending={updatePlanStructureMutation.isPending}
                 />
                 {isLoadingLinkedPlans ? (
                   <Text className="text-sm text-muted-foreground">
                     Loading linked activity plans...
                   </Text>
+                ) : null}
+                {linkedPlansError ? (
+                  <View accessibilityRole="alert">
+                    <Text>{linkedPlansError.message}</Text>
+                    <Button onPress={() => void refetchLinkedPlans()}>
+                      <Text>Retry linked activities</Text>
+                    </Button>
+                  </View>
                 ) : null}
               </View>
             ) : (
@@ -1098,34 +973,30 @@ export default function TrainingPlanOverview() {
           </View>
 
           <TrainingPlanTemplateSchedulingDialog
-            applyPending={scheduling.applyTemplateMutation.isPending}
+            applyPending={scheduling.applyPending}
+            inputsLocked={scheduling.inputsLocked}
+            previewPending={scheduling.previewPending}
+            scheduleError={scheduling.scheduleError}
+            applicationsLoading={scheduling.appliedSchedulesQuery.isLoading}
+            applicationsError={scheduling.appliedSchedulesQuery.error?.message ?? null}
+            onRetryApplications={() => void scheduling.appliedSchedulesQuery.refetch()}
             onApply={scheduling.handleApplyTemplate}
-            onConcurrencyOpenChange={scheduling.setShowConcurrencyWarning}
-            onOpenActivePlan={scheduling.handleOpenActivePlan}
-            onReplaceScheduledPlan={scheduling.handleReplaceScheduledPlan}
-            onScheduleModalOpenChange={scheduling.setShowApplyModal}
+            onScheduleModalOpenChange={(open) => {
+              if (open) scheduling.setShowApplyModal(true);
+              else scheduling.handleCloseScheduleFlow();
+            }}
             onSelectScheduleApplicationMode={scheduling.handleSelectScheduleApplicationMode}
             onSelectScheduleAnchorMode={scheduling.handleSelectScheduleAnchorMode}
             scheduleApplicationMode={scheduling.scheduleApplicationMode}
             scheduleAnchorContent={scheduling.scheduleAnchorContent}
             scheduleAnchorMode={scheduling.scheduleAnchorMode}
+            scheduleReview={scheduling.scheduleReview}
+            scheduledApplications={scheduling.appliedSchedules?.items ?? []}
+            selectedApplicationId={scheduling.selectedApplicationId}
+            onSelectApplication={scheduling.setSelectedApplicationId}
             setTemplateAnchorDate={scheduling.setTemplateAnchorDate}
-            showConcurrencyWarning={scheduling.showConcurrencyWarning}
             showScheduleModal={scheduling.showApplyModal}
             templateAnchorDate={scheduling.templateAnchorDate}
-          />
-
-          <EntityCommentsSection
-            addCommentPending={comments.addCommentPending}
-            commentCount={comments.commentCount}
-            comments={comments.comments}
-            hasMoreComments={comments.hasMoreComments}
-            isLoadingMoreComments={comments.isLoadingMoreComments}
-            newComment={comments.newComment}
-            onAddComment={comments.handleAddComment}
-            onChangeNewComment={comments.setNewComment}
-            onLoadMoreComments={comments.loadMoreComments}
-            testIDPrefix="training-plan"
           />
         </View>
       </ScrollView>
@@ -1153,59 +1024,58 @@ export default function TrainingPlanOverview() {
         />
       ) : null}
 
-      {showRemoveScheduledConfirm && plan ? (
+      {removalPreview.isPending ? (
+        <Text accessibilityLiveRegion="polite">Preparing removal review...</Text>
+      ) : null}
+      {removalPreview.error ? (
+        <View accessibilityRole="alert">
+          <Text>{removalPreview.error}</Text>
+          <Button onPress={handleRemoveScheduledSessions}>
+            <Text>Retry removal review</Text>
+          </Button>
+        </View>
+      ) : null}
+      {showRemoveScheduledConfirm && scheduledRemovalReview && plan ? (
         <AppConfirmModal
-          description="This removes the current scheduled set for this plan while keeping completed history."
-          onClose={() => setShowRemoveScheduledConfirm(false)}
+          description={`This removes ${scheduledRemovalReview?.affected.length ?? 0} future scheduled session${scheduledRemovalReview?.affected.length === 1 ? "" : "s"} after ${scheduledRemovalReview?.cutoffDate ?? "today"}. Today and completed history are kept.`}
+          onClose={() => {
+            if (removalPending) return;
+            setShowRemoveScheduledConfirm(false);
+            removalPreview.clear();
+          }}
           primaryAction={{
             label: removeScheduledPlanMutation.isPending
               ? "Removing..."
               : "Remove Scheduled Sessions",
             onPress: () => {
-              removeScheduledPlanMutation.mutate({
-                id: plan.id,
-                status: "abandoned",
-              });
+              if (scheduledRemovalReview && !removalMutationGuard.current) {
+                removalMutationGuard.current = true;
+                setRemovalPending(true);
+                removalDispatchedContext.current = removalContext;
+                setRetainedRemoval({ context: removalContext, review: scheduledRemovalReview });
+                removeScheduledPlanMutation.mutate({
+                  applicationId: scheduledRemovalReview.applicationId,
+                  operationId: scheduledRemovalReview.operationId,
+                  previewFingerprint: scheduledRemovalReview.previewFingerprint,
+                });
+              }
             },
             testID: "training-plan-remove-scheduled-confirm",
             variant: "destructive",
-            disabled: removeScheduledPlanMutation.isPending,
+            disabled: removalPending || !scheduledRemovalReview,
           }}
           secondaryAction={{
             label: "Cancel",
-            onPress: () => setShowRemoveScheduledConfirm(false),
+            onPress: () => {
+              if (removalPending) return;
+              setShowRemoveScheduledConfirm(false);
+              removalPreview.clear();
+            },
+            disabled: removalPending,
             variant: "outline",
           }}
           testID="training-plan-remove-scheduled-modal"
           title="Remove scheduled sessions?"
-        />
-      ) : null}
-
-      {pendingActivityRemovalSession ? (
-        <AppConfirmModal
-          description="This session will no longer reference an activity plan."
-          onClose={() => setPendingActivityRemovalSession(null)}
-          primaryAction={{
-            label: updatePlanStructureMutation.isPending ? "Removing..." : "Remove Linked Activity",
-            onPress: () => {
-              void commitSessionActivityPlan(
-                pendingActivityRemovalSession,
-                null,
-                pendingActivityRemovalSession.title,
-              );
-              setPendingActivityRemovalSession(null);
-            },
-            testID: "training-plan-remove-linked-activity-confirm",
-            variant: "destructive",
-            disabled: updatePlanStructureMutation.isPending,
-          }}
-          secondaryAction={{
-            label: "Cancel",
-            onPress: () => setPendingActivityRemovalSession(null),
-            variant: "outline",
-          }}
-          testID="training-plan-remove-linked-activity-modal"
-          title="Remove linked activity?"
         />
       ) : null}
 
@@ -1247,12 +1117,12 @@ function TrainingPlanCompactActivityPlanCard({
   linkedPlan,
   onPress,
 }: {
-  linkedPlan: any;
+  linkedPlan: ActivityPlanListItem;
   onPress: () => void;
 }) {
   return (
     <View testID={`training-plan-linked-activity-${linkedPlan.id}`}>
-      <ActivityPlanCard activityPlan={linkedPlan} onPress={onPress} variant="default" />
+      <ActivityPlanCard plan={linkedPlan} onPress={onPress} variant="default" />
     </View>
   );
 }

@@ -1,3 +1,4 @@
+import { Text } from "react-native";
 import { renderNative } from "../../test/render-native";
 import {
   DropdownMenu,
@@ -8,13 +9,19 @@ import {
 } from "./index.native";
 
 describe("DropdownMenu native", () => {
-  it("renders trigger text and item content", () => {
-    const { getByTestId } = renderNative(
+  it("renders trigger text and item content", async () => {
+    const { getByTestId } = await renderNative(
       <DropdownMenu>
-        <DropdownMenuTrigger testID="activity-menu-trigger">Open menu</DropdownMenuTrigger>
+        <DropdownMenuTrigger testID="activity-menu-trigger">
+          <Text>Open menu</Text>
+        </DropdownMenuTrigger>
         <DropdownMenuContent testID="activity-menu-content">
-          <DropdownMenuItem testID="pin-activity-item">Pin activity</DropdownMenuItem>
-          <DropdownMenuShortcut testID="pin-activity-shortcut">Shift+P</DropdownMenuShortcut>
+          <DropdownMenuItem testID="pin-activity-item">
+            <Text>Pin activity</Text>
+          </DropdownMenuItem>
+          <DropdownMenuShortcut testID="pin-activity-shortcut">
+            <Text>Shift+P</Text>
+          </DropdownMenuShortcut>
         </DropdownMenuContent>
       </DropdownMenu>,
     );
