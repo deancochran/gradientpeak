@@ -2,11 +2,14 @@ import React from "react";
 import type { TestInstance as ReactTestInstance } from "test-renderer";
 import { createActivityPlanDetail } from "../../test/activity-plan-projection-fixture";
 import { createHost, type HostProps } from "../../test/mock-components";
-import { fireEvent, renderNative, screen, waitFor } from "../../test/render-native";
+import { act, fireEvent, renderNative, screen, waitFor } from "../../test/render-native";
 
 const alertMock = jest.fn();
-const createMutateMock = jest.fn();
+const createMutateAsyncMock = jest.fn();
 const updateMutateMock = jest.fn();
+const setErrorMock = jest.fn();
+const clearErrorsMock = jest.fn();
+const refreshScheduleWithCallbacksMock = jest.fn();
 const activityPlanId = "11111111-1111-4111-8111-111111111111";
 
 type ExistingActivityData = {
@@ -23,6 +26,12 @@ type ExistingActivityData = {
 };
 
 let existingActivityData: ExistingActivityData | null = null;
+let profileId: string | null = "22222222-2222-4222-8222-222222222222";
+let planDetails: ReturnType<typeof createActivityPlanDetail> | null = createActivityPlanDetail({
+  id: "plan-1",
+  name: "Tempo Builder",
+  description: "Progressive tempo session with structured intervals.",
+});
 
 jest.mock("@tanstack/react-query", () => ({
   __esModule: true,
@@ -44,39 +53,32 @@ jest.mock("@react-native-community/datetimepicker", () => ({
 
 jest.mock("@repo/ui/hooks", () => {
   const React = require("react");
+  const hooks = jest.requireActual("@repo/ui/hooks");
 
   return {
     __esModule: true,
-    useZodForm: ({ defaultValues }: { defaultValues: Record<string, unknown> }) => {
-      const initialDefaultsRef = React.useRef(defaultValues);
-      const [values, setValues] = React.useState(initialDefaultsRef.current);
-      const valuesRef = React.useRef(values);
+    ...hooks,
+    useZodForm: (...args: Parameters<typeof hooks.useZodForm>) => {
+      const form = hooks.useZodForm(...args);
+      const isInstrumented = React.useRef(false);
 
-      valuesRef.current = values;
+      if (!isInstrumented.current) {
+        const originalSetError = form.setError;
+        const originalClearErrors = form.clearErrors;
 
-      return React.useMemo(
-        () => ({
-          control: {},
-          formState: { errors: {}, isDirty: false },
-          getValues: () => valuesRef.current,
-          reset: () => setValues(initialDefaultsRef.current),
-          setValue: (name: string, value: unknown) =>
-            setValues((current: Record<string, unknown>) => ({ ...current, [name]: value })),
-          watch: (name: string) => valuesRef.current[name],
-        }),
-        [],
-      );
+        form.setError = (...setErrorArgs: Parameters<typeof originalSetError>) => {
+          setErrorMock(...setErrorArgs);
+          return originalSetError(...setErrorArgs);
+        };
+        form.clearErrors = (...clearErrorArgs: Parameters<typeof originalClearErrors>) => {
+          clearErrorsMock(...clearErrorArgs);
+          return originalClearErrors(...clearErrorArgs);
+        };
+        isInstrumented.current = true;
+      }
+
+      return form;
     },
-    useZodFormSubmit: ({
-      form,
-      onSubmit,
-    }: {
-      form: { getValues: () => Record<string, unknown> };
-      onSubmit: (values: Record<string, unknown>) => unknown;
-    }) => ({
-      isSubmitting: false,
-      handleSubmit: () => onSubmit(form.getValues()),
-    }),
   };
 });
 
@@ -147,13 +149,13 @@ jest.mock("lucide-react-native", () => ({
 
 jest.mock("@/lib/scheduling/refreshScheduleViews", () => ({
   __esModule: true,
-  refreshScheduleViews: jest.fn(async () => undefined),
+  refreshScheduleWithCallbacks: refreshScheduleWithCallbacksMock,
 }));
 
 jest.mock("@/lib/stores/auth-store", () => ({
   __esModule: true,
-  useAuthStore: (selector: (state: { profile: { id: string } }) => unknown) =>
-    selector({ profile: { id: "22222222-2222-4222-8222-222222222222" } }),
+  useAuthStore: (selector: (state: { profile: { id: string } | null }) => unknown) =>
+    selector({ profile: profileId ? { id: profileId } : null }),
 }));
 
 jest.mock("@/lib/api", () => ({
@@ -161,21 +163,23 @@ jest.mock("@/lib/api", () => ({
   api: {
     events: {
       getById: { useQuery: () => ({ data: existingActivityData, isLoading: false }) },
-      create: { useMutation: () => ({ isPending: false, error: null, mutate: createMutateMock }) },
+      create: { useMutation: () => ({ isPending: false, error: null, mutateAsync: jest.fn() }) },
       update: { useMutation: () => ({ isPending: false, error: null, mutate: updateMutateMock }) },
     },
     plannedSessions: {
-      create: { useMutation: () => ({ isPending: false, error: null, mutate: createMutateMock }) },
+      create: {
+        useMutation: () => ({
+          isPending: false,
+          error: null,
+          mutateAsync: createMutateAsyncMock,
+        }),
+      },
     },
     activityPlans: {
       getById: {
         useQuery: () => ({
           data: {
-            detail: createActivityPlanDetail({
-              id: "plan-1",
-              name: "Tempo Builder",
-              description: "Progressive tempo session with structured intervals.",
-            }),
+            detail: planDetails,
             edit: null,
           },
           isLoading: false,
@@ -195,7 +199,15 @@ const { ScheduleActivityModal } = require("../ScheduleActivityModal");
 describe("ScheduleActivityModal", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    createMutateAsyncMock.mockResolvedValue(undefined);
+    refreshScheduleWithCallbacksMock.mockResolvedValue(undefined);
     existingActivityData = null;
+    profileId = "22222222-2222-4222-8222-222222222222";
+    planDetails = createActivityPlanDetail({
+      id: "plan-1",
+      name: "Tempo Builder",
+      description: "Progressive tempo session with structured intervals.",
+    });
   });
 
   it("shows the selected activity preview", async () => {
@@ -212,10 +224,11 @@ describe("ScheduleActivityModal", () => {
   });
 
   it("submits a date-key-only planned activity", async () => {
+    const onClose = jest.fn();
     await renderNative(
       <ScheduleActivityModal
         visible
-        onClose={jest.fn()}
+        onClose={onClose}
         activityPlanId={activityPlanId}
         preselectedDate="2026-06-02"
       />,
@@ -224,7 +237,7 @@ describe("ScheduleActivityModal", () => {
     await fireEvent.press(screen.getByTestId("schedule-submit-button"));
 
     await waitFor(() => {
-      expect(createMutateMock).toHaveBeenCalledWith(
+      expect(createMutateAsyncMock).toHaveBeenCalledWith(
         expect.objectContaining({
           profileId: "22222222-2222-4222-8222-222222222222",
           session: expect.objectContaining({
@@ -235,6 +248,136 @@ describe("ScheduleActivityModal", () => {
         }),
       );
     });
+    expect(clearErrorsMock).toHaveBeenCalledWith("root");
+    const clearOrder = clearErrorsMock.mock.invocationCallOrder[0];
+    const mutationOrder = createMutateAsyncMock.mock.invocationCallOrder[0];
+    expect(clearOrder).toBeDefined();
+    expect(mutationOrder).toBeDefined();
+    if (clearOrder === undefined || mutationOrder === undefined) {
+      throw new Error("Expected root-error clearing and mutation invocation");
+    }
+    expect(clearOrder).toBeLessThan(mutationOrder);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(refreshScheduleWithCallbacksMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("refreshes and closes only after the mutation resolves", async () => {
+    let resolveMutation: (() => void) | undefined;
+    createMutateAsyncMock.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveMutation = resolve;
+        }),
+    );
+    const onClose = jest.fn();
+
+    await renderNative(
+      <ScheduleActivityModal visible onClose={onClose} activityPlanId={activityPlanId} />,
+    );
+
+    fireEvent.press(screen.getByTestId("schedule-submit-button"));
+    await waitFor(() => expect(createMutateAsyncMock).toHaveBeenCalledTimes(1));
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(refreshScheduleWithCallbacksMock).not.toHaveBeenCalled();
+
+    resolveMutation?.();
+
+    await waitFor(() => {
+      expect(refreshScheduleWithCallbacksMock).toHaveBeenCalledTimes(1);
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("keeps the modal open and maps server field errors after a rejected submission", async () => {
+    createMutateAsyncMock.mockRejectedValue({
+      data: { zodError: { fieldErrors: { scheduledDate: ["Choose a later date"] } } },
+    });
+    const onClose = jest.fn();
+
+    await renderNative(
+      <ScheduleActivityModal visible onClose={onClose} activityPlanId={activityPlanId} />,
+    );
+    await fireEvent.press(screen.getByTestId("schedule-submit-button"));
+
+    await waitFor(() =>
+      expect(setErrorMock).toHaveBeenCalledWith(
+        "scheduledDate",
+        expect.objectContaining({ message: "Choose a later date" }),
+      ),
+    );
+    expect(onClose).not.toHaveBeenCalled();
+    expect(refreshScheduleWithCallbacksMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the modal open and shows the fallback root error for an empty error property", async () => {
+    createMutateAsyncMock.mockRejectedValue({ error: "" });
+    const onClose = jest.fn();
+
+    await renderNative(
+      <ScheduleActivityModal visible onClose={onClose} activityPlanId={activityPlanId} />,
+    );
+    await fireEvent.press(screen.getByTestId("schedule-submit-button"));
+
+    await waitFor(() =>
+      expect(screen.getByText("Failed to schedule activity. Please try again.")).toBeTruthy(),
+    );
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["profile", () => (profileId = null), "Profile is still loading"],
+    [
+      "non-executable plan",
+      () =>
+        (planDetails = createActivityPlanDetail({
+          capabilities: {
+            canLike: true,
+            canEdit: true,
+            canDelete: true,
+            canDuplicate: true,
+            canSchedule: false,
+            canRecord: true,
+          },
+        })),
+      "Only executable single-activity-category plans can be scheduled.",
+    ],
+  ])("keeps %s guards from mutating and preserves their error copy", async (_name, arrange, copy) => {
+    arrange();
+
+    await renderNative(
+      <ScheduleActivityModal visible onClose={jest.fn()} activityPlanId={activityPlanId} />,
+    );
+
+    const submitButton = screen.queryByTestId("schedule-submit-button");
+    if (submitButton) {
+      await fireEvent.press(submitButton);
+      await waitFor(() => expect(screen.getAllByText(copy).length).toBeGreaterThan(0));
+    } else {
+      expect(screen.getAllByText(copy).length).toBeGreaterThan(0);
+    }
+    expect(createMutateAsyncMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the unavailable-plan guard from mutating and retains its root error copy", async () => {
+    planDetails = null;
+    await renderNative(
+      <ScheduleActivityModal visible onClose={jest.fn()} activityPlanId={activityPlanId} />,
+    );
+
+    const onPress = screen.getByTestId("schedule-submit-button").props.onPress;
+    if (typeof onPress !== "function") {
+      throw new Error("Expected unavailable-plan submit callback");
+    }
+    await act(async () => {
+      await onPress();
+    });
+
+    expect(setErrorMock).toHaveBeenCalledWith(
+      "root",
+      expect.objectContaining({ message: "Activity plan is unavailable" }),
+    );
+    expect(createMutateAsyncMock).not.toHaveBeenCalled();
   });
 
   it("shows existing executable events as read-only", async () => {
