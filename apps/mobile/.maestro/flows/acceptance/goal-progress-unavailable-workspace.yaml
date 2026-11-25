@@ -20,6 +20,8 @@ name: Completed athlete preserves an evidence-free threshold goal through Plan a
     visible:
       id: goal-detail-progress
     timeout: 30000
+- assertNotVisible:
+    id: goal-detail-history-mismatch
 - assertVisible: ${MAESTRO_ACCEPTANCE_GOAL_TITLE}
 - assertVisible: "Current: Unavailable"
 - assertVisible: "Target: 300 W"
