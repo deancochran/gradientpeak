@@ -17,6 +17,7 @@ const thresholdUseQueryMock = jest.fn();
 const mockRecordedMount = jest.fn();
 const mockScaffoldProps = jest.fn();
 const mockProgressInsightProps = jest.fn();
+let mergedStackOptions: NonNullable<StackScreenProps["options"]> = {};
 let mockGoalObjective: Record<string, unknown> = {};
 let mockGoalId = "goal-1";
 let mockAuthProfile: { id: string; planning_timezone: string } | null = {
@@ -68,12 +69,16 @@ jest.mock("react-native", () => ({
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: {
-    Screen: (props: StackScreenProps) =>
-      React.createElement(
+    Screen: (props: StackScreenProps) => {
+      mergedStackOptions = { ...mergedStackOptions, ...props.options };
+      return React.createElement(
         "StackScreen",
         props,
-        typeof props.options?.headerRight === "function" ? props.options.headerRight() : null,
-      ),
+        typeof mergedStackOptions.headerRight === "function"
+          ? mergedStackOptions.headerRight()
+          : null,
+      );
+    },
   },
   useLocalSearchParams: () => ({ id: mockGoalId }),
   useRouter: () => ({ back: jest.fn(), navigate: navigateMock }),
@@ -290,6 +295,8 @@ jest.mock("@/lib/api", () => ({
     httpStatus: error?.data?.httpStatus ?? null,
     trpcCode: error?.data?.code ?? null,
   }),
+  isTrustedNonJson503TransportError: (error: { trustedNonJson503?: boolean } | undefined) =>
+    error?.trustedNonJson503 === true,
   api: {
     useUtils: () => ({
       goals: { list: { invalidate: jest.fn() }, getById: { invalidate: jest.fn() } },
@@ -321,6 +328,7 @@ describe("goal detail persistence", () => {
   beforeEach(() => {
     navigateMock.mockClear();
     mockGoalId = "goal-1";
+    mergedStackOptions = {};
     mockAuthProfile = {
       id: "22222222-2222-4222-8222-222222222222",
       planning_timezone: "America/Los_Angeles",
@@ -588,6 +596,29 @@ describe("goal detail persistence", () => {
     expect(thresholdRefetch).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps authorized cached goal context for the trusted non-JSON transport 503 marker", async () => {
+    goalUseQueryMock.mockReturnValue({
+      data: {
+        id: "goal-1",
+        profile_id: "22222222-2222-4222-8222-222222222222",
+        target_date: "2026-06-01",
+        title: "Spring 5K",
+        priority: 8,
+        activity_category: "run",
+        target_payload: mockGoalObjective,
+      },
+      error: { name: "TRPCClientError", trustedNonJson503: true },
+      isError: true,
+      isLoading: false,
+      refetch: jest.fn(async () => undefined),
+    });
+
+    await renderNative(<GoalDetailScreen />);
+
+    expect(screen.getByTestId("goal-detail-goal-refresh-warning")).toBeTruthy();
+    expect(screen.queryByText("Goal could not be loaded")).toBeNull();
+  });
+
   it("clears cached refresh warnings after Retry refreshes all four goal queries", async () => {
     let failed = true;
     const retryAll = jest.fn(async () => {
@@ -654,6 +685,40 @@ describe("goal detail persistence", () => {
       expect(screen.queryByTestId("goal-detail-goal-refresh-warning")).toBeNull();
       expect(screen.queryByTestId("goal-detail-progress-refresh-warning")).toBeNull();
     });
+  });
+
+  it.each([
+    {
+      name: "denied",
+      error: { name: "TRPCClientError", data: { code: "FORBIDDEN", httpStatus: 403 } },
+    },
+    { name: "unknown", error: { name: "Error" } },
+  ])("clears merged management header actions after a ready goal becomes a $name route error", async ({
+    error,
+  }) => {
+    const view = await renderNative(<GoalDetailScreen />);
+    expect(mergedStackOptions.headerRight?.()).not.toBeNull();
+
+    goalUseQueryMock.mockReturnValue({
+      data: {
+        id: "goal-1",
+        profile_id: "22222222-2222-4222-8222-222222222222",
+        target_date: "2026-06-01",
+        title: "Spring 5K",
+        priority: 8,
+        activity_category: "run",
+        target_payload: mockGoalObjective,
+      },
+      error,
+      isError: true,
+      isLoading: false,
+      refetch: jest.fn(async () => undefined),
+    });
+
+    await view.rerender(<GoalDetailScreen />);
+
+    expect(screen.getByText("Goal could not be loaded")).toBeTruthy();
+    expect(mergedStackOptions.headerRight?.()).toBeNull();
   });
 
   it.each([
