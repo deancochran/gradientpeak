@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { freezePlannedSessionScenarioOperation } from "@repo/api/client";
 import { randomUUID } from "expo-crypto";
 import React from "react";
-import { act, renderNative, waitFor } from "../../../test/render-native";
+import { act, cleanup, renderNative, waitFor } from "../../../test/render-native";
 import { SessionScenarioPreview } from "../SessionScenarioPreview";
 
 const mocks = {
@@ -110,6 +110,8 @@ describe("SessionScenarioPreview", () => {
     await AsyncStorage.clear();
     jest.mocked(randomUUID).mockReturnValue("00000000-0000-4000-8000-000000000001");
   });
+
+  afterEach(cleanup);
 
   function availablePreview(revision = 5) {
     return {
@@ -332,6 +334,70 @@ describe("SessionScenarioPreview", () => {
     await act(async () => screen.getByTestId("session-scenario-retry-apply").props.onPress());
     await waitFor(() => expect(mocks.apply).toHaveBeenCalledTimes(1));
     expect(mocks.apply).toHaveBeenLastCalledWith(receipt.request);
+  });
+
+  it("retries the same recovered operation after a lost acknowledgement without auto-submitting", async () => {
+    const recoveredSession = {
+      ...props.session,
+      id: "00000000-0000-4000-8000-000000000010",
+    };
+    mocks.preview = {
+      data: availablePreview(),
+      isError: false,
+      isLoading: false,
+      refetch: jest.fn(),
+    };
+    const stored = new Map<string, string>();
+    jest.mocked(AsyncStorage.setItem).mockImplementation(async (key, value) => {
+      stored.set(key, value);
+    });
+    jest.mocked(AsyncStorage.getItem).mockImplementation(async (key) => stored.get(key) ?? null);
+    jest.mocked(AsyncStorage.removeItem).mockImplementation(async (key) => {
+      stored.delete(key);
+    });
+    mocks.apply
+      .mockRejectedValueOnce(new Error("response lost"))
+      .mockResolvedValueOnce({ status: "applied", action: "repointed" });
+    const initial = await renderNative(
+      <SessionScenarioPreview {...props} session={recoveredSession} />,
+    );
+    await waitFor(() =>
+      expect(initial.getByTestId("session-scenario-apply").props.disabled).toBe(false),
+    );
+    await act(async () => initial.getByTestId("session-scenario-apply").props.onPress());
+    await act(async () => initial.getByTestId("session-scenario-confirm-apply").props.onPress());
+    await waitFor(() => expect(initial.getByTestId("session-scenario-retry-apply")).toBeTruthy());
+    expect(
+      initial.getByText("We could not confirm the result. Check or retry with the same operation."),
+    ).toBeTruthy();
+    const firstRequest = mocks.apply.mock.calls[0]?.[0];
+    expect(firstRequest).toMatchObject({
+      expectedPreviewFingerprint: `v1:sha256:${"a".repeat(64)}`,
+      operationId: "00000000000040008000000000000001",
+      preview: { sessionId: recoveredSession.id },
+    });
+    expect([...stored.values()]).toEqual([
+      expect.stringContaining(`"operationId":"${firstRequest?.operationId}"`),
+    ]);
+
+    await act(async () => initial.unmount());
+    mocks.preview = {
+      data: { status: "unavailable", reason: "session_not_scheduled" },
+      isError: false,
+      isLoading: false,
+      refetch: jest.fn(),
+    };
+    const recovered = await renderNative(
+      <SessionScenarioPreview {...props} session={recoveredSession} />,
+    );
+    await waitFor(() => expect(recovered.getByTestId("session-scenario-retry-apply")).toBeTruthy());
+    expect(recovered.getByTestId("session-scenario-retry-apply").props.disabled).toBe(false);
+    expect(mocks.apply).toHaveBeenCalledTimes(1);
+
+    await act(async () => recovered.getByTestId("session-scenario-retry-apply").props.onPress());
+    await waitFor(() => expect(mocks.apply).toHaveBeenCalledTimes(2));
+    expect(mocks.apply).toHaveBeenLastCalledWith(firstRequest);
+    await waitFor(() => expect(recovered.getByText("Applied: repointed.")).toBeTruthy());
   });
 
   it("hands a durable outcome to a stable boundary for a same-actor remount", async () => {
