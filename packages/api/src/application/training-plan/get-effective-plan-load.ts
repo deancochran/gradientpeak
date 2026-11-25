@@ -313,24 +313,37 @@ export async function getEffectivePlanLoad(input: {
     }
     completedQuantificationById.set(activityId, parsed.value);
   }
-  const activitiesInRange = facts.activities.filter(
-    (activity): activity is typeof activity & { started_at: Date } => {
-      if (activity.started_at === null) return false;
-      const date = localDate(activity.started_at, planningTimezone);
-      return date >= startDate && date <= endDate;
-    },
-  );
+  const linkedPlanningDates = new Map<string, string | null>();
+  for (const session of facts.plannedSessions) {
+    if (session.lifecycleStatus !== "completed" || session.completedActivityId === null) continue;
+    const previous = linkedPlanningDates.get(session.completedActivityId);
+    linkedPlanningDates.set(
+      session.completedActivityId,
+      previous === undefined ? session.planningDate : null,
+    );
+  }
+  const effectiveCompletedDate = (activity: (typeof facts.activities)[number]) => {
+    if (activity.started_at !== null) return localDate(activity.started_at, planningTimezone);
+    return linkedPlanningDates.get(activity.id) ?? null;
+  };
+  const activitiesInRange = facts.activities.flatMap((activity) => {
+    const completedDate = effectiveCompletedDate(activity);
+    return completedDate !== null && completedDate >= startDate && completedDate <= endDate
+      ? [{ activity, completedDate }]
+      : [];
+  });
   completedQuantificationIncomplete ||= activitiesInRange.some(
-    (activity) => !completedQuantificationById.has(activity.id),
+    ({ activity }) => activity.started_at !== null && !completedQuantificationById.has(activity.id),
   );
-  const completedActivities = activitiesInRange.flatMap((activity) => {
+  const completedActivities = activitiesInRange.flatMap(({ activity, completedDate }) => {
     const source = completedQuantificationById.get(activity.id);
-    if (!source) return [];
+    if (!source && activity.started_at !== null) return [];
     return [
       {
         completedActivityId: activity.id,
-        completedDate: localDate(activity.started_at, planningTimezone),
-        observationQuantification: source,
+        completedDate,
+        commonLoad: source?.summary.commonLoad ?? unavailableActivityLoad(asOf.toISOString()),
+        observationQuantification: source ?? null,
       },
     ];
   });
@@ -415,7 +428,9 @@ export async function getEffectivePlanLoad(input: {
   const completedMembers =
     composition.status === "available"
       ? composition.firmItems.flatMap((item) =>
-          item.kind === "completed" ? item.observationQuantification.members : [],
+          item.kind === "completed" && item.observationQuantification !== null
+            ? item.observationQuantification.members
+            : [],
         )
       : [];
   const completedObservationQuantification =

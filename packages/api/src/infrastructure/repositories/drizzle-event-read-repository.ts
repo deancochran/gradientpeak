@@ -292,7 +292,7 @@ export function createEventReadRepository(
               )
               .limit(boundedLimit)
           : Promise.resolve([]);
-      const [plannedSessionRows, activityRows, recommendationRows] = await Promise.all([
+      const [plannedSessionRows, recommendationRows] = await Promise.all([
         db
           .select({
             id: schema.plannedSessions.id,
@@ -328,33 +328,53 @@ export function createEventReadRepository(
           )
           .orderBy(asc(schema.plannedSessions.planning_date), asc(schema.plannedSessions.id))
           .limit(boundedLimit),
-        db
-          .select({
-            id: schema.activities.id,
-            profile_id: schema.activities.profile_id,
-            started_at: schema.activities.started_at,
-            finished_at: schema.activities.finished_at,
-            elapsed_ms: schema.activities.elapsed_ms,
-            active_ms: schema.activities.active_ms,
-            moving_ms: schema.activities.moving_ms,
-            timing_coverage: schema.activities.timing_coverage,
-            distance_meters: schema.activities.distance_meters,
-            avg_heart_rate: schema.activities.avg_heart_rate,
-            max_heart_rate: schema.activities.max_heart_rate,
-          })
-          .from(schema.activities)
-          .where(
-            and(
-              eq(schema.activities.profile_id, profileId),
-              isNull(schema.activities.superseded_by_activity_id),
-              gte(schema.activities.started_at, envelopeStart),
-              lt(schema.activities.started_at, envelopeEnd),
-            ),
-          )
-          .orderBy(asc(schema.activities.started_at), asc(schema.activities.id))
-          .limit(boundedLimit),
         recommendationQuery,
       ]);
+      const linkedManualActivityIds = plannedSessionRows.flatMap((session) =>
+        session.status === "completed" && session.completed_activity_id !== null
+          ? [session.completed_activity_id]
+          : [],
+      );
+      const activityRangeCondition =
+        linkedManualActivityIds.length === 0
+          ? and(
+              gte(schema.activities.started_at, envelopeStart),
+              lt(schema.activities.started_at, envelopeEnd),
+            )
+          : or(
+              and(
+                isNull(schema.activities.started_at),
+                inArray(schema.activities.id, linkedManualActivityIds),
+              ),
+              and(
+                gte(schema.activities.started_at, envelopeStart),
+                lt(schema.activities.started_at, envelopeEnd),
+              ),
+            );
+      const activityRows = await db
+        .select({
+          id: schema.activities.id,
+          profile_id: schema.activities.profile_id,
+          started_at: schema.activities.started_at,
+          finished_at: schema.activities.finished_at,
+          elapsed_ms: schema.activities.elapsed_ms,
+          active_ms: schema.activities.active_ms,
+          moving_ms: schema.activities.moving_ms,
+          timing_coverage: schema.activities.timing_coverage,
+          distance_meters: schema.activities.distance_meters,
+          avg_heart_rate: schema.activities.avg_heart_rate,
+          max_heart_rate: schema.activities.max_heart_rate,
+        })
+        .from(schema.activities)
+        .where(
+          and(
+            eq(schema.activities.profile_id, profileId),
+            isNull(schema.activities.superseded_by_activity_id),
+            activityRangeCondition,
+          ),
+        )
+        .orderBy(asc(schema.activities.started_at), asc(schema.activities.id))
+        .limit(boundedLimit);
       const activitiesStatus = activityRows.length === boundedLimit ? "partial" : "complete";
       const serializePlannedSession = (row: (typeof plannedSessionRows)[number]) => ({
         id: row.id,
