@@ -147,9 +147,9 @@ it("draws connected comparable evidence, target, markers, and source evidence", 
         {
           status: "on_track",
           deadlineAt: "2026-11-15T00:00:00Z",
-          current: { value: 240 },
-          metrics: { remainingGap: 10 },
-          target: { activityCategory: "bike", targetValue: 250, unit: "watts" },
+          current: { value: 285 },
+          metrics: { remainingGap: 15 },
+          target: { activityCategory: "bike", targetValue: 300, unit: "watts" },
         } as never
       }
       todayKey="2026-04-15"
@@ -174,9 +174,9 @@ it("draws connected comparable evidence, target, markers, and source evidence", 
   expect(screen.getByTestId("plan-progress-deadline-summary")).toBeTruthy();
   await fireEvent.press(screen.getByTestId("plan-progress-source-activity-2"));
   expect(onOpenSourceActivity).toHaveBeenCalledWith("activity-2");
-  expect(screen.getByText("240 W")).toBeTruthy();
-  expect(screen.getByText("250 W")).toBeTruthy();
-  expect(screen.getByText("10 W")).toBeTruthy();
+  expect(screen.getByLabelText("Current: 285 W").props.accessible).toBe(true);
+  expect(screen.getByLabelText("Target: 300 W").props.accessible).toBe(true);
+  expect(screen.getByLabelText("Remaining gap: 15 W").props.accessible).toBe(true);
   await fireEvent.press(screen.getByTestId("plan-progress-point-2026-02-01"));
   await fireEvent.press(screen.getByTestId("plan-progress-source-activity-1"));
   expect(onOpenSourceActivity).toHaveBeenLastCalledWith("activity-1");
@@ -266,6 +266,10 @@ it("shows the goal's current, target, remaining gap and deadline without inventi
   expect(screen.getAllByText("Unavailable")).toHaveLength(2);
   expect(screen.getByText("47 days left")).toBeTruthy();
   expect(screen.queryByText("0 W")).toBeNull();
+  expect(screen.getByLabelText("Current: Unavailable").props.accessible).toBe(true);
+  expect(screen.getByLabelText("Target: 250 W").props.accessible).toBe(true);
+  expect(screen.getByLabelText("Remaining gap: Unavailable").props.accessible).toBe(true);
+  expect(screen.getByLabelText("Time left: 47 days left").props.accessible).toBe(true);
 });
 
 it.each([
@@ -324,6 +328,9 @@ it.each([
   expect(screen.getByText(gap)).toBeTruthy();
   expect(screen.getByText("Pace gap to achievement")).toBeTruthy();
   expect(screen.getByText("Due today")).toBeTruthy();
+  expect(screen.getByLabelText(`Current: ${currentLabel}`).props.accessible).toBe(true);
+  expect(screen.getByLabelText(`Target: ${targetLabel}`).props.accessible).toBe(true);
+  expect(screen.getByLabelText(`Pace gap to achievement: ${gap}`).props.accessible).toBe(true);
   expect(formatGoalGap({ ...progress, metrics: { remainingGap: 0 } })).toBe(
     category === "run" ? "0 s/km" : "0 s/100m",
   );
