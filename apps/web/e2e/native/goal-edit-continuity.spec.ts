@@ -9,6 +9,7 @@ import { withGoalFixture } from "../planning/data";
 import { retainGoalEditFlowScreenshots } from "./goal-edit-continuity-screenshots";
 
 const flowScreenshots = {
+  "goal-edit-calendar-detail.yaml": ["goal-edit-detail-before-save"],
   "goal-edit-cancel.yaml": [
     "goal-edit-detail-before-cancel",
     "goal-edit-invalid-duration",
@@ -23,6 +24,11 @@ const flowScreenshots = {
 } as const;
 
 type Flow = keyof typeof flowScreenshots;
+type GoalEditCase = (context: {
+  assertCanceled: () => Promise<void>;
+  assertSaved: () => Promise<void>;
+  runFlow: (flow: Flow) => void;
+}) => Promise<void>;
 
 function isDateOnly(value: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -71,175 +77,198 @@ function retainFlowScreenshots(testInfo: TestInfo, flow: Flow, debugDirectory: s
 
 test.beforeEach(() => expect(process.env.E2E_DISPOSABLE_DATABASE).toBe("1"));
 
-test("Android keeps goal edits cancelable, clearable, and returnable to their selected Calendar date", async ({
-  actorFactory,
-  e2eDatabase,
-  e2eIdentity,
-}, testInfo) => {
-  test.setTimeout(600_000);
-  const runtimeSentinel = process.env.MAESTRO_ACCEPTANCE_RUNTIME_SENTINEL?.trim();
-  if (!runtimeSentinel)
-    throw new Error(
-      "Native goal-edit acceptance requires the runner-provided MAESTRO_ACCEPTANCE_RUNTIME_SENTINEL.",
-    );
-
-  const actor = await actorFactory.create("athlete", { label: "native-goal-edit-continuity" });
-  const targetDate = new Date(Date.now() + 60 * 86_400_000).toISOString().slice(0, 10);
-  const goalId = e2eIdentity.uuid("native-goal-edit");
-  const title = e2eIdentity.name("Native completion goal");
-  const savedTitle = e2eIdentity.name("Native completion goal saved");
-  const originalGoal = {
-    activityCategory: "run",
-    priority: 6,
-    targetDate,
-    targetPayload: { type: "completion", distance_m: 10_000 },
-    title,
-  };
-
-  const readDeviceToday = () => {
-    const result = spawnSync("adb", ["-s", "emulator-5554", "shell", "date", "+%Y-%m-%d"], {
-      encoding: "utf8",
-      timeout: 30_000,
-    });
-    expect(
-      result.error,
-      "The designated emulator must provide its local Calendar date",
-    ).toBeUndefined();
-    expect(result.status, "The designated emulator date query must succeed").toBe(0);
-    const deviceToday = result.stdout.trim();
-    if (!isDateOnly(deviceToday))
+function goalEditAcceptance(name: string, exercise: GoalEditCase) {
+  test(name, async ({ actorFactory, e2eDatabase, e2eIdentity }, testInfo) => {
+    test.setTimeout(600_000);
+    const runtimeSentinel = process.env.MAESTRO_ACCEPTANCE_RUNTIME_SENTINEL?.trim();
+    if (!runtimeSentinel)
       throw new Error(
-        `The designated emulator returned an invalid local date: ${JSON.stringify(deviceToday)}.`,
+        "Native goal-edit acceptance requires the runner-provided MAESTRO_ACCEPTANCE_RUNTIME_SENTINEL.",
       );
-    return deviceToday;
-  };
 
-  const runFlow = (flow: Flow, environment: Record<string, string>) => {
-    const debugDirectory = testInfo.outputPath("maestro", flow.replace(".yaml", ""));
-    prepareFlowScreenshots(testInfo, flow, debugDirectory);
-    let result: ReturnType<typeof spawnSync> | undefined;
-    let retained: string[] = [];
-    try {
-      result = spawnSync(
-        "maestro",
-        [
-          "--udid",
-          "emulator-5554",
-          "test",
-          "--debug-output",
-          debugDirectory,
-          `../mobile/.maestro/flows/acceptance/${flow}`,
-        ],
-        { encoding: "utf8", timeout: 180_000, env: { ...process.env, ...environment } },
-      );
-    } finally {
-      retained = retainFlowScreenshots(testInfo, flow, debugDirectory);
-    }
-    if (!result) throw new Error(`Maestro did not return a result for ${flow}.`);
-    writeFileSync(
-      testInfo.outputPath(`maestro-${flow.replace(".yaml", "")}.log`),
-      `${result.stdout ?? ""}\n${result.stderr ?? ""}`,
-      { mode: 0o600 },
-    );
-    expect(result.error, `Maestro must execute ${flow} on the designated emulator`).toBeUndefined();
-    expect(result.status, `See private Maestro output for ${flow}`).toBe(0);
-    expect(retained, `Successful ${flow} must retain its declared screenshots`).toEqual([
-      ...flowScreenshots[flow],
-    ]);
-    const artifactDirectory = testInfo.outputPath("goal-edit-continuity-screenshots");
-    for (const screenshot of retained)
-      expect(pngDimensions(screenshotPath(artifactDirectory, screenshot))).toEqual({
-        height: 2400,
-        width: 1080,
+    const actor = await actorFactory.create("athlete", { label: "native-goal-edit-continuity" });
+    const targetDate = new Date(Date.now() + 60 * 86_400_000).toISOString().slice(0, 10);
+    const goalId = e2eIdentity.uuid("native-goal-edit");
+    const title = e2eIdentity.name("Native completion goal");
+    const savedTitle = e2eIdentity.name("Native completion goal saved");
+    const originalGoal = {
+      activityCategory: "run",
+      priority: 6,
+      targetDate,
+      targetPayload: { type: "completion", distance_m: 10_000 },
+      title,
+    };
+
+    const readDeviceToday = () => {
+      const result = spawnSync("adb", ["-s", "emulator-5554", "shell", "date", "+%Y-%m-%d"], {
+        encoding: "utf8",
+        timeout: 30_000,
       });
-  };
-
-  await withGoalFixture(
-    async (fixture) => {
-      const readOwnedGoalAudit = () =>
-        e2eDatabase.db
-          .select({
-            id: profileGoals.id,
-            updatedAt: profileGoals.updated_at,
-          })
-          .from(profileGoals)
-          .where(and(eq(profileGoals.id, goalId), eq(profileGoals.profile_id, actor.profileId)));
-      fixture.rememberGoal(goalId);
-      await e2eDatabase.typedTransaction((transaction) =>
-        transaction.insert(profileGoals).values({
-          id: goalId,
-          profile_id: actor.profileId,
-          title,
-          target_date: targetDate,
-          activity_category: "run",
-          priority: 6,
-          target_payload: originalGoal.targetPayload,
-          created_at: new Date(),
-          updated_at: new Date(),
-        }),
-      );
-      await expect.poll(() => fixture.getGoal(goalId)).toEqual(originalGoal);
-      const baselineRows = await readOwnedGoalAudit();
-      expect(baselineRows).toHaveLength(1);
-      const baseline = baselineRows[0];
-      if (!baseline)
-        throw new Error("The owned goal was absent immediately after its fixture insert.");
-
-      const deviceToday = readDeviceToday();
-      const targetMonthDelta = monthDelta(deviceToday, targetDate);
-      if (targetMonthDelta < 1 || targetMonthDelta > 3)
+      expect(
+        result.error,
+        "The designated emulator must provide its local Calendar date",
+      ).toBeUndefined();
+      expect(result.status, "The designated emulator date query must succeed").toBe(0);
+      const deviceToday = result.stdout.trim();
+      if (!isDateOnly(deviceToday))
         throw new Error(
-          `The canonical +60-day target (${targetDate}) is ${targetMonthDelta} months from the emulator local date (${deviceToday}); expected 1-3 months.`,
+          `The designated emulator returned an invalid local date: ${JSON.stringify(deviceToday)}.`,
         );
-      const environment = {
-        MAESTRO_ACCEPTANCE_DEVICE_TODAY_DATE: deviceToday,
-        MAESTRO_ACCEPTANCE_EMAIL: actor.email,
-        MAESTRO_ACCEPTANCE_GOAL_ID: goalId,
-        MAESTRO_ACCEPTANCE_GOAL_TITLE: title,
-        MAESTRO_ACCEPTANCE_PASSWORD: actor.password,
-        MAESTRO_ACCEPTANCE_RUNTIME_SENTINEL: runtimeSentinel,
-        MAESTRO_ACCEPTANCE_SAVED_GOAL_TITLE: savedTitle,
-        MAESTRO_ACCEPTANCE_TARGET_DATE: targetDate,
-        MAESTRO_ACCEPTANCE_TARGET_MONTH_DELTA: String(targetMonthDelta),
-      };
+      return deviceToday;
+    };
 
-      // Keep the established visible synthetic-account sign-in flow unchanged.
-      const signIn = spawnSync(
-        "maestro",
-        [
-          "--udid",
-          "emulator-5554",
-          "test",
-          "../mobile/.maestro/flows/acceptance/session-scenario-signin.yaml",
-        ],
-        { encoding: "utf8", timeout: 180_000, env: { ...process.env, ...environment } },
-      );
+    const runFlow = (flow: Flow, environment: Record<string, string>) => {
+      const debugDirectory = testInfo.outputPath("maestro", flow.replace(".yaml", ""));
+      prepareFlowScreenshots(testInfo, flow, debugDirectory);
+      let result: ReturnType<typeof spawnSync> | undefined;
+      let retained: string[] = [];
+      try {
+        result = spawnSync(
+          "maestro",
+          [
+            "--udid",
+            "emulator-5554",
+            "test",
+            "--debug-output",
+            debugDirectory,
+            `../mobile/.maestro/flows/acceptance/${flow}`,
+          ],
+          { encoding: "utf8", timeout: 180_000, env: { ...process.env, ...environment } },
+        );
+      } finally {
+        retained = retainFlowScreenshots(testInfo, flow, debugDirectory);
+      }
+      if (!result) throw new Error(`Maestro did not return a result for ${flow}.`);
       writeFileSync(
-        testInfo.outputPath("maestro-goal-edit-sign-in.log"),
-        `${signIn.stdout ?? ""}\n${signIn.stderr ?? ""}`,
+        testInfo.outputPath(`maestro-${flow.replace(".yaml", "")}.log`),
+        `${result.stdout ?? ""}\n${result.stderr ?? ""}`,
         { mode: 0o600 },
       );
       expect(
-        signIn.error,
-        "Maestro must execute the established native sign-in flow",
+        result.error,
+        `Maestro must execute ${flow} on the designated emulator`,
       ).toBeUndefined();
-      expect(signIn.status, "See private Maestro sign-in output").toBe(0);
-
-      runFlow("goal-edit-cancel.yaml", environment);
-      await expect.poll(() => fixture.getGoal(goalId)).toEqual(originalGoal);
-      const canceledRows = await readOwnedGoalAudit();
-      expect(canceledRows).toHaveLength(1);
-      expect(canceledRows[0]?.updatedAt).toEqual(baseline.updatedAt);
-
-      runFlow("goal-edit-save-reopen.yaml", environment);
-      await expect
-        .poll(() => fixture.getGoal(goalId))
-        .toEqual({
-          ...originalGoal,
-          targetPayload: { type: "completion", duration_s: 1 },
-          title: savedTitle,
+      expect(result.status, `See private Maestro output for ${flow}`).toBe(0);
+      expect(retained, `Successful ${flow} must retain its declared screenshots`).toEqual([
+        ...flowScreenshots[flow],
+      ]);
+      const artifactDirectory = testInfo.outputPath("goal-edit-continuity-screenshots");
+      for (const screenshot of retained)
+        expect(pngDimensions(screenshotPath(artifactDirectory, screenshot))).toEqual({
+          height: 2400,
+          width: 1080,
         });
-    },
-    { profileId: actor.profileId },
-  );
-});
+    };
+
+    await withGoalFixture(
+      async (fixture) => {
+        const readOwnedGoalAudit = () =>
+          e2eDatabase.db
+            .select({
+              id: profileGoals.id,
+              updatedAt: profileGoals.updated_at,
+            })
+            .from(profileGoals)
+            .where(and(eq(profileGoals.id, goalId), eq(profileGoals.profile_id, actor.profileId)));
+        fixture.rememberGoal(goalId);
+        await e2eDatabase.typedTransaction((transaction) =>
+          transaction.insert(profileGoals).values({
+            id: goalId,
+            profile_id: actor.profileId,
+            title,
+            target_date: targetDate,
+            activity_category: "run",
+            priority: 6,
+            target_payload: originalGoal.targetPayload,
+            created_at: new Date(),
+            updated_at: new Date(),
+          }),
+        );
+        await expect.poll(() => fixture.getGoal(goalId)).toEqual(originalGoal);
+        const baselineRows = await readOwnedGoalAudit();
+        expect(baselineRows).toHaveLength(1);
+        const baseline = baselineRows[0];
+        if (!baseline)
+          throw new Error("The owned goal was absent immediately after its fixture insert.");
+
+        const deviceToday = readDeviceToday();
+        const targetMonthDelta = monthDelta(deviceToday, targetDate);
+        if (targetMonthDelta < 1 || targetMonthDelta > 3)
+          throw new Error(
+            `The canonical +60-day target (${targetDate}) is ${targetMonthDelta} months from the emulator local date (${deviceToday}); expected 1-3 months.`,
+          );
+        const environment = {
+          MAESTRO_ACCEPTANCE_DEVICE_TODAY_DATE: deviceToday,
+          MAESTRO_ACCEPTANCE_EMAIL: actor.email,
+          MAESTRO_ACCEPTANCE_GOAL_ID: goalId,
+          MAESTRO_ACCEPTANCE_GOAL_TITLE: title,
+          MAESTRO_ACCEPTANCE_PASSWORD: actor.password,
+          MAESTRO_ACCEPTANCE_RUNTIME_SENTINEL: runtimeSentinel,
+          MAESTRO_ACCEPTANCE_SAVED_GOAL_TITLE: savedTitle,
+          MAESTRO_ACCEPTANCE_TARGET_DATE: targetDate,
+          MAESTRO_ACCEPTANCE_TARGET_MONTH_DELTA: String(targetMonthDelta),
+        };
+
+        // Keep the established visible synthetic-account sign-in flow unchanged.
+        const signIn = spawnSync(
+          "maestro",
+          [
+            "--udid",
+            "emulator-5554",
+            "test",
+            "../mobile/.maestro/flows/acceptance/session-scenario-signin.yaml",
+          ],
+          { encoding: "utf8", timeout: 180_000, env: { ...process.env, ...environment } },
+        );
+        writeFileSync(
+          testInfo.outputPath("maestro-goal-edit-sign-in.log"),
+          `${signIn.stdout ?? ""}\n${signIn.stderr ?? ""}`,
+          { mode: 0o600 },
+        );
+        expect(
+          signIn.error,
+          "Maestro must execute the established native sign-in flow",
+        ).toBeUndefined();
+        expect(signIn.status, "See private Maestro sign-in output").toBe(0);
+
+        await exercise({
+          assertCanceled: async () => {
+            await expect.poll(() => fixture.getGoal(goalId)).toEqual(originalGoal);
+            const canceledRows = await readOwnedGoalAudit();
+            expect(canceledRows).toHaveLength(1);
+            expect(canceledRows[0]?.updatedAt).toEqual(baseline.updatedAt);
+          },
+          assertSaved: async () => {
+            await expect
+              .poll(() => fixture.getGoal(goalId))
+              .toEqual({
+                ...originalGoal,
+                targetPayload: { type: "completion", duration_s: 1 },
+                title: savedTitle,
+              });
+            expect(await readOwnedGoalAudit()).toHaveLength(1);
+          },
+          runFlow: (flow) => runFlow(flow, environment),
+        });
+      },
+      { profileId: actor.profileId },
+    );
+  });
+}
+
+goalEditAcceptance(
+  "Android requires invalid Goal duration cancellation to leave the durable goal unchanged",
+  async ({ assertCanceled, runFlow }) => {
+    runFlow("goal-edit-cancel.yaml");
+    await assertCanceled();
+  },
+);
+
+goalEditAcceptance(
+  "Android saves a valid Goal edit and returns to its selected Calendar date",
+  async ({ assertSaved, runFlow }) => {
+    runFlow("goal-edit-calendar-detail.yaml");
+    runFlow("goal-edit-save-reopen.yaml");
+    await assertSaved();
+  },
+);
