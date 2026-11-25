@@ -116,6 +116,8 @@ function SessionScenarioPreviewContents({
     enabled: Boolean(input),
     retry: false,
   });
+  const previewRefetchRef = useRef(previewQuery.refetch);
+  previewRefetchRef.current = previewQuery.refetch;
   const applyMutation = api.plannedSessions.applyScenario.useMutation({ retry: false });
   const alternatives = alternativesQuery.data?.pages.flatMap((page) => page.items) ?? [];
   const storageKey = operationStorageKey(session.profileId, session.id);
@@ -238,7 +240,10 @@ function SessionScenarioPreviewContents({
           utils.activityPlans.invalidate(),
           utils.calendar.invalidate(),
           utils.athleteIntelligence.getReadModel.invalidate(),
-        ]).then(() => previewQuery.refetch());
+        ]).then(() => {
+          if (generation === generationRef.current && submittedActor === actorRef.current)
+            void previewRefetchRef.current();
+        });
       }
     } catch {
       setOutcome(

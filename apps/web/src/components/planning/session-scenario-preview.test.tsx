@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionScenarioPreview } from "./session-scenario-preview";
 
@@ -11,6 +11,12 @@ const mocks = vi.hoisted(() => ({
   previewInput: undefined as unknown,
   apply: vi.fn(),
   actorId: "00000000-0000-4000-8000-000000000001",
+  invalidations: {
+    activityPlans: vi.fn(async () => undefined),
+    calendar: vi.fn(async () => undefined),
+    plannedSessions: vi.fn(async () => undefined),
+    state: vi.fn(async () => undefined),
+  },
   previewResult: {
     data: undefined as unknown,
     isError: false,
@@ -26,10 +32,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../../lib/api/client", () => ({
   api: {
     useUtils: () => ({
-      athleteIntelligence: { getReadModel: { invalidate: vi.fn(async () => undefined) } },
-      activityPlans: { invalidate: vi.fn(async () => undefined) },
-      calendar: { invalidate: vi.fn(async () => undefined) },
-      plannedSessions: { invalidate: vi.fn(async () => undefined) },
+      athleteIntelligence: { getReadModel: { invalidate: mocks.invalidations.state } },
+      activityPlans: { invalidate: mocks.invalidations.activityPlans },
+      calendar: { invalidate: mocks.invalidations.calendar },
+      plannedSessions: { invalidate: mocks.invalidations.plannedSessions },
     }),
     activityPlans: {
       list: {
@@ -78,6 +84,10 @@ beforeEach(() => {
   mocks.previewInputs = [];
   mocks.apply = vi.fn();
   mocks.actorId = "00000000-0000-4000-8000-000000000001";
+  Object.values(mocks.invalidations).forEach((invalidate) => {
+    invalidate.mockReset();
+    invalidate.mockResolvedValue(undefined);
+  });
   mocks.previewResult = { data: undefined, isError: false, isLoading: false, refetch: vi.fn() };
   mocks.stateResult = {
     data: { publishedState: { baseline: { stateRevision: 7 } } },
@@ -315,5 +325,66 @@ describe("SessionScenarioPreview", () => {
     await Promise.resolve();
     expect(screen.queryByText(/Applied: unchanged/i)).toBeNull();
     expect(localStorage.getItem(actorAKey)).not.toBeNull();
+  });
+
+  it("refreshes a stale plan through the current revision without auto-applying a replacement operation", async () => {
+    mocks.previewResult.data = availablePreview();
+    mocks.apply.mockResolvedValue({ status: "stale", reason: "plan_revision" });
+    const firstOperationId = "00000000000040008000000000000001";
+    const secondOperationId = "00000000000040008000000000000002";
+    vi.stubGlobal("crypto", {
+      randomUUID: vi
+        .fn()
+        .mockReturnValueOnce(firstOperationId)
+        .mockReturnValueOnce(secondOperationId),
+    });
+    let releaseActivityPlans: () => void = () => undefined;
+    mocks.invalidations.activityPlans.mockImplementationOnce(
+      () =>
+        new Promise<undefined>((resolve) => {
+          releaseActivityPlans = () => resolve(undefined);
+        }),
+    );
+    const { rerender } = renderPreview();
+    fireEvent.click(screen.getByRole("button", { name: "Apply this scenario" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm apply" }));
+    fireEvent.click(screen.getByRole("button", { name: "Check or retry this change" }));
+    await screen.findByText(/preview is no longer current/i);
+    expect(mocks.invalidations.activityPlans).toHaveBeenCalledOnce();
+
+    mocks.previewResult = {
+      data: {
+        ...availablePreview(),
+        provenance: {
+          ...availablePreview().provenance,
+          selectedPlan: { id: "current-plan", revision: 2 },
+        },
+      },
+      isError: false,
+      isLoading: false,
+      refetch: vi.fn(),
+    };
+    rerender(
+      <SessionScenarioPreview
+        activityPlan={{ detail: { activityPlanRevision: 2 } }}
+        session={session}
+        timeZone="UTC"
+      />,
+    );
+    expect(mocks.previewInput).toMatchObject({ expectedPlanRevision: 2 });
+    expect(screen.getByRole("button", { name: "Apply this scenario" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Check or retry this change" })).toBeNull();
+    expect(mocks.apply).toHaveBeenCalledOnce();
+
+    releaseActivityPlans();
+    await waitFor(() => expect(mocks.previewResult.refetch).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole("button", { name: "Apply this scenario" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm apply" }));
+    const armed = JSON.parse(
+      localStorage.getItem("gradientpeak:planned-session-scenario:v1:profile-a:session-a") ?? "{}",
+    );
+    expect(armed.request.operationId).toBe(secondOperationId);
+    expect(armed.request.operationId).not.toBe(firstOperationId);
+    vi.unstubAllGlobals();
   });
 });
