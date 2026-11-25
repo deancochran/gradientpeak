@@ -1,17 +1,31 @@
 import type { InferredStateSnapshot } from "@repo/core";
 import type { TrainingPlanRow } from "@repo/db";
+import type { DrizzleDbClient } from "@repo/db/client";
 import type { TRPCError } from "@trpc/server";
-import { describe, expect, it } from "vitest";
-
+import { PgDialect } from "drizzle-orm/pg-core";
+import { describe, expect, it, vi } from "vitest";
+import { activityPlanStructureHash } from "../../../application/activity-plans/structure-hash";
 import { createQueryMapDbMock } from "../../../test/mock-query-db";
 import { createTrainingPlanRepository } from "../drizzle-training-plan-repository";
+
+function createRepository(db: unknown) {
+  return createTrainingPlanRepository(db as DrizzleDbClient);
+}
+
+function addRepeatableReadTransaction<T extends { db: Record<string, unknown> }>(mock: T): T {
+  Object.assign(mock.db, {
+    $client: {},
+    transaction: async (read: (tx: typeof mock.db) => Promise<unknown>) => read(mock.db),
+  });
+  return mock;
+}
 
 function createSnapshot(overrides: Partial<InferredStateSnapshot> = {}): InferredStateSnapshot {
   return {
     mean: {
-      ctl: 64,
-      atl: 71,
-      tsb: -7,
+      longTermLoad: 64,
+      recentLoad: 71,
+      loadBalance: -7,
       slb: 58,
       durability: 73,
       readiness: 66,
@@ -37,19 +51,24 @@ function createSnapshot(overrides: Partial<InferredStateSnapshot> = {}): Inferre
 function createTrainingPlanRow(overrides: Partial<TrainingPlanRow> = {}): TrainingPlanRow {
   return {
     id: "plan-1",
-    idx: 1,
     created_at: new Date("2026-04-01T00:00:00.000Z"),
     updated_at: new Date("2026-04-01T00:00:00.000Z"),
     profile_id: "profile-1",
     name: "Base plan",
     description: "Build fitness",
     structure: {},
-    template_visibility: "private",
-    is_public: false,
+    structure_hash: activityPlanStructureHash({}),
+    content_visibility: "private",
     is_system_template: false,
+    system_content_key: null,
+    system_content_version: null,
+    system_content_hash: null,
     sessions_per_week_target: null,
     duration_hours: null,
-    likes_count: 0,
+    revision: 1,
+    validated_state_revision: null,
+    validated_at: null,
+    projection_algorithm_version: null,
     ...overrides,
   };
 }
@@ -72,22 +91,135 @@ function createMissingReturningDb(method: "insert" | "update") {
 }
 
 describe("drizzle-training-plan-repository", () => {
+  it("reads a bounded page and an exact count through the same owner/search filter", async () => {
+    const row = createTrainingPlanRow({ id: "page-plan" });
+    const { db } = addRepeatableReadTransaction(
+      createQueryMapDbMock({
+        training_plans: [
+          { data: [row], error: null },
+          { data: [{ total: 2 }], error: null },
+        ],
+      }),
+    );
+
+    await expect(
+      createRepository(db).listTrainingPlansPage({
+        profileId: "profile-1",
+        ownerScope: "own",
+        search: "Base%_\\plan",
+        offset: 20,
+        limit: 10,
+      }),
+    ).resolves.toEqual({ items: [row], total: 2 });
+  });
+
+  it("applies the same owner, visibility, and escaped literal search predicate to page and count", async () => {
+    const pageWhere = vi.fn();
+    const countWhere = vi.fn();
+    const limit = vi.fn();
+    const offset = vi.fn();
+    const pageBuilder = {
+      from: vi.fn(() => pageBuilder),
+      where: vi.fn((condition) => {
+        pageWhere(condition);
+        return pageBuilder;
+      }),
+      orderBy: vi.fn(() => pageBuilder),
+      limit: vi.fn((value) => {
+        limit(value);
+        return pageBuilder;
+      }),
+      offset: vi.fn((value) => {
+        offset(value);
+        return Promise.resolve([]);
+      }),
+    };
+    const countBuilder = {
+      from: vi.fn(() => countBuilder),
+      where: vi.fn((condition) => {
+        countWhere(condition);
+        return Promise.resolve([{ total: 0 }]);
+      }),
+    };
+    const tx = {
+      select: vi.fn().mockReturnValueOnce(pageBuilder).mockReturnValueOnce(countBuilder),
+    };
+    const transaction = vi.fn(async (read: (executor: typeof tx) => Promise<unknown>) => read(tx));
+    const db = { $client: {}, select: vi.fn(), transaction };
+
+    await createRepository(db).listTrainingPlansPage({
+      profileId: "00000000-0000-4000-8000-000000000001",
+      ownerScope: "own",
+      visibility: "private",
+      search: "Base%_\\plan",
+      offset: 20,
+      limit: 10,
+    });
+
+    expect(limit).toHaveBeenCalledWith(10);
+    expect(offset).toHaveBeenCalledWith(20);
+    expect(transaction).toHaveBeenCalledWith(expect.any(Function), {
+      accessMode: "read only",
+      isolationLevel: "repeatable read",
+    });
+    expect(db.select).not.toHaveBeenCalled();
+    const dialect = new PgDialect();
+    const pageQuery = dialect.sqlToQuery(pageWhere.mock.calls[0]?.[0] as never);
+    const countQuery = dialect.sqlToQuery(countWhere.mock.calls[0]?.[0] as never);
+    expect(pageQuery.sql).toBe(countQuery.sql);
+    expect(pageQuery.params).toEqual(countQuery.params);
+    expect(pageQuery.sql).toContain('"training_plans"."profile_id" = $1');
+    expect(pageQuery.sql).toContain('"training_plans"."content_visibility" = $2');
+    expect(pageQuery.sql).toContain("ilike");
+    expect(pageQuery.params).toEqual([
+      "00000000-0000-4000-8000-000000000001",
+      "private",
+      "%Base\\%\\_\\\\plan%",
+      "%Base\\%\\_\\\\plan%",
+    ]);
+  });
+
+  it("returns schema-derived timestamp rows", async () => {
+    const validatedAt = "2026-04-02T03:04:05.000Z";
+    const row = createTrainingPlanRow({
+      validated_at: new Date(validatedAt),
+      created_at: new Date("2026-04-01T00:00:00.000Z"),
+      updated_at: new Date("2026-04-01T01:00:00.000Z"),
+    });
+    const { db } = createQueryMapDbMock({
+      training_plans: { data: [row], error: null },
+    });
+
+    const result = await createRepository(db).getAccessibleTrainingPlan({
+      id: "11111111-1111-4111-8111-111111111111",
+      profileId: "22222222-2222-4222-8222-222222222222",
+    });
+
+    expect(result).toMatchObject({
+      validated_at: new Date(validatedAt),
+      created_at: new Date("2026-04-01T00:00:00.000Z"),
+      updated_at: new Date("2026-04-01T01:00:00.000Z"),
+    });
+  });
+
   it("creates a training plan and returns the inserted row", async () => {
+    const planId = "11111111-1111-4111-8111-111111111111";
     const createdPlan = createTrainingPlanRow({
+      id: planId,
       name: "Spring build",
       description: "Target June event",
-      structure: { block: "base" },
+      structure: { id: planId, block: "base" },
     });
     const { db, callLog } = createQueryMapDbMock({
       training_plans: { data: [createdPlan], error: null },
     });
-    const repository = createTrainingPlanRepository(db);
+    const repository = createRepository(db);
 
     const result = await repository.createTrainingPlan({
       profileId: "profile-1",
       name: "Spring build",
       description: "Target June event",
-      structure: { block: "base" },
+      structure: { id: planId, block: "base" },
     });
 
     expect(result).toEqual(createdPlan);
@@ -95,16 +227,42 @@ describe("drizzle-training-plan-repository", () => {
       table: "training_plans",
       operation: "insert",
       payload: {
+        id: planId,
         profile_id: "profile-1",
         name: "Spring build",
         description: "Target June event",
-        structure: { block: "base" },
+        structure: { id: planId, block: "base" },
+        structure_hash: activityPlanStructureHash({ id: planId, block: "base" }),
       },
     });
   });
 
+  it("generates a required relational id aligned with structure.id", async () => {
+    const { db, callLog } = createQueryMapDbMock();
+    const repository = createRepository(db);
+
+    await repository.createTrainingPlan({
+      profileId: "profile-1",
+      name: "Generated id plan",
+      description: null,
+      structure: { block: "base" },
+    });
+
+    const insert = callLog.find(
+      (call) => call.table === "training_plans" && call.operation === "insert",
+    );
+    const payload = insert?.payload as {
+      id?: unknown;
+      structure?: { id?: unknown };
+      structure_hash?: unknown;
+    };
+    expect(payload.id).toEqual(expect.stringMatching(/^[0-9a-f-]{36}$/));
+    expect(payload.structure?.id).toBe(payload.id);
+    expect(payload.structure_hash).toBe(activityPlanStructureHash(payload.structure));
+  });
+
   it("throws BAD_REQUEST when create returns no row", async () => {
-    const repository = createTrainingPlanRepository(createMissingReturningDb("insert") as any);
+    const repository = createRepository(createMissingReturningDb("insert"));
 
     await expect(
       repository.createTrainingPlan({
@@ -121,12 +279,12 @@ describe("drizzle-training-plan-repository", () => {
 
   it("gets an owned training plan and returns null when none resolves", async () => {
     const ownedPlan = createTrainingPlanRow({ id: "owned-plan" });
-    const found = createTrainingPlanRepository(
+    const found = createRepository(
       createQueryMapDbMock({
         training_plans: { data: [ownedPlan], error: null },
       }).db,
     );
-    const missing = createTrainingPlanRepository(
+    const missing = createRepository(
       createQueryMapDbMock({
         training_plans: { data: [], error: null },
       }).db,
@@ -150,10 +308,11 @@ describe("drizzle-training-plan-repository", () => {
     const { db, callLog } = createQueryMapDbMock({
       training_plans: { data: [updatedPlan], error: null },
     });
-    const repository = createTrainingPlanRepository(db);
+    const repository = createRepository(db);
 
     const result = await repository.updateTrainingPlan({
       id: "plan-2",
+      expectedStructureHash: updatedPlan.structure_hash,
       profileId: "profile-1",
       name: "Peak block",
       description: "Sharpening",
@@ -168,35 +327,43 @@ describe("drizzle-training-plan-repository", () => {
         name: "Peak block",
         description: "Sharpening",
         structure: { block: "peak" },
+        structure_hash: activityPlanStructureHash({ block: "peak" }),
+        revision: expect.anything(),
+        updated_at: expect.any(Date),
+        validated_state_revision: null,
+        validated_at: null,
+        projection_algorithm_version: null,
       },
     });
   });
 
-  it("throws BAD_REQUEST when update returns no row", async () => {
-    const repository = createTrainingPlanRepository(createMissingReturningDb("update") as any);
+  it("throws a stale conflict when update returns no row", async () => {
+    const repository = createRepository(createMissingReturningDb("update"));
 
     await expect(
       repository.updateTrainingPlan({
         id: "plan-1",
+        expectedStructureHash: `v1:sha256:${"a".repeat(64)}`,
         profileId: "profile-1",
         name: "Updated",
         description: null,
         structure: {},
       }),
     ).rejects.toMatchObject({
-      code: "BAD_REQUEST",
-      message: "Failed to update training plan",
+      code: "CONFLICT",
+      message: "STALE_STRUCTURE_HASH",
     } satisfies Partial<TRPCError>);
   });
 
   it("gets the prior snapshot from the earliest active future-plan fallback", async () => {
     const snapshot = createSnapshot();
     const { db, callLog } = createQueryMapDbMock({
-      events: {
+      planned_sessions: {
         data: [
           {
             training_plan_id: "future-plan",
-            starts_at: "2026-04-10T10:00:00.000Z",
+            planning_date: "2026-04-10",
+            status: "scheduled",
           },
         ],
         error: null,
@@ -215,21 +382,25 @@ describe("drizzle-training-plan-repository", () => {
         error: null,
       },
     });
-    const repository = createTrainingPlanRepository(db);
+    const repository = createRepository(db);
 
     await expect(repository.getPriorInferredStateSnapshot("profile-1")).resolves.toEqual(snapshot);
     expect(callLog.map((entry) => `${entry.operation}:${entry.table}`)).toEqual([
-      "select:events",
+      "select:planned_sessions",
       "select:training_plans",
     ]);
   });
 
   it("returns null when prior snapshot metadata is missing or invalid", async () => {
-    const missingMetadataRepository = createTrainingPlanRepository(
+    const missingMetadataRepository = createRepository(
       createQueryMapDbMock({
-        events: {
+        planned_sessions: {
           data: [
-            { training_plan_id: "plan-missing-metadata", starts_at: "2026-04-10T10:00:00.000Z" },
+            {
+              training_plan_id: "plan-missing-metadata",
+              planning_date: "2026-04-10",
+              status: "scheduled",
+            },
           ],
           error: null,
         },
@@ -239,11 +410,15 @@ describe("drizzle-training-plan-repository", () => {
         },
       }).db,
     );
-    const invalidMetadataRepository = createTrainingPlanRepository(
+    const invalidMetadataRepository = createRepository(
       createQueryMapDbMock({
-        events: {
+        planned_sessions: {
           data: [
-            { training_plan_id: "plan-invalid-metadata", starts_at: "2026-04-10T10:00:00.000Z" },
+            {
+              training_plan_id: "plan-invalid-metadata",
+              planning_date: "2026-04-10",
+              status: "scheduled",
+            },
           ],
           error: null,
         },
@@ -290,7 +465,7 @@ describe("drizzle-training-plan-repository", () => {
         error: null,
       },
     });
-    const repository = createTrainingPlanRepository(db);
+    const repository = createRepository(db);
 
     await repository.persistInferredStateSnapshot({
       profileId: "profile-1",
@@ -314,21 +489,34 @@ describe("drizzle-training-plan-repository", () => {
             inferred_state_snapshot: snapshot,
           },
         },
+        structure_hash: activityPlanStructureHash({
+          blocks: [{ id: "block-1" }],
+          metadata: {
+            source: "generator",
+            version: 3,
+            inferred_state_snapshot: snapshot,
+          },
+        }),
+        revision: expect.anything(),
+        validated_state_revision: null,
+        validated_at: null,
+        projection_algorithm_version: null,
+        updated_at: expect.any(Date),
       },
     });
   });
 
   it("does nothing when no target plan resolves", async () => {
     const { db, callLog } = createQueryMapDbMock({
-      events: { data: [], error: null },
+      planned_sessions: { data: [], error: null },
     });
-    const repository = createTrainingPlanRepository(db);
+    const repository = createRepository(db);
 
     await repository.persistInferredStateSnapshot({
       profileId: "profile-1",
       inferredStateSnapshot: createSnapshot(),
     });
 
-    expect(callLog).toEqual([{ table: "events", operation: "select" }]);
+    expect(callLog).toEqual([{ table: "planned_sessions", operation: "select" }]);
   });
 });

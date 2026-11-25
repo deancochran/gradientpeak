@@ -18,10 +18,23 @@ function resolveItemKey(item: unknown, index: number): string {
 
 const createHost = (type: string) =>
   function MockComponent(props: HostProps) {
-    return React.createElement(type, props, props.children);
+    const children =
+      type === "Modal" && props.visible === false
+        ? null
+        : type === "Text"
+          ? props.children
+          : React.Children.map(props.children, (child) =>
+              typeof child === "string" || typeof child === "number"
+                ? React.createElement("Text", null, String(child))
+                : child,
+            );
+
+    return React.createElement(type, props, children);
   };
 
 export const Modal = createHost("Modal");
+export const findNodeHandle = jest.fn((_node: unknown): number | null => null);
+export const AccessibilityInfo = { setAccessibilityFocus: jest.fn() };
 export const ActivityIndicator = createHost("ActivityIndicator");
 export const KeyboardAvoidingView = createHost("KeyboardAvoidingView");
 export const FlatList = ({
@@ -105,8 +118,10 @@ export const Text = createHost("Text");
 export const TextInput = createHost("TextInput");
 export const TouchableOpacity = createHost("TouchableOpacity");
 export const View = createHost("View");
+export const Image = createHost("Image");
 
-export const useColorScheme = () => "light";
+/** Mutable in tests so native surfaces can prove both resolved color schemes. */
+export const useColorScheme = jest.fn(() => "light" as const);
 export const useWindowDimensions = () => ({ width: 390, height: 844 });
 
 export const Appearance = {
@@ -119,11 +134,17 @@ export const Alert = {
   alert: jest.fn(),
 };
 
-export const InteractionManager = {
-  runAfterInteractions: jest.fn((callback: () => void) => {
-    callback();
-    return { cancel: jest.fn() };
-  }),
+export const Keyboard = { dismiss: jest.fn() };
+
+export const AppState = {
+  currentState: "active",
+  addEventListener: jest.fn((_event: string, _handler: (state: string) => void) => ({
+    remove: jest.fn(),
+  })),
+};
+
+export const BackHandler = {
+  addEventListener: jest.fn((_event: string, _handler: () => boolean) => ({ remove: jest.fn() })),
 };
 
 export const Platform = {

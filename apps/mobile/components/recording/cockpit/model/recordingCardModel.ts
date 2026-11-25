@@ -95,7 +95,7 @@ function shouldShowRecordingCard(
 ) {
   if (card === "metrics") return true;
 
-  if (card === "workout_interval") {
+  if (card === "activity_interval") {
     return params.hasPlan && (params.sessionContract?.guidance.hasStructuredSteps ?? true);
   }
 
@@ -115,7 +115,7 @@ function shouldShowRecordingCard(
 }
 
 export function getRecordingCardShortLabel(card: RecordingInsightCard) {
-  if (card === "workout_interval") return "Activity Plan";
+  if (card === "activity_interval") return "Activity Plan";
   if (card === "route_progress") return "Route";
   if (card === "climb") return "Climb";
   if (card === "trainer") return "Trainer Control";
