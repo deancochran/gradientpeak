@@ -194,11 +194,11 @@ function TrainingStateChart({
             {chart}
             {dateLabels}
             <TrainingStateLegend
-              colors={colors}
+              {...(colors === undefined ? {} : { colors })}
               metrics={[...new Set(series.map(({ metric }) => metric))]}
               sources={[...new Set(series.map(({ source }) => source))]}
-              sourceLabels={sourceLabels}
-              testId={testId === undefined ? undefined : `${testId}-legend`}
+              {...(sourceLabels === undefined ? {} : { sourceLabels })}
+              {...(testId === undefined ? {} : { testId: `${testId}-legend` })}
             />
           </View>
         )
