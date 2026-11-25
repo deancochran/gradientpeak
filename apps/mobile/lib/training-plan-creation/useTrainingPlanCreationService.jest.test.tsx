@@ -449,6 +449,80 @@ describe("useTrainingPlanCreationService authoritative projection", () => {
     expect(hook.result.current.state.details.name).toBe("Draft retained");
   });
 
+  it("clears a fresh conflicting operation before the next authoritative save", async () => {
+    mockQueries.commitPlanMutation.mutateAsync
+      .mockResolvedValueOnce({ status: "operation_conflict" })
+      .mockResolvedValueOnce({
+        status: "saved",
+        planId: "55555555-5555-4555-8555-555555555555",
+      });
+    const onCreated = jest.fn();
+    const hook = await renderHook(() => useTrainingPlanCreationService({ onCreated }));
+    await act(() => {
+      hook.result.current.actions.updateDetails({ name: "Conflicting fresh save" });
+      hook.result.current.actions.addSession(0);
+    });
+
+    await act(async () => hook.result.current.derived.savePlan.execute());
+    const firstRequest = mockQueries.commitPlanMutation.mutateAsync.mock.calls[0]?.[0];
+    expect(hook.result.current.derived.projectionConflict).toBe(
+      "This save request conflicts with another operation. Review and retry.",
+    );
+    expect(mockInvalidate).not.toHaveBeenCalled();
+    expect(mockQueries.publishedStateQuery.refetch).not.toHaveBeenCalled();
+    expect(mockQueries.editPlanQuery.refetch).not.toHaveBeenCalled();
+    expect(onCreated).not.toHaveBeenCalled();
+
+    await act(async () => hook.result.current.derived.savePlan.execute());
+    const secondRequest = mockQueries.commitPlanMutation.mutateAsync.mock.calls[1]?.[0];
+    expect(mockFetchPreview).toHaveBeenCalledTimes(2);
+    expect(secondRequest).not.toBe(firstRequest);
+    expect(secondRequest?.operationId).not.toBe(firstRequest?.operationId);
+    expect(onCreated).toHaveBeenCalledWith({
+      id: "55555555-5555-4555-8555-555555555555",
+    });
+  });
+
+  it("clears an uncertain replay conflict before the next authoritative save", async () => {
+    mockQueries.commitPlanMutation.mutateAsync
+      .mockRejectedValueOnce(new Error("Response lost"))
+      .mockResolvedValueOnce({ status: "operation_conflict" })
+      .mockResolvedValueOnce({
+        status: "saved",
+        planId: "55555555-5555-4555-8555-555555555555",
+      });
+    const onCreated = jest.fn();
+    const hook = await renderHook(() => useTrainingPlanCreationService({ onCreated }));
+    await act(() => {
+      hook.result.current.actions.updateDetails({ name: "Conflicting replay" });
+      hook.result.current.actions.addSession(0);
+    });
+
+    await act(async () => hook.result.current.derived.savePlan.execute());
+    const firstRequest = mockQueries.commitPlanMutation.mutateAsync.mock.calls[0]?.[0];
+    expect(hook.result.current.derived.projectionConflict).toContain("outcome is unknown");
+
+    await act(async () => hook.result.current.derived.savePlan.execute());
+    const replayRequest = mockQueries.commitPlanMutation.mutateAsync.mock.calls[1]?.[0];
+    expect(replayRequest).toBe(firstRequest);
+    expect(hook.result.current.derived.projectionConflict).toBe(
+      "This save request conflicts with another operation. Review and retry.",
+    );
+    expect(mockInvalidate).not.toHaveBeenCalled();
+    expect(mockQueries.publishedStateQuery.refetch).not.toHaveBeenCalled();
+    expect(mockQueries.editPlanQuery.refetch).not.toHaveBeenCalled();
+    expect(onCreated).not.toHaveBeenCalled();
+
+    await act(async () => hook.result.current.derived.savePlan.execute());
+    const nextRequest = mockQueries.commitPlanMutation.mutateAsync.mock.calls[2]?.[0];
+    expect(mockFetchPreview).toHaveBeenCalledTimes(2);
+    expect(nextRequest).not.toBe(firstRequest);
+    expect(nextRequest?.operationId).not.toBe(firstRequest?.operationId);
+    expect(onCreated).toHaveBeenCalledWith({
+      id: "55555555-5555-4555-8555-555555555555",
+    });
+  });
+
   it("retries an unknown save outcome with the exact committed payload without another preview", async () => {
     mockQueries.commitPlanMutation.mutateAsync
       .mockRejectedValueOnce(new Error("Network request failed"))
