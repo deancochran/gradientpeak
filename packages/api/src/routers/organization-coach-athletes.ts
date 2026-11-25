@@ -5,6 +5,11 @@ import {
   findAssignedCoachAthlete,
   listAssignedCoachAthletes,
 } from "../application/organizations/list-assigned-coach-athletes";
+import { readCoachAthleteVisualRoster } from "../application/organizations/read-coach-athlete-visual-roster";
+import {
+  coachAthleteVisualRosterRequestSchema,
+  coachAthleteVisualRosterResponseSchema,
+} from "../contracts/coach-athlete-visual-roster";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
@@ -50,6 +55,22 @@ export const organizationCoachAthletesRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       try {
         return await listAssignedCoachAthletes({
+          db: getRequiredDb(ctx),
+          coachProfileId: ctx.session.user.id,
+          ...input,
+        });
+      } catch (error) {
+        if (error instanceof CoachAthleteDirectoryAccessError)
+          throw new TRPCError({ code: "FORBIDDEN", message: "Coaching access required" });
+        throw error;
+      }
+    }),
+  listVisualRoster: protectedProcedure
+    .input(coachAthleteVisualRosterRequestSchema)
+    .output(coachAthleteVisualRosterResponseSchema)
+    .query(async ({ ctx, input }) => {
+      try {
+        return await readCoachAthleteVisualRoster({
           db: getRequiredDb(ctx),
           coachProfileId: ctx.session.user.id,
           ...input,
