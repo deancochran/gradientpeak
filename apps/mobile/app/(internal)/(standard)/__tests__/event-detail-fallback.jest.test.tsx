@@ -167,6 +167,12 @@ jest.mock("@/lib/navigation/useAppNavigate", () => ({
   useAppNavigate: () => navigateToMock,
 }));
 
+jest.mock("@/lib/server-config", () => ({
+  __esModule: true,
+  ...jest.requireActual("@/lib/server-config"),
+  isLocalDevelopmentApiEndpoint: () => true,
+}));
+
 jest.mock("@/components/ScheduleActivityModal", () => ({
   __esModule: true,
   ScheduleActivityModal: createHost("ScheduleActivityModal"),
@@ -517,7 +523,11 @@ describe("event detail fallback screen", () => {
     completePlannedMock.mockRejectedValueOnce(new Error("Request status is unknown"));
     await renderNative(<EventDetailScreen />);
     expect(eventQueryCalls[0]?.[1]).toMatchObject({ enabled: false });
-    expect(plannedQueryCalls[0]?.[1]).toMatchObject({ enabled: true });
+    expect(plannedQueryCalls[0]?.[1]).toMatchObject({
+      enabled: true,
+      networkMode: "always",
+      retry: false,
+    });
     await fireEvent.press(screen.getByTestId("planned-session-actual-details-toggle"));
     const duration = screen.getByLabelText("Actual duration (minutes, optional)");
     await fireEvent(duration, "changeText", "30");

@@ -367,7 +367,7 @@ it("uses the selected day for the value tray and entry filtering", async () => {
     expect.arrayContaining([expect.objectContaining({ status: "available", value: 45 })]),
   );
   await fireEvent.press(plannedCard);
-  expect(openEntryMock).toHaveBeenCalledWith({ id: "planned-1", target: "event" });
+  expect(openEntryMock).toHaveBeenCalledWith({ id: "planned-1", target: "planned_session" });
 });
 
 it("keeps an unhydrated completed ledger entry visible and tappable", async () => {

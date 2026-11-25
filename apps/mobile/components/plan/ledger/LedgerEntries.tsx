@@ -18,7 +18,9 @@ import {
 } from "./planningLedgerPresentation";
 
 type LedgerEntry = PlanningLedger["entries"][number];
-type NavigationTarget = NonNullable<LedgerEntry["navigation"]>;
+export type LedgerNavigationTarget =
+  | NonNullable<LedgerEntry["navigation"]>
+  | { id: string; target: "planned_session" };
 
 function metric(
   value: LedgerEntry["load"],
@@ -54,7 +56,7 @@ export function LedgerEntries({
 }: {
   completedActivities: readonly ActivityDisplayModel[];
   entries: readonly LedgerEntry[];
-  onOpenEntry: (target: NavigationTarget) => void;
+  onOpenEntry: (target: LedgerNavigationTarget) => void;
   period: PlanningLedger["period"];
 }) {
   const activities = new Map(completedActivities.map((activity) => [activity.id, activity]));
@@ -67,7 +69,11 @@ export function LedgerEntries({
             return (
               <PlannedActivityCard
                 key={`${entry.kind}-${entry.id}`}
-                {...(navigation ? { onPress: () => onOpenEntry(navigation) } : {})}
+                {...(navigation
+                  ? {
+                      onPress: () => onOpenEntry({ id: navigation.id, target: "planned_session" }),
+                    }
+                  : {})}
                 plannedActivity={{
                   calendarDate: entry.date,
                   id: entry.id,

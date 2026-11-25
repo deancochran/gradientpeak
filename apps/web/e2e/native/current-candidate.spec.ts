@@ -188,6 +188,7 @@ test("current Android candidate onboards and creates an executable activity plan
     MAESTRO_ACCEPTANCE_PLAN_NAME: planName,
     MAESTRO_ACCEPTANCE_SESSION_DATE: today,
     MAESTRO_ACCEPTANCE_SESSION_DAY: String(Number(today.slice(8, 10))),
+    MAESTRO_ACCEPTANCE_SESSION_ID: manualSession.id,
   });
   writeFileSync(
     testInfo.outputPath("maestro-manual.log"),
@@ -202,6 +203,8 @@ test("current Android candidate onboards and creates an executable activity plan
   expect(completedSession).toMatchObject({
     status: "completed",
     completed_activity_id: expect.any(String),
+    completion_state: "linked",
+    completion_outcome: "full",
   });
   const manualActivities = await e2eDatabase.db
     .select()
@@ -211,7 +214,27 @@ test("current Android candidate onboards and creates an executable activity plan
   expect(manualActivities[0]).toMatchObject({
     id: completedSession?.completed_activity_id,
     entry_provenance: "manual",
+    elapsed_ms: null,
+    distance_meters: null,
+    started_at: null,
+    finished_at: null,
   });
+  if (!completedSession?.completed_activity_id)
+    throw new Error("Manual completion did not retain its linked activity ID");
+  const reopenManualResult = runMaestro("reopen-manual-completion.yaml", {
+    MAESTRO_ACCEPTANCE_COMPLETED_ACTIVITY_ID: completedSession.completed_activity_id,
+    MAESTRO_ACCEPTANCE_SESSION_DATE: today,
+    MAESTRO_ACCEPTANCE_SESSION_DAY: String(Number(today.slice(8, 10))),
+  });
+  writeFileSync(
+    testInfo.outputPath("maestro-manual-reopen.log"),
+    `${reopenManualResult.stdout ?? ""}\n${reopenManualResult.stderr ?? ""}`,
+    { mode: 0o600 },
+  );
+  expect(
+    reopenManualResult.status,
+    "Calendar must reopen the exact linked manual activity from its selected day",
+  ).toBe(0);
   const recordResult = runMaestro("record-run-native.yaml");
   writeFileSync(
     testInfo.outputPath("maestro-record.log"),
