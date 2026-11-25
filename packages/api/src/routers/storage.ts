@@ -1,12 +1,16 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import {
+  assertOwnedStoragePath,
+  createSignedAvatarDownloadUrl,
+  createSignedAvatarUploadUrl,
+} from "../application/storage/signedFileUrls";
 import { getApiStorageService } from "../storage-service";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 const storageService = getApiStorageService();
 
 const BUCKET_NAME = "profile-avatars";
-const BUCKET_FILE_SIZE_LIMIT = "5MB";
 const ALLOWED_MIME_TYPES = [
   "image/jpeg",
   "image/jpg",
@@ -58,45 +62,8 @@ const filePathSchema = z
     },
   );
 
-const signedUploadUrlDataSchema = z.object({
-  signedUrl: z.string().min(1),
-  path: filePathSchema,
-});
-
-const publicUrlDataSchema = z.object({
-  publicUrl: z.string().url(),
-});
-
-const signedUrlDataSchema = z.object({
-  signedUrl: z.string().min(1),
-});
-
 function getFileExtension(fileName: string) {
   return fileName.slice(fileName.lastIndexOf(".") + 1).toLowerCase();
-}
-
-function assertOwnedFilePath(userId: string, filePath: string) {
-  if (!filePath.startsWith(`${userId}/`)) {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: "You can only access your own files",
-    });
-  }
-}
-
-async function ensureAvatarBucketExists() {
-  const { error } = await storageService.storage.createBucket(BUCKET_NAME, {
-    public: true,
-    fileSizeLimit: BUCKET_FILE_SIZE_LIMIT,
-    allowedMimeTypes: [...ALLOWED_MIME_TYPES],
-  });
-
-  if (error && !error.message.toLowerCase().includes("already exists")) {
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: `Failed to ensure avatar bucket: ${error.message}`,
-    });
-  }
 }
 
 export const storageRouter = createTRPCRouter({
@@ -122,45 +89,10 @@ export const storageRouter = createTRPCRouter({
         }),
     )
     .mutation(async ({ ctx, input }) => {
-      try {
-        await ensureAvatarBucketExists();
-
-        const fileExt = getFileExtension(input.fileName);
-        const uniqueFileName = `${ctx.session.user.id}/${Date.now()}.${fileExt}`;
-
-        const { data, error } = await storageService.storage
-          .from(BUCKET_NAME)
-          .createSignedUploadUrl(uniqueFileName);
-
-        if (error) {
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: `Failed to create signed upload URL: ${error.message}`,
-          });
-        }
-
-        const signedUploadData = signedUploadUrlDataSchema.parse(data);
-        assertOwnedFilePath(ctx.session.user.id, signedUploadData.path);
-
-        const { data: publicUrlData } = storageService.storage
-          .from(BUCKET_NAME)
-          .getPublicUrl(signedUploadData.path);
-        const { publicUrl } = publicUrlDataSchema.parse(publicUrlData);
-
-        return {
-          signedUrl: signedUploadData.signedUrl,
-          path: signedUploadData.path,
-          publicUrl,
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) {
-          throw error;
-        }
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to create signed upload URL",
-        });
-      }
+      return createSignedAvatarUploadUrl({
+        userId: ctx.session.user.id,
+        fileExtension: getFileExtension(input.fileName),
+      });
     }),
 
   getSignedUrl: protectedProcedure
@@ -172,36 +104,10 @@ export const storageRouter = createTRPCRouter({
         .strict(),
     )
     .query(async ({ ctx, input }) => {
-      try {
-        await ensureAvatarBucketExists();
-
-        assertOwnedFilePath(ctx.session.user.id, input.filePath);
-
-        const { data, error } = await storageService.storage
-          .from(BUCKET_NAME)
-          .createSignedUrl(input.filePath, 3600);
-
-        if (error) {
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: `Failed to create signed URL: ${error.message}`,
-          });
-        }
-
-        const signedUrlData = signedUrlDataSchema.parse(data);
-
-        return {
-          signedUrl: signedUrlData.signedUrl,
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) {
-          throw error;
-        }
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to get signed URL",
-        });
-      }
+      return createSignedAvatarDownloadUrl({
+        userId: ctx.session.user.id,
+        filePath: input.filePath,
+      });
     }),
 
   deleteFile: protectedProcedure
@@ -214,7 +120,7 @@ export const storageRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       try {
-        assertOwnedFilePath(ctx.session.user.id, input.filePath);
+        assertOwnedStoragePath(ctx.session.user.id, input.filePath);
 
         const { error } = await storageService.storage.from(BUCKET_NAME).remove([input.filePath]);
 

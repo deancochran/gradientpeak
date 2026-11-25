@@ -1,40 +1,66 @@
 import { Text } from "@repo/ui/components/text";
 import { View } from "react-native";
-import type { TrainingPathRange } from "./trainingPathTypes";
+import { useTheme } from "@/lib/stores/theme-store";
+import { getPlanChartTheme } from "./planChartTheme";
 
-const loadItems = [
-  { label: "Completed", color: "rgba(22, 163, 74, 0.86)", shape: "fill" },
-  { label: "Planned", color: "rgba(37, 99, 235, 0.68)", shape: "fill" },
-  { label: "Ideal Load", color: "rgba(100, 116, 139, 0.24)", shape: "fill" },
-];
+type LegendItem = {
+  color: string;
+  label: string;
+  shape: "fill" | "line";
+};
 
-const pathItems = [
-  { label: "Fitness Trend", color: "rgba(22, 163, 74, 0.95)", shape: "line" },
-  { label: "Scheduled Fitness", color: "rgba(37, 99, 235, 0.95)", shape: "line" },
-  { label: "Ideal Fitness", color: "rgba(15, 23, 42, 0.42)", shape: "line" },
-  { label: "Today", color: "#020617", shape: "line" },
-  { label: "Goal", color: "#020617", shape: "line" },
-  { label: "Selected week", color: "rgba(15, 23, 42, 0.08)", shape: "fill" },
-];
-
-export function TrainingPathLegend({ range }: { range: TrainingPathRange }) {
-  const items = range === "all" ? [loadItems[0], ...pathItems] : [...loadItems, ...pathItems];
+export function TrainingPathLegend({ mode = "daily" }: { mode?: "daily" | "weekly" }) {
+  const { resolvedTheme } = useTheme();
+  const colors = getPlanChartTheme(resolvedTheme);
+  const workloadItems: LegendItem[] = [
+    { label: "Completed", color: colors.completedLoad, shape: "fill" },
+    { label: "Planned", color: colors.plannedLoad, shape: "fill" },
+  ];
+  const stateItems: LegendItem[] =
+    mode === "weekly"
+      ? [
+          { label: "Current fitness", color: colors.completed, shape: "line" },
+          {
+            label: "Planned fitness projection",
+            color: colors.projectedFitness,
+            shape: "line",
+          },
+        ]
+      : [
+          { label: "Fitness", color: colors.fitness, shape: "line" },
+          { label: "Fatigue", color: colors.fatigue, shape: "line" },
+          { label: "Form", color: colors.form, shape: "line" },
+        ];
 
   return (
-    <View className="flex-row flex-wrap gap-x-3 gap-y-1.5" testID="training-path-legend">
-      {items.map((item) => (
-        <View key={item.label} className="flex-row items-center gap-1.5">
-          <View
-            className={item.shape === "line" ? "h-0.5 w-4" : "h-2.5 w-2.5 rounded-sm"}
-            style={{
-              backgroundColor: item.shape === "outline" ? "transparent" : item.color,
-              borderColor: item.color,
-              borderWidth: item.shape === "outline" ? 1 : 0,
-            }}
-          />
-          <Text className="text-[10px] font-medium text-muted-foreground">{item.label}</Text>
-        </View>
-      ))}
+    <View className="gap-2 px-1" testID="training-path-legend">
+      <LegendGroup items={workloadItems} label="Workload" />
+      <LegendGroup items={stateItems} label="Training state" />
+    </View>
+  );
+}
+
+function LegendGroup({ items, label }: { items: LegendItem[]; label: string }) {
+  return (
+    <View className="gap-1">
+      <Text className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {label}
+      </Text>
+      <View className="flex-row flex-wrap gap-x-3 gap-y-1.5">
+        {items.map((item) => (
+          <View key={item.label} className="flex-row items-center gap-1.5">
+            <View
+              className={item.shape === "fill" ? "h-2.5 w-2.5 rounded-sm" : "h-0 w-4 border-t-2"}
+              style={{
+                backgroundColor: item.shape === "fill" ? item.color : "transparent",
+                borderColor: item.color,
+                borderStyle: "solid",
+              }}
+            />
+            <Text className="text-[11px] font-medium text-muted-foreground">{item.label}</Text>
+          </View>
+        ))}
+      </View>
     </View>
   );
 }

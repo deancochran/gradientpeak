@@ -8,11 +8,46 @@ const alertMock = jest.fn();
 const localSearchParamsMock = { groupEventId: "33333333-3333-4333-8333-333333333333" };
 const refetchMock = jest.fn(async () => undefined);
 const rsvpEventSeriesMock = jest.fn(async () => undefined);
-const copySeriesActivityPlansToOccurrenceMock = jest.fn(async () => undefined);
 const cancelEventMock = jest.fn(async () => undefined);
 const rsvpMock = jest.fn(async () => undefined);
 
-const baseEvent = {
+type GroupEventFixture = {
+  id: string;
+  group_id: string;
+  series_id: string | null;
+  occurrence_key: string | null;
+  created_by_profile_id: string;
+  title: string;
+  description: string;
+  starts_at: string;
+  ends_at: string;
+  timezone: string;
+  recurrence_rule: string | null;
+  recurrence_timezone: string | null;
+  location_name: string;
+  route_id: string | null;
+  group: { id: string; name: string; slug: string; avatar_url: string | null } | null;
+  cancelled_at: string | null;
+  created_at: string;
+  updated_at: string;
+  is_recurring_series: boolean;
+  is_recurring_occurrence: boolean;
+  activityPlanOptions: unknown[];
+  viewerRsvp: unknown;
+  viewerSeriesRsvp: unknown;
+};
+type OverflowAction = { label: string; onPress?: () => void; testID: string };
+type DetailScaffoldProps = React.PropsWithChildren<{
+  headerRight?: () => React.ReactNode;
+  isLoading?: boolean;
+  loadingLabel?: string;
+  notFound?: boolean;
+  notFoundDescription?: string;
+  notFoundTitle?: string;
+  screenTestID?: string;
+}>;
+
+const baseEvent: GroupEventFixture = {
   id: "33333333-3333-4333-8333-333333333333",
   group_id: "22222222-2222-4222-8222-222222222222",
   series_id: null as string | null,
@@ -33,20 +68,41 @@ const baseEvent = {
   updated_at: "2026-05-21T12:00:00.000Z",
   is_recurring_series: false,
   is_recurring_occurrence: false,
-  activityPlanOptions: [] as any[],
+  activityPlanOptions: [],
   viewerRsvp: null,
   viewerSeriesRsvp: null,
 };
 
-const detailVm = {
+const detailVm: {
+  detailQuery: Record<string, unknown>;
+  event: GroupEventFixture | null;
+  error: Error | null;
+  isError: boolean;
+  isLoading: boolean;
+  refetch: typeof refetchMock;
+  seriesOccurrences: GroupEventFixture[];
+  seriesOccurrencesQuery: {
+    error: Error | null;
+    isError: boolean;
+    isFetching: boolean;
+    isLoading: boolean;
+    refetch: typeof refetchMock;
+  };
+} = {
   detailQuery: {},
-  event: baseEvent as any,
+  event: baseEvent,
   error: null as Error | null,
   isError: false,
   isLoading: false,
   refetch: refetchMock,
-  seriesOccurrences: [] as any[],
-  seriesOccurrencesQuery: { isLoading: false },
+  seriesOccurrences: [],
+  seriesOccurrencesQuery: {
+    error: null,
+    isError: false,
+    isFetching: false,
+    isLoading: false,
+    refetch: refetchMock,
+  },
 };
 
 const groupVm = {
@@ -89,21 +145,25 @@ jest.mock("@/components/shared/ActivityPlanCard", () => ({
 
 jest.mock("@/components/shared/AppFormModal", () => ({
   __esModule: true,
-  AppFormModal: ({ children, testID, title }: any) =>
+  AppFormModal: ({
+    children,
+    testID,
+    title,
+  }: React.PropsWithChildren<{ testID?: string; title?: string }>) =>
     React.createElement("View", { testID }, React.createElement("Text", null, title), children),
 }));
 
 jest.mock("@/components/shared/detail", () => ({
   __esModule: true,
-  DetailOverflowMenu: ({ actions }: any) =>
+  DetailOverflowMenu: ({ actions }: { actions: OverflowAction[] }) =>
     React.createElement(
       "View",
       { testID: "group-event-detail-overflow" },
-      ...actions.map((action: any) =>
+      ...actions.map((action) =>
         React.createElement(
           "Button",
           { key: action.testID, onPress: action.onPress, testID: action.testID },
-          action.label,
+          React.createElement("Text", null, action.label),
         ),
       ),
     ),
@@ -116,7 +176,7 @@ jest.mock("@/components/shared/detail", () => ({
     notFoundDescription,
     notFoundTitle,
     screenTestID,
-  }: any) => {
+  }: DetailScaffoldProps) => {
     if (isLoading) return React.createElement("Text", null, loadingLabel);
     if (notFound) {
       return React.createElement(
@@ -167,8 +227,6 @@ jest.mock("@/lib/groups", () => ({
   useGroupEventActions: () => ({
     cancelEvent: cancelEventMock,
     cancelMutation: { isPending: false },
-    copySeriesActivityPlansToOccurrence: copySeriesActivityPlansToOccurrenceMock,
-    copySeriesActivityPlansToOccurrenceMutation: { isPending: false },
     rsvp: rsvpMock,
     rsvpEventSeries: rsvpEventSeriesMock,
     rsvpEventSeriesMutation: { isPending: false },
@@ -182,21 +240,27 @@ const GroupEventDetailRoute = require("../group-event-detail").default;
 describe("group event detail route", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    detailVm.event = { ...baseEvent } as any;
+    detailVm.event = { ...baseEvent };
     detailVm.error = null;
     detailVm.isError = false;
     detailVm.isLoading = false;
     detailVm.seriesOccurrences = [];
-    detailVm.seriesOccurrencesQuery = { isLoading: false };
+    detailVm.seriesOccurrencesQuery = {
+      error: null,
+      isError: false,
+      isFetching: false,
+      isLoading: false,
+      refetch: refetchMock,
+    };
     groupVm.viewer = { canCreateGroupEvent: false };
   });
 
-  it("does not render protected event details when access is denied", () => {
+  it("does not render protected event details when access is denied", async () => {
     detailVm.event = null;
     detailVm.error = new Error("You don't have permission to view this group");
     detailVm.isError = true;
 
-    renderNative(<GroupEventDetailRoute />);
+    await renderNative(<GroupEventDetailRoute />);
 
     expect(screen.getByTestId("group-event-detail-unavailable")).toBeTruthy();
     expect(screen.getByText("Unable to load event")).toBeTruthy();
@@ -214,7 +278,7 @@ describe("group event detail route", () => {
       title: "Occurrence Ride",
       is_recurring_occurrence: true,
       viewerSeriesRsvp: null,
-    } as any;
+    };
     detailVm.seriesOccurrences = [
       {
         ...baseEvent,
@@ -224,26 +288,44 @@ describe("group event detail route", () => {
         occurrence_key: "2026-06-04",
         is_recurring_occurrence: true,
       },
-    ] as any[];
+    ];
 
-    renderNative(<GroupEventDetailRoute />);
+    await renderNative(<GroupEventDetailRoute />);
 
     expect(screen.getByText("Repeating event")).toBeTruthy();
-    expect(screen.queryByText("Next Occurrence")).toBeNull();
+    expect(screen.getByText("Next Occurrence")).toBeTruthy();
 
-    fireEvent.press(screen.getByText("Apply to series"));
-    fireEvent.press(screen.getByText("Going to series"));
+    await fireEvent.press(screen.getByText("Apply to series"));
+    await fireEvent.press(screen.getByText("Going to series"));
 
     await waitFor(() => {
       expect(rsvpEventSeriesMock).toHaveBeenCalledWith({
         groupEventSeriesId: "33333333-3333-4333-8333-333333333333",
-        status: "accepted",
+        status: "going",
       });
     });
     expect(refetchMock).toHaveBeenCalled();
   });
 
-  it("shows the owning group avatar row and links to the group detail page", () => {
+  it("shows occurrence query failures and retries them", async () => {
+    detailVm.event = { ...baseEvent, is_recurring_series: true };
+    detailVm.seriesOccurrencesQuery = {
+      error: new Error("Network unavailable"),
+      isError: true,
+      isFetching: false,
+      isLoading: false,
+      refetch: refetchMock,
+    };
+
+    await renderNative(<GroupEventDetailRoute />);
+
+    expect(screen.getByText("Unable to load future dates")).toBeTruthy();
+    expect(screen.getByText("Network unavailable")).toBeTruthy();
+    await fireEvent.press(screen.getByText("Try again"));
+    expect(refetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the owning group avatar row and links to the group detail page", async () => {
     detailVm.event = {
       ...baseEvent,
       group: {
@@ -252,14 +334,14 @@ describe("group event detail route", () => {
         slug: "ride-club",
         avatar_url: null,
       },
-    } as any;
+    };
 
-    renderNative(<GroupEventDetailRoute />);
+    await renderNative(<GroupEventDetailRoute />);
 
     expect(screen.getByText("Ride Club")).toBeTruthy();
     expect(screen.getByText("RC")).toBeTruthy();
 
-    fireEvent.press(screen.getByLabelText("Open group Ride Club"));
+    await fireEvent.press(screen.getByLabelText("Open group Ride Club"));
 
     expect(pushMock).toHaveBeenCalledWith({
       pathname: "/group-detail",
@@ -267,26 +349,18 @@ describe("group event detail route", () => {
     });
   });
 
-  it("exposes copy-series-plans management only for manageable occurrences", async () => {
+  it("does not expose removed copy-series-plans management for occurrences", async () => {
     detailVm.event = {
       ...baseEvent,
       id: "44444444-4444-4444-8444-444444444444",
       series_id: "33333333-3333-4333-8333-333333333333",
       occurrence_key: "2026-05-28",
       is_recurring_occurrence: true,
-    } as any;
+    };
     groupVm.viewer = { canCreateGroupEvent: true };
 
-    renderNative(<GroupEventDetailRoute />);
+    await renderNative(<GroupEventDetailRoute />);
 
-    fireEvent.press(screen.getByTestId("group-event-detail-copy-series-plans"));
-
-    await waitFor(() => {
-      expect(copySeriesActivityPlansToOccurrenceMock).toHaveBeenCalledWith({
-        groupEventOccurrenceId: "44444444-4444-4444-8444-444444444444",
-        groupEventSeriesId: "33333333-3333-4333-8333-333333333333",
-      });
-    });
-    expect(refetchMock).toHaveBeenCalled();
+    expect(screen.queryByTestId("group-event-detail-copy-series-plans")).toBeNull();
   });
 });
