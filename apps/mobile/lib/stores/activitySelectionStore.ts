@@ -1,4 +1,5 @@
 import type { ActivityPayload, RecordingActivityCategory } from "@repo/core";
+import { omitUndefined } from "@/lib/omitUndefined";
 
 export interface RecordingLaunchPayload extends ActivityPayload {
   launchSource: "record_tab" | "activity_plan" | "calendar_event" | "route" | "manual";
@@ -6,12 +7,13 @@ export interface RecordingLaunchPayload extends ActivityPayload {
 }
 
 export function defaultRecordLaunchPayload(
-  category: RecordingActivityCategory = "run",
+  activity_category: RecordingActivityCategory = "bike",
 ): RecordingLaunchPayload {
   return {
     launchSource: "record_tab",
-    category,
-    gpsRecordingEnabled: category === "run" || category === "bike",
+    activity_category,
+    // Recording opens for an indoor ride first. GPS stays opt-in for outdoor sessions.
+    gpsRecordingEnabled: false,
   };
 }
 
@@ -36,11 +38,11 @@ class ActivitySelectionStore {
   setSelection(payload: RecordingLaunchPayload): void {
     console.log("[ActivitySelectionStore] Setting selection:", {
       launchSource: payload.launchSource,
-      category: payload.category,
+      activity_category: payload.activity_category,
       gpsRecordingEnabled: payload.gpsRecordingEnabled,
       hasPlan: !!payload.plan,
       eventId: payload.eventId,
-      routeId: payload.routeId ?? payload.plan?.route_id ?? null,
+      routeId: payload.routeId ?? null,
     });
     this.selection = payload;
   }
@@ -54,7 +56,7 @@ class ActivitySelectionStore {
     if (current) {
       console.log(
         "[ActivitySelectionStore] Consuming selection:",
-        current.category,
+        current.activity_category,
         current.gpsRecordingEnabled,
       );
       this.selection = null;
@@ -80,7 +82,7 @@ class ActivitySelectionStore {
     if (this.selection) {
       console.log(
         "[ActivitySelectionStore] Clearing selection:",
-        this.selection.category,
+        this.selection.activity_category,
         this.selection.gpsRecordingEnabled,
       );
     } else {
@@ -101,16 +103,16 @@ class ActivitySelectionStore {
    */
   getSelectionInfo(): {
     hasSelection: boolean;
-    category?: string;
+    activity_category?: string;
     gpsRecordingEnabled?: boolean;
     hasPlan?: boolean;
   } {
-    return {
+    return omitUndefined({
       hasSelection: this.selection !== null,
-      category: this.selection?.category,
+      activity_category: this.selection?.activity_category,
       gpsRecordingEnabled: this.selection?.gpsRecordingEnabled,
       hasPlan: !!this.selection?.plan,
-    };
+    });
   }
 }
 

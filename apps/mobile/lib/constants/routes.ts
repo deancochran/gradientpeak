@@ -9,10 +9,24 @@ export const ROUTES = {
   // Plan Tab Routes
   PLAN: {
     INDEX: "/(internal)/(tabs)/plan" as const,
-    CALENDAR: "/(internal)/(tabs)/calendar" as const,
+    OVERVIEW: {
+      pathname: "/(internal)/(tabs)/plan",
+      params: { view: "overview" },
+    } as const,
+    ANALYSIS: (params: {
+      anchorDate: string;
+      goalId: string;
+      metric: "threshold" | "load" | "fitness" | "fatigue" | "form";
+      range: "6w" | "3m" | "6m" | "1y";
+      view: "progress" | "training";
+    }) => ({ pathname: "/plan-analysis", params }) as const,
+    CALENDAR: {
+      pathname: "/(internal)/(tabs)/plan",
+      params: { view: "calendar" },
+    } as const,
     CREATE: "/create-activity-plan" as const,
-    SCHEDULED: "/scheduled-activities-list" as const,
-    CALENDAR_DAY: (date: string) => ({ pathname: "/calendar-day", params: { date } }) as const,
+    PLANNING_LEDGER: (params: { anchorDate: string; period: "day" | "week" }) =>
+      ({ pathname: "/planning-ledger", params }) as const,
     AGENDA_CREATE: (date: string) => ({ pathname: "/agenda-create", params: { date } }) as const,
     EVENT_CREATE: (date: string) =>
       ({ pathname: "/event-detail", params: { mode: "create", date } }) as const,
@@ -24,7 +38,6 @@ export const ROUTES = {
       CREATE: "/training-plan-create" as const,
       EDIT: "/training-plan-edit" as const,
     },
-    TRAINING_PREFERENCES: "/training-preferences" as const,
 
     // Create Activity Plan Routes
     CREATE_ACTIVITY_PLAN: {
@@ -45,13 +58,10 @@ export const ROUTES = {
     LIST: "/activities-list" as const,
     IMPORT: "/activity-import" as const,
     DETAIL: (activityId: string) => `/activity-detail?id=${activityId}` as const,
-    EFFORTS_LIST: "/activity-efforts-list" as const,
-    EFFORT_DETAIL: (effortId: string) => `/activity-effort-detail?id=${effortId}` as const,
   },
 
-  PROFILE_METRICS: {
-    LIST: "/profile-metrics-list" as const,
-    DETAIL: (metricId: string) => `/profile-metric-detail?id=${metricId}` as const,
+  THRESHOLDS: {
+    OVERVIEW: "/thresholds" as const,
   },
 
   GOALS: {
@@ -65,18 +75,28 @@ export const ROUTES = {
   ROUTES: {
     LIST: "/routes-list" as const,
     DETAIL: (routeId: string) => `/route-detail?id=${routeId}` as const,
+    EDIT: (routeId: string) => `/route-edit?id=${routeId}` as const,
     UPLOAD: "/route-upload" as const,
   },
 
   // Other Tab Routes
-  SEARCH: "/search" as const,
-  DISCOVER: "/search" as const,
-  CALENDAR: "/(internal)/(tabs)/calendar" as const,
+  SEARCH: "/(internal)/(tabs)/discover" as const,
+  DISCOVER: "/(internal)/(tabs)/discover" as const,
+  COMMUNITY: "/(internal)/(tabs)/groups" as const,
+  MY_GROUPS: "/my-groups" as const,
+  CALENDAR: {
+    pathname: "/(internal)/(tabs)/plan",
+    params: { view: "calendar" },
+  } as const,
 
   // Profile
-  PROFILE_SETTINGS: "/(internal)/(tabs)/profile" as const,
+  ME: "/me" as const,
+  PROFILE_TAB: "/me" as const,
+  INBOX: "/inbox" as const,
+  CHAT: "/chat" as const,
   USER_DETAIL: (userId: string) => `/user/${userId}` as const,
   PROFILE_EDIT: "/profile-edit" as const,
+  SETTINGS: "/settings" as const,
   INTEGRATIONS: "/integrations" as const,
   NOTIFICATIONS: "/notifications" as const,
   MESSAGES: "/messages" as const,
@@ -84,9 +104,6 @@ export const ROUTES = {
 
   // Activity Recording
   RECORD: "/record" as const,
-
-  // Activity Management
-  ACTIVITIES_REORDER: "/activities-reorder" as const,
 } as const;
 
 /**
@@ -95,7 +112,7 @@ export const ROUTES = {
  * buildRoute(ROUTES.PLAN.SCHEDULE_ACTIVITY, { planId: '123' })
  * // Returns: { pathname: '/plan/schedule', params: { planId: '123' } }
  */
-export function buildRoute<T extends Record<string, any>>(
+export function buildRoute<T extends Record<string, unknown>>(
   pathname: string,
   params?: T,
 ): { pathname: string; params?: T } {

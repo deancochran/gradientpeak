@@ -1,4 +1,4 @@
-import type { TrainingGoal } from "../schemas/training_plan_structure";
+import type { TrainingPlanGoal } from "../schemas/training-plan-structure";
 
 const MIN_PRIORITY = 0;
 const MAX_PRIORITY = 10;
@@ -22,7 +22,7 @@ export function getGoalPriorityWeight(
 }
 
 export function calculateGoalPriorityWeights(
-  goals: Array<Pick<TrainingGoal, "id"> & Partial<Pick<TrainingGoal, "priority">>>,
+  goals: Array<Pick<TrainingPlanGoal, "id"> & Partial<Pick<TrainingPlanGoal, "priority">>>,
 ): Record<string, number> {
   if (goals.length === 0) {
     return {};
@@ -43,7 +43,7 @@ export function calculateGoalPriorityWeights(
 }
 
 export function applyGoalPriorityWeighting<
-  TGoal extends Pick<TrainingGoal, "id"> & Partial<Pick<TrainingGoal, "priority">>,
+  TGoal extends Pick<TrainingPlanGoal, "id"> & Partial<Pick<TrainingPlanGoal, "priority">>,
 >(goals: TGoal[]): Array<TGoal & { priority: number; weight: number }> {
   const weightByGoalId = calculateGoalPriorityWeights(goals);
   return goals.map((goal) => {

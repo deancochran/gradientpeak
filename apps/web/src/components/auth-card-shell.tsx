@@ -1,10 +1,4 @@
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@repo/ui/components/card";
+import { Card, CardContent, CardDescription, CardHeader } from "@repo/ui/components/card";
 
 type AuthCardShellProps = {
   title: string;
@@ -16,7 +10,7 @@ export function AuthCardShell({ title, description, children }: AuthCardShellPro
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-2xl">{title}</CardTitle>
+        <h1 className="text-2xl font-semibold leading-none tracking-tight">{title}</h1>
         {description ? <CardDescription>{description}</CardDescription> : null}
       </CardHeader>
       <CardContent>{children}</CardContent>
