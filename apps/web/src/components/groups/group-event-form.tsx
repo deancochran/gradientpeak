@@ -1,9 +1,13 @@
 import { createGroupEventEditorDraft, prepareGroupEventEditorPayload } from "@repo/core/groups";
 import { Button } from "@repo/ui/components/button";
-import { Form, FormTimezoneField } from "@repo/ui/components/form";
+import {
+  Form,
+  FormTextareaField,
+  FormTextField,
+  FormTimezoneField,
+} from "@repo/ui/components/form";
 import { Input } from "@repo/ui/components/input";
 import { Label } from "@repo/ui/components/label";
-import { Textarea } from "@repo/ui/components/textarea";
 import { useZodForm } from "@repo/ui/hooks";
 import { useMemo, useRef, useState } from "react";
 import { z } from "zod";
@@ -66,13 +70,23 @@ export function GroupEventForm({
       ),
     [displayTimezone, event],
   );
-  const timezoneForm = useZodForm({
-    schema: z.object({ timezone: z.string().min(1, "Choose an event time zone.").nullable() }),
-    defaultValues: { timezone: event?.timezone ?? null },
+  const form = useZodForm({
+    schema: z.object({
+      description: z.string(),
+      locationName: z.string(),
+      timezone: z.string().min(1, "Choose an event time zone.").nullable(),
+      title: z.string(),
+    }),
+    defaultValues: {
+      description: initialDraft.description,
+      locationName: initialDraft.locationName,
+      timezone: event?.timezone ?? null,
+      title: initialDraft.title,
+    },
   });
-  const timezone = timezoneForm.watch("timezone");
-  const [title, setTitle] = useState(initialDraft.title);
-  const [description, setDescription] = useState(initialDraft.description);
+  const timezone = form.watch("timezone");
+  const title = form.watch("title");
+  const description = form.watch("description");
   const [startsAt, setStartsAt] = useState(
     initialDraft.date && initialDraft.startsTime
       ? `${initialDraft.date}T${initialDraft.startsTime}`
@@ -83,7 +97,7 @@ export function GroupEventForm({
       ? `${initialDraft.endDate}T${initialDraft.endsTime}`
       : "",
   );
-  const [locationName, setLocationName] = useState(initialDraft.locationName);
+  const locationName = form.watch("locationName");
   const [routeId, setRouteId] = useState(initialDraft.routeId ?? "");
   const [activityPlanId, setActivityPlanId] = useState(event?.activity_plan_id ?? "");
   const [recurrence, setRecurrence] = useState<"none" | "daily" | "weekly" | "monthly">("none");
@@ -132,13 +146,13 @@ export function GroupEventForm({
     pending: isSubmitting,
   });
   return (
-    <Form {...timezoneForm}>
+    <Form {...form}>
       <form
         className="space-y-5"
         onSubmit={async (submitEvent) => {
           submitEvent.preventDefault();
           if (isSubmitting || submittingRef.current) return;
-          const isTimezoneValid = await timezoneForm.trigger("timezone");
+          const isTimezoneValid = await form.trigger("timezone");
           if (!isTimezoneValid || !timezone) return;
           const [date = "", startsTime = ""] = startsAt.split("T");
           const [endDate = "", endsTime = ""] = endsAt.split("T");
@@ -183,16 +197,7 @@ export function GroupEventForm({
           }
         }}
       >
-        <div className="space-y-2">
-          <Label htmlFor="group-event-title">Title</Label>
-          <Input
-            id="group-event-title"
-            maxLength={160}
-            required
-            value={title}
-            onChange={(changeEvent) => setTitle(changeEvent.target.value)}
-          />
-        </div>
+        <FormTextField control={form.control} label="Title" maxLength={160} name="title" required />
         {!event ? (
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="space-y-2 text-sm font-medium" htmlFor="group-event-recurrence">
@@ -225,15 +230,12 @@ export function GroupEventForm({
             ) : null}
           </div>
         ) : null}
-        <div className="space-y-2">
-          <Label htmlFor="group-event-description">Description</Label>
-          <Textarea
-            id="group-event-description"
-            maxLength={4000}
-            value={description}
-            onChange={(changeEvent) => setDescription(changeEvent.target.value)}
-          />
-        </div>
+        <FormTextareaField
+          control={form.control}
+          label="Description"
+          maxLength={4000}
+          name="description"
+        />
         {scheduleError ? (
           <p className="text-xs text-destructive" id="group-event-schedule-error" role="alert">
             {scheduleError}
@@ -265,20 +267,13 @@ export function GroupEventForm({
           </div>
         </div>
         <FormTimezoneField
-          control={timezoneForm.control}
+          control={form.control}
           deviceTimeZone={Intl.DateTimeFormat().resolvedOptions().timeZone}
           label="Event time zone"
           name="timezone"
           rules={{ required: "Choose an event time zone." }}
         />
-        <div className="space-y-2">
-          <Label htmlFor="group-event-location">Location</Label>
-          <Input
-            id="group-event-location"
-            value={locationName}
-            onChange={(changeEvent) => setLocationName(changeEvent.target.value)}
-          />
-        </div>
+        <FormTextField control={form.control} label="Location" name="locationName" />
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="space-y-2 text-sm font-medium" htmlFor="group-event-route">
             Route attachment

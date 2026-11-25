@@ -73,6 +73,7 @@ async function retainAppliedPlanningLedgerEvidence(input: {
   actor: Parameters<typeof createSessionScenarioFixture>[0]["actor"];
   artifactPath: string;
   date: string;
+  sessionId: string;
 }) {
   const request = { anchorDate: input.date, period: "day" } as const;
   const encodedInput = encodeURIComponent(JSON.stringify({ 0: { json: request } }));
@@ -119,6 +120,22 @@ async function retainAppliedPlanningLedgerEvidence(input: {
     selected.planned,
     "Selected planned training composition is invalid.",
   );
+  if (!Array.isArray(result.entries))
+    throw new Error("Planning ledger response has no selected planned-session entries.");
+  const selectedEntry = result.entries
+    .map((entry) => requireRecord(entry, "Planning ledger entry is invalid."))
+    .find((entry) => entry.id === input.sessionId);
+  if (
+    !selectedEntry ||
+    typeof selectedEntry.date !== "string" ||
+    typeof selectedEntry.id !== "string" ||
+    typeof selectedEntry.kind !== "string"
+  )
+    throw new Error("Planning ledger response has no selected planned-session entry.");
+  const selectedEntryDuration = durationMetricFrom(
+    selectedEntry.contributingDurationSeconds,
+    "Planning ledger selected planned-session duration is invalid.",
+  );
   writeFileSync(
     input.artifactPath,
     JSON.stringify(
@@ -134,6 +151,12 @@ async function retainAppliedPlanningLedgerEvidence(input: {
             planned: selectedPlanned,
           },
         },
+        selectedEntry: {
+          contributingDurationSeconds: selectedEntryDuration,
+          date: selectedEntry.date,
+          id: selectedEntry.id,
+          kind: selectedEntry.kind,
+        },
       },
       null,
       2,
@@ -148,6 +171,14 @@ async function retainAppliedPlanningLedgerEvidence(input: {
       },
     ],
   });
+  expect(selectedEntry.date).toBe(input.date);
+  expect(selectedEntry.kind).toBe("planned");
+  expect(selectedEntryDuration).toEqual({ status: "complete", value: 1200 });
+  return {
+    selectedEntryDate: selectedEntry.date,
+    selectedEntryDuration,
+    selectedEntryId: selectedEntry.id,
+  };
 }
 
 test("native athlete compares, cancels, and applies a selected session scenario", async ({
@@ -290,6 +321,7 @@ test("native athlete compares, cancels, and applies a selected session scenario"
     actor,
     artifactPath: testInfo.outputPath("native-scenario-applied-planning-ledger.json"),
     date: fixture.date,
+    sessionId: fixture.sessionId,
   });
   const [sessions, plans] = await fixture.snapshot();
   const selected = requireRow(
@@ -497,6 +529,17 @@ test("native athlete explicitly retries the same scenario request after its comm
   expect(copiedPlan.profile_id).toBe(actor.profileId);
   expect(copiedPlan.content_visibility).toBe("private");
   expect(copiedPlan.is_system_template).toBe(false);
+  expect(selected.planning_date).toBe(originalSelected.planning_date);
+  expect(selected.planning_date).toBe(fixture.date);
+  const appliedLedger = await retainAppliedPlanningLedgerEvidence({
+    actor,
+    artifactPath: testInfo.outputPath("native-scenario-lost-ack-planning-ledger.json"),
+    date: fixture.date,
+    sessionId: fixture.sessionId,
+  });
+  expect(appliedLedger.selectedEntryId).toBe(selected.id);
+  expect(appliedLedger.selectedEntryDate).toBe(selected.planning_date);
+  expect(appliedLedger.selectedEntryDuration).toEqual({ status: "complete", value: 1200 });
   expect(otherOccurrence).toEqual(originalOtherOccurrence);
   expect(unchangedOriginalPlan).toEqual(originalPlan);
   expect(plans).toHaveLength(before[1].length + 1);

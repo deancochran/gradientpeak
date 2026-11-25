@@ -18,7 +18,13 @@ import { useAuth } from "@/lib/hooks/useAuth";
 
 type ScenarioKind = "as_planned" | "less" | "more" | "substitute" | "skip";
 type KnownScenarioOutcome = { actorId: string; message: string };
-type E2ERetryBoundary = "idle" | "received" | "guarded" | "dispatched";
+export type E2ERetryBoundary = "idle" | "received" | "guarded" | "dispatched";
+export type E2ERetryBoundaryUpdate = {
+  actorId: string;
+  boundary: E2ERetryBoundary;
+  generation: number;
+  sessionId: string;
+};
 
 function isE2ERetryBoundaryEnabled() {
   return process.env.EXPO_PUBLIC_MAESTRO_E2E === "1";
@@ -32,23 +38,37 @@ export function SessionScenarioPreview({
   ...props
 }: {
   activityPlanRevision: number;
+  e2eRetryBoundary?: E2ERetryBoundaryUpdate | null;
+  e2eRetryBoundaryGeneration?: number;
   knownOutcome?: KnownScenarioOutcome | null;
+  onE2ERetryBoundaryChange?: (update: E2ERetryBoundaryUpdate) => void;
   onKnownOutcomeChange?: (outcome: KnownScenarioOutcome | null) => void;
   session: { id: string; profileId: string; sessionRevision: number };
   timeZone: string | null;
 }) {
-  return <SessionScenarioPreviewContents key={props.session.id} {...props} />;
+  const { user } = useAuth();
+  return (
+    <SessionScenarioPreviewContents key={props.session.id} actorId={user?.id ?? null} {...props} />
+  );
 }
 
 function SessionScenarioPreviewContents({
   activityPlanRevision,
+  actorId,
+  e2eRetryBoundary,
+  e2eRetryBoundaryGeneration = 0,
   knownOutcome,
+  onE2ERetryBoundaryChange,
   onKnownOutcomeChange,
   session,
   timeZone,
 }: {
   activityPlanRevision: number;
+  actorId: string | null;
+  e2eRetryBoundary?: E2ERetryBoundaryUpdate | null;
+  e2eRetryBoundaryGeneration?: number;
   knownOutcome?: KnownScenarioOutcome | null;
+  onE2ERetryBoundaryChange?: (update: E2ERetryBoundaryUpdate) => void;
   onKnownOutcomeChange?: (outcome: KnownScenarioOutcome | null) => void;
   session: { id: string; profileId: string; sessionRevision: number };
   timeZone: string | null;
@@ -62,16 +82,25 @@ function SessionScenarioPreviewContents({
   const [knownOutcomeSuppressed, setKnownOutcomeSuppressed] = useState(false);
   const [storageUnavailable, setStorageUnavailable] = useState(false);
   const [hydrated, setHydrated] = useState(false);
-  const [e2eRetryBoundary, setE2ERetryBoundary] = useState<E2ERetryBoundary>("idle");
+  const [localE2ERetryBoundary, setE2ERetryBoundary] = useState<E2ERetryBoundaryUpdate | null>(
+    null,
+  );
   const operationRef = useRef<FrozenPlannedSessionScenarioOperation | null>(null);
   const latestOperationIdRef = useRef<string | null>(null);
   const armingRef = useRef(false);
   const submittingRef = useRef(false);
   const generationRef = useRef(0);
-  const { user } = useAuth();
-  const actorId = user?.id ?? null;
   const actorRef = useRef(actorId);
   actorRef.current = actorId;
+  useEffect(() => {
+    setE2ERetryBoundary((current) =>
+      current?.actorId === actorId &&
+      current.generation === e2eRetryBoundaryGeneration &&
+      current.sessionId === session.id
+        ? current
+        : null,
+    );
+  }, [actorId, e2eRetryBoundaryGeneration, session.id]);
   const utils = api.useUtils();
   const stateQuery = api.athleteIntelligence.getReadModel.useQuery(
     { profileId: session.profileId, sections: { publishedState: true, status: true } },
@@ -185,8 +214,25 @@ function SessionScenarioPreviewContents({
     }
   };
   const recordE2ERetryBoundary = (boundary: E2ERetryBoundary) => {
-    if (isE2ERetryBoundaryEnabled()) setE2ERetryBoundary(boundary);
+    if (!isE2ERetryBoundaryEnabled()) return;
+    if (!actorId) return;
+    const update = {
+      actorId,
+      boundary,
+      generation: e2eRetryBoundaryGeneration,
+      sessionId: session.id,
+    };
+    setE2ERetryBoundary(update);
+    onE2ERetryBoundaryChange?.(update);
   };
+  const displayedE2ERetryBoundary =
+    e2eRetryBoundary?.actorId === actorId &&
+    e2eRetryBoundary.generation === e2eRetryBoundaryGeneration &&
+    e2eRetryBoundary.sessionId === session.id
+      ? e2eRetryBoundary.boundary
+      : localE2ERetryBoundary?.actorId === actorId && localE2ERetryBoundary.sessionId === session.id
+        ? localE2ERetryBoundary.boundary
+        : "idle";
   const confirmApply = async () => {
     if (
       !actorId ||
@@ -474,8 +520,8 @@ function SessionScenarioPreviewContents({
             maxHeight: 2,
           }}
         >
-          <Text testID={`e2e-session-scenario-retry-boundary-${e2eRetryBoundary}`}>
-            E2E_RETRY_BOUNDARY={e2eRetryBoundary}
+          <Text testID={`e2e-session-scenario-retry-boundary-${displayedE2ERetryBoundary}`}>
+            E2E_RETRY_BOUNDARY={displayedE2ERetryBoundary}
           </Text>
         </View>
       ) : null}

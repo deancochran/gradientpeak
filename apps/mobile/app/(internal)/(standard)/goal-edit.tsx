@@ -84,7 +84,11 @@ function GoalEditSession({ isCurrent }: { isCurrent: () => boolean }) {
         Promise.resolve().then(() => invalidateGoalQueries(utils, { goalId })),
       ]);
       if (!active.current || !isCurrent() || currentGoalContext.current !== goalContext) return;
-      router.replace(ROUTES.GOALS.DETAIL(goalId) as never);
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace(ROUTES.GOALS.DETAIL(goalId) as never);
+      }
     } finally {
       saveGuard.current = false;
       if (active.current) setIsSaving(false);

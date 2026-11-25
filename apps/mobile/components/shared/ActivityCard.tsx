@@ -1,11 +1,10 @@
 import type { ActivityDisplayModel, SemanticMetric } from "@repo/core";
-import { formatDurationSec } from "@repo/core/utils/dates";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { MessageCircle, Share2 } from "lucide-react-native";
 import { Alert, Share, View } from "react-native";
 import { getUniqueActivityCategoryConfigs } from "@/lib/constants/activities";
-import { formatDistanceMeters } from "@/lib/display/formatters";
+import { formatDistanceMeters, formatDurationSeconds } from "@/lib/display/formatters";
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import { useResourceLike } from "@/lib/hooks/useResourceLike";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
@@ -47,11 +46,21 @@ function formatMetric(
   preferredUnitSystem: ReturnType<typeof usePreferredUnitSystem>,
 ) {
   if (metric.status === "unavailable") return "—";
+  if (
+    metric.unit === "seconds" &&
+    (typeof metric.value !== "number" || !Number.isFinite(metric.value) || metric.value < 0)
+  ) {
+    return "—";
+  }
   const approximationPrefix = metric.status === "partial" ? "~" : "";
   if (metric.unit === "meters") {
     return `${approximationPrefix}${formatDistanceMeters(metric.value, { preferredUnitSystem })}`;
   }
-  if (metric.unit === "seconds") return `${approximationPrefix}${formatDurationSec(metric.value)}`;
+  if (metric.unit === "seconds") {
+    const duration =
+      metric.value > 0 && metric.value < 1 ? "<1 sec" : formatDurationSeconds(metric.value);
+    return `${approximationPrefix}${duration}`;
+  }
   if (metric.unit === "ratio") return `${approximationPrefix}${metric.value.toFixed(2)}`;
   if (metric.unit === "bpm") return `${approximationPrefix}${Math.round(metric.value)} bpm`;
   if (metric.unit === "watts") return `${approximationPrefix}${Math.round(metric.value)} W`;
@@ -228,6 +237,6 @@ export function ActivityCard({
 }
 
 export const activityCardFormatters = {
-  duration: formatDurationSec,
+  duration: formatDurationSeconds,
   distance: formatDistanceMeters,
 };
