@@ -5,7 +5,7 @@ import {
   selectAthletePlanningContextFields,
 } from "@repo/core";
 import { skipToken } from "@tanstack/react-query";
-import type { inferRouterInputs } from "@trpc/server";
+import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 import { randomUUID } from "expo-crypto";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { api } from "@/lib/api";
@@ -43,6 +43,8 @@ import { useTrainingPlanCreationQueries } from "./useTrainingPlanCreationQueries
 const createLocalId = () => randomUUID();
 
 type TrainingPlanCommitRequest = inferRouterInputs<AppRouter>["trainingPlans"]["commit"];
+type TrainingPlanCommitResult = inferRouterOutputs<AppRouter>["trainingPlans"]["commit"];
+type TrainingPlanCommitSettlement = TrainingPlanCommitResult | { status: "saved"; planId: string };
 
 function isDefinitiveRejection(error: unknown) {
   if (!error || typeof error !== "object" || !("data" in error)) return false;
@@ -523,6 +525,47 @@ export function useTrainingPlanCreationService({
       if (mode === "edit") onUpdateError?.(failure);
       else onCreateError?.(failure);
     };
+    const settleCommitResult = async (
+      result: TrainingPlanCommitSettlement,
+      commitRequest: TrainingPlanCommitRequest,
+    ) => {
+      if (!current()) {
+        if (result.status === "saved") await utils.trainingPlans.invalidate();
+        return;
+      }
+      if (result.status === "stale") {
+        retainedCommitRequestRef.current = null;
+        setProjectionConflict(
+          result.reason === "state_revision"
+            ? "Athlete state changed while saving. Your changes were preserved and re-simulated against the refreshed baseline."
+            : "The saved plan changed while saving. Your changes were preserved. Close and reopen the editor to reload the saved plan before retrying.",
+        );
+        await Promise.allSettled([publishedStateQuery.refetch(), editPlanQuery.refetch()]);
+        return;
+      }
+      if (result.status === "operation_conflict") {
+        retainedCommitRequestRef.current = null;
+        setProjectionConflict(
+          "This save request conflicts with another operation. Review and retry.",
+        );
+        return;
+      }
+      acknowledged = true;
+      acknowledgedRequest.current = {
+        operationId: commitRequest.operationId,
+        planId: result.planId,
+      };
+      await utils.trainingPlans.invalidate();
+      if (!current()) return;
+      const savedPlan = { id: result.planId };
+      if (mode === "edit") await onUpdated?.(savedPlan);
+      else await onCreated?.(savedPlan);
+      if (current()) {
+        retainedCommitRequestRef.current = null;
+        acknowledgedRequest.current = null;
+        completedOwner.current = owner;
+      }
+    };
     try {
       setProjectionConflict(null);
       if (
@@ -544,42 +587,7 @@ export function useTrainingPlanCreationService({
           const result = knownId
             ? { status: "saved" as const, planId: knownId }
             : await commitPlanMutation.mutateAsync(commitRequest);
-          if (!current()) {
-            if (result.status === "saved") await utils.trainingPlans.invalidate();
-            return;
-          }
-          if (result.status === "stale") {
-            retainedCommitRequestRef.current = null;
-            setProjectionConflict(
-              result.reason === "state_revision"
-                ? "Athlete state changed while saving. Your changes were preserved and re-simulated against the refreshed baseline."
-                : "The saved plan changed while saving. Your changes were preserved. Close and reopen the editor to reload the saved plan before retrying.",
-            );
-            await Promise.allSettled([publishedStateQuery.refetch(), editPlanQuery.refetch()]);
-            return;
-          }
-          if (result.status === "operation_conflict") {
-            retainedCommitRequestRef.current = null;
-            setProjectionConflict(
-              "This save request conflicts with another operation. Review and retry.",
-            );
-            return;
-          }
-          acknowledged = true;
-          acknowledgedRequest.current = {
-            operationId: commitRequest.operationId,
-            planId: result.planId,
-          };
-          await utils.trainingPlans.invalidate();
-          if (!current()) return;
-          const savedPlan = { id: result.planId };
-          if (mode === "edit") await onUpdated?.(savedPlan);
-          else await onCreated?.(savedPlan);
-          if (current()) {
-            retainedCommitRequestRef.current = null;
-            acknowledgedRequest.current = null;
-            completedOwner.current = owner;
-          }
+          await settleCommitResult(result, commitRequest);
         } catch (error) {
           if (!current()) return;
           // Even a rejected replay cannot prove that the earlier uncertain write failed.
@@ -643,42 +651,7 @@ export function useTrainingPlanCreationService({
         };
         retainedCommitRequestRef.current = commitRequest;
         const result = await commitPlanMutation.mutateAsync(commitRequest);
-        if (!current()) {
-          if (result.status === "saved") await utils.trainingPlans.invalidate();
-          return;
-        }
-        if (result.status === "stale") {
-          retainedCommitRequestRef.current = null;
-          setProjectionConflict(
-            result.reason === "state_revision"
-              ? "Athlete state changed while saving. Your changes were preserved and re-simulated against the refreshed baseline."
-              : "The saved plan changed while saving. Your changes were preserved. Close and reopen the editor to reload the saved plan before retrying.",
-          );
-          await Promise.allSettled([publishedStateQuery.refetch(), editPlanQuery.refetch()]);
-          return;
-        }
-        if (result.status === "operation_conflict") {
-          retainedCommitRequestRef.current = null;
-          setProjectionConflict(
-            "This save request conflicts with another operation. Review and retry.",
-          );
-          return;
-        }
-        acknowledged = true;
-        acknowledgedRequest.current = {
-          operationId: commitRequest.operationId,
-          planId: result.planId,
-        };
-        await utils.trainingPlans.invalidate();
-        if (!current()) return;
-        const savedPlan = { id: result.planId };
-        if (mode === "edit") await onUpdated?.(savedPlan);
-        else await onCreated?.(savedPlan);
-        if (current()) {
-          retainedCommitRequestRef.current = null;
-          acknowledgedRequest.current = null;
-          completedOwner.current = owner;
-        }
+        await settleCommitResult(result, commitRequest);
       } catch (error) {
         if (!current()) return;
         const rejected = !acknowledged && isDefinitiveRejection(error);
