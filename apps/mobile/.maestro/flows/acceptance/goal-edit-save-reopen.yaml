@@ -28,13 +28,14 @@ name: Athlete saves a repaired Goal edit and returns through its original Calend
 - tapOn: "Done Duration"
 - scrollUntilVisible:
     element:
-      id: goal-distance
+      text: "Distance \\(optional\\)"
     direction: DOWN
 - tapOn:
-    id: goal-distance
+    text: "Distance \\(optional\\)"
 - tapOn:
-    id: Clear Distance (optional)
-- tapOn: Done Distance (optional)
+    text: "Clear Distance \\(optional\\)"
+- tapOn:
+    text: "Done Distance \\(optional\\)"
 - takeScreenshot: goal-edit-repaired-before-save
 - tapOn:
     id: goal-edit-submit
