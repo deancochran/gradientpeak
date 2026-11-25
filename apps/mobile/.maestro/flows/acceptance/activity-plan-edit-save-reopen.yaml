@@ -7,7 +7,6 @@ name: Athlete saves metadata-only activity-plan edits, reopens the library recor
 - longPressOn: "Description"
 - tapOn: "Select all"
 - eraseText: 1
-- hideKeyboard
 - tapOn: "Save"
 # The edited name remains visible in the composer draft, so it cannot establish
 # that the async update completed. Wait for the detail-only overflow control
