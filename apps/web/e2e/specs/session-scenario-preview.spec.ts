@@ -136,6 +136,16 @@ test("a confirmed scenario applies one selected occurrence and retries a lost ac
   await expect(
     athletePage.getByRole("button", { name: "Check or retry this change" }),
   ).toBeInViewport();
+  await expect(
+    athletePage.getByRole("button", { name: "Check or retry this change" }),
+  ).toBeFocused();
+  const [headerBox, recoveryHeadingBox] = await Promise.all([
+    athletePage.locator("header.sticky").boundingBox(),
+    athletePage.getByText("Previous change needs confirmation").boundingBox(),
+  ]);
+  if (!headerBox || !recoveryHeadingBox)
+    throw new Error("Expected fixed header and recovery heading geometry.");
+  expect(recoveryHeadingBox.y).toBeGreaterThanOrEqual(headerBox.y + headerBox.height);
   await athletePage.screenshot({
     path: testInfo.outputPath("session-scenario-unknown-result.png"),
   });
