@@ -884,13 +884,24 @@ describe("readPlanTabProjection", () => {
       verifiedThrough,
       maturity: "establishing_baseline",
     });
-    expect(result.fitness.actual).toHaveLength(85);
-    expect(result.fitness.actual.at(-1)?.date).toBe("2026-04-06");
-    expect(result.fitness.actual.find((point) => point.date === verifiedThrough)).toMatchObject({
-      longTermLoad: points.at(-1)?.longTermLoad,
-      recentLoad: points.at(-1)?.recentLoad,
-    });
-    expect(result.fitness.actual.some((point) => point.date === "2026-04-01")).toBe(false);
+    expect(result.fitness.actual.filter((point) => point.date <= verifiedThrough)).toEqual(
+      points.map((point) => ({
+        date: point.date,
+        longTermLoad: point.longTermLoad,
+        recentLoad: point.recentLoad,
+        loadBalance: point.loadBalance,
+      })),
+    );
+    expect(result.fitness.actual).toEqual(
+      expect.arrayContaining([
+        {
+          date: "2026-04-06",
+          longTermLoad: 40,
+          recentLoad: 35,
+          loadBalance: 5,
+        },
+      ]),
+    );
   });
 
   it("does not turn partial completed Load into recorded state", async () => {
@@ -966,7 +977,7 @@ describe("readPlanTabProjection", () => {
     expect(result.fitness.scheduled.at(-1)?.longTermLoad).toBeGreaterThan(40);
   });
 
-  it("uses the authoritative baseline without creating past recorded points", async () => {
+  it("does not bridge missing future load evidence from the authoritative baseline", async () => {
     const db = {
       $client: {},
       transaction: async (operation: (tx: unknown) => unknown) => operation({}),
@@ -991,11 +1002,7 @@ describe("readPlanTabProjection", () => {
     ]);
     expect(past.fitness.scheduled).toEqual([]);
     expect(future.fitness.actual.map((point) => point.date)).toEqual(["2026-04-06"]);
-    expect(future.fitness.scheduled.map((point) => point.date)).toEqual([
-      "2026-04-07",
-      "2026-04-08",
-    ]);
-    expect(future.fitness.scheduled.at(-1)?.recentLoad).toBeLessThan(35);
+    expect(future.fitness.scheduled).toEqual([]);
   });
 
   it("keeps forecast unavailable beyond the authoritative baseline horizon", async () => {
@@ -1013,7 +1020,7 @@ describe("readPlanTabProjection", () => {
     expect(result.fitness.scheduled).toEqual([]);
   });
 
-  it("retains the authoritative baseline through the exact 366-day projection horizon", async () => {
+  it("does not bridge unavailable load evidence at the exact projection horizon", async () => {
     const result = await readPlanTabProjection({
       db: {
         $client: {},
@@ -1025,9 +1032,7 @@ describe("readPlanTabProjection", () => {
       dependencies: dependencies(),
     });
 
-    expect(result.fitness.scheduled).toEqual([expect.objectContaining({ date: "2027-04-07" })]);
-    expect(result.fitness.scheduled[0]?.longTermLoad).toBeGreaterThan(0);
-    expect(result.fitness.scheduled[0]?.recentLoad).toBeGreaterThan(0);
+    expect(result.fitness.scheduled).toEqual([]);
   });
 
   it("anchors history and forecast to the profile planning date across a UTC date boundary", async () => {
@@ -1071,7 +1076,7 @@ describe("readPlanTabProjection", () => {
     expect(result.fitness.scheduled.at(-1)?.date).toBe("2026-04-06");
   });
 
-  it("preserves partial scheduled Load truth while using its known subtotal for trajectory", async () => {
+  it("preserves partial scheduled Load truth without fabricating a forecast", async () => {
     const deps = dependencies();
     const partialAggregate = {
       ...aggregate,
@@ -1147,11 +1152,10 @@ describe("readPlanTabProjection", () => {
     expect(result.ledgerItems).toEqual([
       expect.objectContaining({ kind: "planned", loadStatus: "partial", load: 60 }),
     ]);
-    expect(result.fitness.scheduled.map((point) => point.date)).toEqual(["2026-04-07"]);
-    expect(result.fitness.scheduled.at(-1)?.longTermLoad).toBeGreaterThan(40);
+    expect(result.fitness.scheduled).toEqual([]);
   });
 
-  it("preserves unavailable scheduled Load truth while forecasting a zero-Load trajectory", async () => {
+  it("preserves unavailable scheduled Load truth without forecasting it as zero", async () => {
     const deps = dependencies();
     const readEffectiveLoad = deps.readEffectiveLoad;
     const unavailableLoad = commonLoadResultSchema.parse({
@@ -1224,12 +1228,7 @@ describe("readPlanTabProjection", () => {
     expect(result.ledgerItems).toEqual([
       expect.objectContaining({ kind: "planned", loadStatus: "unavailable", load: null }),
     ]);
-    expect(result.fitness.scheduled.map((point) => point.date)).toEqual(["2026-04-07"]);
-    expect(result.fitness.scheduled.at(-1)?.loadBalance).toBeCloseTo(
-      (result.fitness.scheduled.at(-1)?.longTermLoad ?? 0) -
-        (result.fitness.scheduled.at(-1)?.recentLoad ?? 0),
-      10,
-    );
+    expect(result.fitness.scheduled).toEqual([]);
   });
 
   it("accepts 366 inclusive days and rejects a longer request before opening a transaction", async () => {

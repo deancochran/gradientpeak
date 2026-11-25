@@ -731,29 +731,24 @@ function dateKeys(startDate: string, endDate: string) {
   return result;
 }
 
-function toProjectionDay(summary: z.infer<typeof planTabLoadSummarySchema>, date: string) {
-  if (summary.remainingLoadStatus === "complete" && summary.remainingLoad !== null) {
-    return { date, state: "available" as const, load: summary.remainingLoad };
+function toProjectionDay(
+  summary: z.infer<typeof planTabLoadSummarySchema> | undefined,
+  date: string,
+): CommonLoadTrendProjectionDay {
+  if (!summary) {
+    return { date, state: "unavailable", reason: "unavailable" };
   }
-  if (summary.remainingLoadStatus === "partial" && summary.remainingLoad !== null) {
+  if (summary.remainingLoadStatus === "complete" && summary.remainingLoad !== null) {
     return { date, state: "available" as const, load: summary.remainingLoad };
   }
   if (summary.remainingLoadStatus === "known_zero") {
     return { date, state: "known_zero" as const };
   }
-  if (
-    summary.knownScheduledLoadSubtotal !== null &&
-    summary.knownScheduledLoadSubtotal !== undefined
-  ) {
-    return { date, state: "available" as const, load: summary.knownScheduledLoadSubtotal };
-  }
-  // A missing planned Load is a zero-Load trajectory assumption, not a reason
-  // to remove every later Fitness/Fatigue/Form point from the chart.
-  return { date, state: "known_zero" as const };
-}
-
-function assumedCompletedLoad(summary: z.infer<typeof planTabLoadSummarySchema> | undefined) {
-  return summary?.completedLoad ?? summary?.knownCompletedLoadSubtotal ?? 0;
+  return {
+    date,
+    state: "unavailable",
+    reason: summary.remainingLoadStatus === "partial" ? "partial" : "unavailable",
+  };
 }
 
 function recommendationProjectionDays(recommendation: CommonLoadRecommendation | undefined) {
@@ -847,16 +842,7 @@ function buildFitness(input: {
       lastFutureDate && !isBeyondProjectionHorizon
         ? dateKeys(addDaysDateKey(projectionBaseline.date, 1), lastFutureDate).map((date) => {
             const summary = input.dayLoads[date];
-            if (today && date <= today) {
-              return {
-                date,
-                state: "available" as const,
-                load: assumedCompletedLoad(summary),
-              };
-            }
-            return summary
-              ? toProjectionDay(summary, date)
-              : { date, state: "known_zero" as const };
+            return toProjectionDay(summary, date);
           })
         : [],
   });
