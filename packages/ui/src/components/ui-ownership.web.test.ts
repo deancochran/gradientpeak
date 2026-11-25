@@ -150,8 +150,12 @@ describe("UI ownership guardrails", () => {
       // Goal API projections and recorded-history query composition.
       "planning/goal-progress-chart.tsx",
       "planning/goal-progress-presentation.ts",
+      // Athlete goal, published-evidence, and app-route query composition.
+      "planning/goal-progress-workspace.tsx",
       "planning/plan-dashboard.tsx",
       "planning/recorded-goal-history.tsx",
+      // Session identity, API scenario previews, and app-owned navigation recovery.
+      "planning/session-scenario-preview.tsx",
       "planning/training-load-chart.tsx",
       "planning/training-load-path.tsx",
       "planning/use-recorded-goal-history.ts",

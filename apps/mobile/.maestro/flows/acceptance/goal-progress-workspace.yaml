@@ -18,6 +18,18 @@ name: Completed athlete follows published threshold evidence from selected Plan 
     visible:
       id: calendar-screen-ready
     timeout: 30000
+# Reset the persisted Calendar selection to the same device-local date read by
+# the runner before deriving the bounded month offset to the UTC target.
+- tapOn:
+    id: calendar-reset-today-entry
+- extendedWaitUntil:
+    notVisible:
+      id: calendar-date-jump-loading
+    timeout: 30000
+- extendedWaitUntil:
+    visible:
+      id: calendar-day-select-${MAESTRO_ACCEPTANCE_DEVICE_TODAY_DATE}
+    timeout: 30000
 - repeat:
     times: ${MAESTRO_ACCEPTANCE_TARGET_MONTH_DELTA}
     commands:

@@ -178,6 +178,11 @@ jest.mock("@/components/ScheduleActivityModal", () => ({
   ScheduleActivityModal: createHost("ScheduleActivityModal"),
 }));
 
+jest.mock("@/components/planning/SessionScenarioPreview", () => ({
+  __esModule: true,
+  SessionScenarioPreview: createHost("SessionScenarioPreview"),
+}));
+
 jest.mock("@/components/shared/ActivityPlanCard", () => ({
   __esModule: true,
   ActivityPlanCard: createHost("ActivityPlanCard"),
