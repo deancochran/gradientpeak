@@ -13,6 +13,7 @@ type NativeManualAcceptanceInput = {
   actor: AuthenticatedE2EActor;
   e2eDatabase: LocalE2EDatabase;
   e2eIdentity: E2EExecutionIdentity;
+  outcome?: "full" | "partial" | "skip";
   testInfo: TestInfo;
 };
 
@@ -38,6 +39,7 @@ export async function completeManualNativeAcceptance({
   actor,
   e2eDatabase,
   e2eIdentity,
+  outcome = "full",
   testInfo,
 }: NativeManualAcceptanceInput) {
   const username = `native_${e2eIdentity.suffix("username", 12)}`;
@@ -185,12 +187,24 @@ export async function completeManualNativeAcceptance({
     "Home must keep its truthful goal state and selected scheduled session after returning",
   ).toBe(0);
   expect(workspaceCaptured, "Workspace flow must retain its declared capture").toBe(true);
+  const manualFlow =
+    outcome === "full"
+      ? "manual-native-session.yaml"
+      : outcome === "partial"
+        ? "manual-partial-native-session.yaml"
+        : "manual-skip-native-session.yaml";
+  const manualCompletionCapture =
+    outcome === "full"
+      ? "planned-session-full-completion"
+      : outcome === "partial"
+        ? "planned-session-partial-completion"
+        : "planned-session-skip-completion";
   const manualCaptures = [
     "planned-session-detail-before-completion",
-    "planned-session-full-completion",
+    manualCompletionCapture,
   ] as const;
   clearMaestroCaptures(manualCaptures);
-  const manualResult = runMaestro("manual-native-session.yaml", {
+  const manualResult = runMaestro(manualFlow, {
     MAESTRO_ACCEPTANCE_PLAN_NAME: planName,
     MAESTRO_ACCEPTANCE_SESSION_DATE: today,
     MAESTRO_ACCEPTANCE_SESSION_DAY: String(Number(today.slice(8, 10))),
@@ -202,19 +216,66 @@ export async function completeManualNativeAcceptance({
     `${manualResult.stdout ?? ""}\n${manualResult.stderr ?? ""}`,
     { mode: 0o600 },
   );
-  expect(manualResult.status, "Native manual completion must succeed").toBe(0);
+  expect(
+    manualResult.status,
+    outcome === "full"
+      ? "Native manual completion must succeed"
+      : `Native manual ${outcome} action must succeed`,
+  ).toBe(0);
   expect(detailCaptured, "Manual flow must retain its detail capture").toBe(true);
-  expect(completionCaptured, "Manual flow must retain its completion capture").toBe(true);
+  expect(
+    completionCaptured,
+    outcome === "full"
+      ? "Manual flow must retain its completion capture"
+      : `Manual ${outcome} flow must retain its completion capture`,
+  ).toBe(true);
   const [completedSession] = await e2eDatabase.db
     .select()
     .from(plannedSessions)
     .where(eq(plannedSessions.id, manualSession.id));
-  expect(completedSession).toMatchObject({
-    status: "completed",
-    completed_activity_id: expect.any(String),
-    completion_state: "linked",
-    completion_outcome: "full",
-  });
+  if (!completedSession) throw new Error("Native manual action did not retain its planned session");
+  if (outcome === "skip") {
+    expect(completedSession).toMatchObject({
+      status: "completed",
+      completed_activity_id: null,
+      completion_state: null,
+      completion_outcome: "skipped",
+      skip_operation_id: expect.any(String),
+    });
+    expect(
+      await e2eDatabase.db
+        .select({ id: activities.id })
+        .from(activities)
+        .where(eq(activities.profile_id, actor.profileId)),
+    ).toEqual([]);
+    return {
+      actor,
+      completedSession,
+      manualSession,
+      plan,
+      planName,
+      planningTimezone: profile.planning_timezone,
+      profile,
+      runAdb,
+      runMaestro,
+      today,
+    };
+  }
+  if (outcome === "partial") {
+    expect(completedSession).toMatchObject({
+      status: "completed",
+      completed_activity_id: expect.any(String),
+      completion_state: "linked",
+      completion_outcome: "partial",
+    });
+  } else {
+    expect(completedSession).toMatchObject({
+      status: "completed",
+      completed_activity_id: expect.any(String),
+      completion_state: "linked",
+      completion_outcome: "full",
+    });
+  }
   const manualActivities = await e2eDatabase.db
     .select()
     .from(activities)
