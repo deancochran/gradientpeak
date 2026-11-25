@@ -37,6 +37,15 @@ name: Reopen the exact manual completion from its selected Calendar day
     timeout: 30000
 - scrollUntilVisible:
     element:
+      id: planning-ledger-training-state
+    direction: DOWN
+- assertVisible: "Seven-day training state"
+- assertVisible: "Training state is unavailable for this period."
+- assertVisible: "—"
+- assertVisible: "Unavailable"
+- takeScreenshot: planning-ledger-no-evidence-training-state
+- scrollUntilVisible:
+    element:
       id: planning-ledger-entry-completed-${MAESTRO_ACCEPTANCE_COMPLETED_ACTIVITY_ID}
     direction: DOWN
 - assertVisible:

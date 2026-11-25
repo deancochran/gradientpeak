@@ -22,15 +22,9 @@ import type { AuthenticatedE2EActor } from "../support/actors";
 import type { LocalE2EDatabase } from "../support/database";
 import type { DomainFixtureBuilders } from "../support/domain";
 import type { E2EExecutionIdentity } from "../support/identity";
+import { receiptResultReferencesSession, scenarioApplyReceiptCommand } from "./scenario-receipt";
 
 type ScenarioSnapshot = Awaited<ReturnType<typeof readScenarioRows>>;
-
-function receiptResultReferencesSession(result: unknown, sessionId: string) {
-  if (!result || typeof result !== "object") return false;
-  const session = (result as Record<string, unknown>).session;
-  if (!session || typeof session !== "object") return false;
-  return (session as Record<string, unknown>).id === sessionId;
-}
 
 export type SessionScenarioFixture = {
   activityPlanId: string;
@@ -313,9 +307,14 @@ export async function createSessionScenarioFixture(input: {
             result: chatbotOperationReceipts.result,
           })
           .from(chatbotOperationReceipts)
-          .where(eq(chatbotOperationReceipts.profile_id, input.actor.profileId))
+          .where(
+            and(
+              eq(chatbotOperationReceipts.profile_id, input.actor.profileId),
+              eq(chatbotOperationReceipts.command, scenarioApplyReceiptCommand),
+            ),
+          )
       ).flatMap((receipt) => {
-        return receiptResultReferencesSession(receipt.result, sessionId)
+        return receiptResultReferencesSession(receipt, sessionId)
           ? [{ command: receipt.command, operationId: receipt.operationId }]
           : [];
       }),
