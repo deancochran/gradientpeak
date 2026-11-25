@@ -1,12 +1,13 @@
+import { Text } from "react-native";
 import { renderNative } from "../../test/render-native";
 import { ToggleGroup, ToggleGroupItem } from "./index.native";
 
 describe("ToggleGroup native", () => {
-  it("maps normalized test props for the root and items", () => {
-    const { getByTestId } = renderNative(
+  it("maps normalized test props for the root and items", async () => {
+    const { getByTestId } = await renderNative(
       <ToggleGroup onValueChange={() => {}} testId="view-toggle-group" type="single" value="grid">
         <ToggleGroupItem testId="view-grid" value="grid">
-          Grid
+          <Text>Grid</Text>
         </ToggleGroupItem>
       </ToggleGroup>,
     );

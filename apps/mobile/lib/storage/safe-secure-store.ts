@@ -1,7 +1,7 @@
 import * as SecureStore from "expo-secure-store";
 
-function warnSecureStoreFailure(operation: string, key: string, error: unknown): void {
-  console.warn(`[SecureStore] ${operation} failed for ${key}`, error);
+function warnSecureStoreFailure(operation: string, error: unknown): void {
+  console.warn(`[SecureStore] ${operation} failed`, error);
 }
 
 export const safeSecureStore = {
@@ -9,7 +9,7 @@ export const safeSecureStore = {
     try {
       return SecureStore.getItem(key);
     } catch (error) {
-      warnSecureStoreFailure("getItem", key, error);
+      warnSecureStoreFailure("getItem", error);
       return null;
     }
   },
@@ -18,7 +18,7 @@ export const safeSecureStore = {
     try {
       SecureStore.setItem(key, value);
     } catch (error) {
-      warnSecureStoreFailure("setItem", key, error);
+      warnSecureStoreFailure("setItem", error);
     }
   },
 
@@ -26,7 +26,7 @@ export const safeSecureStore = {
     try {
       return await SecureStore.getItemAsync(key);
     } catch (error) {
-      warnSecureStoreFailure("getItemAsync", key, error);
+      warnSecureStoreFailure("getItemAsync", error);
       return null;
     }
   },
@@ -35,7 +35,7 @@ export const safeSecureStore = {
     try {
       await SecureStore.setItemAsync(key, value);
     } catch (error) {
-      warnSecureStoreFailure("setItemAsync", key, error);
+      warnSecureStoreFailure("setItemAsync", error);
     }
   },
 
@@ -43,7 +43,34 @@ export const safeSecureStore = {
     try {
       await SecureStore.deleteItemAsync(key);
     } catch (error) {
-      warnSecureStoreFailure("deleteItemAsync", key, error);
+      warnSecureStoreFailure("deleteItemAsync", error);
+    }
+  },
+
+  async getItemAsyncOrThrow(key: string): Promise<string | null> {
+    try {
+      return await SecureStore.getItemAsync(key);
+    } catch (error) {
+      warnSecureStoreFailure("getItemAsync", error);
+      throw error;
+    }
+  },
+
+  async setItemAsyncOrThrow(key: string, value: string): Promise<void> {
+    try {
+      await SecureStore.setItemAsync(key, value);
+    } catch (error) {
+      warnSecureStoreFailure("setItemAsync", error);
+      throw error;
+    }
+  },
+
+  async deleteItemAsyncOrThrow(key: string): Promise<void> {
+    try {
+      await SecureStore.deleteItemAsync(key);
+    } catch (error) {
+      warnSecureStoreFailure("deleteItemAsync", error);
+      throw error;
     }
   },
 };

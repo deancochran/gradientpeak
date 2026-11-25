@@ -1,10 +1,10 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
+import { Tabs, TabsList, TabsTrigger } from "@repo/ui/components/tabs";
 import { Text } from "@repo/ui/components/text";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { Alert, Image, Pressable, View } from "react-native";
 import {
-  CurrentGroupEventPlanCard,
   GroupAccessLevelBadge,
   GroupEventCard,
   GroupEventEmptyState,
@@ -19,12 +19,14 @@ import {
   type DetailOverflowMenuAction,
   DetailScaffold,
 } from "@/components/shared/detail";
+import { ROUTES } from "@/lib/constants/routes";
 import {
   type GroupMember,
   useGroupActions,
   useGroupDetailViewModel,
   useGroupEventListViewModel,
 } from "@/lib/groups";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
 
 function singleParam(value: string | string[] | undefined) {
@@ -57,30 +59,31 @@ function GroupEventTabs({
   ];
 
   return (
-    <View
-      className="flex-row self-start rounded-full bg-muted p-1"
-      testID="group-detail-event-tabs"
-    >
-      {tabs.map((tab) => {
-        const isActive = value === tab.value;
-        return (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ selected: isActive }}
-            className={`rounded-full px-4 py-2 ${isActive ? "bg-background" : ""}`}
-            key={tab.value}
-            onPress={() => onChange(tab.value)}
-            testID={`group-detail-event-tab-${tab.value}`}
-          >
-            <Text
-              className={`text-center text-sm font-semibold ${isActive ? "text-foreground" : "text-muted-foreground"}`}
+    <Tabs onValueChange={(tab) => onChange(tab as GroupEventTab)} value={value}>
+      <TabsList
+        className="mr-0 flex-row self-start rounded-full bg-muted p-1"
+        testId="group-detail-event-tabs"
+      >
+        {tabs.map((tab) => {
+          const isActive = value === tab.value;
+          return (
+            <TabsTrigger
+              accessibilityState={{ selected: isActive }}
+              className={`rounded-full px-4 py-2 ${isActive ? "bg-background" : ""}`}
+              key={tab.value}
+              testId={`group-detail-event-tab-${tab.value}`}
+              value={tab.value}
             >
-              {tab.label}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </View>
+              <Text
+                className={`text-center text-sm font-semibold ${isActive ? "text-foreground" : "text-muted-foreground"}`}
+              >
+                {tab.label}
+              </Text>
+            </TabsTrigger>
+          );
+        })}
+      </TabsList>
+    </Tabs>
   );
 }
 
@@ -111,15 +114,16 @@ function MemberAvatarStack({
         ) : null}
         {visibleMembers.map((member) => {
           const displayName = member.profile.username?.trim() || "Athlete";
+          const avatarUri = member.profile.avatar_url
+            ? getReachableSupabaseStorageUrl(member.profile.avatar_url)
+            : null;
           return (
             <Avatar
               alt={displayName}
               className="-ml-2 h-8 w-8 border-2 border-card"
               key={member.profile.id}
             >
-              {member.profile.avatar_url ? (
-                <AvatarImage source={{ uri: member.profile.avatar_url }} />
-              ) : null}
+              {avatarUri ? <AvatarImage key={avatarUri} source={{ uri: avatarUri }} /> : null}
               <AvatarFallback>
                 <Text className="text-[10px] font-semibold text-muted-foreground">
                   {displayName.charAt(0).toUpperCase() || "A"}
@@ -139,8 +143,10 @@ function MemberAvatarStack({
 
 export default function GroupDetailScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ groupId?: string; slug?: string }>();
+  const params = useLocalSearchParams<{ groupId?: string; returnTo?: string; slug?: string }>();
   const groupId = singleParam(params.groupId);
+  const deleteReturnTo =
+    singleParam(params.returnTo) === "community" ? ROUTES.COMMUNITY : ROUTES.MY_GROUPS;
   const slug = singleParam(params.slug);
   const detailVm = useGroupDetailViewModel(groupId ? { groupId } : { slug: slug ?? null });
   const groupActions = useGroupActions();
@@ -179,17 +185,11 @@ export default function GroupDetailScreen() {
         ),
     [pastEventsVm.events],
   );
-  const currentEvent = detailVm.currentEventPlanOptions?.event ?? null;
-  const showCurrentEvent = Boolean(
-    !detailVm.currentEventPlanOptionsQuery.isLoading && currentEvent && eventTab === "upcoming",
-  );
   const visibleEvents = useMemo(() => {
     if (eventTab !== "upcoming") return pastEvents;
     const concreteEvents = upcomingEventsVm.events.filter((event) => !event.is_recurring_series);
-    if (!showCurrentEvent || !currentEvent) return concreteEvents;
-
-    return concreteEvents.filter((event) => event.id !== currentEvent.id);
-  }, [currentEvent, eventTab, pastEvents, showCurrentEvent, upcomingEventsVm.events]);
+    return concreteEvents;
+  }, [eventTab, pastEvents, upcomingEventsVm.events]);
   const visibleEventsVm = eventTab === "upcoming" ? upcomingEventsVm : pastEventsVm;
   const emptyTitle = eventTab === "upcoming" ? "No upcoming events" : "No past events";
   const emptyDescription =
@@ -286,7 +286,7 @@ export default function GroupDetailScreen() {
             onPress: async () => {
               try {
                 await groupActions.deleteGroup(group.id);
-                router.replace("/(internal)/(tabs)/groups");
+                router.replace(deleteReturnTo);
               } catch (error) {
                 Alert.alert(
                   "Unable to delete group",
@@ -304,11 +304,12 @@ export default function GroupDetailScreen() {
 
   return (
     <DetailScaffold
-      headerRight={
-        headerActions.length > 0
-          ? () => <DetailOverflowMenu actions={headerActions} testID="group-detail-overflow" />
-          : undefined
-      }
+      {...omitUndefined({
+        headerRight:
+          headerActions.length > 0
+            ? () => <DetailOverflowMenu actions={headerActions} testID="group-detail-overflow" />
+            : undefined,
+      })}
       isLoading={detailVm.isLoading}
       loadingLabel="Loading group..."
       notFound={detailVm.isError || !group}
@@ -379,9 +380,11 @@ export default function GroupDetailScreen() {
 
           {!viewer?.canViewMembers && group.access_level === "members_only" ? (
             <GroupMembersOnlyLockedState
-              onRequestAccess={
-                viewer?.canRequestToJoin ? () => groupActions.requestToJoin(group.id) : undefined
-              }
+              {...omitUndefined({
+                onRequestAccess: viewer?.canRequestToJoin
+                  ? () => groupActions.requestToJoin(group.id)
+                  : undefined,
+              })}
             />
           ) : null}
 
@@ -402,15 +405,6 @@ export default function GroupDetailScreen() {
                   </Pressable>
                 ) : null}
               </View>
-              {showCurrentEvent && currentEvent ? (
-                <CurrentGroupEventPlanCard
-                  event={currentEvent}
-                  onGroupPress={(eventGroup) =>
-                    router.push({ pathname: "/group-detail", params: { groupId: eventGroup.id } })
-                  }
-                  onPress={(event) => handleOpenEvent(event.id)}
-                />
-              ) : null}
               {visibleEventsVm.isLoading ? (
                 <GroupEventListSkeleton count={2} />
               ) : visibleEvents.length > 0 ? (
@@ -429,7 +423,7 @@ export default function GroupDetailScreen() {
                     />
                   ))}
                 </View>
-              ) : showCurrentEvent ? null : (
+              ) : (
                 <GroupEventEmptyState description={emptyDescription} title={emptyTitle} />
               )}
             </View>

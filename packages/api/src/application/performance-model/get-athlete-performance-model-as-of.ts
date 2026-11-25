@@ -1,0 +1,447 @@
+import {
+  ATHLETE_PERFORMANCE_MODEL_SNAPSHOT_VERSION,
+  type AthleteHeartRateCalibrationFacts,
+  type AthletePerformanceModelSnapshot,
+  type AthletePerformanceTargetFacts,
+  athletePerformanceModelSnapshotSchema,
+  athletePerformanceTargetFactsSchema,
+  CYCLING_DURATION_PERFORMANCE_INPUT_VERSION,
+  calculateCyclingDurationPerformance,
+  calculateRunningDurationPerformance,
+  calculateStrengthOtherPerformance,
+  calculateSwimmingDurationPerformance,
+  HEART_RATE_CALIBRATION_POLICY_VERSION,
+  heartRateCalibrationFactSchema,
+  materializeAthletePerformanceTargetFacts,
+  RUNNING_DURATION_PERFORMANCE_INPUT_VERSION,
+  STRENGTH_OTHER_PERFORMANCE_INPUT_VERSION,
+  SWIMMING_DURATION_PERFORMANCE_INPUT_VERSION,
+} from "@repo/core";
+import { z } from "zod";
+import { type DrizzleQueryExecutor, withRepeatableReadSnapshot } from "../../db";
+import {
+  type AthletePerformanceEvidenceReads,
+  type AthletePerformanceHeartRateReads,
+  type AthletePerformanceHeartRateRepository,
+  type AthletePerformanceModelReadInput,
+  type AthletePerformanceModelRepository,
+  adaptActivityEffortToCanonicalPerformanceEvidence,
+  adaptQualifiedSwimmingPerformanceEvidence,
+  type HeartRateCalibrationCandidateRow,
+} from "../../repositories/athlete-performance-model-repository";
+import { readThresholdsForRequests } from "../../repositories/threshold-repository";
+
+const HEART_RATE_FRESHNESS_WINDOW_MS = 90 * 86_400_000;
+const uuidSchema = z.string().uuid();
+
+const maxHrProvenanceSchema = z
+  .object({
+    activity_id: uuidSchema,
+    segment_id: uuidSchema,
+    derived_from: z.literal("progressive_max_hr_test"),
+    protocol: z.literal("progressive_max_hr"),
+    source_series: z.literal("heart_rate"),
+    calculation_version: z.literal("max_hr_progressive_test_v1"),
+  })
+  .strict();
+
+type ActivityCategory = "bike" | "run" | "swim";
+type HeartRateMetric = "lthr" | "max_hr";
+
+function unavailableHeartRateFact(input: {
+  activityCategory: ActivityCategory;
+  metric: HeartRateMetric;
+  reason: "no_eligible_evidence" | "stale_evidence" | "evidence_read_truncated";
+}) {
+  return heartRateCalibrationFactSchema.parse({
+    status: "unavailable",
+    activityCategory: input.activityCategory,
+    metric: input.metric,
+    unit: "beats_per_minute",
+    policyVersion: HEART_RATE_CALIBRATION_POLICY_VERSION,
+    valueBpm: null,
+    observedAt: null,
+    expiresAt: null,
+    sourceEvidenceId: null,
+    sourceActivityId: null,
+    source: null,
+    method: null,
+    calculationVersion: null,
+    reason: input.reason,
+    ageSeconds: null,
+    freshness: "unavailable",
+    sourceSemantics: "unavailable",
+    evaluationSemantics: "unavailable",
+  });
+}
+
+function adaptHeartRateFact(input: {
+  athleteId: string;
+  activityCategory: ActivityCategory;
+  metric: "max_hr";
+  rows: readonly HeartRateCalibrationCandidateRow[];
+  truncated: boolean;
+  asOf: Date;
+}) {
+  if (input.truncated) {
+    return unavailableHeartRateFact({
+      activityCategory: input.activityCategory,
+      metric: input.metric,
+      reason: "evidence_read_truncated",
+    });
+  }
+  const row = input.rows[0];
+  if (!row) {
+    return unavailableHeartRateFact({
+      activityCategory: input.activityCategory,
+      metric: input.metric,
+      reason: "no_eligible_evidence",
+    });
+  }
+  if (
+    row.profile_id !== input.athleteId ||
+    row.metric_type !== input.metric ||
+    row.activity_category !== input.activityCategory ||
+    row.reference_activity_id === null ||
+    row.source !== "derived" ||
+    row.unit !== "bpm" ||
+    !Number.isFinite(row.value) ||
+    row.recorded_at.getTime() > input.asOf.getTime()
+  ) {
+    throw new Error("Incompatible heart-rate calibration row identity");
+  }
+  const expectedMethod = "max_hr_progressive_test_v1";
+  const expectedCalculationVersion = "max_hr_progressive_test_v1";
+  if (
+    row.method !== expectedMethod ||
+    row.calculation_version !== expectedCalculationVersion ||
+    row.value < 100 ||
+    row.value > 250
+  ) {
+    throw new Error("Incompatible heart-rate calibration method, version, or value");
+  }
+
+  const provenance = maxHrProvenanceSchema.parse(row.provenance);
+  if (provenance.activity_id !== row.reference_activity_id) {
+    throw new Error("Incompatible max-HR provenance identity");
+  }
+
+  const expiresAt = new Date(row.recorded_at.getTime() + HEART_RATE_FRESHNESS_WINDOW_MS);
+  if (input.asOf.getTime() > expiresAt.getTime()) {
+    return unavailableHeartRateFact({
+      activityCategory: input.activityCategory,
+      metric: input.metric,
+      reason: "stale_evidence",
+    });
+  }
+  return heartRateCalibrationFactSchema.parse({
+    status: "available",
+    activityCategory: input.activityCategory,
+    metric: input.metric,
+    unit: "beats_per_minute",
+    policyVersion: HEART_RATE_CALIBRATION_POLICY_VERSION,
+    valueBpm: row.value,
+    observedAt: row.recorded_at.toISOString(),
+    expiresAt: expiresAt.toISOString(),
+    sourceEvidenceId: row.id,
+    sourceActivityId: row.reference_activity_id,
+    source: "activity_file",
+    method: expectedMethod,
+    calculationVersion: expectedCalculationVersion,
+    reason: null,
+    ageSeconds: Math.floor((input.asOf.getTime() - row.recorded_at.getTime()) / 1_000),
+    freshness: "fresh",
+    sourceSemantics: "measured",
+    evaluationSemantics: "direct_measurement",
+  });
+}
+
+export function buildHeartRateCapabilityFactsFromEvidenceReads(input: {
+  athleteId: string;
+  asOf: Date;
+  reads: AthletePerformanceHeartRateReads;
+}): AthleteHeartRateCalibrationFacts {
+  const forCategory = (activityCategory: "bike" | "run" | "swim") => ({
+    lthr: unavailableHeartRateFact({
+      activityCategory,
+      metric: "lthr",
+      reason: "no_eligible_evidence",
+    }),
+    maxHr: adaptHeartRateFact({
+      athleteId: input.athleteId,
+      activityCategory,
+      metric: "max_hr",
+      ...input.reads[activityCategory].maxHr,
+      asOf: input.asOf,
+    }),
+  });
+  return {
+    bike: forCategory("bike"),
+    run: forCategory("run"),
+    swim: forCategory("swim"),
+  };
+}
+
+/**
+ * Runs each canonical Core category model over one bounded, strict as-of read.
+ * No legacy fitted-threshold snapshot is consulted or synthesized.
+ */
+export function buildAthletePerformanceModelFromEvidenceReads(
+  input: AthletePerformanceModelReadInput,
+  reads: AthletePerformanceEvidenceReads,
+): AthletePerformanceModelSnapshot {
+  if (!Number.isFinite(input.asOf.getTime())) throw new Error("Performance-model asOf is invalid");
+  const { effortReads, heartRateReads } = reads;
+  const efforts = {
+    bike: effortReads.bike.rows.map(adaptActivityEffortToCanonicalPerformanceEvidence),
+    run: effortReads.run.rows.map(adaptActivityEffortToCanonicalPerformanceEvidence),
+    swim: effortReads.swim.rows.flatMap((row) => {
+      const evidence = adaptQualifiedSwimmingPerformanceEvidence(row);
+      return evidence === null ? [] : [evidence];
+    }),
+  };
+  if (efforts.bike.some((effort) => effort.activityCategory !== "bike")) {
+    throw new Error("Cycling evidence repository lane returned another category");
+  }
+  if (efforts.run.some((effort) => effort.activityCategory !== "run")) {
+    throw new Error("Running evidence repository lane returned another category");
+  }
+  if (efforts.swim.some((effort) => effort.activityCategory !== "swim")) {
+    throw new Error("Swimming evidence repository lane returned another category");
+  }
+  const asOf = input.asOf.toISOString();
+  const readCoverage = (truncated: boolean) =>
+    truncated
+      ? ({ state: "truncated", reason: "query_limit_reached" } as const)
+      : ({ state: "complete", reason: null } as const);
+
+  const bike = calculateCyclingDurationPerformance({
+    contractVersion: CYCLING_DURATION_PERFORMANCE_INPUT_VERSION,
+    assessmentAsOf: asOf,
+    athleteId: input.athleteId,
+    effortReadCoverage: readCoverage(effortReads.bike.truncated),
+    efforts: efforts.bike.filter((effort) => effort.activityCategory === "bike"),
+  });
+  const run = calculateRunningDurationPerformance({
+    contractVersion: RUNNING_DURATION_PERFORMANCE_INPUT_VERSION,
+    assessmentAsOf: asOf,
+    athleteId: input.athleteId,
+    effortReadCoverage: readCoverage(effortReads.run.truncated),
+    efforts: efforts.run.filter((effort) => effort.activityCategory === "run"),
+  });
+  const swim = calculateSwimmingDurationPerformance({
+    contractVersion: SWIMMING_DURATION_PERFORMANCE_INPUT_VERSION,
+    assessmentAsOf: asOf,
+    athleteId: input.athleteId,
+    evidenceReadCoverage: readCoverage(effortReads.swim.truncated),
+    efforts: efforts.swim.filter((effort) => effort.activityCategory === "swim"),
+    repeatedEffortProtocols: [],
+  });
+  const emptySessionModel = (activityCategory: "strength" | "other") =>
+    calculateStrengthOtherPerformance({
+      contractVersion: STRENGTH_OTHER_PERFORMANCE_INPUT_VERSION,
+      assessmentAsOf: asOf,
+      athleteId: input.athleteId,
+      activityCategory,
+      evidenceReadCoverage: { state: "complete", reason: null },
+      observations: [],
+      repeatedEffortProtocols: [],
+    });
+  const heartRate = buildHeartRateCapabilityFactsFromEvidenceReads({
+    athleteId: input.athleteId,
+    asOf: input.asOf,
+    reads: heartRateReads,
+  });
+
+  return athletePerformanceModelSnapshotSchema.parse({
+    contractVersion: ATHLETE_PERFORMANCE_MODEL_SNAPSHOT_VERSION,
+    athleteId: input.athleteId,
+    asOf,
+    categories: {
+      bike,
+      run,
+      swim,
+      strength: emptySessionModel("strength"),
+      other: emptySessionModel("other"),
+    },
+    heartRate,
+  });
+}
+
+export async function getAthletePerformanceModelAsOf(
+  input: AthletePerformanceModelReadInput,
+  repository: AthletePerformanceModelRepository,
+): Promise<AthletePerformanceModelSnapshot> {
+  if (!Number.isFinite(input.asOf.getTime())) throw new Error("Performance-model asOf is invalid");
+  const repositoryInput = {
+    athleteId: input.athleteId,
+    asOf: input.asOf,
+    ...(input.excludedActivityId === undefined
+      ? {}
+      : { excludedActivityId: input.excludedActivityId }),
+  };
+  const evidenceSnapshot = await repository.readAthletePerformanceEvidenceSnapshot(repositoryInput);
+  return buildAthletePerformanceModelFromEvidenceReads(input, evidenceSnapshot);
+}
+
+/**
+ * Canonical hard-cut threshold facts. Consumers move to these facts in Gate 4;
+ * this read does not translate native threshold facts into fitted duration models.
+ */
+export async function getAthleteThresholdTargetFactsAsOf(
+  input: { athleteId: string; asOf: Date; excludedActivityId?: string },
+  db: DrizzleQueryExecutor,
+): Promise<AthletePerformanceTargetFacts> {
+  const [facts] = await getAthleteThresholdTargetFactsForRequests([input], db);
+  if (!facts) throw new Error("Canonical threshold batch reader omitted a result");
+  return facts;
+}
+
+async function getAthleteThresholdTargetFactsForRequestsInSnapshot(
+  inputs: readonly { athleteId: string; asOf: Date; excludedActivityId?: string }[],
+  db: DrizzleQueryExecutor,
+): Promise<AthletePerformanceTargetFacts[]> {
+  if (inputs.length === 0) return [];
+  for (const input of inputs) {
+    if (!Number.isFinite(input.asOf.getTime())) throw new Error("Threshold-fact asOf is invalid");
+  }
+  const thresholdsByRequest = await readThresholdsForRequests(
+    db,
+    inputs.map((input) => ({
+      profileId: input.athleteId,
+      asOf: input.asOf,
+      ...(input.excludedActivityId === undefined
+        ? {}
+        : { excludedActivityId: input.excludedActivityId }),
+    })),
+  );
+  if (thresholdsByRequest.length !== inputs.length) {
+    throw new Error("Canonical threshold batch reader returned an invalid result count");
+  }
+  return inputs.map((input, index) =>
+    materializeAthletePerformanceTargetFacts({
+      athleteId: input.athleteId,
+      asOf: input.asOf.toISOString(),
+      thresholds: thresholdsByRequest[index] ?? [],
+    }),
+  );
+}
+
+export async function getAthleteThresholdTargetFactsForRequests(
+  inputs: readonly { athleteId: string; asOf: Date; excludedActivityId?: string }[],
+  db: DrizzleQueryExecutor,
+): Promise<AthletePerformanceTargetFacts[]> {
+  if (inputs.length === 0) return [];
+  for (const input of inputs) {
+    if (!Number.isFinite(input.asOf.getTime())) throw new Error("Threshold-fact asOf is invalid");
+  }
+  return withRepeatableReadSnapshot(db, (tx) =>
+    getAthleteThresholdTargetFactsForRequestsInSnapshot(inputs, tx),
+  );
+}
+
+export type AthletePerformanceModelReader = (input: {
+  actorProfileId: string;
+  asOf: Date;
+  excludedActivityId?: string;
+}) => Promise<AthletePerformanceModelSnapshot>;
+
+export type AthletePerformanceTargetFactsReader = (input: {
+  actorProfileId: string;
+  asOf: Date;
+  excludedActivityId?: string;
+}) => Promise<AthletePerformanceTargetFacts>;
+
+export type AthletePerformanceTargetFactsBatchReader = (
+  inputs: Array<{
+    actorProfileId: string;
+    asOf: Date;
+    excludedActivityId?: string;
+  }>,
+) => Promise<AthletePerformanceTargetFacts[]>;
+
+/** Binds the canonical repository once for server runtimes and provider workers. */
+export function createAthletePerformanceModelReader(
+  repository: AthletePerformanceModelRepository,
+): AthletePerformanceModelReader {
+  return (input) =>
+    getAthletePerformanceModelAsOf(
+      {
+        athleteId: input.actorProfileId,
+        asOf: input.asOf,
+        ...(input.excludedActivityId === undefined
+          ? {}
+          : { excludedActivityId: input.excludedActivityId }),
+      },
+      repository,
+    );
+}
+
+/** Narrow target projection for planning, recording, and outbound provider effects. */
+export function createAthletePerformanceTargetFactsReader(
+  repository: AthletePerformanceHeartRateRepository,
+  db: DrizzleQueryExecutor,
+): AthletePerformanceTargetFactsReader {
+  const readBatch = createAthletePerformanceTargetFactsBatchReader(repository, db);
+  return async (input) => {
+    const [facts] = await readBatch([input]);
+    if (!facts) throw new Error("Canonical performance-target batch reader omitted a result");
+    return facts;
+  };
+}
+
+/** Set-based target reader for historical segment fan-out; query count is independent of batch size. */
+export function createAthletePerformanceTargetFactsBatchReader(
+  repository: AthletePerformanceHeartRateRepository,
+  db: DrizzleQueryExecutor,
+): AthletePerformanceTargetFactsBatchReader {
+  return async (inputs) => {
+    if (inputs.length === 0) return [];
+    const repositoryInputs = inputs.map((input) => ({
+      athleteId: input.actorProfileId,
+      asOf: input.asOf,
+      ...(input.excludedActivityId === undefined
+        ? {}
+        : { excludedActivityId: input.excludedActivityId }),
+    }));
+    const readSnapshot = async (executor: DrizzleQueryExecutor) => {
+      const [heartRateReads, thresholdFacts] = await Promise.all([
+        repository.readHeartRateCapabilityEvidenceBatch(executor, repositoryInputs),
+        getAthleteThresholdTargetFactsForRequests(
+          inputs.map((input) => ({
+            athleteId: input.actorProfileId,
+            asOf: input.asOf,
+            ...(input.excludedActivityId === undefined
+              ? {}
+              : { excludedActivityId: input.excludedActivityId }),
+          })),
+          executor,
+        ),
+      ]);
+      if (heartRateReads.length !== inputs.length || thresholdFacts.length !== inputs.length) {
+        throw new Error(
+          "Canonical performance-target batch reader returned an invalid result count",
+        );
+      }
+      return repositoryInputs.map((repositoryInput, index) => {
+        const reads = heartRateReads[index];
+        if (!reads) throw new Error("Canonical heart-rate batch reader omitted a result");
+        const facts = thresholdFacts?.[index];
+        if (!facts) throw new Error("Canonical threshold batch reader omitted a result");
+        const maxHeartRate = buildHeartRateCapabilityFactsFromEvidenceReads({
+          athleteId: repositoryInput.athleteId,
+          asOf: repositoryInput.asOf,
+          reads,
+        });
+        const heartRate = {
+          bike: { lthr: facts.heartRate.bike.lthr, maxHr: maxHeartRate.bike.maxHr },
+          run: { lthr: facts.heartRate.run.lthr, maxHr: maxHeartRate.run.maxHr },
+          swim: { lthr: facts.heartRate.swim.lthr, maxHr: maxHeartRate.swim.maxHr },
+        };
+        return athletePerformanceTargetFactsSchema.parse({ ...facts, heartRate });
+      });
+    };
+
+    return withRepeatableReadSnapshot(db, readSnapshot);
+  };
+}
