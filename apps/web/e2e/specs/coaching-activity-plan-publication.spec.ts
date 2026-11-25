@@ -471,9 +471,18 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
   await waitForAppHydration(coachPage);
   await expect(coachPage.getByText("Completed activities", { exact: true })).toBeVisible();
   const completedActivities = coachPage.getByRole("list", { name: "Completed activities" });
+  const originalCompletion = completedActivities
+    .getByRole("listitem")
+    .filter({ hasText: `Planned ${planningDate}` });
+  const seededCompletion = completedActivities
+    .getByRole("listitem")
+    .filter({ hasText: `Planned ${secondPlanningDate}` });
   await expect(completedActivities.getByRole("listitem")).toHaveCount(2);
   await expect(completedActivities).toContainText("Completed in full");
-  await expect(completedActivities).toContainText("Recorded completion");
+  for (const completion of [originalCompletion, seededCompletion]) {
+    await expect(completion).toContainText("Manual completion");
+    await expect(completion).not.toContainText("Recorded completion");
+  }
   await expect(completedActivities).toContainText(`Planned ${planningDate}`);
   await expect(completedActivities).not.toContainText(publishedActivityPlanName);
   await expect(completedActivities).not.toContainText(completionNote);
@@ -491,7 +500,10 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
   await waitForAppHydration(coachPage);
   await expect(completedActivities.getByRole("listitem")).toHaveCount(2);
   await expect(completedActivities).toContainText("Completed in full");
-  await expect(completedActivities).toContainText("Recorded completion");
+  for (const completion of [originalCompletion, seededCompletion]) {
+    await expect(completion).toContainText("Manual completion");
+    await expect(completion).not.toContainText("Recorded completion");
+  }
   await expect(completedActivities).not.toContainText(completionNote);
   expect(
     await e2eDatabase.db
@@ -508,9 +520,6 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
 
   // Reading above did not acknowledge either row. Acknowledging one must leave
   // the other pending after the authoritative reload.
-  const originalCompletion = completedActivities
-    .getByRole("listitem")
-    .filter({ hasText: `Planned ${planningDate}` });
   await originalCompletion.getByRole("button", { name: "Mark reviewed", exact: true }).click();
   await expect(
     coachPage.getByRole("status").filter({ hasText: "Marked reviewed. The queue is up to date." }),
