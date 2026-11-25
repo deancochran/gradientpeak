@@ -73,7 +73,7 @@ export const loadOrganizationAthletesLanding = createServerFn({ method: "POST" }
     try {
       return {
         status: "directory" as const,
-        ...(await caller.organizations.coachAthletes.listAssigned(data)),
+        ...(await caller.organizations.coachAthletes.listVisualRoster(data)),
       };
     } catch (error) {
       if (!isAccessError(error)) throw error;

@@ -613,6 +613,13 @@
         "validation": "packages/api/src/repositories/athlete-read-access-repository.test.ts verifies the function-backed access decision."
       },
       {
+        "id": "coach-visual-roster-consent-cte",
+        "path": "packages/api/src/repositories/organization-coach-athlete-repository.ts",
+        "allowedKinds": ["complex-cte"],
+        "reason": "The bounded roster projects three independently consent-gated athlete scopes and their ordered aggregates in one statement, so denied fields never enter a result row; splitting it into typed reads would weaken the atomic authorization/data boundary.",
+        "validation": "packages/api/src/routers/__tests__/organization-coach-visual-roster.disposable.live-db.test.ts verifies per-scope denial, local-date bounds, pagination, and post-revocation empty facts."
+      },
+      {
         "id": "artifact-lifecycle-functions",
         "path": "packages/api/src/application/activity-file-ingestion/artifact-retention.ts",
         "allowedKinds": ["stored-function"],

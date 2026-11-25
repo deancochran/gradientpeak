@@ -158,6 +158,34 @@ function AthleteWorkspacePage() {
         initialPage={directory}
         selectedAthlete={identity}
       />
+      {identity ? (
+        <Button asChild variant="outline">
+          <Link
+            to="/messages"
+            search={{
+              compose: true,
+              composeGroup: undefined,
+              composeQuery: identity.username ?? undefined,
+              composeRecipients: [
+                {
+                  id: identity.profileId,
+                  is_public: false,
+                  username: identity.username,
+                },
+              ],
+              conversationId: undefined,
+              flash: undefined,
+              flashType: undefined,
+              returnTo: workspacePath,
+            }}
+          >
+            Message athlete
+          </Link>
+        </Button>
+      ) : null}
+      {identity && overview.status === "granted" ? (
+        <CoachAthleteOverview athleteId={athleteId} mode="summary" result={overview} />
+      ) : null}
       <div className="grid items-start gap-6 xl:grid-cols-2">
         <div className="space-y-6">
           <CoachAthleteCompletedActivities
@@ -198,9 +226,6 @@ function AthleteWorkspacePage() {
           />
         ) : null}
       </div>
-      {identity && overview.status === "granted" ? (
-        <CoachAthleteOverview athleteId={athleteId} mode="summary" result={overview} />
-      ) : null}
       <details className="group rounded-xl border border-border bg-muted/50">
         <summary className="cursor-pointer list-none px-5 py-4 font-medium text-foreground marker:hidden">
           <span className="flex items-center justify-between gap-4">

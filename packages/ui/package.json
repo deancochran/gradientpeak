@@ -12,6 +12,10 @@
       "react-native": "./src/components/training-state-chart/index.native.tsx",
       "default": "./src/components/training-state-chart/index.web.tsx"
     },
+    "./components/session-scenario-comparison": {
+      "react-native": "./src/components/session-scenario-comparison/index.native.tsx",
+      "default": "./src/components/session-scenario-comparison/index.web.tsx"
+    },
     "./components/threshold-history": {
       "react-native": "./src/components/threshold-history/index.native.tsx",
       "default": "./src/components/threshold-history/index.web.tsx"

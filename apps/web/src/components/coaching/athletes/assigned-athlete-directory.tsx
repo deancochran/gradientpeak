@@ -8,10 +8,48 @@ import {
 } from "@repo/ui/components/card";
 import { IdentitySummary } from "@repo/ui/components/identity-summary";
 import { SearchField } from "@repo/ui/components/search-field";
+import {
+  TrainingStateChart,
+  type TrainingStateVisualContract,
+} from "@repo/ui/components/training-state-chart";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
-type Athlete = { profileId: string; displayName: string | null; username: string | null };
+type Athlete = {
+  profileId: string;
+  displayName: string | null;
+  username: string | null;
+  metrics?: {
+    status: "available" | "unavailable" | "unshared";
+    freshness?: "fresh" | "stale" | "unavailable";
+  };
+  activities?: {
+    status: "available" | "unavailable" | "unshared";
+    planningTimezone: string | null;
+    rangeStartDate: string | null;
+    rangeEndDate: string | null;
+    qualifier?: "fresh" | "stale" | "partial" | "unavailable";
+    points: Array<{
+      date: string;
+      dailyLoad: number;
+      fitness: number;
+      fatigue: number;
+      form: number;
+      coverageStatus: "complete" | "partial";
+      omittedActivityCount: number;
+    }>;
+  };
+  goals?: {
+    status: "available" | "unavailable" | "unshared";
+    items: Array<{
+      id: string;
+      name: string;
+      targetDate: string;
+      category: string;
+      priority: number;
+    }>;
+  };
+};
 type Page = { items: Athlete[]; nextCursor: string | null; hasMore: boolean };
 
 export function AssignedAthleteDirectory({
@@ -61,8 +99,7 @@ export function AssignedAthleteDirectory({
         <CardHeader>
           <CardTitle>Athlete directory</CardTitle>
           <CardDescription>
-            Identity details are limited to the assignment directory. Data availability is checked
-            after selection.
+            Shared training facts are shown only for the scope each athlete has authorized.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -81,6 +118,7 @@ export function AssignedAthleteDirectory({
                       supporting={athlete.username ? `@${athlete.username}` : undefined}
                       title={athlete.displayName ?? athlete.username ?? "Assigned athlete"}
                     />
+                    <VisualFacts athlete={athlete} />
                   </Link>
                 </li>
               ))}
@@ -102,4 +140,125 @@ export function AssignedAthleteDirectory({
       </Card>
     </div>
   );
+}
+
+function VisualFacts({ athlete }: { athlete: Athlete }) {
+  if (!athlete.metrics || !athlete.activities || !athlete.goals) return null;
+  const goal = athlete.goals.items[0];
+  const activityQualifier =
+    athlete.activities.status === "available"
+      ? [
+          athlete.activities.qualifier === "stale" ? "stale" : null,
+          athlete.activities.points.some((point) => point.coverageStatus === "partial")
+            ? "partial coverage"
+            : null,
+        ]
+          .filter((value): value is string => value !== null)
+          .join(" · ") || "fresh"
+      : null;
+  return (
+    <dl className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
+      <div>
+        <dt className="font-medium text-foreground">Training state</dt>
+        <dd>
+          {athlete.metrics.status === "available"
+            ? athlete.metrics.freshness === "stale"
+              ? "Stale"
+              : "Fresh"
+            : athlete.metrics.status === "unshared"
+              ? "Unshared"
+              : "Unavailable"}
+        </dd>
+      </div>
+      <div>
+        <dt className="font-medium text-foreground">28-day training state</dt>
+        <dd>
+          {athlete.activities.status === "available"
+            ? `${athlete.activities.points.length} recorded days · ${activityQualifier}`
+            : athlete.activities.status === "unshared"
+              ? "Unshared"
+              : "Unavailable"}
+        </dd>
+      </div>
+      <div>
+        <dt className="font-medium text-foreground">Next goal</dt>
+        <dd>
+          {athlete.goals.status === "available" && goal
+            ? `${goal.name} · ${goal.targetDate}`
+            : athlete.goals.status === "unshared"
+              ? "Unshared"
+              : "Unavailable"}
+        </dd>
+      </div>
+      {athlete.activities.status === "available" && athlete.activities.planningTimezone ? (
+        <div className="sm:col-span-3">
+          <RosterTrainingStateChart
+            points={athlete.activities.points}
+            rangeEndDate={athlete.activities.rangeEndDate}
+            rangeStartDate={athlete.activities.rangeStartDate}
+            timeZone={athlete.activities.planningTimezone}
+          />
+        </div>
+      ) : null}
+    </dl>
+  );
+}
+
+function RosterTrainingStateChart({
+  points,
+  rangeEndDate,
+  rangeStartDate,
+  timeZone,
+}: {
+  points: NonNullable<Athlete["activities"]>["points"];
+  rangeEndDate: string | null;
+  rangeStartDate: string | null;
+  timeZone: string;
+}) {
+  const byDate = new Map(points.map((point) => [point.date, point]));
+  const dates =
+    rangeStartDate && rangeEndDate
+      ? calendarDatesInclusive(rangeStartDate, rangeEndDate)
+      : points.map((point) => point.date);
+  const visual: TrainingStateVisualContract = {
+    points: dates.map((date, index) => ({
+      date,
+      index,
+      projected: { fatigue: null, fitness: null, form: null },
+      recorded: (() => {
+        const point = byDate.get(date);
+        return point
+          ? { fatigue: point.fatigue, fitness: point.fitness, form: point.form }
+          : { fatigue: null, fitness: null, form: null };
+      })(),
+    })),
+    sourceStatus: "recorded",
+    timeZone,
+    unitLabel: "Common Load points",
+  };
+  return (
+    <TrainingStateChart
+      description={`Recorded training state for ${rangeStartDate ?? "the available"} through ${rangeEndDate ?? "the available"} planning dates (${timeZone}). Missing dates are shown as gaps; no values are inferred.`}
+      emptyMessage="No complete daily load observations are available."
+      series={[
+        { metric: "fitness", source: "recorded" },
+        { metric: "fatigue", source: "recorded" },
+        { metric: "form", source: "recorded" },
+      ]}
+      title="Recent training state"
+      density="compact"
+      visual={visual}
+    />
+  );
+}
+
+function calendarDatesInclusive(start: string, end: string) {
+  const dates: string[] = [];
+  for (
+    let current = new Date(`${start}T00:00:00Z`);
+    current <= new Date(`${end}T00:00:00Z`);
+    current.setUTCDate(current.getUTCDate() + 1)
+  )
+    dates.push(current.toISOString().slice(0, 10));
+  return dates;
 }

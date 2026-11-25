@@ -14,6 +14,7 @@ function TrainingStateLegend({
   metrics = ["fitness", "fatigue", "form"],
   sources,
   testId,
+  sourceLabels,
 }: TrainingStateLegendProps) {
   return (
     <ul
@@ -35,18 +36,25 @@ function TrainingStateLegend({
         );
       })}
       {sources?.map((source) => (
-        <li key={source}>━ {getTrainingStateSourceLabel(source)}</li>
+        <li key={source}>
+          {source === "recorded" ? "●" : "□"}{" "}
+          {sourceLabels?.[source] ?? getTrainingStateSourceLabel(source)} ·{" "}
+          {source === "recorded" ? "solid" : "dashed"}
+        </li>
       ))}
     </ul>
   );
 }
 
 function TrainingStateChart({
+  accessibilityLabel,
   className,
   colors,
+  density = "default",
   description,
   emptyMessage,
   series,
+  sourceLabels,
   testId,
   title,
   visual,
@@ -60,7 +68,7 @@ function TrainingStateChart({
     return {
       color: colors?.[metric] ?? metricDefinition.webColor,
       id: `${metric}-${source}`,
-      label: `${metricDefinition.label} · ${getTrainingStateSourceLabel(source)}`,
+      label: `${metricDefinition.label} · ${sourceLabels?.[source] ?? getTrainingStateSourceLabel(source)}`,
       source,
       values,
       summary: summarizeChartValues(values),
@@ -96,6 +104,106 @@ function TrainingStateChart({
   }));
   const firstDate = visual.points[0]?.date;
   const latestDate = visual.points.at(-1)?.date;
+  const compact = density === "compact";
+  const chart = (
+    <div
+      aria-label={
+        accessibilityLabel ?? `${chartTitle}. ${getTrainingStateAccessibilityLabel(visual, series)}`
+      }
+      className={`relative w-full ${compact ? "h-24" : "h-56"}`}
+      data-testid={testId}
+      role="img"
+    >
+      <svg
+        aria-hidden="true"
+        className="absolute inset-0 h-full w-full overflow-visible"
+        preserveAspectRatio="none"
+        viewBox="0 0 100 100"
+      >
+        <line className="text-border" stroke="currentColor" x1="12" x2="12" y1="6" y2="82" />
+        <line className="text-border" stroke="currentColor" x1="12" x2="98" y1="82" y2="82" />
+        {plots.flatMap((plot) =>
+          plot.segments.map((segment) => (
+            <polyline
+              fill="none"
+              key={`${plot.id}-${segment[0]?.label}-${segment.at(-1)?.label}`}
+              points={segment.map((point) => `${point.plotX},${point.plotY}`).join(" ")}
+              stroke={plot.color}
+              strokeDasharray={plot.source === "projected" ? "6 4" : undefined}
+              strokeWidth="3"
+              vectorEffect="non-scaling-stroke"
+            />
+          )),
+        )}
+      </svg>
+      {plots.flatMap((plot) =>
+        plot.segments.flat().map((point) => (
+          <span
+            aria-hidden="true"
+            className={
+              plot.source === "recorded"
+                ? "absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full"
+                : "absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 border-2 bg-background"
+            }
+            data-date={point.label}
+            data-marker={plot.source === "recorded" ? "circle-filled" : "square-outline"}
+            data-source={plot.source}
+            key={`${plot.id}-${point.label ?? point.x}`}
+            style={{
+              ...(plot.source === "recorded"
+                ? { backgroundColor: plot.color }
+                : { borderColor: plot.color }),
+              left: `${point.plotX}%`,
+              top: `${point.plotY}%`,
+            }}
+          />
+        )),
+      )}
+      <span className="absolute bottom-0 left-[12%] text-[10px] text-muted-foreground">
+        {firstDate ? formatTrainingStateDate(firstDate, visual.timeZone) : ""}
+      </span>
+      <span className="absolute bottom-0 right-[2%] text-[10px] text-muted-foreground">
+        {latestDate ? formatTrainingStateDate(latestDate, visual.timeZone) : ""}
+      </span>
+      {!compact ? (
+        <>
+          <span className="absolute left-[1%] top-[3%] text-[10px] text-muted-foreground">
+            {domain.max.toFixed(1)}
+          </span>
+          <span className="absolute bottom-[17%] left-[1%] text-[10px] text-muted-foreground">
+            {domain.min.toFixed(1)}
+          </span>
+          <span className="absolute bottom-0 left-1/2 -translate-x-1/2 text-xs font-medium text-muted-foreground">
+            Planning date
+          </span>
+          <span className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 -rotate-90 text-xs font-medium text-muted-foreground">
+            {visual.unitLabel}
+          </span>
+        </>
+      ) : null}
+    </div>
+  );
+  if (compact) {
+    return (
+      <section aria-label={`${chartTitle} comparison`} className={`space-y-2 ${className ?? ""}`}>
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+          <h3 className="text-sm font-medium text-foreground">{chartTitle}</h3>
+          <p className="text-xs text-muted-foreground">{visual.unitLabel}</p>
+        </div>
+        {chart}
+        <dl className="grid grid-cols-3 gap-2">
+          {plottedSeries.map((item) => (
+            <div key={item.id}>
+              <dt className="text-xs text-muted-foreground">{item.label}</dt>
+              <dd className="text-sm font-semibold text-foreground">
+                {item.summary ? item.summary.last.toFixed(1) : "Unavailable"}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+    );
+  }
 
   return (
     <ChartCard
@@ -117,67 +225,12 @@ function TrainingStateChart({
       }
       title={chartTitle}
     >
-      <div
-        aria-label={`${chartTitle}. ${getTrainingStateAccessibilityLabel(visual, series)}`}
-        className="relative h-56 w-full"
-        data-testid={testId}
-        role="img"
-      >
-        <svg
-          aria-hidden="true"
-          className="absolute inset-0 h-full w-full overflow-visible"
-          preserveAspectRatio="none"
-          viewBox="0 0 100 100"
-        >
-          <line className="text-border" stroke="currentColor" x1="12" x2="12" y1="6" y2="82" />
-          <line className="text-border" stroke="currentColor" x1="12" x2="98" y1="82" y2="82" />
-          {plots.flatMap((plot) =>
-            plot.segments.map((segment) => (
-              <polyline
-                fill="none"
-                key={`${plot.id}-${segment[0]?.label}-${segment.at(-1)?.label}`}
-                points={segment.map((point) => `${point.plotX},${point.plotY}`).join(" ")}
-                stroke={plot.color}
-                strokeDasharray={plot.source === "projected" ? "6 4" : undefined}
-                strokeWidth="3"
-                vectorEffect="non-scaling-stroke"
-              />
-            )),
-          )}
-        </svg>
-        {plots.flatMap((plot) =>
-          plot.segments.flat().map((point) => (
-            <span
-              aria-hidden="true"
-              className="absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-background"
-              key={`${plot.id}-${point.label ?? point.x}`}
-              style={{
-                borderColor: plot.color,
-                left: `${point.plotX}%`,
-                top: `${point.plotY}%`,
-              }}
-            />
-          )),
-        )}
-        <span className="absolute bottom-0 left-[12%] text-[10px] text-muted-foreground">
-          {firstDate ? formatTrainingStateDate(firstDate, visual.timeZone) : ""}
-        </span>
-        <span className="absolute bottom-0 right-[2%] text-[10px] text-muted-foreground">
-          {latestDate ? formatTrainingStateDate(latestDate, visual.timeZone) : ""}
-        </span>
-        <span className="absolute left-[1%] top-[3%] text-[10px] text-muted-foreground">
-          {domain.max.toFixed(1)}
-        </span>
-        <span className="absolute bottom-[17%] left-[1%] text-[10px] text-muted-foreground">
-          {domain.min.toFixed(1)}
-        </span>
-        <span className="absolute bottom-0 left-1/2 -translate-x-1/2 text-xs font-medium text-muted-foreground">
-          Planning date
-        </span>
-        <span className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 -rotate-90 text-xs font-medium text-muted-foreground">
-          {visual.unitLabel}
-        </span>
-      </div>
+      <TrainingStateLegend
+        metrics={[]}
+        sourceLabels={sourceLabels}
+        sources={[...new Set(series.map(({ source }) => source))]}
+      />
+      {chart}
     </ChartCard>
   );
 }
