@@ -6,6 +6,8 @@ import { chooseAuthoringOption } from "../pages/authoring";
 import { withGoalFixture } from "../planning/data";
 import { createGoalProgressFixture } from "../support/goal-progress-fixture";
 
+test.beforeEach(() => expect(process.env.E2E_DISPOSABLE_DATABASE).toBe("1"));
+
 test("canonical threshold evidence advances the published revision after a retained goal-progress read", async ({
   actorFactory,
   e2eDatabase,
@@ -48,14 +50,25 @@ test("canonical threshold evidence advances the published revision after a retai
       await evidence.assertReadModels(goalId);
 
       const transition = await evidence.advancePublication(goalId);
+      expect(transition.previousPublishedRevision).toBe(evidence.publishedRevision);
       expect(transition.previousProgress.publication?.publishedRevision).toBe(
-        transition.previousPublishedRevision,
+        evidence.publishedRevision,
       );
       expect(transition.nextOverview.publication.publishedRevision).toBe(
         transition.publishedRevision,
       );
       expect(transition.publishedRevision).toBeGreaterThan(transition.previousPublishedRevision);
       expect(transition.activityId).not.toBe(evidence.activityId);
+      expect(
+        transition.nextOverview.history.items.some((item) =>
+          item.sourceActivities.some((activity) => activity.id === transition.activityId),
+        ),
+      ).toBe(true);
+      expect(
+        transition.nextProgress.provenance?.current?.sourceActivities.some(
+          (activity) => activity.id === transition.activityId,
+        ),
+      ).toBe(true);
     },
     { profileId: actor.profileId },
   );

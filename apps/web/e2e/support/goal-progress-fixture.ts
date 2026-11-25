@@ -32,6 +32,7 @@ export type GoalProgressFixture = {
 export type GoalProgressPublicationTransition = {
   activityId: string;
   nextOverview: Awaited<ReturnType<typeof readThresholdOverview>>;
+  nextProgress: Awaited<ReturnType<typeof readGoalProgress>>;
   previousProgress: Awaited<ReturnType<typeof readGoalProgress>>;
   previousPublishedRevision: number;
   publishedRevision: number;
@@ -399,10 +400,18 @@ export async function createGoalProgressFixture(input: {
         publishedRevision <= previousPublishedRevision
       )
         throw new Error("The second canonical activity did not advance the published revision.");
+      const nextProgress = await readGoalProgress({
+        db: input.database.db,
+        profileId: input.actor.profileId,
+        goalId,
+      });
+      if (nextProgress.publication?.publishedRevision !== publishedRevision)
+        throw new Error("Goal progress and threshold overview diverged after publication advance.");
 
       return {
         activityId: nextActivityId,
         nextOverview,
+        nextProgress,
         previousProgress,
         previousPublishedRevision,
         publishedRevision,
