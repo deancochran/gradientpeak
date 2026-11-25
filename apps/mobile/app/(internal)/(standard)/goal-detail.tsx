@@ -303,7 +303,11 @@ export default function GoalDetailScreen() {
               {progressQuery.isError || thresholdQuery.isError ? (
                 <View className="gap-1" testID="goal-detail-progress-refresh-warning">
                   <Text className="text-sm text-muted-foreground">
-                    Showing the last available progress while signals refresh.
+                    {progressQuery.isError && thresholdQuery.isError
+                      ? "Could not refresh goal progress or threshold history. Showing the last available compatible evidence."
+                      : progressQuery.isError
+                        ? "Could not refresh goal progress. Showing the last available progress."
+                        : "Could not refresh threshold history. Showing retained compatible history, if available."}
                   </Text>
                   <Text
                     accessibilityRole="button"

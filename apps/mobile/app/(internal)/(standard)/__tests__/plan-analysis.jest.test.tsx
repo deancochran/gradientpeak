@@ -141,6 +141,10 @@ const PlanAnalysis = require("../plan-analysis").default;
 beforeEach(() => {
   jest.clearAllMocks();
   progressInsightProps.mockClear();
+  getGoalProgressQuery.mockReset();
+  getGoalProgressQuery.mockReturnValue({ data: undefined, isError: false, isLoading: false });
+  getThresholdOverviewQuery.mockReset();
+  getThresholdOverviewQuery.mockReturnValue({ data: undefined, isError: false, isLoading: false });
   planningTimezoneState = "ready";
   timezoneSetupError = null;
   mockParams = {
@@ -265,12 +269,107 @@ it("retains cached progress, excludes mismatched history, and retries without ch
   await renderNative(<PlanAnalysis />);
 
   expect(screen.getByTestId("plan-analysis-progress-refresh-warning")).toBeTruthy();
+  expect(
+    screen.getByText("Could not refresh goal progress. Showing the last available progress."),
+  ).toBeTruthy();
   expect(screen.getByTestId("plan-analysis-history-mismatch")).toBeTruthy();
   expect(progressInsightProps).toHaveBeenLastCalledWith(
     expect.objectContaining({
       progress: expect.objectContaining({ current: { value: 285, unit: "watts" } }),
     }),
   );
+  await fireEvent.press(screen.getByText("Retry progress"));
+  expect(retryProgress).toHaveBeenCalled();
+  expect(retryHistory).toHaveBeenCalled();
+  expect(replace).not.toHaveBeenCalled();
+});
+
+it.each([
+  {
+    progressError: false,
+    historyError: true,
+    warning:
+      "Could not refresh threshold history. Showing retained compatible history, if available.",
+  },
+  {
+    progressError: true,
+    historyError: true,
+    warning:
+      "Could not refresh goal progress or threshold history. Showing the last available compatible evidence.",
+  },
+])("uses accurate cached-progress recovery copy", async ({
+  progressError,
+  historyError,
+  warning,
+}) => {
+  const retryProgress = jest.fn(async () => undefined);
+  const retryHistory = jest.fn(async () => undefined);
+  mockParams = {
+    anchorDate: "2026-04-15",
+    goalId: "55555555-5555-4555-8555-555555555555",
+    metric: "threshold",
+    range: "3m",
+    view: "progress",
+  };
+  getGoalProgressQuery.mockReturnValue({
+    data: {
+      publication: { publishedRevision: 4 },
+      result: {
+        status: "current",
+        target: { activityCategory: "bike", metric: "power", unit: "watts" },
+        deadlineAt: "2026-05-20T00:00:00Z",
+      },
+    },
+    isError: progressError,
+    isLoading: false,
+    refetch: retryProgress,
+  });
+  getThresholdOverviewQuery.mockReturnValue({
+    data: {
+      publication: { publishedRevision: 4 },
+      history: { items: [], nextCursor: null },
+    },
+    isError: historyError,
+    isLoading: false,
+    refetch: retryHistory,
+  });
+
+  await renderNative(<PlanAnalysis />);
+
+  expect(screen.getByText(warning)).toBeTruthy();
+  expect(screen.getByTestId("progress-insight")).toBeTruthy();
+  await fireEvent.press(screen.getByText("Retry progress"));
+  expect(retryProgress).toHaveBeenCalled();
+  expect(retryHistory).toHaveBeenCalled();
+  expect(replace).not.toHaveBeenCalled();
+});
+
+it("offers a retry for an uncached failure without changing the route", async () => {
+  const retryProgress = jest.fn(async () => undefined);
+  const retryHistory = jest.fn(async () => undefined);
+  mockParams = {
+    anchorDate: "2026-04-15",
+    goalId: "55555555-5555-4555-8555-555555555555",
+    metric: "threshold",
+    range: "3m",
+    view: "progress",
+  };
+  getGoalProgressQuery.mockReturnValue({
+    data: undefined,
+    isError: true,
+    isLoading: false,
+    refetch: retryProgress,
+  });
+  getThresholdOverviewQuery.mockReturnValue({
+    data: undefined,
+    isError: true,
+    isLoading: false,
+    refetch: retryHistory,
+  });
+
+  await renderNative(<PlanAnalysis />);
+
+  expect(screen.getByText("Progress analysis is unavailable")).toBeTruthy();
   await fireEvent.press(screen.getByText("Retry progress"));
   expect(retryProgress).toHaveBeenCalled();
   expect(retryHistory).toHaveBeenCalled();

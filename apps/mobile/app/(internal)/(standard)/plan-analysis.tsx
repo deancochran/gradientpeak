@@ -297,10 +297,20 @@ function PlanAnalysisContent({
           ) : (progressQuery.isError || thresholdQuery.isError) && !progress ? (
             <View
               accessibilityRole="alert"
-              className="rounded-2xl border border-destructive/40 bg-card p-4"
+              className="gap-2 rounded-2xl border border-destructive/40 bg-card p-4"
             >
               <Text className="font-semibold text-foreground">
                 Progress analysis is unavailable
+              </Text>
+              <Text
+                accessibilityRole="button"
+                className="self-start py-1 font-semibold text-primary"
+                onPress={() => {
+                  void progressQuery.refetch();
+                  void thresholdQuery.refetch();
+                }}
+              >
+                Retry progress
               </Text>
             </View>
           ) : (
@@ -308,7 +318,11 @@ function PlanAnalysisContent({
               {progress && (progressQuery.isError || thresholdQuery.isError) ? (
                 <View className="gap-1" testID="plan-analysis-progress-refresh-warning">
                   <Text className="text-sm text-muted-foreground">
-                    Showing the last available progress while signals refresh.
+                    {progressQuery.isError && thresholdQuery.isError
+                      ? "Could not refresh goal progress or threshold history. Showing the last available compatible evidence."
+                      : progressQuery.isError
+                        ? "Could not refresh goal progress. Showing the last available progress."
+                        : "Could not refresh threshold history. Showing retained compatible history, if available."}
                   </Text>
                   <Text
                     accessibilityRole="button"

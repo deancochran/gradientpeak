@@ -501,6 +501,9 @@ describe("goal detail persistence", () => {
     await renderNative(<GoalDetailScreen />);
 
     expect(screen.getByTestId("goal-detail-progress-refresh-warning")).toBeTruthy();
+    expect(
+      screen.getByText("Could not refresh goal progress. Showing the last available progress."),
+    ).toBeTruthy();
     expect(mockProgressInsightProps).toHaveBeenLastCalledWith(
       expect.objectContaining({
         progress: expect.objectContaining({ current: { value: 285, unit: "watts" } }),
@@ -508,6 +511,53 @@ describe("goal detail persistence", () => {
     );
     await fireEvent.press(screen.getByText("Retry progress"));
     expect(retry).toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      progressError: false,
+      historyError: true,
+      warning:
+        "Could not refresh threshold history. Showing retained compatible history, if available.",
+    },
+    {
+      progressError: true,
+      historyError: true,
+      warning:
+        "Could not refresh goal progress or threshold history. Showing the last available compatible evidence.",
+    },
+  ])("uses accurate cached-progress recovery copy", async ({
+    progressError,
+    historyError,
+    warning,
+  }) => {
+    progressUseQueryMock.mockReturnValue({
+      data: {
+        publication: { publishedRevision: 4 },
+        result: {
+          status: "current",
+          target: { activityCategory: "bike", metric: "power", unit: "watts" },
+          deadlineAt: "2026-06-01T00:00:00Z",
+        },
+      },
+      isError: progressError,
+      isLoading: false,
+      refetch: jest.fn(),
+    });
+    thresholdUseQueryMock.mockReturnValue({
+      data: {
+        publication: { publishedRevision: 4 },
+        history: { items: [], nextCursor: null },
+      },
+      isError: historyError,
+      isLoading: false,
+      refetch: jest.fn(),
+    });
+
+    await renderNative(<GoalDetailScreen />);
+
+    expect(screen.getByText(warning)).toBeTruthy();
+    expect(mockProgressInsightProps).toHaveBeenCalled();
   });
 
   it("discloses mismatched threshold history without passing it to the trend", async () => {
