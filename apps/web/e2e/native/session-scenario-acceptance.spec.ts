@@ -111,6 +111,14 @@ async function retainAppliedPlanningLedgerEvidence(input: {
     composition.selected,
     "Planning ledger response has no selected training composition.",
   );
+  const selectedActual = durationCompositionFrom(
+    selected.actual,
+    "Selected actual training composition is invalid.",
+  );
+  const selectedPlanned = durationCompositionFrom(
+    selected.planned,
+    "Selected planned training composition is invalid.",
+  );
   writeFileSync(
     input.artifactPath,
     JSON.stringify(
@@ -122,14 +130,8 @@ async function retainAppliedPlanningLedgerEvidence(input: {
         periodStart: result.periodStart,
         trainingComposition: {
           selected: {
-            actual: durationCompositionFrom(
-              selected.actual,
-              "Selected actual training composition is invalid.",
-            ),
-            planned: durationCompositionFrom(
-              selected.planned,
-              "Selected planned training composition is invalid.",
-            ),
+            actual: selectedActual,
+            planned: selectedPlanned,
           },
         },
       },
@@ -138,6 +140,14 @@ async function retainAppliedPlanningLedgerEvidence(input: {
     ),
     { mode: 0o600 },
   );
+  expect(selectedPlanned).toEqual({
+    categories: [
+      {
+        activityCategory: "bike",
+        durationSeconds: { status: "complete", value: 1200 },
+      },
+    ],
+  });
 }
 
 test("native athlete compares, cancels, and applies a selected session scenario", async ({

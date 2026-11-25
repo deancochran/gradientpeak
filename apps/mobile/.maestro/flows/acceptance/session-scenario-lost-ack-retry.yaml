@@ -16,6 +16,7 @@ name: Reopen and explicitly retry a retained scenario operation
       id: session-scenario-retry-apply
     direction: DOWN
     timeout: 30000
+    centerElement: true
 - takeScreenshot: session-scenario-lost-ack-reopened
 - assertVisible:
     id: session-scenario-retry-apply
