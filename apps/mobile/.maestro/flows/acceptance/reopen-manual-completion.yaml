@@ -1,6 +1,18 @@
 appId: com.deancochran.gradientpeak.dev
 name: Reopen the exact manual completion from its selected Calendar day
 ---
+# The manual-completion flow leaves the app on its planned-session detail route.
+# Return through the ledger to the tab shell before reopening from Calendar.
+- pressKey: back
+- extendedWaitUntil:
+    visible:
+      id: planning-ledger-screen
+    timeout: 30000
+- pressKey: back
+- extendedWaitUntil:
+    visible:
+      id: tab-button-plan
+    timeout: 30000
 - tapOn:
     id: tab-button-plan
 - tapOn:
