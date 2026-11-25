@@ -20,8 +20,8 @@ jest.mock("victory-native", () => ({
             points: Object.fromEntries(
               (yKeys as string[]).map((key) => [
                 key,
-                (data as Record<string, unknown>[]).map((datum, index) => ({
-                  x: index,
+                (data as Record<string, unknown>[]).map((datum) => ({
+                  x: datum.index,
                   y: typeof datum[key] === "number" ? datum[key] : null,
                   yValue: typeof datum[key] === "number" ? datum[key] : null,
                 })),
@@ -76,9 +76,12 @@ describe("TrainingStateChart native", () => {
       "projected-form",
     ]);
     expect(chart.props.data).toEqual([
-      expect.objectContaining({ "recorded-fitness": 42, "recorded-form": -12 }),
-      expect.objectContaining({ "recorded-fatigue": 0, "projected-fitness": 44 }),
+      expect.objectContaining({ index: 0, "recorded-fitness": 42, "recorded-form": -12 }),
+      expect.objectContaining({ index: 2, "recorded-fatigue": 0, "projected-fitness": 44 }),
     ]);
+    expect(getByText("Apr 13")).toBeTruthy();
+    expect(getByText("Apr 15")).toBeTruthy();
+    expect(getByText("Common Load points")).toBeTruthy();
     const lines = getAllByTestId("victory-line");
     expect(lines).toHaveLength(6);
     const markers = getAllByTestId("victory-scatter");
@@ -163,6 +166,8 @@ describe("TrainingStateChart native", () => {
 
     expect(getByLabelText(/Planning timezone America\/Los_Angeles/)).toBeTruthy();
     expect(getByText(/Common Load points/)).toBeTruthy();
+    expect(getByText("Apr 13")).toBeTruthy();
+    expect(getByText("Apr 15")).toBeTruthy();
     expect(getByText("Fitness: 42.0")).toBeTruthy();
     expect(getByText("Fatigue: 0.0")).toBeTruthy();
   });

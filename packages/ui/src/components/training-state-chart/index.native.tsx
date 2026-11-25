@@ -96,6 +96,19 @@ function TrainingStateChart({
     }
     return datum;
   });
+  const dateLabels = (
+    <View className="gap-1">
+      <View className="flex-row justify-between">
+        <Text className="text-xs text-muted-foreground">
+          {formatTrainingStateDate(visual.points[0]?.date ?? "", visual.timeZone)}
+        </Text>
+        <Text className="text-xs text-muted-foreground">
+          {formatTrainingStateDate(visual.points.at(-1)?.date ?? "", visual.timeZone)}
+        </Text>
+      </View>
+      <Text className="text-xs text-muted-foreground">{visual.unitLabel}</Text>
+    </View>
+  );
   const chart = (
     <View
       accessible
@@ -113,6 +126,8 @@ function TrainingStateChart({
         data={data}
         domainPadding={{ bottom: 8, left: 8, right: 8, top: 8 }}
         frame={{ lineColor: "transparent", lineWidth: 0 }}
+        // `index` is the caller's canonical planning-date position. Keep it rather
+        // than ordinal array positions so gaps remain visible for irregular dates.
         xKey="index"
         yKeys={yKeys}
       >
@@ -155,10 +170,8 @@ function TrainingStateChart({
       {hasValues ? (
         density === "compact" ? (
           <>
-            <Text className="text-xs text-muted-foreground">
-              {`${formatTrainingStateDate(visual.points[0]?.date ?? "", visual.timeZone)} – ${formatTrainingStateDate(visual.points.at(-1)?.date ?? "", visual.timeZone)} · ${visual.unitLabel}`}
-            </Text>
             {chart}
+            {dateLabels}
             <View className="flex-row flex-wrap gap-3">
               {series.map(({ metric, source }) => {
                 const value = visual.points
@@ -179,6 +192,7 @@ function TrainingStateChart({
         ) : (
           <View className="gap-2">
             {chart}
+            {dateLabels}
             <TrainingStateLegend
               colors={colors}
               metrics={[...new Set(series.map(({ metric }) => metric))]}
