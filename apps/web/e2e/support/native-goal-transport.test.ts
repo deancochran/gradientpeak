@@ -51,6 +51,9 @@ async function bytes(request: IncomingMessage) {
 function goalPath(id = goalId) {
   return `/api/trpc/athleteIntelligence.getGoalProgress?batch=1&input=${encodeURIComponent(JSON.stringify({ 0: { json: { goalId: id } } }))}`;
 }
+function observedGoalBatchPath(ids: [string, string] = [goalId, goalId]) {
+  return `/api/trpc/athleteIntelligence.getGoalAssessment,athleteIntelligence.getGoalProgress?batch=1&input=${encodeURIComponent(JSON.stringify({ 0: { json: { goalId: ids[0] } }, 1: { json: { goalId: ids[1] } } }))}`;
+}
 async function start(port: number, environment = env()) {
   const transport = await startNativeGoalTransport({ goalId, environment, upstreamPort: port });
   transports.push(transport);
@@ -117,6 +120,24 @@ describe("native goal transport", () => {
     expect(await transport.observations()).toEqual({ blocked: 1, forwarded: 1 });
   });
 
+  it("fails the observed goal assessment/progress batch until allowed, then relays its real bytes", async () => {
+    const body = Buffer.from('{"real":"batched-progress"}');
+    const port = await upstream((_request, response) => {
+      response.statusCode = 206;
+      response.end(body);
+    });
+    const transport = await start(port);
+    await expect(fetch(`${transport.origin}${observedGoalBatchPath()}`)).resolves.toMatchObject({
+      status: 503,
+    });
+    expect(await transport.observations()).toEqual({ blocked: 1, forwarded: 0 });
+    await transport.allowProgressReads();
+    const allowed = await fetch(`${transport.origin}${observedGoalBatchPath()}`);
+    expect(allowed.status).toBe(206);
+    expect(Buffer.from(await allowed.arrayBuffer())).toEqual(body);
+    expect(await transport.observations()).toEqual({ blocked: 1, forwarded: 1 });
+  });
+
   it("relays malformed and mixed batches unchanged", async () => {
     const port = await upstream((_req, res) => res.end("relay"));
     const transport = await start(port);
@@ -131,6 +152,21 @@ describe("native goal transport", () => {
     await expect(fetch(`${transport.origin}${duplicate}`)).resolves.toMatchObject({ status: 200 });
     const arrayInput = `/api/trpc/athleteIntelligence.getGoalProgress?batch=1&input=${encodeURIComponent(JSON.stringify([{ json: { goalId } }]))}`;
     await expect(fetch(`${transport.origin}${arrayInput}`)).resolves.toMatchObject({ status: 200 });
+    const unknownMixed = `/api/trpc/other,athleteIntelligence.getGoalAssessment,athleteIntelligence.getGoalProgress?batch=1&input=${encodeURIComponent(JSON.stringify({ 0: { json: {} }, 1: { json: { goalId } }, 2: { json: { goalId } } }))}`;
+    await expect(fetch(`${transport.origin}${unknownMixed}`)).resolves.toMatchObject({
+      status: 200,
+    });
+    await expect(
+      fetch(
+        `${transport.origin}${observedGoalBatchPath([
+          goalId,
+          "22222222-2222-4222-8222-222222222222",
+        ])}`,
+      ),
+    ).resolves.toMatchObject({ status: 200 });
+    await expect(
+      fetch(`${transport.origin}${observedGoalBatchPath()}`, { method: "POST" }),
+    ).resolves.toMatchObject({ status: 200 });
     expect(await transport.observations()).toEqual({ blocked: 0, forwarded: 0 });
   });
 
