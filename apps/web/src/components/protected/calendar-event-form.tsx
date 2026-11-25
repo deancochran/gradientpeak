@@ -1,3 +1,4 @@
+import { formatIsoInstantInIanaZone } from "@repo/core/calendar";
 import { Button } from "@repo/ui/components/button";
 import { DateInput } from "@repo/ui/components/date-input";
 import { Form, FormTextareaField, FormTextField } from "@repo/ui/components/form";
@@ -59,21 +60,7 @@ function formatTimeForInput(startsAtIso: string, timeZone: string | null | undef
     return null;
   }
 
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(startsAt);
-  const values = Object.fromEntries(
-    parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]),
-  );
-
-  if (typeof values.hour !== "string" || typeof values.minute !== "string") {
-    return null;
-  }
-
-  return `${values.hour}:${values.minute}`;
+  return formatIsoInstantInIanaZone(startsAt.toISOString(), timeZone).slice(11);
 }
 
 export function CalendarEventForm({ event, month, view }: CalendarEventFormProps) {

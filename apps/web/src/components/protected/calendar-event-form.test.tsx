@@ -121,4 +121,52 @@ describe("CalendarEventForm", () => {
     expect((await screen.findByRole("alert")).textContent).toContain("Enter a valid event date.");
     expect(mocks.action).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ["UTC midnight", "2026-01-15T00:15:45.987Z", "UTC", "00:15"],
+    ["New York spring-forward", "2026-03-08T07:30:45.987Z", "America/New_York", "03:30"],
+    ["New York fall-back", "2026-11-01T05:30:45.987Z", "America/New_York", "01:30"],
+    ["Kolkata", "2026-06-02T16:30:45.987Z", "Asia/Kolkata", "22:00"],
+    ["an offsetless parsed instant", "2026-06-02T16:30:45.987", "Asia/Kolkata", "02:00"],
+  ])("uses %s wall time in the browser event editor", (_, startsAt, timezone, expectedTime) => {
+    render(
+      <CalendarEventForm
+        event={{ ...event, starts_at: startsAt, timezone }}
+        month="2026-10"
+        view="month"
+      />,
+    );
+
+    expect((screen.getByLabelText("Time") as HTMLInputElement).value).toBe(expectedTime);
+  });
+
+  it("keeps missing-zone and invalid-instant time drafts blank", () => {
+    const { rerender } = render(
+      <CalendarEventForm event={{ ...event, timezone: null }} month="2026-10" view="month" />,
+    );
+
+    expect((screen.getByLabelText("Time") as HTMLInputElement).value).toBe("");
+
+    rerender(
+      <CalendarEventForm
+        event={{ ...event, starts_at: "not-an-instant" }}
+        month="2026-10"
+        view="month"
+      />,
+    );
+
+    expect((screen.getByLabelText("Time") as HTMLInputElement).value).toBe("");
+  });
+
+  it("continues surfacing an invalid event timezone", () => {
+    expect(() =>
+      render(
+        <CalendarEventForm
+          event={{ ...event, timezone: "Not/AZone" }}
+          month="2026-10"
+          view="month"
+        />,
+      ),
+    ).toThrow();
+  });
 });

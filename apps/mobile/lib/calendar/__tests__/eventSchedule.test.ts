@@ -27,4 +27,68 @@ describe("event schedule presentation", () => {
     expect(editorDate.getHours()).toBe(9);
     expect(editorDate.getMinutes()).toBe(30);
   });
+
+  it.each([
+    ["UTC midnight", "2026-01-15T00:15:45.987Z", "UTC", [2026, 0, 15, 0, 15]],
+    [
+      "New York spring-forward",
+      "2026-03-08T07:30:45.987Z",
+      "America/New_York",
+      [2026, 2, 8, 3, 30],
+    ],
+    ["New York fall-back", "2026-11-01T05:30:45.987Z", "America/New_York", [2026, 10, 1, 1, 30]],
+    ["Kolkata", "2026-06-02T16:30:45.987Z", "Asia/Kolkata", [2026, 5, 2, 22, 0]],
+    ["an offsetless parsed instant", "2026-06-02T16:30:45.987", "Asia/Kolkata", [2026, 5, 3, 2, 0]],
+  ])("keeps %s as event wall time and drops seconds for native inputs", (_, startsAt, timezone, expected) => {
+    const editorDate = eventDateForEditor({ starts_at: startsAt, timezone });
+
+    expect([
+      editorDate.getFullYear(),
+      editorDate.getMonth(),
+      editorDate.getDate(),
+      editorDate.getHours(),
+      editorDate.getMinutes(),
+      editorDate.getSeconds(),
+      editorDate.getMilliseconds(),
+    ]).toEqual([...expected, 0, 0]);
+  });
+
+  it("retains editor fallbacks for all-day, missing/invalid zones, and invalid instants", () => {
+    const allDay = eventDateForEditor({
+      all_day: true,
+      scheduled_date: "2026-06-02",
+      starts_at: "not-an-instant",
+    });
+    const rawInstant = new Date("2026-06-02T16:30:45.987Z");
+    const invalidZone = eventDateForEditor({
+      starts_at: rawInstant.toISOString(),
+      timezone: "Not/AZone",
+    });
+    const invalidInstant = eventDateForEditor({ starts_at: "not-an-instant", timezone: "UTC" });
+
+    expect([allDay.getFullYear(), allDay.getMonth(), allDay.getDate(), allDay.getHours()]).toEqual([
+      2026, 5, 2, 12,
+    ]);
+    expect(eventDateForEditor({ starts_at: rawInstant.toISOString() }).getTime()).toBe(
+      rawInstant.getTime(),
+    );
+    expect([
+      invalidZone.getFullYear(),
+      invalidZone.getMonth(),
+      invalidZone.getDate(),
+      invalidZone.getHours(),
+      invalidZone.getMinutes(),
+      invalidZone.getSeconds(),
+      invalidZone.getMilliseconds(),
+    ]).toEqual([
+      rawInstant.getFullYear(),
+      rawInstant.getMonth(),
+      rawInstant.getDate(),
+      rawInstant.getHours(),
+      rawInstant.getMinutes(),
+      0,
+      0,
+    ]);
+    expect(Number.isNaN(invalidInstant.getTime())).toBe(false);
+  });
 });
