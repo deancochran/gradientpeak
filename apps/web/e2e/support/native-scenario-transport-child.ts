@@ -1,15 +1,16 @@
 import { createHash } from "node:crypto";
-import { chmodSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, openSync, writeFileSync } from "node:fs";
 import {
   createServer,
   type IncomingMessage,
   type ServerResponse,
   request as upstreamRequest,
 } from "node:http";
-import { requireDisposableAcceptanceEnvironment } from "./disposable-acceptance-server";
+import { requireNativeScenarioTransportGuard } from "./native-scenario-transport";
 
 const MAX_REQUEST_BYTES = 64 * 1024;
 const MAX_RESPONSE_BYTES = 1024 * 1024;
+const REQUEST_TIMEOUT_MS = 10_000;
 const APPLY_PATH = "/api/trpc/plannedSessions.applyScenario";
 
 const [sessionId, observationPath, upstreamPortText] = process.argv.slice(2);
@@ -18,6 +19,16 @@ if (!sessionId || !observationPath || !Number.isInteger(upstreamPort))
   throw new Error("Invalid native scenario transport arguments.");
 const configuredSessionId = sessionId;
 const configuredObservationPath = observationPath;
+try {
+  requireNativeScenarioTransportGuard({
+    observationPath: configuredObservationPath,
+    sessionId: configuredSessionId,
+    upstreamPort,
+  });
+  closeSync(openSync(configuredObservationPath, "wx", 0o600));
+} catch {
+  process.exit(1);
+}
 
 type Observation = {
   dropped: boolean;
@@ -26,7 +37,7 @@ type Observation = {
 const observation: Observation = { dropped: false, requests: [] };
 
 function persistObservation() {
-  writeFileSync(configuredObservationPath, JSON.stringify(observation), { mode: 0o600 });
+  writeFileSync(configuredObservationPath, JSON.stringify(observation), { flag: "w", mode: 0o600 });
   chmodSync(configuredObservationPath, 0o600);
 }
 
@@ -56,9 +67,15 @@ function applyIdentity(body: Buffer) {
 function appliedResponse(statusCode: number, body: Buffer) {
   if (statusCode < 200 || statusCode > 299 || body.length > MAX_RESPONSE_BYTES) return false;
   try {
-    const parsed = JSON.parse(body.toString("utf8")) as unknown;
-    const text = JSON.stringify(parsed);
-    return text.includes('"result"') && !text.includes('"error"');
+    const parsed = JSON.parse(body.toString("utf8")) as Array<{
+      result?: { data?: { json?: { status?: unknown; session?: { id?: unknown } } } };
+    }>;
+    return (
+      Array.isArray(parsed) &&
+      parsed.length === 1 &&
+      parsed[0]?.result?.data?.json?.status === "applied" &&
+      parsed[0].result.data.json.session?.id === configuredSessionId
+    );
   } catch {
     return false;
   }
@@ -85,13 +102,18 @@ function collect(request: IncomingMessage, limit: number) {
     });
     request.on("end", () => finish(Buffer.concat(chunks)));
     request.on("error", () => finish(undefined));
+    request.setTimeout(REQUEST_TIMEOUT_MS, () => finish(undefined));
   });
 }
 
 async function forward(request: IncomingMessage, response: ServerResponse) {
   try {
     // A removed/expired lease makes this request unavailable; it never forwards.
-    requireDisposableAcceptanceEnvironment();
+    requireNativeScenarioTransportGuard({
+      observationPath: configuredObservationPath,
+      sessionId: configuredSessionId,
+      upstreamPort,
+    });
   } catch {
     response.statusCode = 503;
     response.end("Acceptance runner ownership is unavailable.");
@@ -103,45 +125,59 @@ async function forward(request: IncomingMessage, response: ServerResponse) {
     response.end();
     return;
   }
-  const matching =
-    request.method === "POST" &&
-    new URL(request.url ?? "/", "http://loopback").pathname === APPLY_PATH
-      ? applyIdentity(body)
-      : undefined;
-  const upstream = upstreamRequest(
-    {
-      host: "127.0.0.1",
-      port: upstreamPort,
-      method: request.method,
-      path: request.url,
-      headers: { ...request.headers, host: `127.0.0.1:${upstreamPort}` },
-      timeout: 10_000,
-    },
-    async (upstreamResponse) => {
-      const responseBody = await collect(upstreamResponse, MAX_RESPONSE_BYTES);
-      if (!responseBody) {
-        response.statusCode = 502;
-        response.end();
-        return;
-      }
-      if (matching) {
-        observation.requests.push(matching);
-        persistObservation();
-      }
-      if (
-        matching &&
-        !observation.dropped &&
-        appliedResponse(upstreamResponse.statusCode ?? 500, responseBody)
-      ) {
-        observation.dropped = true;
-        persistObservation();
-        response.socket?.destroy();
-        return;
-      }
-      response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
-      response.end(responseBody);
-    },
-  );
+  let matching: ReturnType<typeof applyIdentity>;
+  try {
+    matching =
+      request.method === "POST" &&
+      new URL(request.url ?? "/", "http://loopback").pathname === APPLY_PATH
+        ? applyIdentity(body)
+        : undefined;
+  } catch {
+    response.statusCode = 400;
+    response.end();
+    return;
+  }
+  let upstream: ReturnType<typeof upstreamRequest>;
+  try {
+    upstream = upstreamRequest(
+      {
+        host: "127.0.0.1",
+        port: upstreamPort,
+        method: request.method,
+        path: request.url,
+        headers: { ...request.headers, host: `127.0.0.1:${upstreamPort}` },
+        timeout: 10_000,
+      },
+      async (upstreamResponse) => {
+        const responseBody = await collect(upstreamResponse, MAX_RESPONSE_BYTES);
+        if (!responseBody) {
+          response.statusCode = 502;
+          response.end();
+          return;
+        }
+        if (matching) {
+          observation.requests.push(matching);
+          persistObservation();
+        }
+        if (
+          matching &&
+          !observation.dropped &&
+          appliedResponse(upstreamResponse.statusCode ?? 500, responseBody)
+        ) {
+          observation.dropped = true;
+          persistObservation();
+          response.socket?.destroy();
+          return;
+        }
+        response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
+        response.end(responseBody);
+      },
+    );
+  } catch {
+    response.statusCode = 502;
+    response.end();
+    return;
+  }
   upstream.on("timeout", () => upstream.destroy());
   upstream.on("error", () => {
     if (!response.headersSent) {
@@ -153,10 +189,19 @@ async function forward(request: IncomingMessage, response: ServerResponse) {
 }
 
 persistObservation();
+const sockets = new Set<import("node:net").Socket>();
 const server = createServer((request, response) => void forward(request, response));
+server.on("connection", (socket) => {
+  sockets.add(socket);
+  socket.on("close", () => sockets.delete(socket));
+});
 server.listen(0, "127.0.0.1", () => {
   const address = server.address();
   if (!address || typeof address === "string") process.exit(1);
   process.send?.({ port: address.port });
 });
-process.on("SIGTERM", () => server.close(() => process.exit(0)));
+process.on("SIGTERM", () => {
+  for (const socket of sockets) socket.destroy();
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 1_000);
+});
