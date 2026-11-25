@@ -1,0 +1,42 @@
+appId: com.deancochran.gradientpeak.dev
+name: Completed athlete preserves an evidence-free threshold goal through Plan and back
+---
+- tapOn:
+    id: tab-button-plan
+- extendedWaitUntil:
+    visible:
+      id: plan-selected-goal
+    timeout: 30000
+- assertVisible: ${MAESTRO_ACCEPTANCE_GOAL_TITLE}
+- assertVisible: "Target date: ${MAESTRO_ACCEPTANCE_TARGET_DATE}"
+- assertVisible: "More comparable evidence is needed"
+- assertVisible: "Current: Unavailable"
+- assertVisible: "Target: 300 W"
+- assertVisible: "Remaining gap: Unavailable"
+- takeScreenshot: goal-progress-unavailable-plan
+- tapOn:
+    id: plan-selected-goal
+- extendedWaitUntil:
+    visible:
+      id: goal-detail-progress
+    timeout: 30000
+- assertVisible: ${MAESTRO_ACCEPTANCE_GOAL_TITLE}
+- assertVisible: "Current"
+- assertVisible: "Unavailable"
+- assertVisible: "Target"
+- assertVisible: "300 W"
+- assertVisible: "Remaining gap"
+- assertVisible: "A performance trend requires two or more comparable threshold assessments."
+- assertNotVisible:
+    id: plan-progress-evidence-tray
+- takeScreenshot: goal-progress-unavailable-goal
+- pressKey: back
+- extendedWaitUntil:
+    visible:
+      id: plan-selected-goal
+    timeout: 30000
+- assertVisible: ${MAESTRO_ACCEPTANCE_GOAL_TITLE}
+- assertVisible: "Target date: ${MAESTRO_ACCEPTANCE_TARGET_DATE}"
+- assertVisible: "Current: Unavailable"
+- assertVisible: "Remaining gap: Unavailable"
+- takeScreenshot: goal-progress-unavailable-back
