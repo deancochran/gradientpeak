@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   previewInputs: [] as unknown[],
   previewInput: undefined as unknown,
   apply: vi.fn(),
+  actorId: "00000000-0000-4000-8000-000000000001",
   previewResult: {
     data: undefined as unknown,
     isError: false,
@@ -61,7 +62,7 @@ vi.mock("../../lib/api/client", () => ({
 }));
 
 vi.mock("../providers/auth-provider", () => ({
-  useAuth: () => ({ user: { id: "00000000-0000-4000-8000-000000000001" } }),
+  useAuth: () => ({ user: mocks.actorId ? { id: mocks.actorId } : null }),
 }));
 
 vi.mock("@repo/ui/components/session-scenario-comparison", () => ({
@@ -75,6 +76,7 @@ beforeEach(() => {
   mocks.previewInput = undefined;
   mocks.previewInputs = [];
   mocks.apply = vi.fn();
+  mocks.actorId = "00000000-0000-4000-8000-000000000001";
   mocks.previewResult = { data: undefined, isError: false, isLoading: false, refetch: vi.fn() };
   mocks.stateResult = {
     data: { publishedState: { baseline: { stateRevision: 7 } } },
@@ -98,6 +100,26 @@ function renderPreview(nextSession = session) {
 
 function inputScenario() {
   return (mocks.previewInput as { scenario?: unknown } | undefined)?.scenario;
+}
+
+function availablePreview() {
+  return {
+    status: "available" as const,
+    previewFingerprint: `v1:sha256:${"a".repeat(64)}`,
+    selectedSession: { id: "session-a", sessionRevision: 3, planningDate: "2026-11-26" },
+    stateRevision: 7,
+    freshness: "fresh" as const,
+    horizon: { startDate: "2026-11-26", simulationAt: "2026-11-25T00:00:00.000Z", sessionCount: 2 },
+    scenario: { kind: "as_planned" as const },
+    baseline: {},
+    alternative: {},
+    provenance: {
+      resolution: "current_activity_plan" as const,
+      selectedPlan: { id: "current-plan", revision: 5 },
+      historicalSnapshots: "provenance_only" as const,
+      selectedAlternative: null,
+    },
+  };
 }
 
 describe("SessionScenarioPreview", () => {
@@ -266,5 +288,31 @@ describe("SessionScenarioPreview", () => {
     expect(screen.getByText(/Unable to save safe recovery/i)).toBeTruthy();
     expect(mocks.apply).not.toHaveBeenCalled();
     setItem.mockRestore();
+  });
+
+  it("does not settle an old actor's late acknowledgement into a replacement actor", async () => {
+    mocks.previewResult.data = availablePreview();
+    let resolveApply: (value: unknown) => void = () => undefined;
+    mocks.apply.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveApply = resolve;
+        }),
+    );
+    const { rerender } = renderPreview();
+    fireEvent.click(screen.getByRole("button", { name: "Apply this scenario" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm apply" }));
+    fireEvent.click(screen.getByRole("button", { name: "Check or retry this change" }));
+    const actorAKey = "gradientpeak:planned-session-scenario:v1:profile-a:session-a";
+    expect(localStorage.getItem(actorAKey)).not.toBeNull();
+
+    mocks.actorId = "00000000-0000-4000-8000-000000000002";
+    rerender(
+      <SessionScenarioPreview activityPlan={activityPlan} session={session} timeZone="UTC" />,
+    );
+    resolveApply({ status: "applied", action: "unchanged" });
+    await Promise.resolve();
+    expect(screen.queryByText(/Applied: unchanged/i)).toBeNull();
+    expect(localStorage.getItem(actorAKey)).not.toBeNull();
   });
 });
