@@ -38,6 +38,13 @@ export {
   buildDirectPlannedSessionCreateInput,
   isPlannedSessionConflict,
 } from "./planned-session-client";
+export type { FrozenPlannedSessionScenarioOperation } from "./planned-session-scenario-client";
+export {
+  freezePlannedSessionScenarioOperation,
+  isCurrentPlannedSessionScenarioOperation,
+  parseFrozenPlannedSessionScenarioOperation,
+  requiresFreshPlannedSessionScenarioPreview,
+} from "./planned-session-scenario-client";
 export type { SchedulingRefreshScope } from "./query-client";
 export {
   API_CACHE_TAG_QUERY_KEYS,
