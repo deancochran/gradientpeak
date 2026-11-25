@@ -38,8 +38,10 @@ name: Open the completed session from Calendar and replace it with the named sav
     visible:
       id: planned-session-completion-candidates
     timeout: 30000
-- assertVisible: ${MAESTRO_ACCEPTANCE_RECORDED_ACTIVITY_NAME}
-- tapOn: ${MAESTRO_ACCEPTANCE_RECORDED_ACTIVITY_NAME}
+- assertVisible:
+    text: ".*${MAESTRO_ACCEPTANCE_RECORDED_ACTIVITY_NAME}.*"
+- tapOn:
+    text: ".*${MAESTRO_ACCEPTANCE_RECORDED_ACTIVITY_NAME}.*"
 - tapOn:
     id: planned-session-confirm-association
 - extendedWaitUntil:
