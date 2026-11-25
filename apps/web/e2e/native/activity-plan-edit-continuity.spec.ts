@@ -51,6 +51,7 @@ test("Android preserves a scheduled plan while canceling an invalid provisional 
     e2eIdentity,
     testInfo,
     workspaceOnly: true,
+    workspaceJourney: "selected-home-only",
   });
   const savedPlanName = e2eIdentity.name("Native easy session edited");
   const transientDescription = "Temporary metadata draft";
