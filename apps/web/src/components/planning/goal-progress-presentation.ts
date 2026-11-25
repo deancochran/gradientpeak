@@ -1,4 +1,8 @@
-import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
+import {
+  type AppRouter,
+  type inferRouterOutputs,
+  selectPublishedGoalProgressHistory,
+} from "@repo/api/client";
 import {
   diffDateOnlyUtcDays,
   formatDateOnlyInTimeZone,
@@ -11,25 +15,7 @@ export type GoalProgress = Outputs["getGoalProgress"];
 export type ThresholdHistory = Outputs["getThresholdOverview"]["history"]["items"];
 export type ThresholdOverview = Outputs["getThresholdOverview"];
 
-export function selectGoalProgressHistory(
-  progress: GoalProgress | undefined,
-  overview: ThresholdOverview | undefined,
-) {
-  const progressRevision = progress?.publication?.publishedRevision;
-  const overviewRevision = overview?.publication.publishedRevision;
-  const matches =
-    progressRevision !== null &&
-    progressRevision !== undefined &&
-    overviewRevision !== null &&
-    overviewRevision !== undefined &&
-    progressRevision === overviewRevision;
-
-  return {
-    history: matches ? (overview?.history.items ?? []) : [],
-    historyLimited: matches && overview?.history.nextCursor !== null,
-    publicationMismatch: Boolean(overview && !matches),
-  };
-}
+export const selectGoalProgressHistory = selectPublishedGoalProgressHistory;
 
 export function nearestGoalChartPoint(
   points: readonly { label?: string; plotX: number; plotY: number }[],
