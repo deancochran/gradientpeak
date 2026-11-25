@@ -28,6 +28,12 @@ function preserveMaestroCaptures(testInfo: TestInfo, captures: readonly string[]
   });
 }
 
+function clearMaestroCaptures(captures: readonly string[]) {
+  for (const capture of captures) {
+    rmSync(resolve(`${capture}.png`), { force: true });
+  }
+}
+
 export async function completeManualNativeAcceptance({
   actor,
   e2eDatabase,
@@ -162,13 +168,13 @@ export async function completeManualNativeAcceptance({
     .from(plannedSessions)
     .where(eq(plannedSessions.profile_id, actor.profileId));
   if (!manualSession) throw new Error("Native UI-created session is missing");
+  const workspaceCaptures = ["athlete-workspace-selected-session"] as const;
+  clearMaestroCaptures(workspaceCaptures);
   const athleteVisualWorkspaceResult = runMaestro("athlete-visual-workspace.yaml", {
     MAESTRO_ACCEPTANCE_SESSION_DATE: today,
     MAESTRO_ACCEPTANCE_SESSION_ID: manualSession.id,
   });
-  const [workspaceCaptured] = preserveMaestroCaptures(testInfo, [
-    "athlete-workspace-selected-session",
-  ]);
+  const [workspaceCaptured] = preserveMaestroCaptures(testInfo, workspaceCaptures);
   writeFileSync(
     testInfo.outputPath("maestro-athlete-visual-workspace.log"),
     `${athleteVisualWorkspaceResult.stdout ?? ""}\n${athleteVisualWorkspaceResult.stderr ?? ""}`,
@@ -179,16 +185,18 @@ export async function completeManualNativeAcceptance({
     "Home must keep its truthful goal state and selected scheduled session after returning",
   ).toBe(0);
   expect(workspaceCaptured, "Workspace flow must retain its declared capture").toBe(true);
+  const manualCaptures = [
+    "planned-session-detail-before-completion",
+    "planned-session-full-completion",
+  ] as const;
+  clearMaestroCaptures(manualCaptures);
   const manualResult = runMaestro("manual-native-session.yaml", {
     MAESTRO_ACCEPTANCE_PLAN_NAME: planName,
     MAESTRO_ACCEPTANCE_SESSION_DATE: today,
     MAESTRO_ACCEPTANCE_SESSION_DAY: String(Number(today.slice(8, 10))),
     MAESTRO_ACCEPTANCE_SESSION_ID: manualSession.id,
   });
-  const [detailCaptured, completionCaptured] = preserveMaestroCaptures(testInfo, [
-    "planned-session-detail-before-completion",
-    "planned-session-full-completion",
-  ]);
+  const [detailCaptured, completionCaptured] = preserveMaestroCaptures(testInfo, manualCaptures);
   writeFileSync(
     testInfo.outputPath("maestro-manual.log"),
     `${manualResult.stdout ?? ""}\n${manualResult.stderr ?? ""}`,
@@ -222,12 +230,14 @@ export async function completeManualNativeAcceptance({
   });
   if (!completedSession?.completed_activity_id)
     throw new Error("Manual completion did not retain its linked activity ID");
+  const reopenCaptures = ["planned-session-calendar-reopen"] as const;
+  clearMaestroCaptures(reopenCaptures);
   const reopenManualResult = runMaestro("reopen-manual-completion.yaml", {
     MAESTRO_ACCEPTANCE_COMPLETED_ACTIVITY_ID: completedSession.completed_activity_id,
     MAESTRO_ACCEPTANCE_SESSION_DATE: today,
     MAESTRO_ACCEPTANCE_SESSION_DAY: String(Number(today.slice(8, 10))),
   });
-  const [reopenCaptured] = preserveMaestroCaptures(testInfo, ["planned-session-calendar-reopen"]);
+  const [reopenCaptured] = preserveMaestroCaptures(testInfo, reopenCaptures);
   writeFileSync(
     testInfo.outputPath("maestro-manual-reopen.log"),
     `${reopenManualResult.stdout ?? ""}\n${reopenManualResult.stderr ?? ""}`,
