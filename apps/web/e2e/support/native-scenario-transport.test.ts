@@ -5,7 +5,7 @@ import { createServer, type RequestListener, type Server } from "node:http";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDisposableAcceptanceLease } from "./disposable-acceptance-lease";
 import {
   type NativeScenarioTransport,
@@ -226,7 +226,64 @@ describe("native scenario transport", () => {
     ).rejects.toThrow();
   });
 
+  it("clears its timer and listener when an owned child exits during SIGTERM", async () => {
+    vi.useFakeTimers();
+    try {
+      const child = fakeChild((signal) => {
+        if (signal === "SIGTERM") child.emit("exit", null, "SIGTERM");
+        return true;
+      });
+      await expect(stopNativeScenarioTransportChild(child as never, 1)).resolves.toBeUndefined();
+      expect(vi.getTimerCount()).toBe(0);
+      expect(child.listenerCount("exit")).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("does not hang when an owned child exits synchronously during escalation", async () => {
+    vi.useFakeTimers();
+    try {
+      const child = fakeChild((signal) => {
+        if (signal === "SIGKILL") {
+          child.signalCode = "SIGKILL";
+          child.emit("exit", null, "SIGKILL");
+        }
+        return true;
+      });
+      const stopping = stopNativeScenarioTransportChild(child as never, 1);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(stopping).resolves.toBeUndefined();
+      expect(vi.getTimerCount()).toBe(0);
+      expect(child.listenerCount("exit")).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not signal an already exited child and bounds a child that never exits", async () => {
+    const exited = fakeChild(() => {
+      throw new Error("kill must not run");
+    });
+    exited.exitCode = 0;
+    await expect(stopNativeScenarioTransportChild(exited as never, 1)).resolves.toBeUndefined();
+
+    vi.useFakeTimers();
+    try {
+      const child = fakeChild(() => true);
+      const stopping = stopNativeScenarioTransportChild(child as never, 1);
+      const rejected = expect(stopping).rejects.toThrow(/did not exit/);
+      await vi.advanceTimersByTimeAsync(1);
+      await vi.advanceTimersByTimeAsync(1);
+      await rejected;
+      expect(vi.getTimerCount()).toBe(0);
+      expect(child.listenerCount("exit")).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  function fakeChild(kill: (signal?: NodeJS.Signals) => boolean) {
     const child = new EventEmitter() as EventEmitter & {
       exitCode: number | null;
       signalCode: NodeJS.Signals | null;
@@ -234,15 +291,9 @@ describe("native scenario transport", () => {
     };
     child.exitCode = null;
     child.signalCode = null;
-    child.kill = (signal) => {
-      if (signal === "SIGKILL") {
-        child.signalCode = "SIGKILL";
-        child.emit("exit", null, "SIGKILL");
-      }
-      return true;
-    };
-    await expect(stopNativeScenarioTransportChild(child as never, 1)).resolves.toBeUndefined();
-  });
+    child.kill = kill;
+    return child;
+  }
 
   it("rejects invalid startup input, revokes forwarding after lease loss, and cleans up", async () => {
     const port = await upstream((_request, response) => response.end("ok"));

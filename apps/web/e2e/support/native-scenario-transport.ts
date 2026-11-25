@@ -128,14 +128,34 @@ export async function stopNativeScenarioTransportChild(child: ChildProcess, time
   if (child.exitCode !== null || child.signalCode !== null) return;
   // Attach once before either signal: an exit that races SIGKILL must settle
   // this same promise rather than leaving a second listener waiting forever.
-  const exited = once(child, "exit").then(() => true);
-  const waitForExit = () =>
-    Promise.race([exited, new Promise<false>((done) => setTimeout(() => done(false), timeoutMs))]);
-  child.kill("SIGTERM");
-  if (await waitForExit()) return;
-  if (child.exitCode !== null || child.signalCode !== null) return;
-  child.kill("SIGKILL");
-  if (await waitForExit()) return;
-  if (child.exitCode !== null || child.signalCode !== null) return;
-  throw new Error("Native scenario transport child did not exit after owned shutdown signals.");
+  let resolveExit: (() => void) | undefined;
+  const onExit = () => resolveExit?.();
+  const exited = new Promise<void>((resolve) => {
+    resolveExit = resolve;
+    child.once("exit", onExit);
+  });
+  const waitForExit = async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        exited.then(() => true),
+        new Promise<false>((resolve) => {
+          timer = setTimeout(() => resolve(false), timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+  };
+  try {
+    child.kill("SIGTERM");
+    if (await waitForExit()) return;
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    child.kill("SIGKILL");
+    if (await waitForExit()) return;
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    throw new Error("Native scenario transport child did not exit after owned shutdown signals.");
+  } finally {
+    child.off("exit", onExit);
+  }
 }
