@@ -1,6 +1,5 @@
 import { z } from "zod";
 
-import type { accountDeletionResultSchema } from "./account-deletion";
 import { authSessionSchema, authUserSchema } from "./session";
 
 export const signUpInputSchema = z.object({
@@ -42,10 +41,6 @@ export const verifyEmailInputSchema = z.object({
   tokenHash: z.string().min(1),
 });
 
-export const deleteAccountInputSchema = z.object({
-  userId: z.string().min(1),
-});
-
 export const authMutationResultSchema = z.object({
   user: authUserSchema.nullable().optional(),
   session: authSessionSchema.nullable().optional(),
@@ -72,9 +67,6 @@ export interface AuthOperations {
     input: z.infer<typeof resendVerificationInputSchema>,
   ): Promise<{ success: true }>;
   verifyEmail(input: z.infer<typeof verifyEmailInputSchema>): Promise<{ success: true }>;
-  deleteAccount(
-    input: z.infer<typeof deleteAccountInputSchema>,
-  ): Promise<z.infer<typeof accountDeletionResultSchema>>;
 }
 
 export type SignUpInput = z.infer<typeof signUpInputSchema>;
@@ -84,5 +76,4 @@ export type UpdatePasswordInput = z.infer<typeof updatePasswordInputSchema>;
 export type UpdateEmailInput = z.infer<typeof updateEmailInputSchema>;
 export type ResendVerificationInput = z.infer<typeof resendVerificationInputSchema>;
 export type VerifyEmailInput = z.infer<typeof verifyEmailInputSchema>;
-export type DeleteAccountInput = z.infer<typeof deleteAccountInputSchema>;
 export type AuthMutationResult = z.infer<typeof authMutationResultSchema>;

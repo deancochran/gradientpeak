@@ -1,0 +1,146 @@
+import type { EvidenceItem, EvidenceSourceType } from "@repo/core";
+
+export type EvidenceRegistry = Record<string, EvidenceItem>;
+
+export function sourceId(
+  namespace: "activity" | "metric" | "effort" | "goal" | "manual",
+  id: string,
+  field?: string,
+) {
+  const components = field === undefined ? [id] : [id, field];
+  return `${namespace}:${components.map(encodeURIComponent).join(":")}`;
+}
+
+export function lineageId(namespace: "activity" | "metric" | "manual-test", id: string) {
+  return `${namespace}:${encodeURIComponent(id)}`;
+}
+
+export function addEvidence(input: {
+  registry: EvidenceRegistry;
+  athleteId: string;
+  sourceId: string;
+  lineageGroupId: string;
+  observedAt: Date;
+  value: number | null;
+  unit: string | null;
+  activity_category: "run" | "bike" | "swim" | "strength" | "other" | null;
+  modality: string;
+  sourceType: EvidenceSourceType;
+  validityState?: EvidenceItem["validityState"];
+  compatibilityState?: EvidenceItem["compatibilityState"];
+}): string {
+  input.registry[input.sourceId] = {
+    athleteId: input.athleteId,
+    sourceId: input.sourceId,
+    lineageGroupId: input.lineageGroupId,
+    observedAt: input.observedAt.toISOString(),
+    rawObservation: { value: input.value, unit: input.unit },
+    activity_category: input.activity_category,
+    modality: input.modality,
+    sourceType: input.sourceType,
+    qualityState: input.value === null ? "unknown" : "known",
+    validityState: input.validityState ?? "valid",
+    compatibilityState: input.compatibilityState ?? "compatible",
+  };
+  return input.sourceId;
+}
+
+export function normalizeActivityCategory(value: string | null | undefined) {
+  const activity_category = value?.toLowerCase() ?? "";
+  if (activity_category.includes("run")) return "run" as const;
+  if (
+    activity_category.includes("cycl") ||
+    activity_category.includes("bike") ||
+    activity_category.includes("ride")
+  )
+    return "bike" as const;
+  if (activity_category.includes("swim")) return "swim" as const;
+  if (activity_category.includes("strength") || activity_category.includes("weight"))
+    return "strength" as const;
+  return "other" as const;
+}
+
+export function parseScheduleRecurrence(rule: string | null, startsAt: Date) {
+  if (!rule) return null;
+  const body = rule.replace(/^RRULE:/i, "");
+  const parts: Record<string, string> = {};
+  const supportedKeys = new Set(["FREQ", "INTERVAL", "UNTIL"]);
+  for (const component of body.split(";")) {
+    const separator = component.indexOf("=");
+    if (
+      separator <= 0 ||
+      separator !== component.lastIndexOf("=") ||
+      separator === component.length - 1
+    )
+      return null;
+    const key = component.slice(0, separator).toUpperCase();
+    const value = component.slice(separator + 1);
+    if (!supportedKeys.has(key) || key in parts) return null;
+    parts[key] = value;
+  }
+  const frequency = parts.FREQ?.toLowerCase();
+  if (frequency !== "daily" && frequency !== "weekly" && frequency !== "monthly") return null;
+  if (parts.INTERVAL !== undefined && !/^\d+$/.test(parts.INTERVAL)) return null;
+  const interval = Number(parts.INTERVAL ?? 1);
+  if (!Number.isInteger(interval) || interval < 1 || interval > 52) return null;
+  const untilValue = parts.UNTIL;
+  if (untilValue !== undefined && !/^\d{8}T\d{6}Z$/.test(untilValue)) return null;
+  const until = untilValue
+    ? new Date(
+        untilValue.replace(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/, "$1-$2-$3T$4:$5:$6Z"),
+      )
+    : null;
+  if (until && Number.isNaN(until.getTime())) return null;
+  const normalizedUntil = until
+    ? until.toISOString().replaceAll("-", "").replaceAll(":", "").replace(".000", "")
+    : null;
+  if (until && (normalizedUntil !== untilValue || until < startsAt)) return null;
+  return { frequency, interval, until: until?.toISOString() ?? null };
+}
+
+export const metricUnits = {
+  lthr: "beats_per_minute",
+  max_hr: "beats_per_minute",
+  resting_hr: "beats_per_minute",
+  vo2_max: "milliliters_per_kilogram_per_minute",
+  weight_kg: "kilograms",
+  hrv_rmssd: "milliseconds",
+  sleep_hours: "hours",
+  stress_score: "score",
+  soreness_level: "score",
+  wellness_score: "score",
+  age_years: "years",
+} as const;
+
+export function canonicalMetricValue(
+  type: keyof typeof metricUnits,
+  value: number,
+  unit: string,
+): number | null {
+  const normalized = unit.trim().toLowerCase().replaceAll(" ", "");
+  const aliases: Record<keyof typeof metricUnits, readonly string[]> = {
+    lthr: ["bpm", "beatperminute", "beatsperminute"],
+    max_hr: ["bpm", "beatperminute", "beatsperminute"],
+    resting_hr: ["bpm", "beatperminute", "beatsperminute"],
+    vo2_max: ["ml/kg/min", "millilitersperkilogramperminute"],
+    weight_kg: ["kg", "kilogram", "kilograms"],
+    hrv_rmssd: ["ms", "millisecond", "milliseconds"],
+    sleep_hours: ["h", "hr", "hrs", "hour", "hours"],
+    stress_score: ["score", "points"],
+    soreness_level: ["score", "points"],
+    wellness_score: ["score", "points"],
+    age_years: ["year", "years"],
+  };
+
+  if (aliases[type].includes(normalized)) return value;
+  if (type === "weight_kg" && ["lb", "lbs", "pound", "pounds"].includes(normalized)) {
+    return value * 0.45359237;
+  }
+  if (type === "sleep_hours" && ["min", "minute", "minutes"].includes(normalized)) {
+    return value / 60;
+  }
+  if (type === "sleep_hours" && ["s", "sec", "second", "seconds"].includes(normalized)) {
+    return value / 3_600;
+  }
+  return null;
+}

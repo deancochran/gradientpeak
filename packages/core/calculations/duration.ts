@@ -67,7 +67,7 @@ export function calculateEndTime(activity: StandardActivity): Date {
     startTime: activity.metadata.startTime,
     totalTime: activity.summary.totalTime,
     records: activity.records,
-    laps: activity.laps,
+    ...(activity.laps === undefined ? {} : { laps: activity.laps }),
   });
   return new Date(activity.metadata.startTime.getTime() + duration * 1000);
 }
