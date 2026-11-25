@@ -275,6 +275,10 @@ test("native athlete explicitly retries the same scenario request after its comm
     before[0].find((session) => session.id !== fixture.sessionId),
     "Scenario fixture other occurrence is missing before the lost-ACK flow.",
   );
+  const originalPlan = requireRow(
+    before[1].find((plan) => plan.id === fixture.activityPlanId),
+    "Scenario fixture source activity plan is missing before the lost-ACK flow.",
+  );
   runFlow("session-scenario-compare.yaml");
   await expect(fixture.snapshot()).resolves.toEqual(before);
 
@@ -336,11 +340,16 @@ test("native athlete explicitly retries the same scenario request after its comm
     plans.find((plan) => plan.id === selected.activity_plan_id),
     "Lost-ACK recovery did not retain a persisted copied activity plan.",
   );
+  const unchangedOriginalPlan = requireRow(
+    plans.find((plan) => plan.id === fixture.activityPlanId),
+    "Source activity plan is missing after lost-ACK recovery.",
+  );
   expect(selected.activity_plan_id).not.toBe(fixture.activityPlanId);
   expect(copiedPlan.profile_id).toBe(actor.profileId);
   expect(copiedPlan.content_visibility).toBe("private");
   expect(copiedPlan.is_system_template).toBe(false);
   expect(otherOccurrence).toEqual(originalOtherOccurrence);
+  expect(unchangedOriginalPlan).toEqual(originalPlan);
   expect(plans).toHaveLength(before[1].length + 1);
   await expect(fixture.operationReceiptsForSession(fixture.sessionId)).resolves.toEqual([
     expect.objectContaining({
