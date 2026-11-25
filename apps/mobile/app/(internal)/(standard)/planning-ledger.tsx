@@ -34,18 +34,20 @@ export default function PlanningLedgerScreen() {
       : { startDate: "1970-01-01", endDateExclusive: "1970-01-02", limit: 500 },
     { enabled: request !== null && query.data !== undefined },
   );
+  const calendarItems =
+    calendarQuery.isLoading || calendarQuery.isError ? [] : (calendarQuery.data?.items ?? []);
   const completedActivities = Array.from(
     new Map(
-      (calendarQuery.data?.items ?? []).flatMap((item) =>
+      calendarItems.flatMap((item) =>
         item.activity ? [[item.activity.id, item.activity] as const] : [],
       ),
     ).values(),
   );
-  const plannedActuals: PlannedSessionComparison[] = (calendarQuery.data?.items ?? []).flatMap(
-    (item) => (item.plannedActual ? [item.plannedActual] : []),
+  const plannedActuals: PlannedSessionComparison[] = calendarItems.flatMap((item) =>
+    item.plannedActual ? [item.plannedActual] : [],
   );
   const completedPlannedSessions = query.data
-    ? completedPlannedSessionsForLedger(calendarQuery.data?.items ?? [], query.data)
+    ? completedPlannedSessionsForLedger(calendarItems, query.data)
     : [];
 
   const openEntry = (target: LedgerNavigationTarget) => {

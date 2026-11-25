@@ -188,3 +188,39 @@ it("renders authoritative ledger data while activity-card hydration fails", asyn
   expect(screen.container.queryAll((node) => node.type === "PlanningLedgerView")).toHaveLength(1);
   expect(screen.container.queryAll((node) => node.type === "ErrorState")).toHaveLength(0);
 });
+
+it.each([
+  ["fails", { isError: true, isLoading: false }],
+  ["is loading", { isError: false, isLoading: true }],
+])("does not present cached calendar enrichment as current when its refresh %s", async (_, state) => {
+  calendarRangeQuery.mockReturnValue({
+    data: {
+      items: [
+        {
+          activity: { id: "stale-activity" },
+          calendarDate: "2026-04-15",
+          kind: "planned_activity",
+          metrics: [],
+          plan: null,
+          plannedActual: {
+            actual: { distanceMeters: null, durationSeconds: null, state: "unknown" },
+            planned: { distanceMeters: null, durationSeconds: null, state: "unknown" },
+          },
+          plannedSession: { id: "stale-session" },
+          status: "completed",
+          subtitle: null,
+          title: "Stale completed session",
+        },
+      ],
+    },
+    ...state,
+    refetch: jest.fn(),
+  });
+  await renderNative(<PlanningLedgerScreen />);
+
+  const ledgerView = screen.container.queryAll((node) => node.type === "PlanningLedgerView")[0];
+  if (!ledgerView) throw new Error("Expected Planning Ledger view");
+  expect(ledgerView.props.completedActivities).toEqual([]);
+  expect(ledgerView.props.completedPlannedSessions).toEqual([]);
+  expect(ledgerView.props.plannedActuals).toEqual([]);
+});
