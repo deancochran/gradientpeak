@@ -12,10 +12,10 @@ name: New progress with replayed incompatible history is disclosed without a tra
 - assertVisible: "Threshold history was updated separately and is not shown with this progress."
 - assertNotVisible:
     id: goal-detail-progress-refresh-warning
-- assertVisible: ${MAESTRO_ACCEPTANCE_NEW_CURRENT_LABEL}
-- scrollUntilVisible:
-    element:
-      id: plan-progress-source-${MAESTRO_ACCEPTANCE_NEW_SOURCE_ACTIVITY_ID}
-    direction: DOWN
-- assertVisible: ${MAESTRO_ACCEPTANCE_NEW_SOURCE_ACTIVITY_NAME}
+- assertVisible: ${MAESTRO_ACCEPTANCE_NEW_CURRENT_ACCESSIBILITY_LABEL}
+- assertVisible: ${MAESTRO_ACCEPTANCE_NEW_TARGET_ACCESSIBILITY_LABEL}
+- assertVisible: ${MAESTRO_ACCEPTANCE_NEW_GAP_ACCESSIBILITY_LABEL}
+- assertVisible: "A performance trend requires two or more comparable threshold assessments."
+- assertNotVisible:
+    id: plan-progress-evidence-tray
 - takeScreenshot: goal-progress-revision-mismatch

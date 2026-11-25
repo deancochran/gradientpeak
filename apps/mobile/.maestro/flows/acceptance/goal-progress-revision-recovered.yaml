@@ -11,7 +11,9 @@ name: Matching fresh history clears the mismatch disclosure
     timeout: 30000
 - assertNotVisible:
     id: goal-detail-progress-refresh-warning
-- assertVisible: ${MAESTRO_ACCEPTANCE_NEW_CURRENT_LABEL}
+- assertVisible: ${MAESTRO_ACCEPTANCE_NEW_CURRENT_ACCESSIBILITY_LABEL}
+- assertVisible: ${MAESTRO_ACCEPTANCE_NEW_TARGET_ACCESSIBILITY_LABEL}
+- assertVisible: ${MAESTRO_ACCEPTANCE_NEW_GAP_ACCESSIBILITY_LABEL}
 - scrollUntilVisible:
     element:
       id: plan-progress-source-${MAESTRO_ACCEPTANCE_NEW_SOURCE_ACTIVITY_ID}
