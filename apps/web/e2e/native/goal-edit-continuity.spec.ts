@@ -1,8 +1,17 @@
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import type { TestInfo } from "@playwright/test";
 import { profileGoals } from "@repo/db/schema";
+import { and, eq } from "drizzle-orm";
 import { expect, test } from "../fixtures";
 import { withGoalFixture } from "../planning/data";
 
@@ -61,17 +70,23 @@ function prepareFlowScreenshots(testInfo: TestInfo, flow: Flow, debugDirectory: 
 function retainFlowScreenshots(testInfo: TestInfo, flow: Flow, debugDirectory: string) {
   const retained: string[] = [];
   const artifactDirectory = testInfo.outputPath("goal-edit-continuity-screenshots");
-  mkdirSync(artifactDirectory, { recursive: true });
+  mkdirSync(artifactDirectory, { recursive: true, mode: 0o700 });
+  chmodSync(artifactDirectory, 0o700);
   for (const name of flowScreenshots[flow]) {
     const destination = screenshotPath(artifactDirectory, name);
-    for (const source of [
-      screenshotPath(debugDirectory, name),
-      screenshotPath(process.cwd(), name),
-    ]) {
-      if (!existsSync(source)) continue;
-      copyFileSync(source, destination);
-      retained.push(name);
-      break;
+    const cwdSource = screenshotPath(process.cwd(), name);
+    try {
+      for (const source of [screenshotPath(debugDirectory, name), cwdSource]) {
+        if (!existsSync(source)) continue;
+        copyFileSync(source, destination);
+        chmodSync(destination, 0o600);
+        retained.push(name);
+        break;
+      }
+    } finally {
+      // Maestro can emit this owned capture into cwd; remove only this flow's
+      // exact source name after retention, including when later assertions fail.
+      rmSync(cwdSource, { force: true });
     }
   }
   return retained;
@@ -164,6 +179,14 @@ test("Android keeps goal edits cancelable, clearable, and returnable to their se
 
   await withGoalFixture(
     async (fixture) => {
+      const readOwnedGoalAudit = () =>
+        e2eDatabase.db
+          .select({
+            id: profileGoals.id,
+            updatedAt: profileGoals.updated_at,
+          })
+          .from(profileGoals)
+          .where(and(eq(profileGoals.id, goalId), eq(profileGoals.profile_id, actor.profileId)));
       fixture.rememberGoal(goalId);
       await e2eDatabase.typedTransaction((transaction) =>
         transaction.insert(profileGoals).values({
@@ -179,6 +202,11 @@ test("Android keeps goal edits cancelable, clearable, and returnable to their se
         }),
       );
       await expect.poll(() => fixture.getGoal(goalId)).toEqual(originalGoal);
+      const baselineRows = await readOwnedGoalAudit();
+      expect(baselineRows).toHaveLength(1);
+      const baseline = baselineRows[0];
+      if (!baseline)
+        throw new Error("The owned goal was absent immediately after its fixture insert.");
 
       const deviceToday = readDeviceToday();
       const targetMonthDelta = monthDelta(deviceToday, targetDate);
@@ -222,6 +250,9 @@ test("Android keeps goal edits cancelable, clearable, and returnable to their se
 
       runFlow("goal-edit-cancel.yaml", environment);
       await expect.poll(() => fixture.getGoal(goalId)).toEqual(originalGoal);
+      const canceledRows = await readOwnedGoalAudit();
+      expect(canceledRows).toHaveLength(1);
+      expect(canceledRows[0]?.updatedAt).toEqual(baseline.updatedAt);
 
       runFlow("goal-edit-save-reopen.yaml", environment);
       await expect

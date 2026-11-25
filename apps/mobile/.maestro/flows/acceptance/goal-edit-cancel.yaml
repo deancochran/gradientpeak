@@ -61,7 +61,16 @@ name: Athlete repairs no invalid completion target when canceling a Goal edit
 - tapOn: "Done Duration"
 - assertVisible: "Enter a valid duration."
 - takeScreenshot: goal-edit-invalid-duration
-# Native Back cancels this route; it must not submit the invalid draft.
+# Invalid Done deliberately keeps the duration picker open. The first Back
+# cancels only that picker and restores its pre-picker draft; the second Back
+# cancels the Goal edit route without submitting.
+- pressKey: back
+- extendedWaitUntil:
+    notVisible:
+      id: goal-duration-duration-overlay
+    timeout: 30000
+- assertVisible:
+    id: goal-edit-screen
 - pressKey: back
 - extendedWaitUntil:
     visible:
