@@ -8,7 +8,10 @@ import { eq } from "drizzle-orm";
 import type { AuthenticatedE2EActor } from "../support/actors";
 import type { LocalE2EDatabase } from "../support/database";
 import type { E2EExecutionIdentity } from "../support/identity";
-import { captureNativePlannedSessionErrors } from "./native-api-error-capture";
+import {
+  captureWorkspaceNativeErrors,
+  type NativePlannedSessionCapture,
+} from "./native-api-error-capture";
 
 type NativeManualAcceptanceInput = {
   actor: AuthenticatedE2EActor;
@@ -250,32 +253,40 @@ export async function completeManualNativeAcceptance({
   if (!manualSession) throw new Error("Native UI-created session is missing");
   const workspaceCaptures = ["athlete-workspace-selected-session"] as const;
   clearMaestroCaptures(workspaceCaptures);
-  const appPid = runAdb("shell", "pidof", "com.deancochran.gradientpeak.dev")
-    .stdout.trim()
-    .split(/\s+/)[0];
-  const nativeErrorCapture = appPid ? captureNativePlannedSessionErrors(appPid) : null;
-  const athleteVisualWorkspaceResult = runMaestro("athlete-visual-workspace.yaml", {
-    MAESTRO_ACCEPTANCE_SESSION_DATE: today,
-    MAESTRO_ACCEPTANCE_SESSION_ID: manualSession.id,
-  });
+  const appPid = workspaceOnly
+    ? runAdb("shell", "pidof", "com.deancochran.gradientpeak.dev").stdout.trim().split(/\s+/)[0]
+    : undefined;
+  const nativeErrorCapture = captureWorkspaceNativeErrors(workspaceOnly, appPid);
+  let athleteVisualWorkspaceResult: ReturnType<typeof runMaestro>;
+  let nativeCapture: NativePlannedSessionCapture | null;
+  try {
+    athleteVisualWorkspaceResult = runMaestro("athlete-visual-workspace.yaml", {
+      MAESTRO_ACCEPTANCE_SESSION_DATE: today,
+      MAESTRO_ACCEPTANCE_SESSION_ID: manualSession.id,
+    });
+  } finally {
+    nativeCapture = nativeErrorCapture ? await nativeErrorCapture.stop() : null;
+  }
   const [workspaceCaptured] = preserveMaestroCaptures(testInfo, workspaceCaptures);
   writeFileSync(
     testInfo.outputPath("maestro-athlete-visual-workspace.log"),
     `${athleteVisualWorkspaceResult.stdout ?? ""}\n${athleteVisualWorkspaceResult.stderr ?? ""}`,
     { mode: 0o600 },
   );
-  writeFileSync(
-    testInfo.outputPath("planned-session-get-by-id-native-errors.json"),
-    JSON.stringify(
-      {
-        records: nativeErrorCapture ? await nativeErrorCapture.stop() : [],
-        source: nativeErrorCapture ? "owned-app-pid-logcat" : "app-pid-unavailable",
-      },
-      null,
-      2,
-    ),
-    { mode: 0o600 },
-  );
+  if (workspaceOnly) {
+    writeFileSync(
+      testInfo.outputPath("planned-session-get-by-id-native-errors.json"),
+      JSON.stringify(
+        {
+          ...nativeCapture,
+          source: nativeErrorCapture ? "owned-app-pid-logcat" : "app-pid-unavailable",
+        },
+        null,
+        2,
+      ),
+      { mode: 0o600 },
+    );
+  }
   expect(
     athleteVisualWorkspaceResult.status,
     "Home must keep its truthful goal state and selected scheduled session after returning",
