@@ -24,6 +24,12 @@ name: Completed athlete signs in visibly before the goal-progress proof
     visible:
       id: home-screen
     timeout: 30000
+- takeScreenshot: goal-progress-home-before-scroll
+- extendedWaitUntil:
+    visible:
+      id: plan-selected-goal
+    timeout: 30000
+- assertVisible: ${MAESTRO_ACCEPTANCE_GOAL_TITLE}
 - scrollUntilVisible:
     element:
       text: "Current: 285 W"
