@@ -8,6 +8,7 @@ const backMock = jest.fn();
 const replaceMock = jest.fn();
 const updateMock = jest.fn();
 const invalidateMock = jest.fn();
+const invalidateLedgerMock = jest.fn();
 const firstId = "11111111-1111-4111-8111-111111111111";
 const secondId = "22222222-2222-4222-8222-222222222222";
 let id = firstId;
@@ -51,7 +52,9 @@ jest.mock("@repo/api/react", () => ({
 }));
 jest.mock("@/lib/api", () => ({
   api: {
-    useUtils: () => ({}),
+    useUtils: () => ({
+      trainingPlans: { getPlanningLedger: { invalidate: invalidateLedgerMock } },
+    }),
     goals: {
       getById: {
         useQuery: () => ({
@@ -79,6 +82,7 @@ beforeEach(() => {
   backMock.mockReset();
   replaceMock.mockReset();
   invalidateMock.mockReset().mockResolvedValue(undefined);
+  invalidateLedgerMock.mockReset().mockResolvedValue(undefined);
 });
 
 it.each([
@@ -104,6 +108,7 @@ it.each([
     },
   });
   expect(invalidateMock).toHaveBeenCalledTimes(1);
+  expect(invalidateLedgerMock).toHaveBeenCalledTimes(1);
 });
 
 it("replaces with the canonical Goal Detail after a direct edit save has no history", async () => {
@@ -116,6 +121,7 @@ it("replaces with the canonical Goal Detail after a direct edit save has no hist
   await waitFor(() => expect(replaceMock).toHaveBeenCalledWith(ROUTES.GOALS.DETAIL(firstId)));
   expect(replaceMock).toHaveBeenCalledTimes(1);
   expect(backMock).not.toHaveBeenCalled();
+  expect(invalidateLedgerMock).toHaveBeenCalledTimes(1);
 });
 
 it.each([
@@ -200,6 +206,7 @@ it("keeps failed goal edits with an announced retry error", async () => {
   expect(screen.getByTestId("goal-editor-title-input").props.value).toBe("Keep goal draft");
   expect(backMock).not.toHaveBeenCalled();
   expect(replaceMock).not.toHaveBeenCalled();
+  expect(invalidateLedgerMock).not.toHaveBeenCalled();
 });
 
 it("does not navigate a new goal when the old pending save completes", async () => {
@@ -222,5 +229,6 @@ it("does not navigate a new goal when the old pending save completes", async () 
   await act(async () => resolve({}));
   expect(backMock).not.toHaveBeenCalled();
   expect(replaceMock).not.toHaveBeenCalled();
+  expect(invalidateLedgerMock).not.toHaveBeenCalled();
   expect(screen.getByTestId("goal-editor-title-input").props.value).toBe("Second goal");
 });
