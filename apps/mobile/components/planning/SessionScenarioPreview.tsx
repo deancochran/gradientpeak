@@ -18,6 +18,11 @@ import { useAuth } from "@/lib/hooks/useAuth";
 
 type ScenarioKind = "as_planned" | "less" | "more" | "substitute" | "skip";
 type KnownScenarioOutcome = { actorId: string; message: string };
+type E2ERetryBoundary = "idle" | "received" | "guarded" | "dispatched";
+
+function isE2ERetryBoundaryEnabled() {
+  return process.env.EXPO_PUBLIC_MAESTRO_E2E === "1";
+}
 
 function operationStorageKey(profileId: string, sessionId: string) {
   return `gradientpeak:planned-session-scenario:v1:${profileId}:${sessionId}`;
@@ -57,6 +62,7 @@ function SessionScenarioPreviewContents({
   const [knownOutcomeSuppressed, setKnownOutcomeSuppressed] = useState(false);
   const [storageUnavailable, setStorageUnavailable] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const [e2eRetryBoundary, setE2ERetryBoundary] = useState<E2ERetryBoundary>("idle");
   const operationRef = useRef<FrozenPlannedSessionScenarioOperation | null>(null);
   const latestOperationIdRef = useRef<string | null>(null);
   const armingRef = useRef(false);
@@ -178,6 +184,9 @@ function SessionScenarioPreviewContents({
       return false;
     }
   };
+  const recordE2ERetryBoundary = (boundary: E2ERetryBoundary) => {
+    if (isE2ERetryBoundaryEnabled()) setE2ERetryBoundary(boundary);
+  };
   const confirmApply = async () => {
     if (
       !actorId ||
@@ -212,7 +221,7 @@ function SessionScenarioPreviewContents({
       armingRef.current = false;
     }
   };
-  const submitOperation = async (operationToSubmit = operation) => {
+  const submitOperation = async (operationToSubmit = operation, isRetry = false) => {
     if (
       !operationToSubmit ||
       !actorId ||
@@ -221,8 +230,10 @@ function SessionScenarioPreviewContents({
         sessionId: session.id,
       }) ||
       submittingRef.current
-    )
+    ) {
+      if (isRetry) recordE2ERetryBoundary("guarded");
       return;
+    }
     submittingRef.current = true;
     const generation = generationRef.current;
     const submittedActor = actorId;
@@ -236,6 +247,7 @@ function SessionScenarioPreviewContents({
         sessionId: session.id,
       });
     try {
+      if (isRetry) recordE2ERetryBoundary("dispatched");
       const result = await applyMutation.mutateAsync(operationToSubmit.request);
       if (!isCurrentSubmission()) return;
       if (result.status === "applied") {
@@ -413,11 +425,31 @@ function SessionScenarioPreviewContents({
       {displayableOperation ? (
         <Button
           disabled={applyMutation.isPending}
-          onPress={() => void submitOperation(displayableOperation)}
+          onPress={() => {
+            recordE2ERetryBoundary("received");
+            void submitOperation(displayableOperation, true);
+          }}
           testID="session-scenario-retry-apply"
         >
           <Text>{applyMutation.isPending ? "Applying…" : "Check or retry this change"}</Text>
         </Button>
+      ) : null}
+      {isE2ERetryBoundaryEnabled() ? (
+        <View
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            left: 0,
+            bottom: 0,
+            opacity: 0.01,
+            maxWidth: 2,
+            maxHeight: 2,
+          }}
+        >
+          <Text testID={`e2e-session-scenario-retry-boundary-${e2eRetryBoundary}`}>
+            E2E_RETRY_BOUNDARY={e2eRetryBoundary}
+          </Text>
+        </View>
       ) : null}
       {confirming && previewQuery.data?.status === "available" ? (
         <View accessibilityRole="alert" className="gap-2 rounded-xl border border-border p-3">
