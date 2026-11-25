@@ -12,9 +12,21 @@ describe("selectPublishedGoalProgressHistory", () => {
       expected: { history, historyLimited: true, publicationMismatch: false },
     },
     {
+      name: "equal zero publications",
+      progress: { publication: { publishedRevision: 0 } },
+      overview: { publication: { publishedRevision: 0 } },
+      expected: { history, historyLimited: true, publicationMismatch: false },
+    },
+    {
       name: "different known publications",
       progress: { publication: { publishedRevision: 7 } },
       overview: { publication: { publishedRevision: 8 } },
+      expected: { history: [], historyLimited: false, publicationMismatch: true },
+    },
+    {
+      name: "different known publications beginning at zero",
+      progress: { publication: { publishedRevision: 0 } },
+      overview: { publication: { publishedRevision: 1 } },
       expected: { history: [], historyLimited: false, publicationMismatch: true },
     },
     {
