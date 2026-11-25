@@ -1,5 +1,4 @@
 import type { ActivityDisplayModel, SemanticMetric } from "@repo/core";
-import { formatDurationSec } from "@repo/core/utils/dates";
 import { fireEvent, waitFor } from "@testing-library/react-native";
 import type { ComponentProps } from "react";
 import { Alert, Pressable, View } from "react-native";
@@ -45,11 +44,6 @@ jest.mock("@repo/ui/components/text", () => {
   const { createHost } = jest.requireActual("../../../test/mock-components");
   return { __esModule: true, Text: createHost("Text") };
 });
-
-jest.mock("@repo/core/utils/dates", () => ({
-  __esModule: true,
-  formatDurationSec: jest.fn(() => "60 min"),
-}));
 
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
@@ -286,7 +280,7 @@ describe("ActivityCard", () => {
     expect(screen.getByText("Distance")).toBeTruthy();
     expect(screen.getByText("10.0 km")).toBeTruthy();
     expect(screen.getByText("Elapsed")).toBeTruthy();
-    expect(screen.getByText("60 min")).toBeTruthy();
+    expect(screen.getByText("1 hr 0 min")).toBeTruthy();
     expect(screen.getByText("Load")).toBeTruthy();
     expect(screen.getByText("64")).toBeTruthy();
     expect(screen.getByText("Intensity")).toBeTruthy();
@@ -320,7 +314,7 @@ describe("ActivityCard", () => {
       />,
     );
 
-    expect(jest.mocked(formatDurationSec)).toHaveBeenCalledWith(3600);
+    expect(screen.getByText("1 hr 0 min")).toBeTruthy();
     expect(screen.getByText("Elapsed")).toBeTruthy();
     expect(screen.queryByText("Active")).toBeNull();
   });
@@ -345,9 +339,62 @@ describe("ActivityCard", () => {
       />,
     );
 
-    expect(jest.mocked(formatDurationSec)).toHaveBeenCalledWith(3000);
+    expect(screen.getByText("50 min")).toBeTruthy();
     expect(screen.getByText("Active")).toBeTruthy();
     expect(screen.queryByText("Elapsed")).toBeNull();
+  });
+
+  it.each([
+    ["fractional elapsed duration", 12.095, "12 sec"],
+    ["thirty-second elapsed duration", 30, "30 sec"],
+    ["fifty-nine-second elapsed duration", 59, "59 sec"],
+    ["one-minute elapsed duration", 60, "1 min"],
+    ["long elapsed duration", 3660, "1 hr 1 min"],
+    ["zero elapsed duration", 0, "0 sec"],
+    ["sub-second elapsed duration", 0.25, "<1 sec"],
+    ["negative elapsed duration", -1, "--"],
+    ["non-finite elapsed duration", Number.NaN, "--"],
+  ])("formats %s without reducing it to zero minutes", async (_name, value, expected) => {
+    const activity = {
+      ...createActivityDisplay(),
+      metrics: [
+        {
+          key: "elapsed_duration",
+          label: "Elapsed",
+          status: "available",
+          value,
+          unit: "seconds",
+          reason: null,
+        },
+      ],
+    } as ActivityDisplayModel;
+
+    await renderNative(<ProjectionActivityCard activity={activity} />);
+
+    expect(screen.getByText("Elapsed")).toBeTruthy();
+    expect(screen.getByText(expected)).toBeTruthy();
+  });
+
+  it("keeps unavailable elapsed duration distinct from a recorded zero", async () => {
+    const activity = {
+      ...createActivityDisplay(),
+      metrics: [
+        {
+          key: "elapsed_duration",
+          label: "Elapsed",
+          status: "unavailable",
+          value: null,
+          unit: "seconds",
+          reason: "unavailable",
+        },
+      ],
+    } as ActivityDisplayModel;
+
+    await renderNative(<ProjectionActivityCard activity={activity} />);
+
+    expect(screen.getByText("Elapsed")).toBeTruthy();
+    expect(screen.getByText("—")).toBeTruthy();
+    expect(screen.queryByText("0 sec")).toBeNull();
   });
 
   it("marks partial Load and Intensity values as estimates", async () => {
