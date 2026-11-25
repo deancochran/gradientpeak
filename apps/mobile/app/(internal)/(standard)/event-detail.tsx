@@ -25,7 +25,10 @@ import {
   parseRecurrenceEndDate,
   parseRecurrenceFrequency,
 } from "@/components/event/EventEditorCard";
-import { SessionScenarioPreview } from "@/components/planning/SessionScenarioPreview";
+import {
+  type E2ERetryBoundaryUpdate,
+  SessionScenarioPreview,
+} from "@/components/planning/SessionScenarioPreview";
 import { AppConfirmModal, AppFormModal } from "@/components/shared/AppFormModal";
 import { DetailOverflowMenu } from "@/components/shared/detail";
 import { RouteCard } from "@/components/shared/RouteCard";
@@ -37,6 +40,7 @@ import { getEventStatusLabel, getEventTitle } from "@/lib/calendar/eventPresenta
 import { formatEventTime, getEventScheduledDate } from "@/lib/calendar/eventSchedule";
 import { ROUTES } from "@/lib/constants/routes";
 import { markEstimated } from "@/lib/estimatedMetrics";
+import { useAuth } from "@/lib/hooks/useAuth";
 import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
 import { useDirtyNavigationGuard } from "@/lib/hooks/useDirtyNavigationGuard";
 import { useEntityCommentsController } from "@/lib/hooks/useEntityCommentsController";
@@ -335,6 +339,18 @@ export default function EventDetailScreen() {
     message: string;
     sessionId: string;
   } | null>(null);
+  const { user } = useAuth();
+  const actorId = user?.id ?? null;
+  const [scenarioRetryBoundary, setScenarioRetryBoundary] = useState<E2ERetryBoundaryUpdate | null>(
+    null,
+  );
+  const e2eScenarioRetryBoundaryEnabled = process.env.EXPO_PUBLIC_MAESTRO_E2E === "1";
+  useEffect(() => {
+    if (!e2eScenarioRetryBoundaryEnabled) return;
+    setScenarioRetryBoundary(
+      actorId && isPlannedSession ? { actorId, boundary: "idle", sessionId: eventId } : null,
+    );
+  }, [actorId, e2eScenarioRetryBoundaryEnabled, eventId, isPlannedSession]);
   const plannedReadNetworkMode = isLocalDevelopmentApiEndpoint() ? "always" : "online";
 
   const {
@@ -989,7 +1005,13 @@ export default function EventDetailScreen() {
           {session.lifecycle.status === "scheduled" ? (
             <SessionScenarioPreview
               activityPlanRevision={activityPlan.activityPlanRevision}
+              e2eRetryBoundary={e2eScenarioRetryBoundaryEnabled ? scenarioRetryBoundary : null}
               knownOutcome={scenarioOutcome?.sessionId === session.id ? scenarioOutcome : null}
+              onE2ERetryBoundaryChange={(update) => {
+                if (!e2eScenarioRetryBoundaryEnabled) return;
+                if (update.actorId !== actorId || update.sessionId !== session.id) return;
+                setScenarioRetryBoundary(update);
+              }}
               onKnownOutcomeChange={(outcome) =>
                 setScenarioOutcome(outcome ? { ...outcome, sessionId: session.id } : null)
               }

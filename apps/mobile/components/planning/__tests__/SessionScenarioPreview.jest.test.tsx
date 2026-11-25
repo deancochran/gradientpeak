@@ -491,6 +491,80 @@ describe("SessionScenarioPreview", () => {
     await waitFor(() => expect(recovered.getByText("Applied: repointed.")).toBeTruthy());
   });
 
+  it("retains a real retry dispatch marker through a parent fallback remount", async () => {
+    const recoveredSession = {
+      ...props.session,
+      id: "00000000-0000-4000-8000-000000000012",
+    };
+    const receipt = freezePlannedSessionScenarioOperation({
+      actorId: mocks.actorId,
+      expectedPreviewFingerprint: `v1:sha256:${"d".repeat(64)}`,
+      operationId: "00000000000040008000000000000011",
+      preview: {
+        expectedPlanRevision: 5,
+        expectedSessionRevision: 3,
+        expectedStateRevision: 7,
+        scenario: { kind: "less", targetDurationSeconds: 1200 },
+        sessionId: recoveredSession.id,
+      },
+    });
+    const stored = new Map<string, string>();
+    const storageKey = `gradientpeak:planned-session-scenario:v1:${recoveredSession.profileId}:${recoveredSession.id}`;
+    stored.set(storageKey, JSON.stringify(receipt));
+    jest.mocked(AsyncStorage.getItem).mockImplementation(async (key) => stored.get(key) ?? null);
+    jest.mocked(AsyncStorage.removeItem).mockImplementation(async (key) => {
+      stored.delete(key);
+    });
+    mocks.preview = {
+      data: { status: "unavailable", reason: "session_not_scheduled" },
+      isError: false,
+      isLoading: false,
+      refetch: jest.fn(),
+    };
+    mocks.apply.mockResolvedValue({ status: "applied", action: "repointed" });
+    process.env.EXPO_PUBLIC_MAESTRO_E2E = "1";
+
+    function ParentHarness() {
+      const [boundary, setBoundary] = React.useState<
+        | Parameters<
+            NonNullable<
+              React.ComponentProps<typeof SessionScenarioPreview>["onE2ERetryBoundaryChange"]
+            >
+          >[0]
+        | null
+      >(null);
+      const [showPreview, setShowPreview] = React.useState(true);
+      if (!showPreview)
+        return React.createElement(RemountFallback, {
+          onRestore: () => setShowPreview(true),
+        });
+      return (
+        <SessionScenarioPreview
+          {...props}
+          e2eRetryBoundary={boundary}
+          onE2ERetryBoundaryChange={setBoundary}
+          onKnownOutcomeChange={(outcome) => {
+            if (outcome) setShowPreview(false);
+          }}
+          session={recoveredSession}
+        />
+      );
+    }
+
+    function RemountFallback({ onRestore }: { onRestore: () => void }) {
+      React.useEffect(onRestore, [onRestore]);
+      return React.createElement("View", { testID: "scenario-preview-fallback" });
+    }
+
+    const screen = await renderNative(<ParentHarness />);
+    await waitFor(() => expect(screen.getByTestId("session-scenario-retry-apply")).toBeTruthy());
+    await act(async () => screen.getByTestId("session-scenario-retry-apply").props.onPress());
+    await waitFor(() =>
+      expect(screen.getByTestId("e2e-session-scenario-retry-boundary-dispatched")).toBeTruthy(),
+    );
+    await waitFor(() => expect(mocks.invalidations.plannedSessions).toHaveBeenCalled());
+  });
+
   it("replaces an unknown outcome with one pending recovery announcement until retry settles", async () => {
     let resolveRetry!: (result: { action: string; status: "applied" }) => void;
     const retryResult = new Promise<{ action: string; status: "applied" }>((resolve) => {
