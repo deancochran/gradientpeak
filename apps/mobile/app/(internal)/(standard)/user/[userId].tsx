@@ -13,12 +13,14 @@ import { Clock, Ellipsis, MessageCircle, UserMinus, UserPlus } from "lucide-reac
 import { useEffect, useMemo } from "react";
 import { Alert, ScrollView, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import { ProfileActivitiesSection } from "@/components/profile/ProfileActivitiesSection";
 import { ProfileGroupsSection } from "@/components/profile/ProfileGroupsSection";
 import { ProfileSummaryCard } from "@/components/profile/ProfileSummaryCard";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
+import { omitUndefined } from "@/lib/omitUndefined";
 
 function UserDetailScreen() {
   const router = useRouter();
@@ -32,7 +34,7 @@ function UserDetailScreen() {
 
   useEffect(() => {
     if (isOwnProfile) {
-      router.replace(ROUTES.PROFILE_SETTINGS as any);
+      router.replace(ROUTES.PROFILE_TAB);
     }
   }, [isOwnProfile, router]);
 
@@ -49,9 +51,9 @@ function UserDetailScreen() {
     if (isOwnProfile && profile) {
       return {
         ...profile,
-        followers_count: targetProfile?.followers_count ?? profile.followers_count ?? 0,
-        following_count: targetProfile?.following_count ?? profile.following_count ?? 0,
-        follow_status: targetProfile?.follow_status ?? profile.follow_status ?? null,
+        followers_count: targetProfile?.followers_count ?? 0,
+        following_count: targetProfile?.following_count ?? 0,
+        follow_status: targetProfile?.follow_status ?? null,
       };
     }
 
@@ -76,8 +78,8 @@ function UserDetailScreen() {
 
   const messageMutation = api.messaging.getOrCreateDM.useMutation({
     onSuccess: (data) => {
-      if (data && "id" in data) {
-        navigateTo(`/messages/${(data as any).id}` as any);
+      if (data && "id" in data && typeof data.id === "string") {
+        navigateTo(`/messages/${data.id}`);
       }
     },
     onError: (err) => Alert.alert("Error", err.message || "Failed to start message"),
@@ -93,7 +95,7 @@ function UserDetailScreen() {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" sideOffset={6}>
           <DropdownMenuItem
-            onPress={() => navigateTo(ROUTES.PROFILE_EDIT as any)}
+            onPress={() => navigateTo(ROUTES.PROFILE_EDIT)}
             testID="user-detail-options-edit"
           >
             <Text>Edit Profile</Text>
@@ -149,7 +151,7 @@ function UserDetailScreen() {
   }
 
   const supportingText = isOwnProfile
-    ? "This is how your public profile appears to other athletes. Account tools live in the Profile tab."
+    ? "This is how your public profile appears to other athletes. Account tools live in Me."
     : renderedProfile.is_public
       ? "Open profile details, then follow or message if this looks like the right connection."
       : "This profile stays private until your follow request is accepted.";
@@ -164,6 +166,15 @@ function UserDetailScreen() {
       <Stack.Screen options={{ headerRight: renderHeaderActions }} />
 
       <ProfileSummaryCard
+        {...omitUndefined({
+          onEdit: isOwnProfile ? () => navigateTo(ROUTES.PROFILE_EDIT) : undefined,
+          onFollowersPress: canViewSocialGraph
+            ? () => navigateTo(`/followers?userId=${targetUserId}`)
+            : undefined,
+          onFollowingPress: canViewSocialGraph
+            ? () => navigateTo(`/following?userId=${targetUserId}`)
+            : undefined,
+        })}
         actions={
           !isOwnProfile ? (
             <View className="flex-row gap-3">
@@ -221,18 +232,7 @@ function UserDetailScreen() {
         }
         emailFallback={isOwnProfile ? user?.email : null}
         isOwnProfile={isOwnProfile}
-        onEdit={isOwnProfile ? () => navigateTo(ROUTES.PROFILE_EDIT as any) : undefined}
-        onFollowersPress={
-          canViewSocialGraph
-            ? () => navigateTo(`/followers?userId=${targetUserId}` as any)
-            : undefined
-        }
-        onFollowingPress={
-          canViewSocialGraph
-            ? () => navigateTo(`/following?userId=${targetUserId}` as any)
-            : undefined
-        }
-        profile={renderedProfile}
+        profile={omitUndefined(renderedProfile)}
         showMetadata={
           renderedProfile.is_public !== false ||
           isOwnProfile ||
@@ -241,6 +241,10 @@ function UserDetailScreen() {
         supportingText={supportingText}
         testID="user-detail-summary"
       />
+
+      {canViewSocialGraph ? (
+        <ProfileActivitiesSection profileId={targetUserId} testID="user-detail-activities" />
+      ) : null}
 
       <ProfileGroupsSection profileId={targetUserId} testID="user-detail-groups" />
 

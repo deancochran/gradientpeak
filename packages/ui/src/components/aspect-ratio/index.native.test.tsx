@@ -3,8 +3,8 @@ import { Text } from "../text/index.native";
 import { AspectRatio } from "./index.native";
 
 describe("AspectRatio native", () => {
-  it("renders children inside the primitive root", () => {
-    const { getByTestId, getByText } = renderNative(
+  it("renders children inside the primitive root", async () => {
+    const { getByTestId, getByText } = await renderNative(
       <AspectRatio ratio={16 / 9} testID="media-frame">
         <Text>Preview media</Text>
       </AspectRatio>,

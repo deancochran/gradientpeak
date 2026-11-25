@@ -1,19 +1,19 @@
 # GradientPeak Activity Plan Samples
 
-This directory contains comprehensive sample activity plans for all supported activity types in the GradientPeak platform. These samples serve as templates for users and provide realistic examples for testing and development.
+This directory contains comprehensive sample activity plans for all supported activity categories in the GradientPeak platform. These samples serve as templates for users and provide realistic examples for testing and development.
 
 ## Overview
 
-The samples provide structured activity plans across 7 different activity types, with at least 5 different activities per activity type, totaling **36 unique activity plans**.
+The samples provide structured activity plans across 7 different activity categories, totaling **49 unique activity plans**.
 
 ## Activity Types & Activities
 
-### 🚴 Indoor Bike Trainer (6 activities)
+### 🚴 Indoor Bike Trainer (8 activities)
 - **Sweet Spot Intervals** - 60min focusing on sweet spot power development
 - **VO2 Max Development** - 75min with challenging VO2 max intervals
 - **Active Recovery Ride** - 45min easy recovery ride
 - **Sprint Power Development** - 35min neuromuscular power focus
-- **Threshold Heart Rate Intervals** - 45min threshold HR training
+- **Threshold Heart Rate Intervals** - 55min threshold HR training
 - **Comprehensive Test** - 1min test activity for schema validation
 
 ### 🏃 Indoor Treadmill (5 activities)
@@ -23,14 +23,13 @@ The samples provide structured activity plans across 7 different activity types,
 - **Easy Recovery Run** - 30min low-intensity recovery
 - **Hill Intervals** - 45min incline-based strength and power
 
-### 🏃‍♂️ Outdoor Run (5 activities)
+### 🏃‍♂️ Outdoor Run (14 activities)
 - **Easy Aerobic Run** - 45min comfortable aerobic base building
 - **Tempo Run** - 60min sustained tempo effort
 - **5K Pace Intervals** - 55min high-intensity intervals at race pace
-- **Long Steady Run** - 90min extended aerobic endurance
 - **Fartlek Training** - 50min unstructured speed play
 
-### 🚵 Outdoor Bike (5 activities)
+### 🚵 Outdoor Bike (7 activities)
 - **Easy Endurance Ride** - 60min comfortable aerobic ride
 - **Sweet Spot Intervals** - 75min outdoor sweet spot power
 - **Tempo Intervals** - 80min sustained tempo efforts
@@ -51,19 +50,15 @@ The samples provide structured activity plans across 7 different activity types,
 - **Technique Focus** - 40min technical stroke mechanics
 - **Endurance Set** - 75min long aerobic base building
 
-### 🎯 Other Activities (5 activities)
-- **Yoga Flow** - 60min flexibility and mindfulness practice
-- **Rock Climbing Session** - 90min climbing with warm-up and cool-down
-- **Hiking Adventure** - 120min moderate-intensity hiking
+### 🎯 Other Activities (2 activities)
 - **CrossFit WOD** - 45min high-intensity activity of the day
-- **Recovery Walk** - 45min gentle walking for active recovery
 
 ## Usage
 
 ### Import All Samples
 ```typescript
 import { SAMPLE_ACTIVITIES } from "@gradientpeak/core/samples";
-// Returns array with all 36 activity plans
+// Returns array with all 49 activity plans
 ```
 
 ### Import Specific Activity Type
@@ -87,7 +82,7 @@ const bikeActivities = getSampleActivitiesByType('indoor_bike_trainer');
 ```typescript
 import { SAMPLE_ACTIVITIES_BY_TYPE } from "@gradientpeak/core/samples";
 
-// Access activities by activity type
+// Access activities by activity category
 const strengthActivities = SAMPLE_ACTIVITIES_BY_TYPE.indoor_strength;
 const swimActivities = SAMPLE_ACTIVITIES_BY_TYPE.indoor_swim;
 ```
@@ -101,8 +96,8 @@ interface RecordingServiceActivityPlan {
   version: string;
   name: string;
   description: string;
-  activity_type: PublicActivityType;
-  estimated_tss?: number;
+  activity_category: PublicActivityCategory;
+  estimated_load?: number;
   estimated_duration?: number; // in seconds
   structure: {
     steps: Array<ActivityStep | RepetitionBlock>;
@@ -130,8 +125,8 @@ When adding new sample activities:
 1. Create activity constants following naming convention: `WORKOUT_NAME_TYPE`
 2. Export individual activities for direct access
 3. Add to the appropriate `SAMPLE_<ACTIVITY>_ACTIVITIES` array
-4. Ensure each activity type has at least 5 varied activities
-5. Include realistic TSS and duration estimates
+4. Ensure each activity category has at least 5 varied activities
+5. Include realistic Common Load and duration estimates
 6. Provide clear descriptions and notes for guidance
 
 ## Testing
@@ -148,5 +143,5 @@ These samples are used throughout the application for:
 - All durations are specified in seconds
 - Intensity targets are percentages (0-100+)
 - Each activity includes detailed notes for user guidance
-- Activities range from recovery (TSS ~20) to high intensity (TSS ~95)
+- Activities range from recovery (Common Load ~20) to high intensity (Common Load ~95)
 - Duration ranges from 30 minutes to 2 hours
