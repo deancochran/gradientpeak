@@ -118,16 +118,31 @@ const ledger: PlanningLedger = {
   },
 };
 
+function ledgerWithLoadMetrics(
+  completed: PlanningLedger["load"]["completed"],
+  planned: PlanningLedger["load"]["planned"],
+): PlanningLedger {
+  const day = ledger.dailyBreakdown[0];
+  if (!day) throw new Error("The ledger fixture requires a daily breakdown.");
+  return {
+    ...ledger,
+    dailyBreakdown: [{ ...day, completed, planned }],
+    load: { ...ledger.load, completed, planned },
+  };
+}
+
 it("formats finite partial values as normal numeric presentation", () => {
   const model = buildPlanningLedgerPresentation(ledger);
 
   expect(model.load.completedLabel).toBe("15");
   expect(model.days[0]).toMatchObject({
     completedLabel: "15",
+    consistencyLabel: "Training recorded",
     durationLabel: "30 min",
     intensityLabel: "0.72",
     plannedLabel: "25",
   });
+  expect(model.load.title).toBe("In progress");
   expect(JSON.stringify(model)).not.toContain("~");
   expect(JSON.stringify(model)).not.toContain("partial");
 });
@@ -138,6 +153,71 @@ it("renders unavailable load, duration, and intensity as a dash", () => {
   expect(formatLoadMetric(unavailable)).toBe("—");
   expect(formatDurationSeconds(null)).toBe("—");
   expect(formatIntensityMetric(unavailable)).toBe("—");
+});
+
+it("does not infer rest from unavailable daily load", () => {
+  const unavailable = { status: "unavailable" as const, value: null };
+  const knownZero = partial(0);
+  const model = buildPlanningLedgerPresentation(ledgerWithLoadMetrics(unavailable, knownZero));
+
+  expect(model.load).toMatchObject({
+    completedLabel: "—",
+    plannedLabel: "0",
+    title: "Training load unavailable",
+  });
+  expect(model.days[0]).toMatchObject({
+    accessibilityLabel: expect.stringContaining("No load data. Completed —. Planned 0."),
+    consistencyLabel: "No load data",
+  });
+});
+
+it("does not infer rest when planned load is unavailable", () => {
+  const unavailable = { status: "unavailable" as const, value: null };
+  const knownZero = partial(0);
+  const model = buildPlanningLedgerPresentation(ledgerWithLoadMetrics(knownZero, unavailable));
+
+  expect(model.load.title).not.toBe("Rest day");
+  expect(model.days[0]).toMatchObject({
+    accessibilityLabel: expect.stringContaining("No load data. Completed 0. Planned —."),
+    consistencyLabel: "No load data",
+  });
+});
+
+it("keeps fully unavailable load unavailable", () => {
+  const unavailable = { status: "unavailable" as const, value: null };
+  const model = buildPlanningLedgerPresentation(ledgerWithLoadMetrics(unavailable, unavailable));
+
+  expect(model.load.title).toBe("Training load unavailable");
+  expect(model.days[0]).toMatchObject({
+    consistencyLabel: "No load data",
+    accessibilityLabel: expect.stringContaining("No load data. Completed —. Planned —."),
+  });
+});
+
+it("keeps positive partial load classified by its known value", () => {
+  const unavailable = { status: "unavailable" as const, value: null };
+  const recorded = buildPlanningLedgerPresentation(ledgerWithLoadMetrics(partial(15), unavailable));
+  const planned = buildPlanningLedgerPresentation(ledgerWithLoadMetrics(unavailable, partial(25)));
+
+  expect(recorded.load.title).toBe("Completed load recorded");
+  expect(recorded.days[0]?.consistencyLabel).toBe("Training recorded");
+  expect(planned.load.title).toBe("Ready to train");
+  expect(planned.days[0]?.consistencyLabel).toBe("Planned");
+});
+
+it("keeps known zero load as a rest day", () => {
+  const knownZero = partial(0);
+  const model = buildPlanningLedgerPresentation(ledgerWithLoadMetrics(knownZero, knownZero));
+
+  expect(model.load).toMatchObject({
+    completedLabel: "0",
+    plannedLabel: "0",
+    title: "Rest day",
+  });
+  expect(model.days[0]).toMatchObject({
+    consistencyLabel: "Rest day",
+    accessibilityLabel: expect.stringContaining("Rest day. Completed 0. Planned 0."),
+  });
 });
 
 it("uses training-state series and intensity distribution in chart-ready models", () => {
