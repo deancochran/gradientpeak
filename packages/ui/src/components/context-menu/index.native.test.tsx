@@ -1,3 +1,4 @@
+import { Text } from "react-native";
 import { renderNative } from "../../test/render-native";
 import {
   ContextMenu,
@@ -8,13 +9,19 @@ import {
 } from "./index.native";
 
 describe("ContextMenu native", () => {
-  it("renders trigger and menu item content", () => {
-    const { getByTestId } = renderNative(
+  it("renders trigger and menu item content", async () => {
+    const { getByTestId } = await renderNative(
       <ContextMenu>
-        <ContextMenuTrigger testID="session-options-trigger">Session options</ContextMenuTrigger>
+        <ContextMenuTrigger testID="session-options-trigger">
+          <Text>Session options</Text>
+        </ContextMenuTrigger>
         <ContextMenuContent testID="session-options-content">
-          <ContextMenuItem testID="duplicate-activity-item">Duplicate activity</ContextMenuItem>
-          <ContextMenuShortcut testID="duplicate-activity-shortcut">Cmd+D</ContextMenuShortcut>
+          <ContextMenuItem testID="duplicate-activity-item">
+            <Text>Duplicate activity</Text>
+          </ContextMenuItem>
+          <ContextMenuShortcut testID="duplicate-activity-shortcut">
+            <Text>Cmd+D</Text>
+          </ContextMenuShortcut>
         </ContextMenuContent>
       </ContextMenu>,
     );

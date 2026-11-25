@@ -1,3 +1,4 @@
+import { Schemas } from "@repo/core";
 import { redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
@@ -7,7 +8,7 @@ import { buildFlashHref } from "../flash";
 import { createServerActionCaller } from "../server-action-api";
 
 const notificationIdsActionSchema = z.object({
-  notification_ids: z.array(z.string().uuid()).min(1),
+  notification_ids: Schemas.MarkNotificationReadSchema.shape.notification_ids,
   redirectTo: z.string().optional(),
   successMessage: z.string().optional(),
 });
@@ -36,7 +37,7 @@ function normalizeNotificationInput(data: unknown) {
 }
 
 export const markNotificationsReadAction = createServerFn({ method: "POST" })
-  .inputValidator((data) => normalizeNotificationInput(data))
+  .validator((data) => normalizeNotificationInput(data))
   .handler(async ({ data }) => {
     try {
       const caller = await createServerActionCaller();

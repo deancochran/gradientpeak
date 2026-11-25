@@ -5,6 +5,13 @@ import { sliderFixtures } from "./fixtures";
 import { Slider } from "./index.web";
 
 describe("Slider web", () => {
+  it("defaults to normalized units", () => {
+    renderWeb(<Slider accessibilityLabel="Normalized" />);
+    const input = screen.getByRole("slider", { name: "Normalized" });
+    expect(input).toHaveAttribute("min", "0");
+    expect(input).toHaveAttribute("max", "1");
+    expect(input).toHaveAttribute("step", "0.01");
+  });
   it("maps normalized test props and forwards slider events", () => {
     const onValueChange = vi.fn();
     const onSlidingComplete = vi.fn();

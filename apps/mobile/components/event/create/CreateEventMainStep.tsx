@@ -1,29 +1,43 @@
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
-import { DateInput } from "@repo/ui/components/date-input";
+import {
+  FormDateInputField,
+  FormSwitchField,
+  FormTextareaField,
+  FormTextField,
+  FormTimeInputField,
+  FormTimezoneField,
+} from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
-import { Input } from "@repo/ui/components/input";
-import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
-import { Textarea } from "@repo/ui/components/textarea";
-import { TimeInput } from "@repo/ui/components/time-input";
-import { format } from "date-fns";
 import { X } from "lucide-react-native";
+import type { Control } from "react-hook-form";
 import { Pressable, View } from "react-native";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
+import { RouteCard } from "@/components/shared/RouteCard";
 import type { ActivityPlanListItem, EventRecurrenceFrequency } from "../EventEditorCard";
-import { type CreateEventDraft, type CreateEventMode, toDateOnly } from "./createEventDraft";
+import type { CreateEventDraft, CreateEventMode } from "./createEventDraft";
 
-function applyDateOnlyToDate(current: Date, dateOnly: string) {
-  const [year, month, day] = dateOnly.split("-").map(Number);
-  const next = new Date(current);
-  next.setFullYear(
-    year ?? current.getFullYear(),
-    (month ?? current.getMonth() + 1) - 1,
-    day ?? current.getDate(),
-  );
-  return next;
-}
+export type EventRouteSummary = {
+  id: string;
+  name: string;
+  activity_category?: string | null;
+  description?: string | null;
+  total_ascent?: number | null;
+  total_descent?: number | null;
+  total_distance?: number | null;
+};
+
+export type EventFormValues = {
+  allDay: boolean;
+  customDate: string;
+  customTime: string;
+  notes: string;
+  plannedDate: string;
+  recurrenceEndDate: string | null;
+  title: string;
+  timezone: string | null;
+};
 
 function repeatLabel(frequency: EventRecurrenceFrequency, endDate: string | null) {
   if (frequency === "none") return "Never";
@@ -59,39 +73,129 @@ function SummaryRow({
   );
 }
 
+function RouteLinkSection({
+  onOpenRoute,
+  onRemoveRoute,
+  route,
+  testIDPrefix,
+}: {
+  onOpenRoute: () => void;
+  onRemoveRoute?: () => void;
+  route: EventRouteSummary | null;
+  testIDPrefix: string;
+}) {
+  return (
+    <View className="gap-2" testID={`${testIDPrefix}-route-row`}>
+      <View className="flex-row items-center justify-between gap-3">
+        <Text className="text-xs font-medium text-muted-foreground">Route</Text>
+        <View className="flex-row items-center gap-2">
+          <Pressable
+            className="rounded-full border border-border px-3 py-1.5"
+            onPress={onOpenRoute}
+            testID={`${testIDPrefix}-change-route-button`}
+          >
+            <Text className="text-xs font-semibold text-foreground">
+              {route ? "Change" : "Choose"}
+            </Text>
+          </Pressable>
+          {route && onRemoveRoute ? (
+            <Pressable
+              accessibilityLabel="Detach route"
+              className="h-8 w-8 items-center justify-center rounded-full border border-border bg-background"
+              onPress={onRemoveRoute}
+              testID={`${testIDPrefix}-remove-route-button`}
+            >
+              <Icon as={X} size={14} className="text-muted-foreground" />
+            </Pressable>
+          ) : null}
+        </View>
+      </View>
+      {route ? (
+        <RouteCard
+          onPress={onOpenRoute}
+          route={route}
+          showAttribution={false}
+          showLike={false}
+          variant="compact"
+        />
+      ) : (
+        <Pressable
+          className="rounded-2xl border border-dashed border-border bg-muted/20 px-3 py-4"
+          onPress={onOpenRoute}
+          testID={`${testIDPrefix}-choose-route-card`}
+        >
+          <Text className="text-sm font-semibold text-foreground">Choose a route</Text>
+          <Text className="mt-1 text-xs text-muted-foreground">
+            Optionally attach a route to this event.
+          </Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
 export function CreateEventMainStep({
+  control,
   draft,
   formErrorMessage,
   helperText,
   isPending,
+  isReadOnly = false,
   onCancel,
-  onChangeDraft,
   onChangeMode,
   onOpenActivityPlan,
+  onOpenRoute,
   onRemoveActivityPlan,
+  onRemoveRoute,
   onOpenRepeat,
   onSubmit,
   selectedActivityPlan,
+  selectedRoute,
   showFooterActions = true,
+  showRepeat = true,
   testIDPrefix,
   titleErrorMessage,
 }: {
+  control: Control<EventFormValues>;
   draft: CreateEventDraft;
   formErrorMessage?: string | null;
   helperText?: string | null;
   isPending: boolean;
+  isReadOnly?: boolean;
   onCancel: () => void;
-  onChangeDraft: (draft: CreateEventDraft) => void;
   onChangeMode: (mode: CreateEventMode) => void;
   onOpenActivityPlan: () => void;
+  onOpenRoute: () => void;
   onRemoveActivityPlan?: () => void;
+  onRemoveRoute?: () => void;
   onOpenRepeat: () => void;
   onSubmit: () => void;
   selectedActivityPlan: ActivityPlanListItem | null;
+  selectedRoute: EventRouteSummary | null;
   showFooterActions?: boolean;
+  showRepeat?: boolean;
   testIDPrefix: string;
   titleErrorMessage?: string | null;
 }) {
+  if (isReadOnly) {
+    return (
+      <Card className="rounded-3xl border border-border bg-card">
+        <CardContent className="gap-4 p-4">
+          <View
+            accessibilityRole="alert"
+            className="gap-2 rounded-xl border border-border bg-muted/30 p-4"
+          >
+            <Text className="font-semibold text-foreground">This event is read-only on mobile</Text>
+            <Text className="text-sm text-muted-foreground">
+              Its linked activity plan is unavailable. Go back to view the event, or use the event
+              removal action to remove it.
+            </Text>
+          </View>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card className="rounded-3xl border border-border bg-card">
       <CardContent className="gap-4 p-4">
@@ -145,7 +249,7 @@ export function CreateEventMainStep({
                       {draft.activityPlanId ? "Change" : "Choose"}
                     </Text>
                   </Pressable>
-                  {draft.activityPlanId && onRemoveActivityPlan ? (
+                  {draft.activityPlanId && draft.routeId && onRemoveActivityPlan ? (
                     <Pressable
                       accessibilityLabel="Detach activity plan"
                       onPress={onRemoveActivityPlan}
@@ -159,7 +263,7 @@ export function CreateEventMainStep({
               </View>
               {selectedActivityPlan ? (
                 <ActivityPlanCard
-                  activityPlan={selectedActivityPlan as any}
+                  plan={selectedActivityPlan}
                   onPress={onOpenActivityPlan}
                   testID={`${testIDPrefix}-selected-activity-plan`}
                   variant="compact"
@@ -177,96 +281,86 @@ export function CreateEventMainStep({
                 </Pressable>
               )}
             </View>
-            <DateInput
+            <RouteLinkSection
+              onOpenRoute={onOpenRoute}
+              route={selectedRoute}
+              testIDPrefix={testIDPrefix}
+              {...(onRemoveRoute ? { onRemoveRoute } : {})}
+            />
+            <FormDateInputField
               accessibilityHint="Choose the scheduled activity date"
-              id={`${testIDPrefix}-start-date`}
+              control={control}
               label="Scheduled Date"
-              onChange={(value) => {
-                if (!value) return;
-                onChangeDraft({ ...draft, scheduledDate: value });
-              }}
+              name="plannedDate"
               pickerPresentation="modal"
               testId={`${testIDPrefix}-start-date-button`}
-              value={draft.scheduledDate}
             />
-            <SummaryRow
-              label="Repeat"
-              onPress={onOpenRepeat}
-              testID={`${testIDPrefix}-repeat-row`}
-              value={repeatLabel(draft.recurrenceFrequency, draft.recurrenceEndDate)}
+            <FormTextField
+              control={control}
+              label="Title"
+              name="title"
+              placeholder="Activity title"
+              selectTextOnFocus={process.env.EXPO_PUBLIC_MAESTRO_E2E === "1"}
+              testId={`${testIDPrefix}-title-input`}
             />
-            <View className="gap-2">
-              <Text className="text-xs text-muted-foreground">Title</Text>
-              <Input
-                value={draft.title}
-                onChangeText={(title) => onChangeDraft({ ...draft, title })}
-                placeholder="Activity title"
-                testID={`${testIDPrefix}-title-input`}
-              />
-            </View>
           </>
         ) : (
           <>
-            <View className="gap-2">
-              <Text className="text-xs text-muted-foreground">Title</Text>
-              <Input
-                value={draft.title}
-                onChangeText={(title) => onChangeDraft({ ...draft, title })}
-                placeholder="Event title"
-                testID={`${testIDPrefix}-title-input`}
-              />
-            </View>
-            <DateInput
+            <RouteLinkSection
+              onOpenRoute={onOpenRoute}
+              route={selectedRoute}
+              testIDPrefix={testIDPrefix}
+              {...(onRemoveRoute ? { onRemoveRoute } : {})}
+            />
+            <FormTextField
+              control={control}
+              label="Title"
+              name="title"
+              placeholder="Event title"
+              selectTextOnFocus={process.env.EXPO_PUBLIC_MAESTRO_E2E === "1"}
+              testId={`${testIDPrefix}-title-input`}
+            />
+            <FormDateInputField
               accessibilityHint="Choose when this event starts"
-              id={`${testIDPrefix}-start-date`}
+              control={control}
               label="Starts"
-              onChange={(value) => {
-                if (!value) return;
-                onChangeDraft({ ...draft, startsAt: applyDateOnlyToDate(draft.startsAt, value) });
-              }}
+              name="customDate"
               pickerPresentation="modal"
               testId={`${testIDPrefix}-start-date-button`}
-              value={toDateOnly(draft.startsAt)}
             />
             {!draft.allDay ? (
-              <TimeInput
+              <FormTimeInputField
                 accessibilityHint="Choose when this event starts"
-                id={`${testIDPrefix}-start-time`}
+                control={control}
                 label="Start time"
-                onChange={(value) => {
-                  if (!value) return;
-                  const [hours, minutes] = value.split(":").map(Number);
-                  const startsAt = new Date(draft.startsAt);
-                  startsAt.setHours(
-                    hours ?? startsAt.getHours(),
-                    minutes ?? startsAt.getMinutes(),
-                    0,
-                    0,
-                  );
-                  onChangeDraft({ ...draft, startsAt });
-                }}
+                name="customTime"
                 pickerPresentation="modal"
                 testId={`${testIDPrefix}-start-time-button`}
-                value={format(draft.startsAt, "HH:mm")}
               />
             ) : null}
-            <View className="flex-row items-center justify-between rounded-2xl border border-border bg-card px-3 py-3">
-              <View>
-                <Text className="text-sm font-medium text-foreground">All day</Text>
-                <Text className="text-xs text-muted-foreground">Hide time for this event</Text>
-              </View>
-              <Switch
-                checked={draft.allDay}
-                onCheckedChange={(allDay) => onChangeDraft({ ...draft, allDay })}
-                testId={`${testIDPrefix}-all-day-switch`}
-              />
-            </View>
-            <SummaryRow
-              label="Repeat"
-              onPress={onOpenRepeat}
-              testID={`${testIDPrefix}-repeat-row`}
-              value={repeatLabel(draft.recurrenceFrequency, draft.recurrenceEndDate)}
+            <FormSwitchField
+              control={control}
+              description="Hide time for this event"
+              label="All day"
+              name="allDay"
+              switchLabel="All day"
+              testId={`${testIDPrefix}-all-day-switch`}
             />
+            <FormTimezoneField
+              control={control}
+              deviceTimeZone={Intl.DateTimeFormat().resolvedOptions().timeZone}
+              label="Event time zone"
+              name="timezone"
+              testId={`${testIDPrefix}-timezone`}
+            />
+            {showRepeat ? (
+              <SummaryRow
+                label="Repeat"
+                onPress={onOpenRepeat}
+                testID={`${testIDPrefix}-repeat-row`}
+                value={repeatLabel(draft.recurrenceFrequency, draft.recurrenceEndDate)}
+              />
+            ) : null}
           </>
         )}
 
@@ -274,15 +368,13 @@ export function CreateEventMainStep({
           <Text className="text-xs text-destructive">{titleErrorMessage}</Text>
         ) : null}
 
-        <View className="gap-2">
-          <Text className="text-xs text-muted-foreground">Notes</Text>
-          <Textarea
-            value={draft.notes}
-            onChangeText={(notes) => onChangeDraft({ ...draft, notes })}
-            placeholder="Optional notes"
-            testID={`${testIDPrefix}-notes-input`}
-          />
-        </View>
+        <FormTextareaField
+          control={control}
+          label="Notes"
+          name="notes"
+          placeholder="Optional notes"
+          testId={`${testIDPrefix}-notes-input`}
+        />
 
         {formErrorMessage ? (
           <Text className="text-xs text-destructive">{formErrorMessage}</Text>
