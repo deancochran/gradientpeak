@@ -661,11 +661,13 @@ describe("event detail fallback screen", () => {
       const initial = getScenarioPreviewProps(rendered);
       const generation = initial.e2eRetryBoundaryGeneration;
       if (generation === undefined) throw new Error("expected an initial E2E marker generation");
+      const sessionId = routeParams.id;
+      if (sessionId === undefined) throw new Error("expected a planned-session route ID");
       const dispatch = {
         actorId: scenarioActorId,
         boundary: "dispatched" as const,
         generation,
-        sessionId: routeParams.id,
+        sessionId,
       };
       await act(async () => initial.onE2ERetryBoundaryChange?.(dispatch));
       await waitFor(() =>
@@ -718,11 +720,13 @@ describe("event detail fallback screen", () => {
       const staleGeneration = first.e2eRetryBoundaryGeneration;
       if (staleGeneration === undefined)
         throw new Error("expected an initial E2E marker generation");
+      const sessionId = routeParams.id;
+      if (sessionId === undefined) throw new Error("expected a planned-session route ID");
       const staleUpdate = {
         actorId: actorA,
         boundary: "dispatched" as const,
         generation: staleGeneration,
-        sessionId: routeParams.id,
+        sessionId,
       };
       await act(async () => staleCallback?.(staleUpdate));
       await waitFor(() =>
