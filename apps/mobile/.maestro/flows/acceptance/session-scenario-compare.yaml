@@ -1,0 +1,52 @@
+appId: com.deancochran.gradientpeak.dev
+name: Compare and cancel a selected planned-session scenario
+---
+- tapOn:
+    id: tab-button-plan
+- tapOn:
+    id: plan-view-calendar
+- extendedWaitUntil:
+    visible:
+      id: calendar-screen-ready
+    timeout: 30000
+- tapOn:
+    id: calendar-date-jump-entry
+- tapOn: ${MAESTRO_ACCEPTANCE_SESSION_DAY}
+- tapOn: "OK"
+- extendedWaitUntil:
+    notVisible:
+      id: calendar-date-jump-loading
+    timeout: 30000
+- tapOn:
+    id: calendar-day-select-${MAESTRO_ACCEPTANCE_SESSION_DATE}
+- extendedWaitUntil:
+    visible:
+      id: planning-ledger-screen
+    timeout: 30000
+- tapOn:
+    id: planning-ledger-entry-planned-${MAESTRO_ACCEPTANCE_SESSION_ID}
+- extendedWaitUntil:
+    visible:
+      id: planned-session-detail-screen
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: session-scenario-less
+    direction: DOWN
+- tapOn:
+    id: session-scenario-less
+- tapOn: "Enter an explicit duration"
+- inputText: "1200"
+- hideKeyboard
+- assertVisible:
+    id: session-scenario-apply
+- takeScreenshot: session-scenario-comparison
+- tapOn:
+    id: session-scenario-apply
+- assertVisible:
+    id: session-scenario-confirm-apply
+- takeScreenshot: session-scenario-confirmation
+- tapOn:
+    id: session-scenario-cancel-apply
+- assertVisible:
+    id: session-scenario-apply

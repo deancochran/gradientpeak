@@ -34,6 +34,9 @@ export type SessionScenarioFixture = {
   sessionCount: number;
   sessionRevision: number;
   operationReceiptCount: (operationId: string) => Promise<number>;
+  operationReceiptsForSession: (
+    sessionId: string,
+  ) => Promise<Array<{ command: string; operationId: string }>>;
   stateRevision: number;
   substituteId: string;
   substituteName: string;
@@ -294,6 +297,22 @@ export async function createSessionScenarioFixture(input: {
             ),
           )
       ).length,
+    operationReceiptsForSession: async (sessionId) =>
+      (
+        await input.database.db
+          .select({
+            command: chatbotOperationReceipts.command,
+            operationId: chatbotOperationReceipts.operation_id,
+            result: chatbotOperationReceipts.result,
+          })
+          .from(chatbotOperationReceipts)
+          .where(eq(chatbotOperationReceipts.profile_id, input.actor.profileId))
+      ).flatMap((receipt) => {
+        const result = receipt.result as { session?: { id?: unknown } };
+        return result.session?.id === sessionId
+          ? [{ command: receipt.command, operationId: receipt.operationId }]
+          : [];
+      }),
     stateRevision: state.published_revision,
     substituteId: substitute.id,
     substituteName: substitute.name,
