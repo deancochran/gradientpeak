@@ -1,63 +1,226 @@
+import { Button } from "@repo/ui/components/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@repo/ui/components/card";
 import { Toaster } from "@repo/ui/components/sonner";
-import { TanStackDevtools } from "@tanstack/react-devtools";
-import { createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
-import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
-import type { ReactNode } from "react";
+import {
+  createRootRouteWithContext,
+  type ErrorComponentProps,
+  HeadContent,
+  Link,
+  Scripts,
+} from "@tanstack/react-router";
+import { lazy, type ReactNode, Suspense, useEffect, useState } from "react";
 
-import { AppProviders } from "../components/providers/app-providers";
+import type { WebRouterContext } from "../lib/api/router-context";
 
 import "../styles.css";
 
-export const Route = createRootRoute({
+const VITE_PRELOAD_RELOAD_KEY = "gradientpeak:vite-preload-reload";
+const VITE_PRELOAD_RELOAD_COOLDOWN_MS = 30_000;
+
+type PreloadRecoveryRuntime = {
+  now: () => number;
+  reload: () => void;
+  storage: Pick<Storage, "getItem" | "setItem">;
+};
+
+export function recoverFromVitePreloadError(event: Event, runtime: PreloadRecoveryRuntime) {
+  const now = runtime.now();
+  let lastReloadAt: number;
+  try {
+    lastReloadAt = Number(runtime.storage.getItem(VITE_PRELOAD_RELOAD_KEY));
+  } catch {
+    return false;
+  }
+
+  if (Number.isFinite(lastReloadAt) && now - lastReloadAt < VITE_PRELOAD_RELOAD_COOLDOWN_MS) {
+    event.preventDefault();
+    return false;
+  }
+
+  try {
+    runtime.storage.setItem(VITE_PRELOAD_RELOAD_KEY, String(now));
+  } catch {
+    return false;
+  }
+  event.preventDefault();
+  runtime.reload();
+  return true;
+}
+
+export const Route = createRootRouteWithContext<WebRouterContext>()({
   head: () => ({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "GradientPeak Web Migration" },
+      { title: "GradientPeak" },
+      { name: "application-name", content: "GradientPeak" },
+      { name: "apple-mobile-web-app-title", content: "GradientPeak" },
+      { name: "apple-mobile-web-app-capable", content: "yes" },
+      { name: "mobile-web-app-capable", content: "yes" },
+      { name: "theme-color", content: "#020617" },
+      {
+        name: "description",
+        content: "GradientPeak training, activity logging, planning, and athlete intelligence.",
+      },
+    ],
+    links: [
+      { rel: "manifest", href: "/manifest.json" },
+      { rel: "icon", href: "/favicon.ico" },
+      { rel: "apple-touch-icon", href: "/logo192.png" },
     ],
   }),
   shellComponent: RootDocument,
-  notFoundComponent: NotFoundPage,
+  pendingComponent: RootPendingPage,
+  errorComponent: RootErrorPage,
+  notFoundComponent: RootNotFoundPage,
 });
 
 function RootDocument({ children }: { children: ReactNode }) {
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    setHydrated(true);
+    const handlePreloadError = (event: Event) => {
+      recoverFromVitePreloadError(event, {
+        now: Date.now,
+        reload: () => window.location.reload(),
+        storage: window.sessionStorage,
+      });
+    };
+
+    window.addEventListener("vite:preloadError", handlePreloadError);
+    return () => window.removeEventListener("vite:preloadError", handlePreloadError);
+  }, []);
+
   return (
     <html lang="en">
       <head>
         <HeadContent />
       </head>
       <body className="min-h-screen bg-background text-foreground font-sans antialiased">
-        <AppProviders>
-          <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 pb-12 pt-8 sm:px-6 lg:px-8">
-            {children}
-          </div>
-          <Toaster richColors position="top-right" />
-          <TanStackDevtools
-            config={{
-              position: "bottom-right",
-            }}
-            plugins={[
-              {
-                name: "TanStack Router",
-                render: <TanStackRouterDevtoolsPanel />,
-              },
-            ]}
-          />
-        </AppProviders>
+        <div
+          aria-busy={!hydrated}
+          className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 pb-12 pt-8 sm:px-6 lg:px-8 has-[>.gp-protected-shell]:max-w-none has-[>.gp-protected-shell]:px-0 has-[>.gp-protected-shell]:pb-0 has-[>.gp-protected-shell]:pt-0"
+        >
+          {children}
+        </div>
+        <Toaster richColors position="top-right" />
+        <DevelopmentTools />
         <Scripts />
       </body>
     </html>
   );
 }
 
-function NotFoundPage() {
+const LazyDevelopmentTools =
+  import.meta.env.DEV && import.meta.env.VITE_ENABLE_DEVTOOLS === "true"
+    ? lazy(async () => {
+        const [{ TanStackDevtools }, { TanStackRouterDevtoolsPanel }] = await Promise.all([
+          import("@tanstack/react-devtools"),
+          import("@tanstack/react-router-devtools"),
+        ]);
+        return {
+          default: () => (
+            <TanStackDevtools
+              config={{
+                position: "bottom-right",
+              }}
+              plugins={[
+                {
+                  name: "TanStack Router",
+                  render: <TanStackRouterDevtoolsPanel />,
+                },
+              ]}
+            />
+          ),
+        };
+      })
+    : null;
+
+function DevelopmentTools() {
+  if (!LazyDevelopmentTools) return null;
   return (
-    <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3 text-center">
-      <p className="text-sm font-medium uppercase tracking-[0.2em] text-muted-foreground">404</p>
-      <h1 className="text-3xl font-semibold tracking-tight">Page not found</h1>
-      <p className="max-w-md text-sm text-muted-foreground sm:text-base">
-        The page you requested does not exist or may have moved.
-      </p>
+    <Suspense fallback={null}>
+      <LazyDevelopmentTools />
+    </Suspense>
+  );
+}
+
+export function RootPendingPage() {
+  return (
+    <div
+      className="flex min-h-[60vh] items-center justify-center py-8"
+      role="status"
+      aria-live="polite"
+    >
+      <Card className="w-full max-w-lg overflow-hidden">
+        <CardHeader>
+          <CardTitle className="text-xl">Loading GradientPeak</CardTitle>
+          <CardDescription>Preparing your training workspace.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3" aria-hidden="true">
+          <div className="h-3 w-2/3 animate-pulse rounded-full bg-muted" />
+          <div className="h-3 w-full animate-pulse rounded-full bg-muted" />
+          <div className="h-3 w-4/5 animate-pulse rounded-full bg-muted" />
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+export function RootErrorPage({ reset }: ErrorComponentProps) {
+  return (
+    <div className="flex min-h-[60vh] items-center justify-center py-8">
+      <Card className="w-full max-w-lg">
+        <CardHeader>
+          <CardTitle className="text-2xl">We could not load this page</CardTitle>
+          <CardDescription>
+            Something unexpected interrupted the request. Your account and training data are safe.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3 sm:flex-row">
+          <Button type="button" onClick={reset}>
+            Try again
+          </Button>
+          <Button asChild variant="outline">
+            <Link to="/">Return to dashboard</Link>
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+export function RootNotFoundPage() {
+  return (
+    <div className="flex min-h-[60vh] items-center justify-center py-8 text-center">
+      <Card className="w-full max-w-lg">
+        <CardHeader>
+          <p className="text-sm font-medium uppercase tracking-[0.2em] text-muted-foreground">
+            404
+          </p>
+          <h1 className="text-3xl font-semibold tracking-tight">Page not found</h1>
+          <CardDescription className="text-base">
+            The page you requested does not exist or may have moved.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col justify-center gap-3 sm:flex-row">
+          <Button asChild>
+            <Link to="/">Go to dashboard</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link to="/search" search={{}}>
+              Search GradientPeak
+            </Link>
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from "@storybook/react";
+import type { Meta, StoryObj } from "@storybook/react-native";
 import { Bell, CircleAlert, LayoutGrid } from "lucide-react-native";
 import * as React from "react";
 import { View } from "react-native";
@@ -43,7 +43,7 @@ import { paceSecondsFieldFixtures } from "../components/pace-seconds-field/fixtu
 import { PaceSecondsField } from "../components/pace-seconds-field/index.native";
 import { percentSliderInputFixtures } from "../components/percent-slider-input/fixtures";
 import { PercentSliderInput } from "../components/percent-slider-input/index.native";
-import { Progress } from "../components/progress/index.native";
+import { ProgressBar } from "../components/progress/index.native";
 import { radioGroupFixtures } from "../components/radio-group/fixtures";
 import { RadioGroup, RadioGroupItem } from "../components/radio-group/index.native";
 import { selectFixtures } from "../components/select/fixtures";
@@ -321,7 +321,7 @@ export const ProgressStory: Story = {
   name: "Progress",
   render: () => (
     <NativeFrame>
-      <Progress value={72} />
+      <ProgressBar accessibilityLabel="Example progress" value={72} />
     </NativeFrame>
   ),
 };
@@ -329,7 +329,7 @@ export const ProgressStory: Story = {
 export const RadioGroupStory: Story = {
   name: "Radio Group",
   render: () => {
-    const fixture = radioGroupFixtures.sport;
+    const fixture = radioGroupFixtures.activityCategory;
     const [value, setValue] = React.useState<string>(fixture.value);
     return (
       <NativeFrame>
@@ -349,7 +349,7 @@ export const RadioGroupStory: Story = {
 export const SelectStory: Story = {
   name: "Select",
   render: () => {
-    const fixture = selectFixtures.workoutType;
+    const fixture = selectFixtures.sessionFocus;
     const [value, setValue] = React.useState<Option | undefined>(
       fixture.options.find((option) => option.value === fixture.value),
     );
