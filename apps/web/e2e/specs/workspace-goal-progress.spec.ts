@@ -45,6 +45,7 @@ test("Home and Plan expose observed threshold-goal progress from canonical athle
     if (!cardId) throw new Error("The fixture goal card did not expose an ID.");
     const goalId = cardId.replace("goal-card-", "");
     fixture.rememberGoal(goalId);
+    await evidence.assertReadModels(goalId);
 
     for (const viewport of [
       { width: 1440, height: 1000, label: "1440x1000" },

@@ -1,20 +1,23 @@
 import { randomUUID } from "node:crypto";
-import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
-import { type activityEfforts, profileAthleteState } from "@repo/db/schema";
-import { eq } from "drizzle-orm";
 import {
   type ActivitySubmission,
   activityArtifactId,
+  processAthleteStateJobs,
+  readGoalProgress,
+  readThresholdOverview,
+  readyActivityIngestion,
   submitActivity,
-} from "../../../../packages/api/src/application/activities/submit-activity";
-import { AthleteStateWorkerService } from "../../../../packages/api/src/application/athlete-intelligence/athlete-state-worker";
-import { readyActivityIngestion } from "../../../../packages/api/src/test-support/ready-activity-ingestion";
+} from "@repo/api/test-support/activity-evidence-acceptance";
+import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
+import { type activityEfforts, profileAthleteState } from "@repo/db/schema";
+import { eq } from "drizzle-orm";
 import type { AuthenticatedE2EActor } from "./actors";
 import type { LocalE2EDatabase } from "./database";
 import type { E2EExecutionIdentity } from "./identity";
 
 export type GoalProgressFixture = {
   activityName: string;
+  assertReadModels: (goalId: string) => Promise<void>;
   publishedRevision: number;
 };
 
@@ -176,9 +179,8 @@ export async function createGoalProgressFixture(input: {
   if (submitted.id !== activityId || submitted.noOp)
     throw new Error("The canonical goal-progress activity submission was not accepted.");
 
-  const worker = new AthleteStateWorkerService({ db: input.database.db });
-  await worker.processDueJobs({ limit: 10, now: new Date() });
-  await worker.processDueJobs({ limit: 10, now: new Date() });
+  await processAthleteStateJobs({ db: input.database.db, limit: 10, now: new Date() });
+  await processAthleteStateJobs({ db: input.database.db, limit: 10, now: new Date() });
   const [state] = await input.database.db
     .select({ publishedRevision: profileAthleteState.published_revision })
     .from(profileAthleteState)
@@ -186,5 +188,43 @@ export async function createGoalProgressFixture(input: {
   if (state?.publishedRevision === null || state?.publishedRevision === undefined)
     throw new Error("The athlete-state worker did not publish the qualified threshold.");
 
-  return { activityName, publishedRevision: state.publishedRevision };
+  return {
+    activityName,
+    publishedRevision: state.publishedRevision,
+    assertReadModels: async (goalId) => {
+      const [goalProgress, thresholdOverview] = await Promise.all([
+        readGoalProgress({
+          db: input.database.db,
+          profileId: input.actor.profileId,
+          goalId,
+        }),
+        readThresholdOverview({
+          db: input.database.db,
+          profileId: input.actor.profileId,
+          historyLimit: 100,
+        }),
+      ]);
+      if (
+        goalProgress.publication?.publishedRevision === null ||
+        goalProgress.publication?.publishedRevision === undefined ||
+        thresholdOverview.publication.publishedRevision === null ||
+        thresholdOverview.publication.publishedRevision === undefined ||
+        goalProgress.publication.publishedRevision !==
+          thresholdOverview.publication.publishedRevision ||
+        goalProgress.publication.publishedRevision !== state.publishedRevision
+      )
+        throw new Error(
+          "Goal progress and threshold overview did not read one published revision.",
+        );
+      if (
+        goalProgress.result.status === "unsupported" ||
+        goalProgress.result.current?.value !== 285 ||
+        goalProgress.result.target.targetValue !== 300 ||
+        goalProgress.result.metrics.remainingGap !== 15
+      )
+        throw new Error(
+          "The canonical qualified effort did not produce the expected 285 W progress.",
+        );
+    },
+  };
 }
