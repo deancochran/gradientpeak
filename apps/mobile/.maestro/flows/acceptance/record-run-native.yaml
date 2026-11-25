@@ -69,3 +69,4 @@ name: Enter recording from the visible Record tab and record a real timer-backed
     timeout: 60000
 - assertVisible:
     id: recording-review-summary
+- takeScreenshot: recording-review-ready-to-save

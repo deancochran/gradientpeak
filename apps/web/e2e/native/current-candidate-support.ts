@@ -17,7 +17,7 @@ type NativeManualAcceptanceInput = {
   testInfo: TestInfo;
 };
 
-function preserveMaestroCaptures(testInfo: TestInfo, captures: readonly string[]) {
+export function preserveMaestroCaptures(testInfo: TestInfo, captures: readonly string[]) {
   return captures.map((capture) => {
     const source = resolve(`${capture}.png`);
     const retained = existsSync(source);
@@ -29,7 +29,7 @@ function preserveMaestroCaptures(testInfo: TestInfo, captures: readonly string[]
   });
 }
 
-function clearMaestroCaptures(captures: readonly string[]) {
+export function clearMaestroCaptures(captures: readonly string[]) {
   for (const capture of captures) {
     rmSync(resolve(`${capture}.png`), { force: true });
   }
