@@ -1,9 +1,13 @@
 import React from "react";
 import { createHost } from "../../../../test/mock-components";
-import { fireEvent, renderNative, screen } from "../../../../test/render-native";
+import { renderNative, screen } from "../../../../test/render-native";
 import EventDetailScreen from "../event-detail";
 
 const mockNavigateTo = jest.fn();
+
+type StackScreenProps = Record<string, unknown> & {
+  options?: { headerRight?: () => React.ReactNode };
+};
 
 jest.mock("@tanstack/react-query", () => ({
   __esModule: true,
@@ -24,7 +28,7 @@ jest.mock("react-native", () => ({
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: {
-    Screen: (props: any) =>
+    Screen: (props: StackScreenProps) =>
       React.createElement(
         "StackScreen",
         props,
@@ -32,11 +36,19 @@ jest.mock("expo-router", () => ({
       ),
   },
   useLocalSearchParams: () => ({ id: "event-1" }),
+  useNavigation: () => ({ dispatch: jest.fn() }),
   useRouter: () => ({
     back: jest.fn(),
     navigate: jest.fn(),
     push: jest.fn(),
     replace: jest.fn(),
+  }),
+}));
+
+jest.mock("@repo/api/react", () => ({
+  __esModule: true,
+  usePlannedSessionMutations: () => ({
+    changePlanOnly: { isPending: false, mutateAsync: jest.fn() },
   }),
 }));
 
@@ -86,11 +98,6 @@ jest.mock("@/lib/scheduling/refreshScheduleViews", () => ({
 jest.mock("@/lib/utils/plan/colors", () => ({
   __esModule: true,
   getActivityColor: () => ({ name: "Outdoor Run" }),
-}));
-
-jest.mock("@/lib/utils/plan/dateGrouping", () => ({
-  __esModule: true,
-  isActivityCompleted: () => false,
 }));
 
 jest.mock("@/lib/hooks/useDeletedDetailRedirect", () => ({
@@ -149,8 +156,36 @@ jest.mock("@/lib/api", () => ({
         useMutation: () => ({ isPending: false, mutate: jest.fn() }),
       },
     },
-    trainingPlans: {
+    activities: {
+      createManualDiaryEntry: {
+        useMutation: () => ({ isPending: false, mutateAsync: jest.fn() }),
+      },
+    },
+    plannedSessions: {
+      create: { useMutation: () => ({ isPending: false, mutate: jest.fn() }) },
       getById: {
+        useQuery: () => ({ data: null, error: null, isLoading: false }),
+      },
+      skip: { useMutation: () => ({ isPending: false, mutateAsync: jest.fn() }) },
+      recordingLaunch: { useMutation: () => ({ mutateAsync: jest.fn() }) },
+      linkCompletion: { useMutation: () => ({ isPending: false, mutateAsync: jest.fn() }) },
+      completionCandidates: {
+        useInfiniteQuery: () => ({
+          data: { pages: [{ items: [], nextCursor: null }] },
+          fetchNextPage: jest.fn(),
+          hasNextPage: false,
+          isFetchingNextPage: false,
+          isLoading: false,
+        }),
+      },
+    },
+    profiles: {
+      get: {
+        useQuery: () => ({ data: null, error: null, isLoading: false }),
+      },
+    },
+    trainingPlans: {
+      get: {
         useQuery: () => ({
           data: { id: "plan-123", name: "Spring Build" },
         }),
@@ -174,6 +209,9 @@ jest.mock("@/lib/api", () => ({
       },
     },
     activityPlans: {
+      getById: {
+        useQuery: () => ({ data: null, error: null, isLoading: false }),
+      },
       list: {
         useInfiniteQuery: () => ({
           data: { pages: [{ items: [] }] },
@@ -198,16 +236,14 @@ describe("event detail provenance", () => {
     jest.clearAllMocks();
   });
 
-  it("shows tappable training plan provenance", () => {
-    renderNative(<EventDetailScreen />);
+  it("does not expose executable-plan provenance on generic event records", async () => {
+    await renderNative(<EventDetailScreen />);
 
     expect(screen.queryByText("Event details")).toBeNull();
-    expect(screen.getByText("Source")).toBeTruthy();
-    expect(screen.getByText("Spring Build")).toBeTruthy();
+    expect(screen.queryByText("Source")).toBeNull();
+    expect(screen.queryByText("Spring Build")).toBeNull();
     expect(screen.queryByTestId("event-detail-options-open-training-plan")).toBeNull();
-
-    fireEvent.press(screen.getByTestId("event-detail-source-training-plan"));
-
-    expect(mockNavigateTo).toHaveBeenCalledWith("/training-plan-detail?id=plan-123");
+    expect(screen.queryByTestId("event-detail-source-training-plan")).toBeNull();
+    expect(mockNavigateTo).not.toHaveBeenCalled();
   });
 });
