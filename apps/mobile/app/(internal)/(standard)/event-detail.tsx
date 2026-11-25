@@ -349,7 +349,13 @@ export default function EventDetailScreen() {
   );
   const plannedSessionQuery = api.plannedSessions.getById.useQuery(
     { id: eventId },
-    { enabled: isPlannedSession && !startsInCreateMode && !hasInvalidResource },
+    {
+      enabled: isPlannedSession && !startsInCreateMode && !hasInvalidResource,
+      // A local/disposable API can remain reachable through the device while the
+      // platform reports no external network. Let the read attempt rather than
+      // rendering an unavailable state from a paused query.
+      networkMode: "always",
+    },
   );
   const plannedActivityPlanQuery = api.activityPlans.getById.useQuery(
     { id: plannedSessionQuery.data?.activityPlanId ?? "", personalize: false },

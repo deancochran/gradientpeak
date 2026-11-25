@@ -3,6 +3,7 @@ import { renderNative, screen } from "../../../../test/render-native";
 
 const ledgerQuery = jest.fn();
 const calendarRangeQuery = jest.fn();
+const routerNavigate = jest.fn();
 let params: { anchorDate?: string; period?: string } = {
   anchorDate: "2026-04-15",
   period: "day",
@@ -16,7 +17,7 @@ jest.mock("react-native", () => ({
 jest.mock("expo-router", () => ({
   Stack: { Screen: createHost("StackScreen") },
   useLocalSearchParams: () => params,
-  useRouter: () => ({ navigate: jest.fn() }),
+  useRouter: () => ({ navigate: routerNavigate }),
 }));
 jest.mock("@/components/plan/ledger/PlanningLedgerView", () => ({
   PlanningLedgerView: createHost("PlanningLedgerView"),
@@ -81,6 +82,19 @@ it.each(["day", "week"] as const)("loads the canonical %s Training Breakdown", a
     screen.container.queryAll((node) => node.type === "PlanningLedgerView")[0]?.props
       .trainingComposition,
   ).toEqual({ id: "training-composition" });
+});
+
+it("opens planned ledger entries through the planned-session detail route", async () => {
+  await renderNative(<PlanningLedgerScreen />);
+
+  const ledgerView = screen.container.queryAll((node) => node.type === "PlanningLedgerView")[0];
+  if (!ledgerView) throw new Error("Expected Planning Ledger view");
+  ledgerView.props.onOpenEntry({ id: "planned-1", target: "planned_session" });
+
+  expect(routerNavigate).toHaveBeenCalledWith({
+    pathname: "/event-detail",
+    params: { id: "planned-1", resourceType: "planned_session" },
+  });
 });
 
 it("rejects the removed month surface", async () => {

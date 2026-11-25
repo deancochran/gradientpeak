@@ -188,6 +188,7 @@ test("current Android candidate onboards and creates an executable activity plan
     MAESTRO_ACCEPTANCE_PLAN_NAME: planName,
     MAESTRO_ACCEPTANCE_SESSION_DATE: today,
     MAESTRO_ACCEPTANCE_SESSION_DAY: String(Number(today.slice(8, 10))),
+    MAESTRO_ACCEPTANCE_SESSION_ID: manualSession.id,
   });
   writeFileSync(
     testInfo.outputPath("maestro-manual.log"),
