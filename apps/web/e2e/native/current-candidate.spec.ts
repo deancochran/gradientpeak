@@ -164,7 +164,14 @@ test("current Android candidate onboards and creates an executable activity plan
   const web = await actor.createPage(`/activities/${recordedActivity.id}`);
   await expect(web.getByRole("heading", { name: "Activity", exact: true })).toBeVisible();
   await web.goto("/activities");
-  await expect(web.locator(`a[href="/activities/${recordedActivity.id}"]`)).toHaveCount(1);
+  const recordedCard = web.getByTestId(`activity-card-${recordedActivity.id}`);
+  await expect(recordedCard).toHaveCount(1);
+  const recordedOpenLink = recordedCard.getByRole("link", {
+    name: `Open activity ${recordedActivity.name}`,
+    exact: true,
+  });
+  await expect(recordedOpenLink).toHaveCount(1);
+  await expect(recordedOpenLink).toHaveAttribute("href", `/activities/${recordedActivity.id}`);
   await expect(
     web.locator(`a[href="/activities/${completedSession?.completed_activity_id}"]`),
   ).toHaveCount(0);

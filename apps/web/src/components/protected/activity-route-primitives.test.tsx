@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ActivityCategoryBadges } from "../activity-category-presentation";
@@ -123,12 +123,19 @@ describe("ActivityListCard", () => {
     expect(screen.getByRole("button", { name: "Share activity Activity" })).toBeTruthy();
   });
 
-  it("uses a descriptive activity link when rendered as navigation", () => {
+  it("keeps one primary Open link and one Comment link on the canonical activity card", () => {
     render(<ActivityListCard activity={activity} href={activity.href} />);
 
-    expect(screen.getByRole("link", { name: "Open activity Activity" }).getAttribute("href")).toBe(
-      activity.href,
-    );
+    expect(screen.getAllByTestId(`activity-card-${activity.id}`)).toHaveLength(1);
+    const card = screen.getByTestId(`activity-card-${activity.id}`);
+
+    const openLink = within(card).getByRole("link", { name: "Open activity Activity" });
+    expect(openLink.getAttribute("href")).toBe(activity.href);
+
+    const commentLink = within(card).getByRole("link", {
+      name: "Comment on activity Activity, 0 comments",
+    });
+    expect(commentLink.getAttribute("href")).toBe(activity.href);
   });
 
   it("keeps Share visible and explains when a private activity cannot be shared", () => {
