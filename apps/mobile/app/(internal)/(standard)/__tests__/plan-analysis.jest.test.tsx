@@ -1,0 +1,430 @@
+import { fireEvent } from "@testing-library/react-native";
+import React from "react";
+import { ROUTES } from "@/lib/constants/routes";
+import { createHost } from "../../../../test/mock-components";
+import { renderNative, screen } from "../../../../test/render-native";
+
+const replace = jest.fn();
+const navigate = jest.fn();
+const trainingInsightProps = jest.fn();
+const progressInsightProps = jest.fn();
+const captureProductAnalytics = jest.fn();
+let planningTimezoneState = "ready";
+let timezoneSetupError: string | null = null;
+const retryTimezoneInitialization = jest.fn();
+type QueryResult = {
+  data: unknown;
+  isError: boolean;
+  isLoading: boolean;
+  refetch?: () => Promise<unknown>;
+};
+const getGoalProgressQuery = jest.fn(
+  (_input?: unknown, _options?: unknown): QueryResult => ({
+    data: undefined,
+    isError: false,
+    isLoading: false,
+  }),
+);
+const getThresholdOverviewQuery = jest.fn(
+  (_input?: unknown, _options?: unknown): QueryResult => ({
+    data: undefined,
+    isError: false,
+    isLoading: false,
+  }),
+);
+let mockParams = {
+  anchorDate: "2026-04-15",
+  goalId: "55555555-5555-4555-8555-555555555555",
+  metric: "fitness",
+  range: "1y",
+  view: "training",
+};
+
+jest.mock("react-native", () => ({
+  ...jest.requireActual("@repo/ui/test/react-native"),
+  ScrollView: createHost("ScrollView"),
+  TouchableOpacity: createHost("TouchableOpacity"),
+  View: createHost("View"),
+}));
+jest.mock("expo-router", () => ({
+  useLocalSearchParams: () => mockParams,
+  useRouter: () => ({ navigate, replace }),
+}));
+jest.mock("@repo/ui/components/text", () => ({ Text: createHost("Text") }));
+jest.mock("@/components/ErrorBoundary", () => ({
+  ErrorBoundary: ({ children }: React.PropsWithChildren) => children,
+  ScreenErrorFallback: createHost("ScreenErrorFallback"),
+}));
+jest.mock("@/lib/performance", () => ({ usePerformanceScreenReady: jest.fn() }));
+jest.mock("@/lib/analytics/productAnalytics", () => ({
+  useProductAnalytics: () => ({ capture: captureProductAnalytics }),
+}));
+jest.mock("@/lib/api", () => ({
+  api: {
+    athleteIntelligence: {
+      getGoalProgress: {
+        useQuery: (input: unknown, options: unknown) => getGoalProgressQuery(input, options),
+      },
+      getThresholdOverview: {
+        useQuery: (input: unknown, options: unknown) => getThresholdOverviewQuery(input, options),
+      },
+    },
+  },
+}));
+jest.mock("@repo/api/client", () => ({
+  selectPublishedGoalProgressHistory: (
+    progress: { publication?: { publishedRevision?: number | null } } | undefined,
+    overview:
+      | {
+          publication?: { publishedRevision?: number | null };
+          history: { items: unknown[]; nextCursor: unknown | null };
+        }
+      | undefined,
+  ) => {
+    const progressRevision = progress?.publication?.publishedRevision;
+    const overviewRevision = overview?.publication?.publishedRevision;
+    const matches =
+      progressRevision !== null &&
+      progressRevision !== undefined &&
+      overviewRevision !== null &&
+      overviewRevision !== undefined &&
+      progressRevision === overviewRevision;
+    return {
+      history: matches ? (overview?.history.items ?? []) : [],
+      historyLimited: matches && overview?.history.nextCursor !== null,
+      publicationMismatch: Boolean(overview && !matches),
+    };
+  },
+}));
+jest.mock("@/components/plan/training-path/usePlanTrainingPathData", () => ({
+  usePlanTrainingPathData: () => ({
+    planningTimezoneState,
+    timezoneSetupError,
+    retryTimezoneInitialization,
+    dailyTrainingPathPoints: [
+      { date: "2026-03-01", fitnessCtl: 38 },
+      { date: "2026-04-15", fitnessCtl: 42 },
+      { date: "2026-05-20", scheduledFitnessCtl: 46 },
+    ],
+    goalMarkers: [
+      {
+        activityCategory: "bike",
+        id: "55555555-5555-4555-8555-555555555555",
+        label: "250 W FTP",
+        priority: 8,
+        targetDate: "2026-05-20",
+      },
+    ],
+    timelineEndDate: "2026-05-20",
+    timelineStartDate: "2026-03-01",
+    trainingPath: {
+      fitnessHistoryNotice: "Fitness is verified through Apr 15, 2026.",
+      todayKey: "2026-04-15",
+    },
+  }),
+}));
+jest.mock("@/components/plan/insights/PlanProgressInsight", () => ({
+  PlanProgressInsight: (props: Record<string, unknown>) => {
+    progressInsightProps(props);
+    return React.createElement("View", { testID: "progress-insight" });
+  },
+}));
+jest.mock("@/components/plan/insights/PlanTrainingInsight", () => ({
+  PlanTrainingInsight: (props: Record<string, unknown>) => {
+    trainingInsightProps(props);
+    return React.createElement("View", { testID: "training-insight" });
+  },
+}));
+
+const PlanAnalysis = require("../plan-analysis").default;
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  progressInsightProps.mockClear();
+  getGoalProgressQuery.mockReset();
+  getGoalProgressQuery.mockReturnValue({ data: undefined, isError: false, isLoading: false });
+  getThresholdOverviewQuery.mockReset();
+  getThresholdOverviewQuery.mockReturnValue({ data: undefined, isError: false, isLoading: false });
+  planningTimezoneState = "ready";
+  timezoneSetupError = null;
+  mockParams = {
+    anchorDate: "2026-04-15",
+    goalId: "55555555-5555-4555-8555-555555555555",
+    metric: "fitness",
+    range: "1y",
+    view: "training",
+  };
+});
+
+it("waits for automatic initialization before enabling analysis reads", async () => {
+  planningTimezoneState = "initializing";
+  await renderNative(<PlanAnalysis />);
+  expect(screen.getByTestId("plan-analysis-initializing")).toBeTruthy();
+  expect(screen.getByText("Preparing your plan…")).toBeTruthy();
+  expect(screen.queryByTestId("training-insight")).toBeNull();
+  expect(getGoalProgressQuery).toHaveBeenLastCalledWith(expect.anything(), { enabled: false });
+  expect(getThresholdOverviewQuery).toHaveBeenLastCalledWith(expect.anything(), { enabled: false });
+  expect(navigate).not.toHaveBeenCalled();
+});
+
+it("retries initialization failures without asking for a timezone", async () => {
+  planningTimezoneState = "initializing";
+  timezoneSetupError = "Plan setup could not be completed.";
+  await renderNative(<PlanAnalysis />);
+  await fireEvent.press(screen.getByText("Retry"));
+  expect(retryTimezoneInitialization).toHaveBeenCalledTimes(1);
+});
+
+it("keeps semantic view, metric, range, goal, and anchor state in the route", async () => {
+  await renderNative(<PlanAnalysis />);
+
+  expect(screen.getByTestId("plan-analysis-screen")).toBeTruthy();
+  expect(screen.getByTestId("plan-analysis-view-training").props.accessibilityState).toEqual({
+    selected: true,
+  });
+  expect(screen.getByTestId("plan-analysis-metric-fitness").props.accessibilityState).toEqual({
+    selected: true,
+  });
+  expect(screen.getByTestId("plan-analysis-metric-load")).toBeTruthy();
+  expect(screen.getByTestId("plan-analysis-metric-fatigue")).toBeTruthy();
+  expect(screen.getByTestId("plan-analysis-metric-form")).toBeTruthy();
+  expect(screen.queryByTestId("plan-analysis-metric-threshold")).toBeNull();
+  expect(
+    screen.getByTestId("plan-analysis-training-controls-range-1y").props.accessibilityState,
+  ).toEqual({
+    selected: true,
+  });
+  expect(trainingInsightProps).toHaveBeenCalledWith(
+    expect.objectContaining({ metric: "fitness", selectedDate: "2026-04-15" }),
+  );
+
+  await fireEvent.press(screen.getByTestId("plan-analysis-training-controls-range-6w"));
+  expect(replace).toHaveBeenCalledWith(
+    ROUTES.PLAN.ANALYSIS({
+      anchorDate: "2026-04-15",
+      goalId: "55555555-5555-4555-8555-555555555555",
+      metric: "fitness",
+      range: "6w",
+      view: "training",
+    }),
+  );
+  expect(captureProductAnalytics).toHaveBeenCalledWith("plan.range_selected", { range: "6w" });
+});
+
+it("renders a progress month range without evaluating a week range as months", async () => {
+  mockParams = {
+    anchorDate: "2026-04-15",
+    goalId: "55555555-5555-4555-8555-555555555555",
+    metric: "threshold",
+    range: "3m",
+    view: "progress",
+  };
+  await renderNative(<PlanAnalysis />);
+
+  expect(screen.getByTestId("plan-analysis-view-progress").props.accessibilityState).toEqual({
+    selected: true,
+  });
+  expect(
+    screen.getByTestId("plan-analysis-progress-controls-range-3m").props.accessibilityState,
+  ).toEqual({
+    selected: true,
+  });
+  expect(screen.getByTestId("progress-insight")).toBeTruthy();
+});
+
+it("retains cached progress, excludes mismatched history, and retries without changing the route", async () => {
+  const retryProgress = jest.fn(async () => undefined);
+  const retryHistory = jest.fn(async () => undefined);
+  mockParams = {
+    anchorDate: "2026-04-15",
+    goalId: "55555555-5555-4555-8555-555555555555",
+    metric: "threshold",
+    range: "3m",
+    view: "progress",
+  };
+  getGoalProgressQuery.mockReturnValue({
+    data: {
+      publication: { publishedRevision: 4 },
+      result: {
+        status: "current",
+        target: { activityCategory: "bike", metric: "power", unit: "watts" },
+        deadlineAt: "2026-05-20T00:00:00Z",
+        current: { value: 285, unit: "watts" },
+      },
+    },
+    isError: true,
+    isLoading: false,
+    refetch: retryProgress,
+  });
+  getThresholdOverviewQuery.mockReturnValue({
+    data: {
+      publication: { publishedRevision: 5 },
+      history: { items: [{ value: 999 }], nextCursor: null },
+    },
+    isError: false,
+    isLoading: false,
+    refetch: retryHistory,
+  });
+
+  await renderNative(<PlanAnalysis />);
+
+  expect(screen.getByTestId("plan-analysis-progress-refresh-warning")).toBeTruthy();
+  expect(
+    screen.getByText("Could not refresh goal progress. Showing the last available progress."),
+  ).toBeTruthy();
+  expect(screen.getByTestId("plan-analysis-history-mismatch")).toBeTruthy();
+  expect(progressInsightProps).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      progress: expect.objectContaining({ current: { value: 285, unit: "watts" } }),
+    }),
+  );
+  await fireEvent.press(screen.getByText("Retry progress"));
+  expect(retryProgress).toHaveBeenCalled();
+  expect(retryHistory).toHaveBeenCalled();
+  expect(replace).not.toHaveBeenCalled();
+});
+
+it.each([
+  {
+    progressError: false,
+    historyError: true,
+    warning:
+      "Could not refresh threshold history. Showing retained compatible history, if available.",
+  },
+  {
+    progressError: true,
+    historyError: true,
+    warning:
+      "Could not refresh goal progress or threshold history. Showing the last available compatible evidence.",
+  },
+])("uses accurate cached-progress recovery copy", async ({
+  progressError,
+  historyError,
+  warning,
+}) => {
+  const retryProgress = jest.fn(async () => undefined);
+  const retryHistory = jest.fn(async () => undefined);
+  mockParams = {
+    anchorDate: "2026-04-15",
+    goalId: "55555555-5555-4555-8555-555555555555",
+    metric: "threshold",
+    range: "3m",
+    view: "progress",
+  };
+  getGoalProgressQuery.mockReturnValue({
+    data: {
+      publication: { publishedRevision: 4 },
+      result: {
+        status: "current",
+        target: { activityCategory: "bike", metric: "power", unit: "watts" },
+        deadlineAt: "2026-05-20T00:00:00Z",
+      },
+    },
+    isError: progressError,
+    isLoading: false,
+    refetch: retryProgress,
+  });
+  getThresholdOverviewQuery.mockReturnValue({
+    data: {
+      publication: { publishedRevision: 4 },
+      history: { items: [], nextCursor: null },
+    },
+    isError: historyError,
+    isLoading: false,
+    refetch: retryHistory,
+  });
+
+  await renderNative(<PlanAnalysis />);
+
+  expect(screen.getByText(warning)).toBeTruthy();
+  expect(screen.getByTestId("progress-insight")).toBeTruthy();
+  await fireEvent.press(screen.getByText("Retry progress"));
+  expect(retryProgress).toHaveBeenCalled();
+  expect(retryHistory).toHaveBeenCalled();
+  expect(replace).not.toHaveBeenCalled();
+});
+
+it("offers a retry for an uncached failure without changing the route", async () => {
+  const retryProgress = jest.fn(async () => undefined);
+  const retryHistory = jest.fn(async () => undefined);
+  mockParams = {
+    anchorDate: "2026-04-15",
+    goalId: "55555555-5555-4555-8555-555555555555",
+    metric: "threshold",
+    range: "3m",
+    view: "progress",
+  };
+  getGoalProgressQuery.mockReturnValue({
+    data: undefined,
+    isError: true,
+    isLoading: false,
+    refetch: retryProgress,
+  });
+  getThresholdOverviewQuery.mockReturnValue({
+    data: undefined,
+    isError: true,
+    isLoading: false,
+    refetch: retryHistory,
+  });
+
+  await renderNative(<PlanAnalysis />);
+
+  expect(screen.getByText("Progress analysis is unavailable")).toBeTruthy();
+  await fireEvent.press(screen.getByText("Retry progress"));
+  expect(retryProgress).toHaveBeenCalled();
+  expect(retryHistory).toHaveBeenCalled();
+  expect(replace).not.toHaveBeenCalled();
+});
+
+it("discloses bounded history only when the publications match", async () => {
+  mockParams = {
+    anchorDate: "2026-04-15",
+    goalId: "55555555-5555-4555-8555-555555555555",
+    metric: "threshold",
+    range: "3m",
+    view: "progress",
+  };
+  getGoalProgressQuery.mockReturnValue({
+    data: {
+      publication: { publishedRevision: 4 },
+      result: {
+        status: "current",
+        target: { activityCategory: "bike", metric: "power", unit: "watts" },
+        deadlineAt: "2026-05-20T00:00:00Z",
+      },
+    },
+    isError: false,
+    isLoading: false,
+    refetch: jest.fn(),
+  });
+  getThresholdOverviewQuery.mockReturnValue({
+    data: {
+      publication: { publishedRevision: 4 },
+      history: { items: [], nextCursor: "more-history" },
+    },
+    isError: false,
+    isLoading: false,
+    refetch: jest.fn(),
+  });
+
+  await renderNative(<PlanAnalysis />);
+
+  expect(screen.getByTestId("plan-analysis-history-limited")).toBeTruthy();
+  expect(screen.queryByTestId("plan-analysis-history-mismatch")).toBeNull();
+});
+
+it.each([
+  { anchorDate: "2026-02-30", goalId: "55555555-5555-4555-8555-555555555555" },
+  { anchorDate: "2026-04-15", goalId: "not-a-uuid" },
+])("rejects malformed deep links before enabling analysis queries", async ({
+  anchorDate,
+  goalId,
+}) => {
+  mockParams = { anchorDate, goalId, metric: "threshold", range: "3m", view: "progress" };
+
+  await renderNative(<PlanAnalysis />);
+
+  expect(screen.getByTestId("plan-analysis-invalid")).toBeTruthy();
+  expect(getGoalProgressQuery).not.toHaveBeenCalled();
+  expect(getThresholdOverviewQuery).not.toHaveBeenCalled();
+});
