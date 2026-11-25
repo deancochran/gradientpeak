@@ -112,6 +112,7 @@ export async function createGoalProgressFixture(input: {
     requestedActivityId: activityId,
     profileId: input.actor.profileId,
     name: activityName,
+    nameStrategy: "provided",
     notes: null,
     contentVisibility: "private",
     startedAt,
