@@ -25,6 +25,30 @@ const CLIENT_BODY_TIMEOUT_MS = 10_000;
 const CLIENT_BODY_ABSOLUTE_TIMEOUT_MS = 15_000;
 const UPSTREAM_INACTIVITY_TIMEOUT_MS = 10_000;
 const UPSTREAM_ABSOLUTE_TIMEOUT_MS = 15_000;
+const MAX_TRACE_RECORDS = 32;
+const GOAL_PROCEDURES = new Set([
+  "athleteIntelligence.getGoalAssessment",
+  "athleteIntelligence.getGoalProgress",
+  "athleteIntelligence.getThresholdOverview",
+]);
+type GoalProcedure =
+  | "athleteIntelligence.getGoalAssessment"
+  | "athleteIntelligence.getGoalProgress"
+  | "athleteIntelligence.getThresholdOverview";
+type Trace = {
+  method: string;
+  procedures: GoalProcedure[];
+  batchSize: number;
+  hasProgress: boolean;
+  hasThreshold: boolean;
+  targetGoalMatched: boolean;
+  requestOrder: number;
+  responseOrder?: number;
+  status?: number;
+};
+const trace: Trace[] = [];
+let requestOrder = 0;
+let responseOrder = 0;
 const persist = () => {
   writeFileSync(observationPath, JSON.stringify(counts), { flag: "w", mode: 0o600 });
   chmodSync(observationPath, 0o600);
@@ -111,7 +135,50 @@ function body(
     },
   );
 }
+function traceRequest(request: IncomingMessage) {
+  const url = new URL(request.url ?? "/", "http://loopback");
+  const prefix = "/api/trpc/";
+  if (!url.pathname.startsWith(prefix)) return;
+  const allProcedures = url.pathname.slice(prefix.length).split(",");
+  const entries = allProcedures.flatMap((procedure, index) =>
+    GOAL_PROCEDURES.has(procedure) ? [{ procedure: procedure as GoalProcedure, index }] : [],
+  );
+  if (!entries.length) return;
+  const procedures = entries.map(({ procedure }) => procedure);
+  let targetGoalMatched = false;
+  try {
+    const input = url.searchParams.get("input");
+    const parsed = input
+      ? (JSON.parse(input) as Record<string, { json?: { goalId?: unknown } }>)
+      : {};
+    targetGoalMatched = entries.some(
+      ({ procedure, index }) =>
+        procedure !== "athleteIntelligence.getThresholdOverview" &&
+        parsed[index]?.json?.goalId === goalId,
+    );
+  } catch {
+    // Metadata retains only the failed-to-parse request shape, never its input.
+  }
+  const record: Trace = {
+    method: request.method ?? "UNKNOWN",
+    procedures,
+    batchSize: Math.min(allProcedures.length, MAX_TRACE_RECORDS),
+    hasProgress: procedures.includes("athleteIntelligence.getGoalProgress"),
+    hasThreshold: procedures.includes("athleteIntelligence.getThresholdOverview"),
+    targetGoalMatched,
+    requestOrder: ++requestOrder,
+  };
+  if (trace.length === MAX_TRACE_RECORDS) trace.shift();
+  trace.push(record);
+  return record;
+}
 const server = createServer(async (request, response) => {
+  const requestTrace = traceRequest(request);
+  const finishTrace = (status: number) => {
+    if (!requestTrace || requestTrace.responseOrder !== undefined) return;
+    requestTrace.responseOrder = ++responseOrder;
+    requestTrace.status = status;
+  };
   const respond = (
     statusCode: number,
     headers?: import("node:http").OutgoingHttpHeaders,
@@ -121,6 +188,7 @@ const server = createServer(async (request, response) => {
     if (headers) response.writeHead(statusCode, headers);
     else response.statusCode = statusCode;
     response.end(value);
+    finishTrace(statusCode);
   };
   try {
     requireNativeScenarioTransportGuard({ sessionId: goalId, upstreamPort });
@@ -215,6 +283,7 @@ process.on("message", (message: { type?: string }) => {
     if (message.type === "allow") process.send?.({ type: "allow", ok: true });
     if (message.type === "observations")
       process.send?.({ type: "observations", ok: true, ...counts });
+    if (message.type === "trace") process.send?.({ type: "trace", ok: true, records: trace });
   } catch {
     process.send?.({ type: message.type, ok: false });
   }

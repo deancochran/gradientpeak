@@ -227,6 +227,48 @@ describe("native goal transport", () => {
     await expect(transport.observations()).resolves.toEqual({ blocked: 0, forwarded: 0 });
   });
 
+  it("observes mixed goal progress and later threshold batches without changing relay bytes", async () => {
+    const body = Buffer.from("real-loopback");
+    const port = await upstream((_request, response) => response.end(body));
+    const transport = await start(port);
+    await transport.allowProgressReads();
+    const mixed = `/api/trpc/other,athleteIntelligence.getGoalProgress?batch=1&input=${encodeURIComponent(JSON.stringify({ 0: { json: {} }, 1: { json: { goalId } } }))}`;
+    const threshold =
+      "/api/trpc/athleteIntelligence.getThresholdOverview?batch=1&input=%7B%220%22%3A%7B%22json%22%3A%7B%7D%7D%7D";
+    expect(Buffer.from(await (await fetch(`${transport.origin}${mixed}`)).arrayBuffer())).toEqual(
+      body,
+    );
+    expect(
+      Buffer.from(await (await fetch(`${transport.origin}${threshold}`)).arrayBuffer()),
+    ).toEqual(body);
+    expect(await transport.trace()).toEqual([
+      {
+        method: "GET",
+        procedures: ["athleteIntelligence.getGoalProgress"],
+        batchSize: 2,
+        hasProgress: true,
+        hasThreshold: false,
+        targetGoalMatched: true,
+        requestOrder: 1,
+        responseOrder: 1,
+        status: 200,
+      },
+      {
+        method: "GET",
+        procedures: ["athleteIntelligence.getThresholdOverview"],
+        batchSize: 1,
+        hasProgress: false,
+        hasThreshold: true,
+        targetGoalMatched: false,
+        requestOrder: 2,
+        responseOrder: 2,
+        status: 200,
+      },
+    ]);
+    await fetch(`${transport.origin}/api/trpc/unknown?batch=1`);
+    expect((await transport.trace()).length).toBe(2);
+  });
+
   it("closes a trickling incomplete request at its absolute body deadline", async () => {
     const port = await upstream((_request, response) => response.end("unexpected"));
     const transport = await start(port);
