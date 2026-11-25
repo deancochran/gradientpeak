@@ -19,8 +19,19 @@ type NativeManualAcceptanceInput = {
   e2eIdentity: E2EExecutionIdentity;
   outcome?: "full" | "partial" | "skip";
   workspaceOnly?: boolean;
+  workspaceJourney?: WorkspaceJourney;
   testInfo: TestInfo;
 };
+
+export type WorkspaceJourney = "full" | "selected-home-only";
+
+export const workspaceCaptures = ["athlete-workspace-selected-session"] as const;
+
+export function workspaceFlowFor(workspaceJourney: WorkspaceJourney = "full") {
+  return workspaceJourney === "full"
+    ? "athlete-visual-workspace.yaml"
+    : "athlete-visual-workspace-selected-home.yaml";
+}
 
 type PlanningLedgerTrainingState = {
   actual: {
@@ -116,6 +127,7 @@ export async function completeManualNativeAcceptance({
   outcome = "full",
   testInfo,
   workspaceOnly = false,
+  workspaceJourney = "full",
 }: NativeManualAcceptanceInput) {
   const username = `native_${e2eIdentity.suffix("username", 12)}`;
   const planName = e2eIdentity.name("Native easy session");
@@ -251,16 +263,20 @@ export async function completeManualNativeAcceptance({
     .from(plannedSessions)
     .where(eq(plannedSessions.profile_id, actor.profileId));
   if (!manualSession) throw new Error("Native UI-created session is missing");
-  const workspaceCaptures = ["athlete-workspace-selected-session"] as const;
   clearMaestroCaptures(workspaceCaptures);
-  const appPid = workspaceOnly
-    ? runAdb("shell", "pidof", "com.deancochran.gradientpeak.dev").stdout.trim().split(/\s+/)[0]
-    : undefined;
-  const nativeErrorCapture = captureWorkspaceNativeErrors(workspaceOnly, appPid);
+  const workspaceFlow = workspaceFlowFor(workspaceJourney);
+  const appPid =
+    workspaceOnly && workspaceJourney === "full"
+      ? runAdb("shell", "pidof", "com.deancochran.gradientpeak.dev").stdout.trim().split(/\s+/)[0]
+      : undefined;
+  const nativeErrorCapture = captureWorkspaceNativeErrors(
+    workspaceOnly && workspaceJourney === "full",
+    appPid,
+  );
   let athleteVisualWorkspaceResult: ReturnType<typeof runMaestro>;
   let nativeCapture: NativePlannedSessionCapture | null;
   try {
-    athleteVisualWorkspaceResult = runMaestro("athlete-visual-workspace.yaml", {
+    athleteVisualWorkspaceResult = runMaestro(workspaceFlow, {
       MAESTRO_ACCEPTANCE_SESSION_DATE: today,
       MAESTRO_ACCEPTANCE_SESSION_ID: manualSession.id,
     });
@@ -269,11 +285,11 @@ export async function completeManualNativeAcceptance({
   }
   const [workspaceCaptured] = preserveMaestroCaptures(testInfo, workspaceCaptures);
   writeFileSync(
-    testInfo.outputPath("maestro-athlete-visual-workspace.log"),
+    testInfo.outputPath(`maestro-${workspaceFlow.replace(".yaml", "")}.log`),
     `${athleteVisualWorkspaceResult.stdout ?? ""}\n${athleteVisualWorkspaceResult.stderr ?? ""}`,
     { mode: 0o600 },
   );
-  if (workspaceOnly) {
+  if (workspaceOnly && workspaceJourney === "full") {
     writeFileSync(
       testInfo.outputPath("planned-session-get-by-id-native-errors.json"),
       JSON.stringify(
@@ -289,7 +305,9 @@ export async function completeManualNativeAcceptance({
   }
   expect(
     athleteVisualWorkspaceResult.status,
-    "Home must keep its truthful goal state and selected scheduled session after returning",
+    workspaceJourney === "full"
+      ? "Home must keep its truthful goal state and selected scheduled session after returning"
+      : "Home must show the selected scheduled session before the plan-edit journey enters the library",
   ).toBe(0);
   expect(workspaceCaptured, "Workspace flow must retain its declared capture").toBe(true);
   if (workspaceOnly) {
