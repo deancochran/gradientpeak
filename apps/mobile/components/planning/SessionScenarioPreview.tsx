@@ -189,18 +189,17 @@ function SessionScenarioPreviewContents({
     try {
       const generation = generationRef.current;
       const submittedActor = actorId;
-      const result = await applyMutation.mutateAsync(operation.request);
-      if (
-        generation !== generationRef.current ||
-        actorRef.current !== submittedActor ||
-        !isCurrentPlannedSessionScenarioOperation(operation, {
+      const isCurrentSubmission = () =>
+        generation === generationRef.current &&
+        actorRef.current === submittedActor &&
+        isCurrentPlannedSessionScenarioOperation(operation, {
           actorId: submittedActor,
           sessionId: session.id,
-        })
-      )
-        return;
+        });
+      const result = await applyMutation.mutateAsync(operation.request);
+      if (!isCurrentSubmission()) return;
       if (result.status === "applied") {
-        await persistOperation(null);
+        if (!(await persistOperation(null)) || !isCurrentSubmission()) return;
         try {
           await Promise.all([
             utils.plannedSessions.invalidate(),
@@ -208,26 +207,29 @@ function SessionScenarioPreviewContents({
             utils.calendar.invalidate(),
             utils.athleteIntelligence.getReadModel.invalidate(),
           ]);
+          if (!isCurrentSubmission()) return;
           setOutcome(`Applied: ${result.action}.`);
         } catch {
+          if (!isCurrentSubmission()) return;
           setOutcome(`Applied: ${result.action}. The screen refresh failed; reopen this session.`);
         }
       } else {
-        await persistOperation(null);
-        setOutcome(
-          "This preview is no longer current. Refresh it, then confirm again; your draft remains visible.",
-        );
+        if (!(await persistOperation(null)) || !isCurrentSubmission()) return;
         void Promise.all([
           utils.plannedSessions.invalidate(),
           utils.activityPlans.invalidate(),
           utils.calendar.invalidate(),
           utils.athleteIntelligence.getReadModel.invalidate(),
         ]).then(() => {
-          if (generation === generationRef.current && submittedActor === actorRef.current)
-            void previewRefetchRef.current();
+          if (!isCurrentSubmission()) return;
+          setOutcome(
+            "This preview is no longer current. Refresh it, then confirm again; your draft remains visible.",
+          );
+          void previewRefetchRef.current();
         });
       }
     } catch {
+      if (actorRef.current !== actorId) return;
       setOutcome("We could not confirm the result. Check or retry with the same operation.");
     }
   };

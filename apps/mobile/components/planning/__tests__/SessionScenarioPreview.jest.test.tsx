@@ -332,6 +332,38 @@ describe("SessionScenarioPreview", () => {
     expect(stored.get("gradientpeak:planned-session-scenario:v1:profile-a:session-a")).toBeTruthy();
   });
 
+  it("does not publish actor A's applied result after actor B replaces it during receipt cleanup", async () => {
+    mocks.preview = {
+      data: availablePreview(),
+      isError: false,
+      isLoading: false,
+      refetch: jest.fn(),
+    };
+    mocks.apply.mockResolvedValue({ status: "applied", action: "repointed" });
+    let resolveRemoval: () => void = () => undefined;
+    jest.mocked(AsyncStorage.removeItem).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveRemoval = resolve;
+        }),
+    );
+    const screen = await renderNative(<SessionScenarioPreview {...props} />);
+    await waitFor(() =>
+      expect(screen.getByTestId("session-scenario-apply").props.disabled).toBe(false),
+    );
+    await act(async () => screen.getByTestId("session-scenario-apply").props.onPress());
+    await act(async () => screen.getByTestId("session-scenario-confirm-apply").props.onPress());
+    await waitFor(() => expect(screen.getByTestId("session-scenario-retry-apply")).toBeTruthy());
+    await act(async () => screen.getByTestId("session-scenario-retry-apply").props.onPress());
+    await waitFor(() => expect(AsyncStorage.removeItem).toHaveBeenCalledTimes(1));
+
+    mocks.actorId = "00000000-0000-4000-8000-000000000002";
+    await act(async () => screen.rerender(<SessionScenarioPreview {...props} />));
+    await act(async () => resolveRemoval());
+    expect(screen.queryByText(/Applied: repointed/)).toBeNull();
+    expect(mocks.invalidations.plannedSessions).not.toHaveBeenCalled();
+  });
+
   it("refreshes stale plan revisions without auto-applying and requires a newly frozen confirmation", async () => {
     mocks.preview = {
       data: availablePreview(1),

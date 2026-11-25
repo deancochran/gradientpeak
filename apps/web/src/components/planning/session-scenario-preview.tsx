@@ -74,6 +74,8 @@ function SessionScenarioPreviewContents({
   const [storageUnavailable, setStorageUnavailable] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const operationRef = useRef<FrozenPlannedSessionScenarioOperation | null>(null);
+  const applyButtonRef = useRef<HTMLButtonElement>(null);
+  const confirmButtonRef = useRef<HTMLButtonElement>(null);
   const generationRef = useRef(0);
   const { user } = useAuth();
   const actorId = user?.id ?? null;
@@ -149,6 +151,10 @@ function SessionScenarioPreviewContents({
     }
   }, [actorId, session.id, storageKey]);
 
+  useEffect(() => {
+    if (confirmationOpen) confirmButtonRef.current?.focus();
+  }, [confirmationOpen]);
+
   const persistOperation = (next: FrozenPlannedSessionScenarioOperation | null) => {
     try {
       if (next) window.localStorage.setItem(storageKey, JSON.stringify(next));
@@ -204,19 +210,18 @@ function SessionScenarioPreviewContents({
     setOutcome(null);
     const generation = generationRef.current;
     const submittedActor = actorId;
+    const isCurrentSubmission = () =>
+      generation === generationRef.current &&
+      actorRef.current === submittedActor &&
+      isCurrentPlannedSessionScenarioOperation(operation, {
+        actorId: submittedActor,
+        sessionId: session.id,
+      });
     try {
       const result = await applyMutation.mutateAsync(operation.request);
-      if (
-        !isCurrentPlannedSessionScenarioOperation(operation, {
-          actorId: submittedActor,
-          sessionId: session.id,
-        }) ||
-        generation !== generationRef.current ||
-        actorRef.current !== submittedActor
-      )
-        return;
+      if (!isCurrentSubmission()) return;
       if (result.status === "applied") {
-        persistOperation(null);
+        if (!persistOperation(null) || !isCurrentSubmission()) return;
         try {
           await Promise.all([
             utils.plannedSessions.invalidate(),
@@ -224,28 +229,31 @@ function SessionScenarioPreviewContents({
             utils.calendar.invalidate(),
             utils.athleteIntelligence.getReadModel.invalidate(),
           ]);
+          if (!isCurrentSubmission()) return;
           setOutcome(`Applied: ${result.action}. The durable session result is now shown.`);
         } catch {
+          if (!isCurrentSubmission()) return;
           setOutcome(
             `Applied: ${result.action}. The durable result is safe, but refreshing the screen failed.`,
           );
         }
       } else {
-        persistOperation(null);
-        setOutcome(
-          "This preview is no longer current. Your draft is preserved; refresh the preview and confirm again.",
-        );
+        if (!persistOperation(null) || !isCurrentSubmission()) return;
         void Promise.all([
           utils.plannedSessions.invalidate(),
           utils.activityPlans.invalidate(),
           utils.calendar.invalidate(),
           utils.athleteIntelligence.getReadModel.invalidate(),
         ]).then(() => {
-          if (generation === generationRef.current && submittedActor === actorRef.current)
-            void previewRefetchRef.current();
+          if (!isCurrentSubmission()) return;
+          setOutcome(
+            "This preview is no longer current. Your draft is preserved; refresh the preview and confirm again.",
+          );
+          void previewRefetchRef.current();
         });
       }
     } catch {
+      if (actorRef.current !== submittedActor) return;
       setOutcome(
         "We could not confirm whether the change was applied. Check or retry using the same operation; do not create a new request.",
       );
@@ -381,6 +389,7 @@ function SessionScenarioPreviewContents({
             <Button
               disabled={!hydrated || !actorId}
               onClick={() => setConfirmationOpen(true)}
+              ref={applyButtonRef}
               type="button"
             >
               Apply this scenario
@@ -423,10 +432,17 @@ function SessionScenarioPreviewContents({
             <p className="text-sm text-muted-foreground">As planned makes no session change.</p>
           ) : null}
           <div className="flex gap-2">
-            <Button onClick={confirmApply} type="button">
+            <Button onClick={confirmApply} ref={confirmButtonRef} type="button">
               Confirm apply
             </Button>
-            <Button onClick={() => setConfirmationOpen(false)} type="button" variant="outline">
+            <Button
+              onClick={() => {
+                setConfirmationOpen(false);
+                applyButtonRef.current?.focus();
+              }}
+              type="button"
+              variant="outline"
+            >
               Cancel
             </Button>
           </div>

@@ -327,6 +327,32 @@ describe("SessionScenarioPreview", () => {
     expect(localStorage.getItem(actorAKey)).not.toBeNull();
   });
 
+  it("does not show actor A's stale result or refetch actor B's preview after invalidation", async () => {
+    mocks.previewResult.data = availablePreview();
+    mocks.apply.mockResolvedValue({ status: "stale", reason: "plan_revision" });
+    let releaseInvalidation: () => void = () => undefined;
+    mocks.invalidations.activityPlans.mockImplementationOnce(
+      () =>
+        new Promise<undefined>((resolve) => {
+          releaseInvalidation = () => resolve(undefined);
+        }),
+    );
+    const { rerender } = renderPreview();
+    fireEvent.click(screen.getByRole("button", { name: "Apply this scenario" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm apply" }));
+    fireEvent.click(screen.getByRole("button", { name: "Check or retry this change" }));
+    await waitFor(() => expect(mocks.invalidations.activityPlans).toHaveBeenCalledOnce());
+
+    mocks.actorId = "00000000-0000-4000-8000-000000000002";
+    rerender(
+      <SessionScenarioPreview activityPlan={activityPlan} session={session} timeZone="UTC" />,
+    );
+    releaseInvalidation();
+    await Promise.resolve();
+    expect(screen.queryByText(/preview is no longer current/i)).toBeNull();
+    expect(mocks.previewResult.refetch).not.toHaveBeenCalled();
+  });
+
   it("refreshes a stale plan through the current revision without auto-applying a replacement operation", async () => {
     mocks.previewResult.data = availablePreview();
     mocks.apply.mockResolvedValue({ status: "stale", reason: "plan_revision" });
@@ -349,8 +375,7 @@ describe("SessionScenarioPreview", () => {
     fireEvent.click(screen.getByRole("button", { name: "Apply this scenario" }));
     fireEvent.click(screen.getByRole("button", { name: "Confirm apply" }));
     fireEvent.click(screen.getByRole("button", { name: "Check or retry this change" }));
-    await screen.findByText(/preview is no longer current/i);
-    expect(mocks.invalidations.activityPlans).toHaveBeenCalledOnce();
+    await waitFor(() => expect(mocks.invalidations.activityPlans).toHaveBeenCalledOnce());
 
     mocks.previewResult = {
       data: {

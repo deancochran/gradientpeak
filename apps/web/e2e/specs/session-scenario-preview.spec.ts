@@ -75,7 +75,7 @@ test("a confirmed scenario applies one selected occurrence and retries a lost ac
   e2eData,
   e2eDatabase,
   e2eIdentity,
-}) => {
+}, testInfo) => {
   test.setTimeout(90_000);
   const fixture = await createSessionScenarioFixture({
     actor: athleteActor,
@@ -90,10 +90,14 @@ test("a confirmed scenario applies one selected occurrence and retries a lost ac
   await athletePage.getByRole("button", { name: "less", exact: true }).click();
   await athletePage.getByLabel("Target duration (seconds)").fill("1200");
   await athletePage.getByRole("button", { name: "Apply this scenario" }).click();
-  await expect(athletePage.getByRole("dialog")).toContainText(
-    "affects only this selected occurrence",
-  );
+  const confirmation = athletePage.getByRole("dialog");
+  await expect(confirmation).toContainText("affects only this selected occurrence");
+  await expect(athletePage.getByRole("button", { name: "Confirm apply" })).toBeFocused();
+  await athletePage.screenshot({
+    path: testInfo.outputPath("session-scenario-confirmation.png"),
+  });
   await athletePage.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(athletePage.getByRole("button", { name: "Apply this scenario" })).toBeFocused();
   await expect(fixture.snapshot()).resolves.toEqual(before);
 
   await athletePage.getByRole("button", { name: "Apply this scenario" }).click();
@@ -106,13 +110,24 @@ test("a confirmed scenario applies one selected occurrence and retries a lost ac
   await expect(
     athletePage.getByText(/could not confirm whether the change was applied/i),
   ).toBeVisible();
+  await athletePage.screenshot({
+    path: testInfo.outputPath("session-scenario-unknown-result.png"),
+  });
   await athletePage.unroute("**/api/trpc/plannedSessions.applyScenario?batch=1");
   await athletePage.reload();
-  await expect(
-    athletePage.getByRole("button", { name: "Check or retry this change" }),
-  ).toBeVisible();
-  await athletePage.getByRole("button", { name: "Check or retry this change" }).click();
+  const recovery = athletePage.getByRole("button", { name: "Check or retry this change" });
+  await expect(recovery).toBeVisible();
+  await recovery.scrollIntoViewIfNeeded();
+  await athletePage.screenshot({
+    path: testInfo.outputPath("session-scenario-recovery.png"),
+  });
+  await recovery.click();
   await expect(athletePage.getByText(/Applied: repointed/i)).toBeVisible();
+  await athletePage.getByText(/Applied: repointed/i).scrollIntoViewIfNeeded();
+  await expectNoHorizontalOverflow(athletePage);
+  await athletePage.screenshot({
+    path: testInfo.outputPath("session-scenario-success.png"),
+  });
 
   const [sessions, plans] = await fixture.snapshot();
   const selected = sessions.find((session) => session.id === fixture.sessionId);
