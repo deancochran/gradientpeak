@@ -34,6 +34,22 @@ name: Cached goal progress truthfully exposes a blocked refresh and retry
     id: planning-ledger-milestone-${MAESTRO_ACCEPTANCE_GOAL_ID}
 - extendedWaitUntil:
     visible:
+      id: goal-detail-progress
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: goal-detail-card
+    direction: UP
+- assertVisible:
+    id: goal-detail-card
+- assertVisible: ${MAESTRO_ACCEPTANCE_GOAL_TITLE}
+- takeScreenshot: goal-progress-retry-ready
+- swipe:
+    from:
+      id: goal-detail-card
+    direction: DOWN
+- extendedWaitUntil:
+    visible:
       id: goal-detail-progress-refresh-warning
     timeout: 30000
 - assertVisible: "Could not refresh goal progress. Showing the last available progress."
