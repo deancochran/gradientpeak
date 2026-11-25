@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -76,7 +76,14 @@ beforeEach(() => {
     },
   });
 });
-afterEach(cleanup);
+afterEach(async () => {
+  cleanup();
+  // Radix defers focus restoration until after unmount. Drain that callback
+  // before Vitest replaces this DOM's Event constructors with another realm's.
+  await act(async () => {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  });
+});
 
 describe("StaffRoster suspension", () => {
   it("loads a read-only impact preview without offering a terminal membership mutation", async () => {
