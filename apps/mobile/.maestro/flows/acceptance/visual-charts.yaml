@@ -8,6 +8,7 @@ name: Render shared scenario and threshold charts on the current Android candida
     visible:
       id: sign-in-screen
     timeout: 90000
+- assertVisible: ${MAESTRO_ACCEPTANCE_RUNTIME_SENTINEL}
 - openLink: "gradientpeak-dev://storybook"
 - extendedWaitUntil:
     visible:
