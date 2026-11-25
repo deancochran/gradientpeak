@@ -1,8 +1,19 @@
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
+import type { TestInfo } from "@playwright/test";
 import { expect, test } from "../fixtures";
 import { expectNoHorizontalOverflow, GoalsPage } from "../pages";
 import { chooseAuthoringOption } from "../pages/authoring";
 import { withGoalFixture } from "../planning/data";
 import { createGoalProgressFixture } from "../support/goal-progress-fixture";
+
+function acceptanceScreenshotPath(testInfo: TestInfo, name: string) {
+  const artifactRoot = process.env.E2E_ACCEPTANCE_ARTIFACTS;
+  if (!artifactRoot) return testInfo.outputPath(name);
+  const directory = join(artifactRoot, "goal-progress-screenshots");
+  mkdirSync(directory, { recursive: true });
+  return join(directory, name);
+}
 
 test("Home and Plan expose observed threshold-goal progress from canonical athlete evidence", async ({
   athleteActor,
@@ -88,7 +99,8 @@ test("Home and Plan expose observed threshold-goal progress from canonical athle
           (visibleHeaderBox?.y ?? 0) + (visibleHeaderBox?.height ?? 0),
         );
         await athletePage.screenshot({
-          path: testInfo.outputPath(
+          path: acceptanceScreenshotPath(
+            testInfo,
             `${route === "/" ? "home" : "plan"}-goal-progress-${viewport.label}.png`,
           ),
         });
