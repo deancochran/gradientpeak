@@ -182,8 +182,37 @@ test("Android truthfully retries a blocked cached goal-progress refresh", async 
             ).toBe(0);
             flow("goal-progress-retry-blocked-workspace.yaml", environment);
             expect((await transport.observations()).blocked).toBeGreaterThan(0);
+            const preAllowTrace = await transport.trace();
+            const blockedTargetBatch = preAllowTrace.find(
+              (record) =>
+                record.method === "GET" &&
+                record.batchSize === 2 &&
+                record.targetGoalMatched &&
+                record.status === 503 &&
+                record.procedures[0] === "athleteIntelligence.getGoalAssessment" &&
+                record.procedures[1] === "athleteIntelligence.getGoalProgress",
+            );
+            expect(
+              blockedTargetBatch,
+              "The blocked target request must be the observed assessment/progress batch.",
+            ).toBeDefined();
+            const preAllowRequestOrder = Math.max(
+              ...preAllowTrace.map((record) => record.requestOrder),
+            );
             await transport.allowProgressReads();
             flow("goal-progress-retry-recovery.yaml", environment);
+            const recoveryTrace = await transport.trace();
+            expect(
+              recoveryTrace.some(
+                (record) =>
+                  record.method === "GET" &&
+                  record.hasProgress &&
+                  record.targetGoalMatched &&
+                  record.status === 200 &&
+                  record.requestOrder > preAllowRequestOrder,
+              ),
+              "The successful target progress request must start after the pre-allow trace.",
+            ).toBe(true);
           } finally {
             try {
               trace = await transport.trace();
