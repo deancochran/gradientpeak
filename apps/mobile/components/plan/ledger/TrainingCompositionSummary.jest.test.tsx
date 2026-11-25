@@ -96,3 +96,54 @@ it("keeps unavailable duration distinct from zero", async () => {
   expect(screen.getByText("Duration composition is unavailable for this period.")).toBeTruthy();
   expect(screen.queryByText(/0 min/)).toBeNull();
 });
+
+it("shows known zero totals without inventing a duration donut", async () => {
+  await renderNative(
+    <TrainingCompositionSummary
+      composition={{
+        activeDaysLabel: "0 active days",
+        categories: [
+          {
+            activityCategory: "run",
+            completedDuration: 0,
+            completedLabel: "0 min",
+            label: "Run",
+            plannedDuration: 0,
+            plannedLabel: "0 min",
+          },
+        ],
+        completedDuration: 0,
+        completedLabel: "0 min",
+        plannedDuration: 0,
+        plannedLabel: "0 min",
+        sessionsLabel: "0 sessions",
+      }}
+    />,
+  );
+
+  expect(screen.getAllByText("0 min")).toHaveLength(2);
+  expect(screen.queryByTestId("training-composition-duration-donut")).toBeNull();
+  expect(screen.queryByText("Duration composition is unavailable for this period.")).toBeNull();
+  expect(screen.getByText("0 sessions · 0 active days")).toBeTruthy();
+});
+
+it("keeps an unavailable duration label beside a known zero total without a donut", async () => {
+  await renderNative(
+    <TrainingCompositionSummary
+      composition={{
+        activeDaysLabel: null,
+        categories: [],
+        completedDuration: null,
+        completedLabel: "—",
+        plannedDuration: 0,
+        plannedLabel: "0 min",
+        sessionsLabel: null,
+      }}
+    />,
+  );
+
+  expect(screen.getByText("—")).toBeTruthy();
+  expect(screen.getByText("0 min")).toBeTruthy();
+  expect(screen.queryByTestId("training-composition-duration-donut")).toBeNull();
+  expect(screen.queryByText("Duration composition is unavailable for this period.")).toBeNull();
+});
