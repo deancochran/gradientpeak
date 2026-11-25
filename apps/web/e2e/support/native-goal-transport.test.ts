@@ -168,6 +168,24 @@ describe("native goal transport", () => {
     await expect(fetch(`${refused.origin}/other`)).resolves.toMatchObject({ status: 502 });
   });
 
+  it("relays responses larger than the request cap and rejects responses over one MiB", async () => {
+    const accepted = Buffer.alloc(80 * 1024, 5);
+    const port = await upstream((_request, response) => {
+      response.statusCode = 206;
+      response.end(accepted);
+    });
+    const transport = await start(port);
+    const response = await fetch(`${transport.origin}/other`);
+    expect(response.status).toBe(206);
+    expect(Buffer.from(await response.arrayBuffer())).toEqual(accepted);
+
+    const oversizedPort = await upstream((_request, response) =>
+      response.end(Buffer.alloc(1024 * 1024 + 1)),
+    );
+    const oversized = await start(oversizedPort);
+    await expect(fetch(`${oversized.origin}/other`)).resolves.toMatchObject({ status: 502 });
+  });
+
   it("rejects an oversized POST without forwarding it", async () => {
     let forwarded = false;
     const port = await upstream((_request, response) => {
@@ -199,4 +217,34 @@ describe("native goal transport", () => {
     await expect(transport.stop()).resolves.toBeUndefined();
     socket.destroy();
   }, 12_000);
+
+  it("serializes concurrent controls and remains healthy", async () => {
+    const port = await upstream((_request, response) => response.end("relay"));
+    const transport = await start(port);
+    await expect(
+      Promise.all([transport.allowProgressReads(), transport.observations()]),
+    ).resolves.toEqual([undefined, { blocked: 0, forwarded: 0 }]);
+    await expect(transport.observations()).resolves.toEqual({ blocked: 0, forwarded: 0 });
+  });
+
+  it("closes a trickling incomplete request at its absolute body deadline", async () => {
+    const port = await upstream((_request, response) => response.end("unexpected"));
+    const transport = await start(port);
+    const socket = createConnection({
+      host: "127.0.0.1",
+      port: Number(new URL(transport.origin).port),
+    });
+    const chunks: Buffer[] = [];
+    socket.on("data", (chunk: Buffer) => chunks.push(chunk));
+    await once(socket, "connect");
+    socket.write("POST /other HTTP/1.1\r\nHost: loopback\r\nContent-Length: 5\r\n\r\na");
+    await new Promise((resolve) => setTimeout(resolve, 4_000));
+    socket.write("b");
+    await new Promise((resolve) => setTimeout(resolve, 4_000));
+    socket.write("c");
+    await new Promise((resolve) => setTimeout(resolve, 4_000));
+    socket.write("d");
+    await once(socket, "close");
+    expect(Buffer.concat(chunks).toString("utf8")).toContain("408");
+  }, 18_000);
 });

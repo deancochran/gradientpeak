@@ -19,8 +19,10 @@ try {
 let allowed = false;
 const counts = { blocked: 0, forwarded: 0 };
 const sockets = new Set<import("node:net").Socket>();
-const MAX_BYTES = 64 * 1024;
+const MAX_REQUEST_BYTES = 64 * 1024;
+const MAX_RESPONSE_BYTES = 1024 * 1024;
 const CLIENT_BODY_TIMEOUT_MS = 10_000;
+const CLIENT_BODY_ABSOLUTE_TIMEOUT_MS = 15_000;
 const UPSTREAM_INACTIVITY_TIMEOUT_MS = 10_000;
 const UPSTREAM_ABSOLUTE_TIMEOUT_MS = 15_000;
 const persist = () => {
@@ -52,24 +54,40 @@ function matches(request: IncomingMessage) {
 }
 function body(
   request: IncomingMessage,
-  { limit = MAX_BYTES, timeoutMs = UPSTREAM_INACTIVITY_TIMEOUT_MS } = {},
+  {
+    limit = MAX_RESPONSE_BYTES,
+    timeoutMs = UPSTREAM_INACTIVITY_TIMEOUT_MS,
+    absoluteTimeoutMs,
+    drainOnFailure = false,
+  }: {
+    limit?: number;
+    timeoutMs?: number;
+    absoluteTimeoutMs?: number;
+    drainOnFailure?: boolean;
+  } = {},
 ) {
   return new Promise<{ body: Buffer } | { failure: "oversize" | "timeout" | "error" }>(
     (resolve) => {
       const chunks: Buffer[] = [];
       let size = 0;
-      let timer: ReturnType<typeof setTimeout> | undefined;
+      let inactivityTimer: ReturnType<typeof setTimeout> | undefined;
+      let absoluteTimer: ReturnType<typeof setTimeout> | undefined;
+      let settled = false;
       const finish = (value: { body: Buffer } | { failure: "oversize" | "timeout" | "error" }) => {
+        if (settled) return;
+        settled = true;
         request.off("data", onData);
         request.off("end", onEnd);
         request.off("error", onError);
         request.off("aborted", onError);
-        if (timer !== undefined) clearTimeout(timer);
+        if (inactivityTimer !== undefined) clearTimeout(inactivityTimer);
+        if (absoluteTimer !== undefined) clearTimeout(absoluteTimer);
+        if ("failure" in value && drainOnFailure) request.resume();
         resolve(value);
       };
       const resetTimeout = () => {
-        if (timer !== undefined) clearTimeout(timer);
-        timer = setTimeout(() => finish({ failure: "timeout" }), timeoutMs);
+        if (inactivityTimer !== undefined) clearTimeout(inactivityTimer);
+        inactivityTimer = setTimeout(() => finish({ failure: "timeout" }), timeoutMs);
       };
       const onData = (chunk: Buffer) => {
         size += chunk.length;
@@ -88,6 +106,8 @@ function body(
       request.once("error", onError);
       request.once("aborted", onError);
       resetTimeout();
+      if (absoluteTimeoutMs !== undefined)
+        absoluteTimer = setTimeout(() => finish({ failure: "timeout" }), absoluteTimeoutMs);
     },
   );
 }
@@ -114,9 +134,15 @@ const server = createServer(async (request, response) => {
     respond(503, undefined, "Acceptance runner ownership is unavailable.");
     return;
   }
-  const requestBody = await body(request, { timeoutMs: CLIENT_BODY_TIMEOUT_MS });
+  const requestBody = await body(request, {
+    limit: MAX_REQUEST_BYTES,
+    timeoutMs: CLIENT_BODY_TIMEOUT_MS,
+    absoluteTimeoutMs: CLIENT_BODY_ABSOLUTE_TIMEOUT_MS,
+    drainOnFailure: true,
+  });
   if ("failure" in requestBody) {
-    respond(requestBody.failure === "oversize" ? 413 : 408);
+    if (requestBody.failure === "oversize") respond(413);
+    else respond(408, { connection: "close" });
     return;
   }
   let settled = false;
@@ -162,7 +188,10 @@ const server = createServer(async (request, response) => {
   });
   upstream.setTimeout(UPSTREAM_INACTIVITY_TIMEOUT_MS);
   response.once("close", () => {
-    if (!response.writableEnded) upstream.destroy();
+    if (!response.writableEnded) {
+      upstream.destroy();
+      finish(502);
+    }
   });
   upstream.end(requestBody.body);
   if (matches(request)) {

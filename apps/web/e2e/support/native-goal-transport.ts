@@ -50,19 +50,28 @@ export async function startNativeGoalTransport({
     await stopNativeScenarioTransportChild(child);
     throw new Error("Native goal transport did not become ready.");
   }
-  const command = async (type: "allow" | "observations") => {
-    try {
-      requireNativeScenarioTransportGuard({ environment, sessionId: goalId, upstreamPort });
-      const received = message(child, type);
-      child.send?.({ type });
-      const result = await received;
-      if (!result || typeof result !== "object" || !("ok" in result) || result.ok !== true)
-        throw new Error("Native goal transport control failed.");
-      return result;
-    } catch (error) {
-      await stopNativeScenarioTransportChild(child);
-      throw error;
-    }
+  let commandTail = Promise.resolve();
+  const command = <T extends "allow" | "observations">(type: T) => {
+    const run = async () => {
+      try {
+        requireNativeScenarioTransportGuard({ environment, sessionId: goalId, upstreamPort });
+        const received = message(child, type);
+        child.send?.({ type });
+        const result = await received;
+        if (!result || typeof result !== "object" || !("ok" in result) || result.ok !== true)
+          throw new Error("Native goal transport control failed.");
+        return result;
+      } catch (error) {
+        await stopNativeScenarioTransportChild(child);
+        throw error;
+      }
+    };
+    const result = commandTail.then(run, run);
+    commandTail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
   };
   return {
     origin: `http://127.0.0.1:${ready.port}`,
