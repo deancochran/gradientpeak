@@ -890,6 +890,7 @@ describe("readPlanTabProjection", () => {
       longTermLoad: points.at(-1)?.longTermLoad,
       recentLoad: points.at(-1)?.recentLoad,
     });
+    expect(result.fitness.actual.some((point) => point.date === "2026-04-01")).toBe(false);
   });
 
   it("does not turn partial completed Load into recorded state", async () => {
