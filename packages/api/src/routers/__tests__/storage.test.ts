@@ -41,7 +41,7 @@ function createCaller(userId = "11111111-1111-4111-8111-111111111111") {
     headers: new Headers(),
     clientType: "test",
     trpcSource: "vitest",
-  } as any);
+  } as never);
 }
 
 describe("storageRouter", () => {
@@ -59,6 +59,17 @@ describe("storageRouter", () => {
 
     expect(result.path).toMatch(/^11111111-1111-4111-8111-111111111111\//);
     expect(result.publicUrl).toBe(`https://public.test/${result.path}`);
+  });
+
+  it("uses collision-resistant paths for concurrent profile uploads", async () => {
+    const caller = createCaller();
+
+    const [first, second] = await Promise.all([
+      caller.createSignedUploadUrl({ fileName: "avatar.png", fileType: "image/png" }),
+      caller.createSignedUploadUrl({ fileName: "avatar.png", fileType: "image/png" }),
+    ]);
+
+    expect(first.path).not.toBe(second.path);
   });
 
   it("creates the avatar bucket before issuing upload URLs", async () => {

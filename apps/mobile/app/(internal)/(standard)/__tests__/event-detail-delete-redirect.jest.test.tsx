@@ -5,17 +5,29 @@ import { renderNative, screen } from "../../../../test/render-native";
 import EventDetailScreen from "../event-detail";
 
 var mockRouterNavigate = jest.fn();
-var mockQuery = jest.fn((_input?: any, _options?: any) => ({
+var mockRouterDismissTo = jest.fn();
+var mockQuery = jest.fn((_input?: unknown, _options?: unknown) => ({
   data: null,
   error: { data: { code: "NOT_FOUND" } },
   isLoading: false,
   refetch: jest.fn(),
 }));
 
+type StackScreenProps = Record<string, unknown> & {
+  options?: { headerRight?: () => React.ReactNode };
+};
+
 jest.mock("@tanstack/react-query", () => ({
   __esModule: true,
   ...jest.requireActual("@tanstack/react-query"),
   useQueryClient: () => ({ invalidateQueries: jest.fn() }),
+}));
+
+jest.mock("@repo/api/react", () => ({
+  __esModule: true,
+  usePlannedSessionMutations: () => ({
+    changePlanOnly: { isPending: false, mutateAsync: jest.fn() },
+  }),
 }));
 
 jest.mock("react-native", () => ({
@@ -31,7 +43,7 @@ jest.mock("react-native", () => ({
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: {
-    Screen: (props: any) =>
+    Screen: (props: StackScreenProps) =>
       React.createElement(
         "StackScreen",
         props,
@@ -39,8 +51,10 @@ jest.mock("expo-router", () => ({
       ),
   },
   useLocalSearchParams: () => ({ id: "event-1" }),
+  useNavigation: () => ({ dispatch: jest.fn() }),
   useRouter: () => ({
     back: jest.fn(),
+    dismissTo: mockRouterDismissTo,
     push: jest.fn(),
     navigate: mockRouterNavigate,
     replace: jest.fn(),
@@ -114,7 +128,9 @@ jest.mock("@react-native-community/datetimepicker", () => ({
 
 jest.mock("@repo/core", () => ({
   __esModule: true,
+  ...jest.requireActual("@repo/core"),
   formatDurationSec: jest.fn(() => "60 min"),
+  isActivityCompleted: () => false,
 }));
 
 jest.mock("@repo/core/utils/dates", () => ({
@@ -136,11 +152,6 @@ jest.mock("@/lib/utils/plan/colors", () => ({
   __esModule: true,
   getActivityBgClass: () => "bg-primary",
   getActivityColor: () => ({ name: "Run" }),
-}));
-
-jest.mock("@/lib/utils/plan/dateGrouping", () => ({
-  __esModule: true,
-  isActivityCompleted: () => false,
 }));
 
 jest.mock("lucide-react-native", () => ({
@@ -189,7 +200,7 @@ jest.mock("@/lib/api", () => ({
     },
     events: {
       getById: {
-        useQuery: (input: any, options: any) => mockQuery(input, options),
+        useQuery: (input: unknown, options: unknown) => mockQuery(input, options),
       },
       create: {
         useMutation: () => ({
@@ -210,7 +221,38 @@ jest.mock("@/lib/api", () => ({
         }),
       },
     },
+    activities: {
+      createManualDiaryEntry: {
+        useMutation: () => ({ isPending: false, mutateAsync: jest.fn() }),
+      },
+    },
+    plannedSessions: {
+      create: { useMutation: () => ({ isPending: false, mutate: jest.fn() }) },
+      recordingLaunch: { useMutation: () => ({ mutateAsync: jest.fn() }) },
+      getById: {
+        useQuery: () => ({ data: null, error: null, isLoading: false }),
+      },
+      skip: { useMutation: () => ({ isPending: false, mutateAsync: jest.fn() }) },
+      linkCompletion: { useMutation: () => ({ isPending: false, mutateAsync: jest.fn() }) },
+      completionCandidates: {
+        useInfiniteQuery: () => ({
+          data: { pages: [{ items: [], nextCursor: null }] },
+          fetchNextPage: jest.fn(),
+          hasNextPage: false,
+          isFetchingNextPage: false,
+          isLoading: false,
+        }),
+      },
+    },
+    profiles: {
+      get: {
+        useQuery: () => ({ data: null, error: null, isLoading: false }),
+      },
+    },
     activityPlans: {
+      getById: {
+        useQuery: () => ({ data: null, error: null, isLoading: false }),
+      },
       list: {
         useQuery: () => ({
           data: { items: [] },
@@ -221,7 +263,7 @@ jest.mock("@/lib/api", () => ({
       },
     },
     trainingPlans: {
-      getById: {
+      get: {
         useQuery: () => ({ data: null }),
       },
     },
@@ -231,11 +273,12 @@ jest.mock("@/lib/api", () => ({
 describe("event detail deleted record redirect", () => {
   beforeEach(() => {
     mockRouterNavigate.mockReset();
+    mockRouterDismissTo.mockReset();
     mockQuery.mockClear();
   });
 
   it("uses schedule-aware query freshness for event detail", async () => {
-    renderNative(<EventDetailScreen />);
+    await renderNative(<EventDetailScreen />);
 
     expect(mockQuery).toHaveBeenCalledWith(
       { id: "event-1" },
@@ -245,13 +288,17 @@ describe("event detail deleted record redirect", () => {
     );
   });
 
-  it("redirects away instead of showing a transient not-found state", async () => {
-    renderNative(<EventDetailScreen />);
+  it("dismisses a deleted event route back to the calendar stack", async () => {
+    await renderNative(<EventDetailScreen />);
 
     await waitFor(() => {
-      expect(mockRouterNavigate).toHaveBeenCalledWith("/(internal)/(tabs)/calendar");
+      expect(mockRouterDismissTo).toHaveBeenCalledWith({
+        pathname: "/(internal)/(tabs)/plan",
+        params: { view: "calendar" },
+      });
     });
 
+    expect(mockRouterNavigate).not.toHaveBeenCalled();
     expect(screen.getByText("Closing event...")).toBeTruthy();
     expect(screen.queryByText("Event not found")).toBeNull();
   });
