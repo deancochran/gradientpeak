@@ -22,6 +22,8 @@ name: Confirm a selected planned-session scenario and return to its day
     timeout: 30000
 - assertVisible:
     id: planning-ledger-entry-planned-${MAESTRO_ACCEPTANCE_SESSION_ID}
+- assertVisible: "Planned duration"
+- assertVisible: "20 min"
 - takeScreenshot: session-scenario-returned-ledger
 - pressKey: back
 - extendedWaitUntil:
