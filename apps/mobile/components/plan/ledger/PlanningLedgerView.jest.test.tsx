@@ -318,21 +318,22 @@ it("renders a visual-first weekly breakdown and normal numeric partial values", 
   expect(screen.getByTestId("planning-ledger-weekly-chart")).toBeTruthy();
   expect(screen.getByTestId("planning-ledger-consistency-strip")).toBeTruthy();
   expect(screen.getByTestId("planning-ledger-state-chart")).toBeTruthy();
-  expect(screen.getByTestId("planning-ledger-state-legend").props.accessibilityLabel).toBe(
+  expect(screen.getByTestId("planning-ledger-state-chart-legend").props.accessibilityLabel).toBe(
     "Training-state legend",
   );
-  expect(screen.getAllByText("● Recorded · solid").length).toBeGreaterThan(0);
-  expect(screen.queryByText("● Projected · dashed")).toBeNull();
+  expect(screen.getAllByText("● Recorded · solid")).toHaveLength(1);
+  expect(screen.queryByText("□ Projected · dashed")).toBeNull();
+  expect(screen.queryByTestId("planning-ledger-state-legend")).toBeNull();
   expect(screen.getByTestId("training-composition-duration-donut")).toBeTruthy();
   expect(screen.getByTestId("planning-ledger-intensity-distribution")).toBeTruthy();
   expect(screen.getAllByText("20").length).toBeGreaterThan(0);
   expect(screen.queryByText(/~/)).toBeNull();
   expect(screen.queryByText(/partial|incomplete/i)).toBeNull();
-  expect(
-    screen.getByLabelText(
-      /Fitness Recorded: 7 values.*Fatigue Recorded: 7 values.*Form Recorded: 7 values.*Fitness Projected: no values available/,
-    ),
-  ).toBeTruthy();
+  const recordedStateChart = screen.getByLabelText(
+    /Fitness Recorded: 7 values.*Fatigue Recorded: 7 values.*Form Recorded: 7 values/,
+  );
+  expect(recordedStateChart).toBeTruthy();
+  expect(recordedStateChart.props.accessibilityLabel).not.toContain("Projected");
   expect(
     screen.getByLabelText(/Planning timezone America\/Los_Angeles.*Fatigue Recorded.*Form Recorded/)
       .props.accessibilityLabel,
