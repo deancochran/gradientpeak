@@ -2,6 +2,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import { constants } from "node:os";
 import { join } from "node:path";
 import { Pool } from "pg";
 import {
@@ -23,6 +24,80 @@ type ContainerInspect = {
   NetworkSettings?: { Networks?: Record<string, unknown> };
 };
 type ImageInspect = { Id?: string; RepoDigests?: string[] };
+type DockerLaunchExecutor = (
+  command: string,
+  args: string[],
+  options: { encoding: "utf8"; maxBuffer: number; stdio: ["ignore", "ignore", "pipe"] },
+) => unknown;
+
+const dockerRunStderrLimit = 8 * 1024;
+const safeSignals = new Set(Object.keys(constants.signals));
+const safeSpawnCodes = new Set(["EACCES", "ENOENT", "EPERM"]);
+
+function executeDockerRun(
+  command: string,
+  args: string[],
+  options: { encoding: "utf8"; maxBuffer: number; stdio: ["ignore", "ignore", "pipe"] },
+) {
+  return execFileSync(command, args, options);
+}
+
+function classifyDockerLaunchFailure(stderr: unknown): string {
+  const output = (
+    typeof stderr === "string" ? stderr : Buffer.isBuffer(stderr) ? stderr.toString("utf8") : ""
+  ).toLowerCase();
+  if (/data limit exceeded|data transfer limit|bandwidth limit/.test(output)) {
+    return "registry-data-limit";
+  }
+  if (/toomanyrequests|rate limit|rate_limit|429/.test(output)) return "registry-rate-limit";
+  if (/pull access denied|manifest unknown|no matching manifest|image.*not found/.test(output)) {
+    return "image-unavailable";
+  }
+  if (/permission denied|operation not permitted/.test(output)) return "daemon-permission";
+  if (
+    /cannot connect to the docker daemon|is the docker daemon running|docker\.sock/.test(output)
+  ) {
+    return "daemon-unavailable";
+  }
+  return "unknown";
+}
+
+/**
+ * Keep launch diagnostics actionable without exposing the Docker argv, environment, or raw stderr.
+ */
+export function launchDisposableStorageContainer(
+  command: string[],
+  execute: DockerLaunchExecutor = executeDockerRun,
+) {
+  try {
+    execute("docker", command, {
+      encoding: "utf8",
+      maxBuffer: dockerRunStderrLimit,
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+  } catch (error) {
+    const failure = error as {
+      status?: unknown;
+      signal?: unknown;
+      code?: unknown;
+      stderr?: unknown;
+    };
+    const exit =
+      typeof failure.status === "number" && Number.isInteger(failure.status)
+        ? String(failure.status)
+        : "none";
+    const signal =
+      typeof failure.signal === "string" && safeSignals.has(failure.signal)
+        ? failure.signal
+        : "none";
+    const spawn =
+      typeof failure.code === "string" && safeSpawnCodes.has(failure.code) ? failure.code : "none";
+    const cause = classifyDockerLaunchFailure(failure.stderr);
+    throw new Error(
+      `disposable Storage API Docker launch failed (stage=storage-api-launch exit=${exit} signal=${signal} spawn=${spawn} cause=${cause})`,
+    );
+  }
+}
 
 function dockerJson(args: string[]): unknown {
   return JSON.parse(
@@ -226,7 +301,7 @@ export async function withDisposableSupabaseStorage<T>(
       ];
       for (const environment of spec.environment) command.push("-e", environment);
       command.push(spec.image);
-      execFileSync("docker", command, { stdio: "ignore" });
+      launchDisposableStorageContainer(command);
       const inspect = (
         dockerJson(["inspect", spec.name]) as Parameters<typeof attestStorageContainer>[0][]
       )[0];

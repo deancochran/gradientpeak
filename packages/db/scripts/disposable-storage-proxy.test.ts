@@ -2,7 +2,114 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
-import { proxyStorageRequest } from "./disposable-database-test-harness";
+import { inspect } from "node:util";
+import {
+  launchDisposableStorageContainer,
+  proxyStorageRequest,
+} from "./disposable-database-test-harness";
+
+const fabricatedSecret = "TESTsecret-do-not-leak";
+const fabricatedArgv = `docker run -e SERVICE_KEY=${fabricatedSecret}`;
+const fabricatedEnvironment = `DATABASE_URL=postgresql://role:${fabricatedSecret}@example.test/db`;
+
+function launchError(input: {
+  status?: number;
+  signal?: string;
+  code?: string;
+  stderr?: string | Buffer;
+  cause?: unknown;
+}) {
+  const error = new Error(`raw Docker failure ${fabricatedArgv}`, { cause: input.cause });
+  Object.assign(error, input);
+  return error;
+}
+
+function diagnosticFrom(error: unknown) {
+  assert.ok(error instanceof Error);
+  const serialized = JSON.stringify(error, Object.getOwnPropertyNames(error));
+  const diagnostic = `${error.message}\n${serialized}\n${inspect(error)}`;
+  assert.doesNotMatch(diagnostic, new RegExp(fabricatedSecret, "u"));
+  assert.doesNotMatch(diagnostic, new RegExp(fabricatedArgv, "u"));
+  assert.doesNotMatch(diagnostic, new RegExp(fabricatedEnvironment, "u"));
+  assert.doesNotMatch(diagnostic, /raw Docker failure/u);
+  return diagnostic;
+}
+
+test("disposable Storage launch diagnostics retain safe registry failure details", () => {
+  const command = ["run", "-e", fabricatedEnvironment, "storage-api"];
+  const failure = launchError({
+    status: 125,
+    stderr: Buffer.from("denied: ECR Data limit exceeded while pulling image"),
+    cause: { argv: fabricatedArgv, token: fabricatedSecret },
+  });
+  assert.throws(
+    () =>
+      launchDisposableStorageContainer(command, () => {
+        throw failure;
+      }),
+    (error) => {
+      const diagnostic = diagnosticFrom(error);
+      assert.match(diagnostic, /stage=storage-api-launch exit=125 signal=none spawn=none/u);
+      assert.match(diagnostic, /cause=registry-data-limit/u);
+      return true;
+    },
+  );
+});
+
+test("disposable Storage launch diagnostics never expose unknown raw process failures", () => {
+  const failure = launchError({
+    status: 125,
+    stderr: `unexpected Docker output ${fabricatedSecret} ${fabricatedArgv} ${fabricatedEnvironment}`,
+    cause: { stderr: fabricatedSecret },
+  });
+  assert.throws(
+    () =>
+      launchDisposableStorageContainer(["run", fabricatedArgv], () => {
+        throw failure;
+      }),
+    (error) => {
+      const diagnostic = diagnosticFrom(error);
+      assert.match(diagnostic, /exit=125/u);
+      assert.match(diagnostic, /cause=unknown/u);
+      return true;
+    },
+  );
+});
+
+test("disposable Storage launch diagnostics report safe spawn and signal failures", () => {
+  const spawnFailure = launchError({ code: "ENOENT", stderr: fabricatedSecret });
+  assert.throws(
+    () =>
+      launchDisposableStorageContainer(["run"], () => {
+        throw spawnFailure;
+      }),
+    (error) => {
+      const diagnostic = diagnosticFrom(error);
+      assert.match(diagnostic, /exit=none signal=none spawn=ENOENT cause=unknown/u);
+      return true;
+    },
+  );
+  const signalFailure = launchError({ signal: "SIGTERM", stderr: fabricatedSecret });
+  assert.throws(
+    () =>
+      launchDisposableStorageContainer(["run"], () => {
+        throw signalFailure;
+      }),
+    (error) => {
+      const diagnostic = diagnosticFrom(error);
+      assert.match(diagnostic, /exit=none signal=SIGTERM spawn=none cause=unknown/u);
+      return true;
+    },
+  );
+});
+
+test("disposable Storage launch helper permits successful Docker commands", () => {
+  let invocation: { command: string; args: string[] } | undefined;
+  launchDisposableStorageContainer(["run", "storage-api"], (command, args) => {
+    invocation = { command, args };
+  });
+  assert.deepEqual(invocation, { command: "docker", args: ["run", "storage-api"] });
+});
 
 test("disposable gateway preserves upstream browser-upload CORS and request bodies", async () => {
   const received: string[] = [];
