@@ -6,6 +6,7 @@ import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { FadeIn } from "react-native-reanimated";
 import { FullWindowOverlay as RNFullWindowOverlay } from "react-native-screens";
 import { cn } from "../../lib/cn";
+import { omitUndefined } from "../../lib/omit-undefined";
 import { Icon } from "./icon";
 import { NativeOnlyAnimatedView } from "./native-only-animated-view";
 import { TextClassContext } from "./text";
@@ -158,7 +159,7 @@ function MenubarContent({
   portalHost?: string;
 }) {
   return (
-    <MenubarPrimitive.Portal hostName={portalHost}>
+    <MenubarPrimitive.Portal {...omitUndefined({ hostName: portalHost })}>
       <FullWindowOverlay>
         <NativeOnlyAnimatedView
           entering={FadeIn}

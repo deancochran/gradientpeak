@@ -1,8 +1,8 @@
-import { addDaysDateOnlyUtc } from "@repo/core";
+import type { ActivityPlanPlanningEstimate, ActivityPlanSummary } from "@repo/core";
 import { useRouter } from "expo-router";
-import { startTransition, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert } from "react-native";
-import type { ActivityPlan } from "@/components/shared/ActivityPlanCard";
+import { resolveMobileActivityPlanEstimateMetrics } from "@/components/activity-plan/resolveMobileActivityPlanEstimateMetrics";
 import type {
   ActivityCategoryFilter,
   ActivityPlanSort,
@@ -10,48 +10,50 @@ import type {
 import type { BuilderSheet } from "@/components/training-plan/create/BuilderSheetTypes";
 import { useBuilderSheetStack } from "@/components/training-plan/create/useBuilderSheetStack";
 import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { diffDateOnlyDays } from "@/lib/training-plan-creation/date-utils";
 import type { TrainingPlanActivityPlanFacts } from "@/lib/training-plan-creation/types";
 import { useTrainingPlanCreationService } from "@/lib/training-plan-creation/useTrainingPlanCreationService";
+import { useCreationChartController } from "./useCreationChartController";
 
-type ActivityPlanListItem = ActivityPlan;
+type ActivityPlanListItem = ActivityPlanSummary;
 
 type TrainingPlanBuilderControllerOptions = {
   mode: "create" | "edit";
   planId?: string;
+  onDirtyChange?: (isDirty: boolean) => void;
+  onPersisted?: () => void;
+  isFlowCurrent?: (() => boolean) | undefined;
 };
 
 function toActivityPlanFacts(activityPlan: ActivityPlanListItem): TrainingPlanActivityPlanFacts {
-  const isPublished =
-    activityPlan.template_visibility === "public" ||
-    activityPlan.is_public === true ||
-    activityPlan.is_system_template === true;
+  const isPublished = activityPlan.visibility === "public" || activityPlan.isSystemTemplate;
 
   return {
     id: activityPlan.id,
     name: activityPlan.name,
     published: isPublished,
     accessible: true,
-    estimatedTss: activityPlan.authoritative_metrics?.estimated_tss ?? null,
-    estimatedDurationSeconds: activityPlan.authoritative_metrics?.estimated_duration ?? null,
+    prescriptionQuantification: null,
   };
 }
 
 function toEstimatedActivityPlanFacts(
   activityPlan: ActivityPlanListItem,
-  estimate?: { durationSeconds: number | null; tss: number | null } | null,
+  estimate?: ActivityPlanPlanningEstimate | null,
 ): TrainingPlanActivityPlanFacts {
   return {
     ...toActivityPlanFacts(activityPlan),
-    estimatedDurationSeconds:
-      estimate?.durationSeconds ?? activityPlan.authoritative_metrics?.estimated_duration ?? null,
-    estimatedTss: estimate?.tss ?? activityPlan.authoritative_metrics?.estimated_tss ?? null,
+    prescriptionQuantification: estimate?.prescriptionQuantification ?? null,
   };
 }
 
 export function useTrainingPlanBuilderController({
   mode,
   planId,
+  onDirtyChange,
+  onPersisted,
+  isFlowCurrent,
 }: TrainingPlanBuilderControllerOptions) {
   const router = useRouter();
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -61,14 +63,17 @@ export function useTrainingPlanBuilderController({
     useState<ActivityCategoryFilter>(null);
   const [activityPlanSort, setActivityPlanSort] = useState<ActivityPlanSort>("newest");
   const [pendingSessionDraftId, setPendingSessionDraftId] = useState<string | null>(null);
+  const [numericDraftErrors, setNumericDraftErrors] = useState<Record<string, string>>({});
+  const [sessionRawDrafts, setSessionRawDrafts] = useState<Record<string, string>>({});
+  const [activityPickerReturnsToSession, setActivityPickerReturnsToSession] = useState(false);
+  const numericDraftErrorsRef = useRef<Record<string, string>>({});
   const [selectedWeekStart, setSelectedWeekStart] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [chartExtraWeeks, setChartExtraWeeks] = useState(0);
   const sheetStack = useBuilderSheetStack<BuilderSheet>();
 
   const builder = useTrainingPlanCreationService({
     mode,
-    planId,
+    ...omitUndefined({ planId, isFlowCurrent }),
     activityPlanPicker: {
       enabled: selectedSessionId !== null,
       searchQuery: debouncedActivityPlanSearchQuery,
@@ -77,44 +82,50 @@ export function useTrainingPlanBuilderController({
       selectedSessionId,
     },
     onCreated: (createdPlan) => {
+      onPersisted?.();
       router.replace({ pathname: "/training-plan-detail", params: { id: createdPlan.id } });
     },
     onCreateError: (error) => {
       Alert.alert("Could not create plan", error.message || "Try again after reviewing the plan.");
     },
     onUpdated: (updatedPlan) => {
+      onPersisted?.();
       router.replace({ pathname: "/training-plan-detail", params: { id: updatedPlan.id } });
     },
     onUpdateError: (error) => {
       Alert.alert("Could not update plan", error.message || "Try again after reviewing the plan.");
     },
   });
+  const initialDraftRef = useRef<string | null>(null);
+  const draftSignature = JSON.stringify(builder.state);
+  useEffect(() => {
+    if (builder.isHydratingEditPlan || initialDraftRef.current !== null) return;
+    initialDraftRef.current = draftSignature;
+  }, [builder.isHydratingEditPlan, draftSignature]);
+  const hasInvalidNumericDrafts = Object.keys(numericDraftErrors).length > 0;
+  useEffect(() => {
+    onDirtyChange?.(
+      hasInvalidNumericDrafts ||
+        (initialDraftRef.current !== null && initialDraftRef.current !== draftSignature),
+    );
+  }, [draftSignature, hasInvalidNumericDrafts, onDirtyChange]);
 
   const selectedSession = selectedSessionId
     ? builder.actions.getSessionById(selectedSessionId)
     : null;
   const isSaving = builder.derived.savePlan.isPending;
-  const extendChartEnd = useCallback(
-    () => setChartExtraWeeks((count) => Math.min(count + 4, 52)),
-    [],
-  );
-  const extendChartStart = useCallback(() => undefined, []);
   const selectWeekStart = useCallback((weekStart: string) => {
-    startTransition(() => {
-      setSelectedWeekStart(weekStart);
-      setSelectedDate(weekStart);
-    });
+    setSelectedWeekStart(weekStart);
+    setSelectedDate(weekStart);
   }, []);
   const selectDate = useCallback(
     (date: string) => {
-      startTransition(() => {
-        setSelectedDate(date);
-        setSelectedWeekStart((currentWeekStart) => {
-          const matchingWeek = builder.derived.projection.chart.weeks.find(
-            (week) => date >= week.weekStart && date <= week.weekEnd,
-          );
-          return matchingWeek?.weekStart ?? currentWeekStart;
-        });
+      setSelectedDate(date);
+      setSelectedWeekStart((currentWeekStart) => {
+        const matchingWeek = builder.derived.projection.chart.weeks.find(
+          (week) => date >= week.weekStart && date <= week.weekEnd,
+        );
+        return matchingWeek?.weekStart ?? currentWeekStart;
       });
     },
     [builder.derived.projection.chart.weeks],
@@ -122,28 +133,6 @@ export function useTrainingPlanBuilderController({
   const chartReview = useMemo(() => {
     const baseChart = builder.derived.projection.chart;
     const weeks = [...baseChart.weeks];
-    const lastWeek = weeks.at(-1);
-    for (let index = 0; index < chartExtraWeeks && lastWeek; index += 1) {
-      const previous = weeks.at(-1) ?? lastWeek;
-      const weekStart = addDaysDateOnlyUtc(previous.weekStart, 7);
-      weeks.push({
-        ...previous,
-        weekStart,
-        weekEnd: addDaysDateOnlyUtc(weekStart, 6),
-        label: `Week ${weeks.length + 1}`,
-        completedLoad: null,
-        plannedLoad: 0,
-        tentativePlannedLoad: null,
-        targetLoad: previous.targetLoad,
-        fitness: null,
-        scheduledFitness: previous.scheduledFitness,
-        targetFitness: previous.targetFitness,
-        fatigue: previous.fatigue,
-        form: previous.form,
-        isCurrent: false,
-        isSelected: false,
-      });
-    }
     const selectedStart =
       selectedWeekStart ??
       weeks.find((week) => week.isSelected)?.weekStart ??
@@ -177,17 +166,12 @@ export function useTrainingPlanBuilderController({
       selectedDate: resolvedSelectedDate,
       selectedDayOffset,
       selectedWeekStart: selectedWeek?.weekStart ?? null,
-      extendEnd: extendChartEnd,
-      extendStart: extendChartStart,
       selectDate,
       selectWeekStart,
     };
   }, [
     builder.derived.projection.chart,
     builder.state.scheduling.startDate,
-    chartExtraWeeks,
-    extendChartEnd,
-    extendChartStart,
     selectDate,
     selectWeekStart,
     selectedDate,
@@ -199,20 +183,57 @@ export function useTrainingPlanBuilderController({
     if (chartReview.chart.weeks.some((week) => week.weekStart === selectedWeekStart)) return;
     setSelectedWeekStart(chartReview.chart.weeks[0]?.weekStart ?? null);
   }, [chartReview.chart.weeks, selectedWeekStart]);
+  const [retainedActivityPlans, setRetainedActivityPlans] = useState<
+    Record<string, ActivityPlanSummary>
+  >({});
   useEffect(() => {
-    if (!selectedDate) return;
-    if (chartReview.chart.dailyPoints.some((point) => point.date === selectedDate)) return;
-    setSelectedDate(chartReview.selectedDate);
-  }, [chartReview.chart.dailyPoints, chartReview.selectedDate, selectedDate]);
+    const items = [
+      ...(builder.linkedActivityPlansQuery.data?.items ?? []),
+      ...builder.activityPlanItems,
+    ];
+    if (items.length === 0) return;
+    setRetainedActivityPlans((current) => {
+      if (items.every((item) => current[item.id] === item)) return current;
+      return { ...current, ...Object.fromEntries(items.map((item) => [item.id, item])) };
+    });
+  }, [builder.activityPlanItems, builder.linkedActivityPlansQuery.data]);
   const activityPlansById = useMemo(
-    () =>
-      Object.fromEntries(
-        builder.activityPlanItems.map((activityPlan) => [activityPlan.id, activityPlan] as const),
+    () => ({
+      ...retainedActivityPlans,
+      ...Object.fromEntries(
+        [...(builder.linkedActivityPlansQuery.data?.items ?? []), ...builder.activityPlanItems].map(
+          (activityPlan) => [activityPlan.id, activityPlan] as const,
+        ),
       ),
-    [builder.activityPlanItems],
+    }),
+    [builder.activityPlanItems, builder.linkedActivityPlansQuery.data, retainedActivityPlans],
+  );
+
+  const performanceTargets =
+    builder.queries.publishedState.data?.publishedState?.performanceTargets;
+  const metricsByActivityPlanId = useMemo(
+    () =>
+      new Map(
+        Object.values(activityPlansById).map((plan) => [
+          plan.id,
+          resolveMobileActivityPlanEstimateMetrics({
+            structure: plan.structure,
+            persistedMetrics: plan.metrics,
+            ...omitUndefined({ performanceTargets }),
+          }),
+        ]),
+      ),
+    [activityPlansById, performanceTargets],
+  );
+  const creationChart = useCreationChartController(
+    builder,
+    activityPlansById,
+    metricsByActivityPlanId,
+    performanceTargets,
   );
 
   const addSession = useCallback(() => {
+    setActivityPickerReturnsToSession(false);
     const nextOffsetDays =
       builder.derived.summary.sessionCount === 0 ? 0 : builder.derived.summary.durationDays;
     const session = builder.actions.addSession(nextOffsetDays);
@@ -228,6 +249,7 @@ export function useTrainingPlanBuilderController({
 
   const addSessionAtOffset = useCallback(
     (offsetDays: number) => {
+      setActivityPickerReturnsToSession(false);
       const session = builder.actions.addSession(Math.max(0, offsetDays));
       setSelectedSessionId(session.localId);
       setPendingSessionDraftId(session.localId);
@@ -236,29 +258,69 @@ export function useTrainingPlanBuilderController({
     [builder.actions, sheetStack.openSheet],
   );
 
-  const applyStructureProposal = useCallback(() => {
-    builder.actions.addProposedStructure();
-  }, [builder.actions]);
-
   const handleSave = useCallback(async () => {
-    if (!builder.derived.saveReadiness.canSave) {
+    const numericErrors = Object.values(numericDraftErrorsRef.current);
+    if (numericErrors.length > 0) {
+      Alert.alert("Plan needs attention", numericErrors.join("\n"));
+      return;
+    }
+    if (!builder.derived.savePlan.canSave) {
       Alert.alert(
         "Plan needs attention",
-        builder.derived.saveReadiness.blockers.map((blocker) => blocker.message).join("\n"),
+        builder.derived.savePlan.blockers.map((blocker) => blocker.message).join("\n"),
       );
       return;
     }
 
     await builder.derived.savePlan.execute();
-  }, [
-    builder.derived.savePlan,
-    builder.derived.saveReadiness.blockers,
-    builder.derived.saveReadiness.canSave,
-  ]);
+  }, [builder.derived.savePlan]);
+  const setNumericDraftError = useCallback((key: string, message: string | null) => {
+    const current = numericDraftErrorsRef.current;
+    if (message === null) {
+      if (!(key in current)) return;
+      const { [key]: _removed, ...next } = current;
+      numericDraftErrorsRef.current = next;
+      setNumericDraftErrors(next);
+      return;
+    }
+    if (current[key] === message) return;
+    const next = { ...current, [key]: message };
+    numericDraftErrorsRef.current = next;
+    setNumericDraftErrors(next);
+  }, []);
+  const clearNumericDraftErrors = useCallback((prefix: string) => {
+    const current = numericDraftErrorsRef.current;
+    const next = Object.fromEntries(
+      Object.entries(current).filter(([key]) => !key.startsWith(prefix)),
+    );
+    if (Object.keys(next).length === Object.keys(current).length) return;
+    numericDraftErrorsRef.current = next;
+    setNumericDraftErrors(next);
+  }, []);
+  const setSessionRawDraft = useCallback((key: string, value: string) => {
+    setSessionRawDrafts((current) => ({ ...current, [key]: value }));
+  }, []);
+  const clearSessionDrafts = useCallback((sessionId: string) => {
+    setSessionRawDrafts((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([key]) => !key.startsWith(`session:${sessionId}:`)),
+      ),
+    );
+  }, []);
 
   const selectActivityPlan = useCallback(
     (activityPlan: ActivityPlanListItem) => {
       if (!selectedSessionId) return;
+      const session = builder.actions.getSessionById(selectedSessionId);
+      if (!session) return;
+      builder.actions.updateSession({
+        ...session,
+        demand: {
+          ...session.demand,
+          activity_category: activityPlan.activityCategory,
+          ...(activityPlan.trainingIntent ? { training_intent: activityPlan.trainingIntent } : {}),
+        },
+      });
       builder.actions.assignActivityPlan(
         selectedSessionId,
         toEstimatedActivityPlanFacts(
@@ -266,38 +328,59 @@ export function useTrainingPlanBuilderController({
           builder.activityPlanEstimateById.get(activityPlan.id),
         ),
       );
-      if (pendingSessionDraftId === selectedSessionId) {
-        setPendingSessionDraftId(null);
-      }
+      setActivityPickerReturnsToSession(false);
       sheetStack.openSheet("session");
     },
-    [
-      builder.activityPlanEstimateById,
-      builder.actions,
-      pendingSessionDraftId,
-      selectedSessionId,
-      sheetStack.openSheet,
-    ],
+    [builder.activityPlanEstimateById, builder.actions, selectedSessionId, sheetStack.openSheet],
   );
 
   const cancelPendingSessionDraft = useCallback(() => {
     if (!pendingSessionDraftId) return;
     const pendingSession = builder.actions.getSessionById(pendingSessionDraftId);
-    if (pendingSession && !pendingSession.activityPlan) {
+    if (pendingSession) {
       builder.actions.removeSession(pendingSessionDraftId);
+      clearNumericDraftErrors(`session:${pendingSessionDraftId}:`);
+      clearSessionDrafts(pendingSessionDraftId);
       if (selectedSessionId === pendingSessionDraftId) {
         setSelectedSessionId(null);
       }
     }
     setPendingSessionDraftId(null);
-  }, [builder.actions, pendingSessionDraftId, selectedSessionId]);
+  }, [
+    builder.actions,
+    clearNumericDraftErrors,
+    clearSessionDrafts,
+    pendingSessionDraftId,
+    selectedSessionId,
+  ]);
 
-  const removeSelectedSession = useCallback(() => {
-    if (!selectedSession) return;
-    builder.actions.removeSession(selectedSession.localId);
-    setSelectedSessionId(null);
-    sheetStack.closeSheet();
-  }, [builder.actions, selectedSession, sheetStack.closeSheet]);
+  const confirmRemoveSession = useCallback(
+    (sessionId: string) => {
+      Alert.alert("Remove activity?", "This activity will be removed from the plan.", [
+        { style: "cancel", text: "Cancel" },
+        {
+          style: "destructive",
+          text: "Remove",
+          onPress: () => {
+            builder.actions.removeSession(sessionId);
+            clearNumericDraftErrors(`session:${sessionId}:`);
+            clearSessionDrafts(sessionId);
+            if (selectedSessionId === sessionId) {
+              setSelectedSessionId(null);
+              sheetStack.closeSheet();
+            }
+          },
+        },
+      ]);
+    },
+    [
+      builder.actions,
+      clearNumericDraftErrors,
+      clearSessionDrafts,
+      selectedSessionId,
+      sheetStack.closeSheet,
+    ],
+  );
 
   const applyActivityFiltersDraft = useCallback(
     ({
@@ -317,22 +400,29 @@ export function useTrainingPlanBuilderController({
     () => ({
       title: mode === "edit" ? "Edit training plan" : "Create training plan",
       primaryLabel: builder.derived.savePlan.label,
-      primaryDisabled: !builder.derived.savePlan.canSave || isSaving,
+      primaryDisabled:
+        !builder.derived.savePlan.canSave || Object.keys(numericDraftErrors).length > 0 || isSaving,
       isSaving,
       showDoneAction: false,
       done: () => undefined,
       save: handleSave,
     }),
-    [builder.derived.savePlan.canSave, builder.derived.savePlan.label, handleSave, isSaving, mode],
+    [
+      builder.derived.savePlan.canSave,
+      builder.derived.savePlan.label,
+      handleSave,
+      isSaving,
+      mode,
+      numericDraftErrors,
+    ],
   );
   const selection = useMemo(
     () => ({
       session: selectedSession,
       sessionId: selectedSessionId,
-      removeSession: removeSelectedSession,
       setSessionId: setSelectedSessionId,
     }),
-    [removeSelectedSession, selectedSession, selectedSessionId],
+    [selectedSession, selectedSessionId],
   );
   const activityPicker = useMemo(
     () => ({
@@ -341,15 +431,19 @@ export function useTrainingPlanBuilderController({
       searchQuery: activityPlanSearchQuery,
       sort: activityPlanSort,
       plansById: activityPlansById,
+      metricsById: metricsByActivityPlanId,
       applyFiltersDraft: applyActivityFiltersDraft,
       selectPlan: selectActivityPlan,
+      setCategoryFilter: setActivityPlanCategoryFilter,
       setSearchQuery: setActivityPlanSearchQuery,
+      setSort: setActivityPlanSort,
     }),
     [
       activityPlanCategoryFilter,
       activityPlanSearchQuery,
       activityPlanSort,
       activityPlansById,
+      metricsByActivityPlanId,
       applyActivityFiltersDraft,
       builder.activityPlanEstimateById,
       selectActivityPlan,
@@ -359,11 +453,46 @@ export function useTrainingPlanBuilderController({
     () => ({
       addSession,
       addSessionAtOffset,
-      applyStructureProposal,
       cancelPendingSessionDraft,
+      confirmRemoveSession,
       handleSave,
+      openActivityPicker: (sessionId: string) => {
+        setSelectedSessionId(sessionId);
+        setActivityPickerReturnsToSession(true);
+        sheetStack.openSheet("activityAssignment");
+      },
+      backFromActivityPicker: () => {
+        if (activityPickerReturnsToSession) {
+          setActivityPickerReturnsToSession(false);
+          sheetStack.openSheet("session");
+          return;
+        }
+        cancelPendingSessionDraft();
+        sheetStack.closeSheet();
+      },
+      exitSession: () => {
+        cancelPendingSessionDraft();
+        setSelectedSessionId(null);
+        sheetStack.closeSheet();
+      },
+      acceptSession: () => {
+        if (!selectedSession?.activityPlan) return;
+        setPendingSessionDraftId(null);
+        setSelectedSessionId(null);
+        sheetStack.closeSheet();
+      },
     }),
-    [addSession, addSessionAtOffset, applyStructureProposal, cancelPendingSessionDraft, handleSave],
+    [
+      addSession,
+      addSessionAtOffset,
+      activityPickerReturnsToSession,
+      cancelPendingSessionDraft,
+      confirmRemoveSession,
+      handleSave,
+      selectedSession,
+      sheetStack.closeSheet,
+      sheetStack.openSheet,
+    ],
   );
 
   return {
@@ -371,8 +500,19 @@ export function useTrainingPlanBuilderController({
     activityPicker,
     builder,
     chartReview,
+    creationChart,
     header,
     isSaving,
+    mode,
+    isNewSession: pendingSessionDraftId !== null && pendingSessionDraftId === selectedSessionId,
+    numericDrafts: {
+      clearErrors: clearNumericDraftErrors,
+      hasInvalid: hasInvalidNumericDrafts,
+      hasInvalidFor: (prefix: string) =>
+        Object.keys(numericDraftErrors).some((key) => key.startsWith(prefix)),
+      setError: setNumericDraftError,
+    },
+    sessionDrafts: { rawDrafts: sessionRawDrafts, setRawDraft: setSessionRawDraft },
     selection,
     sheetStack,
   };
