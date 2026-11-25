@@ -5,7 +5,7 @@ import { ThresholdHistoryChart } from "./index.web";
 import { groupThresholdHistory } from "./shared";
 
 describe("threshold history presentation", () => {
-  it("separates same-sport power and LTHR before charting and orders each series by date", () => {
+  it("separates same-activity-category power and LTHR before charting and orders each series by date", () => {
     const [earlyPower, beforePolicyChange, latestPower] =
       thresholdHistoryFixtures.bikePowerWithPolicyGap.points;
     if (!earlyPower || !beforePolicyChange || !latestPower)
