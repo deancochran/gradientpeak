@@ -123,6 +123,7 @@ const plannedQueryCalls: unknown[][] = [];
 let routeParams: Record<string, string> = { id: "event-1" };
 let plannedSession: unknown = null;
 let plannedSessionError: EventQueryError | null = null;
+let plannedSessionLoading = false;
 var getActivityColorMock = jest.fn((_activityCategory: string) => ({ name: "Outdoor Run" }));
 
 type StackScreenProps = Record<string, unknown> & {
@@ -403,7 +404,7 @@ jest.mock("@/lib/api", () => ({
           return {
             data: plannedSession,
             fetchStatus: "idle",
-            isLoading: false,
+            isLoading: plannedSessionLoading,
             isError: Boolean(plannedSessionError),
             error: plannedSessionError,
             refetch: plannedSessionRefetchMock,
@@ -508,6 +509,7 @@ describe("event detail fallback screen", () => {
     routeParams = { id: "event-1" };
     plannedSession = null;
     plannedSessionError = null;
+    plannedSessionLoading = false;
     plannedSessionMutationOptions = undefined;
     scenarioActorId = "00000000-0000-4000-8000-000000000004";
     scenarioPreview = null;
@@ -792,6 +794,19 @@ describe("event detail fallback screen", () => {
     expect(screen.queryByText("Planned session not found")).toBeNull();
     await fireEvent.press(screen.getByText("Retry"));
     expect(plannedSessionRefetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a planned-session read in its loading state until it settles", async () => {
+    routeParams = {
+      id: "00000000-0000-4000-8000-000000000001",
+      resourceType: "planned_session",
+    };
+    plannedSessionLoading = true;
+
+    await renderNative(<EventDetailScreen />);
+
+    expect(screen.getByText("Loading event...")).toBeTruthy();
+    expect(screen.queryByText("Planned session unavailable")).toBeNull();
   });
 
   it("renders planned-session not found only after a confirmed NOT_FOUND response", async () => {
