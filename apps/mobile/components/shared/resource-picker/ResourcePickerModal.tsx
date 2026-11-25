@@ -1,15 +1,15 @@
-import { Icon } from "@repo/ui/components/icon";
-import { Input } from "@repo/ui/components/input";
 import { InlineLoadingStatus } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { keepPreviousData } from "@tanstack/react-query";
-import { Search } from "lucide-react-native";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, View } from "react-native";
+import { Pressable, View } from "react-native";
 import { AppFormModal } from "@/components/shared/AppFormModal";
+import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
+import { SearchField } from "@/components/shared/SearchField";
 import { api } from "@/lib/api";
 import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
+import { omitUndefined } from "@/lib/omitUndefined";
 import {
   mapActivityPlanToResourcePickerItem,
   mapRouteToResourcePickerItem,
@@ -17,14 +17,37 @@ import {
 } from "./ResourcePickerResultRow";
 import type { ResourcePickerItem, ResourcePickerScope } from "./resourcePickerTypes";
 
+type ActivityPlanQueryOptions = {
+  limit?: number;
+  ownerScope?: "all" | "own";
+};
+
+export type ResourcePickerRenderContext = {
+  allItems: ResourcePickerItem[];
+  error: unknown;
+  hasSearch: boolean;
+  isLoading: boolean;
+  items: ResourcePickerItem[];
+  refetch: () => void;
+};
+
 type ResourcePickerModalProps = {
+  activityPlanQueryOptions?: ActivityPlanQueryOptions;
   description?: string;
+  filterItems?: (items: ResourcePickerItem[]) => ResourcePickerItem[];
+  filterSlot?: (context: ResourcePickerRenderContext) => ReactNode;
   footerAction?: ReactNode;
+  footerSlot?: ReactNode;
   onClose: () => void;
+  onSearchQueryChange?: (query: string) => void;
   onSelect: (item: ResourcePickerItem) => void;
+  recommendationSlot?: (context: ResourcePickerRenderContext) => ReactNode;
+  searchQuery?: string;
+  searchTestID?: string;
   scope: ResourcePickerScope;
   selectedId?: string | null;
   selectedIds?: string[];
+  testID?: string;
   title: string;
   visible: boolean;
 };
@@ -51,17 +74,33 @@ function getEmptyLabel(scope: ResourcePickerScope, hasSearch: boolean) {
 }
 
 export function ResourcePickerModal({
+  activityPlanQueryOptions,
   description,
+  filterItems,
+  filterSlot,
   footerAction,
+  footerSlot,
   onClose,
+  onSearchQueryChange,
   onSelect,
+  recommendationSlot,
+  searchQuery: controlledSearchQuery,
+  searchTestID,
   scope,
   selectedId,
   selectedIds,
+  testID,
   title,
   visible,
 }: ResourcePickerModalProps) {
-  const [searchQuery, setSearchQuery] = useState("");
+  const [uncontrolledSearchQuery, setUncontrolledSearchQuery] = useState("");
+  const searchQuery = controlledSearchQuery ?? uncontrolledSearchQuery;
+  const setSearchQuery = (query: string) => {
+    if (controlledSearchQuery === undefined) {
+      setUncontrolledSearchQuery(query);
+    }
+    onSearchQueryChange?.(query);
+  };
   const debouncedSearch = useDebouncedValue(searchQuery.trim(), 300);
   const hasSearch = debouncedSearch.length > 0;
 
@@ -81,22 +120,20 @@ export function ResourcePickerModal({
 
   const activityPlanQuery = api.activityPlans.list.useInfiniteQuery(
     {
-      includeEstimation: true,
-      includeSystemTemplates: true,
-      limit: PAGE_SIZE,
-      ownerScope: "all",
+      limit: activityPlanQueryOptions?.limit ?? PAGE_SIZE,
+      ownerScope: activityPlanQueryOptions?.ownerScope ?? "all",
       search: hasSearch ? debouncedSearch : undefined,
     },
     {
       enabled: visible && scope === "activityPlans",
-      getNextPageParam: (lastPage: any) => lastPage.nextCursor,
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
       placeholderData: keepPreviousData,
     },
   );
 
   const query = scope === "routes" ? routeQuery : activityPlanQuery;
   const isUpdatingItems = query.isFetching && !query.isLoading && !query.isFetchingNextPage;
-  const items = useMemo<ResourcePickerItem[]>(() => {
+  const unfilteredItems = useMemo<ResourcePickerItem[]>(() => {
     if (scope === "routes") {
       return (
         routeQuery.data?.pages.flatMap((page) => page.items.map(mapRouteToResourcePickerItem)) ?? []
@@ -104,54 +141,79 @@ export function ResourcePickerModal({
     }
 
     return (
-      activityPlanQuery.data?.pages.flatMap((page: any) =>
+      activityPlanQuery.data?.pages.flatMap((page) =>
         (page.items ?? []).map(mapActivityPlanToResourcePickerItem),
       ) ?? []
     );
   }, [activityPlanQuery.data?.pages, routeQuery.data?.pages, scope]);
+  const items = useMemo(
+    () => (filterItems ? filterItems(unfilteredItems) : unfilteredItems),
+    [filterItems, unfilteredItems],
+  );
+  const renderContext: ResourcePickerRenderContext = {
+    allItems: unfilteredItems,
+    error: query.error,
+    hasSearch,
+    isLoading: query.isLoading,
+    items,
+    refetch: () => void query.refetch(),
+  };
+  const hasFooterAction = Boolean(footerAction);
 
   if (!visible) return null;
 
   return (
     <AppFormModal
+      {...omitUndefined({ testID })}
       description={description ?? getDefaultDescription(scope)}
-      footerContent={footerAction ? <View className="gap-2">{footerAction}</View> : undefined}
+      footerContent={
+        footerSlot ?? (hasFooterAction ? <View className="gap-2">{footerAction}</View> : undefined)
+      }
       onClose={onClose}
       scrollProps={{ contentContainerClassName: "gap-3 p-4" }}
       title={title}
     >
       <View className="gap-2">
-        <View className="relative">
-          <View className="absolute left-3 top-3 z-10">
-            <Icon as={Search} size={18} className="text-muted-foreground" />
-          </View>
-          <Input
-            accessibilityLabel={getPlaceholder(scope)}
-            onChangeText={setSearchQuery}
-            placeholder={getPlaceholder(scope)}
-            style={{ paddingLeft: 40 }}
-            value={searchQuery}
-          />
-        </View>
+        <SearchField
+          accessibilityLabel={getPlaceholder(scope)}
+          onChangeText={setSearchQuery}
+          onClear={() => setSearchQuery("")}
+          placeholder={getPlaceholder(scope)}
+          {...omitUndefined({ testID: searchTestID })}
+          value={searchQuery}
+        />
         <View className="flex-row items-center justify-between gap-3">
           <Text className="text-xs text-muted-foreground">
             {items.length} {scope === "routes" ? "routes" : "activity plans"} available
           </Text>
           <InlineLoadingStatus loading={isUpdatingItems} label="Updating..." />
         </View>
+        {filterSlot?.(renderContext)}
       </View>
 
       {query.isLoading ? (
-        <View className="items-center justify-center py-8">
-          <ActivityIndicator />
-          <Text className="mt-2 text-sm text-muted-foreground">Loading...</Text>
+        <LoadingState />
+      ) : query.error ? (
+        <View className="gap-3 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-4">
+          <Text
+            accessibilityRole="alert"
+            accessibilityLiveRegion="polite"
+            className="text-sm font-medium text-destructive"
+          >
+            Could not load resources.
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            className="self-start rounded-md border border-border bg-background px-3 py-2"
+            onPress={() => void query.refetch()}
+          >
+            <Text className="text-xs font-medium text-foreground">Try again</Text>
+          </Pressable>
         </View>
       ) : items.length === 0 ? (
-        <View className="rounded-2xl border border-dashed border-border p-4">
-          <Text className="text-center text-sm text-muted-foreground">
-            {getEmptyLabel(scope, hasSearch)}
-          </Text>
-        </View>
+        <EmptyState title={getEmptyLabel(scope, hasSearch)} />
+      ) : recommendationSlot ? (
+        recommendationSlot(renderContext)
       ) : (
         <View className="gap-2">
           {items.map((item) => (

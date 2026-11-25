@@ -6,11 +6,10 @@
 
 // Export all activity defaults
 export * from "./activity-defaults";
-// Export date grouping utilities
-export * from "./date-grouping";
-// Export date utilities
-export * from "./dates";
+export { isSameDay } from "./dates";
 export * from "./fitness-inputs";
+export * from "./minute-of-day";
+export * from "./numeric-ux-policy";
 export type { LatLng, LatLngAlt, RouteStats } from "./polyline";
 // Export from polyline (exclude calculateDistance - in calculations)
 export {
@@ -27,10 +26,10 @@ export * from "./recording-config-resolver";
 export * from "./recording-plan-target-resolver";
 export * from "./recording-source-resolver";
 export * from "./recording-trainer-policy";
+export * from "./recurrence";
+export * from "./schedule-date";
+export * from "./sha256";
 export * from "./stream-sampling";
-
-// Export temporal metrics utilities
-export * from "./temporal-metrics";
 
 // NOTE: streamDecompression is NOT exported from the runtime-neutral utils API.
 // - Server-side code should import from: import { decompressStream } from "@repo/core/server/stream-decompression"

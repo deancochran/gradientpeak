@@ -13,13 +13,13 @@ Use this file when working in `packages/db`.
 ## Scope
 
 - Relational schema and inferred DB types.
-- Drizzle migrations and baseline strategy.
+- Relational baseline strategy and Drizzle schema inspection.
 - Local DB tooling and retained Supabase CLI assets.
 
 ## Source Of Truth
 
 - `src/schema/**` is the relational source of truth.
-- `drizzle/` contains migration artifacts and baseline SQL.
+- `supabase/migrations/` has exactly one fresh-only transactional MVP baseline.
 - `supabase/` contains DB-owned local workflow assets.
 
 ## Rules
@@ -27,7 +27,7 @@ Use this file when working in `packages/db`.
 - Keep schema, validation, and migration changes aligned.
 - Treat DB changes as high-impact and prefer the smallest safe change.
 - Preserve clear separation between relational ownership here and app or API logic elsewhere.
-- Keep detailed migration process rules in nested files like `drizzle/` rather than expanding this package root file.
+- Keep detailed baseline process rules in the package README and owning workflow scripts.
 - Keep Drizzle config explicit about managed scope, connectivity, and Supabase-owned objects so diffs do not drift into unmanaged surfaces.
 - Express invariants in PostgreSQL and Drizzle schema definitions with keys, nullability, uniqueness, checks, and foreign keys instead of relying on app-only validation.
 
@@ -46,6 +46,7 @@ Use this file when working in `packages/db`.
 ## Validation
 
 - Use package or repo DB commands relevant to the change, including migration and local DB workflows.
+- A schema or migration change requires `pnpm --filter @repo/db db:verify`.
 
 ## References
 

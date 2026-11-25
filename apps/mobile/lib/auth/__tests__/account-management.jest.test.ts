@@ -1,28 +1,21 @@
-const changeEmailMock = jest.fn(async (_input?: any) => ({ error: null }));
-const changePasswordMock = jest.fn(async (_input?: any) => ({ error: null }));
-const deleteUserMock = jest.fn(async (_input?: any) => ({ error: null }));
+const changeEmailMock = jest.fn(async (_input?: unknown) => ({ error: null }));
+const changePasswordMock = jest.fn(async (_input?: unknown) => ({ error: null }));
 
 jest.mock("@/lib/auth/client", () => ({
   __esModule: true,
   authClient: {
-    changeEmail: (input: any) => changeEmailMock(input),
-    changePassword: (input: any) => changePasswordMock(input),
-    deleteUser: (input: any) => deleteUserMock(input),
+    changeEmail: (input: unknown) => changeEmailMock(input),
+    changePassword: (input: unknown) => changePasswordMock(input),
   },
   getEmailVerificationCallbackUrl: () => "gradientpeak://callback",
 }));
 
-import {
-  deleteMobileAccount,
-  updateMobileEmail,
-  updateMobilePassword,
-} from "../account-management";
+import { updateMobileEmail, updateMobilePassword } from "../account-management";
 
 describe("account-management mobile auth boundary", () => {
   beforeEach(() => {
     changeEmailMock.mockClear();
     changePasswordMock.mockClear();
-    deleteUserMock.mockClear();
   });
 
   it("delegates email updates through the auth client adapter", async () => {
@@ -44,11 +37,5 @@ describe("account-management mobile auth boundary", () => {
       currentPassword: "old-password",
       newPassword: "new-password",
     });
-  });
-
-  it("delegates account deletion through the auth client adapter", async () => {
-    await deleteMobileAccount();
-
-    expect(deleteUserMock).toHaveBeenCalledWith({});
   });
 });

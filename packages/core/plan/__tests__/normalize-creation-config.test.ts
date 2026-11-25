@@ -7,7 +7,7 @@ describe("normalizeCreationConfig safety fields", () => {
 
     expect(normalized.optimization_profile).toBe("balanced");
     expect(normalized.post_goal_recovery_days).toBe(5);
-    expect(normalized.behavior_controls_v1).toEqual({
+    expect(normalized.behavior_controls).toEqual({
       aggressiveness: 0.5,
       variability: 0.5,
       spike_frequency: 0.35,
@@ -29,7 +29,7 @@ describe("normalizeCreationConfig safety fields", () => {
       user_values: {
         optimization_profile: "sustainable",
         post_goal_recovery_days: 10,
-        behavior_controls_v1: {
+        behavior_controls: {
           aggressiveness: 0.8,
           variability: 0.3,
           spike_frequency: 0.7,
@@ -49,8 +49,8 @@ describe("normalizeCreationConfig safety fields", () => {
 
     expect(normalized.optimization_profile).toBe("sustainable");
     expect(normalized.post_goal_recovery_days).toBe(10);
-    expect(normalized.behavior_controls_v1.aggressiveness).toBe(0.8);
-    expect(normalized.behavior_controls_v1.shape_target).toBe(-0.4);
+    expect(normalized.behavior_controls.aggressiveness).toBe(0.8);
+    expect(normalized.behavior_controls.shape_target).toBe(-0.4);
     expect(normalized.calibration_composite_locks).toEqual({
       target_attainment_weight: true,
       envelope_weight: false,
