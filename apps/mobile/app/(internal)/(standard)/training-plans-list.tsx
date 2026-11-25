@@ -1,9 +1,10 @@
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
 import { Text } from "@repo/ui/components/text";
 import { Stack } from "expo-router";
-import { useMemo, useState } from "react";
-import { TouchableOpacity, View } from "react-native";
+import { useMemo, useRef, useState } from "react";
+import { View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import { HeaderTextAction } from "@/components/shared/HeaderAction";
 import { IndexFilterSheet } from "@/components/shared/IndexFilterSheet";
 import {
   FilterChip,
@@ -21,32 +22,76 @@ function TrainingPlansListScreen() {
   const navigateTo = useAppNavigate();
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [visibilityFilter, setVisibilityFilter] = useState<"private" | "public" | null>(null);
+  const [visibilityFilter, setVisibilityFilter] = useState<
+    "private" | "followers" | "public" | null
+  >(null);
   const [draftVisibilityFilter, setDraftVisibilityFilter] = useState<typeof visibilityFilter>(null);
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
+  const pageFlights = useRef(new Set<string>());
+  const queryKey = JSON.stringify([searchQuery.trim(), visibilityFilter]);
+  const [pageState, setPageState] = useState<{
+    key: string;
+    pending: boolean;
+    error: string | null;
+  } | null>(null);
+  const currentPageState = pageState?.key === queryKey ? pageState : null;
 
-  const { data, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage, refetch } =
-    api.trainingPlans.list.useInfiniteQuery(
-      {
-        ownerScope: "own",
-        includeOwnOnly: true,
-        includeSystemTemplates: false,
-        search: searchQuery.trim() || undefined,
-        visibility: visibilityFilter ?? undefined,
-        limit: 25,
-      },
-      {
-        getNextPageParam: (lastPage: any) => lastPage.nextCursor,
-      },
-    );
+  const {
+    data,
+    error,
+    isError,
+    isFetching,
+    isLoading,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+    refetch,
+  } = api.trainingPlans.list.useInfiniteQuery(
+    {
+      ownerScope: "own",
+      search: searchQuery.trim() || undefined,
+      visibility: visibilityFilter ?? undefined,
+      limit: 25,
+    },
+    {
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
+    },
+  );
 
   const sortedPlans = useMemo(() => data?.pages.flatMap((page) => page.items) ?? [], [data]);
   const planCount = data?.pages[0]?.total ?? sortedPlans.length;
+  const hasActiveQuery = searchQuery.trim().length > 0 || visibilityFilter !== null;
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await refetch();
-    setRefreshing(false);
+    try {
+      await refetch();
+    } finally {
+      setRefreshing(false);
+    }
+  };
+  const loadMore = async () => {
+    if (!hasNextPage || isFetchingNextPage || pageFlights.current.has(queryKey)) return;
+    pageFlights.current.add(queryKey);
+    setPageState({ key: queryKey, pending: true, error: null });
+    try {
+      await fetchNextPage();
+    } catch (error) {
+      setPageState((current) =>
+        current?.key === queryKey
+          ? {
+              key: queryKey,
+              pending: false,
+              error:
+                error instanceof Error ? error.message : "Unable to load more plans. Try again.",
+            }
+          : current,
+      );
+      return;
+    } finally {
+      pageFlights.current.delete(queryKey);
+    }
+    setPageState((current) => (current?.key === queryKey ? null : current));
   };
 
   return (
@@ -54,13 +99,12 @@ function TrainingPlansListScreen() {
       <Stack.Screen
         options={{
           headerRight: () => (
-            <TouchableOpacity
-              onPress={() => navigateTo(ROUTES.PLAN.TRAINING_PLAN.CREATE as any)}
-              className="mr-2 rounded-full px-2 py-1"
+            <HeaderTextAction
+              accessibilityLabel="Create training plan"
+              label="Create"
+              onPress={() => navigateTo(ROUTES.PLAN.TRAINING_PLAN.CREATE)}
               testID="training-plans-list-create-trigger"
-            >
-              <Text className="text-sm font-medium text-primary">Create</Text>
-            </TouchableOpacity>
+            />
           ),
         }}
       />
@@ -79,6 +123,8 @@ function TrainingPlansListScreen() {
       <ResourceList
         testID="training-plans-list-content"
         data={sortedPlans}
+        errorDescription={error?.message ?? "Please try again."}
+        errorTitle="Unable to load training plans"
         contentContainerClassName="gap-4 p-4 pb-6"
         emptyComponent={
           <View testID="training-plans-list-empty-state">
@@ -89,8 +135,11 @@ function TrainingPlansListScreen() {
           </View>
         }
         hasNextPage={hasNextPage}
-        isFetchingNextPage={isFetchingNextPage}
+        isFetchingNextPage={isFetchingNextPage || Boolean(currentPageState?.pending)}
+        isError={isError}
         isLoading={isLoading}
+        isEmptyFiltered={hasActiveQuery}
+        isRetrying={isFetching}
         keyExtractor={(plan) => plan.id}
         ListHeaderComponent={
           <IndexResultsSummary
@@ -100,19 +149,22 @@ function TrainingPlansListScreen() {
           />
         }
         loadingMoreLabel="Loading more plans..."
-        onLoadMore={() => void fetchNextPage()}
+        onLoadMore={() => void loadMore()}
         onRefresh={handleRefresh}
+        onRetry={refetch}
         refreshing={refreshing}
         renderItem={(plan) => (
           <View testID={`training-plans-list-item-${plan.id}`}>
             <TrainingPlanCard
-              plan={plan as any}
-              onPress={() => navigateTo(ROUTES.PLAN.TRAINING_PLAN.DETAIL(plan.id) as any)}
-              variant="default"
+              plan={plan}
+              onPress={() => navigateTo(ROUTES.PLAN.TRAINING_PLAN.DETAIL(plan.id))}
             />
           </View>
         )}
       />
+      {currentPageState?.error ? (
+        <Text accessibilityRole="alert">{currentPageState.error}</Text>
+      ) : null}
       <IndexFilterSheet
         visible={isFilterSheetOpen}
         title="Training Plan Filters"
@@ -130,6 +182,7 @@ function TrainingPlansListScreen() {
           <View className="flex-row flex-wrap gap-2">
             {[
               { id: "private", label: "Private" },
+              { id: "followers", label: "Followers" },
               { id: "public", label: "Public" },
             ].map((option) => (
               <FilterChip
