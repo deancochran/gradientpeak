@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   goalInput: vi.fn(),
+  progressInput: vi.fn(),
+  thresholdInput: vi.fn(),
   projectionInput: vi.fn(),
   profile: {
     data: { id: "profile" },
@@ -16,6 +18,18 @@ const state = vi.hoisted(() => ({
   projection: { data: {} as unknown, isError: false, isLoading: false, refetch: vi.fn() },
   goals: {
     data: { items: [] },
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  },
+  progress: {
+    data: undefined,
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  },
+  thresholdOverview: {
+    data: undefined,
     isError: false,
     isLoading: false,
     refetch: vi.fn(),
@@ -90,6 +104,20 @@ vi.mock("../../lib/api/client", () => ({
         },
       },
     },
+    athleteIntelligence: {
+      getGoalProgress: {
+        useQuery: (input: unknown) => {
+          state.progressInput(input);
+          return state.progress;
+        },
+      },
+      getThresholdOverview: {
+        useQuery: (input: unknown) => {
+          state.thresholdInput(input);
+          return state.thresholdOverview;
+        },
+      },
+    },
   },
 }));
 vi.mock("../../components/protected/plan-goal-form", () => ({ PlanGoalForm: () => null }));
@@ -99,6 +127,8 @@ import { PlanDashboard } from "./plan-dashboard";
 afterEach(() => {
   cleanup();
   state.goalInput.mockReset();
+  state.progressInput.mockReset();
+  state.thresholdInput.mockReset();
   state.projectionInput.mockReset();
   state.profile = {
     data: { id: "profile" },
@@ -114,6 +144,18 @@ afterEach(() => {
     isLoading: false,
     refetch: vi.fn(),
   };
+  state.progress = {
+    data: undefined,
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  };
+  state.thresholdOverview = {
+    data: undefined,
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  };
   state.selectedDay = {
     data: { projection: { items: [] } },
     isError: false,
@@ -121,6 +163,22 @@ afterEach(() => {
     refetch: vi.fn(),
   };
 });
+
+function renderEmptySelectedDay(date: string, selectedDay: typeof state.selectedDay) {
+  state.selectedDay = selectedDay;
+  state.projection = {
+    data: {
+      today: "2026-04-02",
+      timeline: { days: [], weeks: [] },
+      fitness: { actual: [], scheduled: [], recommended: [] },
+      goalMarkers: [],
+    },
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as never;
+  render(<PlanDashboard selectedDate={date} />);
+}
 
 it("uses the projection's authoritative day for selected-day status and the goal lower bound", () => {
   state.projection = {
@@ -150,6 +208,7 @@ it("uses the projection's authoritative day for selected-day status and the goal
         ],
       },
       fitness: { actual: [], scheduled: [], recommended: [] },
+      goalMarkers: [],
     },
     isError: false,
     isLoading: false,
@@ -194,6 +253,7 @@ it("reanchors a no-URL selection to the server planning day without navigation",
         ],
       },
       fitness: { actual: [], scheduled: [], recommended: [] },
+      goalMarkers: [],
     },
     isError: false,
     isLoading: false,
@@ -357,9 +417,10 @@ it("keeps compact goal, library, and current-session access available", () => {
   expect(screen.getByRole("button", { name: "New goal" })).toBeTruthy();
   expect(screen.getByRole("link", { name: "Open training-plan library" })).toBeTruthy();
   expect(screen.getByRole("link", { name: "All goals" })).toBeTruthy();
-  expect(screen.getByRole("link", { name: /Spring race/ }).getAttribute("data-goal-id")).toBe(
-    "goal-1",
-  );
+  expect(
+    screen.getAllByRole("link", { name: /Spring race/ })[0]?.getAttribute("data-goal-id"),
+  ).toBe("goal-1");
+  expect(state.progressInput).toHaveBeenCalledWith({ goalId: "goal-1" });
 });
 
 it("only offers a follow-session action for a canonically scheduled session", () => {
@@ -416,6 +477,7 @@ it("only offers a follow-session action for a canonically scheduled session", ()
         ],
       },
       fitness: { actual: [], scheduled: [], recommended: [] },
+      goalMarkers: [],
     },
     isError: false,
     isLoading: false,
@@ -506,6 +568,184 @@ it("does not offer a next-session action for a cancelled session", () => {
 
   expect(screen.getByText("No session scheduled")).toBeTruthy();
   expect(screen.queryByRole("link", { name: /Open session/ })).toBeNull();
+});
+
+it("does not offer an empty-day action while today is still loading", () => {
+  state.selectedDay = {
+    data: undefined,
+    isError: false,
+    isLoading: true,
+    refetch: vi.fn(),
+  } as never;
+  state.projection = {
+    data: {
+      today: "2026-04-02",
+      timeline: { days: [], weeks: [] },
+      fitness: { actual: [], scheduled: [], recommended: [] },
+    },
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as never;
+
+  render(<PlanDashboard selectedDate="2026-04-02" />);
+
+  expect(screen.getByText("Loading today’s next action...")).toBeTruthy();
+  expect(screen.queryByText("No session scheduled")).toBeNull();
+  expect(screen.queryByRole("link", { name: "Add work" })).toBeNull();
+});
+
+it("does not offer an empty-day action when today cannot be loaded", () => {
+  state.selectedDay = {
+    data: undefined,
+    isError: true,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as never;
+  state.projection = {
+    data: {
+      today: "2026-04-02",
+      timeline: { days: [], weeks: [] },
+      fitness: { actual: [], scheduled: [], recommended: [] },
+    },
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as never;
+
+  render(<PlanDashboard selectedDate="2026-04-02" />);
+
+  expect(screen.getByText("Today’s next action is unavailable")).toBeTruthy();
+  expect(screen.queryByText("No session scheduled")).toBeNull();
+  expect(screen.queryByRole("link", { name: "Add work" })).toBeNull();
+});
+
+it("keeps cached failed empty-day data visibly stale and withholds its add action", () => {
+  state.selectedDay = {
+    data: { projection: { items: [] } },
+    isError: true,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as never;
+  state.projection = {
+    data: {
+      today: "2026-04-02",
+      timeline: { days: [], weeks: [] },
+      fitness: { actual: [], scheduled: [], recommended: [] },
+    },
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as never;
+
+  render(<PlanDashboard selectedDate="2026-04-02" />);
+
+  expect(screen.getByRole("alert").textContent).toMatch(/may be stale/);
+  expect(screen.getByText("No session in the last available update")).toBeTruthy();
+  expect(screen.queryByRole("link", { name: "Add work" })).toBeNull();
+});
+
+it("offers an empty-day action after a successful current-day result", () => {
+  state.selectedDay = {
+    data: { projection: { items: [] } },
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as never;
+  state.projection = {
+    data: {
+      today: "2026-04-02",
+      timeline: { days: [], weeks: [] },
+      fitness: { actual: [], scheduled: [], recommended: [] },
+    },
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as never;
+
+  render(<PlanDashboard selectedDate="2026-04-02" />);
+
+  expect(screen.getByText("No session scheduled")).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Add work" })).toBeTruthy();
+});
+
+describe.each([
+  ["past", "2026-04-01"],
+  ["today", "2026-04-02"],
+  ["future", "2026-04-03"],
+])("selected %s day action availability", (_label, date) => {
+  it("withholds add actions while the day is pending", () => {
+    renderEmptySelectedDay(date, {
+      data: undefined,
+      isError: false,
+      isLoading: true,
+      refetch: vi.fn(),
+    } as never);
+
+    expect(screen.queryByRole("link", { name: /Add (work|to this day)/ })).toBeNull();
+  });
+
+  it("withholds add actions when the day has an initial failure", () => {
+    renderEmptySelectedDay(date, {
+      data: undefined,
+      isError: true,
+      isLoading: false,
+      refetch: vi.fn(),
+    } as never);
+
+    expect(screen.queryByRole("link", { name: /Add (work|to this day)/ })).toBeNull();
+  });
+
+  it("withholds add actions for a failed refresh of an empty cached day", () => {
+    renderEmptySelectedDay(date, {
+      data: { projection: { items: [] } },
+      isError: true,
+      isLoading: false,
+      refetch: vi.fn(),
+    } as never);
+
+    expect(screen.getByRole("alert").textContent).toMatch(/may be stale/);
+    expect(screen.queryByRole("link", { name: /Add (work|to this day)/ })).toBeNull();
+  });
+
+  it("offers an add action after a successful empty-day result", () => {
+    renderEmptySelectedDay(date, {
+      data: { projection: { items: [] } },
+      isError: false,
+      isLoading: false,
+      refetch: vi.fn(),
+    } as never);
+
+    expect(screen.getAllByRole("link", { name: /Add (work|to this day)/ }).length).toBeGreaterThan(
+      0,
+    );
+  });
+});
+
+it("keeps cached nonempty selected-day work visible and explicitly stale", () => {
+  renderEmptySelectedDay("2026-04-03", {
+    data: {
+      projection: {
+        items: [
+          {
+            id: "stale-session",
+            calendarDate: "2026-04-03",
+            kind: "planned_activity",
+            status: "scheduled",
+            title: "Cached tempo",
+            plannedSession: { lifecycle: { status: "scheduled" } },
+          },
+        ],
+      },
+    },
+    isError: true,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as never);
+
+  expect(screen.getByText("Cached tempo")).toBeTruthy();
+  expect(screen.getByText(/last available update and may be stale/i)).toBeTruthy();
+  expect(screen.queryByRole("link", { name: "Add to this day" })).toBeNull();
 });
 
 it("requests the first future goal with a bounded server-side date predicate", () => {

@@ -1,3 +1,4 @@
+import { diffDateOnlyUtcDays } from "@repo/core/plan/dateOnlyUtc";
 import type { TrainingStateVisualContract } from "../training-state-chart/shared";
 
 export type SessionScenarioSimulation = {
@@ -54,12 +55,14 @@ export function toSessionScenarioComparisonVisual(
   const alternativeByDate = transitionsByDate(input.alternative.transitions);
   const dates = [...new Set([...baselineByDate.keys(), ...alternativeByDate.keys()])].sort();
   return {
-    points: dates.map((date, index) => {
+    points: dates.map((date) => {
       const baseline = baselineByDate.get(date) ?? null;
       const alternative = alternativeByDate.get(date) ?? null;
       return {
         date,
-        index,
+        // Native charts consume this coordinate directly; preserve elapsed
+        // planning days rather than compressing irregular dates to ordinals.
+        index: diffDateOnlyUtcDays(dates[0] ?? date, date),
         recorded: {
           fitness: baseline?.state.longTermLoad ?? null,
           fatigue: baseline?.state.recentLoad ?? null,

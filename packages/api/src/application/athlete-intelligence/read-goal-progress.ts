@@ -16,7 +16,7 @@ import {
   goalProgressResponseSchema,
 } from "../../contracts/goal-progress";
 import { calculatedThresholdHistoryItemSchema } from "../../contracts/threshold-overview";
-import type { DrizzleQueryExecutor } from "../../db";
+import { type DrizzleQueryExecutor, withRepeatableReadSnapshot } from "../../db";
 import {
   type PublishedThresholdHistoryItem,
   readPublishedThresholdHistory,
@@ -216,81 +216,83 @@ export async function readGoalProgress(input: {
   dependencies?: Partial<GoalProgressReadDependencies>;
 }): Promise<GoalProgressResponse> {
   const dependencies = { ...defaultDependencies, ...input.dependencies };
-  const rawRow = await dependencies.readOwnedGoal(input.db, {
-    goalId: input.goalId,
-    profileId: input.profileId,
-  });
-  if (!rawRow) throw new GoalProgressNotFoundError();
-
-  const row = ownedGoalProgressRowSchema.parse(rawRow);
-  const { created_at: createdAt, ...goalRecord } = row;
-  const goal = parseProfileGoalRecord(goalRecord);
-  const support = resolveThresholdGoalSupport(goal);
-  if (support.status === "unsupported") {
-    return goalProgressResponseSchema.parse({
-      result: support,
-      provenance: null,
-      publication: null,
+  return withRepeatableReadSnapshot(input.db, async (tx) => {
+    const rawRow = await dependencies.readOwnedGoal(tx, {
+      goalId: input.goalId,
+      profileId: input.profileId,
     });
-  }
+    if (!rawRow) throw new GoalProgressNotFoundError();
 
-  const now = input.now ?? new Date();
-  const [snapshot, history] = await Promise.all([
-    dependencies.readSnapshot({ db: input.db, profileId: input.profileId, now }),
-    dependencies.readThresholdHistory(input.db, { profileId: input.profileId, limit: 100 }),
-  ]);
-  const historyDtos = history.items.map(historyItemDto);
-  const historyObservations = historyDtos.map(progressObservation);
-  const currentFact = snapshot.performanceTargets?.thresholds[support.activityCategory] ?? null;
-  const currentProvenance =
-    currentFact?.status === "available"
-      ? (historyDtos.find(({ thresholdId }) => thresholdId === currentFact.thresholdId) ?? null)
-      : null;
-  const currentThreshold =
-    currentFact?.status === "available" && currentProvenance
-      ? {
-          ...progressObservation(currentProvenance),
-          freshness:
-            snapshot.freshness === "fresh" && currentFact.freshness === "fresh"
-              ? ("fresh" as const)
-              : ("stale" as const),
-        }
-      : null;
-  const result = evaluateThresholdGoalProgress({
-    goal,
-    goalCreatedAt: createdAt.toISOString(),
-    assessedAt: now.toISOString(),
-    deadlineAt: endOfScheduledDateToIsoInstant({
-      scheduledDate: goal.target_date,
-      timeZone: snapshot.planningTimezone,
-    }),
-    currentThreshold,
-    thresholdHistory: historyObservations,
-    thresholdHistoryComplete: history.nextCursor === null,
-  });
-  if (result.status === "unsupported") {
-    throw new Error("Supported threshold goal unexpectedly became unsupported");
-  }
-  const provenanceFor = (observation: typeof result.baseline) =>
-    observation
-      ? (historyDtos.find(({ thresholdId }) => thresholdId === observation.thresholdId) ?? null)
-      : null;
+    const row = ownedGoalProgressRowSchema.parse(rawRow);
+    const { created_at: createdAt, ...goalRecord } = row;
+    const goal = parseProfileGoalRecord(goalRecord);
+    const support = resolveThresholdGoalSupport(goal);
+    if (support.status === "unsupported") {
+      return goalProgressResponseSchema.parse({
+        result: support,
+        provenance: null,
+        publication: null,
+      });
+    }
 
-  return goalProgressResponseSchema.parse({
-    result,
-    provenance: {
-      baseline: provenanceFor(result.baseline),
-      current: provenanceFor(result.current),
-    },
-    publication: {
-      computedAt: snapshot.computedAt,
-      status:
-        snapshot.freshness === "fresh"
-          ? "available"
-          : snapshot.freshness === "stale"
-            ? "stale"
-            : "unavailable",
-      publishedRevision: snapshot.revisions.published,
-    },
+    const now = input.now ?? new Date();
+    const [snapshot, history] = await Promise.all([
+      dependencies.readSnapshot({ db: tx, profileId: input.profileId, now }),
+      dependencies.readThresholdHistory(tx, { profileId: input.profileId, limit: 100 }),
+    ]);
+    const historyDtos = history.items.map(historyItemDto);
+    const historyObservations = historyDtos.map(progressObservation);
+    const currentFact = snapshot.performanceTargets?.thresholds[support.activityCategory] ?? null;
+    const currentProvenance =
+      currentFact?.status === "available"
+        ? (historyDtos.find(({ thresholdId }) => thresholdId === currentFact.thresholdId) ?? null)
+        : null;
+    const currentThreshold =
+      currentFact?.status === "available" && currentProvenance
+        ? {
+            ...progressObservation(currentProvenance),
+            freshness:
+              snapshot.freshness === "fresh" && currentFact.freshness === "fresh"
+                ? ("fresh" as const)
+                : ("stale" as const),
+          }
+        : null;
+    const result = evaluateThresholdGoalProgress({
+      goal,
+      goalCreatedAt: createdAt.toISOString(),
+      assessedAt: now.toISOString(),
+      deadlineAt: endOfScheduledDateToIsoInstant({
+        scheduledDate: goal.target_date,
+        timeZone: snapshot.planningTimezone,
+      }),
+      currentThreshold,
+      thresholdHistory: historyObservations,
+      thresholdHistoryComplete: history.nextCursor === null,
+    });
+    if (result.status === "unsupported") {
+      throw new Error("Supported threshold goal unexpectedly became unsupported");
+    }
+    const provenanceFor = (observation: typeof result.baseline) =>
+      observation
+        ? (historyDtos.find(({ thresholdId }) => thresholdId === observation.thresholdId) ?? null)
+        : null;
+
+    return goalProgressResponseSchema.parse({
+      result,
+      provenance: {
+        baseline: provenanceFor(result.baseline),
+        current: provenanceFor(result.current),
+      },
+      publication: {
+        computedAt: snapshot.computedAt,
+        status:
+          snapshot.freshness === "fresh"
+            ? "available"
+            : snapshot.freshness === "stale"
+              ? "stale"
+              : "unavailable",
+        publishedRevision: snapshot.revisions.published,
+      },
+    });
   });
 }

@@ -300,6 +300,11 @@ test("deferred selected-athlete response cannot reveal or overwrite another athl
   await grantMetrics(workspace, e2eIdentity);
   const { page, athlete, secondAthlete, organizationId } = workspace;
   await page.goto(`/organizations/${organizationId}/athletes/${athlete.profileId}`);
+  await page
+    .locator("details")
+    .filter({ hasText: "Training context and shared data" })
+    .locator("summary")
+    .click();
   await expect(page.getByText("211 watts", { exact: true })).toBeVisible();
   await expect(page.getByText(`@${athlete.username}`, { exact: true })).toBeVisible();
   let resolve!: () => void;
@@ -340,6 +345,11 @@ test("deferred selected-athlete response cannot reveal or overwrite another athl
   await navigation;
   await page.unroute("**/*", hold);
   await expect(page.getByText(`@${athlete.username}`, { exact: true })).toBeVisible();
+  const returnedTrainingContext = page
+    .locator("details")
+    .filter({ hasText: "Training context and shared data" });
+  if (!(await returnedTrainingContext.evaluate((element) => (element as HTMLDetailsElement).open)))
+    await returnedTrainingContext.locator("summary").click();
   await expect(page.getByText("211 watts", { exact: true })).toBeVisible();
   await expect(page.getByText("322 watts", { exact: true })).toHaveCount(0);
 });

@@ -1,0 +1,27 @@
+appId: com.deancochran.gradientpeak.dev
+name: Confirm a selected planned-session scenario and return to its day
+---
+- tapOn:
+    id: session-scenario-apply
+- tapOn:
+    id: session-scenario-confirm-apply
+- extendedWaitUntil:
+    visible: "Applied: repointed."
+    timeout: 30000
+- takeScreenshot: session-scenario-success
+- pressKey: back
+- extendedWaitUntil:
+    visible:
+      id: planning-ledger-screen
+    timeout: 30000
+- assertVisible:
+    id: planning-ledger-entry-planned-${MAESTRO_ACCEPTANCE_SESSION_ID}
+- takeScreenshot: session-scenario-returned-ledger
+- pressKey: back
+- extendedWaitUntil:
+    visible:
+      id: calendar-screen-ready
+    timeout: 30000
+- assertVisible:
+    id: calendar-day-select-${MAESTRO_ACCEPTANCE_SESSION_DATE}
+- takeScreenshot: session-scenario-returned-calendar

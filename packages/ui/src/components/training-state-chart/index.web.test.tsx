@@ -153,4 +153,30 @@ describe("TrainingStateChart", () => {
     );
     expect(screen.getByLabelText("Chart legend")).toHaveTextContent("Fitness · Baseline");
   });
+
+  it("keeps comparable series and the full accessible summary in compact density", () => {
+    render(
+      <TrainingStateChart
+        density="compact"
+        emptyMessage="No training state"
+        series={[
+          { metric: "fitness", source: "recorded" },
+          { metric: "fatigue", source: "recorded" },
+          { metric: "form", source: "recorded" },
+        ]}
+        title="Recent training state"
+        visual={trainingStateChartFixtures.mixedSeries}
+      />,
+    );
+
+    expect(
+      screen.getByRole("img", { name: /Planning timezone America\/Los_Angeles/ }),
+    ).toBeTruthy();
+    expect(screen.getByText("Fitness · Recorded")).toBeTruthy();
+    expect(screen.getByText("Common Load points")).toBeTruthy();
+    expect(screen.getByText("42.0")).toBeTruthy();
+    expect(screen.getByText("0.0")).toBeTruthy();
+    expect(screen.queryByLabelText("Chart legend")).toBeNull();
+    expect(document.querySelector('[role="img"]')?.className).toContain("h-24");
+  });
 });

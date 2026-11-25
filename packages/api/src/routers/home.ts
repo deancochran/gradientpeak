@@ -11,6 +11,7 @@ import {
   getPlannedEstimate,
   loadCoverageSchema,
   loadSeriesIdentitySchema,
+  persistedTrainingPlanStructureSchema,
 } from "@repo/core";
 import {
   addDaysDateOnlyUtc,
@@ -414,7 +415,9 @@ export const homeRouter = createTRPCRouter({
       }
 
       if (plan?.structure) {
-        canonicalTrainingPlanStructureSchema.parse(plan.structure);
+        z.union([canonicalTrainingPlanStructureSchema, persistedTrainingPlanStructureSchema]).parse(
+          plan.structure,
+        );
       }
 
       // --- 2. Calculate Dates ---
