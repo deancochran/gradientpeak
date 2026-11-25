@@ -82,6 +82,7 @@ function GoalEditSession({ isCurrent }: { isCurrent: () => boolean }) {
       if (!active.current || !isCurrent() || currentGoalContext.current !== goalContext) return;
       await Promise.allSettled([
         Promise.resolve().then(() => invalidateGoalQueries(utils, { goalId })),
+        Promise.resolve().then(() => utils.trainingPlans.getPlanningLedger.invalidate()),
       ]);
       if (!active.current || !isCurrent() || currentGoalContext.current !== goalContext) return;
       if (router.canGoBack()) {
