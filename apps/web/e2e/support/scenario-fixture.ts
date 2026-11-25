@@ -1,10 +1,15 @@
 import { randomUUID } from "node:crypto";
+import {
+  type ActivitySubmission,
+  activityArtifactId,
+  markDisposableAthleteStateDirty,
+  processAthleteStateJobs,
+  readyActivityIngestion,
+  submitActivity,
+} from "@repo/api/test-support/activity-evidence-acceptance";
 import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
 import {
-  activities,
-  activityArtifacts,
   activityPlans,
-  activitySegments,
   activityTrainingEffects,
   plannedSessions,
   profileAthleteState,
@@ -12,14 +17,6 @@ import {
   profiles,
 } from "@repo/db/schema";
 import { and, asc, eq } from "drizzle-orm";
-import {
-  type ActivitySubmission,
-  activityArtifactId,
-  submitActivity,
-} from "../../../../packages/api/src/application/activities/submit-activity";
-import { AthleteStateWorkerService } from "../../../../packages/api/src/application/athlete-intelligence/athlete-state-worker";
-import { markAthleteStateDirty } from "../../../../packages/api/src/repositories/athlete-state-repository";
-import { readyActivityIngestion } from "../../../../packages/api/src/test-support/ready-activity-ingestion";
 import type { AuthenticatedE2EActor } from "../support/actors";
 import type { LocalE2EDatabase } from "../support/database";
 import type { DomainFixtureBuilders } from "../support/domain";
@@ -195,16 +192,14 @@ export async function createSessionScenarioFixture(input: {
     durationMs: 1_440_000,
     powerWatts: 280,
   });
-  await input.database.typedTransaction((transaction) =>
-    markAthleteStateDirty(transaction, {
-      profileId: input.actor.profileId,
-      effectiveAt: new Date(now.getTime() - 14 * 86_400_000),
-      now,
-    }),
-  );
-  const worker = new AthleteStateWorkerService({ db: input.database.db });
-  await worker.processDueJobs({ limit: 2, now });
-  await worker.processDueJobs({ limit: 2, now });
+  await markDisposableAthleteStateDirty({
+    db: input.database.db,
+    effectiveAt: new Date(now.getTime() - 14 * 86_400_000),
+    now,
+    profileId: input.actor.profileId,
+  });
+  await processAthleteStateJobs({ db: input.database.db, limit: 2, now });
+  await processAthleteStateJobs({ db: input.database.db, limit: 2, now });
   const [state] = await input.database.db
     .select()
     .from(profileAthleteState)
