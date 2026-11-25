@@ -2,6 +2,7 @@ export * from "./authoring";
 export * from "./compile";
 export * from "./derived-naming";
 export * from "./draft";
+export * from "./ephemeral-duration";
 export * from "./intent-validation";
 export * from "./occurrence";
 export * from "./presentation";

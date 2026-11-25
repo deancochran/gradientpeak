@@ -11,6 +11,7 @@ import {
   type GoalProgress,
   goalPlanningDate,
   nearestGoalChartPoint,
+  selectGoalProgressHistory,
   type ThresholdHistory,
 } from "./goal-progress-presentation";
 
@@ -131,6 +132,39 @@ it("shows numeric progress, target/deadline markers and selectable source links"
       /What influences your assessment|Your approach|Next step|Evidence and assumptions/,
     ),
   ).toBeNull();
+});
+
+it("preserves cached observations when a goal-progress refresh fails", () => {
+  render(
+    <GoalProgressChart data={data} history={history} isLoading={false} isError onRetry={vi.fn()} />,
+  );
+
+  expect(screen.getByText("240 W", { exact: true })).toBeTruthy();
+  expect(screen.getByText("250 W", { exact: true })).toBeTruthy();
+  expect(screen.getByText("10 W", { exact: true })).toBeTruthy();
+  expect(screen.getByRole("alert").textContent).toMatch(/could not be refreshed/i);
+  expect(screen.getByRole("link", { name: "Source activity: Test ride 1" })).toBeTruthy();
+});
+
+it("only accepts overview history from the matching progress publication", () => {
+  const overview = {
+    current: {} as never,
+    history: { items: history, nextCursor: "cursor" },
+    publication: { computedAt: "2026-04-02T00:00:00Z", status: "available", publishedRevision: 1 },
+  } as never;
+  const matching = selectGoalProgressHistory(data, overview);
+  expect(matching.history).toEqual(history);
+  expect(matching.historyLimited).toBe(true);
+  expect(matching.publicationMismatch).toBe(false);
+
+  const mismatched = selectGoalProgressHistory(data, {
+    current: {} as never,
+    history: { items: history, nextCursor: "cursor" },
+    publication: { computedAt: "2026-04-02T00:00:00Z", status: "available", publishedRevision: 2 },
+  } as never);
+  expect(mismatched.history).toEqual([]);
+  expect(mismatched.historyLimited).toBe(false);
+  expect(mismatched.publicationMismatch).toBe(true);
 });
 
 it("keeps unrelated activity categories out of the goal chart and includes the deadline in its domain", () => {

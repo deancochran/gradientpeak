@@ -342,6 +342,46 @@
       "testId": "section-divider"
     }
   },
+  "session-scenario-comparison": {
+    "aligned": {
+      "alternative": {
+        "transitions": [
+          {
+            "state": {
+              "longTermLoad": 42,
+              "recentLoad": 57,
+              "loadBalance": -15
+            }
+          },
+          {
+            "state": {
+              "longTermLoad": 43,
+              "recentLoad": 50,
+              "loadBalance": -7
+            }
+          }
+        ]
+      },
+      "baseline": {
+        "transitions": [
+          {
+            "state": {
+              "longTermLoad": 42,
+              "recentLoad": 57,
+              "loadBalance": -15
+            }
+          },
+          {
+            "state": {
+              "longTermLoad": 43,
+              "recentLoad": 55,
+              "loadBalance": -12
+            }
+          }
+        ]
+      }
+    }
+  },
   "sheet": {
     "filters": {
       "testId": "activity-filters-sheet"
@@ -399,7 +439,7 @@
     }
   },
   "threshold-history": {
-    "bikePower": {
+    "bikePowerWithPolicyGap": {
       "id": "bike:power:watts",
       "points": [
         {
@@ -409,8 +449,28 @@
         },
         {
           "confidence": 0.8,
+          "thresholdId": "bike-power-before-policy-change",
+          "value": 250
+        },
+        {
+          "confidence": 0.8,
           "thresholdId": "bike-power-latest",
           "value": 260
+        }
+      ]
+    },
+    "runPace": {
+      "id": "run:speed:meters_per_second",
+      "points": [
+        {
+          "confidence": 0.8,
+          "thresholdId": "run-pace-early",
+          "value": 3.8
+        },
+        {
+          "confidence": 0.8,
+          "thresholdId": "run-pace-latest",
+          "value": 4
         }
       ]
     }

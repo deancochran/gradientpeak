@@ -18,6 +18,7 @@ import { useMemo, useRef, useState } from "react";
 
 import { GoalIntelligenceCard } from "../../../../components/planning/goal-intelligence-card";
 import { GoalProgressChart } from "../../../../components/planning/goal-progress-chart";
+import { selectGoalProgressHistory } from "../../../../components/planning/goal-progress-presentation";
 import { RecordedGoalHistory } from "../../../../components/planning/recorded-goal-history";
 import { RouteFlashToast, type RouteFlashType } from "../../../../components/route-flash-toast";
 import { api } from "../../../../lib/api/client";
@@ -78,6 +79,7 @@ function GoalDetailPage() {
     { historyLimit: 100 },
     { enabled: Boolean(progressQuery.data && progressQuery.data.result.status !== "unsupported") },
   );
+  const history = selectGoalProgressHistory(progressQuery.data, historyQuery.data);
   if (goalQuery.isLoading) return <p>Loading goal...</p>;
   if (goalQuery.isError)
     return (
@@ -171,7 +173,7 @@ function GoalDetailPage() {
           targetDate={goal.target_date}
           key={goalId}
           data={progressQuery.data}
-          history={historyQuery.data?.history.items ?? []}
+          history={history.history}
           isLoading={
             progressQuery.isLoading ||
             (Boolean(progressQuery.data && progressQuery.data.result.status !== "unsupported") &&
@@ -179,10 +181,12 @@ function GoalDetailPage() {
           }
           isError={progressQuery.isError}
           historyError={historyQuery.isError}
+          historyLimited={history.historyLimited}
           onRetry={() => {
             void progressQuery.refetch();
             void historyQuery.refetch();
           }}
+          publicationMismatch={history.publicationMismatch}
         />
       )}
       <GoalIntelligenceCard

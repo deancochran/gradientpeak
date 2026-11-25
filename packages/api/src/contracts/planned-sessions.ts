@@ -1,3 +1,5 @@
+import { planSimulationResultSchema, prescriptionResolutionManifestSchema } from "@repo/core";
+import { activityPlanStructureSchema } from "@repo/core/activity-plan";
 import { planningDayIdentitySchema } from "@repo/core/athlete-intelligence";
 import {
   type PlannedSession,
@@ -264,6 +266,99 @@ export const linkPlannedSessionGroupEventDtoRequestSchema = z
 export const plannedSessionRangeDtoSchema = z
   .object({ items: z.array(plannedSessionDtoSchema).max(5_000), truncated: z.boolean() })
   .strict();
+
+export const previewPlannedSessionScenarioRequestSchema = z
+  .object({
+    sessionId: uuidSchema,
+    expectedSessionRevision: z.number().int().positive(),
+    expectedPlanRevision: z.number().int().positive(),
+    expectedStateRevision: z.number().int().nonnegative(),
+    scenario: z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("as_planned") }).strict(),
+      z
+        .object({ kind: z.literal("less"), targetDurationSeconds: z.number().int().positive() })
+        .strict(),
+      z
+        .object({ kind: z.literal("more"), targetDurationSeconds: z.number().int().positive() })
+        .strict(),
+      z.object({ kind: z.literal("skip") }).strict(),
+      z.object({ kind: z.literal("substitute"), activityPlanId: uuidSchema }).strict(),
+    ]),
+  })
+  .strict();
+
+export const plannedSessionScenarioUnavailableReasonSchema = z.enum([
+  "session_not_found",
+  "session_not_scheduled",
+  "session_in_past",
+  "baseline_unavailable",
+  "planning_timezone_unavailable",
+  "horizon_exceeds_limit",
+  "current_plan_unavailable",
+  "candidate_unavailable",
+  "prescription_unavailable",
+  "scenario_duration_unsupported",
+  "substitute_incompatible",
+]);
+export const plannedSessionScenarioPreviewDtoSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      status: z.literal("unavailable"),
+      reason: plannedSessionScenarioUnavailableReasonSchema,
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("stale"),
+      reason: z.enum(["session_revision", "plan_revision", "state_revision"]),
+      currentSessionRevision: z.number().int().positive().nullable(),
+      currentPlanRevision: z.number().int().positive().nullable(),
+      currentStateRevision: z.number().int().nonnegative().nullable(),
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("available"),
+      selectedSession: z
+        .object({
+          id: uuidSchema,
+          sessionRevision: z.number().int().positive(),
+          planningDate: planningDayIdentitySchema,
+        })
+        .strict(),
+      stateRevision: z.number().int().nonnegative(),
+      freshness: z.enum(["fresh", "stale", "unavailable"]),
+      horizon: z
+        .object({
+          startDate: planningDayIdentitySchema,
+          simulationAt: z.string().datetime({ offset: true }),
+          sessionCount: z.number().int().positive(),
+        })
+        .strict(),
+      scenario: previewPlannedSessionScenarioRequestSchema.shape.scenario,
+      baseline: planSimulationResultSchema,
+      alternative: planSimulationResultSchema,
+      provenance: z
+        .object({
+          resolution: z.literal("current_activity_plan"),
+          selectedPlan: z
+            .object({ id: uuidSchema, revision: z.number().int().positive() })
+            .strict(),
+          historicalSnapshots: z.literal("provenance_only"),
+          selectedAlternative: z
+            .object({
+              activityPlanId: uuidSchema,
+              activityPlanRevision: z.number().int().positive(),
+              structure: activityPlanStructureSchema,
+              manifest: prescriptionResolutionManifestSchema,
+            })
+            .strict()
+            .nullable(),
+        })
+        .strict(),
+    })
+    .strict(),
+]);
 
 export const plannedSessionMutationReceiptSchema = z
   .object({

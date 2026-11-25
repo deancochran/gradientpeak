@@ -9,6 +9,27 @@ import { buildChartSegments, getPaddedChartDomain } from "@repo/ui/lib/chart";
 type Outputs = inferRouterOutputs<AppRouter>["athleteIntelligence"];
 export type GoalProgress = Outputs["getGoalProgress"];
 export type ThresholdHistory = Outputs["getThresholdOverview"]["history"]["items"];
+export type ThresholdOverview = Outputs["getThresholdOverview"];
+
+export function selectGoalProgressHistory(
+  progress: GoalProgress | undefined,
+  overview: ThresholdOverview | undefined,
+) {
+  const progressRevision = progress?.publication?.publishedRevision;
+  const overviewRevision = overview?.publication.publishedRevision;
+  const matches =
+    progressRevision !== null &&
+    progressRevision !== undefined &&
+    overviewRevision !== null &&
+    overviewRevision !== undefined &&
+    progressRevision === overviewRevision;
+
+  return {
+    history: matches ? (overview?.history.items ?? []) : [],
+    historyLimited: matches && overview?.history.nextCursor !== null,
+    publicationMismatch: Boolean(overview && !matches),
+  };
+}
 
 export function nearestGoalChartPoint(
   points: readonly { label?: string; plotX: number; plotY: number }[],

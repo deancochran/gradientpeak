@@ -27,6 +27,7 @@ import { ArrowLeft, Pencil, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { z } from "zod";
 import { ActivityPlanSessionFlow } from "../../../../../components/activity-plan/activity-plan-session-flow";
+import { SessionScenarioPreview } from "../../../../../components/planning/session-scenario-preview";
 import { RouteListCard } from "../../../../../components/protected/activity-route-primitives";
 import { RouteFlashToast, type RouteFlashType } from "../../../../../components/route-flash-toast";
 import { api } from "../../../../../lib/api/client";
@@ -539,6 +540,13 @@ function EventDetailPage() {
               </CardContent>
             </Card>
             <ActivityPlanSessionFlow structure={activityPlanQuery.data?.detail?.structure} />
+            {plannedSession.lifecycle.status === "scheduled" ? (
+              <SessionScenarioPreview
+                activityPlan={activityPlanQuery.data}
+                session={plannedSession}
+                timeZone={planningTimezone}
+              />
+            ) : null}
           </div>
 
           <Card className="lg:self-start">

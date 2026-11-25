@@ -1,8 +1,10 @@
+import { DashPathEffect } from "@shopify/react-native-skia";
 import { Fragment } from "react";
 import { View } from "react-native";
 import { CartesianChart, Line, Scatter } from "victory-native";
 import { Text } from "../text/index.native";
 import {
+  formatTrainingStateDate,
   getTrainingStateAccessibilityLabel,
   getTrainingStateMetric,
   getTrainingStateSourceLabel,
@@ -30,6 +32,7 @@ function TrainingStateLegend({
   colors,
   metrics = ["fitness", "fatigue", "form"],
   sources,
+  sourceLabels,
   testId,
 }: TrainingStateLegendProps) {
   return (
@@ -52,7 +55,9 @@ function TrainingStateLegend({
       })}
       {sources?.map((source) => (
         <Text className="text-xs text-muted-foreground" key={source}>
-          ━ {getTrainingStateSourceLabel(source)}
+          {source === "recorded" ? "●" : "□"}{" "}
+          {sourceLabels?.[source] ?? getTrainingStateSourceLabel(source)} ·{" "}
+          {source === "recorded" ? "solid" : "dashed"}
         </Text>
       ))}
     </View>
@@ -60,11 +65,14 @@ function TrainingStateLegend({
 }
 
 function TrainingStateChart({
+  accessibilityLabel,
   className,
   colors,
+  density = "default",
   description,
   emptyMessage,
   series,
+  sourceLabels,
   testId,
   title,
   visual,
@@ -88,6 +96,69 @@ function TrainingStateChart({
     }
     return datum;
   });
+  const dateLabels = (
+    <View className="gap-1">
+      <View className="flex-row justify-between">
+        <Text className="text-xs text-muted-foreground">
+          {formatTrainingStateDate(visual.points[0]?.date ?? "", visual.timeZone)}
+        </Text>
+        <Text className="text-xs text-muted-foreground">
+          {formatTrainingStateDate(visual.points.at(-1)?.date ?? "", visual.timeZone)}
+        </Text>
+      </View>
+      <Text className="text-xs text-muted-foreground">{visual.unitLabel}</Text>
+    </View>
+  );
+  const chart = (
+    <View
+      accessible
+      accessibilityLabel={[accessibilityLabel, getTrainingStateAccessibilityLabel(visual, series)]
+        .filter(Boolean)
+        .join(". ")}
+      accessibilityRole="image"
+      className={
+        density === "compact"
+          ? "h-24"
+          : "h-40 overflow-hidden rounded-2xl border border-border bg-card p-2"
+      }
+    >
+      <CartesianChart
+        data={data}
+        domainPadding={{ bottom: 8, left: 8, right: 8, top: 8 }}
+        frame={{ lineColor: "transparent", lineWidth: 0 }}
+        // `index` is the caller's canonical planning-date position. Keep it rather
+        // than ordinal array positions so gaps remain visible for irregular dates.
+        xKey="index"
+        yKeys={yKeys}
+      >
+        {({ points }) => (
+          <>
+            {series.map(({ metric, source }) => (
+              <Fragment key={getNativeSeriesKey(metric, source)}>
+                <Line
+                  color={colors?.[metric] ?? getTrainingStateMetric(metric).nativeColor}
+                  connectMissingData={false}
+                  curveType="natural"
+                  {...(source === "projected" ? { opacity: 0.45 } : {})}
+                  points={points[getNativeSeriesKey(metric, source)]}
+                  strokeWidth={metric === "fitness" ? 3 : metric === "fatigue" ? 2.5 : 2}
+                >
+                  {source === "projected" ? <DashPathEffect intervals={[6, 4]} /> : null}
+                </Line>
+                <Scatter
+                  color={colors?.[metric] ?? getTrainingStateMetric(metric).nativeColor}
+                  {...(source === "projected" ? { opacity: 0.45 } : {})}
+                  points={points[getNativeSeriesKey(metric, source)]}
+                  radius={2.5}
+                  shape={source === "recorded" ? "circle" : "square"}
+                />
+              </Fragment>
+            ))}
+          </>
+        )}
+      </CartesianChart>
+    </View>
+  );
   return (
     <View {...(className === undefined ? {} : { className })} testID={testId}>
       {title ? (
@@ -97,43 +168,40 @@ function TrainingStateChart({
       ) : null}
       {description ? <Text className="text-xs text-muted-foreground">{description}</Text> : null}
       {hasValues ? (
-        <View
-          accessible
-          accessibilityLabel={getTrainingStateAccessibilityLabel(visual, series)}
-          accessibilityRole="image"
-          className="h-40 overflow-hidden rounded-2xl border border-border bg-card p-2"
-        >
-          <CartesianChart
-            data={data}
-            domainPadding={{ bottom: 8, left: 8, right: 8, top: 8 }}
-            frame={{ lineColor: "transparent", lineWidth: 0 }}
-            xKey="index"
-            yKeys={yKeys}
-          >
-            {({ points }) => (
-              <>
-                {series.map(({ metric, source }) => (
-                  <Fragment key={getNativeSeriesKey(metric, source)}>
-                    <Line
-                      color={colors?.[metric] ?? getTrainingStateMetric(metric).nativeColor}
-                      connectMissingData={false}
-                      curveType="natural"
-                      {...(source === "projected" ? { opacity: 0.45 } : {})}
-                      points={points[getNativeSeriesKey(metric, source)]}
-                      strokeWidth={metric === "fitness" ? 3 : metric === "fatigue" ? 2.5 : 2}
-                    />
-                    <Scatter
-                      color={colors?.[metric] ?? getTrainingStateMetric(metric).nativeColor}
-                      {...(source === "projected" ? { opacity: 0.45 } : {})}
-                      points={points[getNativeSeriesKey(metric, source)]}
-                      radius={2.5}
-                    />
-                  </Fragment>
-                ))}
-              </>
-            )}
-          </CartesianChart>
-        </View>
+        density === "compact" ? (
+          <>
+            {chart}
+            {dateLabels}
+            <View className="flex-row flex-wrap gap-3">
+              {series.map(({ metric, source }) => {
+                const value = visual.points
+                  .map((point) => point[source][metric])
+                  .filter((candidate): candidate is number => candidate !== null)
+                  .at(-1);
+                return (
+                  <Text
+                    className="text-xs text-muted-foreground"
+                    key={getNativeSeriesKey(metric, source)}
+                  >
+                    {`${getTrainingStateMetric(metric).label}: ${value === undefined ? "Unavailable" : value.toFixed(1)}`}
+                  </Text>
+                );
+              })}
+            </View>
+          </>
+        ) : (
+          <View className="gap-2">
+            {chart}
+            {dateLabels}
+            <TrainingStateLegend
+              colors={colors}
+              metrics={[...new Set(series.map(({ metric }) => metric))]}
+              sources={[...new Set(series.map(({ source }) => source))]}
+              sourceLabels={sourceLabels}
+              testId={testId === undefined ? undefined : `${testId}-legend`}
+            />
+          </View>
+        )
       ) : (
         <Text className="rounded-xl bg-muted/20 px-3 py-3 text-sm text-muted-foreground">
           {emptyMessage}

@@ -16,6 +16,11 @@ const SOURCE_ACTIVITY_ID = "33333333-3333-4333-8333-333333333333";
 const BASELINE_THRESHOLD_ID = "44444444-4444-4444-8444-444444444444";
 const CURRENT_THRESHOLD_ID = "55555555-5555-4555-8555-555555555555";
 const NOW = new Date("2026-02-20T00:00:00.000Z");
+const transactionDb = {};
+const snapshotDb = {
+  $client: {},
+  transaction: async (read: (tx: typeof transactionDb) => Promise<unknown>) => read(transactionDb),
+};
 
 function goalRow(
   targetPayload: Record<string, unknown> = {
@@ -119,23 +124,26 @@ describe("readGoalProgress", () => {
   it("reads the canonical goal and threshold history only in the authenticated owner scope", async () => {
     const deps = dependencies();
     const result = await readGoalProgress({
-      db: {} as never,
+      db: snapshotDb as never,
       profileId: PROFILE_ID,
       goalId: GOAL_ID,
       now: NOW,
       dependencies: deps,
     });
 
-    expect(deps.readOwnedGoal).toHaveBeenCalledWith({}, { goalId: GOAL_ID, profileId: PROFILE_ID });
+    expect(deps.readOwnedGoal).toHaveBeenCalledWith(transactionDb, {
+      goalId: GOAL_ID,
+      profileId: PROFILE_ID,
+    });
     expect(deps.readSnapshot).toHaveBeenCalledWith({
-      db: {},
+      db: transactionDb,
       profileId: PROFILE_ID,
       now: NOW,
     });
-    expect(deps.readThresholdHistory).toHaveBeenCalledWith(
-      {},
-      { profileId: PROFILE_ID, limit: 100 },
-    );
+    expect(deps.readThresholdHistory).toHaveBeenCalledWith(transactionDb, {
+      profileId: PROFILE_ID,
+      limit: 100,
+    });
     expect(result).toMatchObject({
       result: {
         status: "on_track",
@@ -148,7 +156,7 @@ describe("readGoalProgress", () => {
 
   it("retains source activity provenance for the selected baseline and current threshold", async () => {
     const result = await readGoalProgress({
-      db: {} as never,
+      db: snapshotDb as never,
       profileId: PROFILE_ID,
       goalId: GOAL_ID,
       now: NOW,
@@ -179,7 +187,7 @@ describe("readGoalProgress", () => {
 
     await expect(
       readGoalProgress({
-        db: {} as never,
+        db: snapshotDb as never,
         profileId: PROFILE_ID,
         goalId: GOAL_ID,
         now: NOW,
@@ -204,7 +212,7 @@ describe("readGoalProgress", () => {
   ] as const)("returns explicit unsupported %s results without reading threshold data", async (_label, objective, reason) => {
     const deps = dependencies(goalRow(objective));
     const result = await readGoalProgress({
-      db: {} as never,
+      db: snapshotDb as never,
       profileId: PROFILE_ID,
       goalId: GOAL_ID,
       now: NOW,
@@ -224,7 +232,7 @@ describe("readGoalProgress", () => {
     const deps = dependencies(null);
     await expect(
       readGoalProgress({
-        db: {} as never,
+        db: snapshotDb as never,
         profileId: PROFILE_ID,
         goalId: GOAL_ID,
         dependencies: deps,

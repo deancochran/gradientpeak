@@ -34,8 +34,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../components/select/index.web";
+import { SessionScenarioComparison } from "../../components/session-scenario-comparison/index.web";
 import { Switch } from "../../components/switch/index.web";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/tabs/index.web";
+import { ThresholdHistoryChart } from "../../components/threshold-history/index.web";
 import { TrainingStateChart } from "../../components/training-state-chart/index.web";
 import { uiPreviewContract, uiPreviewFixtures, uiPreviewFormFields } from "./shared";
 
@@ -98,6 +100,35 @@ function UiPreviewSurface() {
             title={uiPreviewContract.scenarios.trainingState.title}
           />
           <TrainingStateChart {...uiPreviewFixtures.trainingState} />
+        </section>
+        <section
+          className="space-y-4 lg:col-span-2"
+          data-testid={uiPreviewContract.scenarios.sessionScenarioComparison.testId}
+        >
+          <ScenarioHeader
+            description={uiPreviewContract.scenarios.sessionScenarioComparison.description}
+            title={uiPreviewContract.scenarios.sessionScenarioComparison.title}
+          />
+          <SessionScenarioComparison {...uiPreviewFixtures.sessionScenarioComparison} />
+        </section>
+        <section
+          className="space-y-4 lg:col-span-2"
+          data-testid={uiPreviewContract.scenarios.thresholdHistory.testId}
+        >
+          <ScenarioHeader
+            description={uiPreviewContract.scenarios.thresholdHistory.description}
+            title={uiPreviewContract.scenarios.thresholdHistory.title}
+          />
+          <ThresholdHistoryChart
+            emptyMessage="No threshold history is available."
+            series={uiPreviewFixtures.thresholdHistory.bikePower}
+            testId="ui-preview-threshold-bike-power"
+          />
+          <ThresholdHistoryChart
+            emptyMessage="No threshold history is available."
+            series={uiPreviewFixtures.thresholdHistory.runPace}
+            testId="ui-preview-threshold-run-pace"
+          />
         </section>
         <section
           className="space-y-4"
