@@ -291,7 +291,109 @@ async function replaceDirectAuthorityWithGroup(input: {
   };
 }
 
+async function addGroupAuthorityForCoach(input: {
+  coachId: string;
+  engagementId: string;
+  organizationId: string;
+}) {
+  const [organization] = await db
+    .select({ rootOwnerMembershipId: organizations.root_owner_membership_id })
+    .from(organizations)
+    .where(eq(organizations.id, input.organizationId));
+  if (!organization) throw new Error("Expected organization");
+  const membershipId = randomUUID();
+  const groupId = randomUUID();
+  const groupAthleteMembershipId = randomUUID();
+  const groupCoachAssignmentId = randomUUID();
+  await db.transaction(async (tx) => {
+    await tx.insert(organizationMemberships).values({
+      id: membershipId,
+      organization_id: input.organizationId,
+      profile_id: input.coachId,
+    });
+    await tx.insert(organizationMembershipRoleGrants).values({
+      organization_id: input.organizationId,
+      membership_id: membershipId,
+      role_key: "coach",
+    });
+    await tx.insert(organizationGroups).values({
+      id: groupId,
+      organization_id: input.organizationId,
+      name: "Second coach completion review group",
+      created_by_membership_id: organization.rootOwnerMembershipId,
+    });
+    await tx.insert(organizationGroupAthletes).values({
+      id: groupAthleteMembershipId,
+      organization_id: input.organizationId,
+      group_id: groupId,
+      engagement_id: input.engagementId,
+      added_by_membership_id: organization.rootOwnerMembershipId,
+    });
+    await tx.insert(organizationGroupCoachAssignments).values({
+      id: groupCoachAssignmentId,
+      organization_id: input.organizationId,
+      group_id: groupId,
+      coach_membership_id: membershipId,
+      assigned_by_membership_id: organization.rootOwnerMembershipId,
+    });
+  });
+  return { groupAthleteMembershipId, groupCoachAssignmentId, membershipId };
+}
+
 describe("delegated completed activities live DB projection", () => {
+  it("uses the acting coach's group authority when another coach retains the direct assignment", async () => {
+    const seeded = await seedPublicReconciliationCase("Mixed direct and group acknowledgement");
+    const groupCoachId = await person("Group-only completion review coach");
+    const group = await addGroupAuthorityForCoach({
+      coachId: groupCoachId,
+      engagementId: seeded.relationship.engagementId,
+      organizationId: seeded.relationship.organizationId,
+    });
+    const groupCoach = await caller(groupCoachId);
+
+    const listed = await groupCoach.calendar.coachAthleteCompletedActivities(seeded.request);
+    const evidenceVersion = listed.items[0]?.evidenceVersion;
+    if (!evidenceVersion) throw new Error("Expected group-authorized completion");
+    await expect(
+      db
+        .select({ id: coachingCompletionReviews.id })
+        .from(coachingCompletionReviews)
+        .where(eq(coachingCompletionReviews.session_id, seeded.sessionId)),
+    ).resolves.toEqual([]);
+
+    await expect(
+      groupCoach.calendar.acknowledgeCoachAthleteCompletedActivity({
+        ...seeded.request,
+        evidenceVersion,
+        sessionId: seeded.sessionId,
+      }),
+    ).resolves.toEqual({ outcome: "acknowledged" });
+
+    await expect(
+      db
+        .select({
+          authorityKind: coachingCompletionReviews.review_authority_kind,
+          groupAthleteMembershipId:
+            coachingCompletionReviews.reviewed_by_group_athlete_membership_id,
+          groupCoachAssignmentId: coachingCompletionReviews.reviewed_by_group_coach_assignment_id,
+          membershipId: coachingCompletionReviews.reviewed_by_membership_id,
+          reviewedByProfileId: coachingCompletionReviews.reviewed_by_profile_id,
+          directAssignmentId: coachingCompletionReviews.reviewed_by_assignment_id,
+        })
+        .from(coachingCompletionReviews)
+        .where(eq(coachingCompletionReviews.session_id, seeded.sessionId)),
+    ).resolves.toEqual([
+      {
+        authorityKind: "group",
+        directAssignmentId: null,
+        groupAthleteMembershipId: group.groupAthleteMembershipId,
+        groupCoachAssignmentId: group.groupCoachAssignmentId,
+        membershipId: group.membershipId,
+        reviewedByProfileId: groupCoachId,
+      },
+    ]);
+  });
+
   it("uses retained exact group authority for real-router acknowledgement and fails closed after group revocation", async () => {
     const seeded = await seedPublicReconciliationCase("Group completion acknowledgement");
     const group = await replaceDirectAuthorityWithGroup({
