@@ -1,6 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { once } from "node:events";
 import { closeSync, openSync } from "node:fs";
 import { resolve } from "node:path";
 import {
@@ -47,15 +46,23 @@ export async function startNativeGoalTransport({
     { env: environment, stdio: ["ignore", "ignore", "ignore", "ipc"] },
   );
   const ready = await message(child, "ready");
-  if (!ready || typeof ready !== "object" || !("port" in ready) || !Number.isInteger(ready.port))
+  if (!ready || typeof ready !== "object" || !("port" in ready) || !Number.isInteger(ready.port)) {
+    await stopNativeScenarioTransportChild(child);
     throw new Error("Native goal transport did not become ready.");
+  }
   const command = async (type: "allow" | "observations") => {
-    const received = message(child, type);
-    child.send?.({ type });
-    const result = await received;
-    if (!result || typeof result !== "object" || !("ok" in result) || result.ok !== true)
-      throw new Error("Native goal transport control failed.");
-    return result;
+    try {
+      requireNativeScenarioTransportGuard({ environment, sessionId: goalId, upstreamPort });
+      const received = message(child, type);
+      child.send?.({ type });
+      const result = await received;
+      if (!result || typeof result !== "object" || !("ok" in result) || result.ok !== true)
+        throw new Error("Native goal transport control failed.");
+      return result;
+    } catch (error) {
+      await stopNativeScenarioTransportChild(child);
+      throw error;
+    }
   };
   return {
     origin: `http://127.0.0.1:${ready.port}`,
@@ -72,11 +79,20 @@ async function message(
   child: ChildProcess,
   expected: string,
 ): Promise<Record<string, unknown> | undefined> {
-  const result = await Promise.race([
-    once(child, "message").then(([value]) => value),
-    once(child, "exit").then(() => undefined),
-    new Promise<undefined>((done) => setTimeout(done, 10_000)),
-  ]);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const result = await new Promise<unknown>((resolve) => {
+    const finish = (value: unknown) => {
+      child.off("message", onMessage);
+      child.off("exit", onExit);
+      if (timer !== undefined) clearTimeout(timer);
+      resolve(value);
+    };
+    const onMessage = (value: unknown) => finish(value);
+    const onExit = () => finish(undefined);
+    child.once("message", onMessage);
+    child.once("exit", onExit);
+    timer = setTimeout(() => finish(undefined), 10_000);
+  });
   return result && typeof result === "object" && "type" in result && result.type === expected
     ? (result as Record<string, unknown>)
     : undefined;

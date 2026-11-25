@@ -18,6 +18,11 @@ try {
 }
 let allowed = false;
 const counts = { blocked: 0, forwarded: 0 };
+const sockets = new Set<import("node:net").Socket>();
+const MAX_BYTES = 64 * 1024;
+const CLIENT_BODY_TIMEOUT_MS = 10_000;
+const UPSTREAM_INACTIVITY_TIMEOUT_MS = 10_000;
+const UPSTREAM_ABSOLUTE_TIMEOUT_MS = 15_000;
 const persist = () => {
   writeFileSync(observationPath, JSON.stringify(counts), { flag: "w", mode: 0o600 });
   chmodSync(observationPath, 0o600);
@@ -27,33 +32,105 @@ function matches(request: IncomingMessage) {
   const url = new URL(request.url ?? "/", "http://loopback");
   if (
     url.pathname !== "/api/trpc/athleteIntelligence.getGoalProgress" ||
-    url.searchParams.get("batch") !== "1"
+    url.searchParams.get("batch") !== "1" ||
+    url.searchParams.getAll("batch").length !== 1 ||
+    url.searchParams.getAll("input").length !== 1
   )
     return false;
   const input = url.searchParams.get("input");
   if (!input) return false;
   try {
     const parsed = JSON.parse(input) as { 0?: { json?: { goalId?: unknown } } };
-    return Object.keys(parsed).length === 1 && parsed[0]?.json?.goalId === goalId;
+    return (
+      !Array.isArray(parsed) &&
+      Object.keys(parsed).length === 1 &&
+      parsed[0]?.json?.goalId === goalId
+    );
   } catch {
     return false;
   }
 }
-const server = createServer((request, response) => {
+function body(
+  request: IncomingMessage,
+  { limit = MAX_BYTES, timeoutMs = UPSTREAM_INACTIVITY_TIMEOUT_MS } = {},
+) {
+  return new Promise<{ body: Buffer } | { failure: "oversize" | "timeout" | "error" }>(
+    (resolve) => {
+      const chunks: Buffer[] = [];
+      let size = 0;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const finish = (value: { body: Buffer } | { failure: "oversize" | "timeout" | "error" }) => {
+        request.off("data", onData);
+        request.off("end", onEnd);
+        request.off("error", onError);
+        request.off("aborted", onError);
+        if (timer !== undefined) clearTimeout(timer);
+        resolve(value);
+      };
+      const resetTimeout = () => {
+        if (timer !== undefined) clearTimeout(timer);
+        timer = setTimeout(() => finish({ failure: "timeout" }), timeoutMs);
+      };
+      const onData = (chunk: Buffer) => {
+        size += chunk.length;
+        if (size > limit) {
+          request.resume();
+          finish({ failure: "oversize" });
+          return;
+        }
+        chunks.push(chunk);
+        resetTimeout();
+      };
+      const onEnd = () => finish({ body: Buffer.concat(chunks) });
+      const onError = () => finish({ failure: "error" });
+      request.on("data", onData);
+      request.once("end", onEnd);
+      request.once("error", onError);
+      request.once("aborted", onError);
+      resetTimeout();
+    },
+  );
+}
+const server = createServer(async (request, response) => {
+  const respond = (
+    statusCode: number,
+    headers?: import("node:http").OutgoingHttpHeaders,
+    value?: Buffer | string,
+  ) => {
+    if (response.writableEnded || response.destroyed) return;
+    if (headers) response.writeHead(statusCode, headers);
+    else response.statusCode = statusCode;
+    response.end(value);
+  };
   try {
     requireNativeScenarioTransportGuard({ sessionId: goalId, upstreamPort });
     if (matches(request) && !allowed) {
       counts.blocked++;
       persist();
-      response.statusCode = 503;
-      response.end("Acceptance runner ownership is unavailable.");
+      respond(503, undefined, "Acceptance runner ownership is unavailable.");
       return;
     }
   } catch {
-    response.statusCode = 503;
-    response.end("Acceptance runner ownership is unavailable.");
+    respond(503, undefined, "Acceptance runner ownership is unavailable.");
     return;
   }
+  const requestBody = await body(request, { timeoutMs: CLIENT_BODY_TIMEOUT_MS });
+  if ("failure" in requestBody) {
+    respond(requestBody.failure === "oversize" ? 413 : 408);
+    return;
+  }
+  let settled = false;
+  let absoluteTimer: ReturnType<typeof setTimeout> | undefined;
+  const finish = (
+    statusCode: number,
+    headers?: import("node:http").OutgoingHttpHeaders,
+    value?: Buffer | string,
+  ) => {
+    if (settled) return;
+    settled = true;
+    if (absoluteTimer !== undefined) clearTimeout(absoluteTimer);
+    respond(statusCode, headers, value);
+  };
   const upstream = upstreamRequest(
     {
       host: "127.0.0.1",
@@ -61,15 +138,33 @@ const server = createServer((request, response) => {
       method: request.method,
       path: request.url,
       headers: { ...request.headers, host: `127.0.0.1:${upstreamPort}` },
-      timeout: 10_000,
     },
-    (upstreamResponse) => {
-      response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
-      upstreamResponse.pipe(response);
+    async (upstreamResponse) => {
+      const responseBody = await body(upstreamResponse);
+      if ("failure" in responseBody) {
+        upstream.destroy();
+        finish(502);
+        return;
+      }
+      finish(upstreamResponse.statusCode ?? 502, upstreamResponse.headers, responseBody.body);
     },
   );
-  upstream.on("error", () => response.end());
-  upstream.end();
+  absoluteTimer = setTimeout(() => {
+    upstream.destroy();
+    finish(502);
+  }, UPSTREAM_ABSOLUTE_TIMEOUT_MS);
+  upstream.on("timeout", () => {
+    upstream.destroy();
+    finish(502);
+  });
+  upstream.on("error", () => {
+    finish(502);
+  });
+  upstream.setTimeout(UPSTREAM_INACTIVITY_TIMEOUT_MS);
+  response.once("close", () => {
+    if (!response.writableEnded) upstream.destroy();
+  });
+  upstream.end(requestBody.body);
   if (matches(request)) {
     counts.forwarded++;
     persist();
@@ -79,6 +174,10 @@ persist();
 server.listen(0, "127.0.0.1", () => {
   const address = server.address();
   if (address && typeof address !== "string") process.send?.({ type: "ready", port: address.port });
+});
+server.on("connection", (socket) => {
+  sockets.add(socket);
+  socket.on("close", () => sockets.delete(socket));
 });
 process.on("message", (message: { type?: string }) => {
   try {
@@ -91,4 +190,7 @@ process.on("message", (message: { type?: string }) => {
     process.send?.({ type: message.type, ok: false });
   }
 });
-process.on("SIGTERM", () => server.close(() => process.exit(0)));
+process.on("SIGTERM", () => {
+  for (const socket of sockets) socket.destroy();
+  server.close(() => process.exit(0));
+});
