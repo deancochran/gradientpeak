@@ -380,6 +380,58 @@
           }
         ]
       }
+    },
+    "irregularThreeDateHorizon": {
+      "alternative": {
+        "transitions": [
+          {
+            "state": {
+              "longTermLoad": 42,
+              "recentLoad": 57,
+              "loadBalance": -15
+            }
+          },
+          {
+            "state": {
+              "longTermLoad": 43,
+              "recentLoad": 52,
+              "loadBalance": -9
+            }
+          },
+          {
+            "state": {
+              "longTermLoad": 45,
+              "recentLoad": 48,
+              "loadBalance": -3
+            }
+          }
+        ]
+      },
+      "baseline": {
+        "transitions": [
+          {
+            "state": {
+              "longTermLoad": 42,
+              "recentLoad": 57,
+              "loadBalance": -15
+            }
+          },
+          {
+            "state": {
+              "longTermLoad": 44,
+              "recentLoad": 54,
+              "loadBalance": -10
+            }
+          },
+          {
+            "state": {
+              "longTermLoad": 47,
+              "recentLoad": 51,
+              "loadBalance": -4
+            }
+          }
+        ]
+      }
     }
   },
   "sheet": {
