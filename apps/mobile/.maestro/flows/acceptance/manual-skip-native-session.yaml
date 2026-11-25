@@ -46,3 +46,17 @@ name: Open the visible scheduled session from Calendar and explicitly skip it wi
     timeout: 30000
 - assertVisible: "Actual: Not performed"
 - takeScreenshot: planned-session-skip-completion
+- pressKey: back
+- extendedWaitUntil:
+    visible:
+      id: planning-ledger-screen
+    timeout: 30000
+# The detail route returns to the original day ledger. Retain the proof before
+# the date-context assertion so a failed sentinel remains debuggable.
+- takeScreenshot: planned-session-skip-return-ledger
+- assertVisible: ${MAESTRO_ACCEPTANCE_LEDGER_DATE}
+- pressKey: back
+- extendedWaitUntil:
+    visible:
+      id: tab-button-plan
+    timeout: 30000

@@ -128,6 +128,12 @@ export async function completeManualNativeAcceptance({
   // Completion availability is evaluated against the athlete's authoritative
   // planning day, which may be different from the runner's UTC date.
   const today = formatDateOnlyInTimeZone(new Date(), profile.planning_timezone);
+  const ledgerDateLabel = new Intl.DateTimeFormat("en-US", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+    year: "numeric",
+  }).format(new Date(`${today}T00:00:00.000Z`));
   const scheduleResult = runMaestro("schedule-native-plan.yaml", {
     MAESTRO_ACCEPTANCE_PLAN_NAME: planName,
     MAESTRO_ACCEPTANCE_SCHEDULE_DAY: String(Number(today.slice(8, 10))),
@@ -199,18 +205,26 @@ export async function completeManualNativeAcceptance({
       : outcome === "partial"
         ? "planned-session-partial-completion"
         : "planned-session-skip-completion";
-  const manualCaptures = [
-    "planned-session-detail-before-completion",
-    manualCompletionCapture,
-  ] as const;
+  const manualCaptures =
+    outcome === "skip"
+      ? ([
+          "planned-session-detail-before-completion",
+          manualCompletionCapture,
+          "planned-session-skip-return-ledger",
+        ] as const)
+      : (["planned-session-detail-before-completion", manualCompletionCapture] as const);
   clearMaestroCaptures(manualCaptures);
   const manualResult = runMaestro(manualFlow, {
+    MAESTRO_ACCEPTANCE_LEDGER_DATE: ledgerDateLabel,
     MAESTRO_ACCEPTANCE_PLAN_NAME: planName,
     MAESTRO_ACCEPTANCE_SESSION_DATE: today,
     MAESTRO_ACCEPTANCE_SESSION_DAY: String(Number(today.slice(8, 10))),
     MAESTRO_ACCEPTANCE_SESSION_ID: manualSession.id,
   });
-  const [detailCaptured, completionCaptured] = preserveMaestroCaptures(testInfo, manualCaptures);
+  const [detailCaptured, completionCaptured, skipReturnCaptured] = preserveMaestroCaptures(
+    testInfo,
+    manualCaptures,
+  );
   writeFileSync(
     testInfo.outputPath("maestro-manual.log"),
     `${manualResult.stdout ?? ""}\n${manualResult.stderr ?? ""}`,
@@ -235,6 +249,7 @@ export async function completeManualNativeAcceptance({
     .where(eq(plannedSessions.id, manualSession.id));
   if (!completedSession) throw new Error("Native manual action did not retain its planned session");
   if (outcome === "skip") {
+    expect(skipReturnCaptured, "Skip flow must retain its ledger-return capture").toBe(true);
     expect(completedSession).toMatchObject({
       status: "completed",
       completed_activity_id: null,
