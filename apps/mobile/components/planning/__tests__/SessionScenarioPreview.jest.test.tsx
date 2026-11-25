@@ -332,6 +332,113 @@ describe("SessionScenarioPreview", () => {
     expect(mocks.apply).toHaveBeenLastCalledWith(receipt.request);
   });
 
+  it("hands a durable outcome to a stable boundary for a same-actor remount", async () => {
+    mocks.preview = {
+      data: availablePreview(),
+      isError: false,
+      isLoading: false,
+      refetch: jest.fn(),
+    };
+    mocks.apply.mockResolvedValue({ status: "applied", action: "repointed" });
+    const onKnownOutcomeChange = jest.fn();
+    const screen = await renderNative(
+      <SessionScenarioPreview {...props} onKnownOutcomeChange={onKnownOutcomeChange} />,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("session-scenario-apply").props.disabled).toBe(false),
+    );
+    await act(async () => screen.getByTestId("session-scenario-apply").props.onPress());
+    await act(async () => screen.getByTestId("session-scenario-confirm-apply").props.onPress());
+    await waitFor(() =>
+      expect(onKnownOutcomeChange).toHaveBeenCalledWith({
+        actorId: mocks.actorId,
+        message: "Applied: repointed.",
+      }),
+    );
+    const knownOutcome = onKnownOutcomeChange.mock.calls.at(-1)?.[0];
+    await act(async () => screen.rerender(<React.Fragment key="unmounted" />));
+    await act(async () =>
+      screen.rerender(<SessionScenarioPreview {...props} knownOutcome={knownOutcome} />),
+    );
+    expect(screen.getByText("Applied: repointed.")).toBeTruthy();
+  });
+
+  it("does not show actor A's known outcome to actor B on the same session", async () => {
+    const knownOutcome = {
+      actorId: "00000000-0000-4000-8000-000000000001",
+      message: "Applied: repointed.",
+    };
+    const screen = await renderNative(
+      <SessionScenarioPreview {...props} knownOutcome={knownOutcome} />,
+    );
+    expect(screen.getByText(knownOutcome.message)).toBeTruthy();
+
+    mocks.actorId = "00000000-0000-4000-8000-000000000002";
+    await act(async () =>
+      screen.rerender(<SessionScenarioPreview {...props} knownOutcome={knownOutcome} />),
+    );
+    expect(screen.queryByText(knownOutcome.message)).toBeNull();
+  });
+
+  it("clears a prior known outcome before arming the next frozen operation", async () => {
+    mocks.preview = {
+      data: availablePreview(),
+      isError: false,
+      isLoading: false,
+      refetch: jest.fn(),
+    };
+    let resolveApply: (value: unknown) => void = () => undefined;
+    mocks.apply.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveApply = resolve;
+        }),
+    );
+    const onKnownOutcomeChange = jest.fn();
+    const knownOutcome = { actorId: mocks.actorId, message: "Applied: repointed." };
+    const screen = await renderNative(
+      <SessionScenarioPreview
+        {...props}
+        knownOutcome={knownOutcome}
+        onKnownOutcomeChange={onKnownOutcomeChange}
+      />,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("session-scenario-apply").props.disabled).toBe(false),
+    );
+    await act(async () => screen.getByTestId("session-scenario-apply").props.onPress());
+    await act(async () => screen.getByTestId("session-scenario-confirm-apply").props.onPress());
+    expect(onKnownOutcomeChange).toHaveBeenCalledWith(null);
+    expect(screen.queryByText(knownOutcome.message)).toBeNull();
+    await act(async () => resolveApply({ status: "applied", action: "repointed" }));
+  });
+
+  it("updates the stable known outcome when refresh invalidation fails", async () => {
+    mocks.preview = {
+      data: availablePreview(),
+      isError: false,
+      isLoading: false,
+      refetch: jest.fn(),
+    };
+    mocks.apply.mockResolvedValue({ status: "applied", action: "repointed" });
+    mocks.invalidations.calendar.mockRejectedValueOnce(new Error("refresh unavailable"));
+    const onKnownOutcomeChange = jest.fn();
+    const screen = await renderNative(
+      <SessionScenarioPreview {...props} onKnownOutcomeChange={onKnownOutcomeChange} />,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("session-scenario-apply").props.disabled).toBe(false),
+    );
+    await act(async () => screen.getByTestId("session-scenario-apply").props.onPress());
+    await act(async () => screen.getByTestId("session-scenario-confirm-apply").props.onPress());
+    await waitFor(() =>
+      expect(onKnownOutcomeChange).toHaveBeenLastCalledWith({
+        actorId: mocks.actorId,
+        message: "Applied: repointed. The screen refresh failed; reopen this session.",
+      }),
+    );
+  });
+
   it("fences actor A's late apply acknowledgement after actor B replaces the session identity", async () => {
     mocks.preview = {
       data: availablePreview(),

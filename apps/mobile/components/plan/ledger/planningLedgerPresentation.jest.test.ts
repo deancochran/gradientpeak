@@ -155,10 +155,30 @@ it("uses training-state series and intensity distribution in chart-ready models"
   ]);
   expect(model.state.latestSource).toBe("Recorded");
   expect(model.state.sourceStatus).toBe("recorded");
+  expect(model.state.fitnessDirection).toBe("Unavailable");
+  expect(model.state.fatigueDirection).toBe("Unavailable");
+  expect(model.state.formDirection).toBe("Unavailable");
   expect(model.state.timeZone).toBe("UTC");
   expect(model.state.unitLabel).toBe("Common Load points");
   expect(model.intensity.bands).toEqual([
     expect.objectContaining({ band: "endurance", durationLabel: "1h", percentageLabel: "100%" }),
   ]);
   expect(model.days[0]?.accessibilityLabel).toContain("Completed 15. Planned 25.");
+});
+
+it("keeps two equal training-state points stable", () => {
+  const model = buildPlanningLedgerPresentation({
+    ...ledger,
+    trainingState: {
+      ...ledger.trainingState,
+      series: [
+        { actual: { fatigue: 30, fitness: 42, form: 12 }, date: "2026-04-14", planned: null },
+        { actual: { fatigue: 30, fitness: 42, form: 12 }, date: "2026-04-15", planned: null },
+      ],
+    },
+  });
+
+  expect(model.state.fitnessDirection).toBe("Stable");
+  expect(model.state.fatigueDirection).toBe("Stable");
+  expect(model.state.formDirection).toBe("Stable");
 });
