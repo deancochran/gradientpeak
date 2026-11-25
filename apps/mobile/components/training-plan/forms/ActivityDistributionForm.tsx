@@ -1,4 +1,4 @@
-import type { CanonicalSport } from "@repo/core";
+import type { CanonicalActivityCategory } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Label } from "@repo/ui/components/label";
@@ -8,7 +8,7 @@ import { Text } from "@repo/ui/components/text";
 import { useEffect, useState } from "react";
 import { View } from "react-native";
 
-type ActivityCategory = CanonicalSport;
+type ActivityCategory = CanonicalActivityCategory;
 
 interface ActivityDistributionFormProps {
   data: Record<ActivityCategory, number> | null;
@@ -51,33 +51,34 @@ export function ActivityDistributionForm({
   useEffect(() => {
     if (data) {
       const categories = Object.keys(data) as ActivityCategory[];
-      if (categories.length === 1 && data[categories[0]] === 1) {
-        // Single-sport mode
+      const [onlyCategory] = categories;
+      if (onlyCategory && categories.length === 1 && data[onlyCategory] === 1) {
+        // Single-activity_category mode
         setIsMultiSport(false);
-        setPrimaryActivity(categories[0]!);
+        setPrimaryActivity(onlyCategory);
       } else {
-        // Multi-sport mode
+        // Multi-activity_category mode
         setIsMultiSport(true);
         setDistribution(data);
       }
     } else {
-      // Default: single-sport run
+      // Default: single-activity-category run
       onChange({ run: 1.0, bike: 0, swim: 0, strength: 0, other: 0 });
     }
   }, [
-    data, // Default: single-sport run
+    data, // Default: single-activity-category run
     onChange,
   ]);
 
-  // Handle multi-sport toggle
+  // Handle multi-activity_category toggle
   const handleMultiSportToggle = (enabled: boolean) => {
     setIsMultiSport(enabled);
     if (!enabled) {
-      // Switch to single-sport mode
+      // Switch to single-activity-category mode
       const newDist = { [primaryActivity]: 1.0 } as Record<ActivityCategory, number>;
       onChange(newDist);
     } else {
-      // Switch to multi-sport mode with balanced distribution
+      // Switch to multi-activity_category mode with balanced distribution
       const balanced: Record<ActivityCategory, number> = {
         run: 0.4,
         bike: 0.3,
@@ -90,14 +91,14 @@ export function ActivityDistributionForm({
     }
   };
 
-  // Handle primary activity selection (single-sport)
+  // Handle primary activity selection (single-activity-category)
   const handlePrimaryActivityChange = (activity: ActivityCategory) => {
     setPrimaryActivity(activity);
     const newDist = { [activity]: 1.0 } as Record<ActivityCategory, number>;
     onChange(newDist);
   };
 
-  // Handle slider change (multi-sport)
+  // Handle slider change (multi-activity_category)
   const handleSliderChange = (category: ActivityCategory, value: number) => {
     const newDist = {
       ...distribution,
@@ -123,19 +124,19 @@ export function ActivityDistributionForm({
       <View className="gap-2">
         <Text className="text-2xl font-bold">Activity Distribution</Text>
         <Text className="text-muted-foreground">
-          Define how your training time is split across different activity types
+          Define how your training time is split across different activity categories
         </Text>
       </View>
 
-      {/* Multi-Sport Toggle */}
+      {/* Multi-ActivityCategory Toggle */}
       <Card>
         <CardContent className="p-4">
           <View className="flex-row items-center justify-between">
             <View className="flex-1 pr-4">
-              <Text className="font-semibold mb-1">Multi-Sport Training</Text>
+              <Text className="font-semibold mb-1">Multi-ActivityCategory Training</Text>
               <Text className="text-sm text-muted-foreground">
                 {isMultiSport
-                  ? "Customize percentages for each activity type"
+                  ? "Customize percentages for each activity category"
                   : "Focus on a single primary activity"}
               </Text>
             </View>
@@ -144,7 +145,7 @@ export function ActivityDistributionForm({
         </CardContent>
       </Card>
 
-      {/* Single-Sport Mode: Primary Activity Selector */}
+      {/* Single-ActivityCategory Mode: Primary Activity Selector */}
       {!isMultiSport && (
         <View className="gap-3">
           <Label className="text-base font-semibold">Primary Activity</Label>
@@ -171,7 +172,7 @@ export function ActivityDistributionForm({
         </View>
       )}
 
-      {/* Multi-Sport Mode: Percentage Sliders */}
+      {/* Multi-ActivityCategory Mode: Percentage Sliders */}
       {isMultiSport && (
         <>
           <View className="gap-4">
@@ -241,16 +242,16 @@ export function ActivityDistributionForm({
                 • For triathlons, common splits are 40% run, 40% bike, 20% swim
               </Text>
               <Text className="text-sm text-muted-foreground">
-                • Include strength training (5-15%) for injury prevention
+                • Strength activities can be included as part of the weekly time split
               </Text>
             </>
           ) : (
             <>
               <Text className="text-sm text-muted-foreground">
-                • Single-sport mode dedicates 100% of training to one activity
+                • Single-activity_category mode dedicates 100% of training to one activity
               </Text>
               <Text className="text-sm text-muted-foreground">
-                • Switch to multi-sport if you&apos;re training for multiple disciplines
+                • Switch to multi-activity_category if you&apos;re training for multiple disciplines
               </Text>
               <Text className="text-sm text-muted-foreground">
                 • You can always change this later in plan settings

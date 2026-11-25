@@ -1,39 +1,23 @@
-import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
+import {
+  ResourceActionRegion,
+  ResourceCardHeader,
+  ResourceCardShell,
+  type ResourceMetric,
+  ResourceMetricsRow,
+} from "@repo/ui/components/resource-presentation";
 import { Text } from "@repo/ui/components/text";
-import { differenceInHours, format, formatDistanceToNow } from "date-fns";
 import { Heart } from "lucide-react-native";
 import type { ComponentType, ReactNode } from "react";
-import { Pressable, TouchableOpacity, View } from "react-native";
+import { Pressable, View } from "react-native";
+import { formatSmartTimestamp, formatTimestamp } from "@/lib/display/formatters";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { type EntityOwner, EntityOwnerRow } from "./EntityOwnerRow";
 
-type ResourceCardShellProps = {
-  children: ReactNode;
-  cardClassName?: string;
-  compact?: boolean;
-  contentClassName?: string;
-  disabledClassName?: string;
-  highlighted?: boolean;
-  onPress?: () => void;
-  testID?: string;
-};
+export type { ResourceMetric };
+export { ResourceCardHeader, ResourceCardShell, ResourceMetricsRow };
 
-type ResourceCardHeaderProps = {
-  accessory?: ReactNode;
-  compact?: boolean;
-  description?: string | null;
-  descriptionFallback?: string | null;
-  descriptionNumberOfLines?: number;
-  detail?: boolean;
-  icon?: ComponentType<any>;
-  iconClassName?: string;
-  iconContainerClassName?: string;
-  meta?: ReactNode;
-  title?: string | null;
-  titleFallback: string;
-  titleClassName?: string;
-  titleNumberOfLines?: number;
-};
+type IconComponent = ComponentType<{ className?: string; color?: string; size?: number }>;
 
 type ResourceLikeButtonProps = {
   disabled?: boolean;
@@ -42,6 +26,18 @@ type ResourceLikeButtonProps = {
   onPress?: () => void;
   testID?: string;
 };
+
+type ResourceCardActionButtonProps = {
+  accessibilityLabel: string;
+  children: ReactNode;
+  contentClassName?: string;
+  disabled?: boolean;
+  onPress: () => void;
+  testID?: string;
+};
+
+/** An accessory must provide its own accessible, independently pressable 44dp target. */
+export type ResourceCardAccessory = ReactNode;
 
 type ResourceAttributionRowProps = {
   compact?: boolean;
@@ -56,7 +52,8 @@ type ResourceAttributionRowProps = {
 
 type ResourceOwnerActionRowProps = {
   actions?: ReactNode;
-  categoryIcon?: ComponentType<any>;
+  categoryItems?: readonly ResourceCategoryItem[];
+  categoryIcon?: IconComponent;
   categoryIconClassName?: string;
   categoryLabel?: string | null;
   compact?: boolean;
@@ -68,18 +65,40 @@ type ResourceOwnerActionRowProps = {
   testID?: string;
 };
 
-export type ResourceMetric = {
+export type ResourceCategoryItem = {
+  icon: IconComponent;
+  iconClassName?: string;
   label: string;
-  tone?: "default" | "primary" | "muted";
-  value: string;
 };
 
-type ResourceMetricsRowProps = {
-  compact?: boolean;
-  maxItems?: number;
-  metrics: ResourceMetric[];
+export function ResourceCategoryItems({
+  items,
+  testID = "resource-category-items",
+}: {
+  items: readonly ResourceCategoryItem[];
   testID?: string;
-};
+}) {
+  if (items.length === 0) return null;
+
+  return (
+    <View
+      accessibilityLabel={items.map((item) => item.label).join(", ")}
+      className="flex-row flex-wrap items-center gap-x-2 gap-y-1"
+      testID={testID}
+    >
+      {items.map((item) => (
+        <View className="flex-row items-center gap-1" key={item.label}>
+          <Icon
+            as={item.icon}
+            className={item.iconClassName ?? "text-muted-foreground"}
+            size={12}
+          />
+          <Text className="text-xs text-muted-foreground">{item.label}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
 
 export type ResourceTag = {
   label: string;
@@ -91,36 +110,9 @@ type ResourceTagRowProps = {
   testID?: string;
 };
 
-function formatTimestamp(timestamp?: string | Date | null, prefix = "Updated") {
-  if (!timestamp) return null;
-
-  const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
-  if (Number.isNaN(date.getTime())) return null;
-
-  return `${prefix} ${format(date, "MMM d, yyyy")}`;
-}
-
-function formatSmartTimestamp(timestamp?: string | Date | null) {
-  if (!timestamp) return null;
-
-  const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
-  if (Number.isNaN(date.getTime())) return null;
-
-  const hoursAgo = differenceInHours(new Date(), date);
-
-  if (hoursAgo >= 0 && hoursAgo < 24) {
-    return formatDistanceToNow(date, { addSuffix: true });
-  }
-
-  if (hoursAgo >= 24 && hoursAgo < 48) {
-    return `Yesterday at ${format(date, "h:mm a")}`;
-  }
-
-  return format(date, "MMM d, yyyy • h:mm a");
-}
-
 export function ResourceOwnerActionRow({
   actions,
+  categoryItems = [],
   categoryIcon,
   categoryIconClassName = "text-muted-foreground",
   categoryLabel,
@@ -133,7 +125,8 @@ export function ResourceOwnerActionRow({
   testID = "resource-owner-action-row",
 }: ResourceOwnerActionRowProps) {
   const timestampLabel = formatSmartTimestamp(timestamp);
-  const hasSubtitle = Boolean(categoryLabel || timestampLabel);
+  const hasActions = Boolean(actions);
+  const hasSubtitle = Boolean(categoryItems.length || categoryLabel || timestampLabel);
   const displayOwner = owner ?? null;
   const ownerName = displayOwner ? undefined : systemName || fallbackLabel;
   const fallbackInitials = displayOwner ? undefined : "GP";
@@ -145,11 +138,19 @@ export function ResourceOwnerActionRow({
 
   const subtitle = hasSubtitle ? (
     <View className="flex-row flex-wrap items-center gap-x-1.5 gap-y-1">
-      {categoryIcon ? <Icon as={categoryIcon} size={12} className={categoryIconClassName} /> : null}
-      {categoryLabel ? (
-        <Text className="text-xs text-muted-foreground">{categoryLabel}</Text>
-      ) : null}
-      {categoryLabel && timestampLabel ? (
+      {categoryItems.length > 0 ? (
+        <ResourceCategoryItems items={categoryItems} />
+      ) : (
+        <>
+          {categoryIcon ? (
+            <Icon as={categoryIcon} size={12} className={categoryIconClassName} />
+          ) : null}
+          {categoryLabel ? (
+            <Text className="text-xs text-muted-foreground">{categoryLabel}</Text>
+          ) : null}
+        </>
+      )}
+      {(categoryItems.length > 0 || categoryLabel) && timestampLabel ? (
         <Text className="text-xs text-muted-foreground">•</Text>
       ) : null}
       {timestampLabel ? (
@@ -162,136 +163,22 @@ export function ResourceOwnerActionRow({
     <View className="flex-row items-start justify-between gap-3" testID={testID}>
       <View className="min-w-0 flex-1">
         <EntityOwnerRow
+          {...omitUndefined({
+            displayNameOverride: ownerName,
+            fallbackClassName,
+            fallbackInitials,
+            onPress: onOwnerPress,
+          })}
           compact={compact}
-          displayNameOverride={ownerName}
-          fallbackClassName={fallbackClassName}
-          fallbackInitials={fallbackInitials}
           minimal
-          onPress={onOwnerPress}
           owner={displayOwner}
           subtitle={subtitle}
         />
       </View>
 
-      {actions ? <View className="shrink-0 flex-row items-center gap-2">{actions}</View> : null}
-    </View>
-  );
-}
-
-export function ResourceCardShell({
-  children,
-  cardClassName,
-  compact = false,
-  contentClassName,
-  disabledClassName,
-  highlighted = false,
-  onPress,
-  testID,
-}: ResourceCardShellProps) {
-  const Wrapper = onPress ? TouchableOpacity : View;
-
-  return (
-    <Wrapper
-      activeOpacity={onPress ? 0.85 : 1}
-      disabled={!onPress}
-      onPress={onPress}
-      testID={testID}
-    >
-      <Card
-        className={`${compact ? "py-2" : "py-3"} ${highlighted ? "border-2 border-primary" : ""} ${disabledClassName ?? ""} ${cardClassName ?? ""}`}
-      >
-        <CardContent className={contentClassName ?? (compact ? "gap-3 px-2" : "gap-3 px-3")}>
-          {children}
-        </CardContent>
-      </Card>
-    </Wrapper>
-  );
-}
-
-export function ResourceCardHeader({
-  accessory,
-  compact = false,
-  description,
-  descriptionFallback,
-  descriptionNumberOfLines,
-  detail = false,
-  icon,
-  iconClassName = "text-primary",
-  iconContainerClassName = "bg-primary/10",
-  meta,
-  title,
-  titleClassName,
-  titleFallback,
-  titleNumberOfLines,
-}: ResourceCardHeaderProps) {
-  const resolvedDescription = description?.trim() || descriptionFallback?.trim() || null;
-  const IconComponent = icon;
-
-  return (
-    <View className="flex-row items-start gap-3">
-      {IconComponent ? (
-        <View className={`rounded-full p-2.5 ${iconContainerClassName}`}>
-          <Icon as={IconComponent} size={compact ? 16 : 18} className={iconClassName} />
-        </View>
+      {hasActions ? (
+        <ResourceActionRegion className="shrink-0">{actions}</ResourceActionRegion>
       ) : null}
-
-      <View className="min-w-0 flex-1 gap-1">
-        <Text
-          className={
-            titleClassName ??
-            `${detail ? "text-xl" : compact ? "text-lg" : "text-xl"} font-semibold text-foreground`
-          }
-          numberOfLines={titleNumberOfLines ?? (detail ? undefined : 2)}
-        >
-          {title?.trim() || titleFallback}
-        </Text>
-        {resolvedDescription ? (
-          <Text
-            className="text-sm leading-5 text-muted-foreground"
-            numberOfLines={descriptionNumberOfLines ?? (detail ? undefined : 2)}
-          >
-            {resolvedDescription}
-          </Text>
-        ) : null}
-        {meta}
-      </View>
-
-      {accessory}
-    </View>
-  );
-}
-
-export function ResourceMetricsRow({
-  compact = false,
-  maxItems,
-  metrics,
-  testID,
-}: ResourceMetricsRowProps) {
-  const visibleMetrics = metrics.slice(0, maxItems ?? (compact ? 3 : metrics.length));
-
-  if (visibleMetrics.length === 0) {
-    return null;
-  }
-
-  return (
-    <View className="flex-row flex-wrap items-start gap-x-5 gap-y-2 px-1" testID={testID}>
-      {visibleMetrics.map((metric) => (
-        <View key={metric.label} className="items-start gap-0.5">
-          <Text className="text-[10px] text-muted-foreground">{metric.label}</Text>
-          <Text
-            className={`text-[11px] font-semibold ${
-              metric.tone === "primary"
-                ? "text-primary"
-                : metric.tone === "muted"
-                  ? "text-muted-foreground"
-                  : "text-foreground"
-            }`}
-            numberOfLines={1}
-          >
-            {metric.value}
-          </Text>
-        </View>
-      ))}
     </View>
   );
 }
@@ -324,22 +211,52 @@ export function ResourceLikeButton({
 
   return (
     <Pressable
-      className="flex-row items-center rounded-full bg-muted px-2.5 py-1.5"
+      accessibilityLabel={
+        resolvedLiked ? `Unlike, ${resolvedLikeCount} likes` : `Like, ${resolvedLikeCount} likes`
+      }
+      accessibilityRole="button"
+      accessibilityState={{ disabled: disabled || !onPress, selected: resolvedLiked }}
+      className="min-h-11 min-w-11 items-center justify-center"
       disabled={disabled || !onPress}
-      onPress={(event) => {
-        event?.stopPropagation?.();
-        onPress?.();
-      }}
+      hitSlop={8}
+      onPress={onPress}
       testID={testID}
     >
-      <Icon
-        as={Heart}
-        size={14}
-        className={resolvedLiked ? "text-red-500 fill-red-500" : "text-muted-foreground"}
-      />
-      <Text className="ml-1 text-xs font-medium text-muted-foreground">
-        {resolvedLikeCount > 0 ? `${resolvedLikeCount}` : resolvedLiked ? "Liked" : "Like"}
-      </Text>
+      <View className="flex-row items-center rounded-full bg-muted px-2.5 py-1.5">
+        <Icon
+          as={Heart}
+          size={14}
+          className={resolvedLiked ? "text-red-500 fill-red-500" : "text-muted-foreground"}
+        />
+        <Text className="ml-1 text-xs font-medium text-muted-foreground">
+          {resolvedLikeCount > 0 ? `${resolvedLikeCount}` : resolvedLiked ? "Liked" : "Like"}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
+export function ResourceCardActionButton({
+  accessibilityLabel,
+  children,
+  contentClassName,
+  disabled = false,
+  onPress,
+  testID,
+}: ResourceCardActionButtonProps) {
+  return (
+    <Pressable
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
+      accessibilityState={{ disabled }}
+      className="min-h-11 min-w-11 items-center justify-center"
+      disabled={disabled}
+      onPress={onPress}
+      testID={testID}
+    >
+      <View {...(contentClassName !== undefined ? { className: contentClassName } : {})}>
+        {children}
+      </View>
     </Pressable>
   );
 }
@@ -364,7 +281,12 @@ export function ResourceAttributionRow({
     <View className="mt-3 flex-row items-end justify-between gap-3" testID={testID}>
       <View className="min-w-0 flex-1">
         {owner ? (
-          <EntityOwnerRow compact={compact} minimal onPress={onOwnerPress} owner={owner} />
+          <EntityOwnerRow
+            {...omitUndefined({ onPress: onOwnerPress })}
+            compact={compact}
+            minimal
+            owner={owner}
+          />
         ) : (
           <Text
             className={

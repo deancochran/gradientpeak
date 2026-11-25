@@ -1,0 +1,61 @@
+appId: com.deancochran.gradientpeak.dev
+name: Cached goal progress truthfully exposes a blocked refresh and retry
+---
+- tapOn:
+    id: tab-button-plan
+- extendedWaitUntil:
+    visible:
+      id: plan-selected-goal
+    timeout: 30000
+- tapOn:
+    id: plan-view-calendar
+- extendedWaitUntil:
+    visible:
+      id: calendar-screen-ready
+    timeout: 30000
+- tapOn:
+    id: calendar-reset-today-entry
+- extendedWaitUntil:
+    notVisible:
+      id: calendar-date-jump-loading
+    timeout: 30000
+- repeat:
+    times: ${MAESTRO_ACCEPTANCE_TARGET_MONTH_DELTA}
+    commands:
+      - tapOn:
+          id: calendar-next-month
+- tapOn:
+    id: calendar-day-select-${MAESTRO_ACCEPTANCE_TARGET_DATE}
+- scrollUntilVisible:
+    element:
+      id: planning-ledger-milestone-${MAESTRO_ACCEPTANCE_GOAL_ID}
+    direction: DOWN
+- tapOn:
+    id: planning-ledger-milestone-${MAESTRO_ACCEPTANCE_GOAL_ID}
+- extendedWaitUntil:
+    visible:
+      id: goal-detail-progress
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: goal-detail-card
+    direction: UP
+- assertVisible:
+    id: goal-detail-card
+- assertVisible: ${MAESTRO_ACCEPTANCE_GOAL_TITLE}
+- takeScreenshot: goal-progress-retry-ready
+- swipe:
+    from:
+      id: goal-detail-card
+    direction: DOWN
+- extendedWaitUntil:
+    visible:
+      id: goal-detail-goal-refresh-warning
+    timeout: 30000
+- extendedWaitUntil:
+    visible:
+      id: goal-detail-progress-refresh-warning
+    timeout: 30000
+- assertVisible: "Could not refresh goal progress or threshold history. Showing the last available compatible evidence."
+- assertVisible: Retry progress
+- takeScreenshot: goal-progress-retry-blocked
