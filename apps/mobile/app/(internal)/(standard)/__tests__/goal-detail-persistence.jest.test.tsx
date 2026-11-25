@@ -680,7 +680,25 @@ describe("goal detail persistence", () => {
       routeId: "goal-1",
     },
     {
-      name: "cached goal for a different route or actor",
+      name: "cached goal for a different route",
+      data: {
+        id: "goal-1",
+        profile_id: "22222222-2222-4222-8222-222222222222",
+        target_date: "2026-06-01",
+        title: "Spring 5K",
+        priority: 8,
+        activity_category: "run",
+        target_payload: mockGoalObjective,
+      },
+      error: { name: "TRPCClientError", data: { code: "INTERNAL_SERVER_ERROR", httpStatus: 503 } },
+      profile: {
+        id: "22222222-2222-4222-8222-222222222222",
+        planning_timezone: "America/Los_Angeles",
+      },
+      routeId: "other-goal",
+    },
+    {
+      name: "cached goal for a different actor",
       data: {
         id: "goal-1",
         profile_id: "22222222-2222-4222-8222-222222222222",
@@ -695,7 +713,40 @@ describe("goal detail persistence", () => {
         id: "33333333-3333-4333-8333-333333333333",
         planning_timezone: "America/Los_Angeles",
       },
-      routeId: "other-goal",
+      routeId: "goal-1",
+    },
+    {
+      name: "missing authenticated profile",
+      data: {
+        id: "goal-1",
+        profile_id: "22222222-2222-4222-8222-222222222222",
+        target_date: "2026-06-01",
+        title: "Spring 5K",
+        priority: 8,
+        activity_category: "run",
+        target_payload: mockGoalObjective,
+      },
+      error: { name: "TRPCClientError", data: { code: "INTERNAL_SERVER_ERROR", httpStatus: 503 } },
+      profile: null,
+      routeId: "goal-1",
+    },
+    {
+      name: "untyped error with copied transient metadata",
+      data: {
+        id: "goal-1",
+        profile_id: "22222222-2222-4222-8222-222222222222",
+        target_date: "2026-06-01",
+        title: "Spring 5K",
+        priority: 8,
+        activity_category: "run",
+        target_payload: mockGoalObjective,
+      },
+      error: { name: "Error", data: { code: "INTERNAL_SERVER_ERROR", httpStatus: 503 } },
+      profile: {
+        id: "22222222-2222-4222-8222-222222222222",
+        planning_timezone: "America/Los_Angeles",
+      },
+      routeId: "goal-1",
     },
   ])("fails closed for $name", async ({ data, error, profile, routeId }) => {
     mockAuthProfile = profile;

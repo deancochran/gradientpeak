@@ -45,7 +45,11 @@ function SectionCard({ children, testID }: { children: React.ReactNode; testID?:
 
 function isTransientGoalRefreshFailure(error: unknown) {
   const diagnostic = getSafeApiErrorDiagnostic(error);
-  return diagnostic.httpStatus === 503 && diagnostic.trpcCode === "INTERNAL_SERVER_ERROR";
+  return (
+    diagnostic.errorClass === "TRPCClientError" &&
+    diagnostic.httpStatus === 503 &&
+    diagnostic.trpcCode === "INTERNAL_SERVER_ERROR"
+  );
 }
 
 export default function GoalDetailScreen() {
