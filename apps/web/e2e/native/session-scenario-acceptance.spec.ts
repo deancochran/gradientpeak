@@ -19,6 +19,115 @@ function requireRow<Row>(row: Row | undefined, message: string): Row {
   return row;
 }
 
+type DurationMetric = {
+  status: "complete" | "partial" | "known_zero" | "unavailable";
+  value: number | null;
+};
+
+function requireRecord(value: unknown, message: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(message);
+  return value as Record<string, unknown>;
+}
+
+function durationMetricFrom(value: unknown, message: string): DurationMetric {
+  const metric = requireRecord(value, message);
+  if (
+    (metric.status !== "complete" &&
+      metric.status !== "partial" &&
+      metric.status !== "known_zero" &&
+      metric.status !== "unavailable") ||
+    (metric.value !== null && (typeof metric.value !== "number" || !Number.isFinite(metric.value)))
+  ) {
+    throw new Error(message);
+  }
+  return { status: metric.status, value: metric.value };
+}
+
+function durationCompositionFrom(value: unknown, message: string) {
+  const summary = requireRecord(value, message);
+  if (!Array.isArray(summary.categories)) throw new Error(message);
+  return {
+    categories: summary.categories.map((category, index) => {
+      const entry = requireRecord(category, `${message} category ${index} is invalid.`);
+      if (typeof entry.activityCategory !== "string")
+        throw new Error(`${message} category ${index} has no activity category.`);
+      return {
+        activityCategory: entry.activityCategory,
+        durationSeconds: durationMetricFrom(
+          entry.durationSeconds,
+          `${message} category ${index} has no duration metric.`,
+        ),
+      };
+    }),
+  };
+}
+
+async function retainAppliedPlanningLedgerEvidence(input: {
+  actor: Parameters<typeof createSessionScenarioFixture>[0]["actor"];
+  date: string;
+  outputPath: (path: string) => string;
+}) {
+  const request = { anchorDate: input.date, period: "day" } as const;
+  const encodedInput = encodeURIComponent(JSON.stringify({ 0: { json: request } }));
+  const response = await input.actor.request.get(
+    `/api/trpc/trainingPlans.getPlanningLedger?batch=1&input=${encodedInput}`,
+  );
+  expect(response.ok(), `Planning ledger request failed with HTTP ${response.status()}`).toBe(true);
+  const body = await response.json();
+  if (!Array.isArray(body) || body.length !== 1)
+    throw new Error("Planning ledger response was not a single batched tRPC result.");
+  const ledger = requireRecord(
+    requireRecord(
+      requireRecord(body[0], "Planning ledger result is invalid.").result,
+      "Planning ledger result is invalid.",
+    ).data,
+    "Planning ledger result is invalid.",
+  ).json;
+  const result = requireRecord(ledger, "Planning ledger response has no JSON result.");
+  expect(result).toMatchObject({
+    anchorDate: input.date,
+    contractVersion: "planning-ledger-v3",
+    period: "day",
+    periodEnd: input.date,
+    periodStart: input.date,
+  });
+  const composition = requireRecord(
+    result.trainingComposition,
+    "Planning ledger response has no training composition.",
+  );
+  const selected = requireRecord(
+    composition.selected,
+    "Planning ledger response has no selected training composition.",
+  );
+  writeFileSync(
+    input.outputPath("native-scenario-applied-planning-ledger.json"),
+    JSON.stringify(
+      {
+        anchorDate: result.anchorDate,
+        contractVersion: result.contractVersion,
+        period: result.period,
+        periodEnd: result.periodEnd,
+        periodStart: result.periodStart,
+        trainingComposition: {
+          selected: {
+            actual: durationCompositionFrom(
+              selected.actual,
+              "Selected actual training composition is invalid.",
+            ),
+            planned: durationCompositionFrom(
+              selected.planned,
+              "Selected planned training composition is invalid.",
+            ),
+          },
+        },
+      },
+      null,
+      2,
+    ),
+    { mode: 0o600 },
+  );
+}
+
 test("native athlete compares, cancels, and applies a selected session scenario", async ({
   actorFactory,
   e2eData,
@@ -155,6 +264,11 @@ test("native athlete compares, cancels, and applies a selected session scenario"
     );
     throw error;
   }
+  await retainAppliedPlanningLedgerEvidence({
+    actor,
+    date: fixture.date,
+    outputPath: testInfo.outputPath,
+  });
   const [sessions, plans] = await fixture.snapshot();
   const selected = requireRow(
     sessions.find((session) => session.id === fixture.sessionId),
