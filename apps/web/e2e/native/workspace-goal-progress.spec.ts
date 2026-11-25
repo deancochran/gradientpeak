@@ -9,6 +9,14 @@ import { GoalsPage } from "../pages";
 import { chooseAuthoringOption } from "../pages/authoring";
 import { withGoalFixture } from "../planning/data";
 import { createGoalProgressFixture } from "../support/goal-progress-fixture";
+import {
+  type NativeGoalTransportTrace,
+  startNativeGoalTransport,
+} from "../support/native-goal-transport";
+import {
+  requireNativeReverseRestoration,
+  runWithNativeScenarioCleanup,
+} from "../support/native-scenario-cleanup";
 
 const flowScreenshots = {
   "goal-progress-sign-in.yaml": ["goal-progress-home"],
@@ -78,6 +86,8 @@ function monthDelta(fromDate: string, toDate: string) {
     Number(fromDate.slice(5, 7))
   );
 }
+
+test.beforeEach(() => expect(process.env.E2E_DISPOSABLE_DATABASE).toBe("1"));
 
 test("Android shows canonical published threshold evidence through the goal and selected Plan day", async ({
   actorFactory,
@@ -222,8 +232,91 @@ test("Android shows canonical published threshold evidence through the goal and 
         MAESTRO_ACCEPTANCE_TARGET_DATE: targetDate,
         MAESTRO_ACCEPTANCE_TARGET_MONTH_DELTA: String(targetMonthDelta),
       };
-      runFlow("goal-progress-sign-in.yaml", environment, "maestro-goal-progress-sign-in.log");
-      runFlow("goal-progress-workspace.yaml", environment, "maestro-goal-progress-workspace.log");
+      const transport = await startNativeGoalTransport({ goalId });
+      const transportPort = new URL(transport.origin).port;
+      let trace: NativeGoalTransportTrace[] | undefined;
+      let traceError: unknown;
+      await runWithNativeScenarioCleanup(
+        async () => {
+          try {
+            await transport.allowProgressReads();
+            expect(
+              spawnSync("adb", ["-s", "emulator-5554", "reverse", "--remove", "tcp:3100"], {
+                encoding: "utf8",
+              }).status,
+              "Must remove only the runner-owned API reverse before tracing goal transport.",
+            ).toBe(0);
+            expect(
+              spawnSync(
+                "adb",
+                ["-s", "emulator-5554", "reverse", "tcp:3100", `tcp:${transportPort}`],
+                { encoding: "utf8" },
+              ).status,
+              "Must route the runner-owned API reverse through the goal transport.",
+            ).toBe(0);
+            runFlow("goal-progress-sign-in.yaml", environment, "maestro-goal-progress-sign-in.log");
+            runFlow(
+              "goal-progress-workspace.yaml",
+              environment,
+              "maestro-goal-progress-workspace.log",
+            );
+          } finally {
+            try {
+              trace = await transport.trace();
+              writeFileSync(
+                testInfo.outputPath("native-goal-transport-trace.json"),
+                `${JSON.stringify(trace, null, 2)}\n`,
+                { mode: 0o600 },
+              );
+            } catch (error) {
+              // Preserve an original journey or cleanup error; report trace
+              // capture failure only when the happy journey otherwise succeeds.
+              traceError = error;
+            }
+          }
+        },
+        {
+          restoreReverse: () =>
+            requireNativeReverseRestoration(
+              spawnSync("adb", ["-s", "emulator-5554", "reverse", "tcp:3100", "tcp:3100"], {
+                encoding: "utf8",
+              }),
+            ),
+          stopTransport: () => transport.stop(),
+        },
+      );
+      if (traceError) throw traceError;
+      if (!trace) throw new Error("Native goal transport trace was not retained.");
+      const goalProcedures = new Set([
+        "athleteIntelligence.getGoalAssessment",
+        "athleteIntelligence.getGoalProgress",
+        "athleteIntelligence.getThresholdOverview",
+      ]);
+      for (const record of trace) {
+        expect(["GET", "POST"]).toContain(record.method);
+        expect(record.procedures.every((procedure) => goalProcedures.has(procedure))).toBe(true);
+        expect(record.batchSize).toBeGreaterThan(0);
+        expect(typeof record.hasProgress).toBe("boolean");
+        expect(typeof record.hasThreshold).toBe("boolean");
+        expect(typeof record.targetGoalMatched).toBe("boolean");
+        expect(record.requestOrder).toBeGreaterThan(0);
+        expect(record.responseOrder).toBeGreaterThan(0);
+        expect(record.status).toBeGreaterThanOrEqual(100);
+      }
+      expect(new Set(trace.map((record) => record.requestOrder)).size).toBe(trace.length);
+      expect(new Set(trace.map((record) => record.responseOrder)).size).toBe(trace.length);
+      const targetProgress = trace.find(
+        (record) => record.hasProgress && record.targetGoalMatched && record.status === 200,
+      );
+      const threshold = trace.find((record) => record.hasThreshold && record.status === 200);
+      expect(
+        targetProgress,
+        "Trace must observe a successful target goal-progress response.",
+      ).toBeDefined();
+      expect(
+        threshold,
+        "Trace must observe a successful threshold-overview response.",
+      ).toBeDefined();
     },
     { profileId: actor.profileId },
   );
