@@ -17,6 +17,12 @@ export const uiPreviewContract = {
       testId: "ui-preview-scenario-session-scenario-comparison",
       title: "Session scenario comparison",
     },
+    thresholdHistory: {
+      description:
+        "Threshold charts retain timestamps and units, with policy gaps and pace kept on separate scales.",
+      testId: "ui-preview-scenario-threshold-history",
+      title: "Threshold history",
+    },
     identitySummary: {
       description: "Shared identity hierarchy with supporting context and status.",
       testId: "ui-preview-scenario-identity-summary",
@@ -55,6 +61,7 @@ export const uiPreviewContract = {
 export const uiPreviewScenarios = [
   uiPreviewContract.scenarios.trainingState,
   uiPreviewContract.scenarios.sessionScenarioComparison,
+  uiPreviewContract.scenarios.thresholdHistory,
   uiPreviewContract.scenarios.identitySummary,
   uiPreviewContract.scenarios.accountControls,
   uiPreviewContract.scenarios.planTabs,
@@ -76,6 +83,7 @@ export const uiPreviewFormFields = {
 export const uiPreviewScenarioSelectors = {
   trainingState: ["ui-preview-training-state-chart"],
   sessionScenarioComparison: ["ui-preview-session-scenario-comparison"],
+  thresholdHistory: ["ui-preview-threshold-bike-power", "ui-preview-threshold-run-pace"],
   identitySummary: [],
   accountControls: ["profile-card", "auth-email", "settings-save"],
   feedbackStates: [],

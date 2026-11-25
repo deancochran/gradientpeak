@@ -8,6 +8,7 @@ type MessageSearch = {
   composeQuery: undefined;
   composeRecipients: [];
   conversationId: undefined;
+  returnTo: undefined;
   flash: undefined;
   flashType: undefined;
 };
@@ -18,6 +19,7 @@ const composeSearch: MessageSearch = {
   composeQuery: undefined,
   composeRecipients: [],
   conversationId: undefined,
+  returnTo: undefined,
   flash: undefined,
   flashType: undefined,
 };

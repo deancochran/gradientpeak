@@ -28,6 +28,7 @@ export {
   recordingSummarySubmissionInputSchema,
   recordingUploadedArtifactSchema,
 } from "./contracts/recording-submission";
+export { selectPublishedGoalProgressHistory } from "./goal-progress-client";
 export type { ActivityIngestionClientStatus } from "./ingestion-client";
 export {
   canRetryDirectIngestion,
@@ -37,6 +38,13 @@ export {
   buildDirectPlannedSessionCreateInput,
   isPlannedSessionConflict,
 } from "./planned-session-client";
+export type { FrozenPlannedSessionScenarioOperation } from "./planned-session-scenario-client";
+export {
+  freezePlannedSessionScenarioOperation,
+  isCurrentPlannedSessionScenarioOperation,
+  parseFrozenPlannedSessionScenarioOperation,
+  requiresFreshPlannedSessionScenarioPreview,
+} from "./planned-session-scenario-client";
 export type { SchedulingRefreshScope } from "./query-client";
 export {
   API_CACHE_TAG_QUERY_KEYS,

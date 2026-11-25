@@ -83,6 +83,10 @@ vi.mock("@repo/api/react", () => ({
 
 vi.mock("@tanstack/react-start", () => ({ useServerFn: () => mocks.deleteAction }));
 
+vi.mock("../../../../components/providers/auth-provider", () => ({
+  useAuth: () => ({ user: { id: "00000000-0000-4000-8000-000000000002" } }),
+}));
+
 vi.mock("../../../../components/route-flash-toast", () => ({ RouteFlashToast: () => null }));
 vi.mock("../../../../components/app-href-link", () => ({
   AppHrefLink: (props: React.ComponentProps<"a">) => <a {...props} />,
@@ -139,6 +143,9 @@ vi.mock("../../../../lib/api/client", () => ({
           isLoading: false,
           refetch: vi.fn(),
         }),
+      },
+      applyScenario: {
+        useMutation: () => ({ isPending: false, mutateAsync: vi.fn() }),
       },
       skip: { useMutation: () => ({ mutateAsync: mocks.skipPlannedSession }) },
     },

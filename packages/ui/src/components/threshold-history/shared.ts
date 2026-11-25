@@ -1,5 +1,12 @@
-export type ThresholdActivityCategory = "bike" | "run" | "swim";
-export type ThresholdMetric = "power" | "speed" | "lthr";
+import type {
+  ThresholdActivityCategory,
+  ThresholdMetric,
+} from "@repo/core/performance-calibration";
+
+export type {
+  ThresholdActivityCategory,
+  ThresholdMetric,
+} from "@repo/core/performance-calibration";
 export type ThresholdUnit = "watts" | "meters_per_second" | "bpm";
 
 /** A presentation-safe subset of the threshold overview transport contract. */
@@ -37,7 +44,13 @@ export type ThresholdHistoryChartDatum = {
 export function thresholdMetricLabel(category: ThresholdActivityCategory, metric: ThresholdMetric) {
   if (metric === "lthr") return `${category} LTHR`;
   if (metric === "power") return `${category} power`;
-  return `${category} speed`;
+  return `${category} pace`;
+}
+
+export function thresholdUnitLabel(unit: ThresholdUnit, category: ThresholdActivityCategory) {
+  if (unit === "watts") return "watts";
+  if (unit === "bpm") return "bpm";
+  return category === "swim" ? "pace (/100m)" : "pace (/km)";
 }
 
 export function formatThresholdValue(

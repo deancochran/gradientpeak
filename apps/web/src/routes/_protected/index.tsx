@@ -7,8 +7,9 @@ import {
   CardTitle,
 } from "@repo/ui/components/card";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
-import { Activity, CalendarDays, Target } from "lucide-react";
+import { Activity, CalendarDays } from "lucide-react";
 import { ActivityFeed } from "../../components/feed/activity-feed";
+import { PlanDashboard } from "../../components/planning/plan-dashboard";
 import { SearchLauncher } from "../../components/protected/search-launcher";
 import { useAuth } from "../../components/providers/auth-provider";
 import { api } from "../../lib/api/client";
@@ -85,6 +86,11 @@ function DashboardPage() {
 
   const dashboard = dashboardQuery.data;
   const schedule = dashboard?.schedule.slice(0, 4) ?? [];
+  const availableThresholds = thresholdOverviewQuery.data
+    ? Object.values(thresholdOverviewQuery.data.current.thresholds).filter(
+        (threshold) => threshold.status === "available",
+      ).length
+    : 0;
 
   return (
     <div className="space-y-8">
@@ -110,94 +116,10 @@ function DashboardPage() {
         </div>
       ) : null}
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <MetricCard
-          title="Fitness"
-          value={
-            dashboard?.currentLoadStatus ? dashboard.currentLoadStatus.longTermLoad.toFixed(1) : "—"
-          }
-          description={
-            dashboard?.currentLoadStatus
-              ? `Long-term load · ${dashboard.currentLoadStatus.maturity} maturity`
-              : dashboardQuery.isLoading
-                ? "Loading Common Load history"
-                : "Complete Common Load history is unavailable"
-          }
-          icon={<Activity className="h-4 w-4" />}
-        />
-        <MetricCard
-          title="Fatigue"
-          value={
-            dashboard?.currentLoadStatus ? dashboard.currentLoadStatus.recentLoad.toFixed(1) : "—"
-          }
-          description={
-            dashboard?.currentLoadStatus
-              ? "Recent load"
-              : dashboardQuery.isLoading
-                ? "Loading Common Load history"
-                : "Complete Common Load history is unavailable"
-          }
-          icon={<Activity className="h-4 w-4" />}
-        />
-        <MetricCard
-          title="Form"
-          value={
-            dashboard?.currentLoadStatus ? dashboard.currentLoadStatus.loadBalance.toFixed(1) : "—"
-          }
-          description={
-            dashboard?.currentLoadStatus
-              ? `Load balance · ${dashboard.currentLoadStatus.coverageStatus} coverage`
-              : dashboardQuery.isLoading
-                ? "Loading Common Load history"
-                : "Complete Common Load history is unavailable"
-          }
-          icon={<Activity className="h-4 w-4" />}
-        />
-        <MetricCard
-          title="Consistency"
-          value={dashboard ? `${dashboard.consistency.streak} days` : "..."}
-          description={
-            dashboard
-              ? `${dashboard.consistency.weeklyCount} activities this week`
-              : "Loading consistency"
-          }
-          icon={<CalendarDays className="h-4 w-4" />}
-        />
-        <MetricCard
-          title="Active Plan"
-          value={dashboard?.activePlan?.name ?? (dashboardQuery.isLoading ? "…" : "No active plan")}
-          description={
-            dashboardQuery.isLoading
-              ? "Loading active plan"
-              : "Create or assign a plan to see progress here"
-          }
-          icon={<CalendarDays className="h-4 w-4" />}
-        />
-        <Card>
-          <CardHeader>
-            <CardTitle>Performance</CardTitle>
-            <CardDescription>
-              {thresholdOverviewQuery.isLoading
-                ? "Loading calculated thresholds"
-                : thresholdOverviewQuery.isError
-                  ? "Threshold status is unavailable"
-                  : thresholdOverviewQuery.data?.publication.status === "unavailable"
-                    ? "Calculated thresholds are not available yet"
-                    : "Calculated thresholds are available"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild variant="outline">
-              <Link to="/thresholds">Manage thresholds</Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </section>
-
-      <ActivityFeed />
+      <PlanDashboard />
 
       <section className="grid gap-6 lg:grid-cols-[1.7fr_1fr]">
-        <Card>
+        <Card data-testid="home-upcoming-schedule">
           <CardHeader>
             <CardTitle>Upcoming Schedule</CardTitle>
             <CardDescription>Your next planned sessions.</CardDescription>
@@ -208,9 +130,11 @@ function DashboardPage() {
             ) : schedule.length > 0 ? (
               <div className="space-y-3">
                 {schedule.map((item) => (
-                  <div
+                  <Link
                     key={item.id}
-                    className="flex items-center justify-between rounded-lg border p-3"
+                    className="flex items-center justify-between rounded-lg border p-3 transition-colors hover:border-primary hover:bg-accent/40"
+                    search={{ date: item.date, flash: undefined, flashType: undefined }}
+                    to="/plan"
                   >
                     <div>
                       <p className="font-medium">{item.activityName}</p>
@@ -229,7 +153,7 @@ function DashboardPage() {
                         load={item.load}
                       />
                     </div>
-                  </div>
+                  </Link>
                 ))}
               </div>
             ) : (
@@ -240,26 +164,50 @@ function DashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Current Focus</CardTitle>
-            <CardDescription>Keep the home surface lightweight and task-oriented.</CardDescription>
+            <CardTitle>Training signals</CardTitle>
+            <CardDescription>Supporting context for your plan.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="rounded-lg border p-4">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <Target className="h-4 w-4 text-muted-foreground" />
-                {dashboard?.activePlan?.name ?? "No active plan"}
-              </div>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Use search to jump directly into planning, messages, settings, or calendar
-                workflows.
-              </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <MetricCard
+                title="Consistency"
+                value={dashboard ? `${dashboard.consistency.streak} days` : "…"}
+                description={
+                  dashboard
+                    ? `${dashboard.consistency.weeklyCount} activities this week`
+                    : "Loading consistency"
+                }
+                icon={<CalendarDays className="h-4 w-4" />}
+              />
+              <MetricCard
+                title="Performance"
+                value={
+                  thresholdOverviewQuery.isLoading
+                    ? "…"
+                    : thresholdOverviewQuery.isError
+                      ? "Unavailable"
+                      : `${availableThresholds} current`
+                }
+                description={
+                  thresholdOverviewQuery.isLoading
+                    ? "Loading calculated thresholds"
+                    : thresholdOverviewQuery.isError
+                      ? "Threshold status is unavailable"
+                      : availableThresholds > 0
+                        ? "Current calculated thresholds"
+                        : "No current calculated thresholds"
+                }
+                icon={<Activity className="h-4 w-4" />}
+              />
             </div>
-            <p className="text-xs text-muted-foreground">
-              Search is now the primary jump-off point for deeper areas of the web app.
-            </p>
+            <Button asChild size="sm" variant="outline">
+              <Link to="/thresholds">Inspect thresholds</Link>
+            </Button>
           </CardContent>
         </Card>
       </section>
+
+      <ActivityFeed />
     </div>
   );
 }

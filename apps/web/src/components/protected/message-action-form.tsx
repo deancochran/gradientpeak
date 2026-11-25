@@ -32,6 +32,7 @@ export function MessageActionForm({
           composeQuery: undefined,
           composeRecipients: [],
           conversationId: conversation.id,
+          returnTo: undefined,
           flash: "Conversation ready",
           flashType: "success",
         },

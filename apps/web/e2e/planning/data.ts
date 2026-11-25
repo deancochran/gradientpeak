@@ -1,4 +1,5 @@
 import type { TestInfo } from "@playwright/test";
+import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
 import {
   activities,
   activityPlans,
@@ -152,6 +153,7 @@ export async function withPlanningPathFixture(
           summary: {
             version: 1,
             timing: { timingCoverage: "complete", activeMs: 3_600_000, movingMs: 3_600_000 },
+            normalizedPowerResult: calculateCyclingNormalizedPower({ samples: [] }),
           },
           summary_version: 1,
           timing_coverage: "complete",
@@ -282,9 +284,12 @@ export async function withCalendarEventFixture(
 }
 
 /** Browser-created goal IDs and exact unique titles are registered before inspection. */
-export async function withGoalFixture(run: (fixture: GoalFixture) => Promise<void>) {
+export async function withGoalFixture(
+  run: (fixture: GoalFixture) => Promise<void>,
+  options: { profileId?: string } = {},
+) {
   const database = new LocalE2EDatabase();
-  const profileId = currentE2EActor("athlete").profileId;
+  const profileId = options.profileId ?? currentE2EActor("athlete").profileId;
   const goalIds = new Set<string>();
   const goalTitles = new Set<string>();
   const cleanup = currentE2ECleanupRegistry();

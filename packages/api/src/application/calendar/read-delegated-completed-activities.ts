@@ -29,6 +29,7 @@ export const completionEvidenceVersion = sql<string>`md5(concat_ws(
   ${plannedSessions.id}::text,
   ${plannedSessions.completed_activity_id}::text,
   ${plannedSessions.linked_at}::text,
+  ${plannedSessions.completion_outcome}::text,
   ${activities.entry_provenance}::text,
   case when ${activities.entry_provenance} = 'manual'
     then ${activities.manual_activity_category}::text end,
@@ -70,6 +71,12 @@ export async function readDelegatedCompletedActivities(input: {
             )
           end`,
           activityId: activities.id,
+          completionOutcome: sql<"full" | "partial">`${plannedSessions.completion_outcome}`,
+          completionSource: sql<"manual" | "recorded" | "unavailable">`case
+            when ${activities.entry_provenance} = 'manual' then 'manual'
+            when ${activities.entry_provenance} is null then 'recorded'
+            else 'unavailable'
+          end`,
           distanceMeters: activities.distance_meters,
           elapsedMs: activities.elapsed_ms,
           evidenceVersion: completionEvidenceVersion,
@@ -117,6 +124,8 @@ export async function readDelegatedCompletedActivities(input: {
     items: authorized.value.map((item) => ({
       ...item,
       activityCategory: item.activityCategory,
+      completionOutcome: item.completionOutcome,
+      completionSource: item.completionSource,
       distanceMeters: item.distanceMeters ?? null,
       elapsedMs: item.elapsedMs ?? null,
     })),

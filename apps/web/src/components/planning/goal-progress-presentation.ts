@@ -1,4 +1,8 @@
-import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
+import {
+  type AppRouter,
+  type inferRouterOutputs,
+  selectPublishedGoalProgressHistory,
+} from "@repo/api/client";
 import {
   diffDateOnlyUtcDays,
   formatDateOnlyInTimeZone,
@@ -9,6 +13,9 @@ import { buildChartSegments, getPaddedChartDomain } from "@repo/ui/lib/chart";
 type Outputs = inferRouterOutputs<AppRouter>["athleteIntelligence"];
 export type GoalProgress = Outputs["getGoalProgress"];
 export type ThresholdHistory = Outputs["getThresholdOverview"]["history"]["items"];
+export type ThresholdOverview = Outputs["getThresholdOverview"];
+
+export const selectGoalProgressHistory = selectPublishedGoalProgressHistory;
 
 export function nearestGoalChartPoint(
   points: readonly { label?: string; plotX: number; plotY: number }[],
