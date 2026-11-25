@@ -1,3 +1,4 @@
+import { cn } from "../../lib/cn";
 import { getNativeTestProps } from "../../lib/test-props";
 import type { BadgeProps as RegistryBadgeProps } from "../../registry/native/badge";
 import {
@@ -9,7 +10,7 @@ import type { BadgeTestProps } from "./shared";
 
 type BadgeProps = Omit<RegistryBadgeProps, "nativeID" | "testID"> & BadgeTestProps;
 
-function Badge({ accessibilityLabel, id, role, testId, ...props }: BadgeProps) {
+function Badge({ accessibilityLabel, className, id, role, testId, ...props }: BadgeProps) {
   const { role: _unusedRole, ...nativeTestProps } = getNativeTestProps({
     accessibilityLabel,
     id,
@@ -17,7 +18,13 @@ function Badge({ accessibilityLabel, id, role, testId, ...props }: BadgeProps) {
     testId,
   });
 
-  return <RegistryBadge {...nativeTestProps} {...props} />;
+  return (
+    <RegistryBadge
+      {...nativeTestProps}
+      {...props}
+      className={cn(props.variant === "destructive" && "bg-destructive-surface", className)}
+    />
+  );
 }
 
 export type { BadgeProps };

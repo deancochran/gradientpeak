@@ -1,4 +1,5 @@
-import { Avatar, AvatarFallback } from "@repo/ui/components/avatar";
+import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
+import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -8,9 +9,15 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
+import {
+  ResourceActionRegion,
+  ResourceCardHeader,
+  ResourceMetricsRow,
+} from "@repo/ui/components/resource-presentation";
 import { cn } from "@repo/ui/lib/cn";
-import { Heart, MapPin } from "lucide-react";
-import type { ReactNode } from "react";
+import { Heart, MapPin, MessageCircle, Share2 } from "lucide-react";
+import { type ReactNode, useEffect, useState } from "react";
+import { useViewingUserPreferredUnitSystem } from "../../hooks/use-viewing-user-preferred-unit-system";
 import {
   buildElevationPolylinePoints,
   buildMapPolylinePoints,
@@ -20,42 +27,78 @@ import {
   formatDistance,
   formatDuration,
   formatElevation,
-  getActivityBadgeLabel,
-  getActivityEmoji,
+  getActivityCoordinates,
   type RouteCoordinate,
 } from "../../lib/activity-route-helpers";
+import { api } from "../../lib/api/client";
+import { ActivityCategoryBadges } from "../activity-category-presentation";
+import { AppHrefLink } from "../app-href-link";
+import {
+  COMPACT_ROUTE_PREVIEW_MAX_COORDINATES,
+  RoutePreviewMap,
+} from "../recording/route-preview-map";
 
 type DetailMetricItem = {
   label: string;
   value: string;
 };
 
+type RouterOutputs = inferRouterOutputs<AppRouter>;
+type RouteListItem = RouterOutputs["routes"]["list"]["items"][number];
+type ActivityEffort = RouterOutputs["activities"]["getEfforts"][number];
+
+/** Limits only the library-card presentation path; route detail and recording remain unrestricted. */
+export const COMPACT_ROUTE_PREVIEW_MAX_ENCODED_LENGTH = 12 * 1024;
+
+function decodeRoutePreviewCoordinates(polyline: string) {
+  return getActivityCoordinates(polyline, null);
+}
+
+export function getCompactRoutePreviewCoordinates(
+  polyline: string | null | undefined,
+  decode = decodeRoutePreviewCoordinates,
+) {
+  if (!polyline || polyline.length > COMPACT_ROUTE_PREVIEW_MAX_ENCODED_LENGTH) {
+    return [] as RouteCoordinate[];
+  }
+
+  const coordinates = decode(polyline);
+  return coordinates.length <= COMPACT_ROUTE_PREVIEW_MAX_COORDINATES ? coordinates : [];
+}
+
 export function DetailPageIntro({
   actions,
   badges,
+  categories,
   description,
   eyebrow,
   title,
 }: {
   actions?: ReactNode;
   badges?: string[];
+  categories?: readonly string[];
   description?: string | null;
   eyebrow?: string;
-  title: string;
+  title?: string;
 }) {
+  const hasActions = Boolean(actions);
+
   return (
     <div className="flex flex-col gap-4 rounded-3xl border border-border bg-card p-6 lg:flex-row lg:items-start lg:justify-between">
       <div className="space-y-3">
         {eyebrow ? <p className="text-sm font-medium text-primary">{eyebrow}</p> : null}
         <div className="space-y-2">
-          <h1 className="text-3xl font-semibold tracking-tight text-foreground">{title}</h1>
+          {title ? (
+            <h1 className="text-3xl font-semibold tracking-tight text-foreground">{title}</h1>
+          ) : null}
           {description ? (
             <p className="max-w-3xl text-sm text-muted-foreground">{description}</p>
           ) : null}
         </div>
-        {badges?.length ? (
+        {categories !== undefined || badges?.length ? (
           <div className="flex flex-wrap gap-2">
-            {badges.map((badge) => (
+            {categories !== undefined ? <ActivityCategoryBadges categories={categories} /> : null}
+            {badges?.map((badge) => (
               <Badge key={badge} variant="secondary">
                 {badge}
               </Badge>
@@ -63,7 +106,7 @@ export function DetailPageIntro({
           </div>
         ) : null}
       </div>
-      {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
+      {hasActions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
     </div>
   );
 }
@@ -99,13 +142,21 @@ export function EntityMapCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{title}</CardTitle>
+        <CardTitle aria-level={2} role="heading">
+          {title}
+        </CardTitle>
         {subtitle ? <CardDescription>{subtitle}</CardDescription> : null}
       </CardHeader>
       <CardContent>
         {points ? (
           <div className="overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-sky-50 via-background to-emerald-50 dark:from-sky-950/30 dark:to-emerald-950/20">
-            <svg className="block h-72 w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+            <svg
+              aria-label={`${title} map`}
+              className="block h-72 w-full"
+              preserveAspectRatio="none"
+              role="img"
+              viewBox="0 0 100 100"
+            >
               <defs>
                 <linearGradient id="route-line" x1="0%" x2="100%" y1="0%" y2="100%">
                   <stop offset="0%" stopColor="currentColor" stopOpacity="0.95" />
@@ -148,7 +199,12 @@ export function ElevationProfileCard({ coordinates }: { coordinates: RouteCoordi
       </CardHeader>
       <CardContent>
         <div className="overflow-hidden rounded-2xl border border-border bg-muted/20 p-4">
-          <svg className="block h-32 w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+          <svg
+            aria-hidden="true"
+            className="block h-32 w-full"
+            preserveAspectRatio="none"
+            viewBox="0 0 100 100"
+          >
             <polyline
               className="text-primary"
               fill="none"
@@ -170,11 +226,13 @@ export function LikeToggleButton({
   liked,
   onClick,
   pending = false,
+  retryLabel,
 }: {
   count: number;
   liked: boolean;
   onClick: () => void;
   pending?: boolean;
+  retryLabel?: string;
 }) {
   return (
     <Button
@@ -185,85 +243,286 @@ export function LikeToggleButton({
       variant="outline"
     >
       <Heart className={cn("h-4 w-4", liked && "fill-current")} />
-      <span>{count > 0 ? `${count} like${count === 1 ? "" : "s"}` : liked ? "Liked" : "Like"}</span>
+      <span>
+        {retryLabel ??
+          (count > 0 ? `${count} like${count === 1 ? "" : "s"}` : liked ? "Liked" : "Like")}
+      </span>
     </Button>
   );
 }
 
-export function ActivityListCard({ activity, onOpen }: { activity: any; onOpen: () => void }) {
+function formatDisplayMetric(metric: SemanticMetric, unitSystem: "metric" | "imperial") {
+  if (metric.status === "unavailable") return "—";
+  const approximationPrefix = metric.status === "partial" ? "~" : "";
+  if (metric.unit === "meters")
+    return `${approximationPrefix}${formatDistance(metric.value, unitSystem)}`;
+  if (metric.unit === "seconds") return `${approximationPrefix}${formatDuration(metric.value)}`;
+  if (metric.unit === "ratio") return `${approximationPrefix}${metric.value.toFixed(2)}`;
+  if (metric.unit === "bpm") return `${approximationPrefix}${Math.round(metric.value)} bpm`;
+  if (metric.unit === "watts") return `${approximationPrefix}${Math.round(metric.value)} W`;
+  if (metric.unit === "kilocalories")
+    return `${approximationPrefix}${Math.round(metric.value)} kcal`;
+  return `${approximationPrefix}${Number.isInteger(metric.value) ? String(metric.value) : metric.value.toFixed(1)}`;
+}
+
+export function ActivityListCard({
+  activity,
+  href,
+  onOpen,
+}: {
+  activity: ActivityDisplayModel;
+  href?: string;
+  onOpen?: () => void;
+}) {
+  const { unitSystem } = useViewingUserPreferredUnitSystem();
+  const [liked, setLiked] = useState(activity.engagement.viewerHasLiked);
+  const [likes, setLikes] = useState(activity.engagement.likes);
+  const likeMutation = api.social.toggleLike.useMutation({ retry: false });
+  const activityHref = href ?? activity.href;
+
+  useEffect(() => {
+    setLiked(activity.engagement.viewerHasLiked);
+    setLikes(activity.engagement.likes);
+  }, [activity.engagement.likes, activity.engagement.viewerHasLiked]);
+
+  const handleLike = () => {
+    if (likeMutation.isPending) return;
+    const previousLiked = liked;
+    const previousLikes = likes;
+    const nextLiked = !liked;
+    setLiked(nextLiked);
+    setLikes(nextLiked ? likes + 1 : Math.max(0, likes - 1));
+    likeMutation.mutate(
+      { entity_id: activity.id, entity_type: "activity" },
+      {
+        onError: () => {
+          setLiked(previousLiked);
+          setLikes(previousLikes);
+        },
+      },
+    );
+  };
+
+  const handleShare = async () => {
+    if (activity.visibility !== "public") {
+      window.alert("Only public activities can be shared.");
+      return;
+    }
+    const shareUrl = `${window.location.origin}/share/activities/${activity.id}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: activity.title, url: shareUrl });
+        return;
+      }
+      if (!navigator.clipboard) {
+        window.alert("Sharing is unavailable in this browser.");
+        return;
+      }
+      await navigator.clipboard.writeText(shareUrl);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      window.alert("The activity could not be shared. Try again.");
+    }
+  };
   return (
-    <Card className="transition-colors hover:border-primary/30">
+    <Card
+      className="transition-colors hover:border-primary/30"
+      data-testid={`activity-card-${activity.id}`}
+    >
       <CardContent className="space-y-4 p-4">
-        <div className="flex items-start gap-3">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xl">
-            {getActivityEmoji(activity.type)}
-          </div>
-          <div className="min-w-0 flex-1 space-y-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-lg font-semibold text-foreground">{activity.name}</h3>
-              <Badge variant="secondary">{getActivityBadgeLabel(activity.type)}</Badge>
-            </div>
-            <p className="text-sm text-muted-foreground">{formatDateTime(activity.started_at)}</p>
-            {activity.notes ? (
-              <p className="line-clamp-2 text-sm text-muted-foreground">{activity.notes}</p>
-            ) : null}
-          </div>
-          <Button onClick={onOpen} type="button" variant="ghost">
-            Open
+        <ResourceCardHeader
+          accessory={
+            href ? (
+              <Button asChild variant="ghost">
+                <AppHrefLink
+                  aria-label={`Open activity ${activity.title}`}
+                  data-testid={`activity-card-${activity.id}-open`}
+                  href={href}
+                >
+                  Open
+                </AppHrefLink>
+              </Button>
+            ) : onOpen ? (
+              <Button
+                data-testid={`activity-card-${activity.id}-open`}
+                onClick={onOpen}
+                type="button"
+                variant="ghost"
+              >
+                Open
+              </Button>
+            ) : null
+          }
+          leading={
+            <Avatar className="h-10 w-10 shrink-0">
+              {activity.owner.avatarUrl ? <AvatarImage src={activity.owner.avatarUrl} /> : null}
+              <AvatarFallback>
+                {(activity.owner.username ?? "GP").slice(0, 2).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+          }
+          meta={
+            <>
+              <p className="text-sm font-medium text-foreground">
+                @{activity.owner.username ?? "athlete"}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <ActivityCategoryBadges categories={activity.activityComposition.categories} />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {activity.time.startedAt ? formatDateTime(activity.time.startedAt) : "—"}
+              </p>
+              {activity.notes ? (
+                <p className="line-clamp-2 text-sm text-muted-foreground">{activity.notes}</p>
+              ) : null}
+            </>
+          }
+          title={activity.title}
+          titleClassName="text-base"
+        />
+        <ResourceMetricsRow
+          metrics={activity.metrics.map((metric) => ({
+            label: metric.label,
+            ...(metric.key === "common_load" || metric.key === "normalized_intensity"
+              ? { tone: "primary" as const }
+              : {}),
+            value: formatDisplayMetric(metric, unitSystem),
+          }))}
+          testID="activity-card-metrics"
+        />
+        <ResourceActionRegion className="flex-wrap" testID="activity-card-social-actions">
+          <Button
+            aria-label={`${liked ? "Unlike" : "Like"} activity ${activity.title}, ${likes} likes`}
+            disabled={likeMutation.isPending || activity.capabilities.canLike === false}
+            onClick={handleLike}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            <Heart aria-hidden="true" className={cn("mr-1 size-4", liked && "fill-current")} />
+            {likes}
           </Button>
-        </div>
-        <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2 xl:grid-cols-4">
-          <MetricPill label="Distance" value={formatDistance(activity.distance_meters)} />
-          <MetricPill label="Duration" value={formatDuration(activity.duration_seconds)} />
-          <MetricPill
-            label="TSS"
-            value={activity.derived?.tss != null ? `${Math.round(activity.derived.tss)}` : "-"}
-          />
-          <MetricPill
-            label="Avg power"
-            value={activity.avg_power != null ? `${Math.round(activity.avg_power)} W` : "-"}
-          />
-        </div>
+          <Button asChild size="sm" variant="ghost">
+            <AppHrefLink
+              aria-label={`Comment on activity ${activity.title}, ${activity.engagement.comments} comments`}
+              href={activityHref}
+            >
+              <MessageCircle aria-hidden="true" className="mr-1 size-4" />
+              {activity.engagement.comments}
+            </AppHrefLink>
+          </Button>
+          <Button
+            aria-label={`Share activity ${activity.title}`}
+            onClick={() => void handleShare()}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            <Share2 aria-hidden="true" className="mr-1 size-4" />
+            Share
+          </Button>
+        </ResourceActionRegion>
       </CardContent>
     </Card>
   );
 }
 
-export function RouteListCard({ onOpen, route }: { onOpen: () => void; route: any }) {
+export function RouteListCard({
+  href,
+  onOpen,
+  route,
+}: {
+  href?: string;
+  onOpen?: () => void;
+  route: RouteListItem;
+}) {
+  const { unitSystem } = useViewingUserPreferredUnitSystem();
+  const coordinates = getCompactRoutePreviewCoordinates(route.polyline);
+
   return (
-    <Card className="transition-colors hover:border-primary/30">
+    <Card
+      className="transition-colors hover:border-primary/30"
+      data-testid={`route-card-${route.id}`}
+    >
       <CardContent className="space-y-4 p-4">
-        <div className="flex items-start gap-3">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary/10">
-            <MapPin className="h-5 w-5 text-primary" />
-          </div>
-          <div className="min-w-0 flex-1 space-y-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-lg font-semibold text-foreground">{route.name}</h3>
+        <ResourceCardHeader
+          accessory={
+            href ? (
+              <Button asChild variant="ghost">
+                <AppHrefLink
+                  aria-label={`Open route ${route.name}`}
+                  data-testid={`route-card-${route.id}-open`}
+                  href={href}
+                >
+                  Open
+                </AppHrefLink>
+              </Button>
+            ) : onOpen ? (
+              <Button
+                data-testid={`route-card-${route.id}-open`}
+                onClick={onOpen}
+                type="button"
+                variant="ghost"
+              >
+                Open
+              </Button>
+            ) : null
+          }
+          description={`Saved ${formatDate(route.created_at)}`}
+          leading={
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary/10">
+              <MapPin className="h-5 w-5 text-primary" />
             </div>
-            <p className="text-sm text-muted-foreground">Saved {formatDate(route.created_at)}</p>
-            {route.description ? (
+          }
+          meta={
+            route.description ? (
               <p className="line-clamp-2 text-sm text-muted-foreground">{route.description}</p>
-            ) : null}
-          </div>
-          <Button onClick={onOpen} type="button" variant="ghost">
-            Open
-          </Button>
+            ) : null
+          }
+          titleContent={
+            href ? (
+              <AppHrefLink className="hover:underline" href={href}>
+                {route.name}
+              </AppHrefLink>
+            ) : (
+              route.name
+            )
+          }
+        />
+        <div data-testid={`route-card-${route.id}-preview`}>
+          <RoutePreviewMap compact coordinates={coordinates} />
         </div>
-        <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2 xl:grid-cols-4">
-          <MetricPill label="Distance" value={formatDistance(route.total_distance)} />
-          <MetricPill label="Ascent" value={formatElevation(route.total_ascent)} />
-          <MetricPill label="Descent" value={formatElevation(route.total_descent)} />
-          <MetricPill label="Visibility" value={route.is_public ? "Public" : "Private"} />
-        </div>
+        <ResourceMetricsRow
+          metrics={[
+            {
+              label: "Distance",
+              value:
+                route.total_distance == null
+                  ? "—"
+                  : formatDistance(route.total_distance, unitSystem),
+            },
+            { label: "Ascent", value: formatElevation(route.total_ascent, unitSystem) },
+            { label: "Descent", value: formatElevation(route.total_descent, unitSystem) },
+            { label: "Visibility", value: route.is_public ? "Public" : "Private" },
+          ]}
+        />
       </CardContent>
     </Card>
   );
 }
 
-export function ActivityEffortListCard({ effort, onOpen }: { effort: any; onOpen: () => void }) {
+export function ActivityEffortListCard({
+  effort,
+  onOpen,
+}: {
+  effort: ActivityEffort;
+  onOpen: () => void;
+}) {
   return (
-    <Card className="transition-colors hover:border-primary/30">
+    <Card
+      className="transition-colors hover:border-primary/30"
+      data-testid={`activity-effort-card-${effort.id}`}
+    >
       <CardContent className="space-y-4 p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="space-y-1">
@@ -277,7 +536,12 @@ export function ActivityEffortListCard({ effort, onOpen }: { effort: any; onOpen
               Manual or imported best-effort reference.
             </p>
           </div>
-          <Button onClick={onOpen} type="button" variant="ghost">
+          <Button
+            data-testid={`activity-effort-card-${effort.id}-open`}
+            onClick={onOpen}
+            type="button"
+            variant="ghost"
+          >
             Open
           </Button>
         </div>
@@ -286,7 +550,7 @@ export function ActivityEffortListCard({ effort, onOpen }: { effort: any; onOpen
           <MetricPill label="Duration" value={formatDuration(effort.duration_seconds)} />
           <MetricPill
             label="Start offset"
-            value={effort.start_offset != null ? formatCompactDuration(effort.start_offset) : "-"}
+            value={formatCompactDuration(effort.start_offset_ms / 1_000)}
           />
         </div>
       </CardContent>
@@ -327,11 +591,22 @@ export function OwnerSummary({
   );
 }
 
-function MetricPill({ label, value }: { label: string; value: string }) {
+function MetricPill({ label, tone, value }: { label: string; tone?: "primary"; value: string }) {
   return (
-    <div className="rounded-xl border border-border bg-muted/20 px-3 py-2">
-      <p className="text-xs uppercase tracking-wide">{label}</p>
-      <p className="mt-1 font-medium text-foreground">{value}</p>
+    <div
+      className={cn(
+        "rounded-xl border border-border bg-muted/20 px-3 py-2",
+        tone === "primary" && "border-primary/30 bg-primary/5",
+      )}
+    >
+      <p className={cn("text-xs uppercase tracking-wide", tone === "primary" && "text-primary")}>
+        {label}
+      </p>
+      <p className={cn("mt-1 font-medium text-foreground", tone === "primary" && "text-primary")}>
+        {value}
+      </p>
     </div>
   );
 }
+
+import type { ActivityDisplayModel, SemanticMetric } from "@repo/core";
