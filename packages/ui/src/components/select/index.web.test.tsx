@@ -14,13 +14,13 @@ import {
 describe("Select web", () => {
   it("renders trigger text and option content", async () => {
     renderWeb(
-      <Select defaultValue={selectFixtures.workoutType.value}>
+      <Select defaultValue={selectFixtures.sessionFocus.value}>
         <SelectTrigger>
-          <SelectValue placeholder={selectFixtures.workoutType.placeholder} />
+          <SelectValue placeholder={selectFixtures.sessionFocus.placeholder} />
         </SelectTrigger>
         <SelectContent>
           <NativeSelectScrollView>
-            {selectFixtures.workoutType.options.map((option) => (
+            {selectFixtures.sessionFocus.options.map((option) => (
               <SelectItem key={option.value} value={option.value}>
                 {option.label}
               </SelectItem>
