@@ -2,6 +2,7 @@ import { addDaysDateKey, planningLedgerRequestSchema } from "@repo/core";
 import type { PlannedSessionComparison } from "@repo/core/calendar";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { ScrollView, View } from "react-native";
+import { completedPlannedSessionsForLedger } from "@/components/plan/ledger/completedPlannedSessions";
 import type { LedgerNavigationTarget } from "@/components/plan/ledger/LedgerEntries";
 import { PlanningLedgerView } from "@/components/plan/ledger/PlanningLedgerView";
 import { ErrorState, LoadingState } from "@/components/shared/ScreenState";
@@ -43,6 +44,9 @@ export default function PlanningLedgerScreen() {
   const plannedActuals: PlannedSessionComparison[] = (calendarQuery.data?.items ?? []).flatMap(
     (item) => (item.plannedActual ? [item.plannedActual] : []),
   );
+  const completedPlannedSessions = query.data
+    ? completedPlannedSessionsForLedger(calendarQuery.data?.items ?? [], query.data)
+    : [];
 
   const openEntry = (target: LedgerNavigationTarget) => {
     const route =
@@ -81,6 +85,7 @@ export default function PlanningLedgerScreen() {
         <ScrollView className="flex-1" contentContainerStyle={{ flexGrow: 1 }}>
           <PlanningLedgerView
             completedActivities={completedActivities}
+            completedPlannedSessions={completedPlannedSessions}
             ledger={query.data}
             onOpenEntry={openEntry}
             plannedActuals={plannedActuals}

@@ -84,6 +84,71 @@ it.each(["day", "week"] as const)("loads the canonical %s Training Breakdown", a
   ).toEqual({ id: "training-composition" });
 });
 
+it("keeps a completed selected-day session reachable through its durable session ID", async () => {
+  calendarRangeQuery.mockReturnValue({
+    data: {
+      items: [
+        {
+          activity: { id: "manual-activity" },
+          calendarDate: "2026-04-15",
+          kind: "planned_activity",
+          metrics: [],
+          plan: null,
+          plannedSession: { id: "session-1" },
+          status: "completed",
+          subtitle: null,
+          title: "Completed plan session",
+        },
+      ],
+    },
+    isError: false,
+    isLoading: false,
+    refetch: jest.fn(),
+  });
+  await renderNative(<PlanningLedgerScreen />);
+
+  const ledgerView = screen.container.queryAll((node) => node.type === "PlanningLedgerView")[0];
+  if (!ledgerView) throw new Error("Expected Planning Ledger view");
+  expect(ledgerView.props.completedPlannedSessions).toEqual([
+    {
+      calendarDate: "2026-04-15",
+      id: "session-1",
+      metrics: [],
+      plan: null,
+      status: "completed",
+      subtitle: null,
+      title: "Completed plan session",
+    },
+  ]);
+});
+
+it("does not pass a stale calendar session from a different ledger day", async () => {
+  calendarRangeQuery.mockReturnValue({
+    data: {
+      items: [
+        {
+          calendarDate: "2026-04-16",
+          kind: "planned_activity",
+          metrics: [],
+          plan: null,
+          plannedSession: { id: "session-other-day" },
+          status: "completed",
+          subtitle: null,
+          title: "Other day",
+        },
+      ],
+    },
+    isError: false,
+    isLoading: false,
+    refetch: jest.fn(),
+  });
+  await renderNative(<PlanningLedgerScreen />);
+
+  const ledgerView = screen.container.queryAll((node) => node.type === "PlanningLedgerView")[0];
+  if (!ledgerView) throw new Error("Expected Planning Ledger view");
+  expect(ledgerView.props.completedPlannedSessions).toEqual([]);
+});
+
 it("opens planned ledger entries through the planned-session detail route", async () => {
   await renderNative(<PlanningLedgerScreen />);
 

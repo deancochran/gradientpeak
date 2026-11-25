@@ -8,6 +8,7 @@ import { Info } from "lucide-react-native";
 import { useEffect, useMemo, useState } from "react";
 import { TouchableOpacity, View } from "react-native";
 import { GoalCard } from "@/components/shared/GoalCard";
+import type { PlannedActivityCardData } from "@/components/shared/PlannedActivityCard";
 import { IntensityDistributionChart } from "./IntensityDistributionChart";
 import { LedgerEntries, type LedgerNavigationTarget } from "./LedgerEntries";
 import { LedgerLoadHero } from "./LedgerLoadHero";
@@ -47,12 +48,14 @@ function formatComparisonDistance(value: number | null) {
 
 export function PlanningLedgerView({
   completedActivities,
+  completedPlannedSessions = [],
   ledger,
   onOpenEntry,
   plannedActuals = [],
   trainingComposition,
 }: {
   completedActivities: readonly ActivityDisplayModel[];
+  completedPlannedSessions?: readonly PlannedActivityCardData[];
   ledger: PlanningLedger;
   onOpenEntry: (target: LedgerNavigationTarget) => void;
   plannedActuals?: readonly PlannedSessionComparison[];
@@ -91,6 +94,23 @@ export function PlanningLedgerView({
     ledger.period === "day" || selectedDate === null
       ? resourceEntries
       : resourceEntries.filter((entry) => entry.date === selectedDate);
+  const visibleCompletedPlannedSessions = useMemo(() => {
+    const seenSessionIds = new Set<string>();
+    return completedPlannedSessions.filter((session) => {
+      if (
+        session.calendarDate < ledger.periodStart ||
+        session.calendarDate > ledger.periodEnd ||
+        (ledger.period === "week" &&
+          selectedDate !== null &&
+          session.calendarDate !== selectedDate) ||
+        seenSessionIds.has(session.id)
+      ) {
+        return false;
+      }
+      seenSessionIds.add(session.id);
+      return true;
+    });
+  }, [completedPlannedSessions, ledger.period, ledger.periodEnd, ledger.periodStart, selectedDate]);
 
   return (
     <View className="gap-7 px-4 pb-8 pt-4" testID="planning-ledger-content">
@@ -159,6 +179,7 @@ export function PlanningLedgerView({
       >
         <LedgerEntries
           completedActivities={completedActivities}
+          completedPlannedSessions={visibleCompletedPlannedSessions}
           entries={visibleResourceEntries}
           onOpenEntry={onOpenEntry}
           period={ledger.period}
