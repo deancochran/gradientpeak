@@ -1,0 +1,549 @@
+import { createHash } from "node:crypto";
+import {
+  canonicalJson,
+  getCalendarDateInIanaZone,
+  ianaTimezoneSchema,
+  type ProjectedTrainingStimulus,
+  type ResolutionManifest,
+  resolvePlanReadinessHorizon,
+  resolvePrescription,
+  scheduledDateTimeToIsoInstant,
+  simulateTrainingPlan,
+} from "@repo/core";
+import { activityPlanSemanticHash, withEphemeralTimedDuration } from "@repo/core/activity-plan";
+import type { PlannedSession } from "@repo/core/calendar";
+import type { DrizzleDbClient } from "@repo/db";
+import { activityPlans } from "@repo/db";
+import { and, eq, inArray, or } from "drizzle-orm";
+import type { z } from "zod";
+import {
+  plannedSessionScenarioPreviewDtoSchema,
+  type plannedSessionScenarioUnavailableReasonSchema,
+  previewPlannedSessionScenarioRequestSchema,
+} from "../../contracts/planned-sessions";
+import { type DrizzleQueryExecutor, withProfileFencedRepeatableReadSnapshot } from "../../db";
+import { createDrizzlePlannedSessionRepository } from "../../infrastructure/repositories";
+import type {
+  ActivityPlanPrescriptionSource,
+  PlannedSessionRepositoryPort,
+} from "../../repositories/planned-session-repository-port";
+import {
+  toVerifiedResolverCandidate,
+  toVerifiedResolverCandidates,
+} from "../activity-plans/resolver-candidate";
+import {
+  activityPlanCanonicalStructureHash,
+  activityPlanStructureHash,
+} from "../activity-plans/structure-hash";
+import { readAthleteReadModel } from "../athlete-intelligence/athlete-read-model";
+import { loadPlanningBaseline } from "../athlete-intelligence/load-planning-baseline";
+import { selectSimulatedSessionsForProjection } from "../training-plan/projection-planning";
+import { resolveCurrentPlannedSessionPlan } from "./resolve-current-planned-session-plan";
+
+const MAX_SCENARIO_SESSIONS = 366;
+const SCENARIO_PROJECTION_POLICY = "planned-session-scenario-v1";
+export const previewPlannedSessionScenarioInputSchema = previewPlannedSessionScenarioRequestSchema;
+export type PlannedSessionScenarioApplyAuthority = {
+  sourcePlan: {
+    id: string;
+    revision: number;
+    structureHash: string;
+    semanticHash: string;
+  };
+};
+
+const unavailable = (reason: z.output<typeof plannedSessionScenarioUnavailableReasonSchema>) => ({
+  status: "unavailable" as const,
+  reason,
+});
+const stale = (
+  reason: "session_revision" | "plan_revision" | "state_revision",
+  current: { sessionRevision?: number; planRevision?: number; stateRevision?: number } = {},
+) => ({
+  status: "stale" as const,
+  reason,
+  currentSessionRevision: current.sessionRevision ?? null,
+  currentPlanRevision: current.planRevision ?? null,
+  currentStateRevision: current.stateRevision ?? null,
+});
+
+function demandForPlan(plan: ActivityPlanPrescriptionSource) {
+  return {
+    activity_category: plan.structure.activity_category,
+    training_intent: plan.trainingIntent,
+    target_duration_minutes: null,
+    target_common_load: null,
+    importance: "normal" as const,
+  };
+}
+
+function fingerprintPlanningBaseline(
+  baseline: Awaited<ReturnType<typeof loadPlanningBaseline>>,
+  planningDate: string,
+) {
+  if (baseline.status === "no_context") return { status: baseline.status, planningDate };
+
+  const { context } = baseline;
+  const normalizeUnknownFitnessFact = <T extends { source: string; recordedAt: string | null }>(
+    fact: T,
+  ) => (fact.source === "unknown" ? { ...fact, recordedAt: null } : fact);
+  const {
+    asOf: _targetAsOf,
+    thresholds,
+    heartRate,
+    ...performanceTargetFacts
+  } = context.performanceTargets;
+  const withoutElapsedAge = <T extends { ageSeconds: number | null }>(fact: T) => {
+    const { ageSeconds: _ageSeconds, ...stableFact } = fact;
+    return stableFact;
+  };
+
+  return {
+    status: baseline.status,
+    revision: baseline.revision,
+    context: {
+      demographics: context.demographics,
+      body: context.body,
+      physiology: {
+        ...context.physiology,
+        currentFitnessLongTermLoad: normalizeUnknownFitnessFact(
+          context.physiology.currentFitnessLongTermLoad,
+        ),
+        currentFatigueRecentLoad: normalizeUnknownFitnessFact(
+          context.physiology.currentFatigueRecentLoad,
+        ),
+        currentFormLoadBalance: normalizeUnknownFitnessFact(
+          context.physiology.currentFormLoadBalance,
+        ),
+      },
+      wellness: context.wellness,
+      efforts: context.efforts,
+      evidence: {
+        metricCount: context.evidence.metricCount,
+        effortCount: context.evidence.effortCount,
+        missingFields: context.evidence.missingFields,
+        profileMetricsCoverage: context.evidence.profileMetricsCoverage,
+        activityEffortsCoverage: context.evidence.activityEffortsCoverage,
+        excludedFutureMetricCount: context.evidence.excludedFutureMetricCount,
+        excludedFutureEffortCount: context.evidence.excludedFutureEffortCount,
+      },
+      performanceTargets: {
+        ...performanceTargetFacts,
+        thresholds: {
+          bike: withoutElapsedAge(thresholds.bike),
+          run: withoutElapsedAge(thresholds.run),
+          swim: withoutElapsedAge(thresholds.swim),
+        },
+        heartRate: {
+          bike: {
+            lthr: withoutElapsedAge(heartRate.bike.lthr),
+            maxHr: withoutElapsedAge(heartRate.bike.maxHr),
+          },
+          run: {
+            lthr: withoutElapsedAge(heartRate.run.lthr),
+            maxHr: withoutElapsedAge(heartRate.run.maxHr),
+          },
+          swim: {
+            lthr: withoutElapsedAge(heartRate.swim.lthr),
+            maxHr: withoutElapsedAge(heartRate.swim.maxHr),
+          },
+        },
+      },
+    },
+  };
+}
+
+/**
+ * Read-only comparison authority. It resolves every remaining scheduled session
+ * from the current plan reference; persisted snapshots are provenance only.
+ */
+export async function previewPlannedSessionScenario(input: {
+  db: DrizzleDbClient;
+  profileId: string;
+  values: z.input<typeof previewPlannedSessionScenarioInputSchema>;
+  now: Date;
+  createRepository?: typeof createDrizzlePlannedSessionRepository;
+}) {
+  const values = previewPlannedSessionScenarioInputSchema.parse(input.values);
+  const createRepository = input.createRepository ?? createDrizzlePlannedSessionRepository;
+  return withProfileFencedRepeatableReadSnapshot(input.db, input.profileId, (tx) =>
+    derivePlannedSessionScenario({
+      db: tx,
+      repository: createRepository(tx),
+      profileId: input.profileId,
+      values,
+      now: input.now,
+    }),
+  );
+}
+
+export async function derivePlannedSessionScenario(input: {
+  db: DrizzleQueryExecutor;
+  repository: PlannedSessionRepositoryPort;
+  profileId: string;
+  values: z.input<typeof previewPlannedSessionScenarioInputSchema>;
+  now: Date;
+  authoritySink?: { current?: PlannedSessionScenarioApplyAuthority };
+}) {
+  const values = previewPlannedSessionScenarioInputSchema.parse(input.values);
+  const selected = await input.repository.getOwned({
+    profileId: input.profileId,
+    sessionId: values.sessionId,
+  });
+  if (!selected) return unavailable("session_not_found");
+  if (selected.lifecycle.status !== "scheduled") return unavailable("session_not_scheduled");
+  if (selected.sessionRevision !== values.expectedSessionRevision)
+    return stale("session_revision", { sessionRevision: selected.sessionRevision });
+
+  const readModel = await readAthleteReadModel({
+    db: input.db,
+    profileId: input.profileId,
+    now: input.now,
+    sections: {
+      publishedState: true,
+      status: true,
+      currentBaseline: { includePlanningContext: false },
+    },
+  });
+  if (readModel.publishedRevision !== values.expectedStateRevision)
+    return stale(
+      "state_revision",
+      readModel.publishedRevision === null ? {} : { stateRevision: readModel.publishedRevision },
+    );
+  const simulationBaseline = readModel.currentBaseline?.baseline;
+  if (!simulationBaseline || !readModel.currentBaseline?.planningTimezone)
+    return unavailable("baseline_unavailable");
+  const timezone = ianaTimezoneSchema.safeParse(readModel.currentBaseline.planningTimezone);
+  if (!timezone.success) return unavailable("planning_timezone_unavailable");
+
+  const today = getCalendarDateInIanaZone(input.now.toISOString(), timezone.data);
+  if (selected.planningDate < today) return unavailable("session_in_past");
+  const baselineDate = getCalendarDateInIanaZone(simulationBaseline.asOf, timezone.data);
+  const startDate = baselineDate > today ? baselineDate : today;
+  const endDate = new Date(`${startDate}T00:00:00.000Z`);
+  endDate.setUTCDate(endDate.getUTCDate() + MAX_SCENARIO_SESSIONS - 1);
+  if (selected.planningDate > endDate.toISOString().slice(0, 10))
+    return unavailable("horizon_exceeds_limit");
+  const range = await input.repository.listOwnedRange({
+    profileId: input.profileId,
+    startDate,
+    endDate: endDate.toISOString().slice(0, 10),
+    limit: MAX_SCENARIO_SESSIONS,
+  });
+  if (range.truncated) return unavailable("horizon_exceeds_limit");
+  const sessions = range.items.filter((session) => session.lifecycle.status === "scheduled");
+  if (!sessions.some((session) => session.id === selected.id))
+    return unavailable("session_not_scheduled");
+
+  const currentPlans = await Promise.all(
+    sessions.map(async (session) => ({
+      session,
+      plan: await resolveCurrentPlannedSessionPlan({
+        repository: input.repository,
+        profileId: input.profileId,
+        session,
+      }),
+    })),
+  );
+  const resolvedPlans = currentPlans.flatMap(({ session, plan }) =>
+    plan && activityPlanCanonicalStructureHash(plan.structure) === plan.structureHash
+      ? [{ session, plan }]
+      : [],
+  );
+  if (resolvedPlans.length !== currentPlans.length) return unavailable("current_plan_unavailable");
+  const selectedPlan = resolvedPlans.find(({ session }) => session.id === selected.id)?.plan;
+  if (!selectedPlan) return unavailable("current_plan_unavailable");
+  if (selectedPlan.revision !== values.expectedPlanRevision)
+    return stale("plan_revision", { planRevision: selectedPlan.revision });
+
+  const replacementId =
+    values.scenario.kind === "substitute" ? values.scenario.activityPlanId : null;
+  const ids = new Set(resolvedPlans.map(({ plan }) => plan.id));
+  if (replacementId) ids.add(replacementId);
+  const candidateRows = await input.db
+    .select()
+    .from(activityPlans)
+    .where(
+      and(
+        inArray(activityPlans.id, [...ids]),
+        or(
+          eq(activityPlans.profile_id, input.profileId),
+          eq(activityPlans.content_visibility, "public"),
+          eq(activityPlans.is_system_template, true),
+        ),
+      ),
+    )
+    .limit(ids.size + 1);
+  if (candidateRows.length !== ids.size) return unavailable("candidate_unavailable");
+  let candidates: ReturnType<typeof toVerifiedResolverCandidates>;
+  try {
+    candidates = toVerifiedResolverCandidates(
+      candidateRows.map((row) => ({
+        id: row.id,
+        revision: row.revision,
+        structure: row.structure,
+        structureHash: row.structure_hash,
+        semanticHash: row.semantic_hash,
+        trainingIntent: row.training_intent,
+      })),
+      [...ids],
+    );
+  } catch {
+    return unavailable("candidate_unavailable");
+  }
+  const baseline = await loadPlanningBaseline({
+    db: input.db,
+    profileId: input.profileId,
+    now: input.now,
+  });
+  const resolve = (
+    session: PlannedSession,
+    plan: ActivityPlanPrescriptionSource,
+    alternative: boolean,
+  ) => {
+    const baselineResolution = resolvePrescription({
+      demand: demandForPlan(plan),
+      activity_plan_id: plan.id,
+      preferences: {
+        weekly_session_count: null,
+        target_weekly_duration_minutes: null,
+        maximum_session_duration_minutes: null,
+        preferred_weekdays: [],
+        rest_days: [],
+        progression_style: null,
+        recovery_priority: null,
+      },
+      baseline,
+      planning_weekday: new Date(`${session.planningDate}T00:00:00.000Z`).getUTCDay(),
+      candidates: candidates.filter((candidate) => candidate.id === plan.id),
+    });
+    if (baselineResolution.status !== "resolved") return baselineResolution;
+    if (!alternative || session.id !== selected.id || values.scenario.kind === "as_planned")
+      return baselineResolution;
+    if (values.scenario.kind === "skip") return baselineResolution;
+    if (values.scenario.kind === "substitute") {
+      const replacement = candidates.find((candidate) => candidate.id === replacementId);
+      if (!replacement)
+        return {
+          status: "unsupported" as const,
+          reasons: [
+            {
+              code: "explicit_plan_missing" as const,
+              message: "The selected replacement is unavailable.",
+            },
+          ],
+        };
+      return resolvePrescription({
+        demand: {
+          activity_category: replacement.activity_category,
+          training_intent: replacement.training_intent,
+          target_duration_minutes: null,
+          target_common_load: null,
+          importance: "normal",
+        },
+        activity_plan_id: replacement.id,
+        preferences: {
+          weekly_session_count: null,
+          target_weekly_duration_minutes: null,
+          maximum_session_duration_minutes: null,
+          preferred_weekdays: [],
+          rest_days: [],
+          progression_style: null,
+          recovery_priority: null,
+        },
+        baseline,
+        planning_weekday: new Date(`${session.planningDate}T00:00:00.000Z`).getUTCDay(),
+        candidates: [replacement],
+      });
+    }
+    const transformed = withEphemeralTimedDuration({
+      structure: plan.structure,
+      targetDurationSeconds: values.scenario.targetDurationSeconds,
+    });
+    if (transformed.status !== "transformed")
+      return {
+        status: "unsupported" as const,
+        reasons: [{ code: "unsupported_duration" as const, message: transformed.reason }],
+      };
+    const ephemeral = toVerifiedResolverCandidate({
+      id: plan.id,
+      revision: plan.revision,
+      structure: transformed.structure,
+      structureHash: activityPlanStructureHash(transformed.structure),
+      semanticHash: activityPlanSemanticHash({
+        structure: transformed.structure,
+        trainingIntent: plan.trainingIntent,
+      }),
+      trainingIntent: plan.trainingIntent,
+    });
+    return resolvePrescription({
+      demand: demandForPlan(plan),
+      activity_plan_id: plan.id,
+      preferences: {
+        weekly_session_count: null,
+        target_weekly_duration_minutes: null,
+        maximum_session_duration_minutes: null,
+        preferred_weekdays: [],
+        rest_days: [],
+        progression_style: null,
+        recovery_priority: null,
+      },
+      baseline,
+      planning_weekday: new Date(`${session.planningDate}T00:00:00.000Z`).getUTCDay(),
+      candidates: [ephemeral],
+    });
+  };
+  let selectedAlternative: {
+    activityPlanId: string;
+    activityPlanRevision: number;
+    structure: ActivityPlanPrescriptionSource["structure"];
+    manifest: ResolutionManifest;
+  } | null = null;
+  const toStimuli = (alternative: boolean): ProjectedTrainingStimulus[] | null => {
+    const stimuli: Array<ProjectedTrainingStimulus & { planningDate: string; isUntimed: boolean }> =
+      [];
+    for (const { session, plan } of resolvedPlans) {
+      if (alternative && session.id === selected.id && values.scenario.kind === "skip") continue;
+      const result = resolve(session, plan, alternative);
+      if (
+        result.status !== "resolved" ||
+        result.manifest.prescription_estimate.common_load.value === null
+      )
+        return null;
+      if (alternative && session.id === selected.id && values.scenario.kind !== "skip") {
+        selectedAlternative = {
+          activityPlanId: result.manifest.activity_plan_id,
+          activityPlanRevision: result.manifest.activity_plan_revision,
+          structure: result.manifest.resolved_structure,
+          manifest: result.manifest,
+        };
+      }
+      stimuli.push({
+        kind: "projected",
+        sourceId: session.id,
+        scheduledAt: scheduledDateTimeToIsoInstant({
+          scheduledDate: session.planningDate,
+          time: "00:00",
+          timeZone: timezone.data,
+        }),
+        planningDate: session.planningDate,
+        isUntimed: true,
+        activityCategory: result.manifest.resolved_structure.activity_category,
+        commonLoad: result.manifest.prescription_estimate.common_load.value,
+      });
+    }
+    return selectSimulatedSessionsForProjection({
+      baselineAsOf: simulationBaseline.asOf,
+      planningTimezone: timezone.data,
+      sessions: stimuli,
+    });
+  };
+  const baselineStimuli = toStimuli(false);
+  const alternativeStimuli = toStimuli(true);
+  if (!baselineStimuli || !alternativeStimuli) return unavailable("prescription_unavailable");
+  const simulationAt = resolvePlanReadinessHorizon({
+    baselineAsOf: simulationBaseline.asOf,
+    plannedSessions: baselineStimuli,
+    goal: null,
+  });
+  const simulate = (plannedSessions: ProjectedTrainingStimulus[]) =>
+    simulateTrainingPlan({
+      baseline: simulationBaseline,
+      plannedSessions,
+      simulationAt,
+      planningTimezone: timezone.data,
+      goal: null,
+    });
+  const previewFingerprint = `v1:sha256:${createHash("sha256")
+    .update(
+      canonicalJson({
+        policy: {
+          version: SCENARIO_PROJECTION_POLICY,
+          maxScenarioSessions: MAX_SCENARIO_SESSIONS,
+          resolution: "current_activity_plan",
+        },
+        scenario: values.scenario,
+        selected: {
+          id: selected.id,
+          sessionRevision: selected.sessionRevision,
+          planningDate: selected.planningDate,
+        },
+        planning: {
+          planningDate: today,
+          timezone: timezone.data,
+          startDate,
+          endDate: endDate.toISOString().slice(0, 10),
+        },
+        publishedState: {
+          revision: readModel.publishedRevision,
+          algorithmVersion: readModel.algorithmVersion ?? null,
+        },
+        // This server-only input captures evidence, observations, and preferences
+        // that can change the canonical prescription without a state-revision bump.
+        // Its explicit fingerprint projection excludes only runtime elapsed clocks
+        // while retaining their semantic freshness/expiry state and all persisted
+        // evidence values and timestamps.
+        planningBaseline: fingerprintPlanningBaseline(baseline, today),
+        sessions: resolvedPlans
+          .map(({ session, plan }) => ({
+            id: session.id,
+            lifecycle: session.lifecycle,
+            planningDate: session.planningDate,
+            sessionRevision: session.sessionRevision,
+            plan: {
+              id: plan.id,
+              revision: plan.revision,
+              structureHash: plan.structureHash,
+              semanticHash: plan.semanticHash,
+            },
+          }))
+          .sort((left, right) => left.id.localeCompare(right.id)),
+        candidates: candidates
+          .map((candidate) => ({
+            id: candidate.id,
+            revision: candidate.revision,
+            structureHash: activityPlanStructureHash(candidate.structure),
+            semanticHash: candidate.semantic_hash,
+          }))
+          .sort((left, right) => left.id.localeCompare(right.id)),
+      }),
+    )
+    .digest("hex")}`;
+  const sourcePlan =
+    values.scenario.kind === "substitute"
+      ? candidates.find((candidate) => candidate.id === replacementId)
+      : selectedPlan;
+  if (!sourcePlan) return unavailable("candidate_unavailable");
+  if (input.authoritySink) {
+    input.authoritySink.current = {
+      sourcePlan: {
+        id: sourcePlan.id,
+        revision: sourcePlan.revision,
+        structureHash: activityPlanStructureHash(sourcePlan.structure),
+        semanticHash:
+          "semanticHash" in sourcePlan ? sourcePlan.semanticHash : sourcePlan.semantic_hash,
+      },
+    };
+  }
+  return plannedSessionScenarioPreviewDtoSchema.parse({
+    status: "available" as const,
+    previewFingerprint,
+    selectedSession: {
+      id: selected.id,
+      sessionRevision: selected.sessionRevision,
+      planningDate: selected.planningDate,
+    },
+    stateRevision: readModel.publishedRevision,
+    freshness: readModel.status?.freshness ?? "unavailable",
+    horizon: { startDate: selected.planningDate, simulationAt, sessionCount: sessions.length },
+    scenario: values.scenario,
+    baseline: simulate(baselineStimuli),
+    alternative: simulate(alternativeStimuli),
+    provenance: {
+      resolution: "current_activity_plan",
+      selectedPlan: { id: selectedPlan.id, revision: selectedPlan.revision },
+      historicalSnapshots: "provenance_only" as const,
+      selectedAlternative,
+    },
+  });
+}

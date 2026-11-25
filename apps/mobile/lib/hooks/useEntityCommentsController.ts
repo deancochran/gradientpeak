@@ -1,13 +1,7 @@
+import type { SocialCommentEntityType } from "@repo/core";
 import { skipToken } from "@tanstack/react-query";
 import { Alert } from "react-native";
 import { api } from "@/lib/api";
-
-export type SocialCommentEntityType =
-  | "activity"
-  | "training_plan"
-  | "activity_plan"
-  | "route"
-  | "event";
 
 function isValidUuid(value: string): boolean {
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -37,7 +31,7 @@ export function useEntityCommentsController({
         }
       : skipToken,
     {
-      getNextPageParam: (lastPage: any) => lastPage.nextCursor,
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
     },
   );
 
@@ -66,10 +60,16 @@ export function useEntityCommentsController({
   return {
     addCommentPending: addCommentMutation.isPending,
     commentCount: commentsQuery.data?.pages[0]?.total ?? 0,
-    comments: commentsQuery.data?.pages.flatMap((page: any) => page.comments) ?? [],
+    comments: commentsQuery.data?.pages.flatMap((page) => page.comments) ?? [],
     handleAddComment,
     hasMoreComments: commentsQuery.hasNextPage ?? false,
+    isLoadingComments: commentsQuery.isLoading,
     isLoadingMoreComments: commentsQuery.isFetchingNextPage,
+    commentsError: commentsQuery.isError
+      ? commentsQuery.error instanceof Error
+        ? commentsQuery.error.message
+        : "Comments could not be loaded."
+      : null,
     loadMoreComments: () => {
       if (commentsQuery.hasNextPage && !commentsQuery.isFetchingNextPage) {
         void commentsQuery.fetchNextPage();

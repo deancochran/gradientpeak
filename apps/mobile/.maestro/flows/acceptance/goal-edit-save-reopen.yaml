@@ -1,0 +1,68 @@
+appId: com.deancochran.gradientpeak.dev
+name: Athlete saves a repaired Goal edit and returns through its original Calendar date
+---
+- tapOn:
+    id: goal-detail-options-trigger
+- tapOn:
+    id: goal-detail-options-edit
+- extendedWaitUntil:
+    visible:
+      id: goal-edit-screen
+    timeout: 30000
+# Name is the real keyboard-backed native form field. The runner asserts the
+# persisted value through the real disposable database after this flow.
+- tapOn:
+    id: goal-editor-title-input
+- eraseText: 200
+- inputText: ${MAESTRO_ACCEPTANCE_SAVED_GOAL_TITLE}
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: goal-duration
+    direction: DOWN
+- tapOn:
+    id: goal-duration
+- tapOn:
+    id: goal-duration-seconds
+- tapOn: "1"
+- tapOn: "Done Duration"
+- scrollUntilVisible:
+    element:
+      id: goal-distance
+    direction: DOWN
+- tapOn:
+    id: goal-distance
+- tapOn:
+    id: Clear Distance (optional)
+- tapOn: Done Distance (optional)
+- takeScreenshot: goal-edit-repaired-before-save
+- tapOn:
+    id: goal-edit-submit
+- extendedWaitUntil:
+    visible:
+      id: goal-detail-card
+    timeout: 30000
+- assertVisible: ${MAESTRO_ACCEPTANCE_SAVED_GOAL_TITLE}
+- takeScreenshot: goal-edit-saved-detail
+# Reopen the saved canonical detail from its original date, then Back to prove
+# that neither save nor reopen changed the Calendar's selected date.
+- pressKey: back
+- extendedWaitUntil:
+    visible:
+      id: planning-ledger-milestone-${MAESTRO_ACCEPTANCE_GOAL_ID}
+    timeout: 30000
+- tapOn:
+    id: planning-ledger-milestone-${MAESTRO_ACCEPTANCE_GOAL_ID}
+- extendedWaitUntil:
+    visible:
+      id: goal-detail-card
+    timeout: 30000
+- assertVisible: ${MAESTRO_ACCEPTANCE_SAVED_GOAL_TITLE}
+- takeScreenshot: goal-edit-reopened-detail
+- pressKey: back
+- extendedWaitUntil:
+    visible:
+      id: planning-ledger-milestone-${MAESTRO_ACCEPTANCE_GOAL_ID}
+    timeout: 30000
+- assertVisible: ${MAESTRO_ACCEPTANCE_SAVED_GOAL_TITLE}
+- takeScreenshot: goal-edit-original-calendar-date

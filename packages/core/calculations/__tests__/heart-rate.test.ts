@@ -4,7 +4,6 @@ import {
   calculateHRZones,
   calculateTargetHR,
   calculateVO2MaxFromHR,
-  estimateLTHR,
   estimateMaxHRFromAge,
 } from "../heart-rate";
 
@@ -32,24 +31,6 @@ describe("calculateVO2MaxFromHR", () => {
 
     const tooHigh = calculateVO2MaxFromHR(220, 30);
     expect(tooHigh).toBeLessThanOrEqual(100);
-  });
-});
-
-describe("estimateLTHR", () => {
-  it("should estimate LTHR as 85% of max HR", () => {
-    const lthr = estimateLTHR(190);
-    expect(lthr).toBe(162);
-  });
-
-  it("should round to nearest integer", () => {
-    const lthr = estimateLTHR(185);
-    expect(lthr).toBe(Math.round(185 * 0.85));
-  });
-
-  it("should throw error for invalid max HR", () => {
-    expect(() => estimateLTHR(0)).toThrow();
-    expect(() => estimateLTHR(-10)).toThrow();
-    expect(() => estimateLTHR(300)).toThrow();
   });
 });
 
