@@ -1,8 +1,10 @@
 import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
 import { Text } from "@repo/ui/components/text";
+import { formatGoalGap } from "@repo/ui/lib/goal-progress-presentation";
 import { TouchableOpacity, View } from "react-native";
 import {
   buildGoalTrajectoryAnswer,
+  formatPlanThresholdValue,
   type PlanGoalProgressResult,
 } from "./planDashboardPresentation";
 
@@ -72,6 +74,19 @@ export function PlanGoalTrajectory({
       ? readinessStatus.replaceAll("_", " ")
       : "unavailable";
   const attention = attentionStatement(progress?.status);
+  const evidenceSummary =
+    !progressLoading && !progressError && progress && progress.status !== "unsupported"
+      ? {
+          current: progress.current
+            ? formatPlanThresholdValue(progress.target.activityCategory, progress.current.value)
+            : "Unavailable",
+          gap: formatGoalGap(progress),
+          target: formatPlanThresholdValue(
+            progress.target.activityCategory,
+            progress.target.targetValue,
+          ),
+        }
+      : null;
   const emptyPortfolio = totalGoalCount === 0;
   const showCreate = !portfolioLoading && !portfolioError && emptyPortfolio;
   const emptyHeading = portfolioLoading
@@ -88,6 +103,20 @@ export function PlanGoalTrajectory({
       : emptyPortfolio
         ? "Add a goal to connect training trends to a target and date."
         : "Your saved goals are past their target date. Open Goals to review them.";
+  const selectedGoalAccessibilityLabel = selectedGoal
+    ? [
+        `Priority active goal ${selectedGoal.title}`,
+        `Target date ${selectedGoal.targetDate}`,
+        trajectory,
+        evidenceSummary &&
+          `Current ${evidenceSummary.current}. Target ${evidenceSummary.target}. Remaining gap ${evidenceSummary.gap}`,
+        `Readiness ${readiness}`,
+        attention,
+        coherenceLabel ?? "Goal signal freshness unavailable",
+      ]
+        .filter(Boolean)
+        .join(". ")
+    : null;
 
   return (
     <View className="gap-3" testID="plan-goal-trajectory">
@@ -95,7 +124,7 @@ export function PlanGoalTrajectory({
         <View className="gap-2">
           <View className="flex-row items-start gap-2">
             <TouchableOpacity
-              accessibilityLabel={`Priority active goal ${selectedGoal.title}. Target date ${selectedGoal.targetDate}. ${trajectory}. Readiness ${readiness}. ${attention}. ${coherenceLabel ?? "Goal signal freshness unavailable."}`}
+              accessibilityLabel={selectedGoalAccessibilityLabel ?? undefined}
               accessibilityRole="button"
               className="min-w-0 flex-1 gap-2 rounded-2xl border border-border bg-card p-4"
               onPress={() => onOpenGoal(selectedGoal.id)}
@@ -110,6 +139,22 @@ export function PlanGoalTrajectory({
               </Text>
               <View className="gap-1 border-t border-border pt-2">
                 <Text className="text-sm font-semibold text-foreground">{trajectory}</Text>
+                {evidenceSummary ? (
+                  <View
+                    className="flex-row flex-wrap gap-x-3 gap-y-1"
+                    testID="plan-goal-evidence-summary"
+                  >
+                    <Text className="text-sm text-foreground">
+                      Current: {evidenceSummary.current}
+                    </Text>
+                    <Text className="text-sm text-foreground">
+                      Target: {evidenceSummary.target}
+                    </Text>
+                    <Text className="text-sm text-foreground">
+                      Remaining gap: {evidenceSummary.gap}
+                    </Text>
+                  </View>
+                ) : null}
                 <Text className="text-sm text-muted-foreground">Readiness: {readiness}</Text>
                 <Text className="text-sm text-muted-foreground">{attention}</Text>
               </View>
