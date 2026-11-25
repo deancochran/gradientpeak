@@ -9,6 +9,11 @@ name: Compare and cancel a selected planned-session scenario
     visible:
       id: calendar-screen-ready
     timeout: 30000
+# The retained candidate preserves its last calendar month across disposable
+# runs. Reset it to the device's verified current date before selecting the
+# fixture's tomorrow occurrence.
+- tapOn:
+    id: calendar-reset-today-entry
 # The fixture schedules exactly tomorrow, which is always present in the
 # current Calendar month's 42-day semantic grid, including month boundaries.
 - tapOn:
