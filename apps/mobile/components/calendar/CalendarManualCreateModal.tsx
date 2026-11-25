@@ -1,3 +1,8 @@
+import {
+  DEFAULT_WEEKLY_COUNT_RECURRENCE,
+  serializeWeeklyCountRecurrence,
+  type WeeklyCountRecurrence,
+} from "@repo/core/recurrence";
 import { Button } from "@repo/ui/components/button";
 import {
   Form,
@@ -6,14 +11,19 @@ import {
   FormTextareaField,
   FormTextField,
   FormTimeInputField,
+  FormTimezoneField,
 } from "@repo/ui/components/form";
 import { LoadingButton } from "@repo/ui/components/loading";
+import { RecurrenceFields } from "@repo/ui/components/recurrence-fields";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
-import { format } from "date-fns";
-import { useEffect, useState } from "react";
-import { Modal, Pressable, ScrollView, TouchableOpacity, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { Modal, ScrollView, TouchableOpacity, View } from "react-native";
 import { z } from "zod";
+import { InlineNotice } from "@/components/shared/LayoutPrimitives";
+import { getDetectedDeviceTimeZone } from "@/lib/calendar/eventSchedule";
+import { useDirtyCloseGuard } from "@/lib/hooks/useDirtyCloseGuard";
+import { omitUndefined } from "@/lib/omitUndefined";
 
 export type ManualEventCreateType = "race_target" | "custom";
 
@@ -23,6 +33,7 @@ type CalendarManualCreateFormValues = {
   scheduled_date: string;
   scheduled_time: string | null;
   all_day: boolean;
+  timezone: string | null;
 };
 
 const calendarManualCreateSchema = z.object({
@@ -34,6 +45,7 @@ const calendarManualCreateSchema = z.object({
     .regex(/^\d{2}:\d{2}$/)
     .nullable(),
   all_day: z.boolean(),
+  timezone: z.string().min(1, "Choose the event time zone.").nullable(),
 });
 
 type CalendarManualCreateModalProps = {
@@ -47,36 +59,25 @@ type CalendarManualCreateModalProps = {
     createType: ManualEventCreateType;
     title: string;
     notes: string;
+    scheduledDate: string;
     startsAt: Date;
     allDay: boolean;
+    timezone: string;
     recurrence?: { rule: string; timezone: string };
   }) => void;
 };
-
-function getRRuleWeekday(dateKey: string): string {
-  const day = new Date(`${dateKey}T00:00:00.000Z`).getUTCDay();
-  return ["SU", "MO", "TU", "WE", "TH", "FR", "SA"][day] ?? "MO";
-}
-
-function buildWeeklyRecurrence(dateKey: string, occurrenceCount: number) {
-  return {
-    rule: `FREQ=WEEKLY;INTERVAL=1;COUNT=${occurrenceCount};BYDAY=${getRRuleWeekday(dateKey)}`,
-    timezone: "UTC",
-  };
-}
 
 function buildInitialValues(
   activeDate: string,
   _createType: ManualEventCreateType,
 ): CalendarManualCreateFormValues {
-  const startsAt = new Date(`${activeDate}T09:00:00.000Z`);
-
   return {
     title: "",
     notes: null,
     scheduled_date: activeDate,
-    scheduled_time: format(startsAt, "HH:mm"),
+    scheduled_time: null,
     all_day: false,
+    timezone: null,
   };
 }
 
@@ -86,22 +87,19 @@ function buildStartsAt(input: {
   allDay: boolean;
 }) {
   const [year, month, day] = input.scheduledDate.split("-").map(Number);
-  const startsAt = new Date(
+  const [scheduledHours, scheduledMinutes] = input.scheduledTime?.split(":").map(Number) ?? [];
+
+  return new Date(
     year ?? 1970,
     (month ?? 1) - 1,
     day ?? 1,
-    input.allDay ? 9 : 0,
-    0,
+    // All-day events are keyed by scheduledDate. Noon is only a local Date carrier for callers
+    // that still require an instant; it is never presented or persisted as an appointment time.
+    input.allDay ? 12 : (scheduledHours ?? 0),
+    input.allDay ? 0 : (scheduledMinutes ?? 0),
     0,
     0,
   );
-
-  if (!input.allDay && input.scheduledTime) {
-    const [hours, minutes] = input.scheduledTime.split(":").map(Number);
-    startsAt.setHours(hours ?? 0, minutes ?? 0, 0, 0);
-  }
-
-  return startsAt;
 }
 
 function getManualCreateTitle(createType: ManualEventCreateType): string {
@@ -131,8 +129,9 @@ export function CalendarManualCreateModal({
   onClose,
   onSubmit,
 }: CalendarManualCreateModalProps) {
-  const [repeatWeekly, setRepeatWeekly] = useState(false);
-  const [repeatOccurrenceCount, setRepeatOccurrenceCount] = useState(4);
+  const [recurrence, setRecurrence] = useState<WeeklyCountRecurrence>({
+    ...DEFAULT_WEEKLY_COUNT_RECURRENCE,
+  });
   const form = useZodForm({
     schema: calendarManualCreateSchema,
     defaultValues: buildInitialValues(activeDate, createType ?? "custom"),
@@ -140,40 +139,66 @@ export function CalendarManualCreateModal({
 
   const title = form.watch("title");
   const allDay = form.watch("all_day");
+  const wasVisibleRef = useRef(false);
+  const createTypeRef = useRef<ManualEventCreateType | null>(null);
 
   useEffect(() => {
-    if (!visible || !createType) {
+    if (!visible) {
+      wasVisibleRef.current = false;
       return;
     }
 
+    if (!createType || (wasVisibleRef.current && createTypeRef.current === createType)) return;
     form.reset(buildInitialValues(activeDate, createType));
-    setRepeatWeekly(false);
-    setRepeatOccurrenceCount(4);
+    setRecurrence({ ...DEFAULT_WEEKLY_COUNT_RECURRENCE });
+    wasVisibleRef.current = true;
+    createTypeRef.current = createType;
   }, [activeDate, createType, form, visible]);
 
   const submitForm = useZodFormSubmit<CalendarManualCreateFormValues>({
     form,
     onSubmit: async (data) => {
       if (!createType) return;
+      if (!data.timezone) {
+        form.setError("timezone", { message: "Choose the event time zone." });
+        return;
+      }
+      if (!data.all_day && !data.scheduled_time) {
+        form.setError("scheduled_time", {
+          message: "Choose a start time or mark this event all day.",
+        });
+        return;
+      }
+
+      const startsAt = buildStartsAt({
+        scheduledDate: data.scheduled_date,
+        scheduledTime: data.scheduled_time,
+        allDay: data.all_day,
+      });
 
       onSubmit({
         createType,
         title: data.title,
         notes: data.notes ?? "",
-        startsAt: buildStartsAt({
-          scheduledDate: data.scheduled_date,
-          scheduledTime: data.scheduled_time,
-          allDay: data.all_day,
-        }),
+        scheduledDate: data.scheduled_date,
+        startsAt,
         allDay: data.all_day,
-        recurrence: repeatWeekly
-          ? buildWeeklyRecurrence(data.scheduled_date, repeatOccurrenceCount)
-          : undefined,
+        timezone: data.timezone,
+        ...omitUndefined({
+          recurrence: serializeWeeklyCountRecurrence({
+            recurrence,
+            startInstant: startsAt,
+          }),
+        }),
       });
     },
   });
 
   const canSubmit = !!createType && !submitting && title.trim().length > 0;
+  const requestClose = useDirtyCloseGuard({
+    isDirty: form.formState.isDirty,
+    isPending: submitting,
+  });
   const submitButtonState = submitForm.getSubmitButtonState({
     disabled: !canSubmit,
     label: "Create Event",
@@ -185,17 +210,22 @@ export function CalendarManualCreateModal({
   }
 
   return (
-    <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    <Modal
+      visible
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={() => requestClose(onClose)}
+    >
       <View className="flex-1 bg-background">
         <View className="flex-row items-center justify-between border-b border-border px-4 py-4">
           <Text className="text-lg font-semibold">{getManualCreateTitle(createType)}</Text>
           <TouchableOpacity
-            onPress={onClose}
+            onPress={() => requestClose(onClose)}
             className="rounded-md bg-muted px-3 py-2"
             activeOpacity={0.8}
             testID="close-manual-create"
           >
-            <Text className="text-xs">Close</Text>
+            <Text className="text-xs text-foreground">Close</Text>
           </TouchableOpacity>
         </View>
 
@@ -231,6 +261,14 @@ export function CalendarManualCreateModal({
                   testId="manual-create-all-day-toggle"
                 />
 
+                <FormTimezoneField
+                  control={form.control}
+                  deviceTimeZone={getDetectedDeviceTimeZone()}
+                  label="Event time zone"
+                  name="timezone"
+                  testId="manual-create-timezone"
+                />
+
                 {!allDay ? (
                   <FormTimeInputField
                     accessibilityHint="Choose the start time for this event"
@@ -254,75 +292,28 @@ export function CalendarManualCreateModal({
                   testId="manual-create-notes-input"
                 />
 
-                <View className="rounded-xl border border-border bg-card px-3 py-3">
-                  <View className="flex-row items-center justify-between gap-3">
-                    <View className="flex-1 gap-1">
-                      <Text className="text-sm font-medium text-foreground">Repeat weekly</Text>
-                      <Text className="text-xs text-muted-foreground">
-                        Create this event every week on the selected day.
-                      </Text>
-                    </View>
-                    <Pressable
-                      accessibilityRole="switch"
-                      accessibilityState={{ checked: repeatWeekly }}
-                      className={`rounded-full px-3 py-2 ${repeatWeekly ? "bg-primary" : "bg-muted"}`}
-                      disabled={submitting}
-                      onPress={() => setRepeatWeekly((current) => !current)}
-                      testID="manual-create-repeat-weekly-toggle"
-                    >
-                      <Text
-                        className={`text-xs font-semibold ${repeatWeekly ? "text-primary-foreground" : "text-foreground"}`}
-                      >
-                        {repeatWeekly ? "On" : "Off"}
-                      </Text>
-                    </Pressable>
-                  </View>
-
-                  {repeatWeekly ? (
-                    <View className="mt-3 gap-2 border-t border-border pt-3">
-                      <Text className="text-xs font-medium text-muted-foreground">
-                        Ends after {repeatOccurrenceCount} occurrences
-                      </Text>
-                      <View className="flex-row gap-2">
-                        <Pressable
-                          className="rounded-md border border-border px-3 py-2"
-                          disabled={submitting || repeatOccurrenceCount <= 2}
-                          onPress={() =>
-                            setRepeatOccurrenceCount((current) => Math.max(2, current - 1))
-                          }
-                          testID="manual-create-repeat-count-decrement"
-                        >
-                          <Text className="text-sm text-foreground">-</Text>
-                        </Pressable>
-                        <Pressable
-                          className="rounded-md border border-border px-3 py-2"
-                          disabled={submitting || repeatOccurrenceCount >= 52}
-                          onPress={() =>
-                            setRepeatOccurrenceCount((current) => Math.min(52, current + 1))
-                          }
-                          testID="manual-create-repeat-count-increment"
-                        >
-                          <Text className="text-sm text-foreground">+</Text>
-                        </Pressable>
-                      </View>
-                    </View>
-                  ) : null}
-                </View>
+                <RecurrenceFields
+                  disabled={submitting}
+                  onChange={setRecurrence}
+                  testIdPrefix="manual-create"
+                  value={recurrence}
+                />
               </View>
             </Form>
 
-            {errorMessage ? (
-              <View className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2">
-                <Text className="text-xs text-destructive">{errorMessage}</Text>
-              </View>
-            ) : null}
+            {errorMessage ? <InlineNotice tone="error">{errorMessage}</InlineNotice> : null}
           </View>
         </ScrollView>
 
         <View className="border-t border-border px-4 py-4">
           <View className="flex-row gap-2">
-            <Button variant="outline" className="flex-1" onPress={onClose} disabled={submitting}>
-              <Text>Cancel</Text>
+            <Button
+              variant="outline"
+              className="flex-1"
+              onPress={() => requestClose(onClose)}
+              disabled={submitting}
+            >
+              <Text className="text-foreground">Cancel</Text>
             </Button>
             <LoadingButton
               className="flex-1"

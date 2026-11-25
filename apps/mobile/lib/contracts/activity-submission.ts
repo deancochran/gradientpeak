@@ -1,7 +1,7 @@
-import type { RecordingActivityCategory } from "@repo/core";
+import type { ContentVisibility, RecordingActivityCategory } from "@repo/core";
 
 export interface PreparedRecordedActivityDraft {
-  is_private?: boolean;
+  content_visibility?: ContentVisibility;
   activityPlanId?: string | null;
   calories?: number;
   distanceMeters: number;
@@ -12,5 +12,5 @@ export interface PreparedRecordedActivityDraft {
   notes?: string | null;
   profileId: string;
   startedAt: Date;
-  activityType: RecordingActivityCategory;
+  activityCategory: RecordingActivityCategory;
 }
