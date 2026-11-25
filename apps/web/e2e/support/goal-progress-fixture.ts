@@ -9,7 +9,13 @@ import {
   submitActivity,
 } from "@repo/api/test-support/activity-evidence-acceptance";
 import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
-import { type activityEfforts, profileAthleteState } from "@repo/db/schema";
+import {
+  activities,
+  type activityEfforts,
+  profileAthleteState,
+  thresholdEvaluations,
+  thresholds,
+} from "@repo/db/schema";
 import { eq } from "drizzle-orm";
 import type { AuthenticatedE2EActor } from "./actors";
 import type { LocalE2EDatabase } from "./database";
@@ -17,6 +23,7 @@ import type { E2EExecutionIdentity } from "./identity";
 
 export type GoalProgressFixture = {
   activityName: string;
+  activityId: string;
   assertReadModels: (goalId: string) => Promise<void>;
   publishedRevision: number;
 };
@@ -31,6 +38,25 @@ export async function createGoalProgressFixture(input: {
   database: LocalE2EDatabase;
   identity: E2EExecutionIdentity;
 }): Promise<GoalProgressFixture> {
+  const [existingActivities, existingThresholds, existingEvaluations] = await Promise.all([
+    input.database.db
+      .select({ id: activities.id })
+      .from(activities)
+      .where(eq(activities.profile_id, input.actor.profileId)),
+    input.database.db
+      .select({ id: thresholds.id })
+      .from(thresholds)
+      .where(eq(thresholds.profile_id, input.actor.profileId)),
+    input.database.db
+      .select({ id: thresholdEvaluations.id })
+      .from(thresholdEvaluations)
+      .where(eq(thresholdEvaluations.profile_id, input.actor.profileId)),
+  ]);
+  if (existingActivities.length || existingThresholds.length || existingEvaluations.length)
+    throw new Error(
+      "The canonical goal-progress fixture requires an athlete without seeded evidence.",
+    );
+
   const activityId = input.identity.uuid("goal-progress-activity");
   const segmentId = input.identity.uuid("goal-progress-segment");
   const effortId = input.identity.uuid("goal-progress-effort");
@@ -190,6 +216,7 @@ export async function createGoalProgressFixture(input: {
 
   return {
     activityName,
+    activityId,
     publishedRevision: state.publishedRevision,
     assertReadModels: async (goalId) => {
       const [goalProgress, thresholdOverview] = await Promise.all([
@@ -224,6 +251,19 @@ export async function createGoalProgressFixture(input: {
       )
         throw new Error(
           "The canonical qualified effort did not produce the expected 285 W progress.",
+        );
+      const history = thresholdOverview.history.items;
+      const sourceActivities = history[0]?.sourceActivities;
+      if (
+        history.length !== 1 ||
+        sourceActivities?.length !== 1 ||
+        sourceActivities[0]?.id !== activityId ||
+        sourceActivities[0]?.name !== activityName ||
+        goalProgress.provenance?.current?.sourceActivities.length !== 1 ||
+        goalProgress.provenance.current.sourceActivities[0]?.id !== activityId
+      )
+        throw new Error(
+          "Published threshold history was not solely derived from the canonical source.",
         );
     },
   };
