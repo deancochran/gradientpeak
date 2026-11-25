@@ -39,7 +39,9 @@ test("an independent athlete creates a goal and plan, schedules it, and retains 
     username: `independent_${e2eIdentity.suffix("independent-athlete")}`,
   });
   const targetDate = futureUtcDate(45);
-  const scheduleDate = futureUtcDate(7);
+  // Home's upcoming schedule is a seven-day exclusive window, so keep the
+  // selected date inside it rather than placing the fixture on its boundary.
+  const scheduleDate = futureUtcDate(6);
   const goalTitle = e2eIdentity.name("Independent goal");
   const trainingPlanName = e2eIdentity.name("Independent training plan");
   const viewport =
@@ -255,6 +257,10 @@ test("an independent athlete creates a goal and plan, schedules it, and retains 
       await selectedSession.click();
       await expect(athletePage.getByText("Planning date", { exact: true })).toBeVisible();
       await expect(athletePage.getByText(scheduleDate, { exact: true })).toBeVisible();
+      await athletePage.screenshot({
+        path: testInfo.outputPath(`independent-athlete-session-detail-${viewport.width}.png`),
+        scale: "css",
+      });
       await athletePage.goBack();
       await expect(athletePage.locator("#plan-selected-date")).toHaveValue(scheduleDate);
       await expectNoHorizontalOverflow(athletePage);
