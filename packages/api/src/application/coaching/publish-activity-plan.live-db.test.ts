@@ -19,7 +19,7 @@ import {
   requireFreshBaseline,
   withDisposableDatabase,
 } from "@repo/db/testing/disposable-database";
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { expect, it } from "vitest";
 import { withProfileFencedRepeatableReadSnapshot } from "../../db";
 import { coachingPublicationRouter } from "../../routers/coaching-publication";
@@ -165,12 +165,16 @@ it("enforces athlete publication authority, idempotency, input validation, engag
         const coachId = await person(db, "Coach");
         const athleteId = await person(db, "Athlete");
         const outsiderId = await person(db, "Outsider");
+        const foreignAthleteId = await person(db, "Foreign athlete");
         const sourceActivityPlanId = await sourcePlan(db, coachId);
         const first = await organizationWithCoach({ db, ownerId, coachId, athleteId });
         const second = await organizationWithCoach({ db, ownerId, coachId, athleteId });
         const athleteCaller = coachingPublicationRouter.createCaller(context(db, athleteId));
         const coachCaller = coachingPublicationRouter.createCaller(context(db, coachId));
         const outsiderCaller = coachingPublicationRouter.createCaller(context(db, outsiderId));
+        const foreignAthleteCaller = coachingPublicationRouter.createCaller(
+          context(db, foreignAthleteId),
+        );
         const operationId = `publication_${"a".repeat(32)}`;
         const publish = {
           organizationId: first.organizationId,
@@ -247,6 +251,89 @@ it("enforces athlete publication authority, idempotency, input validation, engag
             coachMembershipId: first.coachMembershipId,
           }),
         ).toEqual(granted);
+        const activeGrantCount = async () => {
+          const [row] = await db
+            .select({ count: sql<number>`count(*)::int` })
+            .from(athletePlanEditGrants)
+            .where(
+              and(
+                eq(athletePlanEditGrants.athlete_profile_id, athleteId),
+                sql`${athletePlanEditGrants.revoked_at} is null`,
+              ),
+            );
+          if (!row) throw new Error("Expected active grant count");
+          return row.count;
+        };
+        const ownerGrantState = () =>
+          db
+            .select()
+            .from(athletePlanEditGrants)
+            .where(eq(athletePlanEditGrants.athlete_profile_id, athleteId))
+            .orderBy(asc(athletePlanEditGrants.id));
+        const outsiderGrantState = () =>
+          db
+            .select()
+            .from(athletePlanEditGrants)
+            .where(eq(athletePlanEditGrants.athlete_profile_id, outsiderId))
+            .orderBy(asc(athletePlanEditGrants.id));
+        expect(await activeGrantCount()).toBe(1);
+        const grantsBeforeForeignRevoke = await ownerGrantState();
+        await expect(
+          foreignAthleteCaller.revoke({ grantId: granted.grant.id }),
+        ).rejects.toMatchObject({
+          code: "NOT_FOUND",
+        });
+        expect(await ownerGrantState()).toEqual(grantsBeforeForeignRevoke);
+        expect(await activeGrantCount()).toBe(1);
+        const grantsBeforeDeniedRequests = await ownerGrantState();
+        await expect(
+          athleteCaller.grant({
+            organizationId: first.organizationId,
+            coachMembershipId: randomUUID(),
+          }),
+        ).rejects.toMatchObject({ code: "FORBIDDEN" });
+        await expect(
+          athleteCaller.grant({
+            organizationId: first.organizationId,
+            coachMembershipId: second.coachMembershipId,
+          }),
+        ).rejects.toMatchObject({ code: "FORBIDDEN" });
+        expect(await ownerGrantState()).toEqual(grantsBeforeDeniedRequests);
+        expect(await activeGrantCount()).toBe(1);
+        const ownerGrantsBeforeOutsiderGrant = await ownerGrantState();
+        const outsiderGrantsBeforeOutsiderGrant = await outsiderGrantState();
+        await expect(
+          outsiderCaller.grant({
+            organizationId: first.organizationId,
+            coachMembershipId: first.coachMembershipId,
+          }),
+        ).rejects.toMatchObject({ code: "FORBIDDEN" });
+        expect(await ownerGrantState()).toEqual(ownerGrantsBeforeOutsiderGrant);
+        expect(await outsiderGrantState()).toEqual(outsiderGrantsBeforeOutsiderGrant);
+        const grantsBeforeUnknownRevoke = await ownerGrantState();
+        await expect(athleteCaller.revoke({ grantId: randomUUID() })).rejects.toMatchObject({
+          code: "NOT_FOUND",
+        });
+        expect(await ownerGrantState()).toEqual(grantsBeforeUnknownRevoke);
+        expect(await activeGrantCount()).toBe(1);
+        const secondGranted = await athleteCaller.grant({
+          organizationId: second.organizationId,
+          coachMembershipId: second.coachMembershipId,
+        });
+        if (!secondGranted.grant) throw new Error("Expected second athlete permission grant");
+        expect(await activeGrantCount()).toBe(2);
+        await expect(athleteCaller.revoke({ grantId: secondGranted.grant.id })).resolves.toEqual({
+          revoked: true,
+          grantId: secondGranted.grant.id,
+        });
+        const grantsBeforeRepeatedRevoke = await ownerGrantState();
+        await expect(
+          athleteCaller.revoke({ grantId: secondGranted.grant.id }),
+        ).rejects.toMatchObject({
+          code: "NOT_FOUND",
+        });
+        expect(await ownerGrantState()).toEqual(grantsBeforeRepeatedRevoke);
+        expect(await activeGrantCount()).toBe(1);
 
         await expect(
           coachCaller.publish({
@@ -630,7 +717,7 @@ it("enforces athlete publication authority, idempotency, input validation, engag
         expect(await artifactCounts()).toEqual({ copies: 3, receipts: 3, sessions: 3 });
         expect(
           await db.select({ id: athletePlanEditGrants.id }).from(athletePlanEditGrants),
-        ).toHaveLength(2);
+        ).toHaveLength(3);
       } finally {
         await revokingClient.close();
         await publishingClient.close();
