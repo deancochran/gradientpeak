@@ -167,6 +167,12 @@ jest.mock("@/lib/navigation/useAppNavigate", () => ({
   useAppNavigate: () => navigateToMock,
 }));
 
+jest.mock("@/lib/server-config", () => ({
+  __esModule: true,
+  ...jest.requireActual("@/lib/server-config"),
+  isLocalDevelopmentApiEndpoint: () => true,
+}));
+
 jest.mock("@/components/ScheduleActivityModal", () => ({
   __esModule: true,
   ScheduleActivityModal: createHost("ScheduleActivityModal"),

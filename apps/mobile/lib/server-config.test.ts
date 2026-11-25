@@ -1,3 +1,4 @@
+import { onlineManager, QueryClient, QueryObserver } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 async function loadServerConfigModule(environment = "development", serverOverrideEnabled = false) {
@@ -124,6 +125,102 @@ describe("server-config", () => {
       supabaseUrl: "https://db.gradientpeak.app",
       overrideUrl: "https://api.custom.example.com",
     });
+  });
+
+  it("only permits offline read attempts for a sanctioned local development API", async () => {
+    const { module } = await loadServerConfigModule();
+
+    await module.initializeServerConfig();
+    await module.setServerUrlOverride("http://127.0.0.1:3000");
+    expect(module.isLocalDevelopmentApiEndpoint()).toBe(true);
+
+    await module.setServerUrlOverride("https://api.custom.example.com");
+    expect(module.isLocalDevelopmentApiEndpoint()).toBe(false);
+  });
+
+  it("resolves every cold planned-detail read while offline for a local API", async () => {
+    const { module } = await loadServerConfigModule();
+    await module.initializeServerConfig();
+    await module.setServerUrlOverride("http://127.0.0.1:3000");
+    const queryClient = new QueryClient();
+    const requests = {
+      activityPlan: vi.fn(async () => "activity-plan"),
+      plannedSession: vi.fn(async () => "planned-session"),
+      profile: vi.fn(async () => "profile"),
+    };
+
+    onlineManager.setOnline(false);
+    try {
+      const networkMode = module.isLocalDevelopmentApiEndpoint() ? "always" : "online";
+      await expect(
+        Promise.all([
+          queryClient.fetchQuery({
+            networkMode,
+            queryFn: requests.plannedSession,
+            queryKey: ["plannedSessions", "getById", "cold"],
+            retry: false,
+          }),
+          queryClient.fetchQuery({
+            networkMode,
+            queryFn: requests.activityPlan,
+            queryKey: ["activityPlans", "getById", "cold"],
+            retry: false,
+          }),
+          queryClient.fetchQuery({
+            networkMode,
+            queryFn: requests.profile,
+            queryKey: ["profiles", "get", "cold"],
+            retry: false,
+          }),
+        ]),
+      ).resolves.toEqual(["planned-session", "activity-plan", "profile"]);
+      expect(requests.plannedSession).toHaveBeenCalledTimes(1);
+      expect(requests.activityPlan).toHaveBeenCalledTimes(1);
+      expect(requests.profile).toHaveBeenCalledTimes(1);
+    } finally {
+      onlineManager.setOnline(true);
+      queryClient.clear();
+    }
+  });
+
+  it("keeps hosted reads paused offline and bounds an unreachable local read", async () => {
+    const { module } = await loadServerConfigModule();
+    await module.initializeServerConfig();
+    const queryClient = new QueryClient();
+    const hostedRequest = vi.fn(async () => "unexpected");
+
+    onlineManager.setOnline(false);
+    const hostedObserver = new QueryObserver(queryClient, {
+      networkMode: module.isLocalDevelopmentApiEndpoint() ? "always" : "online",
+      queryFn: hostedRequest,
+      queryKey: ["plannedSessions", "getById", "hosted-cold"],
+      retry: false,
+    });
+    const unsubscribe = hostedObserver.subscribe(() => undefined);
+
+    try {
+      expect(module.isLocalDevelopmentApiEndpoint()).toBe(false);
+      expect(hostedObserver.getCurrentResult().fetchStatus).toBe("paused");
+      expect(hostedRequest).not.toHaveBeenCalled();
+
+      await module.setServerUrlOverride("http://10.0.2.2:3000");
+      const localRequest = vi.fn(async () => {
+        throw new Error("local API unavailable");
+      });
+      await expect(
+        queryClient.fetchQuery({
+          networkMode: module.isLocalDevelopmentApiEndpoint() ? "always" : "online",
+          queryFn: localRequest,
+          queryKey: ["plannedSessions", "getById", "local-unreachable"],
+          retry: false,
+        }),
+      ).rejects.toThrow("local API unavailable");
+      expect(localRequest).toHaveBeenCalledTimes(1);
+    } finally {
+      unsubscribe();
+      onlineManager.setOnline(true);
+      queryClient.clear();
+    }
   });
 
   it("rejects malformed URLs", async () => {
