@@ -332,6 +332,37 @@ describe("SessionScenarioPreview", () => {
     expect(mocks.apply).toHaveBeenLastCalledWith(receipt.request);
   });
 
+  it("hands a durable outcome to a stable boundary for a same-actor remount", async () => {
+    mocks.preview = {
+      data: availablePreview(),
+      isError: false,
+      isLoading: false,
+      refetch: jest.fn(),
+    };
+    mocks.apply.mockResolvedValue({ status: "applied", action: "repointed" });
+    const onKnownOutcomeChange = jest.fn();
+    const screen = await renderNative(
+      <SessionScenarioPreview {...props} onKnownOutcomeChange={onKnownOutcomeChange} />,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("session-scenario-apply").props.disabled).toBe(false),
+    );
+    await act(async () => screen.getByTestId("session-scenario-apply").props.onPress());
+    await act(async () => screen.getByTestId("session-scenario-confirm-apply").props.onPress());
+    await waitFor(() =>
+      expect(onKnownOutcomeChange).toHaveBeenCalledWith({
+        actorId: mocks.actorId,
+        message: "Applied: repointed.",
+      }),
+    );
+    const knownOutcome = onKnownOutcomeChange.mock.calls[0]?.[0];
+    await act(async () => screen.rerender(<React.Fragment key="unmounted" />));
+    await act(async () =>
+      screen.rerender(<SessionScenarioPreview {...props} knownOutcome={knownOutcome} />),
+    );
+    expect(screen.getByText("Applied: repointed.")).toBeTruthy();
+  });
+
   it("fences actor A's late apply acknowledgement after actor B replaces the session identity", async () => {
     mocks.preview = {
       data: availablePreview(),

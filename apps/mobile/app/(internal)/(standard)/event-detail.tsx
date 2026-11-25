@@ -330,6 +330,11 @@ export default function EventDetailScreen() {
     onRedirect: () => router.dismissTo(ROUTES.PLAN.CALENDAR),
   });
   const [isClosingAfterDelete, setIsClosingAfterDelete] = useState(false);
+  const [scenarioOutcome, setScenarioOutcome] = useState<{
+    actorId: string;
+    message: string;
+    sessionId: string;
+  } | null>(null);
   const plannedReadNetworkMode = isLocalDevelopmentApiEndpoint() ? "always" : "online";
 
   const {
@@ -984,6 +989,10 @@ export default function EventDetailScreen() {
           {session.lifecycle.status === "scheduled" ? (
             <SessionScenarioPreview
               activityPlanRevision={activityPlan.activityPlanRevision}
+              knownOutcome={scenarioOutcome?.sessionId === session.id ? scenarioOutcome : null}
+              onKnownOutcomeChange={(outcome) =>
+                setScenarioOutcome({ ...outcome, sessionId: session.id })
+              }
               session={session}
               timeZone={timezone}
             />

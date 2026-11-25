@@ -17,6 +17,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/hooks/useAuth";
 
 type ScenarioKind = "as_planned" | "less" | "more" | "substitute" | "skip";
+type KnownScenarioOutcome = { actorId: string; message: string };
 
 function operationStorageKey(profileId: string, sessionId: string) {
   return `gradientpeak:planned-session-scenario:v1:${profileId}:${sessionId}`;
@@ -26,6 +27,8 @@ export function SessionScenarioPreview({
   ...props
 }: {
   activityPlanRevision: number;
+  knownOutcome?: KnownScenarioOutcome | null;
+  onKnownOutcomeChange?: (outcome: KnownScenarioOutcome) => void;
   session: { id: string; profileId: string; sessionRevision: number };
   timeZone: string | null;
 }) {
@@ -34,10 +37,14 @@ export function SessionScenarioPreview({
 
 function SessionScenarioPreviewContents({
   activityPlanRevision,
+  knownOutcome,
+  onKnownOutcomeChange,
   session,
   timeZone,
 }: {
   activityPlanRevision: number;
+  knownOutcome?: KnownScenarioOutcome | null;
+  onKnownOutcomeChange?: (outcome: KnownScenarioOutcome) => void;
   session: { id: string; profileId: string; sessionRevision: number };
   timeZone: string | null;
 }) {
@@ -95,6 +102,8 @@ function SessionScenarioPreviewContents({
   const applyMutation = api.plannedSessions.applyScenario.useMutation({ retry: false });
   const plans = plansQuery.data?.pages.flatMap((page) => page.items) ?? [];
   const storageKey = operationStorageKey(session.profileId, session.id);
+  const visibleOutcome =
+    outcome ?? (knownOutcome?.actorId === actorId ? knownOutcome.message : null);
 
   useEffect(() => {
     let active = true;
@@ -204,6 +213,9 @@ function SessionScenarioPreviewContents({
       if (!isCurrentSubmission()) return;
       if (result.status === "applied") {
         if (!(await persistOperation(null)) || !isCurrentSubmission()) return;
+        const appliedOutcome = { actorId: submittedActor, message: `Applied: ${result.action}.` };
+        setOutcome(appliedOutcome.message);
+        onKnownOutcomeChange?.(appliedOutcome);
         try {
           await Promise.all([
             utils.plannedSessions.invalidate(),
@@ -212,7 +224,6 @@ function SessionScenarioPreviewContents({
             utils.athleteIntelligence.getReadModel.invalidate(),
           ]);
           if (!isCurrentSubmission()) return;
-          setOutcome(`Applied: ${result.action}.`);
         } catch {
           if (!isCurrentSubmission()) return;
           setOutcome(`Applied: ${result.action}. The screen refresh failed; reopen this session.`);
@@ -403,9 +414,9 @@ function SessionScenarioPreviewContents({
           </View>
         </View>
       ) : null}
-      {outcome ? (
+      {visibleOutcome ? (
         <Text accessibilityLiveRegion="polite" className="text-sm text-muted-foreground">
-          {outcome}
+          {visibleOutcome}
         </Text>
       ) : null}
       {storageUnavailable ? (

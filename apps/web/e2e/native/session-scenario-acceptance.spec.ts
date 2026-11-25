@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { activityPlans, plannedSessions } from "@repo/db/schema";
 import { and, eq } from "drizzle-orm";
@@ -32,6 +32,8 @@ test("native athlete compares, cancels, and applies a selected session scenario"
   if (!selectedPlan) throw new Error("Scenario fixture selected activity plan is missing.");
 
   const runFlow = (flow: string, screenshots: readonly string[] = []) => {
+    for (const screenshot of screenshots)
+      rmSync(resolve(process.cwd(), screenshot), { force: true });
     const result = spawnSync(
       "maestro",
       [
@@ -99,11 +101,52 @@ test("native athlete compares, cancels, and applies a selected session scenario"
   ]);
   await expect(fixture.snapshot()).resolves.toEqual(before);
 
-  runFlow("session-scenario-apply.yaml", [
-    "session-scenario-success.png",
-    "session-scenario-returned-ledger.png",
-    "session-scenario-returned-calendar.png",
-  ]);
+  try {
+    runFlow("session-scenario-apply.yaml", [
+      "session-scenario-success.png",
+      "session-scenario-returned-ledger.png",
+      "session-scenario-returned-calendar.png",
+    ]);
+  } catch (error) {
+    const [diagnosticSessions, diagnosticPlans] = await fixture.snapshot();
+    const diagnosticSelected = diagnosticSessions.find(
+      (session) => session.id === fixture.sessionId,
+    );
+    const diagnosticPlan = diagnosticPlans.find(
+      (plan) => plan.id === diagnosticSelected?.activity_plan_id,
+    );
+    const receipts = await fixture.operationReceiptsForSession(fixture.sessionId);
+    writeFileSync(
+      testInfo.outputPath("native-scenario-apply-diagnostic.json"),
+      JSON.stringify(
+        {
+          currentPlan: diagnosticPlan
+            ? {
+                contentVisibility: diagnosticPlan.content_visibility,
+                isSystemTemplate: diagnosticPlan.is_system_template,
+                ownedByActor: diagnosticPlan.profile_id === actor.profileId,
+                differsFromOriginal: diagnosticPlan.id !== fixture.activityPlanId,
+              }
+            : null,
+          receipts: receipts.map((receipt) => ({
+            command: receipt.command,
+            operationId: "[redacted]",
+          })),
+          selectedSession: diagnosticSelected
+            ? {
+                pointsToOriginalPlan:
+                  diagnosticSelected.activity_plan_id === fixture.activityPlanId,
+                present: true,
+              }
+            : { present: false },
+        },
+        null,
+        2,
+      ),
+      { mode: 0o600 },
+    );
+    throw error;
+  }
   const [sessions, plans] = await fixture.snapshot();
   const selected = requireRow(
     sessions.find((session) => session.id === fixture.sessionId),
