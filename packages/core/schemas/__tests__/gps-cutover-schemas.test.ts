@@ -3,23 +3,27 @@ import { ActivityPayloadSchema, ActivityUploadSchema } from "../activity_payload
 import { activityPlanCreateSchema } from "../index";
 
 describe("GPS cutover schemas", () => {
-  it("accepts gpsRecordingEnabled and rejects legacy location in ActivityPayloadSchema", () => {
+  it("requires GPS-off launch payloads and rejects legacy location aliases", () => {
     expect(
       ActivityPayloadSchema.safeParse({
-        category: "run",
-        gpsRecordingEnabled: true,
+        activity_category: "run",
+        gpsRecordingEnabled: false,
       }).success,
     ).toBe(true);
-
     expect(
       ActivityPayloadSchema.safeParse({
-        category: "run",
+        activity_category: "run",
+        gpsRecordingEnabled: true,
+      }).success,
+    ).toBe(false);
+    expect(
+      ActivityPayloadSchema.safeParse({
+        activity_category: "run",
         gpsRecordingEnabled: true,
         location: "outdoor",
       }).success,
     ).toBe(false);
   });
-
   it("rejects location aliases in ActivityUploadSchema", () => {
     const base = {
       name: "Morning Run",
@@ -31,92 +35,64 @@ describe("GPS cutover schemas", () => {
       distanceMeters: 9000,
       metrics: {},
     };
-
     expect(ActivityUploadSchema.safeParse(base).success).toBe(true);
-
     expect(
       ActivityUploadSchema.safeParse({
         ...base,
         location: "outdoor",
       }).success,
     ).toBe(false);
+    for (const retiredField of ["ftp", "threshold_hr"] as const) {
+      expect(
+        ActivityUploadSchema.safeParse({
+          ...base,
+          profileSnapshot: { [retiredField]: 250 },
+        }).success,
+      ).toBe(false);
+    }
   });
-
-  it("requires structured intervals and rejects activity_location in activityPlanCreateSchema", () => {
+  it("requires strict structure and rejects top-level location/activity_category aliases", () => {
+    const structure = {
+      version: 5 as const,
+      activity_category: "run" as const,
+      items: [
+        {
+          type: "step",
+          id: "22222222-2222-4222-8222-222222222222",
+          name: "Run",
+          duration: { type: "time" as const, seconds: 600 },
+          targets: [{ type: "%MaxHR" as const, intensity: 70 }],
+        },
+      ],
+    };
     expect(
       activityPlanCreateSchema.safeParse({
         name: "Easy Run",
         description: "",
-        activity_category: "run",
-        structure: {
-          version: 2,
-          intervals: [
-            {
-              id: "11111111-1111-4111-8111-111111111111",
-              name: "Main Set",
-              repetitions: 1,
-              steps: [
-                {
-                  id: "22222222-2222-4222-8222-222222222222",
-                  name: "Run",
-                  duration: { type: "time", seconds: 600 },
-                  targets: [{ type: "%MaxHR", intensity: 70 }],
-                },
-              ],
-            },
-          ],
-        },
+        structure,
       }).success,
     ).toBe(true);
-
     expect(
       activityPlanCreateSchema.safeParse({
-        name: "Route Only",
+        name: "Old input",
         description: "",
-        activity_category: "run",
-        structure: {
-          version: 2,
-          intervals: [
-            {
-              id: "11111111-1111-4111-8111-111111111111",
-              name: "Follow Route",
-              repetitions: 1,
-              steps: [
-                {
-                  id: "22222222-2222-4222-8222-222222222222",
-                  name: "Follow Route",
-                  duration: { type: "untilFinished" },
-                  targets: [],
-                },
-              ],
-            },
-          ],
-        },
+        structure: { version: 2, intervals: [] },
       }).success,
     ).toBe(false);
-
     expect(
       activityPlanCreateSchema.safeParse({
         name: "Easy Run",
         description: "",
         activity_category: "run",
-        structure: {
-          version: 2,
-          intervals: [],
-        },
+        structure,
       }).success,
     ).toBe(false);
-
     expect(
       activityPlanCreateSchema.safeParse({
         name: "Easy Run",
         description: "",
-        activity_category: "run",
         activity_location: "outdoor",
-        structure: {
-          version: 2,
-          intervals: [],
-        },
+        structure,
       }).success,
     ).toBe(false);
   });

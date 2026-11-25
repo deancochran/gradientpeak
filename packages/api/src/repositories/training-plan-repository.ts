@@ -1,4 +1,8 @@
-import type { InferredStateSnapshot } from "@repo/core";
+import type {
+  CanonicalActivityCategory,
+  ContentVisibility,
+  InferredStateSnapshot,
+} from "@repo/core";
 import type { TrainingPlanInsert, TrainingPlanRow } from "@repo/db";
 
 export type TrainingPlanOwnerScope = "own" | "system" | "public" | "all";
@@ -17,7 +21,7 @@ export type TrainingPlanTemplateListFilters = {
     | "duration_asc"
     | "sessions_desc"
     | "sessions_asc";
-  sport?: string;
+  activity_category?: CanonicalActivityCategory;
 };
 
 export interface ActiveTrainingPlanLookup {
@@ -25,17 +29,18 @@ export interface ActiveTrainingPlanLookup {
   scheduleBatchId: string | null;
   trainingPlan: TrainingPlanRow;
   trainingPlanId: string;
-  userTrainingPlanId: string | null;
 }
 
 export interface CreateTrainingPlanRecordInput
   extends Pick<TrainingPlanInsert, "description" | "name" | "structure"> {
   profileId: string;
+  contentVisibility?: ContentVisibility;
 }
 
 export interface UpdateTrainingPlanRecordInput
   extends Pick<TrainingPlanInsert, "description" | "name" | "structure"> {
   id: string;
+  expectedStructureHash: string;
   profileId: string;
 }
 
@@ -57,8 +62,16 @@ export interface TrainingPlanRepository {
   listTrainingPlans(input: {
     ownerScope: TrainingPlanOwnerScope;
     profileId: string;
-    visibility?: "private" | "public";
+    visibility?: "private" | "followers" | "public";
   }): Promise<TrainingPlanRow[]>;
+  listTrainingPlansPage(input: {
+    limit: number;
+    offset: number;
+    ownerScope: TrainingPlanOwnerScope;
+    profileId: string;
+    search?: string;
+    visibility?: "private" | "followers" | "public";
+  }): Promise<{ items: TrainingPlanRow[]; total: number }>;
   updateTrainingPlan(input: UpdateTrainingPlanRecordInput): Promise<TrainingPlanRow>;
   getPriorInferredStateSnapshot(profileId: string): Promise<InferredStateSnapshot | null>;
   persistInferredStateSnapshot(input: {

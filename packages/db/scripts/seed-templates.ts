@@ -1,60 +1,85 @@
 #!/usr/bin/env tsx
 
-import { and, eq } from "drizzle-orm";
+import {
+  type CanonicalActivityCategory,
+  canonicalActivityCategorySchema,
+  getSystemActivityTemplateDefinitions,
+  type SystemActivityTemplateDefinition,
+} from "@repo/core";
+import { activityPlanStructureSchema } from "@repo/core/activity-plan";
+import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-
-import { getTemplatesByCategory, SYSTEM_TEMPLATES, type SystemTemplate } from "../../core/samples";
 import { activityPlans } from "../src/schema/tables";
-import { deepEqual, prepareDbEnv, stripIds } from "./_helpers";
+import { deepEqual, prepareDbEnv } from "./_helpers";
+import { structureHash } from "./canonical-json";
+import { materializeSystemActivityTemplateSeedValues } from "./system-content-seed-values";
 
 const args = process.argv.slice(2);
 const isDryRun = args.includes("--dry-run");
+const isValidateOnly = args.includes("--validate-only");
 const noDelete = args.includes("--no-delete") || args.includes("--no-clear");
-const categoryArg = args.find((arg) => arg.startsWith("--category="));
-const category = categoryArg
-  ? (categoryArg.slice("--category=".length) as SystemTemplate["activity_category"])
+const categoryArg = args.find((arg) => arg.startsWith("--activity_category="));
+const activity_category: CanonicalActivityCategory | undefined = categoryArg
+  ? canonicalActivityCategorySchema.parse(categoryArg.slice("--activity_category=".length))
   : undefined;
 
-const databaseUrl = prepareDbEnv();
-const pool = new Pool({ connectionString: databaseUrl });
-const db = drizzle({ client: pool, casing: "snake_case" });
-
-const templates = category ? getTemplatesByCategory(category) : SYSTEM_TEMPLATES;
+let pool: Pool | undefined;
 
 type ExistingActivityTemplate = typeof activityPlans.$inferSelect;
 
-function hasChanges(local: SystemTemplate, remote: ExistingActivityTemplate): boolean {
-  if (local.version !== remote.version) return true;
+function hasChanges(
+  definition: SystemActivityTemplateDefinition,
+  remote: ExistingActivityTemplate,
+): boolean {
+  const local = definition.content;
   if (local.name !== remote.name) return true;
   if (local.description !== (remote.description ?? null)) return true;
-  if (local.activity_category !== remote.activity_category) return true;
-  if ((local.route_id ?? null) !== (remote.route_id ?? null)) return true;
+  if ((local.gps_recording_enabled ?? true) !== remote.gps_recording_enabled) return true;
+  if (structureHash(local.structure) !== remote.structure_hash) return true;
   if ((local.notes ?? null) !== (remote.notes ?? null)) return true;
+  if (local.training_intent !== remote.training_intent) return true;
+  if (remote.profile_id !== null) return true;
+  if (remote.is_system_template !== true) return true;
+  if (remote.content_visibility !== "public") return true;
+  if (remote.system_content_key !== definition.key) return true;
+  if (remote.system_content_version !== definition.version) return true;
+  if (remote.system_content_hash !== definition.contentHash) return true;
 
-  const localStructure = stripIds(JSON.parse(JSON.stringify(local.structure)));
-  const remoteStructure = stripIds(remote.structure);
+  const localStructure = JSON.parse(JSON.stringify(local.structure));
+  const remoteStructure = remote.structure;
 
-  return !deepEqual(localStructure, remoteStructure);
+  if (!deepEqual(localStructure, remoteStructure)) return true;
+  return false;
 }
 
 async function seedTemplates() {
+  const definitions = (await getSystemActivityTemplateDefinitions()).filter(
+    (definition) =>
+      activity_category === undefined ||
+      definition.content.structure.activity_category === activity_category,
+  );
+  for (const definition of definitions) {
+    activityPlanStructureSchema.parse(definition.content.structure);
+  }
+  if (isValidateOnly) {
+    console.log(`Validated ${definitions.length} strict current system activity templates.`);
+    return;
+  }
+
+  const databaseUrl = prepareDbEnv();
+  pool = new Pool({ connectionString: databaseUrl });
+  const db = drizzle({ client: pool, casing: "snake_case" });
+
   console.log("🌱 Starting template sync...");
   console.log(`   Mode: ${isDryRun ? "DRY RUN" : "LIVE"}`);
-  console.log(`   Filter: ${category ? `${category} only` : "all"}`);
-  console.log(`   Local Templates: ${templates.length}\n`);
+  console.log(`   Filter: ${activity_category ? `${activity_category} only` : "all"}`);
+  console.log(`   Local Templates: ${definitions.length}\n`);
 
   const existingTemplates = await db
     .select()
     .from(activityPlans)
-    .where(
-      category
-        ? and(
-            eq(activityPlans.is_system_template, true),
-            eq(activityPlans.activity_category, category),
-          )
-        : eq(activityPlans.is_system_template, true),
-    );
+    .where(eq(activityPlans.is_system_template, true));
 
   const idCounts = new Map<string, number>();
   for (const template of existingTemplates) {
@@ -76,7 +101,8 @@ async function seedTemplates() {
   let deletedCount = 0;
   let errorCount = 0;
 
-  for (const template of templates) {
+  for (const definition of definitions) {
+    const template = definition.content;
     if (!template.id) {
       console.error(`❌ Template "${template.name}" is missing a static ID. Skipping.`);
       errorCount += 1;
@@ -87,22 +113,18 @@ async function seedTemplates() {
     const existing = existingMap.get(template.id);
 
     try {
+      const { id: _id, ...seedValues } = materializeSystemActivityTemplateSeedValues(definition);
       if (existing) {
-        if (hasChanges(template, existing)) {
+        if (hasChanges(definition, existing)) {
           console.log(`📝 Updating "${template.name}" (${template.id})...`);
 
           if (!isDryRun) {
+            const structureChanged = seedValues.semantic_hash !== existing.semantic_hash;
             await db
               .update(activityPlans)
               .set({
-                version: template.version,
-                name: template.name,
-                description: template.description,
-                activity_category: template.activity_category,
-                structure: template.structure,
-                route_id: template.route_id ?? null,
-                notes: template.notes ?? null,
-                template_visibility: "public",
+                ...seedValues,
+                ...(structureChanged ? { revision: sql`${activityPlans.revision} + 1` } : {}),
                 updated_at: new Date(),
               })
               .where(eq(activityPlans.id, existing.id));
@@ -119,17 +141,7 @@ async function seedTemplates() {
           const now = new Date();
 
           await db.insert(activityPlans).values({
-            id: template.id,
-            profile_id: null,
-            is_system_template: true,
-            template_visibility: "public",
-            version: template.version,
-            name: template.name,
-            description: template.description,
-            activity_category: template.activity_category,
-            structure: template.structure,
-            route_id: template.route_id ?? null,
-            notes: template.notes ?? null,
+            ...materializeSystemActivityTemplateSeedValues(definition),
             created_at: now,
             updated_at: now,
           });
@@ -188,5 +200,5 @@ try {
   console.error("\n💥 Sync failed:", error);
   process.exitCode = 1;
 } finally {
-  await pool.end();
+  await pool?.end();
 }

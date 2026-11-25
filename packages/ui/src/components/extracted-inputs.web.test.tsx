@@ -91,6 +91,12 @@ describe("extracted inputs web", () => {
     expect(onChange).toHaveBeenCalledWith("285");
   });
 
+  it("BoundedNumberInput forwards test IDs", () => {
+    renderWeb(<BoundedNumberInput label="FTP" onChange={vi.fn()} testID="ftp-input" value="" />);
+
+    expect(screen.getByTestId("ftp-input")).toBeInTheDocument();
+  });
+
   it("IntegerStepper increments with the plus button", () => {
     const onChange = vi.fn();
 
@@ -148,6 +154,98 @@ describe("extracted inputs web", () => {
     expect(onChange).toHaveBeenCalledWith(0.95);
   });
 
+  it("NumberSliderInput uses inline exact entry without rendering a second field by default", () => {
+    const onChange = vi.fn();
+    const onExactValueInvalidChange = vi.fn();
+    renderWeb(
+      <NumberSliderInput
+        inlineValueEditor
+        max={1}
+        min={0}
+        onChange={onChange}
+        onExactValueInvalidChange={onExactValueInvalidChange}
+        testId="intensity"
+        value={0.75}
+      />,
+    );
+
+    expect(screen.queryByTestId("intensity-inline-value")).toBeNull();
+    const currentValue = screen.getByTestId("intensity-current-value");
+    expect(currentValue).toHaveAttribute("type", "button");
+    fireEvent.click(currentValue);
+    const input = screen.getByTestId("intensity-inline-value");
+    fireEvent.change(input, { currentTarget: { value: "1.5" }, target: { value: "1.5" } });
+    fireEvent.blur(input);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(onExactValueInvalidChange).toHaveBeenLastCalledWith(true);
+
+    fireEvent.change(input, { currentTarget: { value: "0.955" }, target: { value: "0.955" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onChange).toHaveBeenLastCalledWith(0.955);
+  });
+
+  it("NumberSliderInput preserves full precision when exact entry closes unchanged", () => {
+    const onChange = vi.fn();
+    renderWeb(
+      <NumberSliderInput
+        decimals={2}
+        inlineValueEditor
+        max={1}
+        min={0}
+        onChange={onChange}
+        testId="precise"
+        value={0.123456789}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("precise-current-value"));
+    const input = screen.getByTestId("precise-inline-value");
+    expect(input).toHaveValue("0.123456789");
+    fireEvent.blur(input);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("aligns slider and +/- changes to an anchored policy grid while retaining exact typed values", () => {
+    const onChange = vi.fn();
+    renderWeb(
+      <NumberSliderInput
+        adjustmentStep={5}
+        inlineValueEditor
+        label="Heart rate"
+        max={200}
+        min={1}
+        onChange={onChange}
+        showAdjustmentButtons
+        step={5}
+        testId="heart-rate"
+        value={153}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("Increase Heart rate"));
+    fireEvent.click(screen.getByLabelText("Decrease Heart rate"));
+    expect(onChange).toHaveBeenNthCalledWith(1, 155);
+    expect(onChange).toHaveBeenNthCalledWith(2, 150);
+  });
+
+  it("maps min-one five-step web slider indices onto canonical multiples", () => {
+    const onChange = vi.fn();
+    renderWeb(
+      <NumberSliderInput
+        label="Grid"
+        max={20}
+        min={1}
+        onChange={onChange}
+        step={5}
+        testId="grid"
+        value={5}
+      />,
+    );
+    const slider = screen.getByTestId("grid-slider");
+    fireEvent.change(slider, { target: { value: "2" } });
+    expect(onChange).toHaveBeenCalledWith(10);
+  });
+
   it("PercentSliderInput commits numeric entry on blur", () => {
     const onChange = vi.fn();
 
@@ -171,6 +269,7 @@ describe("extracted inputs web", () => {
     );
 
     const input = screen.getByLabelText(paceSecondsFieldFixtures.easy.label);
+    expect(screen.getByTestId("easy-pace-seconds-field")).toBe(input);
     fireEvent.change(input, {
       currentTarget: { value: "5:45" },
       target: { value: "5:45" },
