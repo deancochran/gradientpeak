@@ -48,7 +48,10 @@ describe("threshold history presentation", () => {
     expect(
       screen.getByRole("img", { name: /bike power history.*260 W.*May 10, 2026/i }),
     ).toBeTruthy();
-    expect(screen.getByText("bike power · watts")).toBeTruthy();
+    const bikeCaption = screen.getByText("bike power · watts");
+    expect(bikeCaption).toBeTruthy();
+    expect(bikeCaption.parentElement?.className).toContain("space-y-1");
+    expect(bikeCaption.nextElementSibling?.className).toContain("relative h-44");
     expect(screen.getByText("run pace · pace (/km)")).toBeTruthy();
     expect(
       screen.getByRole("img", { name: /run pace history.*4:10 \/km.*Apr 12, 2026/i }),
