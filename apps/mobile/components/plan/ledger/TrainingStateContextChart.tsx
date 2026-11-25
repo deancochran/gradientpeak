@@ -16,7 +16,7 @@ function Metric({
   label,
   value,
 }: {
-  direction: "Falling" | "Rising" | "Stable";
+  direction: "Falling" | "Rising" | "Stable" | "Unavailable";
   label: string;
   value: string;
 }) {

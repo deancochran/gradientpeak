@@ -21,3 +21,4 @@ name: Cancel the visible rescheduled native session
     timeout: 30000
 - assertNotVisible:
     id: planned-session-cancel
+- takeScreenshot: planned-session-cancelled

@@ -1,10 +1,12 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { format } from "date-fns";
+import { randomUUID } from "expo-crypto";
 import React from "react";
 import type { TestInstance as ReactTestInstance } from "test-renderer";
 import { ROUTES } from "@/lib/constants/routes";
 import { createActivityPlanSummary } from "../../../../test/activity-plan-projection-fixture";
 import { createHost } from "../../../../test/mock-components";
-import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
+import { act, fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 import EventDetailScreen from "../event-detail";
 
 type ActivityPlanFixture = {
@@ -97,6 +99,19 @@ const movePlannedMock = jest.fn();
 const cancelPlannedMock = jest.fn();
 const plannedSessionRefetchMock = jest.fn(async () => undefined);
 let plannedSessionMutationOptions: unknown;
+const scenarioApplyMock = jest.fn();
+const scenarioInvalidations = {
+  activityPlans: jest.fn(async () => undefined),
+  calendar: jest.fn(async () => undefined),
+  plannedSessions: jest.fn(async () => undefined),
+  state: jest.fn(async () => undefined),
+};
+let scenarioActorId = "00000000-0000-4000-8000-000000000004";
+let scenarioPreview: unknown = null;
+let plannedActivityPlanDetail: {
+  activityCategory: "run";
+  activityPlanRevision: number;
+} | null = { activityCategory: "run", activityPlanRevision: 5 };
 let completionCandidates: { canAssociate: boolean; items: unknown[]; nextCursor: null } = {
   canAssociate: true,
   items: [],
@@ -166,6 +181,10 @@ jest.mock("@/lib/navigation/useAppNavigate", () => ({
   __esModule: true,
   useAppNavigate: () => navigateToMock,
 }));
+jest.mock("@/lib/hooks/useAuth", () => ({
+  __esModule: true,
+  useAuth: () => ({ user: scenarioActorId ? { id: scenarioActorId } : null }),
+}));
 
 jest.mock("@/lib/server-config", () => ({
   __esModule: true,
@@ -176,11 +195,6 @@ jest.mock("@/lib/server-config", () => ({
 jest.mock("@/components/ScheduleActivityModal", () => ({
   __esModule: true,
   ScheduleActivityModal: createHost("ScheduleActivityModal"),
-}));
-
-jest.mock("@/components/planning/SessionScenarioPreview", () => ({
-  __esModule: true,
-  SessionScenarioPreview: createHost("SessionScenarioPreview"),
 }));
 
 jest.mock("@/components/shared/ActivityPlanCard", () => ({
@@ -244,6 +258,14 @@ jest.mock("@/components/shared/detail", () => ({
 jest.mock("@/components/activity/charts/ElevationProfileChart", () => ({
   __esModule: true,
   ElevationProfileChart: createHost("ElevationProfileChart"),
+}));
+jest.mock("@/components/training-plan/modals/components/ActivitySelector", () => ({
+  __esModule: true,
+  ActivitySelector: createHost("ActivitySelector"),
+}));
+jest.mock("@repo/ui/components/session-scenario-comparison", () => ({
+  __esModule: true,
+  SessionScenarioComparison: createHost("SessionScenarioComparison"),
 }));
 
 jest.mock("@repo/ui/components/button", () => ({
@@ -335,6 +357,10 @@ jest.mock("@/lib/api", () => ({
   api: {
     useUtils: () => ({
       events: { invalidate: jest.fn() },
+      activityPlans: { invalidate: scenarioInvalidations.activityPlans },
+      athleteIntelligence: { getReadModel: { invalidate: scenarioInvalidations.state } },
+      calendar: { invalidate: scenarioInvalidations.calendar },
+      plannedSessions: { invalidate: scenarioInvalidations.plannedSessions },
     }),
     events: {
       getById: {
@@ -385,12 +411,13 @@ jest.mock("@/lib/api", () => ({
       },
       previewScenario: {
         useQuery: () => ({
-          data: null,
+          data: scenarioPreview,
           isError: false,
           isLoading: false,
           refetch: jest.fn(),
         }),
       },
+      applyScenario: { useMutation: () => ({ isPending: false, mutateAsync: scenarioApplyMock }) },
       completionCandidates: {
         useInfiniteQuery: () => ({
           data: { pages: [completionCandidates] },
@@ -412,7 +439,7 @@ jest.mock("@/lib/api", () => ({
     activityPlans: {
       getById: {
         useQuery: () => ({
-          data: { detail: { activityCategory: "run" } },
+          data: plannedActivityPlanDetail ? { detail: plannedActivityPlanDetail } : null,
           isLoading: false,
           error: null,
           refetch: jest.fn(),
@@ -439,6 +466,7 @@ jest.mock("@/lib/api", () => ({
       getReadModel: {
         useQuery: () => ({
           data: { publishedState: { baseline: { stateRevision: 1 } } },
+          isSuccess: true,
         }),
       },
     },
@@ -479,6 +507,16 @@ describe("event detail fallback screen", () => {
     plannedSession = null;
     plannedSessionError = null;
     plannedSessionMutationOptions = undefined;
+    scenarioActorId = "00000000-0000-4000-8000-000000000004";
+    scenarioPreview = null;
+    scenarioApplyMock.mockReset();
+    Object.values(scenarioInvalidations).forEach((invalidate) => {
+      invalidate.mockReset();
+    });
+    Object.values(scenarioInvalidations).forEach((invalidate) => {
+      invalidate.mockResolvedValue(undefined);
+    });
+    plannedActivityPlanDetail = { activityCategory: "run", activityPlanRevision: 5 };
     movePlannedMock.mockReset();
     cancelPlannedMock.mockReset();
     plannedSessionRefetchMock.mockClear();
@@ -504,6 +542,175 @@ describe("event detail fallback screen", () => {
       activity_category: "run",
       estimated_duration: 3600,
     };
+  });
+
+  afterEach(async () => {
+    await AsyncStorage.clear();
+  });
+
+  function enableScenarioRoute() {
+    routeParams = {
+      id: "00000000-0000-4000-8000-000000000001",
+      resourceType: "planned_session",
+    };
+    plannedSession = {
+      id: routeParams.id,
+      profileId: "00000000-0000-4000-8000-000000000002",
+      sessionRevision: 3,
+      planningDate: "2000-01-01",
+      lifecycle: { status: "scheduled" },
+      activityPlanId: "00000000-0000-4000-8000-000000000003",
+      prescription: null,
+    };
+    scenarioPreview = {
+      status: "available",
+      previewFingerprint: `v1:sha256:${"a".repeat(64)}`,
+      selectedSession: { id: routeParams.id, sessionRevision: 3, planningDate: "2000-01-01" },
+      stateRevision: 1,
+      horizon: { sessionCount: 2 },
+      scenario: { kind: "as_planned" },
+      baseline: {},
+      alternative: {},
+      provenance: { selectedPlan: { id: "00000000-0000-4000-8000-000000000003", revision: 5 } },
+    };
+  }
+
+  async function confirmScenarioApply() {
+    await waitFor(() =>
+      expect(screen.getByTestId("session-scenario-apply").props.disabled).toBe(false),
+    );
+    await act(async () => {
+      await fireEvent.press(screen.getByTestId("session-scenario-apply"));
+    });
+    await act(async () => {
+      await fireEvent.press(screen.getByTestId("session-scenario-confirm-apply"));
+    });
+  }
+
+  it("retains an applied repoint outcome when its replacement plan briefly disappears and returns", async () => {
+    enableScenarioRoute();
+    scenarioApplyMock.mockResolvedValueOnce({ status: "applied", action: "repointed" });
+    const rendered = await renderNative(<EventDetailScreen />);
+
+    await confirmScenarioApply();
+    await waitFor(() => expect(scenarioApplyMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByText("Applied: repointed.")).toBeTruthy());
+
+    plannedSession = {
+      ...(plannedSession as Record<string, unknown>),
+      activityPlanId: "00000000-0000-4000-8000-000000000009",
+    };
+    plannedActivityPlanDetail = null;
+    await rendered.rerender(<EventDetailScreen />);
+    expect(screen.getByText("Activity plan unavailable")).toBeTruthy();
+
+    plannedActivityPlanDetail = { activityCategory: "run", activityPlanRevision: 6 };
+    await rendered.rerender(<EventDetailScreen />);
+    await waitFor(() => expect(screen.getByText("Applied: repointed.")).toBeTruthy());
+  });
+
+  it("clears the first applied receipt before a confirmed second scenario operation is pending", async () => {
+    enableScenarioRoute();
+    scenarioApplyMock.mockResolvedValueOnce({ status: "applied", action: "repointed" });
+    let resolveSecondApply: (result: { status: "applied"; action: string }) => void = () =>
+      undefined;
+    scenarioApplyMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveSecondApply = resolve;
+        }),
+    );
+    await renderNative(<EventDetailScreen />);
+
+    await confirmScenarioApply();
+    await waitFor(() => expect(screen.getByText("Applied: repointed.")).toBeTruthy());
+    await confirmScenarioApply();
+    await waitFor(() => expect(scenarioApplyMock).toHaveBeenCalledTimes(2));
+
+    expect(screen.queryByText("Applied: repointed.")).toBeNull();
+    expect(screen.getByTestId("session-scenario-retry-apply")).toBeTruthy();
+    expect(jest.mocked(AsyncStorage.removeItem)).toHaveBeenCalled();
+    await act(async () => resolveSecondApply({ status: "applied", action: "unchanged" }));
+  });
+
+  it("keeps a newly armed operation as the only recovery after an older refresh rejects", async () => {
+    enableScenarioRoute();
+    let rejectFirstRefresh: (error: Error) => void = () => undefined;
+    scenarioInvalidations.calendar.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectFirstRefresh = reject;
+        }),
+    );
+    scenarioApplyMock
+      .mockResolvedValueOnce({ status: "applied", action: "repointed" })
+      .mockResolvedValueOnce({ status: "applied", action: "unchanged" });
+    jest
+      .mocked(randomUUID)
+      .mockReturnValueOnce("00000000-0000-4000-8000-000000000001")
+      .mockReturnValueOnce("00000000-0000-4000-8000-000000000002");
+    await renderNative(<EventDetailScreen />);
+
+    await confirmScenarioApply();
+    await waitFor(() => expect(scenarioInvalidations.calendar).toHaveBeenCalledTimes(1));
+    await confirmScenarioApply();
+    await waitFor(() => expect(screen.getByTestId("session-scenario-retry-apply")).toBeTruthy());
+
+    await act(async () => rejectFirstRefresh(new Error("first refresh failed")));
+    expect(
+      screen.queryByText("Applied: repointed. The screen refresh failed; reopen this session."),
+    ).toBeNull();
+    expect(screen.queryByText("Applied: repointed.")).toBeNull();
+    expect(screen.getByTestId("session-scenario-retry-apply")).toBeTruthy();
+
+    await fireEvent.press(screen.getByTestId("session-scenario-retry-apply"));
+    await waitFor(() => expect(screen.getByText("Applied: unchanged.")).toBeTruthy());
+  });
+
+  it("retains refresh-failure reopen guidance through the plan query gap", async () => {
+    enableScenarioRoute();
+    scenarioApplyMock.mockResolvedValueOnce({ status: "applied", action: "repointed" });
+    scenarioInvalidations.calendar.mockRejectedValueOnce(new Error("refresh unavailable"));
+    const rendered = await renderNative(<EventDetailScreen />);
+
+    await confirmScenarioApply();
+    await waitFor(() =>
+      expect(
+        screen.getByText("Applied: repointed. The screen refresh failed; reopen this session."),
+      ).toBeTruthy(),
+    );
+
+    plannedActivityPlanDetail = null;
+    await rendered.rerender(<EventDetailScreen />);
+    expect(screen.getByText("Activity plan unavailable")).toBeTruthy();
+    plannedActivityPlanDetail = { activityCategory: "run", activityPlanRevision: 6 };
+    await rendered.rerender(<EventDetailScreen />);
+    await waitFor(() =>
+      expect(
+        screen.getByText("Applied: repointed. The screen refresh failed; reopen this session."),
+      ).toBeTruthy(),
+    );
+  });
+
+  it("hides actor A's pending scenario receipt when actor B opens the same route", async () => {
+    enableScenarioRoute();
+    let resolveApply: (result: { status: "applied"; action: string }) => void = () => undefined;
+    scenarioApplyMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveApply = resolve;
+        }),
+    );
+    const rendered = await renderNative(<EventDetailScreen />);
+
+    await confirmScenarioApply();
+    await waitFor(() => expect(screen.getByTestId("session-scenario-retry-apply")).toBeTruthy());
+    scenarioActorId = "00000000-0000-4000-8000-000000000005";
+    await rendered.rerender(<EventDetailScreen />);
+
+    expect(screen.queryByTestId("session-scenario-retry-apply")).toBeNull();
+    expect(screen.queryByText(/Applied:/)).toBeNull();
+    await act(async () => resolveApply({ status: "applied", action: "repointed" }));
   });
 
   it("isolates planned-session reads and completes without invented actual values", async () => {

@@ -372,6 +372,33 @@ describe("planning ledger", () => {
     expect(result.load.effective).toEqual({ status: "unavailable", value: null });
   });
 
+  it("keeps absent recorded fitness unavailable when only a scheduled projection exists", () => {
+    const result = buildPlanningLedger({
+      projection: {
+        ...projection,
+        fitness: {
+          ...projection.fitness,
+          actual: [],
+        },
+      },
+      request: { period: "week", anchorDate: "2026-04-15" },
+    });
+
+    expect(result.trainingState.actual.fitness).toEqual({
+      status: "unavailable",
+      value: null,
+      observedOn: null,
+      source: null,
+    });
+    expect(result.trainingState.series).toEqual([
+      {
+        date: "2026-04-14",
+        actual: null,
+        planned: { fitness: 43, fatigue: 46, form: -3 },
+      },
+    ]);
+  });
+
   it("caps dense ledgers deterministically", () => {
     const denseProjection = {
       ...projection,

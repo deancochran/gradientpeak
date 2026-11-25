@@ -17,6 +17,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/hooks/useAuth";
 
 type ScenarioKind = "as_planned" | "less" | "more" | "substitute" | "skip";
+type KnownScenarioOutcome = { actorId: string; message: string };
 
 function operationStorageKey(profileId: string, sessionId: string) {
   return `gradientpeak:planned-session-scenario:v1:${profileId}:${sessionId}`;
@@ -26,6 +27,8 @@ export function SessionScenarioPreview({
   ...props
 }: {
   activityPlanRevision: number;
+  knownOutcome?: KnownScenarioOutcome | null;
+  onKnownOutcomeChange?: (outcome: KnownScenarioOutcome | null) => void;
   session: { id: string; profileId: string; sessionRevision: number };
   timeZone: string | null;
 }) {
@@ -34,10 +37,14 @@ export function SessionScenarioPreview({
 
 function SessionScenarioPreviewContents({
   activityPlanRevision,
+  knownOutcome,
+  onKnownOutcomeChange,
   session,
   timeZone,
 }: {
   activityPlanRevision: number;
+  knownOutcome?: KnownScenarioOutcome | null;
+  onKnownOutcomeChange?: (outcome: KnownScenarioOutcome | null) => void;
   session: { id: string; profileId: string; sessionRevision: number };
   timeZone: string | null;
 }) {
@@ -46,10 +53,12 @@ function SessionScenarioPreviewContents({
   const [substituteId, setSubstituteId] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [operation, setOperation] = useState<FrozenPlannedSessionScenarioOperation | null>(null);
-  const [outcome, setOutcome] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState<KnownScenarioOutcome | null>(null);
+  const [knownOutcomeSuppressed, setKnownOutcomeSuppressed] = useState(false);
   const [storageUnavailable, setStorageUnavailable] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const operationRef = useRef<FrozenPlannedSessionScenarioOperation | null>(null);
+  const latestOperationIdRef = useRef<string | null>(null);
   const armingRef = useRef(false);
   const submittingRef = useRef(false);
   const generationRef = useRef(0);
@@ -95,12 +104,30 @@ function SessionScenarioPreviewContents({
   const applyMutation = api.plannedSessions.applyScenario.useMutation({ retry: false });
   const plans = plansQuery.data?.pages.flatMap((page) => page.items) ?? [];
   const storageKey = operationStorageKey(session.profileId, session.id);
+  const displayableOperation =
+    operation &&
+    actorId &&
+    isCurrentPlannedSessionScenarioOperation(operation, {
+      actorId,
+      sessionId: session.id,
+    })
+      ? operation
+      : null;
+  const visibleOutcome =
+    outcome?.actorId === actorId
+      ? outcome.message
+      : !knownOutcomeSuppressed && knownOutcome?.actorId === actorId
+        ? knownOutcome.message
+        : null;
 
   useEffect(() => {
     let active = true;
     const generation = ++generationRef.current;
     operationRef.current = null;
+    latestOperationIdRef.current = null;
     setOperation(null);
+    setOutcome(null);
+    setKnownOutcomeSuppressed(false);
     setHydrated(false);
     void AsyncStorage.getItem(storageKey)
       .then((raw) => {
@@ -116,6 +143,7 @@ function SessionScenarioPreviewContents({
         ) {
           if (generation !== generationRef.current) return;
           operationRef.current = recovered;
+          latestOperationIdRef.current = recovered.request.operationId;
           setOperation(recovered);
         }
       })
@@ -142,6 +170,7 @@ function SessionScenarioPreviewContents({
       )
         return false;
       operationRef.current = next;
+      if (next) latestOperationIdRef.current = next.request.operationId;
       setOperation(next);
       return true;
     } catch {
@@ -168,11 +197,16 @@ function SessionScenarioPreviewContents({
     });
     try {
       if (!(await persistOperation(next))) {
-        setOutcome("Unable to save safe recovery. Check device storage and try again.");
+        setOutcome({
+          actorId,
+          message: "Unable to save safe recovery. Check device storage and try again.",
+        });
         return;
       }
       setConfirming(false);
+      setKnownOutcomeSuppressed(true);
       setOutcome(null);
+      onKnownOutcomeChange?.(null);
       void submitOperation(next);
     } finally {
       armingRef.current = false;
@@ -190,20 +224,26 @@ function SessionScenarioPreviewContents({
     )
       return;
     submittingRef.current = true;
+    const generation = generationRef.current;
+    const submittedActor = actorId;
+    const submittedOperationId = operationToSubmit.request.operationId;
+    const isCurrentSubmission = () =>
+      generation === generationRef.current &&
+      actorRef.current === submittedActor &&
+      latestOperationIdRef.current === submittedOperationId &&
+      isCurrentPlannedSessionScenarioOperation(operationToSubmit, {
+        actorId: submittedActor,
+        sessionId: session.id,
+      });
     try {
-      const generation = generationRef.current;
-      const submittedActor = actorId;
-      const isCurrentSubmission = () =>
-        generation === generationRef.current &&
-        actorRef.current === submittedActor &&
-        isCurrentPlannedSessionScenarioOperation(operationToSubmit, {
-          actorId: submittedActor,
-          sessionId: session.id,
-        });
       const result = await applyMutation.mutateAsync(operationToSubmit.request);
       if (!isCurrentSubmission()) return;
       if (result.status === "applied") {
         if (!(await persistOperation(null)) || !isCurrentSubmission()) return;
+        const appliedOutcome = { actorId: submittedActor, message: `Applied: ${result.action}.` };
+        setKnownOutcomeSuppressed(false);
+        setOutcome(appliedOutcome);
+        onKnownOutcomeChange?.(appliedOutcome);
         try {
           await Promise.all([
             utils.plannedSessions.invalidate(),
@@ -212,10 +252,14 @@ function SessionScenarioPreviewContents({
             utils.athleteIntelligence.getReadModel.invalidate(),
           ]);
           if (!isCurrentSubmission()) return;
-          setOutcome(`Applied: ${result.action}.`);
         } catch {
           if (!isCurrentSubmission()) return;
-          setOutcome(`Applied: ${result.action}. The screen refresh failed; reopen this session.`);
+          const refreshFailureOutcome = {
+            actorId: submittedActor,
+            message: `Applied: ${result.action}. The screen refresh failed; reopen this session.`,
+          };
+          setOutcome(refreshFailureOutcome);
+          onKnownOutcomeChange?.(refreshFailureOutcome);
         }
       } else {
         if (!(await persistOperation(null)) || !isCurrentSubmission()) return;
@@ -226,15 +270,20 @@ function SessionScenarioPreviewContents({
           utils.athleteIntelligence.getReadModel.invalidate(),
         ]).then(() => {
           if (!isCurrentSubmission()) return;
-          setOutcome(
-            "This preview is no longer current. Refresh it, then confirm again; your draft remains visible.",
-          );
+          setOutcome({
+            actorId: submittedActor,
+            message:
+              "This preview is no longer current. Refresh it, then confirm again; your draft remains visible.",
+          });
           void previewRefetchRef.current();
         });
       }
     } catch {
-      if (actorRef.current !== actorId) return;
-      setOutcome("We could not confirm the result. Check or retry with the same operation.");
+      if (!isCurrentSubmission()) return;
+      setOutcome({
+        actorId,
+        message: "We could not confirm the result. Check or retry with the same operation.",
+      });
     } finally {
       submittingRef.current = false;
     }
@@ -348,7 +397,7 @@ function SessionScenarioPreviewContents({
             state revision {previewQuery.data.stateRevision};{" "}
             {previewQuery.data.horizon.sessionCount} sessions.
           </Text>
-          {!operation ? (
+          {!displayableOperation ? (
             <Button
               disabled={!hydrated || !actorId}
               onPress={() => setConfirming(true)}
@@ -359,10 +408,10 @@ function SessionScenarioPreviewContents({
           ) : null}
         </View>
       ) : null}
-      {operation ? (
+      {displayableOperation ? (
         <Button
           disabled={applyMutation.isPending}
-          onPress={() => void submitOperation()}
+          onPress={() => void submitOperation(displayableOperation)}
           testID="session-scenario-retry-apply"
         >
           <Text>{applyMutation.isPending ? "Applying…" : "Check or retry this change"}</Text>
@@ -403,9 +452,9 @@ function SessionScenarioPreviewContents({
           </View>
         </View>
       ) : null}
-      {outcome ? (
+      {visibleOutcome ? (
         <Text accessibilityLiveRegion="polite" className="text-sm text-muted-foreground">
-          {outcome}
+          {visibleOutcome}
         </Text>
       ) : null}
       {storageUnavailable ? (

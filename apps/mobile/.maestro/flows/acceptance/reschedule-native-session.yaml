@@ -63,3 +63,4 @@ name: Open a visible scheduled native session and reschedule it with the system 
       id: planned-session-reschedule
     timeout: 30000
 - assertVisible: ${MAESTRO_ACCEPTANCE_RESCHEDULE_DATE}
+- takeScreenshot: planned-session-rescheduled
