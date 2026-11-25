@@ -119,14 +119,6 @@ async function retainAppliedPlanningLedgerEvidence(input: {
     selected.planned,
     "Selected planned training composition is invalid.",
   );
-  expect(selectedPlanned).toEqual({
-    categories: [
-      {
-        activityCategory: "bike",
-        durationSeconds: { status: "complete", value: 1200 },
-      },
-    ],
-  });
   writeFileSync(
     input.artifactPath,
     JSON.stringify(
@@ -148,6 +140,14 @@ async function retainAppliedPlanningLedgerEvidence(input: {
     ),
     { mode: 0o600 },
   );
+  expect(selectedPlanned).toEqual({
+    categories: [
+      {
+        activityCategory: "bike",
+        durationSeconds: { status: "complete", value: 1200 },
+      },
+    ],
+  });
 }
 
 test("native athlete compares, cancels, and applies a selected session scenario", async ({
