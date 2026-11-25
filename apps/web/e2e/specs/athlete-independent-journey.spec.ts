@@ -1,3 +1,7 @@
+import {
+  markDisposableAthleteStateDirty,
+  processAthleteStateJobs,
+} from "@repo/api/test-support/activity-evidence-acceptance";
 import { activityCategoryChoices } from "@repo/core";
 import {
   coachingEngagements,
@@ -15,6 +19,7 @@ import { chooseAuthoringOption } from "../pages/authoring";
 import { withGoalFixture } from "../planning/data";
 import { seedOwnedActivityPlan } from "../seeds/activity-plans";
 import { registerTrainingPlanCleanup } from "../training-plans/cleanup";
+import { currentContractEpochHeaders } from "../utils/contractEpoch";
 
 function futureUtcDate(daysFromNow: number) {
   const date = new Date(Date.now() + daysFromNow * 86_400_000);
@@ -37,6 +42,10 @@ test("an independent athlete creates a goal and plan, schedules it, and retains 
   const scheduleDate = futureUtcDate(7);
   const goalTitle = e2eIdentity.name("Independent goal");
   const trainingPlanName = e2eIdentity.name("Independent training plan");
+  const viewport =
+    testInfo.project.name === "Mobile Chrome 390x844"
+      ? { width: 390, height: 844 }
+      : { width: 1440, height: 1000 };
 
   await e2eDatabase.db
     .update(profiles)
@@ -79,23 +88,25 @@ test("an independent athlete creates a goal and plan, schedules it, and retains 
     athlete.profileId,
     e2eIdentity.suffix("independent-library-plan", 64),
   );
-  await e2eDatabase.typedTransaction((transaction) =>
-    transaction
-      .insert(profileAthleteState)
-      .values({
-        profile_id: athlete.profileId,
-        source_revision: 1,
-        published_revision: 1,
-        fitness: 0,
-        fatigue: 0,
-        evidence_confidence: 0,
-        computed_at: new Date(),
-        updated_at: new Date(),
-      })
-      .onConflictDoNothing(),
-  );
+  const bootstrapNow = new Date();
+  await markDisposableAthleteStateDirty({
+    db: e2eDatabase.db,
+    effectiveAt: bootstrapNow,
+    now: bootstrapNow,
+    profileId: athlete.profileId,
+  });
+  await processAthleteStateJobs({ db: e2eDatabase.db, limit: 1, now: bootstrapNow });
+  const [publishedEmptyState] = await e2eDatabase.db
+    .select({
+      publishedRevision: profileAthleteState.published_revision,
+      sourceRevision: profileAthleteState.source_revision,
+    })
+    .from(profileAthleteState)
+    .where(eq(profileAthleteState.profile_id, athlete.profileId));
+  expect(publishedEmptyState).toMatchObject({ publishedRevision: 1, sourceRevision: 1 });
 
   const athletePage = await athlete.createPage("/");
+  await athletePage.setViewportSize(viewport);
   await withGoalFixture(
     async (goalsFixture) => {
       const goals = new GoalsPage(athletePage);
@@ -124,7 +135,14 @@ test("an independent athlete creates a goal and plan, schedules it, and retains 
           title: goalTitle,
           targetDate,
         });
+      const originalGoal = await goalsFixture.getGoal(goalId);
+      if (!originalGoal)
+        throw new Error("The created goal was not available for recovery comparison.");
 
+      await athletePage.goto(`/goals/${goalId}`);
+      await expect(
+        athletePage.getByRole("heading", { name: goalTitle, exact: true }),
+      ).toBeVisible();
       await athletePage.getByTestId(`goal-edit-${goalId}`).click();
       await chooseAuthoringOption(athletePage, "Goal type", "Completion");
       await athletePage.getByLabel("Duration", { exact: true }).fill("0:10:00");
@@ -134,17 +152,20 @@ test("an independent athlete creates a goal and plan, schedules it, and retains 
       await expect(optionalDistance).toBeFocused();
       await expect(optionalDistance).toHaveAttribute("aria-invalid", "true");
       await expect(athletePage.getByRole("alert")).toContainText(/distance/i);
+      await athletePage.screenshot({
+        path: testInfo.outputPath(`independent-athlete-goal-invalid-${viewport.width}.png`),
+        scale: "css",
+      });
       await optionalDistance.fill("");
       await athletePage.getByRole("button", { name: "Cancel", exact: true }).click();
       await expect(
         athletePage.getByRole("heading", { name: goalTitle, exact: true }),
       ).toBeVisible();
-      await expect
-        .poll(() => goalsFixture.getGoal(goalId))
-        .toMatchObject({
-          title: goalTitle,
-          targetDate,
-        });
+      await expect.poll(() => goalsFixture.getGoal(goalId)).toEqual(originalGoal);
+      await athletePage.screenshot({
+        path: testInfo.outputPath(`independent-athlete-goal-recovery-${viewport.width}.png`),
+        scale: "css",
+      });
 
       const plans = new TrainingPlansPage(athletePage);
       await plans.openLibrary();
@@ -188,6 +209,10 @@ test("an independent athlete creates a goal and plan, schedules it, and retains 
           ),
         );
       expect(previewApplications).toEqual([]);
+      await athletePage.screenshot({
+        path: testInfo.outputPath(`independent-athlete-schedule-preview-${viewport.width}.png`),
+        scale: "css",
+      });
       await plans.confirmSchedule();
       await expect(athletePage.getByText("Plan scheduled.", { exact: true })).toBeVisible();
 
@@ -205,6 +230,15 @@ test("an independent athlete creates a goal and plan, schedules it, and retains 
       if (!scheduledSession)
         throw new Error("The confirmed schedule did not create a planned session.");
 
+      const dashboardResponse = await athletePage.request.get(
+        "/api/trpc/home.getDashboard?batch=1&input=%7B%7D",
+        { headers: currentContractEpochHeaders },
+      );
+      const dashboardBody = await dashboardResponse.text();
+      expect(
+        dashboardResponse.ok(),
+        `home.getDashboard returned ${dashboardResponse.status()}: ${dashboardBody}`,
+      ).toBe(true);
       await athletePage.goto("/");
       const homeSession = athletePage
         .getByTestId("home-upcoming-schedule")
@@ -225,7 +259,7 @@ test("an independent athlete creates a goal and plan, schedules it, and retains 
       await expect(athletePage.locator("#plan-selected-date")).toHaveValue(scheduleDate);
       await expectNoHorizontalOverflow(athletePage);
       await athletePage.screenshot({
-        path: testInfo.outputPath("independent-athlete-selected-session.png"),
+        path: testInfo.outputPath(`independent-athlete-selected-session-${viewport.width}.png`),
         scale: "css",
       });
     },
