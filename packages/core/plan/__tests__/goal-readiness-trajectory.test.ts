@@ -12,10 +12,10 @@ describe("buildGoalReadinessTrajectory", () => {
       currentGoalReadiness: 78,
       confidence: "low",
       points: [
-        { date: "2026-05-15", state_readiness: 78, predicted_fitness_ctl: 40 },
-        { date: "2026-07-01", state_readiness: 79, predicted_fitness_ctl: 52 },
-        { date: "2026-09-01", state_readiness: 80, predicted_fitness_ctl: 64 },
-        { date: "2026-11-17", state_readiness: 80, predicted_fitness_ctl: 72 },
+        { date: "2026-05-15", state_readiness: 78, predicted_fitness_longTermLoad: 40 },
+        { date: "2026-07-01", state_readiness: 79, predicted_fitness_longTermLoad: 52 },
+        { date: "2026-09-01", state_readiness: 80, predicted_fitness_longTermLoad: 64 },
+        { date: "2026-11-17", state_readiness: 80, predicted_fitness_longTermLoad: 72 },
       ],
     });
 
@@ -30,8 +30,8 @@ describe("buildGoalReadinessTrajectory", () => {
       targetGoalReadiness: 106,
       confidence: "medium",
       points: [
-        { date: "2026-05-15", state_readiness: 70, predicted_fitness_ctl: 35 },
-        { date: "2026-11-17", state_readiness: 84, predicted_fitness_ctl: 85 },
+        { date: "2026-05-15", state_readiness: 70, predicted_fitness_longTermLoad: 35 },
+        { date: "2026-11-17", state_readiness: 84, predicted_fitness_longTermLoad: 85 },
       ],
     });
 

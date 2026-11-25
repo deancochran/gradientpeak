@@ -11,4 +11,9 @@ export const buttonFixtures = {
     id: "save-button",
     testId: "settings-save",
   },
+  moreActions: {
+    accessibilityLabel: "More actions",
+    id: "more-actions-button",
+    testId: "more-actions-button",
+  },
 } as const;

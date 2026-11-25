@@ -43,7 +43,7 @@ export const VALIDATION_RANGES = {
   HEIGHT_CM: { min: 100, max: 250 },
   AGE: { min: 10, max: 120 },
   FTP: { min: 50, max: 600 },
-  TSS: { min: 0, max: 1000 },
+  commonLoad: { min: 0, max: 1000 },
 } as const;
 
 export const TIME_CONSTANTS = {
