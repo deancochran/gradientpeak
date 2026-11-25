@@ -128,9 +128,14 @@ async function retainAppliedPlanningLedgerEvidence(input: {
   if (
     !selectedEntry ||
     typeof selectedEntry.date !== "string" ||
-    typeof selectedEntry.id !== "string"
+    typeof selectedEntry.id !== "string" ||
+    typeof selectedEntry.kind !== "string"
   )
     throw new Error("Planning ledger response has no selected planned-session entry.");
+  const selectedEntryDuration = durationMetricFrom(
+    selectedEntry.contributingDurationSeconds,
+    "Planning ledger selected planned-session duration is invalid.",
+  );
   writeFileSync(
     input.artifactPath,
     JSON.stringify(
@@ -147,8 +152,10 @@ async function retainAppliedPlanningLedgerEvidence(input: {
           },
         },
         selectedEntry: {
+          contributingDurationSeconds: selectedEntryDuration,
           date: selectedEntry.date,
           id: selectedEntry.id,
+          kind: selectedEntry.kind,
         },
       },
       null,
@@ -165,7 +172,13 @@ async function retainAppliedPlanningLedgerEvidence(input: {
     ],
   });
   expect(selectedEntry.date).toBe(input.date);
-  return { selectedEntryDate: selectedEntry.date, selectedEntryId: selectedEntry.id };
+  expect(selectedEntry.kind).toBe("planned");
+  expect(selectedEntryDuration).toEqual({ status: "complete", value: 1200 });
+  return {
+    selectedEntryDate: selectedEntry.date,
+    selectedEntryDuration,
+    selectedEntryId: selectedEntry.id,
+  };
 }
 
 test("native athlete compares, cancels, and applies a selected session scenario", async ({
@@ -526,6 +539,7 @@ test("native athlete explicitly retries the same scenario request after its comm
   });
   expect(appliedLedger.selectedEntryId).toBe(selected.id);
   expect(appliedLedger.selectedEntryDate).toBe(selected.planning_date);
+  expect(appliedLedger.selectedEntryDuration).toEqual({ status: "complete", value: 1200 });
   expect(otherOccurrence).toEqual(originalOtherOccurrence);
   expect(unchangedOriginalPlan).toEqual(originalPlan);
   expect(plans).toHaveLength(before[1].length + 1);
