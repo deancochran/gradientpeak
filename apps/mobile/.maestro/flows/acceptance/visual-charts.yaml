@@ -23,6 +23,12 @@ name: Render shared scenario and threshold charts on the current Android candida
     text: "● Baseline · solid"
 - assertVisible:
     text: "□ Alternative · dashed"
+- assertVisible:
+    text: "Nov 23"
+- assertVisible:
+    text: "Nov 24"
+- assertVisible:
+    text: "training load"
 - takeScreenshot: visual-charts-scenario-comparison
 - scrollUntilVisible:
     element:
