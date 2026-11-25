@@ -1,42 +1,17 @@
 import type { CanonicalGoalActivityCategory, ProfileGoal } from "../schemas";
 
-export type GoalEditorGoalType =
-  | "race_performance"
-  | "completion"
-  | "pace_threshold"
-  | "power_threshold"
-  | "hr_threshold"
-  | "consistency";
-
-export type GoalEditorRaceTargetMode = "time" | "pace";
-
-export interface GoalEditorDraft {
-  title: string;
-  targetDate: string;
-  importance: number;
-  goalType: GoalEditorGoalType;
-  activityCategory: CanonicalGoalActivityCategory;
-  raceDistanceKm?: number | null;
-  raceTargetMode?: GoalEditorRaceTargetMode;
-  targetDuration?: string;
-  targetPace?: string;
-  targetWatts?: number | null;
-  targetBpm?: number | null;
-  thresholdTestDuration?: string;
-  consistencySessionsPerWeek?: number | null;
-  consistencyWeeks?: number | null;
-}
+export type { GoalEditorDraft, GoalEditorGoalType, GoalEditorRaceTargetMode } from "./draft";
 
 export interface GoalTargetForValidation {
   id: string;
   targetType: "race_performance" | "pace_threshold" | "power_threshold" | "hr_threshold";
-  activityCategory?: CanonicalGoalActivityCategory;
-  distanceKm?: string;
-  completionTimeHms?: string;
-  paceMmSs?: string;
-  testDurationHms?: string;
-  targetWatts?: number;
-  targetLthrBpm?: number;
+  activityCategory?: CanonicalGoalActivityCategory | undefined;
+  distanceKm?: string | undefined;
+  completionTimeHms?: string | undefined;
+  paceMmSs?: string | undefined;
+  testDurationHms?: string | undefined;
+  targetWatts?: number | undefined;
+  targetLthrBpm?: number | undefined;
 }
 
 export interface GoalForValidation {

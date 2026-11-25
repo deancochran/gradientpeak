@@ -1,5 +1,5 @@
 import * as ImagePicker from "expo-image-picker";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Alert, Button, Image, StyleSheet, View } from "react-native";
 import { api } from "@/lib/api";
 import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
@@ -24,25 +24,27 @@ export default function Avatar({ url, size = 150, onUpload }: Props) {
   const [uploading, setUploading] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const avatarSize = { height: size, width: size };
-
-  useEffect(() => {
-    if (url) downloadImage(url);
-  }, [url, downloadImage]);
-
   const utils = api.useUtils();
 
-  async function downloadImage(path: string) {
-    try {
-      const { signedUrl } = await utils.client.storage.getSignedUrl.query({
-        filePath: path,
-      });
-      setAvatarUrl(signedUrl);
-    } catch (error) {
-      if (error instanceof Error) {
-        console.log("Error downloading image: ", error.message);
+  const downloadImage = useCallback(
+    async (path: string) => {
+      try {
+        const { signedUrl } = await utils.client.storage.getSignedUrl.query({
+          filePath: path,
+        });
+        setAvatarUrl(signedUrl);
+      } catch (error) {
+        if (error instanceof Error) {
+          console.log("Error downloading image: ", error.message);
+        }
       }
-    }
-  }
+    },
+    [utils.client.storage.getSignedUrl],
+  );
+
+  useEffect(() => {
+    if (url) void downloadImage(url);
+  }, [url, downloadImage]);
 
   async function uploadAvatar() {
     try {
@@ -62,13 +64,17 @@ export default function Avatar({ url, size = 150, onUpload }: Props) {
       }
 
       const image = result.assets[0];
+      if (image === undefined) {
+        Alert.alert("No image was selected. Please choose an image and try again.");
+        return;
+      }
       console.log("Got image", image);
 
       if (!image.uri) {
         throw new Error("No image uri!"); // Realistically, this should never happen, but just in case...
       }
 
-      const fileExt = image.uri?.split(".").pop()?.toLowerCase() ?? "jpeg";
+      const fileExt = image.uri.split(".").pop()?.toLowerCase() ?? "jpeg";
       const fileName = `${Date.now()}.${fileExt}`;
       const fileType: AllowedAvatarMimeType = allowedAvatarMimeTypes.includes(
         image.mimeType as AllowedAvatarMimeType,
@@ -120,7 +126,7 @@ export default function Avatar({ url, size = 150, onUpload }: Props) {
           style={[avatarSize, styles.avatar, styles.image]}
         />
       ) : (
-        <View style={[avatarSize, styles.avatar, styles.noImage]} />
+        <View className="border border-border bg-muted" style={[avatarSize, styles.avatar]} />
       )}
       <View>
         <Button
@@ -142,12 +148,5 @@ const styles = StyleSheet.create({
   image: {
     objectFit: "cover",
     paddingTop: 0,
-  },
-  noImage: {
-    backgroundColor: "#333",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: "rgb(200, 200, 200)",
-    borderRadius: 5,
   },
 });

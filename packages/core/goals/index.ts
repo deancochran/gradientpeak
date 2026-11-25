@@ -1,4 +1,5 @@
 export * from "./draft";
+export * from "./editor-contract";
 export * from "./intelligence";
 export * from "./management";
 export {

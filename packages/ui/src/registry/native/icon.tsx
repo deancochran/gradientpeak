@@ -1,15 +1,8 @@
 import { styled } from "nativewind";
 import * as React from "react";
+import type { IconProps } from "../../components/icon/shared";
 import { cn } from "../../lib/cn";
 import { TextClassContext } from "./text";
-
-type IconProps = {
-  as: React.ComponentType<any>;
-  className?: string;
-  size?: number;
-  style?: any;
-  [key: string]: any;
-};
 
 function IconImpl({ as: IconComponent, ...props }: IconProps) {
   return <IconComponent {...props} />;
