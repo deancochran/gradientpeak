@@ -355,16 +355,22 @@ export default function EventDetailScreen() {
       // platform reports no external network. Let the read attempt rather than
       // rendering an unavailable state from a paused query.
       networkMode: "always",
+      retry: false,
     },
   );
   const plannedActivityPlanQuery = api.activityPlans.getById.useQuery(
     { id: plannedSessionQuery.data?.activityPlanId ?? "", personalize: false },
     {
       enabled: isPlannedSession && Boolean(plannedSessionQuery.data?.activityPlanId),
+      networkMode: "always",
       retry: false,
     },
   );
-  const profileQuery = api.profiles.get.useQuery(undefined, { enabled: isPlannedSession });
+  const profileQuery = api.profiles.get.useQuery(undefined, {
+    enabled: isPlannedSession,
+    networkMode: "always",
+    retry: false,
+  });
   const createManualDiaryEntry = api.activities.createManualDiaryEntry.useMutation({
     retry: false,
   });
