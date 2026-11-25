@@ -17,6 +17,75 @@ type NativeManualAcceptanceInput = {
   testInfo: TestInfo;
 };
 
+type PlanningLedgerTrainingState = {
+  actual: {
+    fatigue: {
+      observedOn: string | null;
+      source: string | null;
+      status: string;
+      value: number | null;
+    };
+    fitness: {
+      observedOn: string | null;
+      source: string | null;
+      status: string;
+      value: number | null;
+    };
+  };
+  series: Array<{ actual: { fatigue: number; fitness: number; form: number } | null }>;
+};
+
+type PlanningLedgerResponse = {
+  anchorDate: string;
+  contractVersion: "planning-ledger-v3";
+  period: "day" | "month" | "week";
+  periodEnd: string;
+  periodStart: string;
+  trainingState: PlanningLedgerTrainingState;
+};
+
+function planningLedgerFrom(value: unknown): PlanningLedgerResponse {
+  if (!Array.isArray(value) || value.length !== 1)
+    throw new Error("Real planning ledger response was not a single tRPC result");
+  const json = (value[0] as { result?: { data?: { json?: unknown } } } | undefined)?.result?.data
+    ?.json;
+  if (!json || typeof json !== "object")
+    throw new Error("Real planning ledger response had no JSON result");
+  const ledger = json as Partial<PlanningLedgerResponse>;
+  if (
+    ledger.contractVersion !== "planning-ledger-v3" ||
+    !ledger.trainingState ||
+    typeof ledger.anchorDate !== "string" ||
+    typeof ledger.period !== "string" ||
+    typeof ledger.periodStart !== "string" ||
+    typeof ledger.periodEnd !== "string"
+  ) {
+    throw new Error("Real planning ledger response did not match the planning-ledger-v3 contract");
+  }
+  return ledger as PlanningLedgerResponse;
+}
+
+async function expectNoTrainingStateEvidence(actor: AuthenticatedE2EActor, today: string) {
+  const request = { anchorDate: today, period: "day" } as const;
+  const input = encodeURIComponent(JSON.stringify({ 0: { json: request } }));
+  const response = await actor.request.get(
+    `/api/trpc/trainingPlans.getPlanningLedger?batch=1&input=${input}`,
+  );
+  expect(response.ok(), `Planning ledger request failed with HTTP ${response.status()}`).toBe(true);
+  const ledger = planningLedgerFrom(await response.json());
+  expect(ledger).toMatchObject({
+    anchorDate: today,
+    period: "day",
+    periodEnd: today,
+    periodStart: today,
+  });
+  expect(ledger.trainingState.actual).toEqual({
+    fatigue: { observedOn: null, source: null, status: "unavailable", value: null },
+    fitness: { observedOn: null, source: null, status: "unavailable", value: null },
+  });
+  expect(ledger.trainingState.series.every((point) => point.actual === null)).toBe(true);
+}
+
 export function preserveMaestroCaptures(testInfo: TestInfo, captures: readonly string[]) {
   return captures.map((capture) => {
     const source = resolve(`${capture}.png`);
@@ -211,6 +280,7 @@ export async function completeManualNativeAcceptance({
           "planned-session-detail-before-completion",
           manualCompletionCapture,
           "planned-session-skip-return-ledger",
+          "planning-ledger-no-evidence-training-state",
         ] as const)
       : (["planned-session-detail-before-completion", manualCompletionCapture] as const);
   clearMaestroCaptures(manualCaptures);
@@ -221,10 +291,8 @@ export async function completeManualNativeAcceptance({
     MAESTRO_ACCEPTANCE_SESSION_DAY: String(Number(today.slice(8, 10))),
     MAESTRO_ACCEPTANCE_SESSION_ID: manualSession.id,
   });
-  const [detailCaptured, completionCaptured, skipReturnCaptured] = preserveMaestroCaptures(
-    testInfo,
-    manualCaptures,
-  );
+  const [detailCaptured, completionCaptured, skipReturnCaptured, skipTrainingStateCaptured] =
+    preserveMaestroCaptures(testInfo, manualCaptures);
   writeFileSync(
     testInfo.outputPath("maestro-manual.log"),
     `${manualResult.stdout ?? ""}\n${manualResult.stderr ?? ""}`,
@@ -250,6 +318,10 @@ export async function completeManualNativeAcceptance({
   if (!completedSession) throw new Error("Native manual action did not retain its planned session");
   if (outcome === "skip") {
     expect(skipReturnCaptured, "Skip flow must retain its ledger-return capture").toBe(true);
+    expect(
+      skipTrainingStateCaptured,
+      "Skip flow must retain its unavailable training-state capture",
+    ).toBe(true);
     expect(completedSession).toMatchObject({
       status: "completed",
       completed_activity_id: null,
@@ -263,6 +335,7 @@ export async function completeManualNativeAcceptance({
         .from(activities)
         .where(eq(activities.profile_id, actor.profileId)),
     ).toEqual([]);
+    await expectNoTrainingStateEvidence(actor, today);
     return {
       actor,
       completedSession,
@@ -304,16 +377,20 @@ export async function completeManualNativeAcceptance({
     started_at: null,
     finished_at: null,
   });
+  await expectNoTrainingStateEvidence(actor, today);
   if (!completedSession?.completed_activity_id)
     throw new Error("Manual completion did not retain its linked activity ID");
-  const reopenCaptures = ["planned-session-calendar-reopen"] as const;
+  const reopenCaptures = [
+    "planning-ledger-no-evidence-training-state",
+    "planned-session-calendar-reopen",
+  ] as const;
   clearMaestroCaptures(reopenCaptures);
   const reopenManualResult = runMaestro("reopen-manual-completion.yaml", {
     MAESTRO_ACCEPTANCE_COMPLETED_ACTIVITY_ID: completedSession.completed_activity_id,
     MAESTRO_ACCEPTANCE_SESSION_DATE: today,
     MAESTRO_ACCEPTANCE_SESSION_DAY: String(Number(today.slice(8, 10))),
   });
-  const [reopenCaptured] = preserveMaestroCaptures(testInfo, reopenCaptures);
+  const [trainingStateCaptured, reopenCaptured] = preserveMaestroCaptures(testInfo, reopenCaptures);
   writeFileSync(
     testInfo.outputPath("maestro-manual-reopen.log"),
     `${reopenManualResult.stdout ?? ""}\n${reopenManualResult.stderr ?? ""}`,
@@ -323,6 +400,10 @@ export async function completeManualNativeAcceptance({
     reopenManualResult.status,
     "Calendar must reopen the exact linked manual activity from its selected day",
   ).toBe(0);
+  expect(
+    trainingStateCaptured,
+    "Evidence-free manual completion must retain its unavailable training-state capture",
+  ).toBe(true);
   expect(reopenCaptured, "Reopen flow must retain its calendar capture").toBe(true);
   return {
     actor,
