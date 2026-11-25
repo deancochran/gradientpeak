@@ -112,49 +112,18 @@ function toDateOnlyString(value: Date): string {
 }
 
 function setRootFormError(
-  form: Partial<Pick<UseFormReturn<ScheduleActivityModalFormOutput>, "setError">>,
+  form: Pick<UseFormReturn<ScheduleActivityModalFormOutput>, "setError">,
   error: unknown,
   fallbackMessage: string,
 ) {
-  if (
-    form.setError &&
-    applyServerFormErrors(
-      form as Pick<UseFormReturn<ScheduleActivityModalFormOutput>, "setError">,
-      error,
-    )
-  ) {
+  if (applyServerFormErrors(form, error)) {
     return;
   }
 
-  form.setError?.("root", {
+  form.setError("root", {
     type: "server",
     message: getErrorMessage(error) || fallbackMessage,
   });
-}
-
-function clearRootFormError(
-  form: Partial<Pick<UseFormReturn<ScheduleActivityModalFormOutput>, "clearErrors">>,
-) {
-  form.clearErrors?.("root");
-}
-
-async function runMutation<TInput, TResult>(
-  mutation: {
-    mutateAsync?: (input: TInput) => Promise<TResult>;
-    mutate?: (input: TInput) => void;
-  },
-  input: TInput,
-): Promise<TResult | undefined> {
-  if (mutation.mutateAsync) {
-    return await mutation.mutateAsync(input);
-  }
-
-  if (mutation.mutate) {
-    mutation.mutate(input);
-    return;
-  }
-
-  throw new Error("Mutation is unavailable");
 }
 
 export function ScheduleActivityModal({
@@ -248,11 +217,10 @@ export function ScheduleActivityModal({
       return;
     }
 
-    clearRootFormError(form);
+    form.clearErrors("root");
 
     try {
-      await runMutation(
-        createMutation,
+      await createMutation.mutateAsync(
         buildDirectPlannedSessionCreateInput({
           profileId,
           planningDate: data.scheduledDate,
