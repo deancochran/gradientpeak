@@ -1,0 +1,197 @@
+# Coaching database foundation
+
+## Scope
+
+Database-only implementation of the agreed declarative organization foundation.
+API orchestration, Core domain-contract expansion, UI, billing and automation are
+separate follow-up work. Workspace is the interface to an organization, not a new
+entity. One profile can be staff and athlete in the same organization and can
+participate in multiple organizations.
+
+Reuse existing organization memberships, additive role grants, coaching
+engagements, direct coaching assignments, consent policies/grants and audit events.
+Add organization invitations, private organization groups, group athlete links
+referencing engagements, and group coach assignments referencing staff membership.
+Preserve existing public/community groups and their authorization semantics.
+
+## Source baseline
+
+- Feature branch: `feat/coaching-database-foundation`.
+- Created from fetched `origin/main`: `c7072ca839ca646f9a8db470af26756b8327cbe7`.
+- Required existing organization foundation comes from source checkpoint
+  `1d5ac63ab7ad7a89b25bdfd1dec9a63f5b770ce4` on
+  `migration/main-preview-baseline`, not from preview.
+- Local prerequisite merge: `c6fa78f1285054cdcac16d689cb9ebedc747d5cd`.
+- This prerequisite includes substantial existing baseline work not yet in remote
+  main. The database feature must be reviewed relative to that prerequisite;
+  publishing a draft must disclose the larger main-relative dependency. Do not
+  auto-merge the entire baseline as though it were an independently verified small
+  database patch.
+
+## Safety and acceptance contract
+
+- Every new relationship is organization-scoped with composite foreign keys.
+- Root owner/admin controls invitations and roster/assignment changes. Roster
+  changes are authorization changes, not low-privilege cosmetic edits.
+- Coach reads require active organization, membership, coach grant, engagement,
+  scope consent, and a direct or group-derived assignment.
+- Group participation never grants peer access, consent, calendar writes or
+  ownership of athlete history. Personal self-access remains independent.
+- Retain relationship history; enforce current-row uniqueness and chronology.
+- Role revocation and group archive must deny group-derived access even when
+  retained link records exist. Removing one path preserves another valid path.
+- Use the existing organization lock protocol for authorization and authority
+  lifecycle changes. Verify tenant mismatch, role loss, overlapping paths,
+  group lifecycle, same-person staff/athlete, and concurrent access/revocation.
+- Invitations need verified recipient binding and transactional acceptance. The
+  database slice must clearly distinguish stored constraints from API acceptance
+  workflows that are not yet implemented. Invitation acceptance never implies
+  sharing consent.
+- New tables require explicit ACL/RLS treatment. Do not infer protection merely
+  from an organization ID or test only with a database owner role.
+- Source baseline and generated artifacts follow the DB package workflow.
+  Fresh/disposable-target success is not preserved-target migration evidence.
+- No shared/hosted database resets or seeding. User subsequently explicitly
+  approved a narrow data-preserving upgrade-policy exception for preview, with
+  transactional preconditions, verification and a recovery backup. This is not
+  permission to replay the fresh baseline or migrate unrelated targets. Preview
+  integration requires compatibility evidence and the shared lock.
+
+## Current disposition
+
+Implementation in progress; not live. Database worker owns `packages/db/**`;
+coordinator owns review, commit, publication and preview disposition. API/Core
+feature work has not started. Verification and exact checkpoint evidence will be
+recorded here after implementation and review.
+
+### Preview upgrade preparation
+
+User confirmed the database foundation must be applied to preview before API/Core
+work begins, then explicitly approved the one-time data-preserving upgrade
+exception. The DB package otherwise supports only fresh-baseline installation.
+
+Read-only target verification: preview web's existing DATABASE_URL and POSTGRES_URL
+both select the loopback PostgreSQL database `postgres` on port `54322`, mapped to
+`supabase_db_gradientpeak`. No credentials were copied or printed. PostgreSQL and
+pg_dump are both 17.6. Existing organization tables are present; the proposed
+organization_groups and organization_invitations tables are absent. The separate
+retained E2E database on port `55322` is not authorized for mutation by this task.
+
+During activation, the coordinator will hold the shared-preview lock, verify the
+target and expected pre-upgrade fingerprint, create a private recovery backup,
+apply only the reviewed transactional upgrade, verify post-upgrade schema/security
+and affected runtime health, and record the exact source/preview checkpoints. No
+schema mutation has occurred during this preparation.
+
+Pre-upgrade read-only fingerprint verification passed against the preview target:
+75 managed tables match the existing preview schema. A private custom-format
+PostgreSQL 17.6 recovery archive was created under the shared-preview lock; its
+archive inventory is readable. Archive file permissions are 0600 and its directory
+is 0700 outside Git. Full restore rehearsal has not yet been performed. The
+initial `/tmp/opencode` backup-directory attempt failed because that directory is
+root-owned; the successful archive uses the coordinator-owned private cache
+instead. No privilege escalation, target reset or data mutation was used.
+
+### Initial implementation verification
+
+Worker returned four-table schema/baseline, relations/types, lifecycle triggers,
+group-derived read authorization and focused regression cases. Package typecheck,
+baseline structure check and diff whitespace check passed. Package lint completed
+with two existing noSecrets warnings. Live authorization verification timed out
+twice and is not passing evidence; mandatory db:verify, generated fingerprint and
+preserved upgrade remain pending.
+
+The disposable harness explicitly creates uniquely named test databases on the
+repository-managed PostgreSQL server, independently of the preserved `postgres`
+database. Coordinator inspected the two task-created authorization databases from
+the timed-out runs under the preview lock, verified both had no active sessions,
+and dropped only those exact disposable targets. Preserved preview and retained
+E2E data were untouched. Timeout diagnosis and completion of the supported test
+workflow are in progress; a separate read-only security review is also running.
+
+### Recovery and review findings resolved locally
+
+The timeout was a pool self-deadlock in the new regression: it held the sole
+checked-out connection and then called pool.query. Using that existing client
+resolved it. The authorization suite now passes, including the added group cases.
+The coordinator took over implementation after the incomplete worker handoff.
+
+Independent review findings prompted future-membership rejection/read gating,
+organization-lock fencing for all group authority writes, scoped archive/removal
+actors, immutable lifecycle checks, audit events, and profile-bound invitation
+acceptance. Further regressions prove consent/role loss, overlapping direct/group
+grants, same-person staff+athlete, invitation recipient/replay checks, and both
+read-first/writer-first orders for group archive and both link removals.
+
+Fresh verification exposed an ACL-checker inventory omission and PostgreSQL 17's
+MAINTAIN grant from GRANT ALL. The four new tables now have explicit SELECT-only
+service-role ACLs, including MAINTAIN revocation; the security checker recognizes
+them as protected coaching tables. The fresh-install verification passed parity,
+fingerprint, storage, ACL/RLS/switched-role checks, SQL lint and empty schema diff.
+
+A bounded generated upgrade and guarded runner now exist outside active fresh
+migrations. Disposable prerequisite-to-upgrade proof passed: retained profile
+unchanged, exact new fingerprint, unexpected-schema/already-installed refusal,
+and the full authorization/concurrency suite. Final reruns, review, publication,
+and preview activation are still required before claiming live delivery.
+
+The full `pnpm --filter @repo/db db:verify` subsequently passed, including upgrade
+proof, two fresh installs with identical fingerprints, switched-role security,
+549 Core/SQL authoring boundary cases, and the existing query-plan checks. Final
+review then required additional operator protections: exact generated-SQL/source
+matching and a private recovery manifest binding archive digest, target, creation
+time and prerequisite fingerprint. These are implemented with tamper regressions.
+Invitation closure now records a current administrative actor independently of
+the inviter, so the owner can revoke invitations after an inviter loses authority;
+acceptance still requires the inviter's current authority. The final DB gate is
+being rerun after these fixes. No preview schema change has yet occurred.
+
+## Verified preview delivery
+
+The final `pnpm --filter @repo/db db:verify` passed after all review fixes. Its
+cleanup was narrowed to terminate only disposable-target client sessions, avoiding
+permission failures on internal PostgreSQL maintenance workers. Independent final
+review found no remaining actionable blockers in the scoped database/upgrade work.
+
+- Source checkpoint: `0cefa21e9adc64aebf3eef03a2ba17f30be11b88`.
+- Preview before: `f0b572c9f17a4777d5c8b7290b116a57a5189061`.
+- Preview after: `5fd68cd24055617f1b50122ffb1e13b79c20b3b5`.
+- Exclusive shared-preview lock covered integration, archive attestation,
+  transaction, data/fingerprint checks and service health. Ancestry checker passed.
+- Approved one-time data-preserving upgrade committed; all 79 managed tables
+  match the final fingerprint. No reset, reseed or fresh-baseline replay occurred.
+- All 72 pre-existing public tables retained identical row counts and content
+  digests before runtime services resumed. Recovery archive, private bound
+  manifest and before/after data digests remain outside Git in the coordinator
+  cache referenced by the shared activation record. Archive inventory is readable;
+  a full restore rehearsal was not performed.
+- Initial backup inventory invocation hit Node stdin EPIPE before any migration;
+  using file-descriptor input fixed it. The archive and unchanged pre-upgrade data
+  were verified before continuing. No database rollback or reset was needed.
+- Previously active web/provider worker services restored; web health HTTP 200 and
+  Metro running. No native or dependency changes. New tables remain backend-owned;
+  no management UI/endpoints or new direct-client grants are claimed.
+
+Database phase is complete and live in preview. API/Core implementation has not
+started. Subsequent work is a read-only evaluation of domain contracts and API
+management workflows. Remote publication is a separate delivery gate and must not
+be inferred from successful preview activation.
+
+### Remote publication blocked by prerequisite API architecture
+
+Normal `git push -u origin feat/coaching-database-foundation` was attempted with
+hooks enabled. The required pre-push gate stopped at four raw-SQL architecture
+violations in unchanged prerequisite API files:
+
+- `packages/api/src/application/performance-model/reconcile-thresholds.ts`
+  (stored-function call, reported line 802).
+- `packages/api/src/repositories/threshold-repository.ts`
+  (ordinary CRUD, reported lines 332, 402 and 419).
+
+These files are byte-identical to prerequisite source `1d5ac63a` and were not
+modified by the database feature. The branch was not published and no PR could
+be created; no hook bypass or auto-merge was used. Resolving the prerequisite API
+checkpoint is outside the current database-only implementation boundary. Next:
+reconcile an approved source checkpoint containing that prerequisite repair, then
+rerun normal publication gates. The database foundation remains independently
+verified and live in preview; this blocker does not revoke that delivery status.

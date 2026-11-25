@@ -1,9 +1,7 @@
 import { z } from "zod";
-
+import { dateOnlySchema } from "./date-only";
 export const templateItemTypeSchema = z.enum(["training_plan", "activity_plan"]);
 export const trainingPlanApplicationModeSchema = z.enum(["full", "remaining"]);
-
-const dateOnlySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 export const templateApplyInputSchema = z
   .object({

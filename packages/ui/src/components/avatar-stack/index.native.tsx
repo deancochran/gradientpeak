@@ -37,8 +37,8 @@ function AvatarStack({ avatars, className, maxAvatarsAmount = 3, orientation }: 
         orientation === "horizontal" ? "-space-x-0" : "-space-y-0",
       )}
     >
-      {shownAvatars.map(({ image, name }, index) => (
-        <Avatar alt={name} key={`${name}-${image}-${index}`} className="border-background border-2">
+      {shownAvatars.map(({ id, image, name }) => (
+        <Avatar alt={name} key={id} className="border-background border-2">
           <AvatarImage source={{ uri: image }} />
           <AvatarFallback>
             <Text className="text-xs font-medium text-muted-foreground">{getInitials(name)}</Text>

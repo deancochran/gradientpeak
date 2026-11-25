@@ -1,31 +1,35 @@
+import type { ActivityPlanDetail, ActivityPlanSummary } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { DateInput } from "@repo/ui/components/date-input";
-import { Form, FormSwitchField, FormTextareaField, FormTextField } from "@repo/ui/components/form";
-import { Icon } from "@repo/ui/components/icon";
+import {
+  Form,
+  FormDateInputField,
+  FormSwitchField,
+  FormTextareaField,
+  FormTextField,
+  FormTimeInputField,
+} from "@repo/ui/components/form";
 import { Input } from "@repo/ui/components/input";
 import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
 import { Textarea } from "@repo/ui/components/textarea";
 import { TimeInput } from "@repo/ui/components/time-input";
 import { format } from "date-fns";
-import { X } from "lucide-react-native";
-import { Pressable, TouchableOpacity, View } from "react-native";
+import type { FieldValues, UseFormReturn } from "react-hook-form";
+import { Pressable, View } from "react-native";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
+import { ClearFieldAction } from "@/components/shared/ClearFieldAction";
+import { EmptyState, ErrorState, LoadingState } from "@/components/shared/ScreenState";
+import { SearchField } from "@/components/shared/SearchField";
+import { eventDateForEditor, getDeviceTimeZone } from "@/lib/calendar/eventSchedule";
+import { formatRecurrenceUntil, recurrenceEndDate } from "@/lib/calendar/recurrenceInput";
+import { omitUndefined } from "@/lib/omitUndefined";
 
 export type CreateEventType = "custom" | "planned";
 export type EventRecurrenceFrequency = "none" | "daily" | "weekly" | "monthly";
 
-export type ActivityPlanListItem = {
-  id: string;
-  name: string;
-  activity_category?: string | null;
-  description?: string | null;
-  authoritative_metrics?: {
-    estimated_duration?: number | null;
-    estimated_tss?: number | null;
-  } | null;
-};
+export type ActivityPlanListItem = ActivityPlanSummary | ActivityPlanDetail;
 
 export function toDateOnly(value: Date) {
   return format(value, "yyyy-MM-dd");
@@ -52,6 +56,7 @@ export function parseRecurrenceFrequency(event: {
 }
 
 export function parseRecurrenceEndDate(event: {
+  timezone?: string | null;
   recurrence_rule?: string | null;
   recurrence?: { rule?: string | null } | null;
 }): string | null {
@@ -60,18 +65,13 @@ export function parseRecurrenceEndDate(event: {
     return null;
   }
 
-  const untilMatch = rule.toUpperCase().match(/(?:^|;)UNTIL=(\d{8})(?:T\d{6}Z)?(?:;|$)/);
-  if (!untilMatch?.[1]) {
-    return null;
-  }
-
-  const rawDate = untilMatch[1];
-  return `${rawDate.slice(0, 4)}-${rawDate.slice(4, 6)}-${rawDate.slice(6, 8)}`;
+  return recurrenceEndDate(rule, event.timezone ?? "UTC");
 }
 
 export function buildRecurrenceFromFrequency(
   frequency: EventRecurrenceFrequency,
   endDate: string | null,
+  timezone = getDeviceTimeZone(),
 ) {
   if (frequency === "none") {
     return null;
@@ -81,11 +81,11 @@ export function buildRecurrenceFromFrequency(
     return null;
   }
 
-  const untilDate = endDate.replace(/-/g, "");
+  const until = formatRecurrenceUntil(endDate, timezone);
 
   return {
-    rule: `FREQ=${frequency.toUpperCase()};UNTIL=${untilDate}T235959Z`,
-    timezone: "UTC",
+    rule: `FREQ=${frequency.toUpperCase()};UNTIL=${until}`,
+    timezone,
   };
 }
 
@@ -99,14 +99,13 @@ function buildLocalDateAtHour(dateKey: string | undefined, hour: number) {
   return new Date(year ?? fallback.getFullYear(), (month ?? 1) - 1, day ?? 1, hour, 0, 0, 0);
 }
 
-export function parseEventDateForEditor(event: { starts_at: string; all_day?: boolean | null }) {
-  if (event.all_day) {
-    const dateOnly = event.starts_at.slice(0, 10);
-    const [year, month, day] = dateOnly.split("-").map(Number);
-    return new Date(year ?? 1970, (month ?? 1) - 1, day ?? 1, 12, 0, 0, 0);
-  }
-
-  return new Date(event.starts_at);
+export function parseEventDateForEditor(event: {
+  starts_at: string;
+  all_day?: boolean | null;
+  scheduled_date?: string | null;
+  timezone?: string | null;
+}) {
+  return eventDateForEditor(event);
 }
 
 export function buildCreateStartsAt(dateKey?: string) {
@@ -126,7 +125,7 @@ function applyDateOnlyToDate(current: Date, dateOnly: string) {
 
 type EventEditorCardProps = {
   mode: "create" | "update";
-  form?: { control: any };
+  form?: UseFormReturn<FieldValues>;
   title: string;
   subtitle: string;
   eventTitle: string;
@@ -233,6 +232,8 @@ export function EventEditorCard({
                     const isSelected = createEventType === value;
                     return (
                       <Pressable
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: isSelected }}
                         key={value}
                         onPress={() => onChangeCreateEventType(value as CreateEventType)}
                         className={`flex-1 rounded-md border px-3 py-3 ${isSelected ? "border-primary bg-primary/10" : "border-border bg-card"}`}
@@ -261,9 +262,11 @@ export function EventEditorCard({
             onSelectActivityPlan ? (
               <View className="gap-3">
                 <Text className="text-xs text-muted-foreground">Search activity plans</Text>
-                <Input
-                  value={activityPlanSearchQuery}
+                <SearchField
+                  accessibilityLabel="Search your activity plans"
+                  value={activityPlanSearchQuery ?? ""}
                   onChangeText={onChangeActivityPlanSearchQuery}
+                  onClear={() => onChangeActivityPlanSearchQuery("")}
                   placeholder="Search your activity plans"
                   testID={`${testIDPrefix}-activity-plan-search-input`}
                 />
@@ -272,7 +275,7 @@ export function EventEditorCard({
                   <View className="gap-2" testID={`${testIDPrefix}-selected-activity-plan`}>
                     <Text className="text-xs font-medium text-muted-foreground">Selected plan</Text>
                     <ActivityPlanCard
-                      activityPlan={selectedCreateActivityPlan as any}
+                      plan={selectedCreateActivityPlan}
                       testID={`${testIDPrefix}-selected-activity-plan-card`}
                       variant="compact"
                     />
@@ -280,15 +283,14 @@ export function EventEditorCard({
                 ) : null}
 
                 {isLoadingActivityPlans ? (
-                  <Text className="text-xs text-muted-foreground">Loading activity plans...</Text>
+                  <LoadingState message="Loading activity plans..." />
                 ) : activityPlansError ? (
-                  <TouchableOpacity
-                    onPress={onRetryActivityPlans}
-                    activeOpacity={0.85}
+                  <ErrorState
+                    description="Activity plans could not be loaded."
+                    {...omitUndefined({ onAction: onRetryActivityPlans })}
                     testID={`${testIDPrefix}-activity-plan-retry`}
-                  >
-                    <Text className="text-xs text-primary">Retry loading activity plans</Text>
-                  </TouchableOpacity>
+                    title="Unable to load activity plans"
+                  />
                 ) : (filteredActivityPlans?.length ?? 0) > 0 ? (
                   <View className="gap-2">
                     {filteredActivityPlans?.slice(0, 8).map((plan) => {
@@ -296,10 +298,14 @@ export function EventEditorCard({
                       return (
                         <View
                           key={plan.id}
-                          className={isSelected ? "rounded-2xl border-2 border-primary" : undefined}
+                          {...omitUndefined({
+                            className: isSelected
+                              ? "rounded-2xl border-2 border-primary"
+                              : undefined,
+                          })}
                         >
                           <ActivityPlanCard
-                            activityPlan={plan as any}
+                            plan={plan}
                             onPress={() => onSelectActivityPlan(plan.id)}
                             testID={`${testIDPrefix}-activity-plan-option-${plan.id}`}
                             variant="compact"
@@ -309,15 +315,13 @@ export function EventEditorCard({
                     })}
                   </View>
                 ) : (
-                  <Text className="text-xs text-muted-foreground">
-                    No activity plans match that search yet.
-                  </Text>
+                  <EmptyState title="No activity plans match that search yet." />
                 )}
               </View>
             ) : null}
 
             {useSharedFields ? (
-              <Form {...(form as any)}>
+              <Form {...form}>
                 <FormTextField
                   control={form?.control}
                   disabled={isPending}
@@ -349,7 +353,7 @@ export function EventEditorCard({
           </View>
 
           {useSharedFields ? (
-            <Form {...(form as any)}>
+            <Form {...form}>
               <FormSwitchField
                 control={form?.control}
                 description="Hide time for this event"
@@ -360,45 +364,25 @@ export function EventEditorCard({
               />
 
               <View className="gap-2">
-                <DateInput
+                <FormDateInputField
                   accessibilityHint="Choose when this event starts"
-                  id={`${testIDPrefix}-start-date`}
+                  control={form.control}
+                  disabled={isPending}
                   label="Starts"
-                  onChange={(value) => {
-                    if (!value) {
-                      return;
-                    }
-
-                    onChangeStartsAt(applyDateOnlyToDate(startsAt, value));
-                  }}
+                  name="start_date"
                   pickerPresentation="modal"
                   testId={`${testIDPrefix}-start-date-button`}
-                  value={toDateOnly(startsAt)}
                 />
 
                 {!allDay ? (
-                  <TimeInput
+                  <FormTimeInputField
                     accessibilityHint="Choose when this event starts"
-                    id={`${testIDPrefix}-start-time`}
+                    control={form.control}
+                    disabled={isPending}
                     label="Start time"
-                    onChange={(value) => {
-                      if (!value) {
-                        return;
-                      }
-
-                      const [hours, minutes] = value.split(":").map(Number);
-                      const next = new Date(startsAt);
-                      next.setHours(
-                        hours ?? startsAt.getHours(),
-                        minutes ?? startsAt.getMinutes(),
-                        0,
-                        0,
-                      );
-                      onChangeStartsAt(next);
-                    }}
+                    name="start_time"
                     pickerPresentation="modal"
                     testId={`${testIDPrefix}-start-time-button`}
-                    value={format(startsAt, "HH:mm")}
                   />
                 ) : null}
               </View>
@@ -416,6 +400,8 @@ export function EventEditorCard({
                       const isSelected = recurrenceFrequency === value;
                       return (
                         <Pressable
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: isSelected }}
                           key={value}
                           onPress={() => onChangeRecurrenceFrequency(value)}
                           className={`rounded-md border px-3 py-2 ${isSelected ? "border-primary bg-primary/10" : "border-border bg-card"}`}
@@ -443,15 +429,11 @@ export function EventEditorCard({
                         value={recurrenceEndDate ?? ""}
                       />
                       {recurrenceEndDate ? (
-                        <Pressable
+                        <ClearFieldAction
                           accessibilityLabel="Clear repeat end date"
                           onPress={() => onChangeRecurrenceEndDate(null)}
-                          className="self-start flex-row items-center gap-1 rounded-full border border-border px-2.5 py-1"
                           testID={`${testIDPrefix}-recurrence-end-date-clear`}
-                        >
-                          <Icon as={X} size={12} className="text-muted-foreground" />
-                          <Text className="text-xs font-medium text-muted-foreground">Clear</Text>
-                        </Pressable>
+                        />
                       ) : null}
                       <Text className="text-xs text-muted-foreground">
                         Sets the last day this series appears on your calendar.
@@ -546,6 +528,8 @@ export function EventEditorCard({
                       const isSelected = recurrenceFrequency === value;
                       return (
                         <Pressable
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: isSelected }}
                           key={value}
                           onPress={() => onChangeRecurrenceFrequency(value)}
                           className={`rounded-md border px-3 py-2 ${isSelected ? "border-primary bg-primary/10" : "border-border bg-card"}`}
@@ -573,15 +557,11 @@ export function EventEditorCard({
                         value={recurrenceEndDate ?? ""}
                       />
                       {recurrenceEndDate ? (
-                        <Pressable
+                        <ClearFieldAction
                           accessibilityLabel="Clear repeat end date"
                           onPress={() => onChangeRecurrenceEndDate(null)}
-                          className="self-start flex-row items-center gap-1 rounded-full border border-border px-2.5 py-1"
                           testID={`${testIDPrefix}-recurrence-end-date-clear`}
-                        >
-                          <Icon as={X} size={12} className="text-muted-foreground" />
-                          <Text className="text-xs font-medium text-muted-foreground">Clear</Text>
-                        </Pressable>
+                        />
                       ) : null}
                       <Text className="text-xs text-muted-foreground">
                         Sets the last day this series appears on your calendar.
@@ -620,7 +600,7 @@ export function EventEditorCard({
             disabled={isPending}
             testID={`${testIDPrefix}-cancel-button`}
           >
-            <Text>Cancel</Text>
+            <Text className="text-foreground">Cancel</Text>
           </Button>
           <Button
             className="flex-1"

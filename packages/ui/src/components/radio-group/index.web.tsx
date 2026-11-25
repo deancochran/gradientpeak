@@ -11,7 +11,16 @@ function RadioGroup({
   testId,
   ...props
 }: React.ComponentProps<typeof RegistryRadioGroup> & RadioGroupTestProps) {
-  return <RegistryRadioGroup {...getWebTestProps({ accessibilityLabel, id, testId })} {...props} />;
+  return (
+    <RegistryRadioGroup
+      {...getWebTestProps({
+        ...(accessibilityLabel !== undefined ? { accessibilityLabel } : {}),
+        ...(id !== undefined ? { id } : {}),
+        ...(testId !== undefined ? { testId } : {}),
+      })}
+      {...props}
+    />
+  );
 }
 
 export { RadioGroup, RadioGroupItem };

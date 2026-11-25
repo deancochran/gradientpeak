@@ -1,30 +1,39 @@
+import type { CalendarProjectionItem } from "@repo/core";
 import { PlanCalendarSkeleton } from "@repo/ui/components/loading-skeletons";
 import { Text } from "@repo/ui/components/text";
-import { ScrollView, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, ScrollView, TouchableOpacity, View } from "react-native";
 import { AppHeader } from "@/components/shared";
-import { CalendarDayList, type CalendarDayListProps } from "./CalendarDayList";
-import { type CalendarWeekDayIndicators, CalendarWeekStrip } from "./CalendarWeekStrip";
+import { CalendarMonthPage } from "./CalendarMonthPage";
+import { CalendarTimelineToolbar } from "./CalendarTimelineToolbar";
 
 type CalendarErrorScreenProps = {
   onRetry: () => void;
+  showHeader?: boolean;
 };
 
 type CalendarReadyScreenProps = {
+  activeMonthKey: string;
+  calendarProjectionTruncated: boolean;
+  hasPartialError: boolean;
   hydrated: boolean;
-  headerTitle: string;
+  isLoadingAdjacentPage: boolean;
+  itemsByDate: Map<string, CalendarProjectionItem[]>;
+  monthTitle: string;
+  onCreateEvent: () => void;
+  onMoveMonth: (months: number) => void;
+  onOpenDayBreakdown: (dateKey: string) => void;
+  onSelectDate: (dateKey: string) => void;
+  onToday: () => void;
+  onRetry: () => void;
   selectedDateKey: string;
   todayKey: string;
-  weekDayIndicators: Map<string, CalendarWeekDayIndicators>;
-  dayListProps: CalendarDayListProps;
-  onCreateEvent: () => void;
-  onJumpToday: () => void;
-  onSelectWeekDate: (dateKey: string) => void;
+  showHeader?: boolean;
 };
 
-export function CalendarLoadingScreen() {
+export function CalendarLoadingScreen({ showHeader = true }: { showHeader?: boolean }) {
   return (
     <View className="flex-1 bg-background">
-      <AppHeader title="Calendar" />
+      {showHeader ? <AppHeader title="Calendar" /> : null}
       <ScrollView className="flex-1 p-6">
         <PlanCalendarSkeleton />
       </ScrollView>
@@ -33,18 +42,20 @@ export function CalendarLoadingScreen() {
   );
 }
 
-export function CalendarErrorScreen({ onRetry }: CalendarErrorScreenProps) {
+export function CalendarErrorScreen({ onRetry, showHeader = true }: CalendarErrorScreenProps) {
   return (
     <View className="flex-1 bg-background">
-      <AppHeader title="Calendar" />
+      {showHeader ? <AppHeader title="Calendar" /> : null}
       <View className="flex-1 items-center justify-center gap-3 px-6">
         <Text className="text-center text-sm text-muted-foreground">
           Unable to load calendar events right now.
         </Text>
         <TouchableOpacity
-          onPress={onRetry}
+          accessibilityLabel="Retry loading calendar"
+          accessibilityRole="button"
           className="rounded-full border border-border bg-card px-4 py-2"
-          activeOpacity={0.85}
+          onPress={onRetry}
+          testID="calendar-retry"
         >
           <Text className="text-sm text-foreground">Retry</Text>
         </TouchableOpacity>
@@ -53,35 +64,67 @@ export function CalendarErrorScreen({ onRetry }: CalendarErrorScreenProps) {
   );
 }
 
-export function CalendarReadyScreen({
-  hydrated,
-  headerTitle,
-  selectedDateKey,
-  todayKey,
-  weekDayIndicators,
-  dayListProps,
-  onCreateEvent,
-  onJumpToday,
-  onSelectWeekDate,
-}: CalendarReadyScreenProps) {
+export function CalendarReadyScreen(props: CalendarReadyScreenProps) {
   return (
     <View className="flex-1 bg-background" testID="calendar-screen-ready">
-      <AppHeader title="Calendar" />
-      <CalendarWeekStrip
-        dayIndicators={weekDayIndicators}
-        monthTitle={headerTitle}
-        onCreateEvent={onCreateEvent}
-        onResetToday={onJumpToday}
-        selectedDateKey={selectedDateKey}
-        todayKey={todayKey}
-        onSelectDate={onSelectWeekDate}
+      {props.showHeader !== false ? <AppHeader title="Calendar" /> : null}
+      <CalendarTimelineToolbar
+        dateKey={props.selectedDateKey}
+        isJumpLoading={props.isLoadingAdjacentPage}
+        monthTitle={props.monthTitle}
+        onCreateEvent={props.onCreateEvent}
+        onJumpDate={props.onSelectDate}
+        onMoveMonth={props.onMoveMonth}
+        onResetToday={props.onToday}
       />
 
-      <View className="flex-1" testID="calendar-screen-content-ready">
-        <CalendarDayList {...dayListProps} />
+      {props.hasPartialError ? (
+        <View
+          className="mx-4 mb-2 flex-row items-center justify-between gap-3 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2"
+          testID="calendar-partial-error"
+        >
+          <Text className="flex-1 text-xs text-foreground">
+            Some calendar items could not be loaded.
+          </Text>
+          <TouchableOpacity
+            accessibilityLabel="Retry loading calendar items"
+            accessibilityRole="button"
+            onPress={props.onRetry}
+          >
+            <Text className="text-xs font-medium text-foreground">Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {props.calendarProjectionTruncated ? (
+        <View
+          className="mx-4 mb-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2"
+          testID="calendar-projection-truncated"
+        >
+          <Text accessibilityRole="alert" className="text-xs text-foreground">
+            This date page contains more calendar items than can be shown.
+          </Text>
+        </View>
+      ) : null}
+
+      <View className="flex-1">
+        <CalendarMonthPage
+          activeMonthKey={props.activeMonthKey}
+          itemsByDate={props.itemsByDate}
+          onOpenDay={props.onOpenDayBreakdown}
+          selectedDateKey={props.selectedDateKey}
+          todayKey={props.todayKey}
+        />
       </View>
 
-      {!hydrated ? <View testID="calendar-store-pending" /> : null}
+      {props.isLoadingAdjacentPage ? (
+        <ActivityIndicator
+          accessibilityLabel="Loading calendar month"
+          size="small"
+          testID="calendar-month-loading"
+        />
+      ) : null}
+      {!props.hydrated ? <View testID="calendar-store-pending" /> : null}
     </View>
   );
 }
