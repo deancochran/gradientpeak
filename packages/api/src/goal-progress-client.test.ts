@@ -16,7 +16,7 @@ describe("selectPublishedGoalProgressHistory", () => {
   it.each([
     [{ publication: { publishedRevision: 7 } }, { publication: { publishedRevision: 8 } }],
     [{ publication: { publishedRevision: null } }, { publication: { publishedRevision: null } }],
-    [{ publication: undefined }, { publication: { publishedRevision: 7 } }],
+    [{}, { publication: { publishedRevision: 7 } }],
   ] as const)("excludes foreign or unversioned history", (progress, overview) => {
     expect(
       selectPublishedGoalProgressHistory(progress, {
