@@ -11,7 +11,24 @@ export type NativeGoalTransport = {
   origin: string;
   allowProgressReads: () => Promise<void>;
   observations: () => Promise<{ blocked: number; forwarded: number }>;
+  trace: () => Promise<NativeGoalTransportTrace[]>;
   stop: () => Promise<void>;
+};
+
+export type NativeGoalTransportTrace = {
+  method: string;
+  procedures: Array<
+    | "athleteIntelligence.getGoalAssessment"
+    | "athleteIntelligence.getGoalProgress"
+    | "athleteIntelligence.getThresholdOverview"
+  >;
+  batchSize: number;
+  hasProgress: boolean;
+  hasThreshold: boolean;
+  targetGoalMatched: boolean;
+  requestOrder: number;
+  responseOrder?: number;
+  status?: number;
 };
 
 export async function startNativeGoalTransport({
@@ -51,7 +68,7 @@ export async function startNativeGoalTransport({
     throw new Error("Native goal transport did not become ready.");
   }
   let commandTail = Promise.resolve();
-  const command = <T extends "allow" | "observations">(type: T) => {
+  const command = <T extends "allow" | "observations" | "trace">(type: T) => {
     const run = async () => {
       try {
         requireNativeScenarioTransportGuard({ environment, sessionId: goalId, upstreamPort });
@@ -79,6 +96,10 @@ export async function startNativeGoalTransport({
     observations: async () => {
       const result = await command("observations");
       return { blocked: Number(result.blocked), forwarded: Number(result.forwarded) };
+    },
+    trace: async () => {
+      const result = await command("trace");
+      return Array.isArray(result.records) ? (result.records as NativeGoalTransportTrace[]) : [];
     },
     stop: () => stopNativeScenarioTransportChild(child),
   };
