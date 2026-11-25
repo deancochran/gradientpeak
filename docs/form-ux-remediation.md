@@ -1,5 +1,10 @@
 # Form UX standards and remediation coverage
 
+## Group-event shared text fields — 2026-11-25
+
+- The web group-event editor now uses the existing shared text and textarea fields for title, description and location while retaining raw local date-time controls, Core wall-time preparation, timezone validation, dirty-discard behavior, attachment selection/retry states and submit-inflight protection. Empty optional description/location values still prepare as null; title remains required and limited to 160 characters.
+- Focused component coverage exercises title/description/location edits and clears, native limits, dirty-guard drafts, submit-error draft retention, double-submit protection, invalid scheduling and overnight zone round-tripping. The guarded disposable browser journey passed on Desktop Chrome at 1440×1000 and Mobile Chrome at 390×844, covering invalid overnight repair/save/reopen, dirty Cancel and optional-end clearing; inspected captures show intact labels, hierarchy, density and no horizontal overflow.
+
 ## Cross-platform editing and selection consolidation — 2026-11-22
 
 - Goal editors share Core target-field visibility, requiredness and type-reset rules. Platform renderers retain their own semantic controls, numeric draft validation, duration layouts and presets. Empty required numeric targets remain invalid; optional values remain clearable.
