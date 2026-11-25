@@ -164,7 +164,7 @@ test("Android truthfully retries a blocked cached goal-progress refresh", async 
       // Preload the real successful Home query before installing the 503 transport.
       // The blocked goal read must therefore show the product's cached-refresh warning.
       flow("goal-progress-sign-in.yaml", environment);
-      const transport = await startNativeGoalTransport({ goalId });
+      const transport = await startNativeGoalTransport({ faultMode: "detail-refresh", goalId });
       const port = new URL(transport.origin).port;
       let trace: Awaited<ReturnType<typeof transport.trace>> | undefined;
       let traceError: unknown;

@@ -54,8 +54,38 @@ function goalPath(id = goalId) {
 function observedGoalBatchPath(ids: [string, string] = [goalId, goalId]) {
   return `/api/trpc/athleteIntelligence.getGoalAssessment,athleteIntelligence.getGoalProgress?batch=1&input=${encodeURIComponent(JSON.stringify({ 0: { json: { goalId: ids[0] } }, 1: { json: { goalId: ids[1] } } }))}`;
 }
-async function start(port: number, environment = env()) {
-  const transport = await startNativeGoalTransport({ goalId, environment, upstreamPort: port });
+function detailRefreshPath({
+  id = goalId,
+  order = [
+    "goals.getById",
+    "athleteIntelligence.getGoalAssessment",
+    "athleteIntelligence.getGoalProgress",
+    "athleteIntelligence.getThresholdOverview",
+  ],
+  input = {
+    0: { json: { id } },
+    1: { json: { goalId: id } },
+    2: { json: { goalId: id } },
+    3: { json: { historyLimit: 100 } },
+  },
+}: {
+  id?: string;
+  order?: string[];
+  input?: Record<string, unknown>;
+} = {}) {
+  return `/api/trpc/${order.join(",")}?batch=1&input=${encodeURIComponent(JSON.stringify(input))}`;
+}
+async function start(
+  port: number,
+  environment = env(),
+  faultMode: "initial-pair" | "detail-refresh" = "initial-pair",
+) {
+  const transport = await startNativeGoalTransport({
+    environment,
+    faultMode,
+    goalId,
+    upstreamPort: port,
+  });
   transports.push(transport);
   return transport;
 }
@@ -138,6 +168,52 @@ describe("native goal transport", () => {
     expect(await transport.observations()).toEqual({ blocked: 1, forwarded: 1 });
   });
 
+  it("fails only the exact Goal Detail four-query refresh until allowed, then relays real bytes", async () => {
+    const body = Buffer.from('{"real":"detail-refresh"}');
+    const port = await upstream((_request, response) => {
+      response.statusCode = 206;
+      response.end(body);
+    });
+    const transport = await start(port, env(), "detail-refresh");
+    await expect(fetch(`${transport.origin}${detailRefreshPath()}`)).resolves.toMatchObject({
+      status: 503,
+    });
+    expect(await transport.observations()).toEqual({ blocked: 1, forwarded: 0 });
+    await transport.allowProgressReads();
+    const allowed = await fetch(`${transport.origin}${detailRefreshPath()}`);
+    expect(allowed.status).toBe(206);
+    expect(Buffer.from(await allowed.arrayBuffer())).toEqual(body);
+    expect(await transport.observations()).toEqual({ blocked: 1, forwarded: 1 });
+    expect(await transport.trace()).toMatchObject([
+      {
+        procedures: [
+          "goals.getById",
+          "athleteIntelligence.getGoalAssessment",
+          "athleteIntelligence.getGoalProgress",
+          "athleteIntelligence.getThresholdOverview",
+        ],
+        batchSize: 4,
+        hasProgress: true,
+        hasThreshold: true,
+        targetGoalMatched: true,
+        status: 503,
+      },
+      {
+        procedures: [
+          "goals.getById",
+          "athleteIntelligence.getGoalAssessment",
+          "athleteIntelligence.getGoalProgress",
+          "athleteIntelligence.getThresholdOverview",
+        ],
+        batchSize: 4,
+        hasProgress: true,
+        hasThreshold: true,
+        targetGoalMatched: true,
+        status: 206,
+      },
+    ]);
+  });
+
   it("relays malformed and mixed batches unchanged", async () => {
     const port = await upstream((_req, res) => res.end("relay"));
     const transport = await start(port);
@@ -167,6 +243,75 @@ describe("native goal transport", () => {
     await expect(
       fetch(`${transport.origin}${observedGoalBatchPath()}`, { method: "POST" }),
     ).resolves.toMatchObject({ status: 200 });
+    expect(await transport.observations()).toEqual({ blocked: 0, forwarded: 0 });
+  });
+
+  it("relays every non-exact Goal Detail refresh shape unchanged", async () => {
+    const body = Buffer.from("detail-relay");
+    const port = await upstream((_request, response) => {
+      response.statusCode = 200;
+      response.end(body);
+    });
+    const transport = await start(port, env(), "detail-refresh");
+    const wrongOrder = detailRefreshPath({
+      order: [
+        "goals.getById",
+        "athleteIntelligence.getGoalProgress",
+        "athleteIntelligence.getGoalAssessment",
+        "athleteIntelligence.getThresholdOverview",
+      ],
+    });
+    const wrongGoalId = "22222222-2222-4222-8222-222222222222";
+    const wrongGoalInputs = [
+      {
+        0: { json: { id: wrongGoalId } },
+        1: { json: { goalId } },
+        2: { json: { goalId } },
+        3: { json: { historyLimit: 100 } },
+      },
+      {
+        0: { json: { id: goalId } },
+        1: { json: { goalId: wrongGoalId } },
+        2: { json: { goalId } },
+        3: { json: { historyLimit: 100 } },
+      },
+      {
+        0: { json: { id: goalId } },
+        1: { json: { goalId } },
+        2: { json: { goalId: wrongGoalId } },
+        3: { json: { historyLimit: 100 } },
+      },
+    ];
+    const wrongThreshold = detailRefreshPath({
+      input: {
+        0: { json: { id: goalId } },
+        1: { json: { goalId } },
+        2: { json: { goalId } },
+        3: { json: { historyLimit: 99 } },
+      },
+    });
+    const extraFive = detailRefreshPath({
+      order: [
+        "goals.getById",
+        "athleteIntelligence.getGoalAssessment",
+        "athleteIntelligence.getGoalProgress",
+        "athleteIntelligence.getThresholdOverview",
+        "other",
+      ],
+    });
+    const malformed =
+      "/api/trpc/goals.getById,athleteIntelligence.getGoalAssessment,athleteIntelligence.getGoalProgress,athleteIntelligence.getThresholdOverview?batch=1&input=%7Bbad";
+    for (const path of [
+      wrongOrder,
+      ...wrongGoalInputs.map((input) => detailRefreshPath({ input })),
+      wrongThreshold,
+      extraFive,
+      malformed,
+    ]) {
+      const response = await fetch(`${transport.origin}${path}`);
+      expect(response.status).toBe(200);
+      expect(Buffer.from(await response.arrayBuffer())).toEqual(body);
+    }
     expect(await transport.observations()).toEqual({ blocked: 0, forwarded: 0 });
   });
 
