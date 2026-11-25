@@ -26,11 +26,11 @@ name: Completed athlete signs in visibly before the goal-progress proof
     timeout: 30000
 - scrollUntilVisible:
     element:
-      text: "285 W"
+      text: "Current: 285 W"
     direction: DOWN
 - assertVisible: ${MAESTRO_ACCEPTANCE_GOAL_TITLE}
-- assertVisible: "285 W"
-- assertVisible: "300 W"
-- assertVisible: "15 W"
+- assertVisible: "Current: 285 W"
+- assertVisible: "Target: 300 W"
+- assertVisible: "Remaining gap: 15 W"
 - assertVisible: "Target date: ${MAESTRO_ACCEPTANCE_TARGET_DATE}"
 - takeScreenshot: goal-progress-home
