@@ -1,3 +1,5 @@
+import { formatDeviceCalendarDate } from "../calendar";
+import { dateOnlySchema } from "../schemas/date-only";
 import type { ProfileGoal } from "../schemas/goals/profile_goals";
 import type { GoalEditorDraft } from "./draft";
 
@@ -11,8 +13,12 @@ export type GoalQualityFeedback = {
   canGuidePlan: boolean;
 };
 
-function getDateKey(value: Date) {
-  return value.toISOString().split("T")[0] ?? "";
+function getTodayKey(input: { today?: Date; todayDate?: string }) {
+  // UI dates are device-calendar dates. Planning callers can inject their own
+  // already-resolved calendar day, without relying on the process timezone.
+  return dateOnlySchema.parse(
+    input.todayDate ?? formatDeviceCalendarDate(input.today ?? new Date()),
+  );
 }
 
 function isFutureOrToday(dateKey: string, todayKey: string) {
@@ -35,13 +41,9 @@ function hasDraftTarget(draft: GoalEditorDraft): boolean {
         !!draft.targetDuration?.trim()
       );
     case "pace_threshold":
-      return !!draft.targetPace?.trim() && !!draft.thresholdTestDuration?.trim();
+      return !!draft.targetPace?.trim();
     case "power_threshold":
-      return (
-        typeof draft.targetWatts === "number" &&
-        draft.targetWatts > 0 &&
-        !!draft.thresholdTestDuration?.trim()
-      );
+      return typeof draft.targetWatts === "number" && draft.targetWatts > 0;
     case "hr_threshold":
       return typeof draft.targetBpm === "number" && draft.targetBpm > 0;
     case "consistency":
@@ -56,16 +58,20 @@ function hasDraftTarget(draft: GoalEditorDraft): boolean {
 export function getGoalDraftQualityFeedback(input: {
   draft: GoalEditorDraft;
   today?: Date;
+  todayDate?: string;
 }): GoalQualityFeedback {
-  const { draft, today = new Date() } = input;
-  const todayKey = getDateKey(today);
+  const { draft } = input;
+  const todayKey = getTodayKey(input);
   const missing: string[] = [];
 
   if (!draft.title.trim()) missing.push("name");
-  if (!draft.targetDate) missing.push("date");
+  if (!dateOnlySchema.safeParse(draft.targetDate).success) missing.push("date");
   if (!hasDraftTarget(draft)) missing.push("target");
 
-  if (draft.targetDate && !isFutureOrToday(draft.targetDate, todayKey)) {
+  if (
+    dateOnlySchema.safeParse(draft.targetDate).success &&
+    !isFutureOrToday(draft.targetDate, todayKey)
+  ) {
     return {
       status: "needs_update",
       label: "Needs update",
@@ -97,9 +103,10 @@ export function getGoalDraftQualityFeedback(input: {
 export function getProfileGoalLifecycleStatus(input: {
   goal: ProfileGoal;
   today?: Date;
+  todayDate?: string;
 }): GoalQualityFeedback {
-  const { goal, today = new Date() } = input;
-  const todayKey = getDateKey(today);
+  const { goal } = input;
+  const todayKey = getTodayKey(input);
 
   if (goal.target_date < todayKey) {
     return {
