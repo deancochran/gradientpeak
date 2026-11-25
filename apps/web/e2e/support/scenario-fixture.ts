@@ -25,6 +25,13 @@ import type { E2EExecutionIdentity } from "../support/identity";
 
 type ScenarioSnapshot = Awaited<ReturnType<typeof readScenarioRows>>;
 
+function receiptResultReferencesSession(result: unknown, sessionId: string) {
+  if (!result || typeof result !== "object") return false;
+  const session = (result as Record<string, unknown>).session;
+  if (!session || typeof session !== "object") return false;
+  return (session as Record<string, unknown>).id === sessionId;
+}
+
 export type SessionScenarioFixture = {
   activityPlanId: string;
   activityPlanRevision: number;
@@ -308,8 +315,7 @@ export async function createSessionScenarioFixture(input: {
           .from(chatbotOperationReceipts)
           .where(eq(chatbotOperationReceipts.profile_id, input.actor.profileId))
       ).flatMap((receipt) => {
-        const result = receipt.result as { session?: { id?: unknown } };
-        return result.session?.id === sessionId
+        return receiptResultReferencesSession(receipt.result, sessionId)
           ? [{ command: receipt.command, operationId: receipt.operationId }]
           : [];
       }),

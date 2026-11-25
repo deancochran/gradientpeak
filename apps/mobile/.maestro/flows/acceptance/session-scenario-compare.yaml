@@ -9,14 +9,8 @@ name: Compare and cancel a selected planned-session scenario
     visible:
       id: calendar-screen-ready
     timeout: 30000
-- tapOn:
-    id: calendar-date-jump-entry
-- tapOn: ${MAESTRO_ACCEPTANCE_SESSION_DAY}
-- tapOn: "OK"
-- extendedWaitUntil:
-    notVisible:
-      id: calendar-date-jump-loading
-    timeout: 30000
+# The fixture schedules exactly tomorrow, which is always present in the
+# current Calendar month's 42-day semantic grid, including month boundaries.
 - tapOn:
     id: calendar-day-select-${MAESTRO_ACCEPTANCE_SESSION_DATE}
 - extendedWaitUntil:
@@ -38,13 +32,22 @@ name: Compare and cancel a selected planned-session scenario
 - tapOn: "Enter an explicit duration"
 - inputText: "1200"
 - hideKeyboard
-- assertVisible:
-    id: session-scenario-apply
+- extendedWaitUntil:
+    visible: "Scenario comparison"
+    timeout: 30000
+- assertVisible: "Baseline"
+- assertVisible: "Alternative"
+- assertVisible: "Solid lines show the baseline; dashed lines show the selected alternative. A source with one point is shown as a marker. Both use the same planning horizon and units."
+- scrollUntilVisible:
+    element:
+      id: session-scenario-apply
+    direction: DOWN
 - takeScreenshot: session-scenario-comparison
 - tapOn:
     id: session-scenario-apply
 - assertVisible:
     id: session-scenario-confirm-apply
+- assertVisible: ${MAESTRO_ACCEPTANCE_SESSION_DATE}
 - takeScreenshot: session-scenario-confirmation
 - tapOn:
     id: session-scenario-cancel-apply
