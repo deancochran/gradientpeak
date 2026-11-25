@@ -2,9 +2,11 @@ appId: com.deancochran.gradientpeak.dev
 name: Athlete saves metadata-only activity-plan edits, reopens the library record, and returns Home
 ---
 # This flow continues the retained metadata draft from the prior cancel flow.
-# Clearing the optional description uses the actual native semantic field.
-- tapOn: "Description"
-- eraseText: 200
+# Select the native semantic field's whole value before clearing. eraseText
+# otherwise backspaces from its current cursor and can retain a suffix.
+- longPressOn: "Description"
+- tapOn: "Select all"
+- eraseText: 1
 - hideKeyboard
 - tapOn: "Save"
 # The edited name remains visible in the composer draft, so it cannot establish
@@ -35,6 +37,14 @@ name: Athlete saves metadata-only activity-plan edits, reopens the library recor
     timeout: 30000
 - assertVisible: ${MAESTRO_ACCEPTANCE_EDITED_PLAN_NAME}
 - takeScreenshot: activity-plan-edit-reopened
+# The detail is stacked above the library and has no tab bar. Its canonical
+# semantic header Back control returns to the already-proven library route.
+- tapOn:
+    id: standard-header-back
+- extendedWaitUntil:
+    visible:
+      id: activity-plans-list-screen
+    timeout: 30000
 - tapOn:
     id: tab-button-home
 - extendedWaitUntil:
