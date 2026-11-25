@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { freezePlannedSessionScenarioOperation } from "@repo/api/client";
 import { randomUUID } from "expo-crypto";
 import React from "react";
 import { act, renderNative, waitFor } from "../../../test/render-native";
@@ -296,6 +297,39 @@ describe("SessionScenarioPreview", () => {
         stored.get("gradientpeak:planned-session-scenario:v1:profile-a:session-a") ?? "{}",
       ),
     ).toMatchObject({ actorId: "00000000-0000-4000-8000-000000000001" });
+  });
+
+  it("keeps a hydrated receipt actionable through an unavailable preview without auto-submitting", async () => {
+    const recoveredSessionId = "00000000-0000-4000-8000-000000000010";
+    const receipt = freezePlannedSessionScenarioOperation({
+      actorId: "00000000-0000-4000-8000-000000000001",
+      expectedPreviewFingerprint: `v1:sha256:${"b".repeat(64)}`,
+      operationId: "00000000000040008000000000000009",
+      preview: {
+        expectedPlanRevision: 5,
+        expectedSessionRevision: 3,
+        expectedStateRevision: 7,
+        scenario: { kind: "less", targetDurationSeconds: 1200 },
+        sessionId: recoveredSessionId,
+      },
+    });
+    mocks.preview = {
+      data: { status: "unavailable", reason: "session_not_scheduled" },
+      isError: false,
+      isLoading: false,
+      refetch: jest.fn(),
+    };
+    jest.mocked(AsyncStorage.getItem).mockResolvedValue(JSON.stringify(receipt));
+    mocks.apply.mockResolvedValue({ status: "applied", action: "repointed" });
+
+    const screen = await renderNative(
+      <SessionScenarioPreview {...props} session={{ ...props.session, id: recoveredSessionId }} />,
+    );
+    await waitFor(() => expect(screen.getByTestId("session-scenario-retry-apply")).toBeTruthy());
+    expect(mocks.apply).not.toHaveBeenCalled();
+    await act(async () => screen.getByTestId("session-scenario-retry-apply").props.onPress());
+    await waitFor(() => expect(mocks.apply).toHaveBeenCalledTimes(1));
+    expect(mocks.apply).toHaveBeenLastCalledWith(receipt.request);
   });
 
   it("fences actor A's late apply acknowledgement after actor B replaces the session identity", async () => {
