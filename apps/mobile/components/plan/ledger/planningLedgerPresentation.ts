@@ -160,7 +160,12 @@ function formatAsOf(asOf: string, timezone: string | null) {
 function loadPosition(completed: number | null, planned: number | null) {
   if (completed === null && planned === null) return "Training load unavailable";
   if (planned === null) return "Completed load recorded";
-  if (planned === 0) return completed !== null && completed > 0 ? "Training recorded" : "Rest day";
+  if (planned === 0)
+    return completed === null
+      ? "Training load unavailable"
+      : completed > 0
+        ? "Training recorded"
+        : "Rest day";
   if (completed === null || completed === 0) return "Ready to train";
   if (completed > planned) return "Above planned load";
   if (completed === planned) return "Plan completed";
@@ -169,11 +174,12 @@ function loadPosition(completed: number | null, planned: number | null) {
 
 function dayConsistency(completed: number | null, planned: number | null) {
   if (completed === null && planned === null) return "No load data";
-  if ((completed ?? 0) === 0 && (planned ?? 0) === 0) return "Rest day";
+  if (completed === 0 && planned === 0) return "Rest day";
   if (planned !== null && planned > 0 && completed !== null && completed >= planned)
     return "On plan";
   if (completed !== null && completed > 0) return "Training recorded";
   if (planned !== null && planned > 0) return "Planned";
+  if (completed === null || planned === null) return "No load data";
   return "No load recorded";
 }
 

@@ -72,29 +72,8 @@ jest.mock("@/lib/api", () => ({
   },
 }));
 jest.mock("@repo/api/client", () => ({
-  selectPublishedGoalProgressHistory: (
-    progress: { publication?: { publishedRevision?: number | null } } | undefined,
-    overview:
-      | {
-          publication?: { publishedRevision?: number | null };
-          history: { items: unknown[]; nextCursor: unknown | null };
-        }
-      | undefined,
-  ) => {
-    const progressRevision = progress?.publication?.publishedRevision;
-    const overviewRevision = overview?.publication?.publishedRevision;
-    const matches =
-      progressRevision !== null &&
-      progressRevision !== undefined &&
-      overviewRevision !== null &&
-      overviewRevision !== undefined &&
-      progressRevision === overviewRevision;
-    return {
-      history: matches ? (overview?.history.items ?? []) : [],
-      historyLimited: matches && overview?.history.nextCursor !== null,
-      publicationMismatch: Boolean(overview && !matches),
-    };
-  },
+  selectPublishedGoalProgressHistory: jest.requireActual("@repo/api/goal-progress-client")
+    .selectPublishedGoalProgressHistory,
 }));
 jest.mock("@/components/plan/training-path/usePlanTrainingPathData", () => ({
   usePlanTrainingPathData: () => ({
@@ -282,6 +261,42 @@ it("retains cached progress, excludes mismatched history, and retries without ch
   expect(retryProgress).toHaveBeenCalled();
   expect(retryHistory).toHaveBeenCalled();
   expect(replace).not.toHaveBeenCalled();
+});
+
+it("does not label unknown publications as separately updated history", async () => {
+  mockParams = {
+    anchorDate: "2026-04-15",
+    goalId: "55555555-5555-4555-8555-555555555555",
+    metric: "threshold",
+    range: "3m",
+    view: "progress",
+  };
+  getGoalProgressQuery.mockReturnValue({
+    data: {
+      publication: { publishedRevision: null },
+      result: {
+        status: "current",
+        target: { activityCategory: "bike", metric: "power", unit: "watts" },
+        deadlineAt: "2026-05-20T00:00:00Z",
+      },
+    },
+    isError: false,
+    isLoading: false,
+    refetch: jest.fn(),
+  });
+  getThresholdOverviewQuery.mockReturnValue({
+    data: {
+      publication: { publishedRevision: null },
+      history: { items: [{ value: 999 }], nextCursor: null },
+    },
+    isError: false,
+    isLoading: false,
+    refetch: jest.fn(),
+  });
+
+  await renderNative(<PlanAnalysis />);
+
+  expect(screen.queryByTestId("plan-analysis-history-mismatch")).toBeNull();
 });
 
 it.each([
