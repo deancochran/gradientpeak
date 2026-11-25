@@ -13,6 +13,7 @@ name: Preserve the finalized recording after the runner-injected offline save fa
       id: activity-submit-status
     timeout: 45000
 - assertVisible: "Failed to upload your activity. Please check your connection and try again."
+- takeScreenshot: recording-offline-save-failed
 - tapOn: "OK"
 - assertVisible:
     id: activity-submit-save-button

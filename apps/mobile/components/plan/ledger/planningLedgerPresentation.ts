@@ -90,13 +90,13 @@ export type PlanningLedgerPresentation = {
   };
   periodLabel: string;
   state: {
-    fatigueDirection: "Falling" | "Rising" | "Stable";
+    fatigueDirection: "Falling" | "Rising" | "Stable" | "Unavailable";
     latestFatigueLabel: string;
-    fitnessDirection: "Falling" | "Rising" | "Stable";
+    fitnessDirection: "Falling" | "Rising" | "Stable" | "Unavailable";
     latestFitnessLabel: string;
     latestFormLabel: string;
     latestSource: "Recorded" | "Projected" | null;
-    formDirection: "Falling" | "Rising" | "Stable";
+    formDirection: "Falling" | "Rising" | "Stable" | "Unavailable";
     points: TrainingStatePointPresentation[];
     sourceStatus: TrainingStateSourceStatus;
     summary: string;
@@ -273,7 +273,7 @@ function buildState(ledger: PlanningLedger): PlanningLedgerPresentation["state"]
         return point[`actual${capitalized}`] ?? point[`projected${capitalized}`];
       })
       .filter((value): value is number => value !== null);
-    if (values.length < 2) return "Stable";
+    if (values.length < 2) return "Unavailable";
     const first = values[0] ?? 0;
     const last = values.at(-1) ?? first;
     const change = last - first;

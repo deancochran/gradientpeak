@@ -3,7 +3,11 @@ import { formatDateOnlyInTimeZone } from "@repo/core";
 import { activities, plannedSessions, thresholdEvidence } from "@repo/db/schema";
 import { eq } from "drizzle-orm";
 import { expect, test } from "../fixtures";
-import { completeManualNativeAcceptance } from "./current-candidate-support";
+import {
+  clearMaestroCaptures,
+  completeManualNativeAcceptance,
+  preserveMaestroCaptures,
+} from "./current-candidate-support";
 
 type Projection = {
   contractVersion: "plan-tab-projection-v2";
@@ -39,13 +43,27 @@ test("current Android candidate onboards and creates an executable activity plan
   test.setTimeout(600_000);
   const { completedSession, manualSession, planName, planningTimezone, runAdb, runMaestro, today } =
     await completeManualNativeAcceptance({ actor, e2eDatabase, e2eIdentity, testInfo });
-  const recordResult = runMaestro("record-run-native.yaml");
-  writeFileSync(
-    testInfo.outputPath("maestro-record.log"),
-    `${recordResult.stdout ?? ""}\n${recordResult.stderr ?? ""}`,
-    { mode: 0o600 },
+  const runNativeFlowWithCaptures = (
+    flow: string,
+    captures: readonly string[],
+    logName: string,
+    extraEnvironment: Record<string, string> = {},
+  ) => {
+    clearMaestroCaptures(captures);
+    const result = runMaestro(flow, extraEnvironment);
+    const retained = preserveMaestroCaptures(testInfo, captures);
+    writeFileSync(testInfo.outputPath(logName), `${result.stdout ?? ""}\n${result.stderr ?? ""}`, {
+      mode: 0o600,
+    });
+    return { result, retained };
+  };
+  const { result: recordResult, retained: recordCaptures } = runNativeFlowWithCaptures(
+    "record-run-native.yaml",
+    ["recording-review-ready-to-save"],
+    "maestro-record.log",
   );
   expect(recordResult.status, "Native recording must finalize a real local artifact").toBe(0);
+  expect(recordCaptures).toEqual([true]);
 
   // Disconnect only the runner-owned API reverse. Metro remains reachable so the
   // finalized native artifact and retry UI exercise the app's real recovery path.
@@ -53,31 +71,31 @@ test("current Android candidate onboards and creates an executable activity plan
   expect(removeReverse.status, "Must remove the runner-owned API reverse").toBe(0);
   let restoreReverse: ReturnType<typeof runAdb> | undefined;
   try {
-    const offlineSaveResult = runMaestro("save-recording-offline.yaml");
-    writeFileSync(
-      testInfo.outputPath("maestro-record-offline.log"),
-      `${offlineSaveResult.stdout ?? ""}\n${offlineSaveResult.stderr ?? ""}`,
-      { mode: 0o600 },
+    const { result: offlineSaveResult, retained: offlineCaptures } = runNativeFlowWithCaptures(
+      "save-recording-offline.yaml",
+      ["recording-offline-save-failed"],
+      "maestro-record-offline.log",
     );
     expect(
       offlineSaveResult.status,
       "Offline save must retain the finalized artifact for retry",
     ).toBe(0);
+    expect(offlineCaptures).toEqual([true]);
   } finally {
     restoreReverse = runAdb("reverse", "tcp:3100", "tcp:3100");
   }
   expect(restoreReverse.status, "Must restore the runner-owned API reverse").toBe(0);
 
-  const retrySaveResult = runMaestro("retry-recording-save.yaml");
-  writeFileSync(
-    testInfo.outputPath("maestro-record-retry.log"),
-    `${retrySaveResult.stdout ?? ""}\n${retrySaveResult.stderr ?? ""}`,
-    { mode: 0o600 },
+  const { result: retrySaveResult, retained: retryCaptures } = runNativeFlowWithCaptures(
+    "retry-recording-save.yaml",
+    ["recording-retry-saved"],
+    "maestro-record-retry.log",
   );
   expect(
     retrySaveResult.status,
     "The retained artifact must save after one explicit UI retry",
   ).toBe(0);
+  expect(retryCaptures).toEqual([true]);
   const activitiesAfterRecording = await e2eDatabase.db
     .select({
       elapsed_ms: activities.elapsed_ms,
@@ -108,21 +126,22 @@ test("current Android candidate onboards and creates an executable activity plan
       "Native retry did not persist a recorded activity name for visible association",
     );
 
-  const associationResult = runMaestro("associate-recorded-native-session.yaml", {
-    MAESTRO_ACCEPTANCE_PLAN_NAME: planName,
-    MAESTRO_ACCEPTANCE_RECORDED_ACTIVITY_NAME: recordedActivity.name,
-    MAESTRO_ACCEPTANCE_SESSION_DATE: today,
-    MAESTRO_ACCEPTANCE_SESSION_DAY: String(Number(today.slice(8, 10))),
-  });
-  writeFileSync(
-    testInfo.outputPath("maestro-record-association.log"),
-    `${associationResult.stdout ?? ""}\n${associationResult.stderr ?? ""}`,
-    { mode: 0o600 },
+  const { result: associationResult, retained: associationCaptures } = runNativeFlowWithCaptures(
+    "associate-recorded-native-session.yaml",
+    ["planned-session-recording-associated"],
+    "maestro-record-association.log",
+    {
+      MAESTRO_ACCEPTANCE_PLAN_NAME: planName,
+      MAESTRO_ACCEPTANCE_RECORDED_ACTIVITY_NAME: recordedActivity.name,
+      MAESTRO_ACCEPTANCE_SESSION_DATE: today,
+      MAESTRO_ACCEPTANCE_SESSION_DAY: String(Number(today.slice(8, 10))),
+    },
   );
   expect(
     associationResult.status,
     "Native association must replace the manual completion and reopen its saved activity summary",
   ).toBe(0);
+  expect(associationCaptures).toEqual([true]);
   const [associatedSession] = await e2eDatabase.db
     .select()
     .from(plannedSessions)
@@ -208,25 +227,26 @@ test("current Android candidate onboards and creates an executable activity plan
   expect(laterSession).toMatchObject({ planning_date: laterDate, status: "scheduled" });
   if (!laterSession) throw new Error("Later native session missing");
   const rescheduleDay = rescheduledDate.split("-")[2];
-  const rescheduleResult = runMaestro("reschedule-native-session.yaml", {
-    MAESTRO_ACCEPTANCE_PLAN_NAME: planName,
-    MAESTRO_ACCEPTANCE_RESCHEDULE_DATE: rescheduledDate,
-    MAESTRO_ACCEPTANCE_RESCHEDULE_DAY: String(Number(rescheduleDay)),
-    MAESTRO_ACCEPTANCE_RESCHEDULE_MONTH_DELTA: String(
-      (Number(rescheduledDate.slice(0, 4)) - Number(laterDate.slice(0, 4))) * 12 +
-        Number(rescheduledDate.slice(5, 7)) -
-        Number(laterDate.slice(5, 7)),
-    ),
-    MAESTRO_ACCEPTANCE_SESSION_DATE: laterDate,
-    MAESTRO_ACCEPTANCE_SESSION_DAY: String(Number(laterDate.slice(8, 10))),
-    MAESTRO_ACCEPTANCE_SESSION_MONTH_DELTA: "1",
-  });
-  writeFileSync(
-    testInfo.outputPath("maestro-reschedule.log"),
-    `${rescheduleResult.stdout ?? ""}\n${rescheduleResult.stderr ?? ""}`,
-    { mode: 0o600 },
+  const { result: rescheduleResult, retained: rescheduleCaptures } = runNativeFlowWithCaptures(
+    "reschedule-native-session.yaml",
+    ["planned-session-rescheduled"],
+    "maestro-reschedule.log",
+    {
+      MAESTRO_ACCEPTANCE_PLAN_NAME: planName,
+      MAESTRO_ACCEPTANCE_RESCHEDULE_DATE: rescheduledDate,
+      MAESTRO_ACCEPTANCE_RESCHEDULE_DAY: String(Number(rescheduleDay)),
+      MAESTRO_ACCEPTANCE_RESCHEDULE_MONTH_DELTA: String(
+        (Number(rescheduledDate.slice(0, 4)) - Number(laterDate.slice(0, 4))) * 12 +
+          Number(rescheduledDate.slice(5, 7)) -
+          Number(laterDate.slice(5, 7)),
+      ),
+      MAESTRO_ACCEPTANCE_SESSION_DATE: laterDate,
+      MAESTRO_ACCEPTANCE_SESSION_DAY: String(Number(laterDate.slice(8, 10))),
+      MAESTRO_ACCEPTANCE_SESSION_MONTH_DELTA: "1",
+    },
   );
   expect(rescheduleResult.status, "Native rescheduling must succeed").toBe(0);
+  expect(rescheduleCaptures).toEqual([true]);
   const [rescheduled] = await e2eDatabase.db
     .select()
     .from(plannedSessions)
@@ -236,13 +256,13 @@ test("current Android candidate onboards and creates an executable activity plan
     session_revision: laterSession.session_revision + 1,
     status: "scheduled",
   });
-  const cancelResult = runMaestro("cancel-native-session.yaml");
-  writeFileSync(
-    testInfo.outputPath("maestro-cancel.log"),
-    `${cancelResult.stdout ?? ""}\n${cancelResult.stderr ?? ""}`,
-    { mode: 0o600 },
+  const { result: cancelResult, retained: cancelCaptures } = runNativeFlowWithCaptures(
+    "cancel-native-session.yaml",
+    ["planned-session-cancelled"],
+    "maestro-cancel.log",
   );
   expect(cancelResult.status, "Native cancellation must succeed").toBe(0);
+  expect(cancelCaptures).toEqual([true]);
   const [cancelled] = await e2eDatabase.db
     .select()
     .from(plannedSessions)

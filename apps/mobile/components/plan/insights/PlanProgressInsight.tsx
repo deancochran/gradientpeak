@@ -184,7 +184,12 @@ export function PlanProgressInsight({
             ],
             ["Time left", formatGoalTimeLeft(deadlineDate, todayKey)],
           ].map(([label, value]) => (
-            <View className="min-w-[40%] flex-1 gap-1" key={label}>
+            <View
+              accessible
+              accessibilityLabel={`${label}: ${value}`}
+              className="min-w-[40%] flex-1 gap-1"
+              key={label}
+            >
               <Text className="text-xs text-muted-foreground">{label}</Text>
               <Text className="text-xl font-semibold text-foreground">{value}</Text>
             </View>

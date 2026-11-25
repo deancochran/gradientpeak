@@ -53,6 +53,7 @@ name: Open the completed session from Calendar and replace it with the named sav
 - assertVisible:
     id: activity-detail-summary
 - assertVisible: ${MAESTRO_ACCEPTANCE_RECORDED_ACTIVITY_NAME}
+- takeScreenshot: planned-session-recording-associated
 # Return through visible back navigation to Calendar so the later scheduling
 # flow must rediscover its plan rather than retain a route-provided session.
 - pressKey: back
