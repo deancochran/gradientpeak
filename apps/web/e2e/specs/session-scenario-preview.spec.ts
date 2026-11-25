@@ -64,3 +64,52 @@ test("a published bike baseline supports each read-only session scenario without
   await athletePage.getByRole("link", { name: "Back to day" }).click();
   await expect(athletePage).toHaveURL((url) => url.pathname === `/calendar/day/${fixture.date}`);
 });
+
+test("a confirmed scenario applies one selected occurrence and retries a lost acknowledgement safely", async ({
+  athleteActor,
+  athletePage,
+  e2eData,
+  e2eDatabase,
+  e2eIdentity,
+}) => {
+  test.setTimeout(90_000);
+  const fixture = await createSessionScenarioFixture({
+    actor: athleteActor,
+    database: e2eDatabase,
+    e2eData,
+    identity: e2eIdentity,
+  });
+  const before = await fixture.snapshot();
+  await athletePage.goto(
+    `/calendar/events/${fixture.sessionId}?resourceType=planned_session&month=${fixture.date.slice(0, 7)}&view=agenda`,
+  );
+  await athletePage.getByRole("button", { name: "less", exact: true }).click();
+  await athletePage.getByLabel("Target duration (seconds)").fill("1200");
+  await athletePage.getByRole("button", { name: "Apply this scenario" }).click();
+  await expect(athletePage.getByRole("dialog")).toContainText(
+    "affects only this selected occurrence",
+  );
+  await athletePage.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(fixture.snapshot()).resolves.toEqual(before);
+
+  await athletePage.getByRole("button", { name: "Apply this scenario" }).click();
+  await athletePage.getByRole("button", { name: "Confirm apply" }).click();
+  await athletePage.route("**/api/trpc/plannedSessions.applyScenario?batch=1", async (route) => {
+    await route.fetch();
+    await route.abort();
+  });
+  await athletePage.getByRole("button", { name: "Check or retry this change" }).click();
+  await expect(
+    athletePage.getByText(/could not confirm whether the change was applied/i),
+  ).toBeVisible();
+  await athletePage.unroute("**/api/trpc/plannedSessions.applyScenario?batch=1");
+  await athletePage.getByRole("button", { name: "Check or retry this change" }).click();
+  await expect(athletePage.getByText(/Applied: repointed/i)).toBeVisible();
+
+  const [sessions, plans] = await fixture.snapshot();
+  const selected = sessions.find((session) => session.id === fixture.sessionId);
+  const otherOccurrence = sessions.find((session) => session.id !== fixture.sessionId);
+  expect(selected?.activity_plan_id).not.toBe(fixture.activityPlanId);
+  expect(otherOccurrence?.activity_plan_id).toBe(fixture.activityPlanId);
+  expect(plans).toHaveLength(before[1].length + 1);
+});

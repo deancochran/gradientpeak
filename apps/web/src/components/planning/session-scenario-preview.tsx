@@ -1,8 +1,13 @@
+import {
+  type FrozenPlannedSessionScenarioOperation,
+  freezePlannedSessionScenarioOperation,
+  isCurrentPlannedSessionScenarioOperation,
+} from "@repo/api/client";
 import { Button } from "@repo/ui/components/button";
 import { Input } from "@repo/ui/components/input";
 import { SessionScenarioComparison } from "@repo/ui/components/session-scenario-comparison";
 import { skipToken } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../lib/api/client";
 
 type ScenarioKind = "as_planned" | "less" | "more" | "substitute" | "skip";
@@ -20,6 +25,22 @@ type ActivityPlanPreviewIdentity = {
 
 function describeUnavailable(reason: string) {
   return `A comparison is not available: ${reason.replaceAll("_", " ")}.`;
+}
+
+function scenarioSummary(scenario: {
+  kind: ScenarioKind;
+  targetDurationSeconds?: number;
+  activityPlanId?: string;
+}) {
+  if (scenario.kind === "less" || scenario.kind === "more")
+    return `${scenario.kind === "less" ? "Reduce" : "Increase"} duration to ${scenario.targetDurationSeconds} seconds`;
+  if (scenario.kind === "substitute") return "Use the selected substitute activity plan";
+  if (scenario.kind === "skip") return "Skip this session";
+  return "Keep the session as planned";
+}
+
+function operationStorageKey(profileId: string, sessionId: string) {
+  return `gradientpeak:planned-session-scenario:v1:${profileId}:${sessionId}`;
 }
 
 export function SessionScenarioPreview({
@@ -45,6 +66,12 @@ function SessionScenarioPreviewContents({
   const [kind, setKind] = useState<ScenarioKind>("as_planned");
   const [durationDraft, setDurationDraft] = useState("");
   const [substituteId, setSubstituteId] = useState("");
+  const [confirmationOpen, setConfirmationOpen] = useState(false);
+  const [operation, setOperation] = useState<FrozenPlannedSessionScenarioOperation | null>(null);
+  const [outcome, setOutcome] = useState<string | null>(null);
+  const [storageUnavailable, setStorageUnavailable] = useState(false);
+  const operationRef = useRef<FrozenPlannedSessionScenarioOperation | null>(null);
+  const utils = api.useUtils();
   const stateQuery = api.athleteIntelligence.getReadModel.useQuery(
     {
       profileId: session.profileId,
@@ -81,7 +108,105 @@ function SessionScenarioPreviewContents({
     enabled: Boolean(input),
     retry: false,
   });
+  const applyMutation = api.plannedSessions.applyScenario.useMutation({ retry: false });
   const alternatives = alternativesQuery.data?.pages.flatMap((page) => page.items) ?? [];
+  const storageKey = operationStorageKey(session.profileId, session.id);
+
+  useEffect(() => {
+    operationRef.current = null;
+    setOperation(null);
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      if (!raw) return;
+      const recovered = JSON.parse(raw) as FrozenPlannedSessionScenarioOperation;
+      if (
+        isCurrentPlannedSessionScenarioOperation(recovered, {
+          actorId: session.profileId,
+          sessionId: session.id,
+        })
+      ) {
+        operationRef.current = recovered;
+        setOperation(recovered);
+      } else window.localStorage.removeItem(storageKey);
+    } catch {
+      setStorageUnavailable(true);
+    }
+  }, [session.id, session.profileId, storageKey]);
+
+  const persistOperation = (next: FrozenPlannedSessionScenarioOperation | null) => {
+    operationRef.current = next;
+    setOperation(next);
+    try {
+      if (next) window.localStorage.setItem(storageKey, JSON.stringify(next));
+      else window.localStorage.removeItem(storageKey);
+    } catch {
+      setStorageUnavailable(true);
+    }
+  };
+  const confirmApply = () => {
+    if (!input || previewQuery.data?.status !== "available" || operationRef.current) return;
+    const id = globalThis.crypto?.randomUUID?.().replaceAll("-", "") ?? "";
+    if (id.length < 32) {
+      setOutcome("We could not create a safe operation identity. Try again.");
+      return;
+    }
+    persistOperation(
+      freezePlannedSessionScenarioOperation({
+        actorId: session.profileId,
+        expectedPreviewFingerprint: previewQuery.data.previewFingerprint,
+        operationId: id,
+        preview: input,
+      }),
+    );
+    setConfirmationOpen(false);
+    setOutcome(null);
+  };
+  const submitOperation = async () => {
+    if (
+      !operation ||
+      !isCurrentPlannedSessionScenarioOperation(operation, {
+        actorId: session.profileId,
+        sessionId: session.id,
+      })
+    )
+      return;
+    setOutcome(null);
+    try {
+      const result = await applyMutation.mutateAsync(operation.request);
+      if (
+        !isCurrentPlannedSessionScenarioOperation(operation, {
+          actorId: session.profileId,
+          sessionId: session.id,
+        })
+      )
+        return;
+      if (result.status === "applied") {
+        persistOperation(null);
+        try {
+          await Promise.all([
+            utils.plannedSessions.invalidate(),
+            utils.calendar.invalidate(),
+            utils.athleteIntelligence.getReadModel.invalidate(),
+          ]);
+          setOutcome(`Applied: ${result.action}. The durable session result is now shown.`);
+        } catch {
+          setOutcome(
+            `Applied: ${result.action}. The durable result is safe, but refreshing the screen failed.`,
+          );
+        }
+      } else {
+        persistOperation(null);
+        setOutcome(
+          "This preview is no longer current. Your draft is preserved; refresh the preview and confirm again.",
+        );
+        void previewQuery.refetch();
+      }
+    } catch {
+      setOutcome(
+        "We could not confirm whether the change was applied. Check or retry using the same operation; do not create a new request.",
+      );
+    }
+  };
   const stateUnavailable =
     stateQuery.isSuccess && typeof stateRevision !== "number"
       ? "A published athlete state is required before a scenario can be compared."
@@ -208,7 +333,67 @@ function SessionScenarioPreviewContents({
             state revision {previewQuery.data.stateRevision};{" "}
             {previewQuery.data.horizon.sessionCount} sessions in the shared horizon.
           </p>
+          {!operation ? (
+            <Button onClick={() => setConfirmationOpen(true)} type="button">
+              Apply this scenario
+            </Button>
+          ) : (
+            <Button
+              disabled={applyMutation.isPending}
+              onClick={() => void submitOperation()}
+              type="button"
+            >
+              {applyMutation.isPending ? "Applying…" : "Check or retry this change"}
+            </Button>
+          )}
         </div>
+      ) : null}
+      {confirmationOpen && previewQuery.data?.status === "available" ? (
+        <div
+          className="space-y-3 rounded-md border p-3"
+          role="dialog"
+          aria-labelledby="apply-scenario-title"
+        >
+          <h3 className="font-medium" id="apply-scenario-title">
+            Apply this session scenario?
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            {scenarioSummary(previewQuery.data.scenario)} for{" "}
+            {previewQuery.data.selectedSession.planningDate}. This affects only this selected
+            occurrence and creates a private copy when its activity plan changes.
+          </p>
+          {previewQuery.data.scenario.kind === "skip" ? (
+            <p className="text-sm text-muted-foreground">
+              This will{" "}
+              {previewQuery.data.selectedSession.planningDate ===
+              new Date().toISOString().slice(0, 10)
+                ? "record a skipped outcome for today."
+                : "cancel the scheduled session; it does not change past completion."}
+            </p>
+          ) : null}
+          {previewQuery.data.scenario.kind === "as_planned" ? (
+            <p className="text-sm text-muted-foreground">As planned makes no session change.</p>
+          ) : null}
+          <div className="flex gap-2">
+            <Button onClick={confirmApply} type="button">
+              Confirm apply
+            </Button>
+            <Button onClick={() => setConfirmationOpen(false)} type="button" variant="outline">
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      {outcome ? (
+        <p aria-live="polite" className="text-sm text-muted-foreground">
+          {outcome}
+        </p>
+      ) : null}
+      {storageUnavailable ? (
+        <p role="alert" className="text-sm text-destructive">
+          Recovery storage is unavailable. Keep this screen open while checking or retrying this
+          operation.
+        </p>
       ) : null}
     </section>
   );

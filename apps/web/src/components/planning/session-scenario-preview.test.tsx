@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   fetchNextPage: vi.fn(),
   previewInputs: [] as unknown[],
   previewInput: undefined as unknown,
+  apply: vi.fn(),
   previewResult: {
     data: undefined as unknown,
     isError: false,
@@ -23,6 +24,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../../lib/api/client", () => ({
   api: {
+    useUtils: () => ({
+      athleteIntelligence: { getReadModel: { invalidate: vi.fn(async () => undefined) } },
+      calendar: { invalidate: vi.fn(async () => undefined) },
+      plannedSessions: { invalidate: vi.fn(async () => undefined) },
+    }),
     activityPlans: {
       list: {
         useInfiniteQuery: (input: unknown) => {
@@ -47,6 +53,9 @@ vi.mock("../../lib/api/client", () => ({
           return mocks.previewResult;
         },
       },
+      applyScenario: {
+        useMutation: () => ({ isPending: false, mutateAsync: mocks.apply }),
+      },
     },
   },
 }));
@@ -61,6 +70,7 @@ beforeEach(() => {
   mocks.fetchNextPage = vi.fn();
   mocks.previewInput = undefined;
   mocks.previewInputs = [];
+  mocks.apply = vi.fn();
   mocks.previewResult = { data: undefined, isError: false, isLoading: false, refetch: vi.fn() };
   mocks.stateResult = {
     data: { publishedState: { baseline: { stateRevision: 7 } } },
@@ -179,5 +189,45 @@ describe("SessionScenarioPreview", () => {
       scenario: { kind: "more", targetDurationSeconds: 5400 },
       sessionId: "session-b",
     });
+  });
+
+  it("freezes a confirmed available preview and retries an unknown result with the same operation", async () => {
+    mocks.previewResult.data = {
+      status: "available",
+      previewFingerprint: `v1:sha256:${"a".repeat(64)}`,
+      selectedSession: { id: "session-a", sessionRevision: 3, planningDate: "2026-11-26" },
+      stateRevision: 7,
+      freshness: "fresh",
+      horizon: {
+        startDate: "2026-11-26",
+        simulationAt: "2026-11-25T00:00:00.000Z",
+        sessionCount: 2,
+      },
+      scenario: { kind: "as_planned" },
+      baseline: {},
+      alternative: {},
+      provenance: {
+        resolution: "current_activity_plan",
+        selectedPlan: { id: "current-plan", revision: 5 },
+        historicalSnapshots: "provenance_only",
+        selectedAlternative: null,
+      },
+    };
+    mocks.apply
+      .mockRejectedValueOnce(new Error("lost acknowledgement"))
+      .mockResolvedValueOnce({ status: "applied", action: "unchanged" });
+    renderPreview();
+
+    fireEvent.click(screen.getByRole("button", { name: "Apply this scenario" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm apply" }));
+    fireEvent.click(screen.getByRole("button", { name: "Check or retry this change" }));
+    await screen.findByText(/could not confirm whether/i);
+    fireEvent.click(screen.getByRole("button", { name: "Check or retry this change" }));
+    await screen.findByText(/Applied: unchanged/i);
+    expect(mocks.apply).toHaveBeenCalledTimes(2);
+    const firstRequest = mocks.apply.mock.calls[0]?.[0];
+    const retryRequest = mocks.apply.mock.calls[1]?.[0];
+    if (!firstRequest || !retryRequest) throw new Error("Expected both apply attempts.");
+    expect(firstRequest).toEqual(retryRequest);
   });
 });

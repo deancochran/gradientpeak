@@ -6,10 +6,16 @@ const mocks = {
   previewInput: undefined as unknown,
   previewInputs: [] as unknown[],
   preview: { data: undefined, isError: false, isLoading: false, refetch: jest.fn() },
+  apply: jest.fn(),
 };
 
 jest.mock("@/lib/api", () => ({
   api: {
+    useUtils: () => ({
+      athleteIntelligence: { getReadModel: { invalidate: jest.fn() } },
+      calendar: { invalidate: jest.fn() },
+      plannedSessions: { invalidate: jest.fn() },
+    }),
     activityPlans: {
       list: {
         useInfiniteQuery: () => ({
@@ -38,6 +44,9 @@ jest.mock("@/lib/api", () => ({
           return mocks.preview;
         },
       },
+      applyScenario: {
+        useMutation: () => ({ isPending: false, mutateAsync: mocks.apply }),
+      },
     },
   },
 }));
@@ -65,6 +74,7 @@ describe("SessionScenarioPreview", () => {
     mocks.previewInput = undefined;
     mocks.previewInputs = [];
     mocks.preview = { data: undefined, isError: false, isLoading: false, refetch: jest.fn() };
+    mocks.apply = jest.fn();
   });
 
   it("uses canonical revisions for as-planned, less, more, substitute, and skip previews", async () => {
