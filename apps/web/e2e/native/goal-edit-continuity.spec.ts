@@ -1,19 +1,12 @@
 import { spawnSync } from "node:child_process";
-import {
-  chmodSync,
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { TestInfo } from "@playwright/test";
 import { profileGoals } from "@repo/db/schema";
 import { and, eq } from "drizzle-orm";
 import { expect, test } from "../fixtures";
 import { withGoalFixture } from "../planning/data";
+import { retainGoalEditFlowScreenshots } from "./goal-edit-continuity-screenshots";
 
 const flowScreenshots = {
   "goal-edit-cancel.yaml": [
@@ -68,28 +61,12 @@ function prepareFlowScreenshots(testInfo: TestInfo, flow: Flow, debugDirectory: 
 }
 
 function retainFlowScreenshots(testInfo: TestInfo, flow: Flow, debugDirectory: string) {
-  const retained: string[] = [];
-  const artifactDirectory = testInfo.outputPath("goal-edit-continuity-screenshots");
-  mkdirSync(artifactDirectory, { recursive: true, mode: 0o700 });
-  chmodSync(artifactDirectory, 0o700);
-  for (const name of flowScreenshots[flow]) {
-    const destination = screenshotPath(artifactDirectory, name);
-    const cwdSource = screenshotPath(process.cwd(), name);
-    try {
-      for (const source of [screenshotPath(debugDirectory, name), cwdSource]) {
-        if (!existsSync(source)) continue;
-        copyFileSync(source, destination);
-        chmodSync(destination, 0o600);
-        retained.push(name);
-        break;
-      }
-    } finally {
-      // Maestro can emit this owned capture into cwd; remove only this flow's
-      // exact source name after retention, including when later assertions fail.
-      rmSync(cwdSource, { force: true });
-    }
-  }
-  return retained;
+  return retainGoalEditFlowScreenshots({
+    artifactDirectory: testInfo.outputPath("goal-edit-continuity-screenshots"),
+    cwdDirectory: process.cwd(),
+    debugDirectory,
+    names: flowScreenshots[flow],
+  });
 }
 
 test.beforeEach(() => expect(process.env.E2E_DISPOSABLE_DATABASE).toBe("1"));
