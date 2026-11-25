@@ -156,6 +156,12 @@ export interface EventReadRepository {
     startDate?: string;
   }): Promise<{
     activities: EffectivePlanLoadActivityRecord[];
+    /**
+     * Profile-wide completed-session links for candidate manual activities in
+     * the requested window. These are integrity facts, not scheduled items.
+     */
+    linkedCompletionSessions: EffectivePlanLoadPlannedSessionRecord[];
+    linkedCompletionSessionsComplete: boolean;
     plannedSessions: EffectivePlanLoadPlannedSessionRecord[];
     recommendationPlannedSessions: EffectivePlanLoadPlannedSessionRecord[];
     recommendationSource: {

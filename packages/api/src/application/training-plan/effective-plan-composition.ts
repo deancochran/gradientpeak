@@ -45,7 +45,7 @@ const quantifiedCompositionItemSchema = z.discriminatedUnion("kind", [
       date: dateSchema,
       replacedScheduledItemId: identitySchema.nullable(),
       commonLoad: commonLoadEnvelopeSchema,
-      observationQuantification: activityObservationQuantificationBundleSchema,
+      observationQuantification: activityObservationQuantificationBundleSchema.nullable(),
     })
     .strict(),
 ]);
@@ -62,7 +62,8 @@ export type QuantifiedEffectiveCompositionInput = Omit<
   >;
   completedActivities: Array<
     Omit<EffectiveCompositionInput["completedActivities"][number], "commonLoad"> & {
-      observationQuantification: ActivityObservationQuantificationBundle;
+      commonLoad: z.infer<typeof commonLoadEnvelopeSchema>;
+      observationQuantification: ActivityObservationQuantificationBundle | null;
     }
   >;
 };
@@ -113,9 +114,10 @@ export function composeEffectivePlanDto(
   }));
   const normalizedCompletedActivities = input.completedActivities.map((item) => ({
     ...item,
-    observationQuantification: activityObservationQuantificationBundleSchema.parse(
-      item.observationQuantification,
-    ),
+    observationQuantification:
+      item.observationQuantification === null
+        ? null
+        : activityObservationQuantificationBundleSchema.parse(item.observationQuantification),
   }));
   const scheduledById = new Map(
     normalizedScheduledItems.map((item) => [item.scheduledItemId, item] as const),
@@ -131,7 +133,7 @@ export function composeEffectivePlanDto(
     completedActivities: normalizedCompletedActivities.map(
       ({ observationQuantification, ...item }) => ({
         ...item,
-        commonLoad: observationQuantification.summary.commonLoad,
+        commonLoad: item.commonLoad,
       }),
     ),
   });
@@ -165,7 +167,9 @@ export function composeEffectivePlanDto(
       } else {
         const source = completedById.get(item.completedActivityId);
         if (!source) throw new Error("Effective composition item lost its observation source");
-        observations.push(...source.observationQuantification.members);
+        if (source.observationQuantification !== null) {
+          observations.push(...source.observationQuantification.members);
+        }
       }
       if (item.kind === "completed" && item.replacedScheduledItemId !== null) {
         // The replaced scheduled manifest remains available on the item but
