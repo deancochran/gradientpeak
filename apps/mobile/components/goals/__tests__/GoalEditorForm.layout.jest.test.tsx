@@ -453,16 +453,14 @@ describe("GoalEditorForm target submission contract", () => {
     submits: boolean;
   }>)("matches the Core target contract for $label", async ({ draft, submits }) => {
     const onSubmit = jest.fn<void, [GoalEditorDraft]>();
-    const ref = createRef<{ submit: () => void }>();
     await renderNative(
-      <GoalEditorForm
-        ref={ref}
-        initialValue={{ ...completeDraft, ...draft }}
-        onSubmit={onSubmit}
-      />,
+      <GoalEditorForm initialValue={{ ...completeDraft, ...draft }} onSubmit={onSubmit} />,
     );
+    const saveAction = screen.getByText("Save Goal").parent;
+    if (!saveAction) throw new Error("Expected Save Goal action");
 
-    await act(async () => ref.current?.submit());
+    expect(saveAction.props.disabled).toBe(!submits);
+    await fireEvent.press(saveAction);
 
     expect(onSubmit).toHaveBeenCalledTimes(submits ? 1 : 0);
   });
@@ -476,9 +474,12 @@ describe("GoalEditorForm target submission contract", () => {
       raceDistanceKm: 5,
     };
     await renderNative(<GoalEditorForm initialValue={pastDateDraft} onSubmit={onSubmit} />);
+    const saveAction = screen.getByText("Save Goal").parent;
+    if (!saveAction) throw new Error("Expected Save Goal action");
 
     expect(screen.getByTestId("goal-quality-feedback")).toBeTruthy();
-    await fireEvent.press(screen.getByText("Save Goal"));
+    expect(saveAction.props.disabled).toBe(false);
+    await fireEvent.press(saveAction);
 
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining(pastDateDraft));
   });
