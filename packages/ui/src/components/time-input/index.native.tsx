@@ -4,7 +4,8 @@ import DateTimePicker, {
 } from "@react-native-community/datetimepicker";
 import { format } from "date-fns";
 import { useMemo, useState } from "react";
-import { Modal, Platform, Pressable, View } from "../../lib/react-native";
+import { Modal, Platform, Pressable, View } from "react-native";
+import { omitUndefined } from "../../lib/omit-undefined";
 import { getNativeTestProps } from "../../lib/test-props";
 import { Button } from "../button/index.native";
 import { Label } from "../label/index.native";
@@ -44,7 +45,7 @@ function TimeInput({
   label,
   name: _name,
   onChange,
-  pickerPresentation = "inline",
+  pickerPresentation = "modal",
   placeholder = "Select time",
   required = false,
   testId,
@@ -56,6 +57,14 @@ function TimeInput({
   const selectedTime = useMemo(() => parseTimeValue(value), [value]);
   const usesModalPresentation = pickerPresentation === "modal";
   const formattedValue = value ? format(selectedTime, is24Hour ? "HH:mm" : "h:mm a") : placeholder;
+  const fieldHint = [
+    required ? "Required" : undefined,
+    accessibilityHint ?? "Opens time picker. Format hh:mm",
+    helperText,
+    error ? `Error: ${error}` : undefined,
+  ]
+    .filter(Boolean)
+    .join(". ");
   const { role: _unusedRole, ...nativeTestProps } = getNativeTestProps({
     accessibilityLabel: label,
     id,
@@ -88,7 +97,7 @@ function TimeInput({
       DateTimePickerAndroid.open({
         value: selectedTime,
         mode: "time",
-        is24Hour,
+        ...omitUndefined({ is24Hour }),
         onChange: (_event, nextTime) => {
           if (nextTime) {
             commitSelectedTime(nextTime);
@@ -107,23 +116,38 @@ function TimeInput({
 
   return (
     <View className="gap-2">
-      <Label nativeID={id}>
+      <Label {...omitUndefined({ nativeID: id })}>
         <Text className="text-sm font-medium text-foreground">
           {label}
           {required ? <Text className="text-destructive"> *</Text> : null}
         </Text>
       </Label>
-      <Pressable
-        accessibilityHint={accessibilityHint ?? "Opens time picker. Format hh:mm"}
-        accessibilityRole="button"
-        accessibilityState={{ disabled }}
-        className={`rounded-md border px-3 py-3 ${error ? "border-destructive bg-destructive/5" : "border-input bg-background"}`}
-        disabled={disabled}
-        onPress={handleOpenPicker}
-        {...nativeTestProps}
-      >
-        <Text className="text-foreground">{formattedValue}</Text>
-      </Pressable>
+      <View className="flex-row items-center gap-2">
+        <Pressable
+          accessibilityHint={fieldHint}
+          aria-invalid={!!error}
+          accessibilityRole="button"
+          accessibilityState={{ disabled }}
+          aria-required={required}
+          className={`flex-1 rounded-md border px-3 py-3 ${error ? "border-destructive bg-destructive/5" : "border-input bg-background"}`}
+          disabled={disabled}
+          onPress={handleOpenPicker}
+          {...nativeTestProps}
+        >
+          <Text className="text-foreground">{formattedValue}</Text>
+        </Pressable>
+        {clearable && value ? (
+          <Button
+            accessibilityLabel="Clear time"
+            disabled={disabled}
+            variant="ghost"
+            size="sm"
+            onPress={() => onChange(undefined)}
+          >
+            <Text className="text-muted-foreground">Clear</Text>
+          </Button>
+        ) : null}
+      </View>
       {isPickerVisible && !usesModalPresentation ? (
         <DateTimePicker
           display="default"
@@ -133,7 +157,7 @@ function TimeInput({
           value={selectedTime}
         />
       ) : null}
-      {usesModalPresentation && Platform.OS !== "android" ? (
+      {usesModalPresentation && Platform.OS !== "android" && isPickerVisible ? (
         <Modal
           animationType="fade"
           onRequestClose={() => setIsPickerVisible(false)}
@@ -171,11 +195,6 @@ function TimeInput({
         </Modal>
       ) : null}
       {helperText ? <Text className="text-xs text-muted-foreground">{helperText}</Text> : null}
-      {clearable && value ? (
-        <Button variant="outline" size="sm" onPress={() => onChange(undefined)}>
-          <Text>Clear time</Text>
-        </Button>
-      ) : null}
       {error ? <Text className="text-xs text-destructive">Adjust this field: {error}</Text> : null}
     </View>
   );

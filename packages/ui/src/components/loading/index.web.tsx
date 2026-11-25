@@ -36,9 +36,13 @@ export function LoadingButton({
 
   return (
     <Button aria-busy={loading || undefined} disabled={disabled || loading} {...props}>
-      {loading && spinnerPlacement === "start" ? <Spinner data-icon="inline-start" /> : null}
+      {loading && spinnerPlacement === "start" ? (
+        <Spinner aria-hidden="true" data-icon="inline-start" />
+      ) : null}
       {label}
-      {loading && spinnerPlacement === "end" ? <Spinner data-icon="inline-end" /> : null}
+      {loading && spinnerPlacement === "end" ? (
+        <Spinner aria-hidden="true" data-icon="inline-end" />
+      ) : null}
     </Button>
   );
 }
@@ -65,7 +69,7 @@ export function InlineLoadingStatus({
       role="status"
       {...props}
     >
-      <Spinner className={spinnerClassName} />
+      <Spinner aria-hidden="true" className={spinnerClassName} />
       <span>{label}</span>
     </div>
   );

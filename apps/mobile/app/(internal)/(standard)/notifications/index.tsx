@@ -10,7 +10,10 @@ import { Text } from "@repo/ui/components/text";
 import { cn } from "@repo/ui/lib/cn";
 import { Stack, useRouter } from "expo-router";
 import { Bell, Mail, UserPlus } from "lucide-react-native";
-import { FlatList, Pressable, View } from "react-native";
+import { useState } from "react";
+import { Pressable, View } from "react-native";
+import { ResourceList } from "@/components/shared/ResourceList";
+import { EmptyState, ErrorState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
 
 function NotificationItem({
@@ -105,10 +108,16 @@ function NotificationItem({
 
 export default function NotificationsScreen() {
   const router = useRouter();
+  const [showUnreadOnly, setShowUnreadOnly] = useState(false);
   const utils = api.useUtils();
-  const { data: notifications = [], isLoading } = api.notifications.getRecent.useQuery({
-    limit: 20,
-  });
+  const {
+    data: notifications = [],
+    error,
+    isError,
+    isLoading,
+    isRefetching,
+    refetch,
+  } = api.notifications.getRecent.useQuery({ limit: 20 });
   const normalizedNotifications = notifications
     .map((notification) => normalizeNotificationListItem(notification))
     .filter(
@@ -131,7 +140,7 @@ export default function NotificationsScreen() {
       const previousNotifications = utils.notifications.getRecent.getData();
 
       // Optimistically update to remove the follow_request notification
-      utils.notifications.getRecent.setData({ limit: 20 }, (old: any[] = []) =>
+      utils.notifications.getRecent.setData({ limit: 20 }, (old = []) =>
         old?.filter((n) => !(n.type === "follow_request" && n.actor_id === follower_id)),
       );
 
@@ -160,7 +169,7 @@ export default function NotificationsScreen() {
       const previousNotifications = utils.notifications.getRecent.getData();
 
       // Optimistically update to remove the follow_request notification
-      utils.notifications.getRecent.setData({ limit: 20 }, (old: any[] = []) =>
+      utils.notifications.getRecent.setData({ limit: 20 }, (old = []) =>
         old?.filter((n) => !(n.type === "follow_request" && n.actor_id === follower_id)),
       );
 
@@ -209,6 +218,35 @@ export default function NotificationsScreen() {
   };
 
   const unreadCount = getUnreadNotificationIds(normalizedNotifications).length;
+  const visibleNotifications = showUnreadOnly
+    ? normalizedNotifications.filter((notification) => notification.read_at == null)
+    : normalizedNotifications;
+
+  if (isLoading) {
+    return (
+      <View
+        className="flex-1 items-center justify-center bg-background"
+        testID="notifications-loading-state"
+      >
+        <LoadingState message="Loading notifications..." />
+      </View>
+    );
+  }
+
+  if (isError && error) {
+    return (
+      <View
+        className="flex-1 items-center justify-center bg-background px-6"
+        testID="notifications-error-state"
+      >
+        <ErrorState
+          description="Check your connection and try again."
+          onAction={() => void refetch()}
+          title="Notifications could not be loaded"
+        />
+      </View>
+    );
+  }
 
   return (
     <View className="flex-1 bg-background" testID="notifications-screen">
@@ -226,22 +264,45 @@ export default function NotificationsScreen() {
           ),
         }}
       />
-      <FlatList
+      <View className="flex-row gap-2 border-b border-border px-4 py-3">
+        <Pressable
+          accessibilityRole="button"
+          className={cn("rounded-full px-4 py-2", showUnreadOnly ? "bg-muted" : "bg-primary")}
+          onPress={() => setShowUnreadOnly(false)}
+          testID="notifications-all-filter"
+        >
+          <Text className={showUnreadOnly ? "text-foreground" : "text-primary-foreground"}>
+            All
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          className={cn("rounded-full px-4 py-2", showUnreadOnly ? "bg-primary" : "bg-muted")}
+          onPress={() => setShowUnreadOnly(true)}
+          testID="notifications-unread-filter"
+        >
+          <Text className={showUnreadOnly ? "text-primary-foreground" : "text-foreground"}>
+            Unread
+          </Text>
+        </Pressable>
+      </View>
+      <ResourceList
         testID="notifications-list"
-        data={normalizedNotifications}
+        data={visibleNotifications}
         keyExtractor={(item) => item.id}
+        contentContainerClassName="flex-grow"
         ListHeaderComponent={
-          normalizedNotifications.length > 0 ? (
+          visibleNotifications.length > 0 ? (
             <View className="border-b border-border bg-muted/20 px-4 py-3">
               <Text className="text-sm text-muted-foreground">
-                {normalizedNotifications.length}{" "}
-                {normalizedNotifications.length === 1 ? "notification" : "notifications"}
+                {visibleNotifications.length}{" "}
+                {visibleNotifications.length === 1 ? "notification" : "notifications"}
                 {unreadCount > 0 ? `, ${unreadCount} unread` : ""}
               </Text>
             </View>
           ) : null
         }
-        renderItem={({ item }) => (
+        renderItem={(item) => (
           <NotificationItem
             notification={item}
             onPress={() => handlePress(item)}
@@ -249,14 +310,15 @@ export default function NotificationsScreen() {
             onReject={handleRejectFollow}
           />
         )}
-        ListEmptyComponent={
-          <View
-            className="flex-1 items-center justify-center p-8"
+        emptyComponent={
+          <EmptyState
+            description="Your notifications will appear here."
             testID="notifications-empty-state"
-          >
-            <Text className="text-muted-foreground">Your notifications will appear here.</Text>
-          </View>
+            title="No notifications yet"
+          />
         }
+        onRefresh={() => refetch()}
+        refreshing={isRefetching}
       />
     </View>
   );

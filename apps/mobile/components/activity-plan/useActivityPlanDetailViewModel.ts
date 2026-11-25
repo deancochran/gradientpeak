@@ -1,55 +1,33 @@
-import { decodePolyline, type IntervalStepV2 } from "@repo/core";
+import {
+  type ActivityPlanDetail,
+  type ActivityPlanStep,
+  type ActivityPlanSummary,
+  activityPlanDetailSchema,
+  activityPlanStructureSchema,
+  activityPlanSummarySchema,
+  compileActivityPlan,
+} from "@repo/core";
 import { useMemo } from "react";
-import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
-import { getDurationMs } from "@/lib/utils/durationConversion";
+import { getActivityPlanQuantitySummary } from "@/lib/activityPlanMetrics";
 
-type ActivityPlanLike = {
-  activity_category: string;
-  authoritative_metrics?: {
-    estimated_duration?: number | null;
-    estimated_tss?: number | null;
-    intensity_factor?: number | null;
-    estimated_distance?: number | null;
-  } | null;
-  route?: {
-    distance?: number | null;
-    ascent?: number | null;
-    descent?: number | null;
-  } | null;
-  profile_id?: string | null;
-  structure?: unknown;
-  [key: string]: unknown;
-};
+type ActivityPlanProjection = ActivityPlanSummary | ActivityPlanDetail;
 
 type PlannedActivityLike = {
-  activity_plan?: ActivityPlanLike | null;
+  activityPlanSummary?: ActivityPlanSummary | null;
 };
 
 type ProfileLike = {
   id?: string | null;
 };
 
-type RouteLike = {
-  polyline?: string | null;
-};
-
 interface UseActivityPlanDetailViewModelParams {
   activityPlanParam?: string;
-  fetchedPlan: ActivityPlanLike | null | undefined;
+  fetchedPlan: ActivityPlanDetail | null | undefined;
   formatDuration: (seconds: number) => string;
   isScheduled: boolean;
   plannedActivity: PlannedActivityLike | null | undefined;
   profile: ProfileLike | null | undefined;
-  route: RouteLike | null | undefined;
   template?: string;
-}
-
-function getIntervals(structure: unknown): Array<{ repetitions: number; steps: IntervalStepV2[] }> {
-  if (!structure || typeof structure !== "object") return [];
-  const maybeIntervals = (structure as { intervals?: unknown }).intervals;
-  return Array.isArray(maybeIntervals)
-    ? (maybeIntervals as Array<{ repetitions: number; steps: IntervalStepV2[] }>)
-    : [];
 }
 
 export function useActivityPlanDetailViewModel({
@@ -59,84 +37,61 @@ export function useActivityPlanDetailViewModel({
   isScheduled,
   plannedActivity,
   profile,
-  route,
   template,
 }: UseActivityPlanDetailViewModelParams) {
-  const activityPlan = useMemo(() => {
-    if (plannedActivity?.activity_plan) return plannedActivity.activity_plan;
+  const activityPlan = useMemo<ActivityPlanProjection | null>(() => {
+    if (plannedActivity?.activityPlanSummary) return plannedActivity.activityPlanSummary;
     if (fetchedPlan) return fetchedPlan;
-    if (template) {
+    const serializedPlan = template ?? activityPlanParam;
+    if (serializedPlan) {
       try {
-        return JSON.parse(template);
+        const candidate: unknown = JSON.parse(serializedPlan);
+        const detail = activityPlanDetailSchema.safeParse(candidate);
+        if (detail.success) return detail.data;
+        const summary = activityPlanSummarySchema.safeParse(candidate);
+        if (summary.success) return summary.data;
       } catch (error) {
-        console.error("Failed to parse template:", error);
-      }
-    }
-    if (activityPlanParam) {
-      try {
-        return JSON.parse(activityPlanParam);
-      } catch (error) {
-        console.error("Failed to parse activityPlan:", error);
+        console.error("Failed to parse activity plan projection:", error);
       }
     }
     return null;
   }, [activityPlanParam, fetchedPlan, plannedActivity, template]);
 
-  const steps: IntervalStepV2[] = useMemo(() => {
-    const intervals = getIntervals(activityPlan?.structure);
-    if (intervals.length === 0) return [];
-    const flatSteps: IntervalStepV2[] = [];
-    for (const interval of intervals) {
-      for (let i = 0; i < interval.repetitions; i++) {
-        for (const step of interval.steps) flatSteps.push(step);
-      }
+  const structure = useMemo(() => {
+    const parsed = activityPlanStructureSchema.safeParse(activityPlan?.structure);
+    return parsed.success ? parsed.data : null;
+  }, [activityPlan?.structure]);
+  const steps: ActivityPlanStep[] = useMemo(() => {
+    const flatSteps: ActivityPlanStep[] = [];
+    for (const item of structure?.items ?? []) {
+      if (item.type === "step") flatSteps.push(item);
+      else for (let i = 0; i < item.count; i++) flatSteps.push(...item.steps);
     }
     return flatSteps;
-  }, [activityPlan?.structure]);
+  }, [structure]);
 
-  const totalDuration = useMemo(
-    () => steps.reduce((total, step) => total + getDurationMs(step.duration), 0),
-    [steps],
-  );
+  const compiled = useMemo(() => (structure ? compileActivityPlan(structure) : null), [structure]);
 
-  const authoritativeMetrics = getAuthoritativeActivityPlanMetrics(activityPlan);
-  const estimatedDurationSeconds = authoritativeMetrics.estimated_duration ?? null;
+  const quantitySummary = getActivityPlanQuantitySummary(activityPlan);
+  const estimatedDurationSeconds = quantitySummary.durationSeconds;
   const estimatedDurationMinutes = estimatedDurationSeconds
     ? Math.round(estimatedDurationSeconds / 60)
     : null;
-  const durationMinutes = estimatedDurationMinutes ?? Math.round(totalDuration / 60000);
-  const tss = authoritativeMetrics.estimated_tss ?? null;
-  const intensityFactor = authoritativeMetrics.intensity_factor ?? null;
-  const isOwnedByUser = activityPlan?.profile_id === profile?.id;
+  const durationMinutes = estimatedDurationMinutes;
+  const isOwnedByUser = Boolean(activityPlan?.capabilities.canEdit && profile?.id);
   const detailBadges = activityPlan
     ? [
-        activityPlan.activity_category,
+        compiled?.activity_category || activityPlan.activityCategory || "Other",
         isScheduled ? "Scheduled" : isOwnedByUser ? "My plan" : "Template",
       ]
     : [];
 
-  const routeCoordinates = route?.polyline ? decodePolyline(route.polyline) : null;
-  const routePreview = routeCoordinates?.length
-    ? {
-        coordinates: routeCoordinates,
-        initialRegion: {
-          latitude: routeCoordinates[Math.floor(routeCoordinates.length / 2)].latitude,
-          longitude: routeCoordinates[Math.floor(routeCoordinates.length / 2)].longitude,
-          latitudeDelta: 0.05,
-          longitudeDelta: 0.05,
-        },
-      }
-    : null;
-
   return {
     activityPlan,
     detailBadges,
-    intensityFactor,
     isOwnedByUser,
-    routePreview,
     steps,
-    tss,
-    durationLabel: formatDuration(durationMinutes * 60),
+    durationLabel: durationMinutes === null ? "—" : formatDuration(durationMinutes * 60),
     durationMinutes,
   };
 }

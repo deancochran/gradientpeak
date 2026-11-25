@@ -11,33 +11,33 @@ import {
 describe("computeProjectionFeasibilityMetadata", () => {
   it("returns high readiness when demand is met with low clamp pressure", () => {
     const result = computeProjectionFeasibilityMetadata({
-      requiredPeakWeeklyTssTarget: 420,
-      feasiblePeakWeeklyTssApplied: 420,
-      tssRampClampWeeks: 0,
-      ctlRampClampWeeks: 0,
+      requiredPeakWeeklyLoadTarget: 420,
+      feasiblePeakWeeklyLoadApplied: 420,
+      loadRampClampWeeks: 0,
+      longTermLoadRampClampWeeks: 0,
       confidence: 0.85,
       projectionWeeks: 12,
     });
 
     expect(result.readiness_band).toBe("high");
-    expect(result.demand_gap.unmet_weekly_tss).toBe(0);
-    expect(result.projection_uncertainty?.tss_likely).toBe(420);
+    expect(result.demand_gap.unmet_weekly_load).toBe(0);
+    expect(result.projection_uncertainty?.load_likely).toBe(420);
   });
 
   it("returns lower readiness and limiters when demand exceeds caps", () => {
     const result = computeProjectionFeasibilityMetadata({
-      requiredPeakWeeklyTssTarget: 560,
-      feasiblePeakWeeklyTssApplied: 400,
-      tssRampClampWeeks: 6,
-      ctlRampClampWeeks: 5,
+      requiredPeakWeeklyLoadTarget: 560,
+      feasiblePeakWeeklyLoadApplied: 400,
+      loadRampClampWeeks: 6,
+      longTermLoadRampClampWeeks: 5,
       confidence: 0.4,
       projectionWeeks: 12,
     });
 
     expect(result.readiness_band).toBe("low");
     expect(result.dominant_limiters).toContain("required_growth_exceeds_caps");
-    expect(result.dominant_limiters).toContain("tss_ramp_cap_pressure");
-    expect(result.dominant_limiters).toContain("ctl_ramp_cap_pressure");
+    expect(result.dominant_limiters).toContain("load_ramp_cap_pressure");
+    expect(result.dominant_limiters).toContain("longTermLoad_ramp_cap_pressure");
     expect(result.low_readiness_limiter_mode).toBe("timeline_limited");
     expect(result.dominant_limiters).toContain("timeline_limited_goal_too_soon");
     expect(result.readiness_rationale_codes).toContain("readiness_limiter_timeline_limited");
@@ -45,10 +45,10 @@ describe("computeProjectionFeasibilityMetadata", () => {
 
   it("flags low readiness as capacity-limited when demand stays unmet without timeline pressure", () => {
     const result = computeProjectionFeasibilityMetadata({
-      requiredPeakWeeklyTssTarget: 320,
-      feasiblePeakWeeklyTssApplied: 40,
-      tssRampClampWeeks: 0,
-      ctlRampClampWeeks: 0,
+      requiredPeakWeeklyLoadTarget: 320,
+      feasiblePeakWeeklyLoadApplied: 40,
+      loadRampClampWeeks: 0,
+      longTermLoadRampClampWeeks: 0,
       confidence: 0.78,
       projectionWeeks: 52,
     });
@@ -64,20 +64,20 @@ describe("computeCapacityEnvelope", () => {
   it("lowers envelope score when loads and ramps exceed bounds", () => {
     const realistic = computeCapacityEnvelope({
       weeks: [
-        { projected_weekly_tss: 220, projected_ramp_pct: 4 },
-        { projected_weekly_tss: 235, projected_ramp_pct: 6 },
-        { projected_weekly_tss: 245, projected_ramp_pct: 5 },
+        { projected_weekly_load: 220, projected_ramp_pct: 4 },
+        { projected_weekly_load: 235, projected_ramp_pct: 6 },
+        { projected_weekly_load: 245, projected_ramp_pct: 5 },
       ],
-      starting_ctl: 32,
+      starting_longTermLoad: 32,
       evidence_state: "rich",
     });
     const unrealistic = computeCapacityEnvelope({
       weeks: [
-        { projected_weekly_tss: 360, projected_ramp_pct: 24 },
-        { projected_weekly_tss: 420, projected_ramp_pct: 22 },
-        { projected_weekly_tss: 480, projected_ramp_pct: 20 },
+        { projected_weekly_load: 360, projected_ramp_pct: 24 },
+        { projected_weekly_load: 420, projected_ramp_pct: 22 },
+        { projected_weekly_load: 480, projected_ramp_pct: 20 },
       ],
-      starting_ctl: 32,
+      starting_longTermLoad: 32,
       evidence_state: "rich",
     });
 
@@ -90,23 +90,23 @@ describe("computeCapacityEnvelope", () => {
 
   it("changes smoothly for nearby evidence scores and elite-load boundaries", () => {
     const lowerEvidence = computeCapacityEnvelope({
-      weeks: [{ projected_weekly_tss: 460, projected_ramp_pct: 6 }],
-      starting_ctl: 92,
+      weeks: [{ projected_weekly_load: 460, projected_ramp_pct: 6 }],
+      starting_longTermLoad: 92,
       evidence_score: 0.59,
     });
     const higherEvidence = computeCapacityEnvelope({
-      weeks: [{ projected_weekly_tss: 460, projected_ramp_pct: 6 }],
-      starting_ctl: 92,
+      weeks: [{ projected_weekly_load: 460, projected_ramp_pct: 6 }],
+      starting_longTermLoad: 92,
       evidence_score: 0.61,
     });
     const justBelowElite = computeCapacityEnvelope({
-      weeks: [{ projected_weekly_tss: 645, projected_ramp_pct: 7 }],
-      starting_ctl: 92,
+      weeks: [{ projected_weekly_load: 645, projected_ramp_pct: 7 }],
+      starting_longTermLoad: 92,
       evidence_score: 0.75,
     });
     const justAboveElite = computeCapacityEnvelope({
-      weeks: [{ projected_weekly_tss: 655, projected_ramp_pct: 7 }],
-      starting_ctl: 94,
+      weeks: [{ projected_weekly_load: 655, projected_ramp_pct: 7 }],
+      starting_longTermLoad: 94,
       evidence_score: 0.75,
     });
 
@@ -122,11 +122,11 @@ describe("computeCapacityEnvelope", () => {
 describe("computeCompositeReadiness", () => {
   it("remains deterministic and bounded", () => {
     const envelope = computeCapacityEnvelope({
-      weeks: [{ projected_weekly_tss: 220, projected_ramp_pct: 4 }],
-      starting_ctl: 30,
+      weeks: [{ projected_weekly_load: 220, projected_ramp_pct: 4 }],
+      starting_longTermLoad: 30,
       evidence_state: "sparse",
     });
-    const durability = computeDurabilityScore({ weekly_tss: [210, 220, 215] });
+    const durability = computeDurabilityScore({ weekly_load: [210, 220, 215] });
     const first = computeCompositeReadiness({
       target_attainment_score: 78,
       durability_score: durability,
@@ -151,8 +151,8 @@ describe("computeCompositeReadiness", () => {
 
   it("changes readiness confidence smoothly for nearby evidence levels", () => {
     const envelope = computeCapacityEnvelope({
-      weeks: [{ projected_weekly_tss: 220, projected_ramp_pct: 4 }],
-      starting_ctl: 30,
+      weeks: [{ projected_weekly_load: 220, projected_ramp_pct: 4 }],
+      starting_longTermLoad: 30,
       evidence_state: "rich",
     });
 
@@ -207,27 +207,27 @@ describe("computeProjectionPointReadinessScores", () => {
     const points = [
       {
         date: "2026-01-05",
-        predicted_fitness_ctl: 22,
-        predicted_fatigue_atl: 21,
-        predicted_form_tsb: 1,
+        predicted_fitness_longTermLoad: 22,
+        predicted_fatigue_recentLoad: 21,
+        predicted_form_loadBalance: 1,
       },
       {
         date: "2026-01-12",
-        predicted_fitness_ctl: 28,
-        predicted_fatigue_atl: 25,
-        predicted_form_tsb: 3,
+        predicted_fitness_longTermLoad: 28,
+        predicted_fatigue_recentLoad: 25,
+        predicted_form_loadBalance: 3,
       },
       {
         date: "2026-01-19",
-        predicted_fitness_ctl: 31,
-        predicted_fatigue_atl: 26,
-        predicted_form_tsb: 5,
+        predicted_fitness_longTermLoad: 31,
+        predicted_fatigue_recentLoad: 26,
+        predicted_form_loadBalance: 5,
       },
       {
         date: "2026-01-26",
-        predicted_fitness_ctl: 33,
-        predicted_fatigue_atl: 27,
-        predicted_form_tsb: 6,
+        predicted_fitness_longTermLoad: 33,
+        predicted_fatigue_recentLoad: 27,
+        predicted_form_loadBalance: 6,
       },
     ];
 
@@ -255,21 +255,21 @@ describe("computeProjectionPointReadinessScores", () => {
       points: [
         {
           date: "2026-01-05",
-          predicted_fitness_ctl: 20,
-          predicted_fatigue_atl: 18,
-          predicted_form_tsb: 2,
+          predicted_fitness_longTermLoad: 20,
+          predicted_fatigue_recentLoad: 18,
+          predicted_form_loadBalance: 2,
         },
         {
           date: "2026-01-12",
-          predicted_fitness_ctl: 34,
-          predicted_fatigue_atl: 24,
-          predicted_form_tsb: 10,
+          predicted_fitness_longTermLoad: 34,
+          predicted_fatigue_recentLoad: 24,
+          predicted_form_loadBalance: 10,
         },
         {
           date: "2026-01-19",
-          predicted_fitness_ctl: 38,
-          predicted_fatigue_atl: 20,
-          predicted_form_tsb: 18,
+          predicted_fitness_longTermLoad: 38,
+          predicted_fatigue_recentLoad: 20,
+          predicted_form_loadBalance: 18,
         },
       ],
       planReadinessScore: 47,
@@ -287,27 +287,27 @@ describe("computeProjectionPointReadinessScores", () => {
       points: [
         {
           date: "2026-01-05",
-          predicted_fitness_ctl: 20,
-          predicted_fatigue_atl: 22,
-          predicted_form_tsb: -2,
+          predicted_fitness_longTermLoad: 20,
+          predicted_fatigue_recentLoad: 22,
+          predicted_form_loadBalance: -2,
         },
         {
           date: "2026-01-12",
-          predicted_fitness_ctl: 29,
-          predicted_fatigue_atl: 26,
-          predicted_form_tsb: 3,
+          predicted_fitness_longTermLoad: 29,
+          predicted_fatigue_recentLoad: 26,
+          predicted_form_loadBalance: 3,
         },
         {
           date: "2026-01-19",
-          predicted_fitness_ctl: 33,
-          predicted_fatigue_atl: 24,
-          predicted_form_tsb: 9,
+          predicted_fitness_longTermLoad: 33,
+          predicted_fatigue_recentLoad: 24,
+          predicted_form_loadBalance: 9,
         },
         {
           date: "2026-01-26",
-          predicted_fitness_ctl: 38,
-          predicted_fatigue_atl: 27,
-          predicted_form_tsb: 11,
+          predicted_fitness_longTermLoad: 38,
+          predicted_fatigue_recentLoad: 27,
+          predicted_form_loadBalance: 11,
         },
       ],
       planReadinessScore: 62,
