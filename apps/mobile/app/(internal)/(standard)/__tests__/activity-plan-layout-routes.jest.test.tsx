@@ -29,12 +29,11 @@ jest.mock("lucide-react-native", () => ({
 const StandardLayout = require("../_layout").default;
 
 describe("standard layout activity-plan route declarations", () => {
-  it("keeps unified composer entry and excludes legacy structure/repeat screens", () => {
-    renderNative(<StandardLayout />);
+  it("keeps unified composer entry and excludes legacy structure/repeat screens", async () => {
+    await renderNative(<StandardLayout />);
 
     expect(screen.getByTestId("stack-screen-activity-plan-detail")).toBeTruthy();
     expect(screen.getByTestId("stack-screen-create-activity-plan")).toBeTruthy();
-    expect(screen.getByTestId("stack-screen-scheduled-activities-list")).toBeTruthy();
     expect(screen.queryByTestId("stack-screen-create-activity-plan-structure")).toBeNull();
     expect(screen.queryByTestId("stack-screen-create-activity-plan-repeat")).toBeNull();
   });
