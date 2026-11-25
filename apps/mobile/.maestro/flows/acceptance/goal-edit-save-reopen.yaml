@@ -51,7 +51,8 @@ name: Athlete saves a repaired Goal edit and returns through its original Calend
 - takeScreenshot: goal-edit-saved-detail
 # Reopen the saved canonical detail from its original date, then Back to prove
 # that neither save nor reopen changed the Calendar's selected date.
-- pressKey: back
+- tapOn:
+    id: standard-header-back
 - extendedWaitUntil:
     visible:
       id: planning-ledger-milestone-${MAESTRO_ACCEPTANCE_GOAL_ID}
@@ -64,7 +65,8 @@ name: Athlete saves a repaired Goal edit and returns through its original Calend
     timeout: 30000
 - assertVisible: ${MAESTRO_ACCEPTANCE_SAVED_GOAL_TITLE}
 - takeScreenshot: goal-edit-reopened-detail
-- pressKey: back
+- tapOn:
+    id: standard-header-back
 - extendedWaitUntil:
     visible:
       id: planning-ledger-milestone-${MAESTRO_ACCEPTANCE_GOAL_ID}
