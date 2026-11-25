@@ -1,8 +1,9 @@
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
+import type { Href } from "expo-router";
 import { useState } from "react";
 import { View } from "react-native";
-import { GroupCompactCard } from "@/components/groups/GroupCards";
+import { GroupCard } from "@/components/groups/GroupCards";
 import { api } from "@/lib/api";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
@@ -45,13 +46,14 @@ export function ProfileGroupsSection({
 
       <View className="gap-2">
         {visibleGroups.map((group) => (
-          <GroupCompactCard
+          <GroupCard
             group={group}
             key={group.id}
             onPress={() =>
-              navigateTo({ pathname: "/group-detail", params: { groupId: group.id } } as any)
+              navigateTo({ pathname: "/group-detail", params: { groupId: group.id } } as Href)
             }
             testID={`${testID}-group-${group.id}`}
+            variant="compact"
           />
         ))}
       </View>

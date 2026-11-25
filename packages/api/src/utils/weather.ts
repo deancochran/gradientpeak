@@ -2,6 +2,8 @@
  * Weather utilities for fetching environmental data for activities.
  */
 
+import { formatDateOnlyUtc } from "@repo/core/calendar";
+
 /**
  * Fetch the temperature for a specific location and time.
  * Uses Open-Meteo API (free, no key required).
@@ -17,7 +19,7 @@ export async function fetchActivityTemperature(
   timestamp: Date,
 ): Promise<number | null> {
   try {
-    const dateStr = timestamp.toISOString().split("T")[0];
+    const dateStr = formatDateOnlyUtc(timestamp);
     const now = new Date();
     const isHistorical = now.getTime() - timestamp.getTime() > 7 * 24 * 60 * 60 * 1000; // Older than 7 days
 
