@@ -1,5 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import type { TestInfo } from "@playwright/test";
 import { activities, profiles } from "@repo/db/schema";
 import { eq } from "drizzle-orm";
 import { expect, test } from "../fixtures";
@@ -7,6 +9,61 @@ import { GoalsPage } from "../pages";
 import { chooseAuthoringOption } from "../pages/authoring";
 import { withGoalFixture } from "../planning/data";
 import { createGoalProgressFixture } from "../support/goal-progress-fixture";
+
+const flowScreenshots = {
+  "goal-progress-sign-in.yaml": ["goal-progress-home"],
+  "goal-progress-workspace.yaml": [
+    "goal-progress-plan-context",
+    "goal-progress-plan-selected-date",
+    "goal-progress-goal-context",
+    "goal-progress-source-context",
+  ],
+} as const;
+
+function maestroDebugDirectory(testInfo: TestInfo, flow: keyof typeof flowScreenshots) {
+  return testInfo.outputPath("maestro", flow.replace(".yaml", ""));
+}
+
+function screenshotPath(root: string, name: string) {
+  return join(root, `${name}.png`);
+}
+
+function retainFlowScreenshots(
+  testInfo: TestInfo,
+  flow: keyof typeof flowScreenshots,
+  debugDirectory: string,
+) {
+  const retained: string[] = [];
+  const artifactDirectory = testInfo.outputPath("goal-progress-screenshots");
+  mkdirSync(artifactDirectory, { recursive: true });
+
+  for (const name of flowScreenshots[flow]) {
+    const destination = screenshotPath(artifactDirectory, name);
+    for (const source of [
+      screenshotPath(debugDirectory, name),
+      screenshotPath(process.cwd(), name),
+    ]) {
+      if (!existsSync(source)) continue;
+      copyFileSync(source, destination);
+      retained.push(name);
+      break;
+    }
+  }
+  return retained;
+}
+
+function prepareFlowScreenshots(
+  testInfo: TestInfo,
+  flow: keyof typeof flowScreenshots,
+  debugDirectory: string,
+) {
+  mkdirSync(debugDirectory, { recursive: true });
+  for (const name of flowScreenshots[flow]) {
+    rmSync(screenshotPath(debugDirectory, name), { force: true });
+    rmSync(screenshotPath(process.cwd(), name), { force: true });
+    rmSync(testInfo.outputPath("goal-progress-screenshots", `${name}.png`), { force: true });
+  }
+}
 
 test("Android shows canonical published threshold evidence through the goal and selected Plan day", async ({
   actorFactory,
@@ -26,7 +83,11 @@ test("Android shows canonical published threshold evidence through the goal and 
     throw new Error(
       "Native goal-progress proof requires the runner-provided MAESTRO_ACCEPTANCE_RUNTIME_SENTINEL.",
     );
-  const runMaestro = (flow: string, environment: Record<string, string>) =>
+  const runMaestro = (
+    flow: keyof typeof flowScreenshots,
+    environment: Record<string, string>,
+    debugDirectory: string,
+  ) =>
     spawnSync(
       "maestro",
       [
@@ -34,7 +95,7 @@ test("Android shows canonical published threshold evidence through the goal and 
         "emulator-5554",
         "test",
         "--debug-output",
-        testInfo.outputPath("maestro"),
+        debugDirectory,
         `../mobile/.maestro/flows/acceptance/${flow}`,
       ],
       {
@@ -43,13 +104,31 @@ test("Android shows canonical published threshold evidence through the goal and 
         env: { ...process.env, ...environment },
       },
     );
-  const runFlow = (flow: string, environment: Record<string, string>, output: string) => {
-    const result = runMaestro(flow, environment);
+  const runFlow = (
+    flow: keyof typeof flowScreenshots,
+    environment: Record<string, string>,
+    output: string,
+  ) => {
+    const debugDirectory = maestroDebugDirectory(testInfo, flow);
+    prepareFlowScreenshots(testInfo, flow, debugDirectory);
+    let result: ReturnType<typeof runMaestro> | undefined;
+    let retained: string[] = [];
+    try {
+      result = runMaestro(flow, environment, debugDirectory);
+    } finally {
+      // Retain captures before reporting the flow result so a failing assertion
+      // cannot let runner cleanup discard the screenshots already produced.
+      retained = retainFlowScreenshots(testInfo, flow, debugDirectory);
+    }
+    if (!result) throw new Error(`Maestro did not return a result for ${flow}.`);
     writeFileSync(testInfo.outputPath(output), `${result.stdout ?? ""}\n${result.stderr ?? ""}`, {
       mode: 0o600,
     });
     expect(result.error, `Maestro must execute ${flow} on the designated emulator`).toBeUndefined();
     expect(result.status, `See private Maestro output for ${flow}`).toBe(0);
+    expect(retained, `Successful ${flow} must retain its declared screenshots`).toEqual([
+      ...flowScreenshots[flow],
+    ]);
   };
 
   await e2eDatabase.db
