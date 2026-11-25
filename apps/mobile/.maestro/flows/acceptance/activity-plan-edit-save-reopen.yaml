@@ -36,8 +36,9 @@ name: Athlete saves metadata-only activity-plan edits, reopens the library recor
     timeout: 30000
 - assertVisible: ${MAESTRO_ACCEPTANCE_EDITED_PLAN_NAME}
 - takeScreenshot: activity-plan-edit-reopened
-# The detail is stacked above the library and has no tab bar. Its canonical
-# semantic header Back control returns to the already-proven library route.
+# The standard-stack detail returns to its library, the library returns to the
+# Me route that opened it, and Me returns to the initiating Home tab. Each
+# semantic header Back has a route-owned destination assertion.
 - tapOn:
     id: standard-header-back
 - extendedWaitUntil:
@@ -45,7 +46,13 @@ name: Athlete saves metadata-only activity-plan edits, reopens the library recor
       id: activity-plans-list-screen
     timeout: 30000
 - tapOn:
-    id: tab-button-home
+    id: standard-header-back
+- extendedWaitUntil:
+    visible:
+      id: profile-tab-screen
+    timeout: 30000
+- tapOn:
+    id: standard-header-back
 - extendedWaitUntil:
     visible:
       id: home-training-workspace
