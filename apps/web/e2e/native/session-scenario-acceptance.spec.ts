@@ -3,6 +3,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSyn
 import { resolve } from "node:path";
 import { activityPlans, plannedSessions } from "@repo/db/schema";
 import { and, eq } from "drizzle-orm";
+import superjson, { type SuperJSONResult } from "superjson";
 import { expect, test } from "../fixtures";
 import {
   requireNativeReverseRestoration,
@@ -27,6 +28,12 @@ type DurationMetric = {
 function requireRecord(value: unknown, message: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(message);
   return value as Record<string, unknown>;
+}
+
+function superjsonResultFrom(value: unknown, message: string): SuperJSONResult {
+  const result = requireRecord(value, message);
+  if (!("json" in result)) throw new Error(message);
+  return result as unknown as SuperJSONResult;
 }
 
 function durationMetricFrom(value: unknown, message: string): DurationMetric {
@@ -64,8 +71,8 @@ function durationCompositionFrom(value: unknown, message: string) {
 
 async function retainAppliedPlanningLedgerEvidence(input: {
   actor: Parameters<typeof createSessionScenarioFixture>[0]["actor"];
+  artifactPath: string;
   date: string;
-  outputPath: (path: string) => string;
 }) {
   const request = { anchorDate: input.date, period: "day" } as const;
   const encodedInput = encodeURIComponent(JSON.stringify({ 0: { json: request } }));
@@ -76,14 +83,19 @@ async function retainAppliedPlanningLedgerEvidence(input: {
   const body = await response.json();
   if (!Array.isArray(body) || body.length !== 1)
     throw new Error("Planning ledger response was not a single batched tRPC result.");
-  const ledger = requireRecord(
+  const serializedLedger = requireRecord(
     requireRecord(
       requireRecord(body[0], "Planning ledger result is invalid.").result,
       "Planning ledger result is invalid.",
     ).data,
     "Planning ledger result is invalid.",
-  ).json;
-  const result = requireRecord(ledger, "Planning ledger response has no JSON result.");
+  );
+  const result = requireRecord(
+    superjson.deserialize(
+      superjsonResultFrom(serializedLedger, "Planning ledger result is invalid."),
+    ),
+    "Planning ledger response has no JSON result.",
+  );
   expect(result).toMatchObject({
     anchorDate: input.date,
     contractVersion: "planning-ledger-v3",
@@ -100,7 +112,7 @@ async function retainAppliedPlanningLedgerEvidence(input: {
     "Planning ledger response has no selected training composition.",
   );
   writeFileSync(
-    input.outputPath("native-scenario-applied-planning-ledger.json"),
+    input.artifactPath,
     JSON.stringify(
       {
         anchorDate: result.anchorDate,
@@ -266,8 +278,8 @@ test("native athlete compares, cancels, and applies a selected session scenario"
   }
   await retainAppliedPlanningLedgerEvidence({
     actor,
+    artifactPath: testInfo.outputPath("native-scenario-applied-planning-ledger.json"),
     date: fixture.date,
-    outputPath: testInfo.outputPath,
   });
   const [sessions, plans] = await fixture.snapshot();
   const selected = requireRow(
