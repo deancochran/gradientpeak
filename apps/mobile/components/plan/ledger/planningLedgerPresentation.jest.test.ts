@@ -7,6 +7,7 @@ import {
 } from "./planningLedgerPresentation";
 
 const partial = (value: number) => ({ status: "partial" as const, value });
+const complete = (value: number) => ({ status: "complete" as const, value });
 
 const ledger: PlanningLedger = {
   anchorDate: "2026-04-15",
@@ -157,7 +158,7 @@ it("renders unavailable load, duration, and intensity as a dash", () => {
 
 it("does not infer rest from unavailable daily load", () => {
   const unavailable = { status: "unavailable" as const, value: null };
-  const knownZero = partial(0);
+  const knownZero = { status: "known_zero" as const, value: 0 };
   const model = buildPlanningLedgerPresentation(ledgerWithLoadMetrics(unavailable, knownZero));
 
   expect(model.load).toMatchObject({
@@ -173,7 +174,7 @@ it("does not infer rest from unavailable daily load", () => {
 
 it("does not infer rest when planned load is unavailable", () => {
   const unavailable = { status: "unavailable" as const, value: null };
-  const knownZero = partial(0);
+  const knownZero = { status: "known_zero" as const, value: 0 };
   const model = buildPlanningLedgerPresentation(ledgerWithLoadMetrics(knownZero, unavailable));
 
   expect(model.load.title).not.toBe("Rest day");
@@ -205,8 +206,19 @@ it("keeps positive partial load classified by its known value", () => {
   expect(planned.days[0]?.consistencyLabel).toBe("Planned");
 });
 
+it("keeps complete positive load in progress", () => {
+  const model = buildPlanningLedgerPresentation(ledgerWithLoadMetrics(complete(15), complete(25)));
+
+  expect(model.load.title).toBe("In progress");
+  expect(model.days[0]).toMatchObject({
+    completedLabel: "15",
+    consistencyLabel: "Training recorded",
+    plannedLabel: "25",
+  });
+});
+
 it("keeps known zero load as a rest day", () => {
-  const knownZero = partial(0);
+  const knownZero = { status: "known_zero" as const, value: 0 };
   const model = buildPlanningLedgerPresentation(ledgerWithLoadMetrics(knownZero, knownZero));
 
   expect(model.load).toMatchObject({
