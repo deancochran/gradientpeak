@@ -1,0 +1,52 @@
+appId: com.deancochran.gradientpeak.dev
+name: Completed athlete follows published threshold evidence from selected Plan day to source and back
+---
+# The runner has already confirmed the canonical database read models share one
+# non-null publication revision before this device flow begins.
+- tapOn:
+    id: tab-button-plan
+- extendedWaitUntil:
+    visible:
+      id: plan-training-chart-bucket-${MAESTRO_ACCEPTANCE_TARGET_DATE}
+    timeout: 30000
+- tapOn:
+    id: plan-training-chart-bucket-${MAESTRO_ACCEPTANCE_TARGET_DATE}
+- extendedWaitUntil:
+    visible:
+      id: plan-selected-day-goal-${MAESTRO_ACCEPTANCE_GOAL_ID}
+    timeout: 30000
+- assertVisible: ${MAESTRO_ACCEPTANCE_GOAL_TITLE}
+- takeScreenshot: goal-progress-plan-selected-date
+- tapOn:
+    id: plan-selected-day-goal-${MAESTRO_ACCEPTANCE_GOAL_ID}
+- extendedWaitUntil:
+    visible:
+      id: goal-detail-progress
+    timeout: 30000
+- assertVisible: "285 W"
+- assertVisible: "300 W"
+- assertVisible: "15 W"
+- takeScreenshot: goal-progress-goal-context
+- scrollUntilVisible:
+    element:
+      id: plan-progress-source-${MAESTRO_ACCEPTANCE_SOURCE_ACTIVITY_ID}
+    direction: DOWN
+- assertVisible: ${MAESTRO_ACCEPTANCE_SOURCE_ACTIVITY_NAME}
+- takeScreenshot: goal-progress-source-context
+- tapOn:
+    id: plan-progress-source-${MAESTRO_ACCEPTANCE_SOURCE_ACTIVITY_ID}
+- extendedWaitUntil:
+    visible:
+      id: activity-detail-screen
+    timeout: 30000
+- assertVisible: ${MAESTRO_ACCEPTANCE_SOURCE_ACTIVITY_NAME}
+- pressKey: back
+- extendedWaitUntil:
+    visible:
+      id: goal-detail-progress
+    timeout: 30000
+- pressKey: back
+- extendedWaitUntil:
+    visible:
+      id: plan-selected-day-goal-${MAESTRO_ACCEPTANCE_GOAL_ID}
+    timeout: 30000
