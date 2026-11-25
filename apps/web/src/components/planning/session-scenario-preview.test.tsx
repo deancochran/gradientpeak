@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { freezePlannedSessionScenarioOperation } from "@repo/api/client";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionScenarioPreview } from "./session-scenario-preview";
@@ -10,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   previewInputs: [] as unknown[],
   previewInput: undefined as unknown,
   apply: vi.fn(),
+  applyPending: false,
   actorId: "00000000-0000-4000-8000-000000000001",
   invalidations: {
     activityPlans: vi.fn(async () => undefined),
@@ -64,7 +66,7 @@ vi.mock("../../lib/api/client", () => ({
         },
       },
       applyScenario: {
-        useMutation: () => ({ isPending: false, mutateAsync: mocks.apply }),
+        useMutation: () => ({ isPending: mocks.applyPending, mutateAsync: mocks.apply }),
       },
     },
   },
@@ -85,6 +87,7 @@ beforeEach(() => {
   mocks.previewInput = undefined;
   mocks.previewInputs = [];
   mocks.apply = vi.fn();
+  mocks.applyPending = false;
   mocks.actorId = "00000000-0000-4000-8000-000000000001";
   Object.values(mocks.invalidations).forEach((invalidate) => {
     invalidate.mockReset();
@@ -284,6 +287,44 @@ describe("SessionScenarioPreview", () => {
     const retryRequest = mocks.apply.mock.calls[1]?.[0];
     if (!firstRequest || !retryRequest) throw new Error("Expected both apply attempts.");
     expect(firstRequest).toEqual(retryRequest);
+  });
+
+  it("announces a hydrated pending saved change without offering another retry", async () => {
+    const recoveredSession = {
+      ...session,
+      id: "00000000-0000-4000-8000-000000000010",
+    };
+    const receipt = freezePlannedSessionScenarioOperation({
+      actorId: mocks.actorId,
+      expectedPreviewFingerprint: `v1:sha256:${"b".repeat(64)}`,
+      operationId: "00000000000040008000000000000009",
+      preview: {
+        expectedPlanRevision: 5,
+        expectedSessionRevision: 3,
+        expectedStateRevision: 7,
+        scenario: { kind: "less", targetDurationSeconds: 1200 },
+        sessionId: recoveredSession.id,
+      },
+    });
+    localStorage.setItem(
+      `gradientpeak:planned-session-scenario:v1:${recoveredSession.profileId}:${recoveredSession.id}`,
+      JSON.stringify(receipt),
+    );
+    mocks.previewResult.data = { status: "unavailable", reason: "session_not_scheduled" };
+    mocks.applyPending = true;
+
+    renderPreview(recoveredSession);
+
+    const status = await screen.findByRole("status");
+    expect(status.textContent).toBe(
+      "Checking the saved change now. Wait for its result before trying anything else. The comparison below is read-only.",
+    );
+    expect(screen.getByText("Checking saved change")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Applying…" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(screen.queryByRole("button", { name: "Check or retry this change" })).toBeNull();
+    expect(mocks.apply).not.toHaveBeenCalled();
   });
 
   it("fails closed when browser recovery storage cannot durably arm an operation", async () => {

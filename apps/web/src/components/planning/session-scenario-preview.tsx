@@ -282,13 +282,18 @@ function SessionScenarioPreviewContents({
       {operation || outcome || storageUnavailable ? (
         <div className="space-y-2" data-testid="session-scenario-recovery">
           <h3 className="font-medium">
-            {operation ? "Previous change needs confirmation" : "Change status"}
+            {operation
+              ? applyMutation.isPending
+                ? "Checking saved change"
+                : "Previous change needs confirmation"
+              : "Change status"}
           </h3>
           {operation ? (
             <>
-              <p className="text-sm text-muted-foreground">
-                This saved change may already have been applied. Check or retry it before starting
-                another change. The comparison below is read-only.
+              <p className="text-sm text-muted-foreground" role="status">
+                {applyMutation.isPending
+                  ? "Checking the saved change now. Wait for its result before trying anything else. The comparison below is read-only."
+                  : "This saved change may already have been applied. Check or retry it before starting another change. The comparison below is read-only."}
               </p>
               <Button
                 disabled={applyMutation.isPending}

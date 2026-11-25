@@ -313,13 +313,18 @@ function SessionScenarioPreviewContents({
       {displayableOperation || visibleOutcome || storageUnavailable ? (
         <View className="gap-2" testID="session-scenario-recovery">
           <Text className="font-medium text-foreground">
-            {displayableOperation ? "Previous change needs confirmation" : "Change status"}
+            {displayableOperation
+              ? applyMutation.isPending
+                ? "Checking saved change"
+                : "Previous change needs confirmation"
+              : "Change status"}
           </Text>
           {displayableOperation ? (
             <>
-              <Text className="text-sm text-muted-foreground">
-                This saved change may already have been applied. Check or retry it before starting
-                another change. The comparison below is read-only.
+              <Text accessibilityLiveRegion="polite" className="text-sm text-muted-foreground">
+                {applyMutation.isPending
+                  ? "Checking the saved change now. Wait for its result before trying anything else. The comparison below is read-only."
+                  : "This saved change may already have been applied. Check or retry it before starting another change. The comparison below is read-only."}
               </Text>
               <Button
                 disabled={applyMutation.isPending}
