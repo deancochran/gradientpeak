@@ -1,4 +1,8 @@
-import { CONTRACT_EPOCH_HEADER, CURRENT_CONTRACT_EPOCH } from "@repo/api/client";
+import {
+  CONTRACT_EPOCH_HEADER,
+  CURRENT_CONTRACT_EPOCH,
+  type SafeApiErrorDiagnostic,
+} from "@repo/api/client";
 import {
   type AppRouter,
   api,
@@ -15,6 +19,7 @@ import { omitUndefined } from "@/lib/omitUndefined";
 import { getServerConfig } from "@/lib/server-config";
 import { captureException } from "@/lib/services/sentry";
 
+export type { SafeApiErrorDiagnostic } from "@repo/api/client";
 export { api };
 
 const API_REQUEST_TIMEOUT_MS = 30000;
@@ -178,13 +183,6 @@ const SAFE_ERROR_CLASSES = new Set([
   "AbortError",
   "TypeError",
 ]);
-
-export type SafeApiErrorDiagnostic = {
-  applicationErrorCode: string | null;
-  errorClass: string;
-  httpStatus: number | null;
-  trpcCode: string | null;
-};
 
 /** Returns only finite transport metadata; never use an error message as diagnostics. */
 export function getSafeApiErrorDiagnostic(error: unknown): SafeApiErrorDiagnostic {
