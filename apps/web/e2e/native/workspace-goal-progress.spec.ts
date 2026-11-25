@@ -85,7 +85,10 @@ test("Android shows canonical published threshold evidence through the goal and 
   e2eIdentity,
 }, testInfo) => {
   test.setTimeout(600_000);
-  const actor = await actorFactory.create("athlete", { label: "native-goal-progress-athlete" });
+  // The athlete/profile roles seed threshold evidence for generic web journeys.
+  // This completed profile role intentionally starts evidence-free so the fixture
+  // below proves the sole canonical activity from ingestion through publication.
+  const actor = await actorFactory.create("coach", { label: "native-goal-progress-athlete" });
   const fixtureNow = new Date();
   const targetDate = new Date(fixtureNow.getTime() + 60 * 86_400_000).toISOString().slice(0, 10);
   const title = e2eIdentity.name("Native observed bike threshold goal");
