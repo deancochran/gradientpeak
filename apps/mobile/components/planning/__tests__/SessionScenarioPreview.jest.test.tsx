@@ -415,7 +415,10 @@ describe("SessionScenarioPreview", () => {
     await act(async () => resolveApply({ status: "applied", action: "repointed" }));
   });
 
-  it("updates the stable known outcome when refresh invalidation fails", async () => {
+  it.each([
+    "calendar",
+    "ledger",
+  ] as const)("updates the stable known outcome when %s refresh invalidation fails", async (cache) => {
     mocks.preview = {
       data: availablePreview(),
       isError: false,
@@ -423,7 +426,7 @@ describe("SessionScenarioPreview", () => {
       refetch: jest.fn(),
     };
     mocks.apply.mockResolvedValue({ status: "applied", action: "repointed" });
-    mocks.invalidations.ledger.mockRejectedValueOnce(new Error("refresh unavailable"));
+    mocks.invalidations[cache].mockRejectedValueOnce(new Error("refresh unavailable"));
     const onKnownOutcomeChange = jest.fn();
     const screen = await renderNative(
       <SessionScenarioPreview {...props} onKnownOutcomeChange={onKnownOutcomeChange} />,
