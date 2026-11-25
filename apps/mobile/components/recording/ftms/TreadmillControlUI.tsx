@@ -16,7 +16,7 @@
 import { Text } from "@repo/ui/components/text";
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Pressable, View } from "react-native";
-import { usePlan } from "@/lib/hooks/useActivityRecorder";
+import { useSessionView } from "@/lib/hooks/useActivityRecorder";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 
 export interface TreadmillControlUIProps {
@@ -25,8 +25,8 @@ export interface TreadmillControlUIProps {
   hasPlan: boolean;
 }
 
-export function TreadmillControlUI({ service, controlMode, hasPlan }: TreadmillControlUIProps) {
-  const plan = usePlan(service);
+export function TreadmillControlUI({ service, controlMode }: TreadmillControlUIProps) {
+  const plan = useSessionView(service)?.plan;
 
   // Treadmill control state
   const [speedKmh, setSpeedKmh] = useState<number>(8.0); // km/h
@@ -144,6 +144,8 @@ export function TreadmillControlUI({ service, controlMode, hasPlan }: TreadmillC
 
   const isDisabled = controlMode === "auto";
 
+  const currentPlanTarget = plan?.currentStep?.targets?.at(0);
+
   return (
     <View className="gap-6">
       {/* Speed Control */}
@@ -154,6 +156,10 @@ export function TreadmillControlUI({ service, controlMode, hasPlan }: TreadmillC
             <Pressable
               onPress={() => setSpeedKmh(Math.max(0, speedKmh - 0.5))}
               disabled={isDisabled}
+              accessibilityRole="button"
+              accessibilityLabel="Decrease speed by 0.5 kilometers per hour"
+              accessibilityState={{ disabled: isDisabled }}
+              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
               className={`w-12 h-12 items-center justify-center rounded ${
                 isDisabled ? "bg-muted" : "bg-primary"
               }`}
@@ -171,6 +177,10 @@ export function TreadmillControlUI({ service, controlMode, hasPlan }: TreadmillC
             <Pressable
               onPress={() => setSpeedKmh(Math.min(maxSpeed, speedKmh + 0.5))}
               disabled={isDisabled}
+              accessibilityRole="button"
+              accessibilityLabel="Increase speed by 0.5 kilometers per hour"
+              accessibilityState={{ disabled: isDisabled }}
+              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
               className={`w-12 h-12 items-center justify-center rounded ${
                 isDisabled ? "bg-muted" : "bg-primary"
               }`}
@@ -184,7 +194,11 @@ export function TreadmillControlUI({ service, controlMode, hasPlan }: TreadmillC
           <Pressable
             onPress={applySpeed}
             disabled={isDisabled}
-            className={`py-3 rounded ${isDisabled ? "bg-muted" : "bg-primary"}`}
+            accessibilityRole="button"
+            accessibilityLabel="Apply speed in kilometers per hour"
+            accessibilityState={{ disabled: isDisabled }}
+            style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+            className={`h-12 items-center justify-center rounded ${isDisabled ? "bg-muted" : "bg-primary"}`}
           >
             <Text
               className={`text-center font-medium ${
@@ -210,6 +224,10 @@ export function TreadmillControlUI({ service, controlMode, hasPlan }: TreadmillC
             <Pressable
               onPress={() => setInclinePercent(Math.max(-5, inclinePercent - 0.5))}
               disabled={isDisabled}
+              accessibilityRole="button"
+              accessibilityLabel="Decrease incline by 0.5 percent"
+              accessibilityState={{ disabled: isDisabled }}
+              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
               className={`w-12 h-12 items-center justify-center rounded ${
                 isDisabled ? "bg-muted" : "bg-primary"
               }`}
@@ -226,6 +244,10 @@ export function TreadmillControlUI({ service, controlMode, hasPlan }: TreadmillC
             <Pressable
               onPress={() => setInclinePercent(Math.min(maxIncline, inclinePercent + 0.5))}
               disabled={isDisabled}
+              accessibilityRole="button"
+              accessibilityLabel="Increase incline by 0.5 percent"
+              accessibilityState={{ disabled: isDisabled }}
+              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
               className={`w-12 h-12 items-center justify-center rounded ${
                 isDisabled ? "bg-muted" : "bg-primary"
               }`}
@@ -239,7 +261,11 @@ export function TreadmillControlUI({ service, controlMode, hasPlan }: TreadmillC
           <Pressable
             onPress={applyIncline}
             disabled={isDisabled}
-            className={`py-3 rounded ${isDisabled ? "bg-muted" : "bg-primary"}`}
+            accessibilityRole="button"
+            accessibilityLabel="Apply incline in percent"
+            accessibilityState={{ disabled: isDisabled }}
+            style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+            className={`h-12 items-center justify-center rounded ${isDisabled ? "bg-muted" : "bg-primary"}`}
           >
             <Text
               className={`text-center font-medium ${
@@ -258,19 +284,19 @@ export function TreadmillControlUI({ service, controlMode, hasPlan }: TreadmillC
       )}
 
       {/* Plan Target Display (when in Auto mode) */}
-      {controlMode === "auto" && plan.hasPlan && plan.currentStep && (
+      {controlMode === "auto" && plan?.hasPlan && plan.currentStep && (
         <View className="bg-primary/10 p-4 rounded-lg border border-primary/20">
           <Text className="text-sm font-medium mb-1">Following Plan</Text>
           <Text className="text-xs text-muted-foreground">
             Current step: {plan.currentStep.name || "Interval"}
           </Text>
-          {plan.currentStep.targets && plan.currentStep.targets.length > 0 && (
+          {currentPlanTarget !== undefined && (
             <Text className="text-xs text-muted-foreground mt-1">
-              Target: {plan.currentStep.targets[0].type}{" "}
-              {"min" in plan.currentStep.targets[0] &&
-                "max" in plan.currentStep.targets[0] &&
-                `${plan.currentStep.targets[0].min}-${plan.currentStep.targets[0].max}`}
-              {"value" in plan.currentStep.targets[0] && `${plan.currentStep.targets[0].value}`}
+              Target: {currentPlanTarget.type}{" "}
+              {"min" in currentPlanTarget &&
+                "max" in currentPlanTarget &&
+                `${currentPlanTarget.min}-${currentPlanTarget.max}`}
+              {"value" in currentPlanTarget && `${currentPlanTarget.value}`}
             </Text>
           )}
         </View>
