@@ -15,6 +15,7 @@ import { GoalEditorForm, type GoalEditorFormHandle } from "@/components/goals";
 import { FormScreen } from "@/components/shared/FormScreen";
 import { EmptyState, ErrorState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
+import { ROUTES } from "@/lib/constants/routes";
 import { useCreationFlowActive } from "@/lib/hooks/useCreationFlowActive";
 
 export default function GoalEditScreen() {
@@ -83,7 +84,11 @@ function GoalEditSession({ isCurrent }: { isCurrent: () => boolean }) {
         Promise.resolve().then(() => invalidateGoalQueries(utils, { goalId })),
       ]);
       if (!active.current || !isCurrent() || currentGoalContext.current !== goalContext) return;
-      router.back();
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace(ROUTES.GOALS.DETAIL(goalId) as never);
+      }
     } finally {
       saveGuard.current = false;
       if (active.current) setIsSaving(false);

@@ -1,15 +1,18 @@
 import type { CanonicalGoalObjective, ProfileGoalRecord } from "@repo/core";
 import { act } from "@testing-library/react-native";
 import type React from "react";
+import { ROUTES } from "@/lib/constants/routes";
 import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 
 const backMock = jest.fn();
+const replaceMock = jest.fn();
 const updateMock = jest.fn();
 const invalidateMock = jest.fn();
 const firstId = "11111111-1111-4111-8111-111111111111";
 const secondId = "22222222-2222-4222-8222-222222222222";
 let id = firstId;
 let pathname = "/goal-edit";
+let canGoBack = true;
 jest.mock("expo-router/react-navigation", () => ({
   useIsFocused: () => pathname === "/goal-edit",
 }));
@@ -37,7 +40,11 @@ jest.mock("expo-router", () => ({
     addListener: jest.fn(() => jest.fn()),
     getState: () => ({ index: 0, routes: [] }),
   }),
-  useRouter: () => ({ back: backMock }),
+  useRouter: () => ({
+    back: backMock,
+    canGoBack: () => canGoBack,
+    replace: replaceMock,
+  }),
 }));
 jest.mock("@repo/api/react", () => ({
   invalidateGoalQueries: (...args: unknown[]) => invalidateMock(...args),
@@ -64,11 +71,13 @@ const GoalEditScreen = require("../goal-edit").default;
 beforeEach(() => {
   id = firstId;
   pathname = "/goal-edit";
+  canGoBack = true;
   data = goal();
   queryError = null;
   refetchMock.mockReset();
   updateMock.mockReset().mockResolvedValue({});
   backMock.mockReset();
+  replaceMock.mockReset();
   invalidateMock.mockReset().mockResolvedValue(undefined);
 });
 
@@ -83,6 +92,7 @@ it.each([
   await fireEvent.changeText(screen.getByTestId("goal-editor-title-input"), "Renamed goal");
   await fireEvent.press(screen.getByText("Save"));
   await waitFor(() => expect(backMock).toHaveBeenCalledTimes(1));
+  expect(replaceMock).not.toHaveBeenCalled();
   expect(updateMock).toHaveBeenCalledWith({
     id: firstId,
     data: {
@@ -94,6 +104,18 @@ it.each([
     },
   });
   expect(invalidateMock).toHaveBeenCalledTimes(1);
+});
+
+it("replaces with the canonical Goal Detail after a direct edit save has no history", async () => {
+  canGoBack = false;
+  await renderNative(<GoalEditScreen />);
+
+  await fireEvent.changeText(screen.getByTestId("goal-editor-title-input"), "Direct edit");
+  await fireEvent.press(screen.getByText("Save"));
+
+  await waitFor(() => expect(replaceMock).toHaveBeenCalledWith(ROUTES.GOALS.DETAIL(firstId)));
+  expect(replaceMock).toHaveBeenCalledTimes(1);
+  expect(backMock).not.toHaveBeenCalled();
 });
 
 it.each([
@@ -117,6 +139,7 @@ it.each([
   await fireEvent.press(screen.getByLabelText(`Done ${label}`));
   await fireEvent.press(screen.getByText("Save"));
   await waitFor(() => expect(backMock).toHaveBeenCalledTimes(1));
+  expect(replaceMock).not.toHaveBeenCalled();
   expect(updateMock.mock.calls[0]?.[0].data.target_payload).toStrictEqual(objective);
 });
 
@@ -176,6 +199,7 @@ it("keeps failed goal edits with an announced retry error", async () => {
   );
   expect(screen.getByTestId("goal-editor-title-input").props.value).toBe("Keep goal draft");
   expect(backMock).not.toHaveBeenCalled();
+  expect(replaceMock).not.toHaveBeenCalled();
 });
 
 it("does not navigate a new goal when the old pending save completes", async () => {
@@ -197,5 +221,6 @@ it("does not navigate a new goal when the old pending save completes", async () 
   expect(screen.getByTestId("goal-editor-title-input").props.value).toBe("Second goal");
   await act(async () => resolve({}));
   expect(backMock).not.toHaveBeenCalled();
+  expect(replaceMock).not.toHaveBeenCalled();
   expect(screen.getByTestId("goal-editor-title-input").props.value).toBe("Second goal");
 });
