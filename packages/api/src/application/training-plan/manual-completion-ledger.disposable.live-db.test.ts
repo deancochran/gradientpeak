@@ -143,6 +143,76 @@ describeDisposable("manual planned completion planning ledger", () => {
         linked_at: asOf,
       })
       .where(eq(plannedSessions.id, outsideSessionId));
+    const effective = await getEffectivePlanLoad({
+      db,
+      profileId,
+      request: { startDate: "2026-08-20", endDate: "2026-08-20" },
+      asOf,
+      repository: createEventReadRepository(db),
+    });
+
+    expect(effective).toMatchObject({
+      status: "available",
+      effective: {
+        status: "integrity_unavailable",
+        reason: "duplicate_activity_to_scheduled_links",
+        duplicateLinks: [
+          {
+            completedActivityId: completion.activity.id,
+            scheduledItemIds: expect.arrayContaining([insideSessionId, outsideSessionId]),
+          },
+        ],
+      },
+    });
+    const projection = await readPlanTabProjectionSnapshot({
+      db,
+      profileId,
+      request: { startDate: "2026-08-20", endDate: "2026-08-20" },
+      asOf,
+    });
+    expect(projection.ledgerItems).toEqual([]);
+  });
+
+  it("marks capped profile-wide completion links incomplete before assigning a null-start date", async () => {
+    const profileId = await seedProfile();
+    const activityPlanId = randomUUID();
+    const sessionId = randomUUID();
+    const asOf = new Date("2026-08-20T16:00:00.000Z");
+    await db.insert(activityPlans).values({
+      id: activityPlanId,
+      profile_id: profileId,
+      name: "Capped completion-link rest run",
+      structure,
+      structure_hash: activityPlanStructureHash(structure),
+      semantic_hash: activityPlanSemanticHash({
+        structure,
+        trainingIntent: "general_maintenance",
+      }),
+    });
+    await createDirectPlannedSession({
+      db,
+      repository: createDrizzlePlannedSessionRepository(db),
+      profileId,
+      sessionId,
+      planningDate: "2026-08-20",
+      source: { kind: "direct", operationId: randomUUID() },
+      activityPlanId,
+      groupEventId: null,
+      capturedAt: asOf,
+    });
+    const completion = await createManualDiaryEntry({
+      db,
+      profileId,
+      now: asOf,
+      plannedSession: { sessionId, expectedRevision: 1, outcome: "full" },
+      observation: {
+        operationId: randomUUID(),
+        diaryDate: "2026-08-20",
+        diaryTimezone: "America/New_York",
+        name: "Capped completion-link rest run",
+        activityCategory: "run",
+      },
+    });
     await db.execute(sql`
       insert into planned_sessions (
         id, profile_id, planning_date, original_target_date,
@@ -163,17 +233,18 @@ describeDisposable("manual planned completion planning ledger", () => {
         'linked',
         'full',
         ${asOf}::timestamptz
-      from generate_series(1, 10000) as series
+      from generate_series(1, 10001) as series
     `);
+
     const effectiveInputs = await createEventReadRepository(db).getEffectivePlanLoadInputs({
       profileId,
       startDate: "2026-08-20",
       endDate: "2026-08-20",
       asOf,
     });
+
     expect(effectiveInputs.linkedCompletionSessionsComplete).toBe(false);
     expect(effectiveInputs.sourceCoverage.activities?.status).toBe("partial");
-
     const effective = await getEffectivePlanLoad({
       db,
       profileId,
@@ -181,27 +252,13 @@ describeDisposable("manual planned completion planning ledger", () => {
       asOf,
       repository: createEventReadRepository(db),
     });
-
     expect(effective).toMatchObject({
       status: "available",
       effective: {
         status: "integrity_unavailable",
         reason: "duplicate_activity_to_scheduled_links",
-        duplicateLinks: [
-          {
-            completedActivityId: completion.activity.id,
-            scheduledItemIds: expect.arrayContaining([insideSessionId]),
-          },
-        ],
       },
     });
-    const projection = await readPlanTabProjectionSnapshot({
-      db,
-      profileId,
-      request: { startDate: "2026-08-20", endDate: "2026-08-20" },
-      asOf,
-    });
-    expect(projection.ledgerItems).toEqual([]);
   });
 
   it("prioritizes a linked null-timing completion over an overflowing timestamped range", async () => {

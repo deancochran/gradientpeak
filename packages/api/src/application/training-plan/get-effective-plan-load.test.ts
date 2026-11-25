@@ -1,4 +1,9 @@
+import {
+  createObservationQuantificationBundle,
+  quantifyCompletedActivityObservation,
+} from "@repo/core";
 import { activityPlanStructureSchema } from "@repo/core/activity-plan";
+import { COMMON_RELATIVE_LOAD_MODEL, COMMON_RELATIVE_LOAD_VERSION } from "@repo/core/load";
 import { describe, expect, it, vi } from "vitest";
 import type { EventReadRepository } from "../../repositories";
 import { createResolutionManifestFixture } from "../../test/builders/planned-session";
@@ -75,6 +80,64 @@ const session = (overrides = {}) => ({
   resolutionManifest: manifest,
   ...overrides,
 });
+function observationQuantification(activityId: string) {
+  return createObservationQuantificationBundle({
+    members: [
+      quantifyCompletedActivityObservation({
+        activityCategory: "run",
+        source: {
+          activityId,
+          segmentId: `${activityId}:segment`,
+          provider: null,
+          externalId: null,
+          artifactId: null,
+          capability: "unknown",
+          parserVersion: null,
+          decodedContractVersion: null,
+          materializerVersion: null,
+          segmentsRevision: null,
+          segmentRevision: null,
+          summaryVersion: 1,
+          sourceSessionIndex: null,
+          sourceMessageIndex: null,
+          rawType: null,
+          rawSport: null,
+          rawSubSport: null,
+        },
+        timing: {
+          coverage: "complete",
+          source: "unknown",
+          basis: "unknown",
+          startedAt: "2026-07-20T12:00:00.000Z",
+          finishedAt: "2026-07-20T12:01:00.000Z",
+          elapsedSeconds: 60,
+          activeSeconds: 60,
+          movingSeconds: 60,
+        },
+        distance: { meters: null, source: "unknown", basis: "unknown" },
+        intensity: {
+          averageHeartRateBpm: null,
+          averagePowerWatts: null,
+          averageSpeedMetersPerSecond: null,
+          normalizedSpeedMetersPerSecond: null,
+        },
+        commonLoad: {
+          status: "unavailable",
+          model: COMMON_RELATIVE_LOAD_MODEL,
+          version: COMMON_RELATIVE_LOAD_VERSION,
+          activity_category: "run",
+          method: null,
+          quality: null,
+          thresholdEvidence: null,
+          evidenceFingerprint: null,
+          computedAsOf: "2026-07-20T12:01:00.000Z",
+          contributingDurationSeconds: 60,
+          reason: "activity_data_missing",
+        },
+      }),
+    ],
+  });
+}
 describe("getEffectivePlanLoad", () => {
   it("requires paired bounded dates", () => {
     expect(getEffectivePlanLoadInputSchema.safeParse({ startDate: "2026-07-20" }).success).toBe(
@@ -140,5 +203,100 @@ describe("getEffectivePlanLoad", () => {
       status: "available",
       remaining: { status: "unavailable", reason: "no_load_data" },
     });
+  });
+  it("refuses a null-start linked completion when profile-wide link facts are incomplete", async () => {
+    const nullStartActivityId = id(8);
+    const timestampedActivityId = id(9);
+    const linked = session({
+      completedActivityId: nullStartActivityId,
+      id: id(10),
+      lifecycleStatus: "completed" as const,
+      planningDate: "2026-07-20",
+    });
+    analysis.loadActivitySegmentsByActivityId.mockResolvedValue(new Map());
+    analysis.buildActivityDerivedSummaries.mockResolvedValue({
+      parent: new Map([
+        [
+          timestampedActivityId,
+          { observationQuantification: observationQuantification(timestampedActivityId) },
+        ],
+      ]),
+      segments: [],
+    });
+    const result = await getEffectivePlanLoad({
+      asOf: new Date("2026-07-20T12:30:00.000Z"),
+      db: {} as never,
+      profileId: id(7),
+      repository: {
+        getEffectivePlanLoadInputs: vi.fn().mockResolvedValue({
+          ...facts([linked]),
+          activities: [
+            {
+              id: nullStartActivityId,
+              profile_id: id(7),
+              started_at: null,
+              finished_at: null,
+              elapsed_ms: null,
+              active_ms: null,
+              moving_ms: null,
+              timing_coverage: "unavailable",
+              distance_meters: null,
+              avg_heart_rate: null,
+              max_heart_rate: null,
+            },
+            {
+              id: timestampedActivityId,
+              profile_id: id(7),
+              started_at: new Date("2026-07-20T12:00:00.000Z"),
+              finished_at: new Date("2026-07-20T12:01:00.000Z"),
+              elapsed_ms: 60_000,
+              active_ms: 60_000,
+              moving_ms: 60_000,
+              timing_coverage: "complete",
+              distance_meters: null,
+              avg_heart_rate: null,
+              max_heart_rate: null,
+            },
+          ],
+          linkedCompletionSessions: [linked],
+          linkedCompletionSessionsComplete: false,
+          sourceCoverage: {
+            activities: {
+              startDate: "2026-07-20",
+              endDate: "2026-07-26",
+              status: "partial" as const,
+            },
+            scheduledItems: {
+              startDate: "2026-07-20",
+              endDate: "2026-07-26",
+              status: "complete" as const,
+            },
+          },
+        }),
+      } as unknown as EventReadRepository,
+      request: { startDate: "2026-07-20", endDate: "2026-07-26" },
+    });
+
+    expect(result).toMatchObject({
+      status: "available",
+      effective: {
+        status: "available",
+        firmItems: [
+          expect.objectContaining({
+            kind: "completed",
+            completedActivityId: timestampedActivityId,
+            date: "2026-07-20",
+          }),
+        ],
+      },
+    });
+    if (result.status !== "available" || result.effective.status !== "available") {
+      throw new Error("Expected available effective plan load");
+    }
+    expect(result.effective.firmItems).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ completedActivityId: nullStartActivityId }),
+      ]),
+    );
   });
 });
