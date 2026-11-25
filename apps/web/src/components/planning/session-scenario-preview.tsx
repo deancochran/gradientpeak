@@ -313,7 +313,11 @@ function SessionScenarioPreviewContents({
         </p>
       </div>
       {operation || outcome || storageUnavailable ? (
-        <div className="space-y-2" data-testid="session-scenario-recovery" ref={recoveryRef}>
+        <div
+          className="scroll-mt-20 space-y-2"
+          data-testid="session-scenario-recovery"
+          ref={recoveryRef}
+        >
           <h3 className="font-medium">
             {operation
               ? applyMutation.isPending

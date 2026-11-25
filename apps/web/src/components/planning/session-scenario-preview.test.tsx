@@ -31,6 +31,7 @@ const mocks = vi.hoisted(() => ({
     isSuccess: true,
   },
 }));
+const scrollIntoView = vi.fn();
 
 vi.mock("../../lib/api/client", () => ({
   api: {
@@ -82,6 +83,11 @@ vi.mock("@repo/ui/components/session-scenario-comparison", () => ({
 
 afterEach(cleanup);
 beforeEach(() => {
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+    configurable: true,
+    value: scrollIntoView,
+  });
+  scrollIntoView.mockReset();
   mocks.alternativeInputs = [];
   mocks.fetchNextPage = vi.fn();
   mocks.previewInput = undefined;
@@ -263,6 +269,9 @@ describe("SessionScenarioPreview", () => {
     fireEvent.click(screen.getByRole("button", { name: "Apply this scenario" }));
     fireEvent.click(screen.getByRole("button", { name: "Confirm apply" }));
     await screen.findByText(/could not confirm whether/i);
+    const retryAction = screen.getByRole("button", { name: "Check or retry this change" });
+    expect(scrollIntoView).toHaveBeenCalledOnce();
+    expect(document.activeElement).toBe(retryAction);
     mocks.previewResult.data = { status: "unavailable", reason: "session_not_scheduled" };
     rerender(
       <SessionScenarioPreview activityPlan={activityPlan} session={session} timeZone="UTC" />,
@@ -279,9 +288,10 @@ describe("SessionScenarioPreview", () => {
       recovery.compareDocumentPosition(screen.getByRole("button", { name: "as planned" })) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Check or retry this change" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Check or retry this change" }));
+    expect(retryAction).toBeTruthy();
+    fireEvent.click(retryAction);
     await screen.findByText(/Applied: unchanged/i);
+    expect(scrollIntoView).toHaveBeenCalledOnce();
     expect(mocks.apply).toHaveBeenCalledTimes(2);
     const firstRequest = mocks.apply.mock.calls[0]?.[0];
     const retryRequest = mocks.apply.mock.calls[1]?.[0];
@@ -316,6 +326,8 @@ describe("SessionScenarioPreview", () => {
     renderPreview(recoveredSession);
 
     const status = await screen.findByRole("status");
+    expect(scrollIntoView).not.toHaveBeenCalled();
+    expect(document.activeElement).not.toBe(screen.getByRole("button", { name: "Applying…" }));
     expect(status.textContent).toBe(
       "Checking the saved change now. Wait for its result before trying anything else. The comparison below is read-only.",
     );
