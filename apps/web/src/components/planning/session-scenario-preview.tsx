@@ -279,6 +279,39 @@ function SessionScenarioPreviewContents({
           This comparison is read-only. It does not change this session or its activity plan.
         </p>
       </div>
+      {operation || outcome || storageUnavailable ? (
+        <div className="space-y-2" data-testid="session-scenario-recovery">
+          <h3 className="font-medium">
+            {operation ? "Previous change needs confirmation" : "Change status"}
+          </h3>
+          {operation ? (
+            <>
+              <p className="text-sm text-muted-foreground">
+                This saved change may already have been applied. Check or retry it before starting
+                another change. The comparison below is read-only.
+              </p>
+              <Button
+                disabled={applyMutation.isPending}
+                onClick={() => void submitOperation()}
+                type="button"
+              >
+                {applyMutation.isPending ? "Applying…" : "Check or retry this change"}
+              </Button>
+            </>
+          ) : null}
+          {outcome ? (
+            <p aria-live="polite" className="text-sm text-muted-foreground">
+              {outcome}
+            </p>
+          ) : null}
+          {storageUnavailable ? (
+            <p role="alert" className="text-sm text-destructive">
+              Recovery storage is unavailable. Keep this screen open while checking or retrying this
+              operation.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       <fieldset className="flex flex-wrap gap-2">
         <legend className="sr-only">Scenario</legend>
         {(["as_planned", "less", "more", "substitute", "skip"] as const).map((value) => (
@@ -402,15 +435,6 @@ function SessionScenarioPreviewContents({
           ) : null}
         </div>
       ) : null}
-      {operation ? (
-        <Button
-          disabled={applyMutation.isPending}
-          onClick={() => void submitOperation()}
-          type="button"
-        >
-          {applyMutation.isPending ? "Applying…" : "Check or retry this change"}
-        </Button>
-      ) : null}
       {confirmationOpen && previewQuery.data?.status === "available" ? (
         <div
           className="space-y-3 rounded-md border p-3"
@@ -453,17 +477,6 @@ function SessionScenarioPreviewContents({
             </Button>
           </div>
         </div>
-      ) : null}
-      {outcome ? (
-        <p aria-live="polite" className="text-sm text-muted-foreground">
-          {outcome}
-        </p>
-      ) : null}
-      {storageUnavailable ? (
-        <p role="alert" className="text-sm text-destructive">
-          Recovery storage is unavailable. Keep this screen open while checking or retrying this
-          operation.
-        </p>
       ) : null}
     </section>
   );

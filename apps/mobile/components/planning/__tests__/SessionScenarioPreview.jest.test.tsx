@@ -337,6 +337,18 @@ describe("SessionScenarioPreview", () => {
       <SessionScenarioPreview {...props} session={{ ...props.session, id: recoveredSessionId }} />,
     );
     await waitFor(() => expect(screen.getByTestId("session-scenario-retry-apply")).toBeTruthy());
+    expect(screen.getByText("Previous change needs confirmation")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "This saved change may already have been applied. Check or retry it before starting another change. The comparison below is read-only.",
+      ),
+    ).toBeTruthy();
+    const previewChildren = screen.getByTestId("session-scenario-preview").children;
+    const scenarioChoices = screen.getByTestId("session-scenario-as_planned").parent;
+    if (!scenarioChoices) throw new Error("Scenario choices must have a parent.");
+    expect(previewChildren.indexOf(screen.getByTestId("session-scenario-recovery"))).toBeLessThan(
+      previewChildren.indexOf(scenarioChoices),
+    );
     expect(mocks.apply).not.toHaveBeenCalled();
     await act(async () => screen.getByTestId("session-scenario-retry-apply").props.onPress());
     await waitFor(() => expect(mocks.apply).toHaveBeenCalledTimes(1));

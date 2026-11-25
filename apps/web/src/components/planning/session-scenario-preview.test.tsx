@@ -264,6 +264,18 @@ describe("SessionScenarioPreview", () => {
     rerender(
       <SessionScenarioPreview activityPlan={activityPlan} session={session} timeZone="UTC" />,
     );
+    const recovery = screen.getByTestId("session-scenario-recovery");
+    expect(screen.getByText("Previous change needs confirmation")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "This saved change may already have been applied. Check or retry it before starting another change. The comparison below is read-only.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText(/comparison is not available/i)).toBeTruthy();
+    expect(
+      recovery.compareDocumentPosition(screen.getByRole("button", { name: "as planned" })) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(screen.getByRole("button", { name: "Check or retry this change" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Check or retry this change" }));
     await screen.findByText(/Applied: unchanged/i);
