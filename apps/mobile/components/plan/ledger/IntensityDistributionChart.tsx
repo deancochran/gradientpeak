@@ -52,7 +52,7 @@ export function IntensityDistributionChart({
           </View>
         </>
       ) : (
-        <Text className="rounded-xl bg-muted/20 px-3 py-3 text-sm text-muted-foreground">
+        <Text className="text-sm text-muted-foreground">
           Intensity distribution is unavailable for this period.
         </Text>
       )}
