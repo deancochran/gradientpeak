@@ -1,19 +1,30 @@
 import React from "react";
+import type { HostProps, PressableHostProps } from "../../../../test/mock-components";
 
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 import { BuilderScheduleEditor } from "../BuilderScheduleEditor";
 
+let mockScrollViewCount = 0;
+
+jest.mock("@/components/plan/training-path/PlanTrainingChart", () => ({
+  PlanTrainingChart: (props: HostProps) =>
+    React.createElement("View", { ...props, testID: "shared-plan-chart" }),
+}));
+
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
-  Pressable: (props: any) => React.createElement("Pressable", props, props.children),
-  ScrollView: (props: any) => React.createElement("ScrollView", props, props.children),
-  View: (props: any) => React.createElement("View", props, props.children),
+  Pressable: (props: HostProps) => React.createElement("Pressable", props, props.children),
+  ScrollView: (props: HostProps) => {
+    mockScrollViewCount += 1;
+    return React.createElement("ScrollView", props, props.children);
+  },
+  View: (props: HostProps) => React.createElement("View", props, props.children),
 }));
 
 jest.mock("@repo/ui/components/button", () => ({
   __esModule: true,
-  Button: ({ children, disabled, onPress, ...props }: any) =>
+  Button: ({ children, disabled, onPress, ...props }: PressableHostProps) =>
     React.createElement(
       "Pressable",
       {
@@ -28,11 +39,11 @@ jest.mock("@repo/ui/components/button", () => ({
 
 jest.mock("@repo/ui/components/text", () => ({
   __esModule: true,
-  Text: (props: any) => React.createElement("Text", props, props.children),
+  Text: (props: HostProps) => React.createElement("Text", props, props.children),
 }));
 
 jest.mock("lucide-react-native", () => {
-  const Icon = (props: any) => React.createElement("Icon", props);
+  const Icon = (props: HostProps) => React.createElement("Icon", props);
   return {
     __esModule: true,
     ChevronLeft: Icon,
@@ -49,7 +60,27 @@ jest.mock("../BuilderTrainingPathReviewSection", () => ({
 
 jest.mock("../TrainingPlanBuilderEventCard", () => ({
   __esModule: true,
-  TrainingPlanBuilderEventCard: () => React.createElement("View", { testID: "mock-event-card" }),
+  TrainingPlanBuilderEventCard: ({
+    onDuplicate,
+    onEdit,
+    onMoveByDays,
+    onRemove,
+  }: {
+    onDuplicate: () => void;
+    onEdit: () => void;
+    onMoveByDays: (days: number) => void;
+    onRemove: () => void;
+  }) =>
+    React.createElement(
+      "View",
+      { testID: "mock-event-card" },
+      React.createElement("Pressable", { onPress: onEdit, testID: "event-edit" }),
+      React.createElement("Pressable", { onPress: onDuplicate, testID: "event-duplicate" }),
+      React.createElement("Pressable", { onPress: () => onMoveByDays(1), testID: "event-move" }),
+      React.createElement("Pressable", { onPress: onRemove, testID: "event-remove" }),
+    ),
+  TrainingPlanBuilderEventEditor: ({ event }: { event: { localId: string } }) =>
+    React.createElement("View", { testID: `inline-editor-${event.localId}` }),
 }));
 
 const makeWeeks = () => [
@@ -60,13 +91,19 @@ const makeWeeks = () => [
 
 const makeTimelineWeeks = () =>
   makeWeeks().map((week, weekIndex) => ({
-    estimatedTss: week.plannedLoad,
-    recommendedTss: week.targetLoad,
+    estimatedCommonLoad: week.plannedLoad,
+    recommendedLoad: week.targetLoad,
     sessions: [],
     weekIndex,
   }));
 
-const renderEditor = (
+function getFirstByTestId(testID: string) {
+  const first = screen.getAllByTestId(testID)[0];
+  if (!first) throw new Error(`Expected at least one element with testID ${testID}`);
+  return first;
+}
+
+const renderEditor = async (
   selectedWeekIndex: number,
   overrides: Partial<React.ComponentProps<typeof BuilderScheduleEditor>> = {},
 ) => {
@@ -89,7 +126,6 @@ const renderEditor = (
     onAddSessionAtOffset: jest.fn(),
     onDuplicateSession: jest.fn(),
     onMoveSessionByDays: jest.fn(),
-    onOpenSchedulePreview: jest.fn(),
     onPressSession: jest.fn(),
     onRemoveSession: jest.fn(),
     projection: {},
@@ -98,23 +134,92 @@ const renderEditor = (
     ...overrides,
   } as unknown as React.ComponentProps<typeof BuilderScheduleEditor>;
 
-  renderNative(<BuilderScheduleEditor {...props} />);
+  await renderNative(<BuilderScheduleEditor {...props} />);
 
   return props;
 };
 
 describe("BuilderScheduleEditor selected day planning", () => {
-  it("adds a workout at the selected week start offset", () => {
-    const props = renderEditor(2);
+  it("uses shared Plan chart selection for the activity and copy actions", async () => {
+    const selectDate = jest.fn();
+    const props = await renderEditor(0, {
+      creationChart: {
+        selectedDate: "2026-02-18",
+        selectedDayOffset: 16,
+        selectDate,
+        forecastAvailable: false,
+        chartProps: {
+          dailyPoints: [
+            { date: "2026-02-18", plannedLoad: null, plannedLoadStatus: "unavailable" },
+          ],
+        },
+      },
+      onCopyWeek: jest.fn(),
+      viewModel: {
+        timelineWeeks: [
+          { weekIndex: 2, sessions: [{ session: { localId: "s", offsetDays: 16 } }] },
+        ],
+      },
+    } as unknown as Partial<React.ComponentProps<typeof BuilderScheduleEditor>>);
+    expect(screen.getByTestId("shared-plan-chart")).toBeTruthy();
+    expect(screen.getByTestId("mock-event-card")).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
+    expect(props.onAddSessionAtOffset).toHaveBeenCalledWith(16);
+    await fireEvent.press(screen.getByTestId("builder-copy-week"));
+    expect(props.onCopyWeek).toHaveBeenCalledWith(2, 3);
+    await fireEvent.press(screen.getByLabelText("Next schedule day"));
+    expect(selectDate).toHaveBeenCalledWith("2026-02-19");
+  });
+  it("returns to the newly scheduled week instead of hiding it on week one", async () => {
+    await renderEditor(0, { scheduleOnly: true, focusOffsetDays: 15 });
+    expect(screen.getByText("Week 3")).toBeTruthy();
+  });
+  it("browses a sparse authored schedule without a server chart or fitness panels", async () => {
+    const props = await renderEditor(0, {
+      scheduleOnly: true,
+      chartReview: { chart: { weeks: [] }, selectedWeekIndex: 0 },
+      viewModel: {
+        timelineWeeks: [
+          { weekIndex: 2, sessions: [{ session: { localId: "session-1", offsetDays: 16 } }] },
+        ],
+      },
+    } as unknown as Partial<React.ComponentProps<typeof BuilderScheduleEditor>>);
+    expect(screen.queryByTestId("mock-chart-review")).toBeNull();
+    expect(screen.queryByTestId("builder-copy-week")).toBeNull();
+    expect(
+      screen.getByText("No activities this week. Add an activity to get started."),
+    ).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText("Next schedule week"));
+    await fireEvent.press(screen.getByLabelText("Next schedule week"));
+    expect(screen.getByText("Week 3")).toBeTruthy();
+    expect(screen.getByText("Day 3")).toBeTruthy();
+    expect(screen.getByTestId("mock-event-card")).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("builder-add-activity"));
+    expect(props.onAddSessionAtOffset).toHaveBeenCalledWith(14);
+    expect(screen.getByLabelText("Next schedule week").props.disabled).toBe(true);
+  });
+  beforeEach(() => {
+    mockScrollViewCount = 0;
+  });
+  it("adds a activity at the selected week start offset", async () => {
+    const props = await renderEditor(2);
 
-    fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
+    await fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
 
     expect(props.onAddSessionAtOffset).toHaveBeenCalledTimes(1);
     expect(props.onAddSessionAtOffset).toHaveBeenCalledWith(14);
   });
 
-  it("adds a workout at the selected day offset when the chart has a selected day", () => {
-    const props = renderEditor(1, {
+  it("copies the selected week through the schedule controller action", async () => {
+    const props = await renderEditor(1, { onCopyWeek: jest.fn() });
+
+    await fireEvent.press(screen.getByTestId("builder-copy-week"));
+
+    expect(props.onCopyWeek).toHaveBeenCalledWith(1, 2);
+  });
+
+  it("adds a activity at the selected day offset when the chart has a selected day", async () => {
+    const props = await renderEditor(1, {
       chartReview: {
         chart: { weeks: makeWeeks() },
         extendEnd: jest.fn(),
@@ -129,9 +234,41 @@ describe("BuilderScheduleEditor selected day planning", () => {
       },
     } as unknown as Partial<React.ComponentProps<typeof BuilderScheduleEditor>>);
 
-    fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
+    await fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
 
     expect(props.onAddSessionAtOffset).toHaveBeenCalledTimes(1);
     expect(props.onAddSessionAtOffset).toHaveBeenCalledWith(10);
+  });
+
+  it("renders selected-day sessions in the parent vertical flow without a capped inner scroll area", async () => {
+    const props = await renderEditor(0, {
+      viewModel: {
+        timelineWeeks: [
+          {
+            sessions: [
+              { session: { localId: "session-1", offsetDays: 0 } },
+              { session: { localId: "session-2", offsetDays: 0 } },
+            ],
+            weekIndex: 0,
+          },
+        ],
+      },
+    } as unknown as Partial<React.ComponentProps<typeof BuilderScheduleEditor>>);
+
+    expect(screen.getAllByTestId("mock-event-card")).toHaveLength(2);
+    expect(mockScrollViewCount).toBe(0);
+    await fireEvent.press(getFirstByTestId("event-edit"));
+    await fireEvent.press(getFirstByTestId("event-duplicate"));
+    await fireEvent.press(getFirstByTestId("event-move"));
+    await fireEvent.press(getFirstByTestId("event-remove"));
+    expect(props.onPressSession).toHaveBeenCalledWith("session-1");
+    expect(props.onDuplicateSession).toHaveBeenCalledWith("session-1");
+    expect(props.onMoveSessionByDays).toHaveBeenCalledWith("session-1", 1);
+    expect(props.onRemoveSession).toHaveBeenCalledWith("session-1");
+  });
+
+  it("keeps editing out of the schedule so all entry points use the session page", async () => {
+    await renderEditor(0);
+    expect(screen.queryByTestId("builder-inline-session-editor")).toBeNull();
   });
 });
