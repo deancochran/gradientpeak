@@ -8,6 +8,12 @@ jest.mock("react-native", () => ({
   View: createHost("View"),
 }));
 
+jest.mock("expo-router", () => ({
+  __esModule: true,
+  useLocalSearchParams: () => ({}),
+  useRouter: () => ({ navigate: jest.fn() }),
+}));
+
 jest.mock("@/components/ErrorBoundary", () => ({
   __esModule: true,
   ErrorBoundary: ({ children }: { children: React.ReactNode }) => children,
@@ -24,6 +30,20 @@ jest.mock("@/components/feed", () => ({
       React.createElement("Text", null, "Catch up on the athletes you follow."),
       React.createElement("Text", null, "Feed list rendered"),
     ),
+}));
+
+jest.mock("@/components/plan/training-path/PlanDashboardContent", () => ({
+  __esModule: true,
+  PlanDashboardContent: createHost("PlanDashboardContent"),
+}));
+
+jest.mock("@/components/plan/training-path/usePlanTrainingPathData", () => ({
+  __esModule: true,
+  usePlanTrainingPathData: () => ({
+    hasUsableData: true,
+    planningTimezoneState: "ready",
+    queryFailureCount: 0,
+  }),
 }));
 
 jest.mock("@/components/shared", () => ({
