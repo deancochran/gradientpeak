@@ -3,6 +3,7 @@ import {
   activityPlanStructureSchema,
   calculateRollingTrainingQuality,
   canonicalActivityCategorySchema,
+  canonicalTrainingPlanStructureSchema,
   createObservationQuantificationBundle,
   createPrescriptionQuantificationBundle,
   createUnavailableActivityPlanPlanningEstimate,
@@ -414,7 +415,9 @@ export const homeRouter = createTRPCRouter({
       }
 
       if (plan?.structure) {
-        persistedTrainingPlanStructureSchema.parse(plan.structure);
+        z.union([canonicalTrainingPlanStructureSchema, persistedTrainingPlanStructureSchema]).parse(
+          plan.structure,
+        );
       }
 
       // --- 2. Calculate Dates ---

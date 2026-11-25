@@ -957,6 +957,52 @@ describe("homeRouter", () => {
     expect(result.schedule).toEqual([]);
     expect(result.todaysActivity).toBeNull();
   });
+  it("getDashboard retains support for a scheduled plan stored as a canonical structure", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
+    homeMocks.buildWorkloadEnvelopes.mockReturnValue(unavailableWorkload());
+    // Canonical storage omits the ID; the system-content seed adapter also uses this shape.
+    const { id, ...structure } = buildPersistedTrainingPlanStructure();
+    const name = "Canonical stored plan";
+    const { caller } = createCaller({
+      select: {
+        plannedSessions: [[{ training_plan_id: id }]],
+        trainingPlans: [
+          [
+            {
+              id,
+              name,
+              description: null,
+              structure,
+            },
+          ],
+        ],
+      },
+    });
+    await expect(caller.getDashboard()).resolves.toMatchObject({
+      activePlan: { id, name },
+    });
+  });
+  it.each(["not-a-uuid", null])("rejects a malformed supplied structure ID: %s", async (id) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
+    const { caller } = createCaller({
+      select: {
+        plannedSessions: [[{ training_plan_id: persistedTrainingPlanId }]],
+        trainingPlans: [
+          [
+            {
+              id: persistedTrainingPlanId,
+              name: "Invalid stored plan",
+              description: null,
+              structure: { ...buildPersistedTrainingPlanStructure(), id },
+            },
+          ],
+        ],
+      },
+    });
+    await expect(caller.getDashboard()).rejects.toMatchObject({ code: "INTERNAL_SERVER_ERROR" });
+  });
   it("getDashboard rejects invalid raw SQL plan rows", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
