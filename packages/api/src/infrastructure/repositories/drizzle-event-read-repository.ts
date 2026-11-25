@@ -208,6 +208,7 @@ export function createEventReadRepository(
         return {
           activities: [],
           linkedCompletionSessions: [],
+          linkedCompletionSessionsComplete: true,
           plannedSessions: [],
           recommendationPlannedSessions: [],
           recommendationSource: {
@@ -450,7 +451,9 @@ export function createEventReadRepository(
       );
       const activityRows = [...visibleLinkedManualRows, ...visibleTimestampRows];
       const activitiesStatus =
-        linkedManualRows.length === boundedLimit || timestampRows.length === timestampLimit
+        linkedCompletionRows.length === boundedLimit ||
+        linkedManualRows.length === boundedLimit ||
+        timestampRows.length === timestampLimit
           ? "partial"
           : "complete";
       const scheduledItemsStatus =
@@ -460,6 +463,7 @@ export function createEventReadRepository(
       return {
         activities: activityRows,
         linkedCompletionSessions: linkedCompletionRows.map(serializePlannedSession),
+        linkedCompletionSessionsComplete: linkedCompletionRows.length < boundedLimit,
         plannedSessions: plannedSessionRows.slice(0, boundedLimit - 1).map(serializePlannedSession),
         recommendationPlannedSessions: recommendationRows
           .slice(0, boundedLimit - 1)

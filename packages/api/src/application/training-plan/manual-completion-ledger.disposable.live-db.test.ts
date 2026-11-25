@@ -143,6 +143,36 @@ describeDisposable("manual planned completion planning ledger", () => {
         linked_at: asOf,
       })
       .where(eq(plannedSessions.id, outsideSessionId));
+    await db.execute(sql`
+      insert into planned_sessions (
+        id, profile_id, planning_date, original_target_date,
+        source_kind, idempotency_key, direct_operation_id, activity_plan_id,
+        status, completed_activity_id, completion_state, completion_outcome, linked_at
+      )
+      select
+        gen_random_uuid(),
+        ${profileId}::uuid,
+        '2026-08-21'::date,
+        '2026-08-21'::date,
+        'direct',
+        'direct:boundary' || lpad(series::text, 24, '0'),
+        'boundary' || lpad(series::text, 24, '0'),
+        ${activityPlanId}::uuid,
+        'completed',
+        ${completion.activity.id}::uuid,
+        'linked',
+        'full',
+        ${asOf}::timestamptz
+      from generate_series(1, 10000) as series
+    `);
+    const effectiveInputs = await createEventReadRepository(db).getEffectivePlanLoadInputs({
+      profileId,
+      startDate: "2026-08-20",
+      endDate: "2026-08-20",
+      asOf,
+    });
+    expect(effectiveInputs.linkedCompletionSessionsComplete).toBe(false);
+    expect(effectiveInputs.sourceCoverage.activities?.status).toBe("partial");
 
     const effective = await getEffectivePlanLoad({
       db,
@@ -160,7 +190,7 @@ describeDisposable("manual planned completion planning ledger", () => {
         duplicateLinks: [
           {
             completedActivityId: completion.activity.id,
-            scheduledItemIds: expect.arrayContaining([insideSessionId, outsideSessionId]),
+            scheduledItemIds: expect.arrayContaining([insideSessionId]),
           },
         ],
       },

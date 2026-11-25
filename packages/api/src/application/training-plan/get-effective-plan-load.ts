@@ -325,6 +325,7 @@ export async function getEffectivePlanLoad(input: {
   }
   const effectiveCompletedDate = (activity: (typeof facts.activities)[number]) => {
     if (activity.started_at !== null) return localDate(activity.started_at, planningTimezone);
+    if (!facts.linkedCompletionSessionsComplete) return null;
     const linkedSessions = linkedSessionsByActivityId.get(activity.id) ?? [];
     return linkedSessions.length === 1 ? (linkedSessions[0]?.planningDate ?? null) : null;
   };

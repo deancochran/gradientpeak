@@ -161,6 +161,7 @@ export interface EventReadRepository {
      * the requested window. These are integrity facts, not scheduled items.
      */
     linkedCompletionSessions: EffectivePlanLoadPlannedSessionRecord[];
+    linkedCompletionSessionsComplete: boolean;
     plannedSessions: EffectivePlanLoadPlannedSessionRecord[];
     recommendationPlannedSessions: EffectivePlanLoadPlannedSessionRecord[];
     recommendationSource: {
