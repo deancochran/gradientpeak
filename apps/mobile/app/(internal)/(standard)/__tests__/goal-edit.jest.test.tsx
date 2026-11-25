@@ -120,6 +120,12 @@ it.each([
   expect(updateMock.mock.calls[0]?.[0].data.target_payload).toStrictEqual(objective);
 });
 
+it("exposes the optional completion distance trigger and clear action semantically", async () => {
+  await renderNative(<GoalEditScreen />);
+  await fireEvent.press(screen.getByLabelText("Distance (optional)"));
+  expect(screen.getByLabelText("Clear Distance (optional)")).toBeTruthy();
+});
+
 it("distinguishes an initial read failure from a missing goal and retries explicitly", async () => {
   data = undefined;
   queryError = new Error("Offline");
