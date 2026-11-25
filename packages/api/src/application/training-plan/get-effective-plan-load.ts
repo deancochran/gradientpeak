@@ -313,52 +313,76 @@ export async function getEffectivePlanLoad(input: {
     }
     completedQuantificationById.set(activityId, parsed.value);
   }
-  const activitiesInRange = facts.activities.filter(
-    (activity): activity is typeof activity & { started_at: Date } => {
-      if (activity.started_at === null) return false;
-      const date = localDate(activity.started_at, planningTimezone);
-      return date >= startDate && date <= endDate;
-    },
-  );
+  const linkedSessionsByActivityId = new Map<
+    string,
+    (typeof facts.linkedCompletionSessions)[number][]
+  >();
+  for (const session of facts.linkedCompletionSessions) {
+    if (session.lifecycleStatus !== "completed" || session.completedActivityId === null) continue;
+    const sessions = linkedSessionsByActivityId.get(session.completedActivityId) ?? [];
+    sessions.push(session);
+    linkedSessionsByActivityId.set(session.completedActivityId, sessions);
+  }
+  const effectiveCompletedDate = (activity: (typeof facts.activities)[number]) => {
+    if (activity.started_at !== null) return localDate(activity.started_at, planningTimezone);
+    if (!facts.linkedCompletionSessionsComplete) return null;
+    const linkedSessions = linkedSessionsByActivityId.get(activity.id) ?? [];
+    return linkedSessions.length === 1 ? (linkedSessions[0]?.planningDate ?? null) : null;
+  };
+  const activitiesInRange = facts.activities.flatMap((activity) => {
+    const completedDate = effectiveCompletedDate(activity);
+    return completedDate !== null && completedDate >= startDate && completedDate <= endDate
+      ? [{ activity, completedDate }]
+      : [];
+  });
   completedQuantificationIncomplete ||= activitiesInRange.some(
-    (activity) => !completedQuantificationById.has(activity.id),
+    ({ activity }) => activity.started_at !== null && !completedQuantificationById.has(activity.id),
   );
-  const completedActivities = activitiesInRange.flatMap((activity) => {
+  const completedActivities = activitiesInRange.flatMap(({ activity, completedDate }) => {
     const source = completedQuantificationById.get(activity.id);
-    if (!source) return [];
+    if (!source && activity.started_at !== null) return [];
     return [
       {
         completedActivityId: activity.id,
-        completedDate: localDate(activity.started_at, planningTimezone),
-        observationQuantification: source,
+        completedDate,
+        commonLoad: source?.summary.commonLoad ?? unavailableActivityLoad(asOf.toISOString()),
+        observationQuantification: source ?? null,
       },
     ];
   });
-  const scheduledItems = facts.plannedSessions.map((session) => {
-    const estimated = session.currentPlan ? currentPlanById.get(session.currentPlan.id) : null;
-    const currentPlan = materializeCurrentPlannedSessionProjection(
-      estimated && session.currentPlan
-        ? {
-            ...session.currentPlan,
-            prescriptionQuantification: estimated.prescriptionQuantification,
-          }
-        : session.currentPlan,
-    );
-    return {
-      scheduledItemId: session.id,
-      scheduledDate: session.planningDate,
-      status:
-        session.lifecycleStatus === "cancelled" ||
-        (session.lifecycleStatus === "completed" && !session.completedActivityId)
-          ? ("cancelled" as const)
-          : ("active" as const),
-      linkedCompletedActivityId: session.completedActivityId,
-      commonLoad: currentPlan
-        ? currentPlanCommonLoad(currentPlan)
-        : currentPlanCommonLoad({ commonLoad: null, durationSeconds: null }),
-      resolutionManifest: session.resolutionManifest,
-    };
-  });
+  const duplicateLinkedSessions = [...linkedSessionsByActivityId.values()].flatMap((sessions) =>
+    sessions.length > 1 ? sessions.slice(0, 2) : [],
+  );
+  const scheduledItems = [...facts.plannedSessions, ...duplicateLinkedSessions]
+    .filter(
+      (session, index, sessions) =>
+        sessions.findIndex((candidate) => candidate.id === session.id) === index,
+    )
+    .map((session) => {
+      const estimated = session.currentPlan ? currentPlanById.get(session.currentPlan.id) : null;
+      const currentPlan = materializeCurrentPlannedSessionProjection(
+        estimated && session.currentPlan
+          ? {
+              ...session.currentPlan,
+              prescriptionQuantification: estimated.prescriptionQuantification,
+            }
+          : session.currentPlan,
+      );
+      return {
+        scheduledItemId: session.id,
+        scheduledDate: session.planningDate,
+        status:
+          session.lifecycleStatus === "cancelled" ||
+          (session.lifecycleStatus === "completed" && !session.completedActivityId)
+            ? ("cancelled" as const)
+            : ("active" as const),
+        linkedCompletedActivityId: session.completedActivityId,
+        commonLoad: currentPlan
+          ? currentPlanCommonLoad(currentPlan)
+          : currentPlanCommonLoad({ commonLoad: null, durationSeconds: null }),
+        resolutionManifest: session.resolutionManifest,
+      };
+    });
   const composition = composeEffectivePlanDto({
     scheduledItems,
     completedActivities,
@@ -415,7 +439,9 @@ export async function getEffectivePlanLoad(input: {
   const completedMembers =
     composition.status === "available"
       ? composition.firmItems.flatMap((item) =>
-          item.kind === "completed" ? item.observationQuantification.members : [],
+          item.kind === "completed" && item.observationQuantification !== null
+            ? item.observationQuantification.members
+            : [],
         )
       : [];
   const completedObservationQuantification =
