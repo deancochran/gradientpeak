@@ -218,6 +218,7 @@ function SessionScenarioPreviewContents({
         try {
           await Promise.all([
             utils.plannedSessions.invalidate(),
+            utils.activityPlans.invalidate(),
             utils.calendar.invalidate(),
             utils.athleteIntelligence.getReadModel.invalidate(),
           ]);
@@ -234,6 +235,7 @@ function SessionScenarioPreviewContents({
         );
         void Promise.all([
           utils.plannedSessions.invalidate(),
+          utils.activityPlans.invalidate(),
           utils.calendar.invalidate(),
           utils.athleteIntelligence.getReadModel.invalidate(),
         ]).then(() => previewQuery.refetch());

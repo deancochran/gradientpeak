@@ -27,6 +27,7 @@ vi.mock("../../lib/api/client", () => ({
   api: {
     useUtils: () => ({
       athleteIntelligence: { getReadModel: { invalidate: vi.fn(async () => undefined) } },
+      activityPlans: { invalidate: vi.fn(async () => undefined) },
       calendar: { invalidate: vi.fn(async () => undefined) },
       plannedSessions: { invalidate: vi.fn(async () => undefined) },
     }),

@@ -50,6 +50,7 @@ function SessionScenarioPreviewContents({
   const [storageUnavailable, setStorageUnavailable] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const operationRef = useRef<FrozenPlannedSessionScenarioOperation | null>(null);
+  const armingRef = useRef(false);
   const generationRef = useRef(0);
   const { user } = useAuth();
   const actorId = user?.id ?? null;
@@ -125,9 +126,18 @@ function SessionScenarioPreviewContents({
   }, [actorId, session.id, storageKey]);
 
   const persistOperation = async (next: FrozenPlannedSessionScenarioOperation | null) => {
+    const generation = generationRef.current;
+    const actor = actorRef.current;
+    const selectedSessionId = session.id;
     try {
       if (next) await AsyncStorage.setItem(storageKey, JSON.stringify(next));
       else await AsyncStorage.removeItem(storageKey);
+      if (
+        generation !== generationRef.current ||
+        actor !== actorRef.current ||
+        selectedSessionId !== session.id
+      )
+        return false;
       operationRef.current = next;
       setOperation(next);
       return true;
@@ -142,21 +152,27 @@ function SessionScenarioPreviewContents({
       !hydrated ||
       !input ||
       previewQuery.data?.status !== "available" ||
-      operationRef.current
+      operationRef.current ||
+      armingRef.current
     )
       return;
+    armingRef.current = true;
     const next = freezePlannedSessionScenarioOperation({
       actorId,
       expectedPreviewFingerprint: previewQuery.data.previewFingerprint,
       operationId: randomUUID().replaceAll("-", ""),
       preview: input,
     });
-    if (!(await persistOperation(next))) {
-      setOutcome("Unable to save safe recovery. Check device storage and try again.");
-      return;
+    try {
+      if (!(await persistOperation(next))) {
+        setOutcome("Unable to save safe recovery. Check device storage and try again.");
+        return;
+      }
+      setConfirming(false);
+      setOutcome(null);
+    } finally {
+      armingRef.current = false;
     }
-    setConfirming(false);
-    setOutcome(null);
   };
   const submitOperation = async () => {
     if (
@@ -186,6 +202,7 @@ function SessionScenarioPreviewContents({
         try {
           await Promise.all([
             utils.plannedSessions.invalidate(),
+            utils.activityPlans.invalidate(),
             utils.calendar.invalidate(),
             utils.athleteIntelligence.getReadModel.invalidate(),
           ]);
@@ -200,6 +217,7 @@ function SessionScenarioPreviewContents({
         );
         void Promise.all([
           utils.plannedSessions.invalidate(),
+          utils.activityPlans.invalidate(),
           utils.calendar.invalidate(),
           utils.athleteIntelligence.getReadModel.invalidate(),
         ]).then(() => previewQuery.refetch());

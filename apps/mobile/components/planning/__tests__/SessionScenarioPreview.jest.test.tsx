@@ -13,6 +13,7 @@ jest.mock("@/lib/api", () => ({
   api: {
     useUtils: () => ({
       athleteIntelligence: { getReadModel: { invalidate: jest.fn() } },
+      activityPlans: { invalidate: jest.fn() },
       calendar: { invalidate: jest.fn() },
       plannedSessions: { invalidate: jest.fn() },
     }),
