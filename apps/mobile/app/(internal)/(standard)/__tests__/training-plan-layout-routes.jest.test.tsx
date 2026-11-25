@@ -31,8 +31,8 @@ jest.mock("lucide-react-native", () => ({
 const StandardLayout = require("../_layout").default;
 
 describe("standard layout training-plan route declarations", () => {
-  it("keeps canonical routes and excludes deprecated legacy entries", () => {
-    renderNative(<StandardLayout />);
+  it("keeps canonical routes and excludes deprecated legacy entries", async () => {
+    await renderNative(<StandardLayout />);
 
     expect(screen.getByTestId("stack-screen-training-plan-detail")).toBeTruthy();
     expect(screen.getByTestId("stack-screen-training-plans-list")).toBeTruthy();

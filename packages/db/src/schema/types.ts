@@ -1,30 +1,34 @@
-import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
+import type { InferInsertModel, InferSelectModel, Table } from "drizzle-orm";
 
 import type {
   activities,
+  activityAnalysisRevisions,
+  activityArtifactLinks,
+  activityArtifacts,
   activityEfforts,
   activityFileIngestions,
-  activityGeometry,
-  activityImports,
-  activityLaps,
-  activityPlanDerivedMetricsCache,
-  activityPlanRefreshQueue,
+  activityImportRuns,
   activityPlans,
+  activityRouteDeletionReceipts,
   activityRoutes,
-  activitySummaries,
-  coachesAthletes,
-  coachingInvitations,
+  activitySegments,
+  activitySessionRpeEvidence,
+  activitySourceReferences,
+  activityTrainingEffects,
+  athleteConsentPolicyVersions,
+  athleteDataSharingConsents,
+  athletePlanEditGrants,
+  athleteRecalculationQueue,
+  coachingActivityPlanPublications,
+  coachingAssignments,
+  coachingEngagements,
   comments,
   contentAccessGrants,
   conversationParticipants,
   conversations,
-  eventExternalLinks,
-  eventPayloads,
-  eventRecurrence,
-  eventScheduleLinks,
+  dailyTrainingLoad,
   events,
   follows,
-  groupEventActivityPlans,
   groupEventRsvps,
   groupEventSeriesRsvps,
   groupEvents,
@@ -36,20 +40,37 @@ import type {
   integrationResourceLinks,
   integrations,
   likes,
+  manualTrainingDiaryOperations,
   messages,
   notifications,
   oauthStates,
-  profileEstimationState,
+  organizationAuditEvents,
+  organizationGroupAthletes,
+  organizationGroupCoachAssignments,
+  organizationGroups,
+  organizationInvitations,
+  organizationMembershipRoleGrants,
+  organizationMemberships,
+  organizations,
+  plannedSessions,
+  profileAthleteState,
   profileGoals,
   profileMetrics,
+  profilePerformanceEstimates,
   profiles,
-  profileTrainingSettings,
   providerSyncJobs,
   providerSyncState,
   providerWebhookReceipts,
+  thresholdEvaluationEfforts,
+  thresholdEvaluations,
+  thresholdEvidence,
+  thresholds,
   trainingPlans,
-  userTrainingPlans,
 } from "./tables";
+
+type InferUpdateModel<TTable extends Table> = {
+  [Key in keyof InferInsertModel<TTable>]?: InferInsertModel<TTable>[Key] | undefined;
+};
 
 export type ProfileRow = InferSelectModel<typeof profiles>;
 export type ProfileInsert = InferInsertModel<typeof profiles>;
@@ -60,6 +81,52 @@ export type GroupInsert = InferInsertModel<typeof groups>;
 export type GroupMembershipRow = InferSelectModel<typeof groupMemberships>;
 export type GroupMembershipInsert = InferInsertModel<typeof groupMemberships>;
 
+export type OrganizationRow = InferSelectModel<typeof organizations>;
+export type OrganizationInsert = InferInsertModel<typeof organizations>;
+
+export type OrganizationMembershipRow = InferSelectModel<typeof organizationMemberships>;
+export type OrganizationMembershipInsert = InferInsertModel<typeof organizationMemberships>;
+export type OrganizationInvitationRow = InferSelectModel<typeof organizationInvitations>;
+export type OrganizationInvitationInsert = InferInsertModel<typeof organizationInvitations>;
+export type OrganizationGroupRow = InferSelectModel<typeof organizationGroups>;
+export type OrganizationGroupInsert = InferInsertModel<typeof organizationGroups>;
+export type OrganizationGroupAthleteRow = InferSelectModel<typeof organizationGroupAthletes>;
+export type OrganizationGroupAthleteInsert = InferInsertModel<typeof organizationGroupAthletes>;
+export type OrganizationGroupCoachAssignmentRow = InferSelectModel<
+  typeof organizationGroupCoachAssignments
+>;
+export type OrganizationGroupCoachAssignmentInsert = InferInsertModel<
+  typeof organizationGroupCoachAssignments
+>;
+
+export type OrganizationMembershipRoleGrantRow = InferSelectModel<
+  typeof organizationMembershipRoleGrants
+>;
+export type OrganizationMembershipRoleGrantInsert = InferInsertModel<
+  typeof organizationMembershipRoleGrants
+>;
+
+export type CoachingEngagementRow = InferSelectModel<typeof coachingEngagements>;
+export type CoachingEngagementInsert = InferInsertModel<typeof coachingEngagements>;
+export type CoachingAssignmentRow = InferSelectModel<typeof coachingAssignments>;
+export type CoachingAssignmentInsert = InferInsertModel<typeof coachingAssignments>;
+export type AthleteConsentPolicyVersionRow = InferSelectModel<typeof athleteConsentPolicyVersions>;
+export type AthleteConsentPolicyVersionInsert = InferInsertModel<
+  typeof athleteConsentPolicyVersions
+>;
+export type AthleteDataSharingConsentRow = InferSelectModel<typeof athleteDataSharingConsents>;
+export type AthleteDataSharingConsentInsert = InferInsertModel<typeof athleteDataSharingConsents>;
+export type AthletePlanEditGrantRow = InferSelectModel<typeof athletePlanEditGrants>;
+export type AthletePlanEditGrantInsert = InferInsertModel<typeof athletePlanEditGrants>;
+export type CoachingActivityPlanPublicationRow = InferSelectModel<
+  typeof coachingActivityPlanPublications
+>;
+export type CoachingActivityPlanPublicationInsert = InferInsertModel<
+  typeof coachingActivityPlanPublications
+>;
+export type OrganizationAuditEventRow = InferSelectModel<typeof organizationAuditEvents>;
+export type OrganizationAuditEventInsert = InferInsertModel<typeof organizationAuditEvents>;
+
 export type GroupInvitationRow = InferSelectModel<typeof groupInvitations>;
 export type GroupInvitationInsert = InferInsertModel<typeof groupInvitations>;
 
@@ -69,9 +136,6 @@ export type GroupJoinRequestInsert = InferInsertModel<typeof groupJoinRequests>;
 export type GroupEventRow = InferSelectModel<typeof groupEvents>;
 export type GroupEventInsert = InferInsertModel<typeof groupEvents>;
 
-export type GroupEventActivityPlanRow = InferSelectModel<typeof groupEventActivityPlans>;
-export type GroupEventActivityPlanInsert = InferInsertModel<typeof groupEventActivityPlans>;
-
 export type GroupEventRsvpRow = InferSelectModel<typeof groupEventRsvps>;
 export type GroupEventRsvpInsert = InferInsertModel<typeof groupEventRsvps>;
 
@@ -80,124 +144,73 @@ export type GroupEventSeriesRsvpInsert = InferInsertModel<typeof groupEventSerie
 
 export type ActivityRouteRow = InferSelectModel<typeof activityRoutes>;
 export type ActivityRouteInsert = InferInsertModel<typeof activityRoutes>;
-
-export type CoachingInvitationRow = InferSelectModel<typeof coachingInvitations>;
-export type CoachingInvitationInsert = InferInsertModel<typeof coachingInvitations>;
-
-export type CoachAthleteRow = InferSelectModel<typeof coachesAthletes>;
-export type CoachAthleteInsert = InferInsertModel<typeof coachesAthletes>;
+export type ActivityRouteDeletionReceiptRow = InferSelectModel<
+  typeof activityRouteDeletionReceipts
+>;
+export type ActivityRouteDeletionReceiptInsert = InferInsertModel<
+  typeof activityRouteDeletionReceipts
+>;
 
 export type ActivityPlanRow = InferSelectModel<typeof activityPlans>;
 export type ActivityPlanInsert = InferInsertModel<typeof activityPlans>;
 
-export type ActivityPlanDerivedMetricsCacheRow = InferSelectModel<
-  typeof activityPlanDerivedMetricsCache
->;
-export type ActivityPlanDerivedMetricsCacheInsert = InferInsertModel<
-  typeof activityPlanDerivedMetricsCache
->;
-
-export type ActivityPlanRefreshQueueRow = InferSelectModel<typeof activityPlanRefreshQueue>;
-export type ActivityPlanRefreshQueueInsert = InferInsertModel<typeof activityPlanRefreshQueue>;
-
 export type TrainingPlanRow = InferSelectModel<typeof trainingPlans>;
 export type TrainingPlanInsert = InferInsertModel<typeof trainingPlans>;
 
-export type UserTrainingPlanRow = InferSelectModel<typeof userTrainingPlans>;
-export type UserTrainingPlanInsert = InferInsertModel<typeof userTrainingPlans>;
-
-type BaseActivityRow = InferSelectModel<typeof activities>;
+export type ActivityRow = InferSelectModel<typeof activities>;
 export type ActivityInsert = InferInsertModel<typeof activities>;
+export type ManualTrainingDiaryOperationRow = InferSelectModel<
+  typeof manualTrainingDiaryOperations
+>;
+export type ManualTrainingDiaryOperationInsert = InferInsertModel<
+  typeof manualTrainingDiaryOperations
+>;
+export type ActivityAnalysisRevisionRow = InferSelectModel<typeof activityAnalysisRevisions>;
+export type ActivityAnalysisRevisionInsert = InferInsertModel<typeof activityAnalysisRevisions>;
+export type ActivityImportRunRow = InferSelectModel<typeof activityImportRuns>;
+export type ActivityImportRunInsert = InferInsertModel<typeof activityImportRuns>;
+export type ActivitySourceReferenceRow = InferSelectModel<typeof activitySourceReferences>;
+export type ActivitySourceReferenceInsert = InferInsertModel<typeof activitySourceReferences>;
 
-export type ActivitySummaryRow = InferSelectModel<typeof activitySummaries>;
-export type ActivitySummaryInsert = InferInsertModel<typeof activitySummaries>;
+export type ActivityArtifactRow = InferSelectModel<typeof activityArtifacts>;
+export type ActivityArtifactInsert = InferInsertModel<typeof activityArtifacts>;
 
-export type ActivityImportRow = InferSelectModel<typeof activityImports>;
-export type ActivityImportInsert = InferInsertModel<typeof activityImports>;
+export type ActivityArtifactLinkRow = InferSelectModel<typeof activityArtifactLinks>;
+export type ActivityArtifactLinkInsert = InferInsertModel<typeof activityArtifactLinks>;
 
-export type ActivityGeometryRow = InferSelectModel<typeof activityGeometry>;
-export type ActivityGeometryInsert = InferInsertModel<typeof activityGeometry>;
-
-export type ActivityLapRow = InferSelectModel<typeof activityLaps>;
-export type ActivityLapInsert = InferInsertModel<typeof activityLaps>;
+export type ActivitySegmentRow = InferSelectModel<typeof activitySegments>;
+export type ActivitySegmentInsert = InferInsertModel<typeof activitySegments>;
 
 export type ActivityFileIngestionRow = InferSelectModel<typeof activityFileIngestions>;
 export type ActivityFileIngestionInsert = InferInsertModel<typeof activityFileIngestions>;
+export type ActivityFileIngestionUpdate = InferUpdateModel<typeof activityFileIngestions>;
+export type ActivityTrainingEffectRow = InferSelectModel<typeof activityTrainingEffects>;
+export type ActivityTrainingEffectInsert = InferInsertModel<typeof activityTrainingEffects>;
+export type ActivityTrainingEffectUpdate = InferUpdateModel<typeof activityTrainingEffects>;
+export type DailyTrainingLoadRow = InferSelectModel<typeof dailyTrainingLoad>;
+export type DailyTrainingLoadInsert = InferInsertModel<typeof dailyTrainingLoad>;
+export type DailyTrainingLoadUpdate = InferUpdateModel<typeof dailyTrainingLoad>;
+export type AthleteRecalculationQueueRow = InferSelectModel<typeof athleteRecalculationQueue>;
+export type AthleteRecalculationQueueInsert = InferInsertModel<typeof athleteRecalculationQueue>;
+export type AthleteRecalculationQueueUpdate = InferUpdateModel<typeof athleteRecalculationQueue>;
+export type ThresholdEvidenceRow = InferSelectModel<typeof thresholdEvidence>;
+export type ThresholdEvidenceInsert = InferInsertModel<typeof thresholdEvidence>;
+export type ThresholdEvidenceUpdate = InferUpdateModel<typeof thresholdEvidence>;
 
-type BaseEventRow = InferSelectModel<typeof events>;
+export type EventRow = InferSelectModel<typeof events>;
 export type EventInsert = InferInsertModel<typeof events>;
-
-export type EventScheduleLinkRow = InferSelectModel<typeof eventScheduleLinks>;
-export type EventScheduleLinkInsert = InferInsertModel<typeof eventScheduleLinks>;
-
-export type EventExternalLinkRow = InferSelectModel<typeof eventExternalLinks>;
-export type EventExternalLinkInsert = InferInsertModel<typeof eventExternalLinks>;
-
-export type EventRecurrenceRow = InferSelectModel<typeof eventRecurrence>;
-export type EventRecurrenceInsert = InferInsertModel<typeof eventRecurrence>;
-
-export type EventPayloadRow = InferSelectModel<typeof eventPayloads>;
-export type EventPayloadInsert = InferInsertModel<typeof eventPayloads>;
-
-export type ActivityRow = BaseActivityRow &
-  Partial<
-    Pick<
-      ActivitySummaryRow,
-      | "avg_cadence"
-      | "avg_heart_rate"
-      | "avg_power"
-      | "avg_speed_mps"
-      | "calories"
-      | "distance_meters"
-      | "duration_seconds"
-      | "max_cadence"
-      | "max_heart_rate"
-      | "max_power"
-      | "max_speed_mps"
-      | "moving_seconds"
-      | "normalized_graded_speed_mps"
-      | "normalized_power"
-      | "normalized_speed_mps"
-    >
-  > &
-  Partial<Pick<ActivityImportRow, "activity_file_path">> &
-  Partial<Pick<ActivityGeometryRow, "map_bounds" | "polyline">>;
-
-export type EventRow = BaseEventRow &
-  Partial<
-    Pick<
-      EventScheduleLinkRow,
-      | "activity_plan_id"
-      | "linked_activity_id"
-      | "route_id"
-      | "schedule_batch_id"
-      | "training_plan_id"
-      | "user_training_plan_id"
-    >
-  > &
-  Partial<
-    Pick<
-      EventExternalLinkRow,
-      "external_calendar_id" | "external_event_id" | "integration_account_id" | "source_provider"
-    >
-  > &
-  Partial<
-    Pick<
-      EventRecurrenceRow,
-      | "occurrence_key"
-      | "original_starts_at"
-      | "recurrence"
-      | "recurrence_rule"
-      | "recurrence_timezone"
-      | "series_id"
-    >
-  >;
+export type PlannedSessionRow = InferSelectModel<typeof plannedSessions>;
+export type PlannedSessionInsert = InferInsertModel<typeof plannedSessions>;
+export type PlannedSessionUpdate = InferUpdateModel<typeof plannedSessions>;
 
 export type ContentAccessGrantRow = InferSelectModel<typeof contentAccessGrants>;
 export type ContentAccessGrantInsert = InferInsertModel<typeof contentAccessGrants>;
 
 export type ActivityEffortRow = InferSelectModel<typeof activityEfforts>;
 export type ActivityEffortInsert = InferInsertModel<typeof activityEfforts>;
+
+export type ActivitySessionRpeEvidenceRow = InferSelectModel<typeof activitySessionRpeEvidence>;
+export type ActivitySessionRpeEvidenceInsert = InferInsertModel<typeof activitySessionRpeEvidence>;
 
 export type IntegrationRow = InferSelectModel<typeof integrations>;
 export type IntegrationInsert = InferInsertModel<typeof integrations>;
@@ -216,12 +229,17 @@ export type ProviderWebhookReceiptInsert = InferInsertModel<typeof providerWebho
 
 export type ProfileMetricRow = InferSelectModel<typeof profileMetrics>;
 export type ProfileMetricInsert = InferInsertModel<typeof profileMetrics>;
-
-export type ProfileEstimationStateRow = InferSelectModel<typeof profileEstimationState>;
-export type ProfileEstimationStateInsert = InferInsertModel<typeof profileEstimationState>;
-
-export type ProfileTrainingSettingsRow = InferSelectModel<typeof profileTrainingSettings>;
-export type ProfileTrainingSettingsInsert = InferInsertModel<typeof profileTrainingSettings>;
+export type ProfileAthleteStateRow = InferSelectModel<typeof profileAthleteState>;
+export type ProfileAthleteStateInsert = InferInsertModel<typeof profileAthleteState>;
+export type ProfileAthleteStateUpdate = InferUpdateModel<typeof profileAthleteState>;
+export type ProfilePerformanceEstimateRow = InferSelectModel<typeof profilePerformanceEstimates>;
+export type ProfilePerformanceEstimateInsert = InferInsertModel<typeof profilePerformanceEstimates>;
+export type ThresholdEvaluationRow = InferSelectModel<typeof thresholdEvaluations>;
+export type ThresholdEvaluationInsert = InferInsertModel<typeof thresholdEvaluations>;
+export type ThresholdEvaluationEffortRow = InferSelectModel<typeof thresholdEvaluationEfforts>;
+export type ThresholdEvaluationEffortInsert = InferInsertModel<typeof thresholdEvaluationEfforts>;
+export type ThresholdRow = InferSelectModel<typeof thresholds>;
+export type ThresholdInsert = InferInsertModel<typeof thresholds>;
 
 export type ProfileGoalRow = InferSelectModel<typeof profileGoals>;
 export type ProfileGoalInsert = InferInsertModel<typeof profileGoals>;

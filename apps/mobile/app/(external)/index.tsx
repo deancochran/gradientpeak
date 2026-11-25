@@ -2,17 +2,10 @@ import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
 import { useRouter } from "expo-router";
-import React from "react";
 import { View } from "react-native";
-import { useAuth } from "@/lib/hooks/useAuth";
 
 export default function WelcomeScreen() {
   const router = useRouter();
-  const { isAuthenticated } = useAuth();
-
-  React.useEffect(() => {
-    console.log("🏠 Welcome Screen: isAuthenticated =", isAuthenticated);
-  }, [isAuthenticated]);
 
   const handleLoginPress = () => {
     router.replace({ pathname: "/(external)/sign-in" });

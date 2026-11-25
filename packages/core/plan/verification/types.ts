@@ -22,7 +22,7 @@ export interface VerificationAuditMetadata {
 
 export interface AthleteScenarioSnapshot {
   history_availability_state: "none" | "sparse" | "rich";
-  starting_ctl: number;
+  starting_longTermLoad: number;
   availability_days_per_week: number;
   max_single_session_duration_minutes?: number;
   hard_rest_days?: readonly string[];
