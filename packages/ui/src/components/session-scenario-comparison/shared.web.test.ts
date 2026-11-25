@@ -38,7 +38,7 @@ describe("toSessionScenarioComparisonVisual", () => {
       },
       {
         date: "2026-12-01",
-        index: 1,
+        index: 7,
         recorded: { fitness: 43, fatigue: 55, form: -12 },
         projected: { fitness: 40, fatigue: 50, form: -10 },
       },
