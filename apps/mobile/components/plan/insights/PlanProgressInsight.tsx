@@ -1,9 +1,6 @@
-import {
-  diffDateOnlyUtcDays,
-  formatDateOnlyInTimeZone,
-  isValidDateOnlyUtc,
-} from "@repo/core/calendar";
+import { formatDateOnlyInTimeZone } from "@repo/core/calendar";
 import { Text } from "@repo/ui/components/text";
+import { formatGoalGap, formatGoalTimeLeft } from "@repo/ui/lib/goal-progress-presentation";
 import { format } from "date-fns";
 import { useEffect, useMemo, useState } from "react";
 import { ScrollView, TouchableOpacity, View } from "react-native";
@@ -19,6 +16,8 @@ import {
   type PlanThresholdTrend,
 } from "../training-path/planDashboardPresentation";
 import { type PlanChartGeometry, ResponsivePlanChartShell } from "./ResponsivePlanChartShell";
+
+export { formatGoalGap, formatGoalTimeLeft };
 
 function millis(date: string) {
   return parseDateKey(date.slice(0, 10)).getTime();
@@ -39,15 +38,6 @@ function axisValue(value: number, unit: string | undefined) {
   return unit === "meters_per_second" ? value.toFixed(2) : Math.round(value).toString();
 }
 
-export function formatGoalTimeLeft(deadlineDate: string | null, todayDate: string) {
-  if (!deadlineDate || !isValidDateOnlyUtc(deadlineDate) || !isValidDateOnlyUtc(todayDate))
-    return "Unavailable";
-  const days = diffDateOnlyUtcDays(todayDate, deadlineDate);
-  if (days === 0) return "Due today";
-  const duration = `${Math.abs(days)} ${Math.abs(days) === 1 ? "day" : "days"}`;
-  return days < 0 ? `${duration} overdue` : `${duration} left`;
-}
-
 function evidenceDate(instant: string, timezone?: string) {
   if (timezone === undefined) return instant.slice(0, 10);
   try {
@@ -60,23 +50,6 @@ function evidenceDate(instant: string, timezone?: string) {
 function evidenceLabelDate(instant: string, timezone?: string) {
   // Existing callers use device-local labels but UTC-sliced chart dates.
   return timezone === undefined ? new Date(instant) : parseDateKey(evidenceDate(instant, timezone));
-}
-
-export function formatGoalGap(
-  progress: Exclude<PlanGoalProgressResult, { status: "unsupported" }>,
-) {
-  if (progress.metrics.remainingGap === null) return "Unavailable";
-  if (progress.target.unit === "watts") return `${Math.round(progress.metrics.remainingGap)} W`;
-  if (!progress.current) return "Unavailable";
-  const distance = progress.target.activityCategory === "swim" ? 100 : 1000;
-  const seconds =
-    progress.metrics.remainingGap === 0
-      ? 0
-      : Math.max(
-          0,
-          distance / progress.current.value - distance / progress.target.achievementValue,
-        );
-  return `${Math.round(seconds)} s/${distance === 100 ? "100m" : "km"}`;
 }
 
 export function PlanProgressInsight({
