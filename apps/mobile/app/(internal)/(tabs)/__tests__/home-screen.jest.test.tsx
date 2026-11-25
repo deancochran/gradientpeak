@@ -10,18 +10,25 @@ jest.mock("react-native", () => ({
 
 jest.mock("@/components/ErrorBoundary", () => ({
   __esModule: true,
-  ErrorBoundary: ({ children }: any) => children,
+  ErrorBoundary: ({ children }: { children: React.ReactNode }) => children,
   ScreenErrorFallback: createHost("ScreenErrorFallback"),
 }));
 
 jest.mock("@/components/feed", () => ({
   __esModule: true,
-  FeedList: () => React.createElement("Text", null, "Feed list rendered"),
+  FeedList: () =>
+    React.createElement(
+      React.Fragment,
+      null,
+      React.createElement("Text", null, "Latest activity"),
+      React.createElement("Text", null, "Catch up on the athletes you follow."),
+      React.createElement("Text", null, "Feed list rendered"),
+    ),
 }));
 
 jest.mock("@/components/shared", () => ({
   __esModule: true,
-  AppHeader: ({ title }: any) => React.createElement("Text", null, `Header:${title}`),
+  AppHeader: ({ title }: { title: string }) => React.createElement("Text", null, `Header:${title}`),
 }));
 
 jest.mock("@/lib/performance", () => ({
@@ -37,10 +44,14 @@ jest.mock("@repo/ui/components/text", () => ({
 const HomeScreen = require("../index").default;
 
 describe("home screen", () => {
-  it("renders the feed tab shell", () => {
-    renderNative(<HomeScreen />);
+  it("renders the feed home without a dashboard switcher", async () => {
+    await renderNative(<HomeScreen />);
 
-    expect(screen.getByText("Header:Feed")).toBeTruthy();
+    expect(screen.getByText("Header:Home")).toBeTruthy();
+    expect(screen.getByText("Latest activity")).toBeTruthy();
+    expect(screen.getByText("Catch up on the athletes you follow.")).toBeTruthy();
     expect(screen.getByText("Feed list rendered")).toBeTruthy();
+    expect(screen.queryByText("Your training, at a glance")).toBeNull();
+    expect(screen.queryByTestId("home-view-tabs")).toBeNull();
   });
 });

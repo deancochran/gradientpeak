@@ -1,4 +1,4 @@
-import { expect, fireEvent, userEvent, within } from "@storybook/test";
+import { expect, fireEvent, userEvent, within } from "storybook/test";
 
 export async function exerciseWeightInputFieldStory({
   canvasElement,

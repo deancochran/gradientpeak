@@ -1,6 +1,5 @@
 import {
   aggregateTrainingLoadTimelineByWeek,
-  type LegacyTrainingLoadTimelinePoint,
   type TrainingLoadTimelinePoint,
 } from "@repo/core/plan/trainingLoadTimeline";
 import { Text } from "@repo/ui/components/text";
@@ -19,24 +18,20 @@ import { useTheme } from "@/lib/stores/theme-store";
 
 export interface FitnessDataPoint {
   date: string;
-  ctl: number;
+  longTermLoad: number;
   atl?: number;
   tsb?: number;
 }
 
-export type LoadChartTimelinePoint = TrainingLoadTimelinePoint | LegacyTrainingLoadTimelinePoint;
+export type LoadChartTimelinePoint = TrainingLoadTimelinePoint;
 
-export interface InsightTimelinePoint extends LegacyTrainingLoadTimelinePoint {
-  recommended_load_tss?: number;
-  scheduled_load_tss?: number;
-  completed_load_tss?: number;
-}
+export type InsightTimelinePoint = TrainingLoadTimelinePoint;
 
 export interface PlanVsActualChartProps {
   timeline?: InsightTimelinePoint[];
   actualData: FitnessDataPoint[];
   projectedData: FitnessDataPoint[];
-  idealData?: Array<{ date: string; ctl: number }>;
+  idealData?: Array<{ date: string; longTermLoad: number }>;
   goalMarkers?: Array<{
     id: string;
     targetDate: string;
@@ -80,8 +75,8 @@ type ChartYKey = SeriesKey | "goal";
 
 type ChartDatum = Record<string, unknown> & {
   index: number;
-  projection: number;
-  planned: number;
+  projection: number | null;
+  planned: number | null;
   actual: number | null;
   goal: number;
 };
@@ -209,9 +204,9 @@ function aggregateTimelineByWeek(timeline: LoadChartTimelinePoint[]) {
   return aggregateTrainingLoadTimelineByWeek(timeline).map((week, index) => ({
     index,
     date: week.week_start,
-    projection: week.recommended_load_tss,
-    planned: week.scheduled_load_tss,
-    actual: week.completed_load_tss,
+    projection: week.recommended_common_load,
+    planned: week.scheduled_common_load,
+    actual: week.completed_common_load,
   }));
 }
 
@@ -261,20 +256,6 @@ function computeYAxisDomain(values: number[]) {
   return [Math.min(0, min), Math.max(50, max)] as [number, number];
 }
 
-function fillSeries(values: Array<number | null>) {
-  const firstKnown = values.find((value): value is number => typeof value === "number");
-  const seed = firstKnown ?? 0;
-  let previous = seed;
-
-  return values.map((value) => {
-    if (typeof value === "number") {
-      previous = value;
-      return value;
-    }
-    return previous;
-  });
-}
-
 function buildFallbackPoints({
   actualData,
   projectedData,
@@ -282,11 +263,11 @@ function buildFallbackPoints({
 }: {
   actualData: FitnessDataPoint[];
   projectedData: FitnessDataPoint[];
-  idealData: Array<{ date: string; ctl: number }>;
+  idealData: Array<{ date: string; longTermLoad: number }>;
 }): NormalizedPoint[] {
-  const idealByDate = new Map(idealData.map((point) => [point.date, point.ctl]));
-  const projectedByDate = new Map(projectedData.map((point) => [point.date, point.ctl]));
-  const actualByDate = new Map(actualData.map((point) => [point.date, point.ctl]));
+  const idealByDate = new Map(idealData.map((point) => [point.date, point.longTermLoad]));
+  const projectedByDate = new Map(projectedData.map((point) => [point.date, point.longTermLoad]));
+  const actualByDate = new Map(actualData.map((point) => [point.date, point.longTermLoad]));
 
   const primaryDates =
     idealData.length > 0
@@ -333,7 +314,7 @@ function interpolateMarkerX(
 
   for (let index = 0; index < framedPoints.length; index += 1) {
     const pointTime = pointTimes[index];
-    if (pointTime === null) continue;
+    if (typeof pointTime !== "number") continue;
     if (targetTime === pointTime) {
       return points[index]?.x ?? null;
     }
@@ -400,7 +381,8 @@ export function PlanVsActualChart({
             idealData: idealData ?? [],
           });
 
-    const todayStr = new Date().toISOString().split("T")[0];
+    const todayStr = new Date().toISOString().split("T").at(0);
+    if (todayStr === undefined) return base;
     const _todayWeek = getWeekStartDateKey(todayStr);
 
     let startIndex = 0;
@@ -409,13 +391,17 @@ export function PlanVsActualChart({
     if (latestGoalTargetDate) {
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const thirtyDaysAgoWeek = getWeekStartDateKey(thirtyDaysAgo.toISOString().split("T")[0]);
+      const thirtyDaysAgoDate = thirtyDaysAgo.toISOString().split("T").at(0);
+      if (thirtyDaysAgoDate === undefined) return base;
+      const thirtyDaysAgoWeek = getWeekStartDateKey(thirtyDaysAgoDate);
 
       const goalDateObj = new Date(`${latestGoalTargetDate}T12:00:00.000Z`);
       if (!Number.isNaN(goalDateObj.getTime())) {
         goalDateObj.setDate(goalDateObj.getDate() + 30);
       }
-      const goalPlusThirtyWeek = getWeekStartDateKey(goalDateObj.toISOString().split("T")[0]);
+      const goalPlusThirtyDate = goalDateObj.toISOString().split("T").at(0);
+      if (goalPlusThirtyDate === undefined) return base;
+      const goalPlusThirtyWeek = getWeekStartDateKey(goalPlusThirtyDate);
 
       const sIdx = base.findIndex((p) => p.date >= thirtyDaysAgoWeek);
       const eIdx = base.findIndex((p) => p.date >= goalPlusThirtyWeek);
@@ -426,7 +412,9 @@ export function PlanVsActualChart({
     } else {
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const thirtyDaysAgoWeek = getWeekStartDateKey(thirtyDaysAgo.toISOString().split("T")[0]);
+      const thirtyDaysAgoDate = thirtyDaysAgo.toISOString().split("T").at(0);
+      if (thirtyDaysAgoDate === undefined) return base;
+      const thirtyDaysAgoWeek = getWeekStartDateKey(thirtyDaysAgoDate);
 
       const sIdx = base.findIndex((p) => p.date >= thirtyDaysAgoWeek);
 
@@ -438,9 +426,9 @@ export function PlanVsActualChart({
 
       const thirtyDaysFuture = new Date();
       thirtyDaysFuture.setDate(thirtyDaysFuture.getDate() + 30);
-      const thirtyDaysFutureWeek = getWeekStartDateKey(
-        thirtyDaysFuture.toISOString().split("T")[0],
-      );
+      const thirtyDaysFutureDate = thirtyDaysFuture.toISOString().split("T").at(0);
+      if (thirtyDaysFutureDate === undefined) return base;
+      const thirtyDaysFutureWeek = getWeekStartDateKey(thirtyDaysFutureDate);
       const futureIdx = base.findIndex((p) => p.date >= thirtyDaysFutureWeek);
       if (futureIdx !== -1 && futureIdx > endIndex) {
         endIndex = futureIdx;
@@ -513,15 +501,11 @@ export function PlanVsActualChart({
   }, [normalizedGoalMarkers]);
 
   const chartData = useMemo<ChartDatum[]>(() => {
-    const projectionValues = fillSeries(framedPoints.map((point) => point.projection));
-    const plannedValues = fillSeries(framedPoints.map((point) => point.planned));
-    const actualValues = framedPoints.map((point) => point.actual ?? 0);
-
-    return framedPoints.map((_point, index) => ({
+    return framedPoints.map((point, index) => ({
       index,
-      projection: projectionValues[index] ?? 0,
-      planned: plannedValues[index] ?? 0,
-      actual: actualValues[index] ?? 0,
+      projection: point.projection,
+      planned: point.planned,
+      actual: point.actual,
       goal: goalLineValue ?? 0,
     }));
   }, [goalLineValue, framedPoints]);
@@ -831,7 +815,7 @@ export function FitnessFatigueFormChart({
   const framedPoints = useMemo<FitnessChartPoint[]>(() => {
     const actualPoints = actualData.map((point) => ({
       date: point.date,
-      fitness: point.ctl,
+      fitness: point.longTermLoad,
       fatigue: point.atl ?? null,
       form: point.tsb ?? null,
       projectedFitness: null as number | null,
@@ -841,7 +825,7 @@ export function FitnessFatigueFormChart({
       fitness: null as number | null,
       fatigue: null as number | null,
       form: null as number | null,
-      projectedFitness: point.ctl,
+      projectedFitness: point.longTermLoad,
     }));
     const pointsByDate = new Map<string, Omit<FitnessChartPoint, "index">>();
 

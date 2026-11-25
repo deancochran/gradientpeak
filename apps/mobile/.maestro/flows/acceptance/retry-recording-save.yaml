@@ -1,0 +1,14 @@
+appId: com.deancochran.gradientpeak.dev
+name: Make one explicit UI retry after the runner restores its API reverse
+---
+# Fault recovery boundary: this flow performs one visible retry, not a direct API retry.
+- extendedWaitUntil:
+    visible:
+      id: activity-submit-save-button
+    timeout: 15000
+- tapOn:
+    id: activity-submit-save-button
+- extendedWaitUntil:
+    visible:
+      id: home-screen
+    timeout: 60000

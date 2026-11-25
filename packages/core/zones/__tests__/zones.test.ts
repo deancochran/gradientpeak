@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { calculateHRZoneDistribution, calculateHRZonesFromReserve } from "../hr";
+import {
+  calculateHRZoneDistribution,
+  calculateHRZonesFromReserve,
+  getHrZoneUpperBoundsFromLthr,
+} from "../hr";
 import { getTrainingIntensityZone } from "../intensity";
-import { calculatePowerZoneDistribution } from "../power";
+import { calculatePowerZoneDistribution, getPowerZoneUpperBoundsFromFtp } from "../power";
 
 describe("canonical zones", () => {
   it("calculates reserve-based HR zone boundaries", () => {
@@ -19,12 +23,12 @@ describe("canonical zones", () => {
           metric: "hr",
           dataType: "float",
           values: [120, 150, 170],
-          timestamps: [0, 60, 120],
+          timestamps: [0, 5, 10],
           sampleCount: 3,
         },
         170,
       ),
-    ).toEqual({ zone1: 60, zone2: 60, zone3: 0, zone4: 0, zone5: 60 });
+    ).toMatchObject({ status: "available", zoneSeconds: [0, 5, 0, 0, 5] });
 
     expect(
       calculatePowerZoneDistribution(
@@ -52,5 +56,20 @@ describe("canonical zones", () => {
     expect(getTrainingIntensityZone(0.5)).toBe("recovery");
     expect(getTrainingIntensityZone(0.9)).toBe("threshold");
     expect(getTrainingIntensityZone(1.2)).toBe("neuromuscular");
+  });
+
+  it("projects canonical live upper bounds only from caller-supplied thresholds", () => {
+    expect(getHrZoneUpperBoundsFromLthr(170)).toEqual([137.7, 153, 159.8, 170, Infinity]);
+    expect(getPowerZoneUpperBoundsFromFtp(250)).toEqual([
+      137.5,
+      190,
+      227.5,
+      265,
+      302.5,
+      377.5,
+      Infinity,
+    ]);
+    expect(getHrZoneUpperBoundsFromLthr(0)).toEqual([]);
+    expect(getPowerZoneUpperBoundsFromFtp(Number.NaN)).toEqual([]);
   });
 });
