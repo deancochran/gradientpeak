@@ -1,0 +1,40 @@
+appId: com.deancochran.gradientpeak.dev
+name: Athlete saves metadata-only activity-plan edits, reopens the library record, and returns Home
+---
+# This flow continues the retained metadata draft from the prior cancel flow.
+# Clearing the optional description uses the actual native semantic field.
+- tapOn: "Description"
+- eraseText: 200
+- hideKeyboard
+- tapOn: "Save"
+- extendedWaitUntil:
+    visible: ${MAESTRO_ACCEPTANCE_EDITED_PLAN_NAME}
+    timeout: 30000
+- takeScreenshot: activity-plan-edit-saved
+# Rediscover through the library after the route-level save, not from cached
+# composer text or an activity-plan deeplink.
+- pressKey: back
+- extendedWaitUntil:
+    visible:
+      id: activity-plans-list-screen
+    timeout: 30000
+- tapOn: ${MAESTRO_ACCEPTANCE_EDITED_PLAN_NAME}
+- extendedWaitUntil:
+    visible:
+      id: activity-plan-options-trigger
+    timeout: 30000
+- assertVisible: ${MAESTRO_ACCEPTANCE_EDITED_PLAN_NAME}
+- takeScreenshot: activity-plan-edit-reopened
+- tapOn:
+    id: tab-button-home
+- extendedWaitUntil:
+    visible:
+      id: home-training-workspace
+    timeout: 30000
+# The selected day context is asserted by the same scheduled-session identity,
+# rather than inventing a plan snapshot/revision semantic for metadata edits.
+- assertVisible:
+    id: plan-selected-day
+- assertVisible:
+    id: plan-selected-day-planned-activity-card-${MAESTRO_ACCEPTANCE_SESSION_ID}
+- takeScreenshot: activity-plan-edit-home
