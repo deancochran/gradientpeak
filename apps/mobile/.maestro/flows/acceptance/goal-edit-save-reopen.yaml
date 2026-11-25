@@ -13,9 +13,13 @@ name: Athlete saves a repaired Goal edit and returns through its original Calend
 # persisted value through the real disposable database after this flow.
 - tapOn:
     id: goal-editor-title-input
-- eraseText: 200
+- longPressOn:
+    id: goal-editor-title-input
+- tapOn: "Select all"
+- eraseText: 1
 - inputText: ${MAESTRO_ACCEPTANCE_SAVED_GOAL_TITLE}
 - hideKeyboard
+- assertVisible: ${MAESTRO_ACCEPTANCE_SAVED_GOAL_TITLE}
 - scrollUntilVisible:
     element:
       id: goal-duration
@@ -28,10 +32,10 @@ name: Athlete saves a repaired Goal edit and returns through its original Calend
 - tapOn: "Done Duration"
 - scrollUntilVisible:
     element:
-      text: "Distance \\(optional\\)"
+      text: "Distance \\(optional\\), .*"
     direction: DOWN
 - tapOn:
-    text: "Distance \\(optional\\)"
+    text: "Distance \\(optional\\), .*"
 - tapOn:
     text: "Clear Distance \\(optional\\)"
 - tapOn:
