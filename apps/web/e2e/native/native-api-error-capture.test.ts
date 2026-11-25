@@ -8,7 +8,6 @@ import {
 } from "./native-api-error-capture";
 
 class FakeLogcatChild extends EventEmitter {
-  exitCode: number | null = null;
   kills: string[] = [];
   stdout = new EventEmitter();
 
@@ -21,7 +20,17 @@ class FakeLogcatChild extends EventEmitter {
 const record =
   '[api] plannedSessions.getById {"applicationErrorCode": null, "errorClass": "TRPCClientError", "httpStatus": 503, "trpcCode": "INTERNAL_SERVER_ERROR"}';
 
-test("parses the retained React Native console format into finite metadata", () => {
+function capture(
+  child: FakeLogcatChild,
+  options: NonNullable<Parameters<typeof captureNativePlannedSessionErrors>[1]> = {},
+) {
+  return captureNativePlannedSessionErrors("123", {
+    ...options,
+    spawnLogcat: () => child as never,
+  });
+}
+
+test("parses only the retained React Native console format into finite metadata", () => {
   assert.deepEqual(parseNativePlannedSessionError(`ERROR  ${record}`), {
     applicationErrorCode: null,
     errorClass: "TRPCClientError",
@@ -31,52 +40,123 @@ test("parses the retained React Native console format into finite metadata", () 
   assert.equal(parseNativePlannedSessionError("[api] anotherProcedure {}"), null);
 });
 
-test("drains a final unterminated line after process exit and before close", async () => {
+test("retains a short relevant line from a multi-line chunk larger than the line bound", async () => {
   const child = new FakeLogcatChild();
-  const capture = captureNativePlannedSessionErrors("123", { spawnLogcat: () => child as never });
-  const stopping = capture.stop();
-  child.exitCode = 0;
-  child.emit("exit", 0);
-  child.stdout.emit("data", Buffer.from(record));
+  const diagnostic = capture(child);
+  const stopping = diagnostic.stop();
+  child.stdout.emit("data", Buffer.from(`${"x".repeat(1025)}\n${record}\n`));
   child.emit("close", 0);
-  const result = await stopping;
 
+  assert.deepEqual(await stopping, {
+    records: [
+      {
+        applicationErrorCode: null,
+        errorClass: "TRPCClientError",
+        httpStatus: 503,
+        trpcCode: "INTERNAL_SERVER_ERROR",
+      },
+    ],
+    status: "unrecognized_relevant_format",
+    truncated: true,
+  });
+});
+
+test("discards an overlong split line through its newline before consuming the next line", async () => {
+  const child = new FakeLogcatChild();
+  const diagnostic = capture(child);
+  const stopping = diagnostic.stop();
+  child.stdout.emit("data", Buffer.from("x".repeat(1025)));
+  child.stdout.emit("data", Buffer.from(`${record}\n${record}\n`));
+  child.emit("close", 0);
+
+  const result = await stopping;
+  assert.equal(result.records.length, 1);
+  assert.equal(result.status, "unrecognized_relevant_format");
+  assert.equal(result.truncated, true);
+});
+
+test("preserves UTF-8 framing across chunks and drains a final line after exit before close", async () => {
+  const child = new FakeLogcatChild();
+  const diagnostic = capture(child);
+  const stopping = diagnostic.stop();
+  const prefix = Buffer.from(`INFO café ${record}`);
+  child.stdout.emit("data", prefix.subarray(0, 9));
+  child.emit("exit", 0);
+  child.stdout.emit("data", prefix.subarray(9));
+  child.emit("close", 0);
+
+  const result = await stopping;
   assert.equal(child.kills[0], "SIGTERM");
   assert.equal(result.status, "captured");
   assert.equal(result.records.length, 1);
 });
 
-test("classifies a spawn failure without retaining raw output", async () => {
+test("reports an unknown relevant format without treating an empty record list as success", async () => {
   const child = new FakeLogcatChild();
-  const capture = captureNativePlannedSessionErrors("123", { spawnLogcat: () => child as never });
-  const stopping = capture.stop();
-  child.emit("error", new Error("unavailable"));
-  child.emit("close", 1);
+  const diagnostic = capture(child);
+  const stopping = diagnostic.stop();
+  child.stdout.emit("data", Buffer.from("[api] plannedSessions.getById unexpected\n"));
+  child.emit("close", 0);
 
-  assert.deepEqual(await stopping, { records: [], status: "capture_failed" });
+  assert.deepEqual(await stopping, {
+    records: [],
+    status: "unrecognized_relevant_format",
+    truncated: false,
+  });
 });
 
-test("bounds shutdown by escalating to SIGKILL", async () => {
-  const child = new FakeLogcatChild();
-  const capture = captureNativePlannedSessionErrors("123", {
-    killTimeoutMs: 1,
-    spawnLogcat: () => child as never,
+test("classifies synchronous spawn and asynchronous child failures without raw output", async () => {
+  const synchronous = captureNativePlannedSessionErrors("123", {
+    spawnLogcat: () => {
+      throw new Error("unavailable");
+    },
   });
-  const result = await capture.stop();
+  assert.equal((await synchronous.stop()).status, "capture_failed");
 
+  const child = new FakeLogcatChild();
+  const asynchronous = capture(child);
+  const stopping = asynchronous.stop();
+  child.emit("error", new Error("unavailable"));
+  child.emit("close", 1);
+  assert.equal((await stopping).status, "capture_failed");
+});
+
+test("does not signal an already closed child", async () => {
+  const child = new FakeLogcatChild();
+  const diagnostic = capture(child);
+  child.emit("close", 0);
+
+  assert.equal((await diagnostic.stop()).status, "no_safe_error");
+  assert.deepEqual(child.kills, []);
+});
+
+test("waits through SIGKILL for late output and close, or returns a bounded timeout", async () => {
+  const child = new FakeLogcatChild();
+  const diagnostic = capture(child, { closeGraceMs: 20, stopTimeoutMs: 1 });
+  const stopping = diagnostic.stop();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  child.stdout.emit("data", Buffer.from(record));
+  child.emit("close", 0);
+
+  const lateClose = await stopping;
   assert.deepEqual(child.kills, ["SIGTERM", "SIGKILL"]);
-  assert.deepEqual(result, { records: [], status: "capture_timed_out" });
+  assert.equal(lateClose.status, "capture_timed_out");
+  assert.equal(lateClose.records.length, 1);
+
+  const noCloseChild = new FakeLogcatChild();
+  const bounded = capture(noCloseChild, { closeGraceMs: 2, stopTimeoutMs: 1 });
+  assert.equal((await bounded.stop()).status, "capture_timed_out");
 });
 
 test("does not start a logcat capture outside the focused workspace diagnostic", () => {
   let spawned = false;
-  const capture = captureWorkspaceNativeErrors(false, "123", {
+  const diagnostic = captureWorkspaceNativeErrors(false, "123", {
     spawnLogcat: () => {
       spawned = true;
       return new FakeLogcatChild() as never;
     },
   });
 
-  assert.equal(capture, null);
+  assert.equal(diagnostic, null);
   assert.equal(spawned, false);
 });

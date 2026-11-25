@@ -1,7 +1,9 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 
 const MAX_CAPTURED_RECORDS = 2;
 const MAX_LINE_BYTES = 1024;
+const DEFAULT_STOP_TIMEOUT_MS = 2_000;
 const SAFE_APPLICATION_ERROR_CODES = new Set([
   "ONBOARDING_PENDING_OAUTH",
   "ACTIVITY_PLAN_INTEGRITY_FAILED",
@@ -30,18 +32,25 @@ export type NativePlannedSessionErrorDiagnostic = {
   trpcCode: string | null;
 };
 
-type CaptureStatus = "captured" | "no_safe_error" | "capture_failed" | "capture_timed_out";
+type CaptureStatus =
+  | "captured"
+  | "no_safe_error"
+  | "unrecognized_relevant_format"
+  | "capture_failed"
+  | "capture_timed_out";
 
 export type NativePlannedSessionCapture = {
   records: NativePlannedSessionErrorDiagnostic[];
   status: CaptureStatus;
+  truncated: boolean;
 };
 
-type LogcatChild = Pick<ChildProcessWithoutNullStreams, "exitCode" | "kill" | "once" | "stdout">;
+type LogcatChild = Pick<ChildProcessWithoutNullStreams, "kill" | "once" | "stdout">;
 
 type CaptureOptions = {
-  killTimeoutMs?: number;
+  closeGraceMs?: number;
   spawnLogcat?: (pid: string) => LogcatChild;
+  stopTimeoutMs?: number;
 };
 
 function safeValue(value: string, allowed: ReadonlySet<string>): string | null {
@@ -59,8 +68,9 @@ const API_ERROR_LINE = new RegExp(
     "[A-Z_]+",
   )}\}`,
 );
+const RELEVANT_PROCEDURE = /\[api\]\s+plannedSessions\.getById\b/;
 
-/** Parses only the known finite React Native console format; raw lines are never retained. */
+/** Parses only the observed finite React Native console format; raw lines are never retained. */
 export function parseNativePlannedSessionError(
   line: string,
 ): NativePlannedSessionErrorDiagnostic | null {
@@ -82,49 +92,112 @@ function defaultSpawnLogcat(pid: string): LogcatChild {
 export function captureNativePlannedSessionErrors(pid: string, options: CaptureOptions = {}) {
   const records: NativePlannedSessionErrorDiagnostic[] = [];
   let pending = "";
-  let failure = false;
-  const child = options.spawnLogcat?.(pid) ?? defaultSpawnLogcat(pid);
+  let discardingOverlongLine = false;
+  let truncated = false;
+  let unrecognizedRelevantFormat = false;
+  let failed = false;
+  let closed = false;
+  let stopPromise: Promise<NativePlannedSessionCapture> | undefined;
+  const decoder = new StringDecoder("utf8");
+  let child: LogcatChild | undefined;
+
   const consume = (line: string) => {
     const diagnostic = parseNativePlannedSessionError(line);
     if (diagnostic && records.length < MAX_CAPTURED_RECORDS) records.push(diagnostic);
+    else if (RELEVANT_PROCEDURE.test(line)) unrecognizedRelevantFormat = true;
   };
-  child.stdout.on("data", (chunk: Buffer) => {
-    pending += chunk.toString("utf8");
+  const receive = (text: string, final = false) => {
+    let start = 0;
+    for (;;) {
+      const newline = text.indexOf("\n", start);
+      if (newline === -1) break;
+      const segment = text.slice(start, newline);
+      start = newline + 1;
+      if (discardingOverlongLine) {
+        discardingOverlongLine = false;
+        continue;
+      }
+      const line = `${pending}${segment}`;
+      pending = "";
+      if (Buffer.byteLength(line) > MAX_LINE_BYTES) {
+        truncated = true;
+        continue;
+      }
+      consume(line);
+    }
+    const tail = text.slice(start);
+    if (discardingOverlongLine) return;
+    pending += tail;
     if (Buffer.byteLength(pending) > MAX_LINE_BYTES) {
       pending = "";
-      return;
+      truncated = true;
+      discardingOverlongLine = true;
     }
-    const lines = pending.split("\n");
-    pending = lines.pop() ?? "";
-    lines.forEach(consume);
-  });
-  child.once("error", () => {
-    failure = true;
+    if (final && pending) {
+      consume(pending);
+      pending = "";
+    }
+  };
+  const flush = () => receive(decoder.end(), true);
+
+  try {
+    child = options.spawnLogcat?.(pid) ?? defaultSpawnLogcat(pid);
+    child.stdout.on("data", (chunk: Buffer) => receive(decoder.write(chunk)));
+    child.once("error", () => {
+      failed = true;
+    });
+    child.once("close", () => {
+      closed = true;
+      flush();
+    });
+  } catch {
+    failed = true;
+    closed = true;
+  }
+
+  const result = (timedOut: boolean): NativePlannedSessionCapture => ({
+    records,
+    status: timedOut
+      ? "capture_timed_out"
+      : failed
+        ? "capture_failed"
+        : unrecognizedRelevantFormat || truncated
+          ? "unrecognized_relevant_format"
+          : records.length
+            ? "captured"
+            : "no_safe_error",
+    truncated,
   });
 
   return {
-    stop: () =>
-      new Promise<NativePlannedSessionCapture>((resolve) => {
+    stop: () => {
+      if (stopPromise !== undefined) return stopPromise;
+      stopPromise = new Promise<NativePlannedSessionCapture>((resolve) => {
+        if (!child || closed) {
+          flush();
+          resolve(result(false));
+          return;
+        }
         let settled = false;
-        const finish = (status: CaptureStatus) => {
+        let timedOut = false;
+        let closeGrace: ReturnType<typeof setTimeout> | undefined;
+        const finish = () => {
           if (settled) return;
           settled = true;
-          if (pending) consume(pending);
-          pending = "";
-          resolve({ records, status: records.length ? "captured" : status });
+          clearTimeout(stopTimeout);
+          if (closeGrace) clearTimeout(closeGrace);
+          resolve(result(timedOut));
         };
-        const timeout = setTimeout(() => {
-          child.kill("SIGKILL");
-          finish("capture_timed_out");
-        }, options.killTimeoutMs ?? 2_000);
-        child.once("close", () => {
-          clearTimeout(timeout);
-          finish(failure ? "capture_failed" : "no_safe_error");
-        });
+        const stopTimeout = setTimeout(() => {
+          timedOut = true;
+          child?.kill("SIGKILL");
+          closeGrace = setTimeout(finish, options.closeGraceMs ?? DEFAULT_STOP_TIMEOUT_MS);
+        }, options.stopTimeoutMs ?? DEFAULT_STOP_TIMEOUT_MS);
+        child.once("close", finish);
         child.kill("SIGTERM");
-        if (child.exitCode !== null)
-          setImmediate(() => finish(failure ? "capture_failed" : "no_safe_error"));
-      }),
+      });
+      return stopPromise;
+    },
   };
 }
 
