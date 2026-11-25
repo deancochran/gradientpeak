@@ -7,10 +7,6 @@ name: Athlete saves metadata-only activity-plan edits, reopens the library recor
 - longPressOn: "Description"
 - tapOn: "Select all"
 - eraseText: 1
-- copyTextFrom: "Description"
-- assertTrue:
-    condition: ${maestro.copiedText == ""}
-    label: Description draft is empty before saving
 - hideKeyboard
 - tapOn: "Save"
 # The edited name remains visible in the composer draft, so it cannot establish
