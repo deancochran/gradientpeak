@@ -15,7 +15,7 @@ import {
 } from "../support/native-scenario-cleanup";
 
 const captures = {
-  "goal-progress-sign-in.yaml": ["goal-progress-home"],
+  "goal-progress-sign-in.yaml": ["goal-progress-home-before-scroll", "goal-progress-home"],
   "goal-progress-retry-blocked-workspace.yaml": [
     "goal-progress-retry-ready",
     "goal-progress-retry-blocked",
