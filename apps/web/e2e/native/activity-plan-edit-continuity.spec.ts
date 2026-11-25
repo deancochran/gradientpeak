@@ -30,16 +30,16 @@ test.beforeEach(() => {
 });
 
 test("Android preserves a scheduled plan while canceling an invalid provisional step and saving metadata", async ({
-  actorFactory,
+  onboardingActor: actor,
   e2eDatabase,
   e2eIdentity,
 }, testInfo) => {
   test.setTimeout(750_000);
   const runtimeSentinel = process.env.MAESTRO_ACCEPTANCE_RUNTIME_SENTINEL?.trim();
   if (!runtimeSentinel) throw new Error("Native plan-edit acceptance requires a runtime sentinel.");
-  const actor = await actorFactory.create("athlete", {
-    label: "native-activity-plan-edit-continuity",
-  });
+  // The shared native prefix enters onboarding through the UI, so it must use
+  // the fixture role whose profile is deliberately still in provider selection.
+  expect(actor.role).toBe("onboarding");
 
   // The shared setup is the actual 3876909 workspace journey: it onboards an
   // athlete, creates the V5 60-second rest plan, schedules it, and leaves Home
