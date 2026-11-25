@@ -1,10 +1,18 @@
-import type { ActivityPlanPlanningEstimate } from "@repo/core";
+import type {
+  ActivityPlanMetric,
+  ActivityPlanPlanningEstimate,
+  ActivityPlanSummary,
+} from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import { useCallback, useMemo } from "react";
 import { View } from "react-native";
-import { type ActivityPlan, ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
+import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { FilterChip, IndexSearchBar } from "@/components/shared/IndexSearchBar";
-import { SearchableBottomSheetList } from "@/components/shared/SearchableBottomSheetList";
+import {
+  SearchableList,
+  type SearchableListPresentation,
+} from "@/components/shared/SearchableBottomSheetList";
+import { omitUndefined } from "@/lib/omitUndefined";
 
 export type ActivityCategoryFilter = "run" | "bike" | "swim" | "strength" | "other" | null;
 export type ActivityPlanSort = "newest" | "oldest" | "name";
@@ -25,7 +33,8 @@ const ACTIVITY_CATEGORY_OPTIONS = [
 
 type BuilderActivityAssignmentSheetContentProps = {
   activityPlanEstimateById: Map<string, ActivityPlanPlanningEstimate>;
-  activityPlanItems: ActivityPlan[];
+  activityPlanItems: ActivityPlanSummary[];
+  metricsById?: ReadonlyMap<string, readonly ActivityPlanMetric[]> | undefined;
   activityPlanSort: ActivityPlanSort;
   categoryFilter: ActivityCategoryFilter;
   hasNextPage?: boolean;
@@ -35,59 +44,57 @@ type BuilderActivityAssignmentSheetContentProps = {
   onFetchNextPage: () => void;
   onOpenFilters: () => void;
   onSearchChange: (value: string) => void;
-  onSelectActivityPlan: (activityPlan: ActivityPlan) => void;
+  onSelectActivityPlan: (activityPlan: ActivityPlanSummary) => void;
   searchQuery: string;
+  presentation?: SearchableListPresentation;
 };
 
 export function BuilderActivityAssignmentSheetContent({
-  activityPlanEstimateById,
   activityPlanItems,
+  metricsById,
   hasNextPage,
   isFetchingNextPage,
   isLoading,
   onFetchNextPage,
   onSelectActivityPlan,
+  presentation,
 }: BuilderActivityAssignmentSheetContentProps) {
-  const activityPlanItemsWithEstimates = useMemo(
-    () =>
-      activityPlanItems.map((activityPlan) =>
-        withEstimateMetrics(activityPlan, activityPlanEstimateById.get(activityPlan.id) ?? null),
-      ),
-    [activityPlanEstimateById, activityPlanItems],
-  );
+  const activityPlanItemsWithEstimates = useMemo(() => activityPlanItems, [activityPlanItems]);
   const activityPlanById = useMemo(
     () =>
       new Map(activityPlanItems.map((activityPlan) => [activityPlan.id, activityPlan] as const)),
     [activityPlanItems],
   );
   const renderActivityPlan = useCallback(
-    (item: ActivityPlan) => (
+    (item: ActivityPlanSummary) => (
       <View className="pb-3">
         <ActivityPlanCard
-          activityPlan={item}
+          plan={item}
+          projectionMetrics={metricsById?.get(item.id)}
           onPress={() => onSelectActivityPlan(activityPlanById.get(item.id) ?? item)}
           testID={`training-plan-builder-activity-row-${item.id}`}
           variant="compact"
         />
       </View>
     ),
-    [activityPlanById, onSelectActivityPlan],
+    [activityPlanById, metricsById, onSelectActivityPlan],
   );
 
   return (
-    <SearchableBottomSheetList
+    <SearchableList
+      {...omitUndefined({ hasNextPage, presentation })}
       data={activityPlanItemsWithEstimates}
-      emptyMessage="No matching workouts."
-      hasNextPage={hasNextPage}
-      isFetchingNextPage={isFetchingNextPage}
-      isLoading={isLoading}
+      emptyMessage="No matching activities."
+      headerInLayout
+      {...omitUndefined({ isFetchingNextPage })}
+      {...omitUndefined({ isLoading })}
       keyExtractor={(item) => item.id}
-      loadingMessage="Loading workouts..."
+      loadingMessage="Loading activities..."
       onFetchNextPage={onFetchNextPage}
-      pluralLabel="workouts"
+      pluralLabel="activities"
       renderItem={renderActivityPlan}
       sectionLabel="Tap to assign"
-      singularLabel="workout"
+      singularLabel="activity"
     />
   );
 }
@@ -111,7 +118,7 @@ export function BuilderActivityAssignmentSheetHeader({
   return (
     <IndexSearchBar
       value={searchQuery}
-      placeholder="Search workouts"
+      placeholder="Search activities"
       hasActiveFilters={categoryFilter !== null || activityPlanSort !== "newest"}
       onChangeText={onSearchChange}
       onClear={onClearSearch}
@@ -119,24 +126,6 @@ export function BuilderActivityAssignmentSheetHeader({
       testIDPrefix="training-plan-builder-activity-picker"
     />
   );
-}
-
-function withEstimateMetrics(
-  activityPlan: ActivityPlan,
-  estimate: ActivityPlanPlanningEstimate | null,
-): ActivityPlan {
-  if (!estimate) return activityPlan;
-  return {
-    ...activityPlan,
-    authoritative_metrics: {
-      ...activityPlan.authoritative_metrics,
-      estimated_duration:
-        estimate.durationSeconds ?? activityPlan.authoritative_metrics?.estimated_duration ?? null,
-      estimated_tss: estimate.tss ?? activityPlan.authoritative_metrics?.estimated_tss ?? null,
-      intensity_factor:
-        estimate.intensityFactor ?? activityPlan.authoritative_metrics?.intensity_factor ?? null,
-    },
-  };
 }
 
 type BuilderActivityFiltersSheetContentProps = {
@@ -169,7 +158,7 @@ export function BuilderActivityFiltersSheetContent({
         </View>
       </View>
       <View className="gap-3">
-        <Text className="text-sm font-semibold text-foreground">Workout type</Text>
+        <Text className="text-sm font-semibold text-foreground">Activity category</Text>
         <View className="flex-row flex-wrap gap-2">
           {ACTIVITY_CATEGORY_OPTIONS.map((option) => (
             <FilterChip
@@ -179,7 +168,7 @@ export function BuilderActivityFiltersSheetContent({
               onPress={() =>
                 onChangeCategoryFilter(draftCategoryFilter === option.id ? null : option.id)
               }
-              testID={`training-plan-builder-activity-filter-category-${option.id}`}
+              testID={`training-plan-builder-activity-filter-activity_category-${option.id}`}
             />
           ))}
         </View>

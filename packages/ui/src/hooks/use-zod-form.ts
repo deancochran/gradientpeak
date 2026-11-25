@@ -1,13 +1,14 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useCallback, useRef } from "react";
 import {
   type DefaultValues,
   type FieldValues,
-  type Resolver,
   type UseFormProps,
   type UseFormReturn,
   useForm,
 } from "react-hook-form";
-import type { ZodTypeAny, z } from "zod";
+import type { ZodType, ZodTypeAny, z } from "zod";
+import { discardPendingFormDrafts } from "./pending-form-drafts";
 
 type InferredUseZodFormOptions<TSchema extends ZodTypeAny, TContext> = Omit<
   UseFormProps<z.input<TSchema> & FieldValues, TContext, z.output<TSchema> & FieldValues>,
@@ -20,9 +21,9 @@ type InferredUseZodFormOptions<TSchema extends ZodTypeAny, TContext> = Omit<
 type UseZodFormOptions<
   TFieldValues extends FieldValues,
   TContext,
-  TTransformedValues extends FieldValues | undefined,
+  TTransformedValues extends FieldValues,
 > = Omit<UseFormProps<TFieldValues, TContext, TTransformedValues>, "resolver"> & {
-  schema: unknown;
+  schema: ZodType<TTransformedValues, TFieldValues>;
   defaultValues?: DefaultValues<TFieldValues>;
 };
 
@@ -33,7 +34,7 @@ export function useZodForm<TSchema extends ZodTypeAny, TContext = undefined>(
 export function useZodForm<
   TFieldValues extends FieldValues = FieldValues,
   TContext = undefined,
-  TTransformedValues extends FieldValues | undefined = TFieldValues,
+  TTransformedValues extends FieldValues = TFieldValues,
 >(
   options: UseZodFormOptions<TFieldValues, TContext, TTransformedValues>,
 ): UseFormReturn<TFieldValues, TContext, TTransformedValues>;
@@ -41,21 +42,29 @@ export function useZodForm<
 export function useZodForm<
   TFieldValues extends FieldValues = FieldValues,
   TContext = undefined,
-  TTransformedValues extends FieldValues | undefined = TFieldValues,
+  TTransformedValues extends FieldValues = TFieldValues,
 >({
   schema,
   mode = "onSubmit",
   reValidateMode = "onChange",
   ...options
 }: UseZodFormOptions<TFieldValues, TContext, TTransformedValues>) {
-  return useForm<TFieldValues, TContext, TTransformedValues>({
+  const form = useForm<TFieldValues, TContext, TTransformedValues>({
     ...options,
     mode,
     reValidateMode,
-    resolver: zodResolver(schema as never) as unknown as Resolver<
-      TFieldValues,
-      TContext,
-      TTransformedValues
-    >,
+    resolver: zodResolver<TFieldValues, TContext, TTransformedValues>(schema),
   });
+  const reset = useRef(form.reset).current;
+  const resetWithDraftDiscard = useCallback(
+    (...args: Parameters<typeof reset>) => {
+      discardPendingFormDrafts(form.control);
+      return reset(...args);
+    },
+    [form.control, reset],
+  );
+
+  form.reset = resetWithDraftDiscard;
+
+  return form;
 }

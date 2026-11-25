@@ -9,7 +9,6 @@ import { RecordingControls } from "@/components/recording/footer";
 export interface RecordControlDockProps {
   activeSurface: RecordingPrimarySurface | null;
   onChangeSurface: (surface: RecordingPrimarySurface) => void;
-  onGpsPress: () => void;
   onOpenActivity: () => void;
   onOpenFtms: () => void;
   onOpenPlan: () => void;
@@ -27,7 +26,6 @@ export interface RecordControlDockProps {
 export function RecordControlDock({
   activeSurface,
   onChangeSurface,
-  onGpsPress,
   onOpenActivity,
   onOpenFtms,
   onOpenPlan,
@@ -54,49 +52,48 @@ export function RecordControlDock({
           return {
             action,
             label: sessionContract.editing.canEditActivity ? "Activity" : "Activity locked",
+            accessibilityLabel: sessionContract.editing.canEditActivity
+              ? "Open activity settings"
+              : "View locked activity settings",
             onPress: onOpenActivity,
-          };
-        case "gps":
-          return {
-            action,
-            label: sessionContract.guidance.routeMode === "live_navigation" ? "GPS on" : "GPS",
-            onPress: onGpsPress,
           };
         case "plan":
           return {
             action,
             label: sessionContract.guidance.hasPlan ? "Plan attached" : "Add plan",
+            accessibilityLabel: sessionContract.guidance.hasPlan
+              ? "Open plan settings, plan attached"
+              : "Open plan settings",
             onPress: onOpenPlan,
           };
         case "route":
           return {
             action,
             label: sessionContract.guidance.hasRoute ? "Route attached" : "Add route",
+            accessibilityLabel: sessionContract.guidance.hasRoute
+              ? "Open route settings, route attached"
+              : "Open route settings",
             onPress: onOpenRoute,
           };
         case "trainer":
           return {
             action,
             label: sessionContract.devices.hasTrainer ? "Trainer" : "No trainer",
+            accessibilityLabel: sessionContract.devices.hasTrainer
+              ? "Open trainer controls, trainer connected"
+              : "Open trainer controls, no trainer connected",
             onPress: onOpenFtms,
           };
         default:
           return {
             action,
             label: "Sensors",
+            accessibilityLabel: "Open sensor controls",
             onPress: onOpenSensors,
           };
       }
     });
-  }, [
-    onGpsPress,
-    onOpenActivity,
-    onOpenFtms,
-    onOpenPlan,
-    onOpenRoute,
-    onOpenSensors,
-    sessionContract,
-  ]);
+  }, [onOpenActivity, onOpenFtms, onOpenPlan, onOpenRoute, onOpenSensors, sessionContract]);
 
   return (
     <View
@@ -121,7 +118,13 @@ export function RecordControlDock({
         contentContainerClassName="gap-2 pr-6"
       >
         {chips.map((chip) => (
-          <QuickActionChip key={chip.action} label={chip.label} onPress={chip.onPress} />
+          <QuickActionChip
+            key={chip.action}
+            label={chip.label}
+            accessibilityLabel={chip.accessibilityLabel}
+            onPress={chip.onPress}
+            testID={`record-dock-quick-action-${chip.action}`}
+          />
         ))}
       </ScrollView>
 
@@ -134,7 +137,11 @@ export function RecordControlDock({
               <Pressable
                 key={surface}
                 onPress={() => onChangeSurface(surface)}
-                className={`rounded-full border px-3 py-2 ${
+                accessibilityLabel={`Show ${surface} recording surface`}
+                accessibilityHint={isActive ? "Currently selected" : "Switches the recording view"}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isActive }}
+                className={`min-h-11 min-w-11 rounded-full border px-3 py-2 active:opacity-80 ${
                   isActive ? "border-foreground bg-foreground" : "border-border bg-card"
                 }`}
                 testID={`record-dock-surface-${surface}`}
@@ -157,9 +164,27 @@ export function RecordControlDock({
   );
 }
 
-function QuickActionChip({ label, onPress }: { label: string; onPress: () => void }) {
+function QuickActionChip({
+  label,
+  accessibilityLabel,
+  onPress,
+  testID,
+}: {
+  label: string;
+  accessibilityLabel: string;
+  onPress: () => void;
+  testID: string;
+}) {
   return (
-    <Button variant="outline" size="sm" onPress={onPress} className="rounded-full">
+    <Button
+      variant="outline"
+      size="sm"
+      onPress={onPress}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
+      className="h-11 min-w-11 rounded-full active:opacity-80"
+      testID={testID}
+    >
       <Text>{label}</Text>
     </Button>
   );
