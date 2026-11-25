@@ -1,3 +1,4 @@
+import { skipToken } from "@tanstack/react-query";
 import { format } from "date-fns";
 import React from "react";
 import type { TestInstance as ReactTestInstance } from "test-renderer";
@@ -104,6 +105,7 @@ let completionCandidates: { canAssociate: boolean; items: unknown[]; nextCursor:
 };
 const eventQueryCalls: unknown[][] = [];
 const plannedQueryCalls: unknown[][] = [];
+const scenarioPreviewQueryCalls: unknown[][] = [];
 let routeParams: Record<string, string> = { id: "event-1" };
 let plannedSession: unknown = null;
 let plannedSessionError: EventQueryError | null = null;
@@ -363,6 +365,25 @@ jest.mock("@/lib/api", () => ({
       linkCompletion: { useMutation: () => ({ mutateAsync: associateRecordedMock }) },
       skip: { useMutation: () => ({ mutateAsync: jest.fn() }) },
       recordingLaunch: { useMutation: () => ({ mutateAsync: jest.fn() }) },
+      previewScenario: {
+        useQuery: (...args: unknown[]) => {
+          scenarioPreviewQueryCalls.push(args);
+          return {
+            data: null,
+            isError: false,
+            isLoading: false,
+            refetch: jest.fn(),
+          };
+        },
+      },
+    },
+    athleteIntelligence: {
+      getReadModel: {
+        useQuery: () => ({
+          data: { publishedState: null, status: { freshness: "unavailable" } },
+          isSuccess: true,
+        }),
+      },
     },
     profiles: { get: { useQuery: () => ({ data: { planning_timezone: "UTC" } }) } },
     activities: {
@@ -382,6 +403,14 @@ jest.mock("@/lib/api", () => ({
           data: { items: [] },
           isLoading: false,
           error: null,
+          refetch: jest.fn(),
+        }),
+        useInfiniteQuery: () => ({
+          data: { pages: [{ items: [], nextCursor: null }] },
+          fetchNextPage: jest.fn(),
+          hasNextPage: false,
+          isError: false,
+          isFetchingNextPage: false,
           refetch: jest.fn(),
         }),
       },
@@ -419,6 +448,9 @@ jest.mock("@/lib/api", () => ({
 describe("event detail fallback screen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    eventQueryCalls.length = 0;
+    plannedQueryCalls.length = 0;
+    scenarioPreviewQueryCalls.length = 0;
     routeParams = { id: "event-1" };
     plannedSession = null;
     plannedSessionError = null;
@@ -473,6 +505,14 @@ describe("event detail fallback screen", () => {
     await renderNative(<EventDetailScreen />);
     expect(eventQueryCalls[0]?.[1]).toMatchObject({ enabled: false });
     expect(plannedQueryCalls[0]?.[1]).toMatchObject({ enabled: true });
+    expect(screen.getByTestId("session-scenario-preview")).toBeTruthy();
+    expect(
+      screen.getByText("A published athlete state is required before a scenario can be compared."),
+    ).toBeTruthy();
+    expect(scenarioPreviewQueryCalls).not.toHaveLength(0);
+    for (const queryCall of scenarioPreviewQueryCalls) {
+      expect(queryCall).toEqual([skipToken, { enabled: false, retry: false }]);
+    }
     await fireEvent.press(screen.getByTestId("planned-session-actual-details-toggle"));
     const duration = screen.getByLabelText("Actual duration (minutes, optional)");
     await fireEvent(duration, "changeText", "30");
