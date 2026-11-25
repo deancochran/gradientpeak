@@ -164,7 +164,7 @@ test("Android truthfully retries a blocked cached goal-progress refresh", async 
       // Preload the real successful Home query before installing the 503 transport.
       // The blocked goal read must therefore show the product's cached-refresh warning.
       flow("goal-progress-sign-in.yaml", environment);
-      const transport = await startNativeGoalTransport({ goalId });
+      const transport = await startNativeGoalTransport({ faultMode: "detail-refresh", goalId });
       const port = new URL(transport.origin).port;
       let trace: Awaited<ReturnType<typeof transport.trace>> | undefined;
       let traceError: unknown;
@@ -189,15 +189,18 @@ test("Android truthfully retries a blocked cached goal-progress refresh", async 
             const blockedTargetBatch = preAllowTrace.find(
               (record) =>
                 record.method === "GET" &&
-                record.batchSize === 2 &&
+                record.batchSize === 4 &&
+                record.procedures.length === 4 &&
                 record.targetGoalMatched &&
                 record.status === 503 &&
-                record.procedures[0] === "athleteIntelligence.getGoalAssessment" &&
-                record.procedures[1] === "athleteIntelligence.getGoalProgress",
+                record.procedures[0] === "goals.getById" &&
+                record.procedures[1] === "athleteIntelligence.getGoalAssessment" &&
+                record.procedures[2] === "athleteIntelligence.getGoalProgress" &&
+                record.procedures[3] === "athleteIntelligence.getThresholdOverview",
             );
             expect(
               blockedTargetBatch,
-              "The blocked target request must be the observed assessment/progress batch.",
+              "The blocked target request must be the observed four-query Goal Detail refresh batch.",
             ).toBeDefined();
             const preAllowRequestOrder = Math.max(
               ...preAllowTrace.map((record) => record.requestOrder),
