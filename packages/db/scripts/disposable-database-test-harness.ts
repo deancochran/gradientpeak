@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { type ChildProcess, execFileSync, spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -27,25 +27,24 @@ type ImageInspect = { Id?: string; RepoDigests?: string[] };
 type DockerLaunchExecutor = (
   command: string,
   args: string[],
-  options: { encoding: "utf8"; maxBuffer: number; stdio: ["ignore", "ignore", "pipe"] },
-) => unknown;
+  options: { stdio: ["ignore", "ignore", "pipe"] },
+) => ChildProcess;
 
 const dockerRunStderrLimit = 8 * 1024;
+const dockerRunStderrHalfLimit = dockerRunStderrLimit / 2;
 const safeSignals = new Set(Object.keys(constants.signals));
 const safeSpawnCodes = new Set(["EACCES", "ENOENT", "EPERM"]);
 
 function executeDockerRun(
   command: string,
   args: string[],
-  options: { encoding: "utf8"; maxBuffer: number; stdio: ["ignore", "ignore", "pipe"] },
+  options: { stdio: ["ignore", "ignore", "pipe"] },
 ) {
-  return execFileSync(command, args, options);
+  return spawn(command, args, options);
 }
 
-function classifyDockerLaunchFailure(stderr: unknown): string {
-  const output = (
-    typeof stderr === "string" ? stderr : Buffer.isBuffer(stderr) ? stderr.toString("utf8") : ""
-  ).toLowerCase();
+function classifyDockerLaunchFailure(stderr: Buffer): string {
+  const output = stderr.toString("utf8").toLowerCase();
   if (/data limit exceeded|data transfer limit|bandwidth limit/.test(output)) {
     return "registry-data-limit";
   }
@@ -62,41 +61,76 @@ function classifyDockerLaunchFailure(stderr: unknown): string {
   return "unknown";
 }
 
+function appendBoundedStderr(retained: { prefix: Buffer; tail: Buffer }, chunk: Buffer | string) {
+  const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+  if (retained.prefix.byteLength < dockerRunStderrHalfLimit) {
+    retained.prefix = Buffer.concat([retained.prefix, bytes]).subarray(0, dockerRunStderrHalfLimit);
+  }
+  retained.tail = Buffer.concat([retained.tail, bytes]).subarray(-dockerRunStderrHalfLimit);
+}
+
+function launchDiagnostic(input: {
+  exit?: number | null;
+  signal?: string | null;
+  spawn?: unknown;
+  stderr: Buffer;
+}) {
+  const exit =
+    typeof input.exit === "number" && Number.isInteger(input.exit) ? String(input.exit) : "none";
+  const signal =
+    typeof input.signal === "string" && safeSignals.has(input.signal) ? input.signal : "none";
+  const spawn =
+    typeof input.spawn === "string" && safeSpawnCodes.has(input.spawn) ? input.spawn : "none";
+  const cause = classifyDockerLaunchFailure(Buffer.concat([input.stderr]));
+  return new Error(
+    `disposable Storage API Docker launch failed (stage=storage-api-launch exit=${exit} signal=${signal} spawn=${spawn} cause=${cause})`,
+  );
+}
+
 /**
  * Keep launch diagnostics actionable without exposing the Docker argv, environment, or raw stderr.
  */
-export function launchDisposableStorageContainer(
+export async function launchDisposableStorageContainer(
   command: string[],
   execute: DockerLaunchExecutor = executeDockerRun,
 ) {
+  const retained = { prefix: Buffer.alloc(0), tail: Buffer.alloc(0) };
+  let child: ChildProcess;
   try {
-    execute("docker", command, {
-      encoding: "utf8",
-      maxBuffer: dockerRunStderrLimit,
-      stdio: ["ignore", "ignore", "pipe"],
-    });
+    child = execute("docker", command, { stdio: ["ignore", "ignore", "pipe"] });
   } catch (error) {
-    const failure = error as {
-      status?: unknown;
-      signal?: unknown;
-      code?: unknown;
-      stderr?: unknown;
-    };
-    const exit =
-      typeof failure.status === "number" && Number.isInteger(failure.status)
-        ? String(failure.status)
-        : "none";
-    const signal =
-      typeof failure.signal === "string" && safeSignals.has(failure.signal)
-        ? failure.signal
-        : "none";
-    const spawn =
-      typeof failure.code === "string" && safeSpawnCodes.has(failure.code) ? failure.code : "none";
-    const cause = classifyDockerLaunchFailure(failure.stderr);
-    throw new Error(
-      `disposable Storage API Docker launch failed (stage=storage-api-launch exit=${exit} signal=${signal} spawn=${spawn} cause=${cause})`,
-    );
+    throw launchDiagnostic({ spawn: (error as { code?: unknown }).code, stderr: retained.prefix });
   }
+  child.stderr?.on("data", (chunk: Buffer | string) => appendBoundedStderr(retained, chunk));
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const finish = (result: () => void) => {
+      if (settled) return;
+      settled = true;
+      result();
+    };
+    child.once("error", (error) =>
+      finish(() =>
+        reject(
+          launchDiagnostic({ spawn: (error as { code?: unknown }).code, stderr: retained.prefix }),
+        ),
+      ),
+    );
+    child.once("close", (exit, signal) =>
+      finish(() => {
+        if (exit === 0) resolve();
+        else {
+          reject(
+            launchDiagnostic({
+              exit,
+              signal,
+              stderr: Buffer.concat([retained.prefix, retained.tail]),
+            }),
+          );
+        }
+      }),
+    );
+  });
 }
 
 function dockerJson(args: string[]): unknown {
@@ -301,7 +335,7 @@ export async function withDisposableSupabaseStorage<T>(
       ];
       for (const environment of spec.environment) command.push("-e", environment);
       command.push(spec.image);
-      launchDisposableStorageContainer(command);
+      await launchDisposableStorageContainer(command);
       const inspect = (
         dockerJson(["inspect", spec.name]) as Parameters<typeof attestStorageContainer>[0][]
       )[0];

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
@@ -12,20 +13,16 @@ const fabricatedSecret = "TESTsecret-do-not-leak";
 const fabricatedArgv = `docker run -e SERVICE_KEY=${fabricatedSecret}`;
 const fabricatedEnvironment = `DATABASE_URL=postgresql://role:${fabricatedSecret}@example.test/db`;
 
-function launchError(input: {
-  status?: number;
-  signal?: string;
-  code?: string;
-  stderr?: string | Buffer;
-  cause?: unknown;
-}) {
-  const error = new Error(`raw Docker failure ${fabricatedArgv}`, { cause: input.cause });
-  Object.assign(error, input);
-  return error;
+function runNodeChild(script: string) {
+  return launchDisposableStorageContainer(
+    ["run", "-e", fabricatedEnvironment, fabricatedArgv],
+    (_command, _args, options) => spawn(process.execPath, ["-e", script], options),
+  );
 }
 
 function diagnosticFrom(error: unknown) {
   assert.ok(error instanceof Error);
+  assert.equal(Object.hasOwn(error, "cause"), false);
   const serialized = JSON.stringify(error, Object.getOwnPropertyNames(error));
   const diagnostic = `${error.message}\n${serialized}\n${inspect(error)}`;
   assert.doesNotMatch(diagnostic, new RegExp(fabricatedSecret, "u"));
@@ -35,66 +32,47 @@ function diagnosticFrom(error: unknown) {
   return diagnostic;
 }
 
-test("disposable Storage launch diagnostics retain safe registry failure details", () => {
-  const command = ["run", "-e", fabricatedEnvironment, "storage-api"];
-  const failure = launchError({
-    status: 125,
-    stderr: Buffer.from("denied: ECR Data limit exceeded while pulling image"),
-    cause: { argv: fabricatedArgv, token: fabricatedSecret },
-  });
-  assert.throws(
-    () =>
-      launchDisposableStorageContainer(command, () => {
-        throw failure;
-      }),
-    (error) => {
-      const diagnostic = diagnosticFrom(error);
-      assert.match(diagnostic, /stage=storage-api-launch exit=125 signal=none spawn=none/u);
-      assert.match(diagnostic, /cause=registry-data-limit/u);
-      return true;
-    },
-  );
+test("disposable Storage launch drains verbose successful stderr without terminating the child", async () => {
+  await runNodeChild("process.stderr.write('x'.repeat(20000))");
 });
 
-test("disposable Storage launch diagnostics never expose unknown raw process failures", () => {
-  const failure = launchError({
-    status: 125,
-    stderr: `unexpected Docker output ${fabricatedSecret} ${fabricatedArgv} ${fabricatedEnvironment}`,
-    cause: { stderr: fabricatedSecret },
-  });
-  assert.throws(
-    () =>
-      launchDisposableStorageContainer(["run", fabricatedArgv], () => {
-        throw failure;
-      }),
-    (error) => {
-      const diagnostic = diagnosticFrom(error);
-      assert.match(diagnostic, /exit=125/u);
-      assert.match(diagnostic, /cause=unknown/u);
-      return true;
-    },
-  );
+test("disposable Storage launch diagnostics retain only fixed failure categories", async () => {
+  const categories = [
+    ["registry-data-limit", "denied: ECR Data limit exceeded"],
+    ["registry-rate-limit", "toomanyrequests: rate limit exceeded"],
+    ["image-unavailable", "manifest unknown"],
+    ["daemon-permission", "permission denied while connecting to Docker"],
+    ["daemon-unavailable", "Cannot connect to the Docker daemon"],
+    ["unknown", "unexpected daemon result"],
+  ] as const;
+  for (const [category, message] of categories) {
+    await assert.rejects(
+      runNodeChild(
+        `process.stderr.write('x'.repeat(12000) + ${JSON.stringify(`${message} ${fabricatedSecret} ${fabricatedArgv} ${fabricatedEnvironment}`)}); process.exit(125)`,
+      ),
+      (error) => {
+        const diagnostic = diagnosticFrom(error);
+        assert.match(diagnostic, /stage=storage-api-launch exit=125 signal=none spawn=none/u);
+        assert.match(diagnostic, new RegExp(`cause=${category}`, "u"));
+        return true;
+      },
+    );
+  }
 });
 
-test("disposable Storage launch diagnostics report safe spawn and signal failures", () => {
-  const spawnFailure = launchError({ code: "ENOENT", stderr: fabricatedSecret });
-  assert.throws(
-    () =>
-      launchDisposableStorageContainer(["run"], () => {
-        throw spawnFailure;
-      }),
+test("disposable Storage launch diagnostics report real spawn and signal failures", async () => {
+  await assert.rejects(
+    launchDisposableStorageContainer(["run"], (_command, _args, options) =>
+      spawn("/definitely-not-a-disposable-storage-command", [], options),
+    ),
     (error) => {
       const diagnostic = diagnosticFrom(error);
       assert.match(diagnostic, /exit=none signal=none spawn=ENOENT cause=unknown/u);
       return true;
     },
   );
-  const signalFailure = launchError({ signal: "SIGTERM", stderr: fabricatedSecret });
-  assert.throws(
-    () =>
-      launchDisposableStorageContainer(["run"], () => {
-        throw signalFailure;
-      }),
+  await assert.rejects(
+    runNodeChild("process.stderr.write('x'.repeat(12000)); process.kill(process.pid, 'SIGTERM')"),
     (error) => {
       const diagnostic = diagnosticFrom(error);
       assert.match(diagnostic, /exit=none signal=SIGTERM spawn=none cause=unknown/u);
@@ -103,12 +81,24 @@ test("disposable Storage launch diagnostics report safe spawn and signal failure
   );
 });
 
-test("disposable Storage launch helper permits successful Docker commands", () => {
-  let invocation: { command: string; args: string[] } | undefined;
-  launchDisposableStorageContainer(["run", "storage-api"], (command, args) => {
-    invocation = { command, args };
-  });
-  assert.deepEqual(invocation, { command: "docker", args: ["run", "storage-api"] });
+test("disposable Storage launch diagnostics discard a synchronous executor cause", async () => {
+  const raw = Object.assign(
+    new Error(`raw executor ${fabricatedArgv}`, { cause: fabricatedSecret }),
+    {
+      code: "ENOENT",
+      stderr: `${fabricatedSecret} ${fabricatedEnvironment}`,
+    },
+  );
+  await assert.rejects(
+    launchDisposableStorageContainer(["run", fabricatedArgv], () => {
+      throw raw;
+    }),
+    (error) => {
+      const diagnostic = diagnosticFrom(error);
+      assert.match(diagnostic, /exit=none signal=none spawn=ENOENT cause=unknown/u);
+      return true;
+    },
+  );
 });
 
 test("disposable gateway preserves upstream browser-upload CORS and request bodies", async () => {
