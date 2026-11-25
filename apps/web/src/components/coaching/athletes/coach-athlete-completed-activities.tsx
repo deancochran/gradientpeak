@@ -17,6 +17,8 @@ type Result =
       items: ReadonlyArray<{
         activityCategory: string | null;
         activityId: string;
+        completionOutcome: "full" | "partial";
+        completionSource: "manual" | "recorded" | "unavailable";
         distanceMeters: number | null;
         evidenceVersion: string;
         elapsedMs: number | null;
@@ -198,13 +200,17 @@ export function CoachAthleteCompletedActivities({
                 key={item.sessionId}
               >
                 <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                  <p className="font-semibold">Completed session</p>
+                  <p className="font-semibold">{completionOutcomeLabel(item.completionOutcome)}</p>
                   <p className="text-xs text-muted-foreground">Planned {item.planningDate}</p>
                 </div>
                 <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-3">
                   <CompletionMetric
                     label="Activity"
                     value={item.activityCategory ?? "Activity category unavailable"}
+                  />
+                  <CompletionMetric
+                    label="Source"
+                    value={completionSourceLabel(item.completionSource)}
                   />
                   {item.elapsedMs !== null ? (
                     <CompletionMetric
@@ -235,6 +241,16 @@ export function CoachAthleteCompletedActivities({
       </CardContent>
     </Card>
   );
+}
+
+function completionOutcomeLabel(outcome: "full" | "partial") {
+  return outcome === "full" ? "Completed in full" : "Completed partially";
+}
+
+function completionSourceLabel(source: "manual" | "recorded" | "unavailable") {
+  if (source === "manual") return "Manual completion";
+  if (source === "recorded") return "Recorded completion";
+  return "Completion source unavailable";
 }
 
 function CompletionMetric({ label, value }: { label: string; value: string }) {

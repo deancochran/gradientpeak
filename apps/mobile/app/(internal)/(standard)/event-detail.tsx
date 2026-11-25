@@ -44,6 +44,7 @@ import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { omitUndefined } from "@/lib/omitUndefined";
 import { buildPlannedSessionRecordingLaunchPayload } from "@/lib/recording/plannedSessionLaunch";
 import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
+import { isLocalDevelopmentApiEndpoint } from "@/lib/server-config";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -329,6 +330,7 @@ export default function EventDetailScreen() {
     onRedirect: () => router.dismissTo(ROUTES.PLAN.CALENDAR),
   });
   const [isClosingAfterDelete, setIsClosingAfterDelete] = useState(false);
+  const plannedReadNetworkMode = isLocalDevelopmentApiEndpoint() ? "always" : "online";
 
   const {
     data: event,
@@ -349,16 +351,28 @@ export default function EventDetailScreen() {
   );
   const plannedSessionQuery = api.plannedSessions.getById.useQuery(
     { id: eventId },
-    { enabled: isPlannedSession && !startsInCreateMode && !hasInvalidResource },
+    {
+      enabled: isPlannedSession && !startsInCreateMode && !hasInvalidResource,
+      // A sanctioned local API can remain reachable through the device while
+      // the platform reports no external network. Hosted endpoints retain the
+      // QueryProvider's normal offline policy.
+      networkMode: plannedReadNetworkMode,
+      retry: false,
+    },
   );
   const plannedActivityPlanQuery = api.activityPlans.getById.useQuery(
     { id: plannedSessionQuery.data?.activityPlanId ?? "", personalize: false },
     {
       enabled: isPlannedSession && Boolean(plannedSessionQuery.data?.activityPlanId),
+      networkMode: plannedReadNetworkMode,
       retry: false,
     },
   );
-  const profileQuery = api.profiles.get.useQuery(undefined, { enabled: isPlannedSession });
+  const profileQuery = api.profiles.get.useQuery(undefined, {
+    enabled: isPlannedSession,
+    networkMode: plannedReadNetworkMode,
+    retry: false,
+  });
   const createManualDiaryEntry = api.activities.createManualDiaryEntry.useMutation({
     retry: false,
   });

@@ -1,7 +1,7 @@
 import type { ThresholdHistorySeries } from "./shared";
 
 export const thresholdHistoryFixtures = {
-  bikePower: {
+  bikePowerWithPolicyGap: {
     activityCategory: "bike",
     id: "bike:power:watts",
     metric: "power",
@@ -26,11 +26,55 @@ export const thresholdHistoryFixtures = {
         metric: "power",
         policyVersion: "threshold-policy-v1",
         sourceActivities: [],
+        thresholdId: "bike-power-before-policy-change",
+        unit: "watts",
+        value: 250,
+      },
+      {
+        activityCategory: "bike",
+        confidence: 0.8,
+        effectiveAt: "2026-05-10T00:00:00.000Z",
+        method: "bike_power_30m",
+        metric: "power",
+        policyVersion: "threshold-policy-v2",
+        sourceActivities: [],
         thresholdId: "bike-power-latest",
         unit: "watts",
         value: 260,
       },
     ],
     unit: "watts",
+  } satisfies ThresholdHistorySeries,
+  runPace: {
+    activityCategory: "run",
+    id: "run:speed:meters_per_second",
+    metric: "speed",
+    points: [
+      {
+        activityCategory: "run",
+        confidence: 0.8,
+        effectiveAt: "2026-03-12T00:00:00.000Z",
+        method: "run_pace_30m",
+        metric: "speed",
+        policyVersion: "threshold-policy-v1",
+        sourceActivities: [],
+        thresholdId: "run-pace-early",
+        unit: "meters_per_second",
+        value: 3.8,
+      },
+      {
+        activityCategory: "run",
+        confidence: 0.8,
+        effectiveAt: "2026-04-12T00:00:00.000Z",
+        method: "run_pace_30m",
+        metric: "speed",
+        policyVersion: "threshold-policy-v1",
+        sourceActivities: [],
+        thresholdId: "run-pace-latest",
+        unit: "meters_per_second",
+        value: 4,
+      },
+    ],
+    unit: "meters_per_second",
   } satisfies ThresholdHistorySeries,
 } as const;

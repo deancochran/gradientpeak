@@ -230,7 +230,17 @@ await withDisposableDatabase(
               metroLog = openSync(resolve(artifacts, "metro.log"), "a", 0o600);
               metro = spawn(
                 "pnpm",
-                ["exec", "expo", "start", "--dev-client", "--localhost", "--port", "8083"],
+                [
+                  "exec",
+                  "expo",
+                  "start",
+                  "--dev-client",
+                  "--localhost",
+                  "--port",
+                  "8083",
+                  "--max-workers",
+                  "2",
+                ],
                 {
                   cwd: resolve("../mobile"),
                   env: {

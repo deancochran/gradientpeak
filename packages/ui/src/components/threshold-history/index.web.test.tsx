@@ -5,9 +5,11 @@ import { ThresholdHistoryChart } from "./index.web";
 import { groupThresholdHistory } from "./shared";
 
 describe("threshold history presentation", () => {
-  it("separates same-sport power and LTHR before charting and orders each series by date", () => {
-    const [earlyPower, latestPower] = thresholdHistoryFixtures.bikePower.points;
-    if (!earlyPower || !latestPower) throw new Error("Threshold fixture is incomplete");
+  it("separates same-activity-category power and LTHR before charting and orders each series by date", () => {
+    const [earlyPower, beforePolicyChange, latestPower] =
+      thresholdHistoryFixtures.bikePowerWithPolicyGap.points;
+    if (!earlyPower || !beforePolicyChange || !latestPower)
+      throw new Error("Threshold fixture is incomplete");
     const series = groupThresholdHistory([
       latestPower,
       {
@@ -22,25 +24,37 @@ describe("threshold history presentation", () => {
         unit: "bpm",
         value: 163,
       },
+      beforePolicyChange,
       earlyPower,
     ]);
 
     expect(series).toHaveLength(2);
     expect(
       series.find((item) => item.unit === "watts")?.points.map((point) => point.thresholdId),
-    ).toEqual(["bike-power-early", "bike-power-latest"]);
+    ).toEqual(["bike-power-early", "bike-power-before-policy-change", "bike-power-latest"]);
   });
 
-  it("uses a pace label while preserving speed values on a dedicated speed scale", () => {
+  it("renders policy-gapped power and pace as separate, visibly labeled unit scales", () => {
     render(
-      <ThresholdHistoryChart
-        emptyMessage="No values"
-        series={thresholdHistoryFixtures.bikePower}
-      />,
+      <>
+        <ThresholdHistoryChart
+          emptyMessage="No values"
+          series={thresholdHistoryFixtures.bikePowerWithPolicyGap}
+        />
+        <ThresholdHistoryChart emptyMessage="No values" series={thresholdHistoryFixtures.runPace} />
+      </>,
     );
 
     expect(
-      screen.getByRole("img", { name: /bike power history.*260 W.*Apr 10, 2026/i }),
+      screen.getByRole("img", { name: /bike power history.*260 W.*May 10, 2026/i }),
+    ).toBeTruthy();
+    const bikeCaption = screen.getByText("bike power · watts");
+    expect(bikeCaption).toBeTruthy();
+    expect(bikeCaption.parentElement?.className).toContain("space-y-1");
+    expect(bikeCaption.nextElementSibling?.className).toContain("relative h-44");
+    expect(screen.getByText("run pace · pace (/km)")).toBeTruthy();
+    expect(
+      screen.getByRole("img", { name: /run pace history.*4:10 \/km.*Apr 12, 2026/i }),
     ).toBeTruthy();
   });
 });

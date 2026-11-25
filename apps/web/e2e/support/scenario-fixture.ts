@@ -11,6 +11,7 @@ import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
 import {
   activityPlans,
   activityTrainingEffects,
+  chatbotOperationReceipts,
   plannedSessions,
   profileAthleteState,
   profileGoals,
@@ -24,6 +25,13 @@ import type { E2EExecutionIdentity } from "../support/identity";
 
 type ScenarioSnapshot = Awaited<ReturnType<typeof readScenarioRows>>;
 
+function receiptResultReferencesSession(result: unknown, sessionId: string) {
+  if (!result || typeof result !== "object") return false;
+  const session = (result as Record<string, unknown>).session;
+  if (!session || typeof session !== "object") return false;
+  return (session as Record<string, unknown>).id === sessionId;
+}
+
 export type SessionScenarioFixture = {
   activityPlanId: string;
   activityPlanRevision: number;
@@ -32,6 +40,10 @@ export type SessionScenarioFixture = {
   sessionId: string;
   sessionCount: number;
   sessionRevision: number;
+  operationReceiptCount: (operationId: string) => Promise<number>;
+  operationReceiptsForSession: (
+    sessionId: string,
+  ) => Promise<Array<{ command: string; operationId: string }>>;
   stateRevision: number;
   substituteId: string;
   substituteName: string;
@@ -280,6 +292,33 @@ export async function createSessionScenarioFixture(input: {
     sessionId: session.id,
     sessionCount: 2,
     sessionRevision: session.revision,
+    operationReceiptCount: async (operationId) =>
+      (
+        await input.database.db
+          .select({ id: chatbotOperationReceipts.id })
+          .from(chatbotOperationReceipts)
+          .where(
+            and(
+              eq(chatbotOperationReceipts.profile_id, input.actor.profileId),
+              eq(chatbotOperationReceipts.operation_id, operationId),
+            ),
+          )
+      ).length,
+    operationReceiptsForSession: async (sessionId) =>
+      (
+        await input.database.db
+          .select({
+            command: chatbotOperationReceipts.command,
+            operationId: chatbotOperationReceipts.operation_id,
+            result: chatbotOperationReceipts.result,
+          })
+          .from(chatbotOperationReceipts)
+          .where(eq(chatbotOperationReceipts.profile_id, input.actor.profileId))
+      ).flatMap((receipt) => {
+        return receiptResultReferencesSession(receipt.result, sessionId)
+          ? [{ command: receipt.command, operationId: receipt.operationId }]
+          : [];
+      }),
     stateRevision: state.published_revision,
     substituteId: substitute.id,
     substituteName: substitute.name,

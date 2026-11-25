@@ -24,12 +24,21 @@ name: Open the visible scheduled session from Calendar and report completion wit
     visible:
       id: planning-ledger-screen
     timeout: 30000
-- assertVisible: ${MAESTRO_ACCEPTANCE_PLAN_NAME}
-- tapOn: ${MAESTRO_ACCEPTANCE_PLAN_NAME}
+# The detail ledger renders contextual load charts before its resource entries.
+# Pin the exact UI-created session rather than asserting an offscreen plan title.
+- scrollUntilVisible:
+    element:
+      id: planning-ledger-entry-planned-${MAESTRO_ACCEPTANCE_SESSION_ID}
+    direction: DOWN
+- assertVisible:
+    id: planning-ledger-entry-planned-${MAESTRO_ACCEPTANCE_SESSION_ID}
+- tapOn:
+    id: planning-ledger-entry-planned-${MAESTRO_ACCEPTANCE_SESSION_ID}
 - extendedWaitUntil:
     visible:
       id: planned-session-detail-screen
     timeout: 30000
+- takeScreenshot: planned-session-detail-before-completion
 - scrollUntilVisible:
     element:
       id: planned-session-complete-full
@@ -42,3 +51,4 @@ name: Open the visible scheduled session from Calendar and report completion wit
     timeout: 30000
 - assertVisible: "completed"
 - assertVisible: "View completed activity"
+- takeScreenshot: planned-session-full-completion

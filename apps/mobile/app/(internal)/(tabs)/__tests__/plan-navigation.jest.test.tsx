@@ -52,6 +52,7 @@ jest.mock("@/components/plan/training-path/PlanDashboardContent", () => ({
     onCreateGoal,
     onOpenGoal = () => {},
     onOpenGoals,
+    onOpenPlannedSession = () => {},
     onOpenSourceActivity = () => {},
     onViewDetails = () => {},
   }: Record<string, ((...args: never[]) => void) | undefined>) =>
@@ -74,6 +75,10 @@ jest.mock("@/components/plan/training-path/PlanDashboardContent", () => ({
       React.createElement("TouchableOpacity", {
         onPress: () => onOpenSourceActivity("activity-1" as never),
         testID: "open-source-activity",
+      }),
+      React.createElement("TouchableOpacity", {
+        onPress: () => onOpenPlannedSession("session-1" as never),
+        testID: "open-planned-session",
       }),
       React.createElement("TouchableOpacity", {
         onPress: () => onViewDetails("2026-04-15" as never, "day" as never),
@@ -120,7 +125,7 @@ describe("Plan dashboard navigation", () => {
     expect(screen.queryByTestId("plan-scroll")).toBeNull();
   });
 
-  it("opens goals, activities, and the same training breakdown for days and weeks", async () => {
+  it("opens goals, activities, planned sessions, and the same training breakdown for days and weeks", async () => {
     await renderNative(<Plan />);
     await fireEvent.press(screen.getByTestId("create-goal"));
     expect(navigateMock).toHaveBeenCalledWith(ROUTES.GOALS.CREATE);
@@ -130,6 +135,11 @@ describe("Plan dashboard navigation", () => {
     expect(navigateMock).toHaveBeenCalledWith(ROUTES.GOALS.DETAIL("goal-1"));
     await fireEvent.press(screen.getByTestId("open-source-activity"));
     expect(navigateMock).toHaveBeenCalledWith(ROUTES.ACTIVITIES.DETAIL("activity-1"));
+    await fireEvent.press(screen.getByTestId("open-planned-session"));
+    expect(navigateMock).toHaveBeenCalledWith({
+      pathname: "/event-detail",
+      params: { id: "session-1", resourceType: "planned_session" },
+    });
     await fireEvent.press(screen.getByTestId("open-day-breakdown"));
     expect(navigateMock).toHaveBeenCalledWith(
       ROUTES.PLAN.PLANNING_LEDGER({ anchorDate: "2026-04-15", period: "day" }),

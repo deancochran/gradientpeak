@@ -24,15 +24,17 @@ jest.mock("@/components/shared/GoalCard", () => ({
 }));
 jest.mock("@/components/shared/PlannedActivityCard", () => ({
   PlannedActivityCard: ({
+    onPress,
     plannedActivity,
     testID,
   }: {
+    onPress?: () => void;
     plannedActivity: { title: string };
     testID: string;
   }) =>
     React.createElement(
-      "View",
-      { testID },
+      "TouchableOpacity",
+      { onPress, testID },
       React.createElement("Text", null, plannedActivity.title),
     ),
 }));
@@ -73,6 +75,7 @@ const baseProps = {
   onOpenCompletedActivity: jest.fn(),
   onOpenDayDetails: jest.fn(),
   onOpenGoal: jest.fn(),
+  onOpenPlannedSession: jest.fn(),
   onRetryCompletedActivities: jest.fn(),
   point: {
     date: "2026-04-15",
@@ -98,6 +101,14 @@ it("opens completed work through the canonical activity card", async () => {
 
   await fireEvent.press(screen.getByTestId("plan-selected-day-activity-card-activity-1"));
   expect(baseProps.onOpenCompletedActivity).toHaveBeenCalledWith("activity-1");
+});
+
+it("opens a scheduled session directly so its existing actions remain in context", async () => {
+  await renderNative(<PlanSelectedDay {...baseProps} day={day} />);
+
+  await fireEvent.press(screen.getByTestId("plan-selected-day-planned-activity-card-plan-1"));
+  expect(baseProps.onOpenPlannedSession).toHaveBeenCalledWith("plan-1");
+  expect(baseProps.onOpenDayDetails).not.toHaveBeenCalled();
 });
 
 it("keeps completed work visible as an explicit retry state when card data fails", async () => {

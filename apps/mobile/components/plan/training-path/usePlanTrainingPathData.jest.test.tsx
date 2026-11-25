@@ -557,6 +557,20 @@ describe("usePlanTrainingPathData", () => {
     expect(result.current.analysisSelectedDate).toBe("2026-04-08");
   });
 
+  it("adopts a changed route date without overwriting a user selection when the route is unchanged", async () => {
+    const { result, rerender } = await renderHook(
+      ({ date }: { date: string }) => usePlanTrainingPathData(date),
+      { initialProps: { date: "2026-04-06" } },
+    );
+
+    await act(() => result.current.handleSelectedDateChange("2026-04-08"));
+    await rerender({ date: "2026-04-06" });
+    expect(result.current.selectedDate).toBe("2026-04-08");
+
+    await rerender({ date: "2026-04-07" });
+    expect(result.current.selectedDate).toBe("2026-04-07");
+  });
+
   it("uses one selected date and lets analysis select a week by its start", async () => {
     const { result } = await renderHook(() => usePlanTrainingPathData());
 

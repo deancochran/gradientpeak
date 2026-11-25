@@ -274,7 +274,9 @@ export function TrainingLoadPath({
               fitness={projection.fitness}
               fitnessHistory={projection.fitnessHistory}
               goalMarkers={projection.goalMarkers}
-              goalMarkersTruncated={projection.goalMarkersTruncated}
+              {...(projection.goalMarkersTruncated === undefined
+                ? {}
+                : { goalMarkersTruncated: projection.goalMarkersTruncated })}
               days={timeline.days}
               {...(selectedDate === undefined ? {} : { selectedDate })}
             />

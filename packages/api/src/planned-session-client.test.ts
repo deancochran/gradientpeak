@@ -16,8 +16,33 @@ describe("buildDirectPlannedSessionCreateInput", () => {
     });
 
     expect(result.session.activityPlanId).toBe(fixture.activityPlanId);
+    expect(result.session).not.toHaveProperty("groupEventId");
     expect(result.session).not.toHaveProperty("prescription");
     expect(result.session).not.toHaveProperty("capturedAt");
+  });
+
+  it("preserves an explicit null or valid group-event association", () => {
+    const fixture = PLANNED_SESSION_V1_FIXTURES[0];
+    const base = {
+      profileId: fixture.profileId,
+      planningDate: fixture.planningDate,
+      operationId: "direct-operation-00000000000000000001",
+      activityPlanId: fixture.activityPlanId,
+    };
+
+    expect(
+      buildDirectPlannedSessionCreateInput({ ...base, groupEventId: null }).session,
+    ).toMatchObject({
+      groupEventId: null,
+    });
+    expect(
+      buildDirectPlannedSessionCreateInput({
+        ...base,
+        groupEventId: "00000000-0000-4000-8000-000000000001",
+      }).session,
+    ).toMatchObject({
+      groupEventId: "00000000-0000-4000-8000-000000000001",
+    });
   });
 
   it("recognizes the finite conflict code without depending on message text", () => {

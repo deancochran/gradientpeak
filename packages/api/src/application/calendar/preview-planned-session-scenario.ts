@@ -1,4 +1,6 @@
+import { createHash } from "node:crypto";
 import {
+  canonicalJson,
   getCalendarDateInIanaZone,
   ianaTimezoneSchema,
   type ProjectedTrainingStimulus,
@@ -39,7 +41,16 @@ import { selectSimulatedSessionsForProjection } from "../training-plan/projectio
 import { resolveCurrentPlannedSessionPlan } from "./resolve-current-planned-session-plan";
 
 const MAX_SCENARIO_SESSIONS = 366;
+const SCENARIO_PROJECTION_POLICY = "planned-session-scenario-v1";
 export const previewPlannedSessionScenarioInputSchema = previewPlannedSessionScenarioRequestSchema;
+export type PlannedSessionScenarioApplyAuthority = {
+  sourcePlan: {
+    id: string;
+    revision: number;
+    structureHash: string;
+    semanticHash: string;
+  };
+};
 
 const unavailable = (reason: z.output<typeof plannedSessionScenarioUnavailableReasonSchema>) => ({
   status: "unavailable" as const,
@@ -63,6 +74,82 @@ function demandForPlan(plan: ActivityPlanPrescriptionSource) {
     target_duration_minutes: null,
     target_common_load: null,
     importance: "normal" as const,
+  };
+}
+
+function fingerprintPlanningBaseline(
+  baseline: Awaited<ReturnType<typeof loadPlanningBaseline>>,
+  planningDate: string,
+) {
+  if (baseline.status === "no_context") return { status: baseline.status, planningDate };
+
+  const { context } = baseline;
+  const normalizeUnknownFitnessFact = <T extends { source: string; recordedAt: string | null }>(
+    fact: T,
+  ) => (fact.source === "unknown" ? { ...fact, recordedAt: null } : fact);
+  const {
+    asOf: _targetAsOf,
+    thresholds,
+    heartRate,
+    ...performanceTargetFacts
+  } = context.performanceTargets;
+  const withoutElapsedAge = <T extends { ageSeconds: number | null }>(fact: T) => {
+    const { ageSeconds: _ageSeconds, ...stableFact } = fact;
+    return stableFact;
+  };
+
+  return {
+    status: baseline.status,
+    revision: baseline.revision,
+    context: {
+      demographics: context.demographics,
+      body: context.body,
+      physiology: {
+        ...context.physiology,
+        currentFitnessLongTermLoad: normalizeUnknownFitnessFact(
+          context.physiology.currentFitnessLongTermLoad,
+        ),
+        currentFatigueRecentLoad: normalizeUnknownFitnessFact(
+          context.physiology.currentFatigueRecentLoad,
+        ),
+        currentFormLoadBalance: normalizeUnknownFitnessFact(
+          context.physiology.currentFormLoadBalance,
+        ),
+      },
+      wellness: context.wellness,
+      efforts: context.efforts,
+      evidence: {
+        metricCount: context.evidence.metricCount,
+        effortCount: context.evidence.effortCount,
+        missingFields: context.evidence.missingFields,
+        profileMetricsCoverage: context.evidence.profileMetricsCoverage,
+        activityEffortsCoverage: context.evidence.activityEffortsCoverage,
+        excludedFutureMetricCount: context.evidence.excludedFutureMetricCount,
+        excludedFutureEffortCount: context.evidence.excludedFutureEffortCount,
+      },
+      performanceTargets: {
+        ...performanceTargetFacts,
+        thresholds: {
+          bike: withoutElapsedAge(thresholds.bike),
+          run: withoutElapsedAge(thresholds.run),
+          swim: withoutElapsedAge(thresholds.swim),
+        },
+        heartRate: {
+          bike: {
+            lthr: withoutElapsedAge(heartRate.bike.lthr),
+            maxHr: withoutElapsedAge(heartRate.bike.maxHr),
+          },
+          run: {
+            lthr: withoutElapsedAge(heartRate.run.lthr),
+            maxHr: withoutElapsedAge(heartRate.run.maxHr),
+          },
+          swim: {
+            lthr: withoutElapsedAge(heartRate.swim.lthr),
+            maxHr: withoutElapsedAge(heartRate.swim.maxHr),
+          },
+        },
+      },
+    },
   };
 }
 
@@ -90,12 +177,13 @@ export async function previewPlannedSessionScenario(input: {
   );
 }
 
-async function derivePlannedSessionScenario(input: {
+export async function derivePlannedSessionScenario(input: {
   db: DrizzleQueryExecutor;
   repository: PlannedSessionRepositoryPort;
   profileId: string;
   values: z.input<typeof previewPlannedSessionScenarioInputSchema>;
   now: Date;
+  authoritySink?: { current?: PlannedSessionScenarioApplyAuthority };
 }) {
   const values = previewPlannedSessionScenarioInputSchema.parse(input.values);
   const selected = await input.repository.getOwned({
@@ -118,7 +206,10 @@ async function derivePlannedSessionScenario(input: {
     },
   });
   if (readModel.publishedRevision !== values.expectedStateRevision)
-    return stale("state_revision", { stateRevision: readModel.publishedRevision ?? undefined });
+    return stale(
+      "state_revision",
+      readModel.publishedRevision === null ? {} : { stateRevision: readModel.publishedRevision },
+    );
   const simulationBaseline = readModel.currentBaseline?.baseline;
   if (!simulationBaseline || !readModel.currentBaseline?.planningTimezone)
     return unavailable("baseline_unavailable");
@@ -363,8 +454,80 @@ async function derivePlannedSessionScenario(input: {
       planningTimezone: timezone.data,
       goal: null,
     });
+  const previewFingerprint = `v1:sha256:${createHash("sha256")
+    .update(
+      canonicalJson({
+        policy: {
+          version: SCENARIO_PROJECTION_POLICY,
+          maxScenarioSessions: MAX_SCENARIO_SESSIONS,
+          resolution: "current_activity_plan",
+        },
+        scenario: values.scenario,
+        selected: {
+          id: selected.id,
+          sessionRevision: selected.sessionRevision,
+          planningDate: selected.planningDate,
+        },
+        planning: {
+          planningDate: today,
+          timezone: timezone.data,
+          startDate,
+          endDate: endDate.toISOString().slice(0, 10),
+        },
+        publishedState: {
+          revision: readModel.publishedRevision,
+          algorithmVersion: readModel.algorithmVersion ?? null,
+        },
+        // This server-only input captures evidence, observations, and preferences
+        // that can change the canonical prescription without a state-revision bump.
+        // Its explicit fingerprint projection excludes only runtime elapsed clocks
+        // while retaining their semantic freshness/expiry state and all persisted
+        // evidence values and timestamps.
+        planningBaseline: fingerprintPlanningBaseline(baseline, today),
+        sessions: resolvedPlans
+          .map(({ session, plan }) => ({
+            id: session.id,
+            lifecycle: session.lifecycle,
+            planningDate: session.planningDate,
+            sessionRevision: session.sessionRevision,
+            plan: {
+              id: plan.id,
+              revision: plan.revision,
+              structureHash: plan.structureHash,
+              semanticHash: plan.semanticHash,
+            },
+          }))
+          .sort((left, right) => left.id.localeCompare(right.id)),
+        candidates: candidates
+          .map((candidate) => ({
+            id: candidate.id,
+            revision: candidate.revision,
+            structureHash: activityPlanStructureHash(candidate.structure),
+            semanticHash: candidate.semantic_hash,
+          }))
+          .sort((left, right) => left.id.localeCompare(right.id)),
+      }),
+    )
+    .digest("hex")}`;
+  const sourcePlan =
+    values.scenario.kind === "substitute"
+      ? candidates.find((candidate) => candidate.id === replacementId)
+      : selectedPlan;
+  if (!sourcePlan) return unavailable("candidate_unavailable");
+  if (input.authoritySink) {
+    input.authoritySink.current = {
+      sourcePlan: {
+        id: sourcePlan.id,
+        revision: sourcePlan.revision,
+        structureHash: activityPlanStructureHash(sourcePlan.structure),
+        semanticHash:
+          "semanticHash" in sourcePlan ? sourcePlan.semanticHash : sourcePlan.semantic_hash,
+      },
+    };
+  }
   return plannedSessionScenarioPreviewDtoSchema.parse({
     status: "available" as const,
+    previewFingerprint,
     selectedSession: {
       id: selected.id,
       sessionRevision: selected.sessionRevision,

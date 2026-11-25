@@ -14,14 +14,18 @@ export function PlanDashboardContent({
   onCreateGoal,
   onOpenGoal,
   onOpenGoals,
+  onOpenPlannedSession,
   onOpenSourceActivity,
+  onSelectedDateChange,
   onViewDetails,
 }: {
   data: PlanData;
   onCreateGoal: () => void;
   onOpenGoal: (goalId: string) => void;
   onOpenGoals: () => void;
+  onOpenPlannedSession: (sessionId: string) => void;
   onOpenSourceActivity: (activityId: string) => void;
+  onSelectedDateChange?: (date: string) => void;
   onViewDetails: (date: string, period: "day" | "week") => void;
 }) {
   const productAnalytics = useProductAnalytics();
@@ -111,6 +115,7 @@ export function PlanDashboardContent({
           onOpenGoal(goalId);
         }}
         onOpenCompletedActivity={onOpenSourceActivity}
+        onOpenPlannedSession={onOpenPlannedSession}
         onPeriodShift={(direction) => {
           productAnalytics.capture("plan.chart_engaged", { chart: "training" });
           data.handleAnalysisPeriodShift(direction);
@@ -123,6 +128,7 @@ export function PlanDashboardContent({
         onSelectedDateChange={(date) => {
           productAnalytics.capture("plan.chart_engaged", { chart: "training" });
           data.handleSelectedDateChange(date);
+          onSelectedDateChange?.(date);
         }}
         onViewDetails={(date, period) => {
           productAnalytics.capture("plan.calendar_action", { action: "details" });

@@ -3,6 +3,7 @@ import { recordingPlannedSessionLaunchSchema } from "@repo/core";
 import { buildPlannedSessionComparison, type PlannedSession } from "@repo/core/calendar";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { applyPlannedSessionScenario } from "../application/calendar/apply-planned-session-scenario";
 import { cancelPlannedSession } from "../application/calendar/cancel-planned-session";
 import { changePlannedSessionPlan } from "../application/calendar/change-planned-session-plan";
 import { createDirectPlannedSession } from "../application/calendar/create-direct-planned-session";
@@ -40,6 +41,10 @@ import {
   OperationReceiptUnauthorizedError,
 } from "../application/operation-receipts";
 import { PLANNED_SESSION_CACHE_TAGS } from "../contracts/cache-receipts";
+import {
+  applyPlannedSessionScenarioRequestSchema,
+  applyPlannedSessionScenarioResultSchema,
+} from "../contracts/planned-session-scenario-apply";
 import {
   cancelPlannedSessionDtoRequestSchema,
   changePlannedSessionPlanDtoRequestSchema,
@@ -305,6 +310,43 @@ export function createPlannedSessionsRouter(
           now: services.now(),
         });
         return result;
+      }),
+    applyScenario: protectedProcedure
+      .input(applyPlannedSessionScenarioRequestSchema)
+      .output(applyPlannedSessionScenarioResultSchema)
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const db = getRequiredDb(ctx);
+          return await applyPlannedSessionScenario({
+            db,
+            actorId: ctx.session.user.id,
+            profileId: ctx.session.user.id,
+            request: input,
+            now: services.now(),
+            enqueueProviderSync: async ({ tx, profileId, sessionId, planningDate, action }) => {
+              requireDurableProviderQueue(
+                await enqueueWahooPlannedSessionSyncAfterMutation({
+                  db,
+                  transaction: tx,
+                  plannedSessionIds: [sessionId],
+                  operation: action === "publish" ? "publish" : "unsync",
+                  profileId,
+                }),
+              );
+              await enqueueGarminPlannedSessionSync({
+                db,
+                transaction: tx,
+                plannedSessionId: sessionId,
+                planningDate,
+                operation: action === "publish" ? "publish" : "cancel",
+                profileId,
+                now: services.now(),
+              });
+            },
+          });
+        } catch (error) {
+          return mapPlannedSessionError(error);
+        }
       }),
     recordingLaunch: protectedProcedure
       .input(z.object({ id: z.string().uuid() }).strict())

@@ -2,6 +2,7 @@ import { addDaysDateKey, planningLedgerRequestSchema } from "@repo/core";
 import type { PlannedSessionComparison } from "@repo/core/calendar";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { ScrollView, View } from "react-native";
+import type { LedgerNavigationTarget } from "@/components/plan/ledger/LedgerEntries";
 import { PlanningLedgerView } from "@/components/plan/ledger/PlanningLedgerView";
 import { ErrorState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
@@ -43,18 +44,20 @@ export default function PlanningLedgerScreen() {
     (item) => (item.plannedActual ? [item.plannedActual] : []),
   );
 
-  const openEntry = (target: {
-    target: "activity" | "event" | "group_event" | "goal";
-    id: string;
-  }) => {
+  const openEntry = (target: LedgerNavigationTarget) => {
     const route =
       target.target === "activity"
         ? { pathname: "/activity-detail", params: { id: target.id } }
-        : target.target === "event"
-          ? { pathname: "/event-detail", params: { id: target.id } }
-          : target.target === "group_event"
-            ? { pathname: "/group-event-detail", params: { groupEventId: target.id } }
-            : { pathname: "/goal-detail", params: { id: target.id } };
+        : target.target === "planned_session"
+          ? {
+              pathname: "/event-detail",
+              params: { id: target.id, resourceType: "planned_session" },
+            }
+          : target.target === "event"
+            ? { pathname: "/event-detail", params: { id: target.id } }
+            : target.target === "group_event"
+              ? { pathname: "/group-event-detail", params: { groupEventId: target.id } }
+              : { pathname: "/goal-detail", params: { id: target.id } };
     router.navigate(route as never);
   };
 

@@ -9,7 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import { TouchableOpacity, View } from "react-native";
 import { GoalCard } from "@/components/shared/GoalCard";
 import { IntensityDistributionChart } from "./IntensityDistributionChart";
-import { LedgerEntries } from "./LedgerEntries";
+import { LedgerEntries, type LedgerNavigationTarget } from "./LedgerEntries";
 import { LedgerLoadHero } from "./LedgerLoadHero";
 import { PlanningLedgerDiagnosticsSheet } from "./PlanningLedgerDiagnosticsSheet";
 import {
@@ -20,8 +20,6 @@ import {
 import { TrainingCompositionSummary } from "./TrainingCompositionSummary";
 import { TrainingStateContextChart } from "./TrainingStateContextChart";
 import { WeeklyLoadChart } from "./WeeklyLoadChart";
-
-type NavigationTarget = NonNullable<PlanningLedger["entries"][number]["navigation"]>;
 
 function Section({
   children,
@@ -56,7 +54,7 @@ export function PlanningLedgerView({
 }: {
   completedActivities: readonly ActivityDisplayModel[];
   ledger: PlanningLedger;
-  onOpenEntry: (target: NavigationTarget) => void;
+  onOpenEntry: (target: LedgerNavigationTarget) => void;
   plannedActuals?: readonly PlannedSessionComparison[];
   trainingComposition?: MobileTrainingComposition | null;
 }) {

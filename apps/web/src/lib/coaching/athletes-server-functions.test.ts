@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   directory: vi.fn(),
+  visualRoster: vi.fn(),
   end: vi.fn(),
   overview: vi.fn(),
   createApiContext: vi.fn(),
@@ -25,7 +26,7 @@ vi.mock("@repo/api/server", () => ({
   appRouter: {
     createCaller: () => ({
       organizations: {
-        coachAthletes: { listAssigned: mocks.directory },
+        coachAthletes: { listAssigned: mocks.directory, listVisualRoster: mocks.visualRoster },
         lifecycle: { adminRoster: { list: mocks.list }, endEngagement: mocks.end },
       },
       athleteIntelligence: { getOrganizationReadModel: mocks.overview },
@@ -175,7 +176,7 @@ describe("athlete administration server functions", () => {
   });
 
   it("discards directory search and profile cursor when falling back to the engagement roster", async () => {
-    mocks.directory.mockRejectedValueOnce(
+    mocks.visualRoster.mockRejectedValueOnce(
       Object.assign(new Error("coach role revoked"), { code: "FORBIDDEN" }),
     );
     await expect(
@@ -183,6 +184,12 @@ describe("athlete administration server functions", () => {
         data: { organizationId, limit: 20, cursor: correlationId, search: "Ada" },
       }),
     ).resolves.toMatchObject({ status: "administration" });
+    expect(mocks.visualRoster).toHaveBeenCalledWith({
+      organizationId,
+      limit: 20,
+      cursor: correlationId,
+      search: "Ada",
+    });
     expect(mocks.list).toHaveBeenCalledWith({ organizationId, limit: 20, cursor: null });
   });
 

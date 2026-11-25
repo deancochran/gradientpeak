@@ -472,7 +472,8 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
   await expect(coachPage.getByText("Completed activities", { exact: true })).toBeVisible();
   const completedActivities = coachPage.getByRole("list", { name: "Completed activities" });
   await expect(completedActivities.getByRole("listitem")).toHaveCount(2);
-  await expect(completedActivities).toContainText("Completed session");
+  await expect(completedActivities).toContainText("Completed in full");
+  await expect(completedActivities).toContainText("Recorded completion");
   await expect(completedActivities).toContainText(`Planned ${planningDate}`);
   await expect(completedActivities).not.toContainText(publishedActivityPlanName);
   await expect(completedActivities).not.toContainText(completionNote);
@@ -489,7 +490,8 @@ test("[coaching-publication] athlete grants, coach publishes an owned activity p
   await coachPage.reload();
   await waitForAppHydration(coachPage);
   await expect(completedActivities.getByRole("listitem")).toHaveCount(2);
-  await expect(completedActivities).toContainText("Completed session");
+  await expect(completedActivities).toContainText("Completed in full");
+  await expect(completedActivities).toContainText("Recorded completion");
   await expect(completedActivities).not.toContainText(completionNote);
   expect(
     await e2eDatabase.db

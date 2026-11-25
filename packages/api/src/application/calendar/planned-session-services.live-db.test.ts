@@ -27,7 +27,10 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { afterAll, describe, expect, it } from "vitest";
 import { createDrizzleAthleteDerivedStateRepository } from "../../infrastructure/repositories/drizzle-athlete-derived-state-repository";
 import { createDrizzlePlannedSessionRepository } from "../../infrastructure/repositories/drizzle-planned-session-repository";
+import { buildDirectPlannedSessionCreateInput } from "../../planned-session-client";
+import { activityPlansRouter } from "../../routers/activity-plans";
 import { groupEventsRouter } from "../../routers/groups/events";
+import { plannedSessionsRouter } from "../../routers/planned-sessions";
 import { createResolutionManifestFixture } from "../../test/builders/planned-session";
 import { createRouterCaller } from "../../test/router";
 import { deleteActivityForProfile } from "../activities/activity-mutations";
@@ -82,8 +85,24 @@ const structure = activityPlanStructureSchema.parse({
     },
   ],
 });
+const nativeRunRestStructure = activityPlanStructureSchema.parse({
+  version: 5,
+  activity_category: "run",
+  items: [
+    {
+      type: "step",
+      id: randomUUID(),
+      duration: { type: "time", seconds: 60 },
+      targets: [{ type: "rest" }],
+    },
+  ],
+});
 const semanticHash = activityPlanSemanticHash({
   structure,
+  trainingIntent: "general_maintenance",
+});
+const nativeRunRestSemanticHash = activityPlanSemanticHash({
+  structure: nativeRunRestStructure,
   trainingIntent: "general_maintenance",
 });
 async function seedProfile(label: string) {
@@ -193,6 +212,7 @@ describeDisposable("planned-session services against a disposable database", () 
     const profileId = await seedProfile("Planned session owner");
     const otherProfileId = await seedProfile("Other planned session owner");
     const ownActivityPlanId = randomUUID();
+    const nativeRunRestActivityPlanId = randomUUID();
     const otherActivityPlanId = randomUUID();
     const systemActivityPlanId = randomUUID();
     const ownTrainingPlanId = randomUUID();
@@ -216,6 +236,14 @@ describeDisposable("planned-session services against a disposable database", () 
           structure,
           structure_hash: activityPlanStructureHash(structure),
           semantic_hash: semanticHash,
+        },
+        {
+          id: nativeRunRestActivityPlanId,
+          profile_id: profileId,
+          name: "Native-style timed rest run",
+          structure: nativeRunRestStructure,
+          structure_hash: activityPlanStructureHash(nativeRunRestStructure),
+          semantic_hash: nativeRunRestSemanticHash,
         },
         {
           id: systemActivityPlanId,
@@ -268,6 +296,51 @@ describeDisposable("planned-session services against a disposable database", () 
         },
       ]);
       const repository = createDrizzlePlannedSessionRepository(db);
+      const routerCaller = createRouterCaller(plannedSessionsRouter, {
+        db,
+        userId: profileId,
+      });
+      const activityPlanCaller = createRouterCaller(activityPlansRouter, {
+        db,
+        userId: profileId,
+      });
+      const appCreatedNativePlan = await activityPlanCaller.create({
+        name: "App-created timed rest run",
+        structure: nativeRunRestStructure,
+        operationId: randomUUID(),
+      });
+      await expect(
+        routerCaller.create(
+          buildDirectPlannedSessionCreateInput({
+            profileId,
+            planningDate: "2026-11-23",
+            operationId: randomUUID(),
+            activityPlanId: appCreatedNativePlan.id,
+          }),
+        ),
+      ).resolves.toMatchObject({
+        outcome: "created",
+        session: {
+          activityPlanId: appCreatedNativePlan.id,
+          planningDate: "2026-11-23",
+        },
+      });
+      await expect(
+        routerCaller.create({
+          profileId,
+          session: {
+            planningDate: "2026-08-20",
+            source: { kind: "direct", operationId: `native_rest_${"r".repeat(32)}` },
+            activityPlanId: nativeRunRestActivityPlanId,
+          },
+        }),
+      ).resolves.toMatchObject({
+        outcome: "created",
+        session: {
+          activityPlanId: nativeRunRestActivityPlanId,
+          planningDate: "2026-08-20",
+        },
+      });
       const ownDirectSessionId = randomUUID();
       await expect(
         createDirectPlannedSession({
