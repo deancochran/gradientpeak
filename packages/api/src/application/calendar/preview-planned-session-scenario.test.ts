@@ -444,6 +444,22 @@ describe("previewPlannedSessionScenario application boundary", () => {
     });
   });
 
+  it("returns a null current revision when publication is no longer available", async () => {
+    mocks.readModel.mockResolvedValueOnce({
+      publishedRevision: null,
+      status: { freshness: "unavailable" },
+      currentBaseline: null,
+    });
+    await expect(preview({ values: request({ kind: "skip" }) })).resolves.toEqual({
+      status: "stale",
+      reason: "state_revision",
+      currentSessionRevision: null,
+      currentPlanRevision: null,
+      currentStateRevision: null,
+    });
+    expect(mocks.planningBaseline).not.toHaveBeenCalled();
+  });
+
   it("keeps a fingerprint stable within a planning date and invalidates it for horizon changes", async () => {
     const morning = await preview({
       values: request({ kind: "as_planned" }),
