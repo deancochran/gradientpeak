@@ -206,7 +206,10 @@ export async function derivePlannedSessionScenario(input: {
     },
   });
   if (readModel.publishedRevision !== values.expectedStateRevision)
-    return stale("state_revision", { stateRevision: readModel.publishedRevision ?? undefined });
+    return stale(
+      "state_revision",
+      readModel.publishedRevision === null ? {} : { stateRevision: readModel.publishedRevision },
+    );
   const simulationBaseline = readModel.currentBaseline?.baseline;
   if (!simulationBaseline || !readModel.currentBaseline?.planningTimezone)
     return unavailable("baseline_unavailable");
