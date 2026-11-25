@@ -44,6 +44,17 @@ type ComposeRecipient = {
   username: string | null;
 };
 
+const coachAthleteWorkspacePath =
+  /^\/organizations\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/athletes\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/?$/i;
+
+/**
+ * Messaging only accepts a known internal coach-workspace path as its return
+ * context.  Do not turn this into a general redirect parameter.
+ */
+function parseCoachWorkspaceReturn(value: unknown) {
+  return typeof value === "string" && coachAthleteWorkspacePath.test(value) ? value : undefined;
+}
+
 function parseComposeRecipients(value: unknown): ComposeRecipient[] {
   if (Array.isArray(value)) {
     return value
@@ -98,6 +109,7 @@ export const Route = createFileRoute("/_protected/messages")({
     composeQuery: typeof search.composeQuery === "string" ? search.composeQuery : undefined,
     composeRecipients: parseComposeRecipients(search.composeRecipients),
     conversationId: typeof search.conversationId === "string" ? search.conversationId : undefined,
+    returnTo: parseCoachWorkspaceReturn(search.returnTo),
     flash: typeof search.flash === "string" ? search.flash : undefined,
     flashType:
       search.flashType === "success" || search.flashType === "error" || search.flashType === "info"
@@ -143,6 +155,7 @@ function MessagesPage() {
     composeQuery,
     composeRecipients,
     conversationId,
+    returnTo,
     flash,
     flashType,
   } = Route.useSearch();
@@ -274,6 +287,7 @@ function MessagesPage() {
         composeQuery,
         composeRecipients: updates.composeRecipients ?? selectedRecipients,
         conversationId: undefined,
+        returnTo,
         flash: undefined,
         flashType: undefined,
       },
@@ -315,6 +329,7 @@ function MessagesPage() {
         conversationId: id,
         flash: successMessage,
         flashType: "success",
+        returnTo,
       },
     });
   };
@@ -371,11 +386,19 @@ function MessagesPage() {
               conversationId,
               flash: undefined,
               flashType: undefined,
+              returnTo,
             },
             replace: true,
           })
         }
       />
+      {returnTo ? (
+        <div className="border-b px-4 py-2 text-sm">
+          <a className="text-primary underline-offset-4 hover:underline" href={returnTo}>
+            Return to athlete workspace
+          </a>
+        </div>
+      ) : null}
       <div className="flex h-full w-full min-w-0">
         <div className="hidden h-full w-[28%] min-w-[18rem] max-w-[28rem] shrink-0 border-r xl:block">
           <div className="flex h-full flex-col">
@@ -396,6 +419,7 @@ function MessagesPage() {
                     composeQuery: undefined,
                     composeRecipients: [],
                     conversationId: undefined,
+                    returnTo,
                     flash: undefined,
                     flashType: undefined,
                   }}
@@ -422,6 +446,7 @@ function MessagesPage() {
                           composeQuery: undefined,
                           composeRecipients: [],
                           conversationId: conversation.id,
+                          returnTo,
                           flash: undefined,
                           flashType: undefined,
                         }}
@@ -491,6 +516,7 @@ function MessagesPage() {
                     composeQuery: undefined,
                     composeRecipients: [],
                     conversationId: undefined,
+                    returnTo,
                     flash: undefined,
                     flashType: undefined,
                   }}
@@ -521,6 +547,7 @@ function MessagesPage() {
                           composeQuery: undefined,
                           composeRecipients: [],
                           conversationId: conversation.id,
+                          returnTo,
                           flash: undefined,
                           flashType: undefined,
                         }}
@@ -562,6 +589,7 @@ function MessagesPage() {
                       conversationId: conversationId ?? conversations[0]?.id,
                       flash: undefined,
                       flashType: undefined,
+                      returnTo,
                     }}
                   >
                     <X className="mr-2 h-4 w-4" />
@@ -579,6 +607,7 @@ function MessagesPage() {
                   >
                     <input type="hidden" name="compose" value="true" />
                     <input type="hidden" name="composeGroup" value={groupName} />
+                    {returnTo ? <input type="hidden" name="returnTo" value={returnTo} /> : null}
                     <input
                       type="hidden"
                       name="composeRecipients"

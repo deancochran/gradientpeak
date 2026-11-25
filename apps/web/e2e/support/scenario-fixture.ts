@@ -28,6 +28,7 @@ export type SessionScenarioFixture = {
   activityPlanId: string;
   activityPlanRevision: number;
   date: string;
+  horizonDate: string;
   sessionId: string;
   sessionCount: number;
   sessionRevision: number;
@@ -275,6 +276,7 @@ export async function createSessionScenarioFixture(input: {
     activityPlanId: selected.id,
     activityPlanRevision: plan.revision,
     date,
+    horizonDate,
     sessionId: session.id,
     sessionCount: 2,
     sessionRevision: session.revision,
