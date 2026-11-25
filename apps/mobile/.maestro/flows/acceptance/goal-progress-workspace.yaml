@@ -40,10 +40,10 @@ name: Completed athlete follows published threshold evidence from selected Plan 
           id: calendar-next-month
 - tapOn:
     id: calendar-day-select-${MAESTRO_ACCEPTANCE_TARGET_DATE}
-- extendedWaitUntil:
-    visible:
+- scrollUntilVisible:
+    element:
       id: planning-ledger-milestone-${MAESTRO_ACCEPTANCE_GOAL_ID}
-    timeout: 30000
+    direction: DOWN
 - assertVisible: ${MAESTRO_ACCEPTANCE_GOAL_TITLE}
 - takeScreenshot: goal-progress-plan-selected-date
 - tapOn:
