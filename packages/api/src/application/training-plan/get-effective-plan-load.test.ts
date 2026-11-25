@@ -46,6 +46,7 @@ const manifest = {
 };
 const facts = (sessions: unknown[] = [], recommendationSessions: unknown[] = []) => ({
   activities: [],
+  linkedCompletionSessions: [],
   plannedSessions: sessions,
   recommendationPlannedSessions: recommendationSessions,
   recommendationSource: { status: "complete" as const, trainingPlanId: id(5) },

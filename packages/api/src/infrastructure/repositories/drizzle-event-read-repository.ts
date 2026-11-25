@@ -207,6 +207,7 @@ export function createEventReadRepository(
       if (!range || !planningTimezone) {
         return {
           activities: [],
+          linkedCompletionSessions: [],
           plannedSessions: [],
           recommendationPlannedSessions: [],
           recommendationSource: {
@@ -335,47 +336,6 @@ export function createEventReadRepository(
           ? [session.completed_activity_id]
           : [],
       );
-      const activityRangeCondition =
-        linkedManualActivityIds.length === 0
-          ? and(
-              gte(schema.activities.started_at, envelopeStart),
-              lt(schema.activities.started_at, envelopeEnd),
-            )
-          : or(
-              and(
-                isNull(schema.activities.started_at),
-                inArray(schema.activities.id, linkedManualActivityIds),
-              ),
-              and(
-                gte(schema.activities.started_at, envelopeStart),
-                lt(schema.activities.started_at, envelopeEnd),
-              ),
-            );
-      const activityRows = await db
-        .select({
-          id: schema.activities.id,
-          profile_id: schema.activities.profile_id,
-          started_at: schema.activities.started_at,
-          finished_at: schema.activities.finished_at,
-          elapsed_ms: schema.activities.elapsed_ms,
-          active_ms: schema.activities.active_ms,
-          moving_ms: schema.activities.moving_ms,
-          timing_coverage: schema.activities.timing_coverage,
-          distance_meters: schema.activities.distance_meters,
-          avg_heart_rate: schema.activities.avg_heart_rate,
-          max_heart_rate: schema.activities.max_heart_rate,
-        })
-        .from(schema.activities)
-        .where(
-          and(
-            eq(schema.activities.profile_id, profileId),
-            isNull(schema.activities.superseded_by_activity_id),
-            activityRangeCondition,
-          ),
-        )
-        .orderBy(asc(schema.activities.started_at), asc(schema.activities.id))
-        .limit(boundedLimit);
-      const activitiesStatus = activityRows.length === boundedLimit ? "partial" : "complete";
       const serializePlannedSession = (row: (typeof plannedSessionRows)[number]) => ({
         id: row.id,
         planningDate: row.planning_date,
@@ -401,12 +361,105 @@ export function createEventReadRepository(
         // A legacy manifest is provenance, never the source for the current plan.
         resolutionManifest: row.resolution_manifest,
       });
+      const linkedCompletionRows =
+        linkedManualActivityIds.length === 0
+          ? []
+          : await db
+              .select({
+                id: schema.plannedSessions.id,
+                planning_date: schema.plannedSessions.planning_date,
+                original_target_date: schema.plannedSessions.original_target_date,
+                status: schema.plannedSessions.status,
+                completed_activity_id: schema.plannedSessions.completed_activity_id,
+                training_plan_id: schema.plannedSessions.training_plan_id,
+                training_plan_revision: schema.plannedSessions.training_plan_revision,
+                resolution_manifest: schema.plannedSessions.resolution_manifest,
+                activity_plan_id: schema.plannedSessions.activity_plan_id,
+                current_plan_name: schema.activityPlans.name,
+                current_plan_structure: schema.activityPlans.structure,
+                current_plan_updated_at: schema.activityPlans.updated_at,
+              })
+              .from(schema.plannedSessions)
+              .leftJoin(
+                schema.activityPlans,
+                and(
+                  eq(schema.plannedSessions.activity_plan_id, schema.activityPlans.id),
+                  or(
+                    eq(schema.activityPlans.profile_id, profileId),
+                    eq(schema.activityPlans.is_system_template, true),
+                  ),
+                ),
+              )
+              .where(
+                and(
+                  eq(schema.plannedSessions.profile_id, profileId),
+                  eq(schema.plannedSessions.status, "completed"),
+                  inArray(schema.plannedSessions.completed_activity_id, linkedManualActivityIds),
+                ),
+              )
+              .orderBy(asc(schema.plannedSessions.planning_date), asc(schema.plannedSessions.id))
+              .limit(boundedLimit);
+      const activityColumns = {
+        id: schema.activities.id,
+        profile_id: schema.activities.profile_id,
+        started_at: schema.activities.started_at,
+        finished_at: schema.activities.finished_at,
+        elapsed_ms: schema.activities.elapsed_ms,
+        active_ms: schema.activities.active_ms,
+        moving_ms: schema.activities.moving_ms,
+        timing_coverage: schema.activities.timing_coverage,
+        distance_meters: schema.activities.distance_meters,
+        avg_heart_rate: schema.activities.avg_heart_rate,
+        max_heart_rate: schema.activities.max_heart_rate,
+      } as const;
+      const visibleActivityLimit = boundedLimit - 1;
+      const linkedManualRows =
+        linkedManualActivityIds.length === 0
+          ? []
+          : await db
+              .select(activityColumns)
+              .from(schema.activities)
+              .where(
+                and(
+                  eq(schema.activities.profile_id, profileId),
+                  isNull(schema.activities.superseded_by_activity_id),
+                  isNull(schema.activities.started_at),
+                  inArray(schema.activities.id, linkedManualActivityIds),
+                ),
+              )
+              .orderBy(asc(schema.activities.id))
+              .limit(boundedLimit);
+      const visibleLinkedManualRows = linkedManualRows.slice(0, visibleActivityLimit);
+      const timestampLimit = visibleActivityLimit - visibleLinkedManualRows.length + 1;
+      const timestampRows = await db
+        .select(activityColumns)
+        .from(schema.activities)
+        .where(
+          and(
+            eq(schema.activities.profile_id, profileId),
+            isNull(schema.activities.superseded_by_activity_id),
+            gte(schema.activities.started_at, envelopeStart),
+            lt(schema.activities.started_at, envelopeEnd),
+          ),
+        )
+        .orderBy(asc(schema.activities.started_at), asc(schema.activities.id))
+        .limit(timestampLimit);
+      const visibleTimestampRows = timestampRows.slice(
+        0,
+        visibleActivityLimit - visibleLinkedManualRows.length,
+      );
+      const activityRows = [...visibleLinkedManualRows, ...visibleTimestampRows];
+      const activitiesStatus =
+        linkedManualRows.length === boundedLimit || timestampRows.length === timestampLimit
+          ? "partial"
+          : "complete";
       const scheduledItemsStatus =
         plannedSessionRows.length === boundedLimit ? "partial" : "complete";
       const recommendationStatus =
         recommendationRows.length === boundedLimit ? "partial" : "complete";
       return {
-        activities: activityRows.slice(0, boundedLimit - 1),
+        activities: activityRows,
+        linkedCompletionSessions: linkedCompletionRows.map(serializePlannedSession),
         plannedSessions: plannedSessionRows.slice(0, boundedLimit - 1).map(serializePlannedSession),
         recommendationPlannedSessions: recommendationRows
           .slice(0, boundedLimit - 1)
@@ -418,7 +471,7 @@ export function createEventReadRepository(
         planningTimezone,
         resolvedRange: { startDate, endDate },
         sourceCounts: {
-          activities: Math.min(activityRows.length, boundedLimit - 1),
+          activities: activityRows.length,
           plannedSessions: Math.min(plannedSessionRows.length, boundedLimit - 1),
         },
         sourceCoverage: {

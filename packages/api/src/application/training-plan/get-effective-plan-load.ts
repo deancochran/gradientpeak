@@ -313,18 +313,20 @@ export async function getEffectivePlanLoad(input: {
     }
     completedQuantificationById.set(activityId, parsed.value);
   }
-  const linkedPlanningDates = new Map<string, string | null>();
-  for (const session of facts.plannedSessions) {
+  const linkedSessionsByActivityId = new Map<
+    string,
+    (typeof facts.linkedCompletionSessions)[number][]
+  >();
+  for (const session of facts.linkedCompletionSessions) {
     if (session.lifecycleStatus !== "completed" || session.completedActivityId === null) continue;
-    const previous = linkedPlanningDates.get(session.completedActivityId);
-    linkedPlanningDates.set(
-      session.completedActivityId,
-      previous === undefined ? session.planningDate : null,
-    );
+    const sessions = linkedSessionsByActivityId.get(session.completedActivityId) ?? [];
+    sessions.push(session);
+    linkedSessionsByActivityId.set(session.completedActivityId, sessions);
   }
   const effectiveCompletedDate = (activity: (typeof facts.activities)[number]) => {
     if (activity.started_at !== null) return localDate(activity.started_at, planningTimezone);
-    return linkedPlanningDates.get(activity.id) ?? null;
+    const linkedSessions = linkedSessionsByActivityId.get(activity.id) ?? [];
+    return linkedSessions.length === 1 ? (linkedSessions[0]?.planningDate ?? null) : null;
   };
   const activitiesInRange = facts.activities.flatMap((activity) => {
     const completedDate = effectiveCompletedDate(activity);
@@ -347,31 +349,39 @@ export async function getEffectivePlanLoad(input: {
       },
     ];
   });
-  const scheduledItems = facts.plannedSessions.map((session) => {
-    const estimated = session.currentPlan ? currentPlanById.get(session.currentPlan.id) : null;
-    const currentPlan = materializeCurrentPlannedSessionProjection(
-      estimated && session.currentPlan
-        ? {
-            ...session.currentPlan,
-            prescriptionQuantification: estimated.prescriptionQuantification,
-          }
-        : session.currentPlan,
-    );
-    return {
-      scheduledItemId: session.id,
-      scheduledDate: session.planningDate,
-      status:
-        session.lifecycleStatus === "cancelled" ||
-        (session.lifecycleStatus === "completed" && !session.completedActivityId)
-          ? ("cancelled" as const)
-          : ("active" as const),
-      linkedCompletedActivityId: session.completedActivityId,
-      commonLoad: currentPlan
-        ? currentPlanCommonLoad(currentPlan)
-        : currentPlanCommonLoad({ commonLoad: null, durationSeconds: null }),
-      resolutionManifest: session.resolutionManifest,
-    };
-  });
+  const duplicateLinkedSessions = [...linkedSessionsByActivityId.values()].flatMap((sessions) =>
+    sessions.length > 1 ? sessions.slice(0, 2) : [],
+  );
+  const scheduledItems = [...facts.plannedSessions, ...duplicateLinkedSessions]
+    .filter(
+      (session, index, sessions) =>
+        sessions.findIndex((candidate) => candidate.id === session.id) === index,
+    )
+    .map((session) => {
+      const estimated = session.currentPlan ? currentPlanById.get(session.currentPlan.id) : null;
+      const currentPlan = materializeCurrentPlannedSessionProjection(
+        estimated && session.currentPlan
+          ? {
+              ...session.currentPlan,
+              prescriptionQuantification: estimated.prescriptionQuantification,
+            }
+          : session.currentPlan,
+      );
+      return {
+        scheduledItemId: session.id,
+        scheduledDate: session.planningDate,
+        status:
+          session.lifecycleStatus === "cancelled" ||
+          (session.lifecycleStatus === "completed" && !session.completedActivityId)
+            ? ("cancelled" as const)
+            : ("active" as const),
+        linkedCompletedActivityId: session.completedActivityId,
+        commonLoad: currentPlan
+          ? currentPlanCommonLoad(currentPlan)
+          : currentPlanCommonLoad({ commonLoad: null, durationSeconds: null }),
+        resolutionManifest: session.resolutionManifest,
+      };
+    });
   const composition = composeEffectivePlanDto({
     scheduledItems,
     completedActivities,
