@@ -36,6 +36,7 @@
       }
     },
     "apps/web": {
+      "ignoreBinaries": ["adb"],
       "ignoreDependencies": ["@tanstack/router-plugin", "tailwindcss"]
     }
   }
