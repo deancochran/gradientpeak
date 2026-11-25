@@ -37,6 +37,11 @@ jest.mock("victory-native", () => ({
     mockReact.createElement("VictoryScatter", { ...props, testID: "victory-scatter" }),
 }));
 
+jest.mock("@shopify/react-native-skia", () => ({
+  DashPathEffect: (props: HostProps) =>
+    mockReact.createElement("SkiaDashPathEffect", { ...props, testID: "skia-dash-path-effect" }),
+}));
+
 describe("TrainingStateChart native", () => {
   const allSeries = [
     { metric: "fitness", source: "recorded" },
@@ -83,6 +88,8 @@ describe("TrainingStateChart native", () => {
       expect.objectContaining({ y: null }),
     ]);
     expect(markers[0]?.props.radius).toBe(2.5);
+    expect(markers.slice(0, 3).every((marker) => marker.props.shape === "circle")).toBe(true);
+    expect(markers.slice(3).every((marker) => marker.props.shape === "square")).toBe(true);
     expect(lines.every((line) => line.props.connectMissingData === false)).toBe(true);
     expect(lines.map((line) => line.props.color)).toEqual([
       "#2563eb",
@@ -158,5 +165,35 @@ describe("TrainingStateChart native", () => {
     expect(getByText(/Common Load points/)).toBeTruthy();
     expect(getByText("Fitness: 42.0")).toBeTruthy();
     expect(getByText("Fatigue: 0.0")).toBeTruthy();
+  });
+
+  it("keeps an accessibility override additive and announces supplied source labels with non-color encoding", async () => {
+    const { getAllByTestId, getByLabelText, getByTestId, getByText } = await renderNative(
+      <TrainingStateChart
+        accessibilityLabel="Baseline and alternative comparison"
+        emptyMessage="No training state"
+        series={[
+          { metric: "fitness", source: "recorded" },
+          { metric: "fitness", source: "projected" },
+        ]}
+        sourceLabels={{ projected: "Alternative", recorded: "Baseline" }}
+        testId="scenario-chart"
+        visual={trainingStateChartFixtures.mixedSeries}
+      />,
+    );
+
+    expect(
+      getByLabelText(/Baseline and alternative comparison.*Planning timezone America\/Los_Angeles/),
+    ).toBeTruthy();
+    expect(getByTestId("victory-cartesian-chart").props.yKeys).toEqual([
+      "recorded-fitness",
+      "projected-fitness",
+    ]);
+    expect(getByTestId("scenario-chart-legend")).toBeTruthy();
+    expect(getByText("● Baseline · solid")).toBeTruthy();
+    expect(getByText("□ Alternative · dashed")).toBeTruthy();
+    const dashEffects = getAllByTestId("skia-dash-path-effect");
+    expect(dashEffects).toHaveLength(1);
+    expect(dashEffects[0]?.props.intervals).toEqual([6, 4]);
   });
 });

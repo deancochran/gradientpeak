@@ -11,6 +11,12 @@ export const uiPreviewContract = {
       testId: "ui-preview-scenario-training-state",
       title: "Training state",
     },
+    sessionScenarioComparison: {
+      description:
+        "Baseline and alternative scenario projections share a horizon and never fill unavailable values.",
+      testId: "ui-preview-scenario-session-scenario-comparison",
+      title: "Session scenario comparison",
+    },
     identitySummary: {
       description: "Shared identity hierarchy with supporting context and status.",
       testId: "ui-preview-scenario-identity-summary",
@@ -48,6 +54,7 @@ export const uiPreviewContract = {
 
 export const uiPreviewScenarios = [
   uiPreviewContract.scenarios.trainingState,
+  uiPreviewContract.scenarios.sessionScenarioComparison,
   uiPreviewContract.scenarios.identitySummary,
   uiPreviewContract.scenarios.accountControls,
   uiPreviewContract.scenarios.planTabs,
@@ -68,6 +75,7 @@ export const uiPreviewFormFields = {
 /** Canonical runtime selectors included in the generated preview manifest. */
 export const uiPreviewScenarioSelectors = {
   trainingState: ["ui-preview-training-state-chart"],
+  sessionScenarioComparison: ["ui-preview-session-scenario-comparison"],
   identitySummary: [],
   accountControls: ["profile-card", "auth-email", "settings-save"],
   feedbackStates: [],

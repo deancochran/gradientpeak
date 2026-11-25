@@ -25,6 +25,7 @@ import {
   parseRecurrenceEndDate,
   parseRecurrenceFrequency,
 } from "@/components/event/EventEditorCard";
+import { SessionScenarioPreview } from "@/components/planning/SessionScenarioPreview";
 import { AppConfirmModal, AppFormModal } from "@/components/shared/AppFormModal";
 import { DetailOverflowMenu } from "@/components/shared/detail";
 import { RouteCard } from "@/components/shared/RouteCard";
@@ -628,8 +629,9 @@ export default function EventDetailScreen() {
 
   if (isPlannedSession && plannedSessionQuery.data) {
     const session = plannedSessionQuery.data;
-    const category = plannedActivityPlanQuery.data?.detail?.activityCategory;
-    if (!category) {
+    const activityPlan = plannedActivityPlanQuery.data?.detail;
+    const category = activityPlan?.activityCategory;
+    if (!category || !activityPlan) {
       return (
         <View className="flex-1 items-center justify-center px-6 bg-background">
           <EmptyState
@@ -964,6 +966,13 @@ export default function EventDetailScreen() {
                 <Text>Cancel session</Text>
               </Button>
             </View>
+          ) : null}
+          {session.lifecycle.status === "scheduled" ? (
+            <SessionScenarioPreview
+              activityPlanRevision={activityPlan.activityPlanRevision}
+              session={session}
+              timeZone={timezone}
+            />
           ) : null}
           {linkedActivityId ? (
             <View className="gap-2">

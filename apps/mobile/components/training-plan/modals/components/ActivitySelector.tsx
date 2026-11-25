@@ -4,7 +4,7 @@ import type { ActivityPlanSummary } from "@repo/core";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { CircleCheck } from "lucide-react-native";
-import { useState } from "react";
+import { type ReactElement, useState } from "react";
 import { FlatList, View } from "react-native";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { EmptyState } from "@/components/shared/ScreenState";
@@ -17,6 +17,7 @@ interface ActivitySelectorProps {
   selectedActivityId: string | null;
   onSelect: (activity: ActivityOption) => void;
   disabled?: boolean;
+  footer?: ReactElement | null;
 }
 
 /**
@@ -45,6 +46,7 @@ export function ActivitySelector({
   selectedActivityId,
   onSelect,
   disabled = false,
+  footer,
 }: ActivitySelectorProps) {
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -122,6 +124,7 @@ export function ActivitySelector({
           keyExtractor={(item) => item.id}
           showsVerticalScrollIndicator={true}
           contentContainerClassName="pb-4"
+          ListFooterComponent={footer}
         />
       )}
     </View>

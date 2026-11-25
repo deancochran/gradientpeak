@@ -1,3 +1,4 @@
+import { DashPathEffect } from "@shopify/react-native-skia";
 import { Fragment } from "react";
 import { View } from "react-native";
 import { CartesianChart, Line, Scatter } from "victory-native";
@@ -31,6 +32,7 @@ function TrainingStateLegend({
   colors,
   metrics = ["fitness", "fatigue", "form"],
   sources,
+  sourceLabels,
   testId,
 }: TrainingStateLegendProps) {
   return (
@@ -53,7 +55,9 @@ function TrainingStateLegend({
       })}
       {sources?.map((source) => (
         <Text className="text-xs text-muted-foreground" key={source}>
-          ━ {getTrainingStateSourceLabel(source)}
+          {source === "recorded" ? "●" : "□"}{" "}
+          {sourceLabels?.[source] ?? getTrainingStateSourceLabel(source)} ·{" "}
+          {source === "recorded" ? "solid" : "dashed"}
         </Text>
       ))}
     </View>
@@ -61,12 +65,14 @@ function TrainingStateLegend({
 }
 
 function TrainingStateChart({
+  accessibilityLabel,
   className,
   colors,
   density = "default",
   description,
   emptyMessage,
   series,
+  sourceLabels,
   testId,
   title,
   visual,
@@ -93,7 +99,9 @@ function TrainingStateChart({
   const chart = (
     <View
       accessible
-      accessibilityLabel={getTrainingStateAccessibilityLabel(visual, series)}
+      accessibilityLabel={[accessibilityLabel, getTrainingStateAccessibilityLabel(visual, series)]
+        .filter(Boolean)
+        .join(". ")}
       accessibilityRole="image"
       className={
         density === "compact"
@@ -119,12 +127,15 @@ function TrainingStateChart({
                   {...(source === "projected" ? { opacity: 0.45 } : {})}
                   points={points[getNativeSeriesKey(metric, source)]}
                   strokeWidth={metric === "fitness" ? 3 : metric === "fatigue" ? 2.5 : 2}
-                />
+                >
+                  {source === "projected" ? <DashPathEffect intervals={[6, 4]} /> : null}
+                </Line>
                 <Scatter
                   color={colors?.[metric] ?? getTrainingStateMetric(metric).nativeColor}
                   {...(source === "projected" ? { opacity: 0.45 } : {})}
                   points={points[getNativeSeriesKey(metric, source)]}
                   radius={2.5}
+                  shape={source === "recorded" ? "circle" : "square"}
                 />
               </Fragment>
             ))}
@@ -166,7 +177,16 @@ function TrainingStateChart({
             </View>
           </>
         ) : (
-          chart
+          <View className="gap-2">
+            {chart}
+            <TrainingStateLegend
+              colors={colors}
+              metrics={[...new Set(series.map(({ metric }) => metric))]}
+              sources={[...new Set(series.map(({ source }) => source))]}
+              sourceLabels={sourceLabels}
+              testId={testId === undefined ? undefined : `${testId}-legend`}
+            />
+          </View>
         )
       ) : (
         <Text className="rounded-xl bg-muted/20 px-3 py-3 text-sm text-muted-foreground">

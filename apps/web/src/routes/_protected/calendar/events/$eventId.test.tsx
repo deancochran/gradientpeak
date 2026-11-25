@@ -132,7 +132,23 @@ vi.mock("../../../../lib/api/client", () => ({
         }),
       },
       linkCompletion: { useMutation: () => ({ mutateAsync: mocks.linkPlannedSessionCompletion }) },
+      previewScenario: {
+        useQuery: () => ({
+          data: undefined,
+          isError: false,
+          isLoading: false,
+          refetch: vi.fn(),
+        }),
+      },
       skip: { useMutation: () => ({ mutateAsync: mocks.skipPlannedSession }) },
+    },
+    athleteIntelligence: {
+      getReadModel: {
+        useQuery: () => ({
+          data: { publishedState: { baseline: { stateRevision: 1 } } },
+          isSuccess: true,
+        }),
+      },
     },
     profiles: { get: { useQuery: () => ({ data: { planning_timezone: "UTC" } }) } },
     activityPlans: {
@@ -142,6 +158,16 @@ vi.mock("../../../../lib/api/client", () => ({
           mocks.activityPlanOptions.push(options);
           return mocks.activityPlanQuery;
         },
+      },
+      list: {
+        useInfiniteQuery: () => ({
+          data: { pages: [{ items: [] }] },
+          fetchNextPage: vi.fn(),
+          hasNextPage: false,
+          isError: false,
+          isFetchingNextPage: false,
+          refetch: vi.fn(),
+        }),
       },
     },
     activities: {

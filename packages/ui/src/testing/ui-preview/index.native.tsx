@@ -33,6 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../components/select/index.native";
+import { SessionScenarioComparison } from "../../components/session-scenario-comparison/index.native";
 import { Switch } from "../../components/switch/index.native";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/tabs/index.native";
 import { Text } from "../../components/text/index.native";
@@ -103,6 +104,13 @@ function UiPreviewSurface() {
         />
         <TrainingStateChart {...uiPreviewFixtures.trainingState} />
         <TrainingStateLegend sources={["recorded", "projected"]} />
+      </View>
+      <View className="gap-4" testID={uiPreviewContract.scenarios.sessionScenarioComparison.testId}>
+        <ScenarioHeader
+          description={uiPreviewContract.scenarios.sessionScenarioComparison.description}
+          title={uiPreviewContract.scenarios.sessionScenarioComparison.title}
+        />
+        <SessionScenarioComparison {...uiPreviewFixtures.sessionScenarioComparison} />
       </View>
 
       <View className="gap-4" testID={uiPreviewContract.scenarios.identitySummary.testId}>

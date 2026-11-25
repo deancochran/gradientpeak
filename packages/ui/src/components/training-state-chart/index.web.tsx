@@ -14,6 +14,7 @@ function TrainingStateLegend({
   metrics = ["fitness", "fatigue", "form"],
   sources,
   testId,
+  sourceLabels,
 }: TrainingStateLegendProps) {
   return (
     <ul
@@ -35,19 +36,25 @@ function TrainingStateLegend({
         );
       })}
       {sources?.map((source) => (
-        <li key={source}>━ {getTrainingStateSourceLabel(source)}</li>
+        <li key={source}>
+          {source === "recorded" ? "●" : "□"}{" "}
+          {sourceLabels?.[source] ?? getTrainingStateSourceLabel(source)} ·{" "}
+          {source === "recorded" ? "solid" : "dashed"}
+        </li>
       ))}
     </ul>
   );
 }
 
 function TrainingStateChart({
+  accessibilityLabel,
   className,
   colors,
   density = "default",
   description,
   emptyMessage,
   series,
+  sourceLabels,
   testId,
   title,
   visual,
@@ -61,7 +68,7 @@ function TrainingStateChart({
     return {
       color: colors?.[metric] ?? metricDefinition.webColor,
       id: `${metric}-${source}`,
-      label: `${metricDefinition.label} · ${getTrainingStateSourceLabel(source)}`,
+      label: `${metricDefinition.label} · ${sourceLabels?.[source] ?? getTrainingStateSourceLabel(source)}`,
       source,
       values,
       summary: summarizeChartValues(values),
@@ -100,7 +107,9 @@ function TrainingStateChart({
   const compact = density === "compact";
   const chart = (
     <div
-      aria-label={`${chartTitle}. ${getTrainingStateAccessibilityLabel(visual, series)}`}
+      aria-label={
+        accessibilityLabel ?? `${chartTitle}. ${getTrainingStateAccessibilityLabel(visual, series)}`
+      }
       className={`relative w-full ${compact ? "h-24" : "h-56"}`}
       data-testid={testId}
       role="img"
@@ -131,10 +140,19 @@ function TrainingStateChart({
         plot.segments.flat().map((point) => (
           <span
             aria-hidden="true"
-            className="absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-background"
+            className={
+              plot.source === "recorded"
+                ? "absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full"
+                : "absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 border-2 bg-background"
+            }
+            data-date={point.label}
+            data-marker={plot.source === "recorded" ? "circle-filled" : "square-outline"}
+            data-source={plot.source}
             key={`${plot.id}-${point.label ?? point.x}`}
             style={{
-              borderColor: plot.color,
+              ...(plot.source === "recorded"
+                ? { backgroundColor: plot.color }
+                : { borderColor: plot.color }),
               left: `${point.plotX}%`,
               top: `${point.plotY}%`,
             }}
@@ -207,6 +225,11 @@ function TrainingStateChart({
       }
       title={chartTitle}
     >
+      <TrainingStateLegend
+        metrics={[]}
+        sourceLabels={sourceLabels}
+        sources={[...new Set(series.map(({ source }) => source))]}
+      />
       {chart}
     </ChartCard>
   );
