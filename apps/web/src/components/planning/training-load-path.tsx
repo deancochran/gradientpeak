@@ -276,7 +276,7 @@ export function TrainingLoadPath({
               goalMarkers={projection.goalMarkers}
               goalMarkersTruncated={projection.goalMarkersTruncated}
               days={timeline.days}
-              selectedDate={selectedDate}
+              {...(selectedDate === undefined ? {} : { selectedDate })}
             />
             <details className="group rounded-xl border bg-muted/10">
               <summary className="cursor-pointer list-none px-3 py-2.5 text-sm font-medium [&::-webkit-details-marker]:hidden">

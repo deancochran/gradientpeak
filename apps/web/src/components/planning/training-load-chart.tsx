@@ -347,7 +347,7 @@ export function TrainingLoadChart({
         <ChartPanel
           dates={timelineDates}
           goalMarkers={visibleGoalMarkers}
-          selectedDate={selectedDate}
+          {...(selectedDate === undefined ? {} : { selectedDate })}
           series={loadSeries.filter((series) => series.points.length > 0)}
           title="Common Load"
         />
@@ -356,7 +356,7 @@ export function TrainingLoadChart({
         <ChartPanel
           dates={timelineDates}
           goalMarkers={visibleGoalMarkers}
-          selectedDate={selectedDate}
+          {...(selectedDate === undefined ? {} : { selectedDate })}
           series={fitnessSeries.filter((series) => series.points.length > 0)}
           title="Fitness"
         />
@@ -369,7 +369,7 @@ export function TrainingLoadChart({
           <ChartPanel
             dates={timelineDates}
             goalMarkers={visibleGoalMarkers}
-            selectedDate={selectedDate}
+            {...(selectedDate === undefined ? {} : { selectedDate })}
             series={[]}
             title="Goal target dates"
           />

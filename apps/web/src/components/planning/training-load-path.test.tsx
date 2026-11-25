@@ -14,7 +14,7 @@ function accessibleDescription(element: HTMLElement) {
 describe("TrainingLoadPath", () => {
   it("keeps the selected day as an accessible, URL-ownable control", () => {
     const onSelectedDateChange = vi.fn();
-    render(
+    const { rerender } = render(
       <TrainingLoadPath
         onSelectedDateChange={onSelectedDateChange}
         projection={undefined}
@@ -28,6 +28,9 @@ describe("TrainingLoadPath", () => {
     expect(onSelectedDateChange).toHaveBeenLastCalledWith("2026-07-27");
     fireEvent.click(screen.getByRole("button", { name: "Next day" }));
     expect(onSelectedDateChange).toHaveBeenLastCalledWith("2026-07-26");
+
+    rerender(<TrainingLoadPath projection={undefined} />);
+    expect(screen.queryByLabelText("Selected day")).toBeNull();
   });
 
   it("renders scheduled firm work from the single Plan-tab projection DTO", () => {
