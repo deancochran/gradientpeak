@@ -27,8 +27,12 @@ name: Athlete retains metadata while canceling an invalid provisional activity-p
 - extendedWaitUntil:
     visible: "Plan name"
     timeout: 30000
-- tapOn: "Plan name"
-- eraseText: 200
+# eraseText backspaces from the current cursor. Select the semantic native
+# field's whole value first so the generated title replaces it exactly rather
+# than preserving a suffix after the cursor.
+- longPressOn: "Plan name"
+- tapOn: "Select all"
+- eraseText: 1
 - inputText: ${MAESTRO_ACCEPTANCE_EDITED_PLAN_NAME}
 - hideKeyboard
 - tapOn: "Description"
