@@ -734,20 +734,23 @@ function dateKeys(startDate: string, endDate: string) {
 function toProjectionDay(
   summary: z.infer<typeof planTabLoadSummarySchema> | undefined,
   date: string,
+  source: "completed" | "remaining" | null,
 ): CommonLoadTrendProjectionDay {
-  if (!summary) {
+  if (!summary || !source) {
     return { date, state: "unavailable", reason: "unavailable" };
   }
-  if (summary.remainingLoadStatus === "complete" && summary.remainingLoad !== null) {
-    return { date, state: "available" as const, load: summary.remainingLoad };
+  const status = source === "completed" ? summary.completedLoadStatus : summary.remainingLoadStatus;
+  const load = source === "completed" ? summary.completedLoad : summary.remainingLoad;
+  if (status === "complete" && load !== null) {
+    return { date, state: "available" as const, load };
   }
-  if (summary.remainingLoadStatus === "known_zero") {
+  if (status === "known_zero") {
     return { date, state: "known_zero" as const };
   }
   return {
     date,
     state: "unavailable",
-    reason: summary.remainingLoadStatus === "partial" ? "partial" : "unavailable",
+    reason: status === "partial" ? "partial" : "unavailable",
   };
 }
 
@@ -842,7 +845,11 @@ function buildFitness(input: {
       lastFutureDate && !isBeyondProjectionHorizon
         ? dateKeys(addDaysDateKey(projectionBaseline.date, 1), lastFutureDate).map((date) => {
             const summary = input.dayLoads[date];
-            return toProjectionDay(summary, date);
+            return toProjectionDay(
+              summary,
+              date,
+              today === null ? null : date <= today ? "completed" : "remaining",
+            );
           })
         : [],
   });

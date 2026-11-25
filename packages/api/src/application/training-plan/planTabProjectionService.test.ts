@@ -1,5 +1,5 @@
 import { calculateCyclingNormalizedPower } from "@repo/core/calculations/normalized-power";
-import { commonLoadResultSchema } from "@repo/core/load";
+import { commonLoadResultSchema, projectCommonLoadTrend } from "@repo/core/load";
 import { buildCenteredPlanAnalysisWindow, PLAN_ANALYSIS_WINDOW_PERIODS } from "@repo/core/plan";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -817,6 +817,110 @@ describe("readPlanTabProjection", () => {
       status: "current",
       verifiedThrough: "2026-04-05",
     });
+  });
+
+  it("uses complete historical load instead of remaining rest-day load after published history", async () => {
+    const deps = dependencies();
+    const readModel = deps.readModel;
+    deps.readModel = vi.fn(async (input) => {
+      const model = await readModel(input);
+      return {
+        ...model,
+        currentBaseline: {
+          ...model.currentBaseline,
+          baseline: null,
+        },
+        loadHistory: {
+          publishedRevision: 7,
+          algorithmVersion: "athlete-state-projection-v1",
+          result: {
+            status: "available",
+            identity: { endDate: "2026-04-04" },
+            maturity: { status: "mature" },
+            points: [{ date: "2026-04-04", longTermLoad: 40, recentLoad: 35, loadBalance: 5 }],
+          },
+        },
+      } as never;
+    });
+    deps.readEffectiveLoad = vi.fn(
+      async () =>
+        ({
+          status: "available",
+          completed: aggregate,
+          remaining: { ...aggregate, status: "known_zero" as const, load: 0, intensity: null },
+          effective: {
+            status: "available",
+            periodStartDate: "2026-04-05",
+            periodEndDate: "2026-04-06",
+            planningDate: "2026-04-06",
+            firmItems: [
+              {
+                kind: "completed",
+                completedActivityId: "66666666-6666-4666-8666-666666666666",
+                replacedScheduledItemId: null,
+                date: "2026-04-05",
+                commonLoad: aggregate,
+              },
+            ],
+            tentativeItems: [],
+            firm: aggregate,
+          },
+          model: "gradientpeak_relative_load",
+          version: "1",
+          sourceCounts: { activities: 1, events: 0 },
+          resolvedRange: {
+            startDate: "2026-04-05",
+            endDate: "2026-04-06",
+            timezone: "America/Los_Angeles",
+          },
+          sourceCoverage: {
+            activities: { startDate: "2026-04-05", endDate: "2026-04-06", status: "complete" },
+            scheduledItems: {
+              startDate: "2026-04-05",
+              endDate: "2026-04-06",
+              status: "complete",
+            },
+          },
+          recommendation: { status: "unavailable", reason: "no_active_plan" },
+        }) as never,
+    );
+
+    const result = await readPlanTabProjection({
+      db: {
+        $client: {},
+        transaction: async (operation: (tx: unknown) => unknown) => operation({}),
+      } as never,
+      profileId,
+      request: { startDate: "2026-04-05", endDate: "2026-04-06" },
+      asOf,
+      dependencies: deps,
+    });
+
+    expect(result.dayLoads["2026-04-05"]).toMatchObject({
+      completedLoadStatus: "complete",
+      completedLoad: 60,
+      remainingLoadStatus: "known_zero",
+      remainingLoad: 0,
+    });
+    expect(result.fitness.actual).toEqual([
+      { date: "2026-04-04", longTermLoad: 40, recentLoad: 35, loadBalance: 5 },
+    ]);
+    expect(result.fitness.scheduled).toEqual(
+      projectCommonLoadTrend({
+        baseline: { date: "2026-04-04", longTermLoad: 40, recentLoad: 35 },
+        days: [
+          { date: "2026-04-05", state: "available", load: 60 },
+          { date: "2026-04-06", state: "known_zero" },
+        ],
+      })
+        .points.filter((point) => point.date === "2026-04-06")
+        .map((point) => ({
+          date: point.date,
+          longTermLoad: point.longTermLoad,
+          recentLoad: point.recentLoad,
+          loadBalance: point.loadBalance,
+        })),
+    );
   });
 
   it("keeps historical evidence exact without filling its missing dates", async () => {
