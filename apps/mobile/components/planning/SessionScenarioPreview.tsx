@@ -78,7 +78,9 @@ function SessionScenarioPreviewContents({
   const [knownOutcomeSuppressed, setKnownOutcomeSuppressed] = useState(false);
   const [storageUnavailable, setStorageUnavailable] = useState(false);
   const [hydrated, setHydrated] = useState(false);
-  const [localE2ERetryBoundary, setE2ERetryBoundary] = useState<E2ERetryBoundary>("idle");
+  const [localE2ERetryBoundary, setE2ERetryBoundary] = useState<E2ERetryBoundaryUpdate | null>(
+    null,
+  );
   const operationRef = useRef<FrozenPlannedSessionScenarioOperation | null>(null);
   const latestOperationIdRef = useRef<string | null>(null);
   const armingRef = useRef(false);
@@ -200,13 +202,17 @@ function SessionScenarioPreviewContents({
   };
   const recordE2ERetryBoundary = (boundary: E2ERetryBoundary) => {
     if (!isE2ERetryBoundaryEnabled()) return;
-    setE2ERetryBoundary(boundary);
-    if (actorId) onE2ERetryBoundaryChange?.({ actorId, boundary, sessionId: session.id });
+    if (!actorId) return;
+    const update = { actorId, boundary, sessionId: session.id };
+    setE2ERetryBoundary(update);
+    onE2ERetryBoundaryChange?.(update);
   };
   const displayedE2ERetryBoundary =
     e2eRetryBoundary?.actorId === actorId && e2eRetryBoundary.sessionId === session.id
       ? e2eRetryBoundary.boundary
-      : localE2ERetryBoundary;
+      : localE2ERetryBoundary?.actorId === actorId && localE2ERetryBoundary.sessionId === session.id
+        ? localE2ERetryBoundary.boundary
+        : "idle";
   const confirmApply = async () => {
     if (
       !actorId ||
