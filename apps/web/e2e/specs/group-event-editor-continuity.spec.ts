@@ -15,6 +15,9 @@ test("event edit preserves overnight dates, invalid drafts, cancellation, and op
     testInfo,
     () => cleanupOwnedGroups([groupName]),
     async () => {
+      if (testInfo.project.name === "Desktop Chrome") {
+        await page.setViewportSize({ width: 1440, height: 1000 });
+      }
       await createOpenGroup(page, groupName);
       await createOneOffEvent(page, eventTitle);
       const detailUrl = page.url();
@@ -29,6 +32,11 @@ test("event edit preserves overnight dates, invalid drafts, cancellation, and op
       const ends = page.getByRole("textbox", { name: "Ends", exact: true });
       const save = page.getByRole("button", { name: "Save changes", exact: true });
       await openEdit();
+      await page.screenshot({
+        animations: "disabled",
+        fullPage: true,
+        path: testInfo.outputPath("event-edit-initial.png"),
+      });
       await starts.fill("2027-06-14T23:00");
       await ends.fill("2027-06-14T22:00");
       await save.click();
@@ -64,6 +72,11 @@ test("event edit preserves overnight dates, invalid drafts, cancellation, and op
       await openEdit();
       await expect(ends).toHaveValue("");
       await expect(starts).toHaveValue("2027-06-14T23:00");
+      await page.screenshot({
+        animations: "disabled",
+        fullPage: true,
+        path: testInfo.outputPath("event-edit-optional-end-cleared.png"),
+      });
       await page.getByRole("button", { name: "Cancel", exact: true }).click();
       await expect(page).toHaveURL(detailUrl);
     },
