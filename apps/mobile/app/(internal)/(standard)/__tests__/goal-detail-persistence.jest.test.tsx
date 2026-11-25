@@ -10,8 +10,10 @@ const assessmentUseQueryMock = jest.fn(() => ({
   refetch: jest.fn(async () => undefined),
 }));
 const progressUseQueryMock = jest.fn();
+const thresholdUseQueryMock = jest.fn();
 const mockRecordedMount = jest.fn();
 const mockScaffoldProps = jest.fn();
+const mockProgressInsightProps = jest.fn();
 let mockGoalObjective: Record<string, unknown> = {};
 const originalDateTimeFormat = Intl.DateTimeFormat;
 
@@ -190,7 +192,35 @@ jest.mock("@/components/charts/PlanReadinessComparisonChart", () => ({
 jest.mock("@/components/plan/insights/PlanProgressInsight", () => ({
   __esModule: true,
   formatGoalTimeLeft: () => "47 days left",
-  PlanProgressInsight: mockCreateHost("PlanProgressInsight"),
+  PlanProgressInsight: (props: HostProps) => {
+    mockProgressInsightProps(props);
+    return React.createElement("PlanProgressInsight", props);
+  },
+}));
+jest.mock("@repo/api/client", () => ({
+  selectPublishedGoalProgressHistory: (
+    progress: { publication?: { publishedRevision?: number | null } } | undefined,
+    overview:
+      | {
+          publication?: { publishedRevision?: number | null };
+          history: { items: unknown[]; nextCursor: unknown | null };
+        }
+      | undefined,
+  ) => {
+    const progressRevision = progress?.publication?.publishedRevision;
+    const overviewRevision = overview?.publication?.publishedRevision;
+    const matches =
+      progressRevision !== null &&
+      progressRevision !== undefined &&
+      overviewRevision !== null &&
+      overviewRevision !== undefined &&
+      progressRevision === overviewRevision;
+    return {
+      history: matches ? (overview?.history.items ?? []) : [],
+      historyLimited: matches && overview?.history.nextCursor !== null,
+      publicationMismatch: Boolean(overview && !matches),
+    };
+  },
 }));
 jest.mock("@/components/plan/training-path/planDashboardPresentation", () => ({
   __esModule: true,
@@ -292,12 +322,7 @@ jest.mock("@/lib/api", () => ({
       getGoalAssessment: { useQuery: assessmentUseQueryMock },
       getGoalProgress: { useQuery: progressUseQueryMock },
       getThresholdOverview: {
-        useQuery: () => ({
-          data: undefined,
-          isError: false,
-          isLoading: false,
-          refetch: jest.fn(async () => undefined),
-        }),
+        useQuery: thresholdUseQueryMock,
       },
     },
   },
@@ -315,8 +340,15 @@ describe("goal detail persistence", () => {
       isLoading: false,
       refetch: jest.fn(async () => undefined),
     });
+    thresholdUseQueryMock.mockReturnValue({
+      data: undefined,
+      isError: false,
+      isLoading: false,
+      refetch: jest.fn(async () => undefined),
+    });
     mockRecordedMount.mockClear();
     mockScaffoldProps.mockClear();
+    mockProgressInsightProps.mockClear();
     mockGoalObjective = { type: "threshold", metric: "pace", value: 4, activity_category: "run" };
     Object.defineProperty(Intl, "DateTimeFormat", {
       configurable: true,
@@ -447,5 +479,146 @@ describe("goal detail persistence", () => {
     await view.rerender(<GoalDetailScreen />);
     expect(screen.getByText("Goal progress could not be loaded.")).toBeTruthy();
     expect(screen.getByText("Retry progress")).toBeTruthy();
+  });
+
+  it("keeps a cached progress snapshot visible and retries after refresh failure", async () => {
+    const retry = jest.fn(async () => undefined);
+    progressUseQueryMock.mockReturnValue({
+      data: {
+        publication: { publishedRevision: 4 },
+        result: {
+          status: "current",
+          target: { activityCategory: "bike", metric: "power", unit: "watts" },
+          deadlineAt: "2026-06-01T00:00:00Z",
+          current: { value: 285, unit: "watts" },
+        },
+      },
+      isError: true,
+      isLoading: false,
+      refetch: retry,
+    });
+
+    await renderNative(<GoalDetailScreen />);
+
+    expect(screen.getByTestId("goal-detail-progress-refresh-warning")).toBeTruthy();
+    expect(
+      screen.getByText("Could not refresh goal progress. Showing the last available progress."),
+    ).toBeTruthy();
+    expect(mockProgressInsightProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        progress: expect.objectContaining({ current: { value: 285, unit: "watts" } }),
+      }),
+    );
+    await fireEvent.press(screen.getByText("Retry progress"));
+    expect(retry).toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      progressError: false,
+      historyError: true,
+      warning:
+        "Could not refresh threshold history. Showing retained compatible history, if available.",
+    },
+    {
+      progressError: true,
+      historyError: true,
+      warning:
+        "Could not refresh goal progress or threshold history. Showing the last available compatible evidence.",
+    },
+  ])("uses accurate cached-progress recovery copy", async ({
+    progressError,
+    historyError,
+    warning,
+  }) => {
+    progressUseQueryMock.mockReturnValue({
+      data: {
+        publication: { publishedRevision: 4 },
+        result: {
+          status: "current",
+          target: { activityCategory: "bike", metric: "power", unit: "watts" },
+          deadlineAt: "2026-06-01T00:00:00Z",
+        },
+      },
+      isError: progressError,
+      isLoading: false,
+      refetch: jest.fn(),
+    });
+    thresholdUseQueryMock.mockReturnValue({
+      data: {
+        publication: { publishedRevision: 4 },
+        history: { items: [], nextCursor: null },
+      },
+      isError: historyError,
+      isLoading: false,
+      refetch: jest.fn(),
+    });
+
+    await renderNative(<GoalDetailScreen />);
+
+    expect(screen.getByText(warning)).toBeTruthy();
+    expect(mockProgressInsightProps).toHaveBeenCalled();
+  });
+
+  it("discloses mismatched threshold history without passing it to the trend", async () => {
+    const presentation = require("@/components/plan/training-path/planDashboardPresentation");
+    presentation.mergeGoalProgressThresholdEvidence.mockClear();
+    progressUseQueryMock.mockReturnValue({
+      data: {
+        publication: { publishedRevision: 4 },
+        result: {
+          status: "current",
+          target: { activityCategory: "bike", metric: "power", unit: "watts" },
+          deadlineAt: "2026-06-01T00:00:00Z",
+        },
+      },
+      isError: false,
+      isLoading: false,
+      refetch: jest.fn(),
+    });
+    thresholdUseQueryMock.mockReturnValue({
+      data: {
+        publication: { publishedRevision: 5 },
+        history: { items: [{ value: 999 }], nextCursor: null },
+      },
+      isError: false,
+      isLoading: false,
+      refetch: jest.fn(),
+    });
+
+    await renderNative(<GoalDetailScreen />);
+
+    expect(screen.getByTestId("goal-detail-history-mismatch")).toBeTruthy();
+    expect(presentation.mergeGoalProgressThresholdEvidence).toHaveBeenCalledWith([], undefined);
+  });
+
+  it("discloses when matching threshold history is bounded", async () => {
+    progressUseQueryMock.mockReturnValue({
+      data: {
+        publication: { publishedRevision: 4 },
+        result: {
+          status: "current",
+          target: { activityCategory: "bike", metric: "power", unit: "watts" },
+          deadlineAt: "2026-06-01T00:00:00Z",
+        },
+      },
+      isError: false,
+      isLoading: false,
+      refetch: jest.fn(),
+    });
+    thresholdUseQueryMock.mockReturnValue({
+      data: {
+        publication: { publishedRevision: 4 },
+        history: { items: [], nextCursor: "more-history" },
+      },
+      isError: false,
+      isLoading: false,
+      refetch: jest.fn(),
+    });
+
+    await renderNative(<GoalDetailScreen />);
+
+    expect(screen.getByTestId("goal-detail-history-limited")).toBeTruthy();
+    expect(screen.queryByTestId("goal-detail-history-mismatch")).toBeNull();
   });
 });
