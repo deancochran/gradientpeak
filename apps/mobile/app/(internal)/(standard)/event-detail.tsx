@@ -12,7 +12,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { randomUUID } from "expo-crypto";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { z } from "zod";
 import {
@@ -345,10 +345,18 @@ export default function EventDetailScreen() {
     null,
   );
   const e2eScenarioRetryBoundaryEnabled = process.env.EXPO_PUBLIC_MAESTRO_E2E === "1";
-  useEffect(() => {
+  const scenarioRetryBoundaryGenerationRef = useRef(0);
+  const scenarioRetryBoundaryIdentityRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
     if (!e2eScenarioRetryBoundaryEnabled) return;
+    const identity = actorId && isPlannedSession ? `${actorId}:${eventId}` : null;
+    if (scenarioRetryBoundaryIdentityRef.current === identity) return;
+    scenarioRetryBoundaryIdentityRef.current = identity;
+    const generation = ++scenarioRetryBoundaryGenerationRef.current;
     setScenarioRetryBoundary(
-      actorId && isPlannedSession ? { actorId, boundary: "idle", sessionId: eventId } : null,
+      actorId && isPlannedSession
+        ? { actorId, boundary: "idle", generation, sessionId: eventId }
+        : null,
     );
   }, [actorId, e2eScenarioRetryBoundaryEnabled, eventId, isPlannedSession]);
   const plannedReadNetworkMode = isLocalDevelopmentApiEndpoint() ? "always" : "online";
@@ -1006,10 +1014,16 @@ export default function EventDetailScreen() {
             <SessionScenarioPreview
               activityPlanRevision={activityPlan.activityPlanRevision}
               e2eRetryBoundary={e2eScenarioRetryBoundaryEnabled ? scenarioRetryBoundary : null}
+              e2eRetryBoundaryGeneration={scenarioRetryBoundary?.generation}
               knownOutcome={scenarioOutcome?.sessionId === session.id ? scenarioOutcome : null}
               onE2ERetryBoundaryChange={(update) => {
                 if (!e2eScenarioRetryBoundaryEnabled) return;
-                if (update.actorId !== actorId || update.sessionId !== session.id) return;
+                if (
+                  update.generation !== scenarioRetryBoundaryGenerationRef.current ||
+                  scenarioRetryBoundaryIdentityRef.current !==
+                    `${update.actorId}:${update.sessionId}`
+                )
+                  return;
                 setScenarioRetryBoundary(update);
               }}
               onKnownOutcomeChange={(outcome) =>
