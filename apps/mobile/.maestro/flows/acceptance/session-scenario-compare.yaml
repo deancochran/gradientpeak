@@ -17,6 +17,10 @@ name: Compare and cancel a selected planned-session scenario
     visible:
       id: planning-ledger-screen
     timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: planning-ledger-entry-planned-${MAESTRO_ACCEPTANCE_SESSION_ID}
+    direction: DOWN
 - tapOn:
     id: planning-ledger-entry-planned-${MAESTRO_ACCEPTANCE_SESSION_ID}
 - extendedWaitUntil:

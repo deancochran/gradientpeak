@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { activityPlans, plannedSessions } from "@repo/db/schema";
 import { and, eq } from "drizzle-orm";
 import { expect, test } from "../fixtures";
@@ -30,7 +31,7 @@ test("native athlete compares, cancels, and applies a selected session scenario"
     .where(eq(activityPlans.id, fixture.activityPlanId));
   if (!selectedPlan) throw new Error("Scenario fixture selected activity plan is missing.");
 
-  const runFlow = (flow: string) => {
+  const runFlow = (flow: string, screenshots: readonly string[] = []) => {
     const result = spawnSync(
       "maestro",
       [
@@ -60,8 +61,20 @@ test("native athlete compares, cancels, and applies a selected session scenario"
       `${result.stdout ?? ""}\n${result.stderr ?? ""}`,
       { mode: 0o600 },
     );
+    const screenshotDirectory = testInfo.outputPath("maestro-screenshots");
+    mkdirSync(screenshotDirectory, { recursive: true, mode: 0o700 });
+    for (const screenshot of screenshots) {
+      const source = resolve(process.cwd(), screenshot);
+      if (existsSync(source)) copyFileSync(source, resolve(screenshotDirectory, screenshot));
+    }
     expect(result.error, `Maestro must execute ${flow}`).toBeUndefined();
     expect(result.status, `See private Maestro output for ${flow}`).toBe(0);
+    for (const screenshot of screenshots) {
+      expect(
+        existsSync(resolve(screenshotDirectory, screenshot)),
+        `Maestro must retain ${screenshot} for inspection.`,
+      ).toBe(true);
+    }
   };
 
   runFlow("session-scenario-signin.yaml");
@@ -79,10 +92,18 @@ test("native athlete compares, cancels, and applies a selected session scenario"
     "Scenario fixture selected activity plan is missing before native interaction.",
   );
   expect(originalSelected.activity_plan_id).toBe(fixture.activityPlanId);
-  runFlow("session-scenario-compare.yaml");
+  runFlow("session-scenario-compare.yaml", [
+    "session-scenario-comparison.png",
+    "session-scenario-comparison-legend.png",
+    "session-scenario-confirmation.png",
+  ]);
   await expect(fixture.snapshot()).resolves.toEqual(before);
 
-  runFlow("session-scenario-apply.yaml");
+  runFlow("session-scenario-apply.yaml", [
+    "session-scenario-success.png",
+    "session-scenario-returned-ledger.png",
+    "session-scenario-returned-calendar.png",
+  ]);
   const [sessions, plans] = await fixture.snapshot();
   const selected = requireRow(
     sessions.find((session) => session.id === fixture.sessionId),
