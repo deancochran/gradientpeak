@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { freezePlannedSessionScenarioOperation } from "@repo/api/client";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionScenarioPreview } from "./session-scenario-preview";
 
@@ -261,9 +261,13 @@ describe("SessionScenarioPreview", () => {
         selectedAlternative: null,
       },
     };
+    let rejectRetry!: (reason: Error) => void;
+    const pendingRetry = new Promise<never>((_resolve, reject) => {
+      rejectRetry = reject;
+    });
     mocks.apply
       .mockRejectedValueOnce(new Error("lost acknowledgement"))
-      .mockRejectedValueOnce(new Error("retry acknowledgement lost"));
+      .mockImplementationOnce(() => pendingRetry);
     const { rerender } = renderPreview();
 
     fireEvent.click(screen.getByRole("button", { name: "Apply this scenario" }));
@@ -290,8 +294,30 @@ describe("SessionScenarioPreview", () => {
     ).toBeTruthy();
     const scenarioChoice = screen.getByRole("button", { name: "as planned" });
     scenarioChoice.focus();
+    mocks.applyPending = true;
     fireEvent.click(retryAction);
-    await waitFor(() => expect(mocks.apply).toHaveBeenCalledTimes(2));
+    rerender(
+      <SessionScenarioPreview activityPlan={activityPlan} session={session} timeZone="UTC" />,
+    );
+    await waitFor(() =>
+      expect(
+        (screen.getByRole("button", { name: "Applying…" }) as HTMLButtonElement).disabled,
+      ).toBe(true),
+    );
+    expect(screen.queryByText(/could not confirm whether/i)).toBeNull();
+
+    mocks.applyPending = false;
+    await act(async () => rejectRetry(new Error("retry acknowledgement lost")));
+    rerender(
+      <SessionScenarioPreview activityPlan={activityPlan} session={session} timeZone="UTC" />,
+    );
+    await waitFor(() => {
+      expect(screen.getByText(/could not confirm whether/i)).toBeTruthy();
+      expect(
+        (screen.getByRole("button", { name: "Check or retry this change" }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(false);
+    });
     expect(scrollIntoView).toHaveBeenCalledOnce();
     expect(document.activeElement).toBe(scenarioChoice);
     const firstRequest = mocks.apply.mock.calls[0]?.[0];
