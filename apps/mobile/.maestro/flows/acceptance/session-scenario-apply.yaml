@@ -9,9 +9,11 @@ name: Confirm a selected planned-session scenario and return to its day
     direction: DOWN
 - tapOn:
     id: session-scenario-confirm-apply
-- extendedWaitUntil:
-    visible: "Applied: repointed."
-    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: "Applied: repointed."
+    direction: DOWN
+- assertVisible: "Applied: repointed."
 - takeScreenshot: session-scenario-success
 - pressKey: back
 - extendedWaitUntil:
