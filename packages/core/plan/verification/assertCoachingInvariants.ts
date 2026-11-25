@@ -16,7 +16,7 @@ export interface CoachingInvariantExpectations {
   };
   ramp?: {
     max_increase_pct?: number;
-    max_increase_tss?: number;
+    max_increase_load?: number;
   };
   taper?: {
     build_week_index: number;
@@ -46,6 +46,19 @@ function getWeek(
   return weeks[index] ?? null;
 }
 
+function loadStatus(week: AggregatedWeeklyPlannedLoad) {
+  return (
+    week.planned_weekly_load_status ??
+    (week.planned_weekly_load === null ? "unavailable" : "complete")
+  );
+}
+
+function hasCompleteLoad(
+  week: AggregatedWeeklyPlannedLoad,
+): week is AggregatedWeeklyPlannedLoad & { planned_weekly_load: number } {
+  return loadStatus(week) === "complete" && week.planned_weekly_load !== null;
+}
+
 /**
  * Evaluates a minimum, reusable set of coaching invariants for weekly load series.
  *
@@ -63,10 +76,11 @@ export function assertCoachingInvariants(input: {
 
   const invalidWeek = input.weeklyLoads.find(
     (week) =>
-      !Number.isFinite(week.planned_weekly_tss) ||
-      week.planned_weekly_tss < 0 ||
+      (week.planned_weekly_load !== null &&
+        (!Number.isFinite(week.planned_weekly_load) || week.planned_weekly_load < 0)) ||
       week.planned_session_count < 0,
   );
+  const incompleteWeek = input.weeklyLoads.find((week) => !hasCompleteLoad(week));
   checks.push(
     invalidWeek
       ? {
@@ -75,55 +89,79 @@ export function assertCoachingInvariants(input: {
           message: `Week ${invalidWeek.week_start_date} has invalid planned load values.`,
           details: {
             week_start_date: invalidWeek.week_start_date,
-            planned_weekly_tss: invalidWeek.planned_weekly_tss,
+            planned_weekly_load: invalidWeek.planned_weekly_load,
             planned_session_count: invalidWeek.planned_session_count,
           },
         }
-      : {
-          id: "load_safety",
-          status: "pass",
-          message: "All weekly load values are finite and non-negative.",
-        },
+      : incompleteWeek
+        ? {
+            id: "load_safety",
+            status: "not_applicable",
+            message: `Week ${incompleteWeek.week_start_date} has incomplete planned Load evidence.`,
+            details: {
+              week_start_date: incompleteWeek.week_start_date,
+              planned_weekly_load: incompleteWeek.planned_weekly_load,
+              planned_weekly_load_status: loadStatus(incompleteWeek),
+            },
+          }
+        : {
+            id: "load_safety",
+            status: "pass",
+            message: "All weekly load values are finite and non-negative.",
+          },
   );
 
   const rampExpectation = input.expectations?.ramp ?? {};
   const maxIncreasePct = rampExpectation.max_increase_pct ?? 0.2;
-  const maxIncreaseTss = rampExpectation.max_increase_tss ?? 30;
-  const rampViolation = input.weeklyLoads.slice(1).find((week, index) => {
-    const previous = input.weeklyLoads[index];
-    if (!previous) {
-      return false;
-    }
-    const increaseTss = week.planned_weekly_tss - previous.planned_weekly_tss;
-    const increasePct =
-      previous.planned_weekly_tss <= 0
-        ? week.planned_weekly_tss > maxIncreaseTss
-          ? Infinity
-          : 0
-        : increaseTss / previous.planned_weekly_tss;
+  const maxIncreaseLoad = rampExpectation.max_increase_load ?? 30;
+  const hasIncompleteRampEvidence = input.weeklyLoads.some((week) => !hasCompleteLoad(week));
+  const rampViolation = hasIncompleteRampEvidence
+    ? undefined
+    : input.weeklyLoads.slice(1).find((week, index) => {
+        const previous = input.weeklyLoads[index];
+        if (!previous || !hasCompleteLoad(previous) || !hasCompleteLoad(week)) {
+          return false;
+        }
+        const increaseLoad = week.planned_weekly_load - previous.planned_weekly_load;
+        const increasePct =
+          previous.planned_weekly_load <= 0
+            ? week.planned_weekly_load > maxIncreaseLoad
+              ? Infinity
+              : 0
+            : increaseLoad / previous.planned_weekly_load;
 
-    return increaseTss > maxIncreaseTss && increasePct > maxIncreasePct;
-  });
+        return increaseLoad > maxIncreaseLoad && increasePct > maxIncreasePct;
+      });
   checks.push(
-    rampViolation
+    hasIncompleteRampEvidence
       ? {
           id: "ramp_rate",
-          status: "fail",
-          message: `Ramp rate exceeds limits at ${rampViolation.week_start_date}.`,
+          status: "not_applicable",
+          message: "Ramp comparison requires complete weekly Load evidence.",
           details: {
             max_increase_pct: maxIncreasePct,
-            max_increase_tss: maxIncreaseTss,
+            max_increase_load: maxIncreaseLoad,
           },
         }
-      : {
-          id: "ramp_rate",
-          status: "pass",
-          message: "Weekly load progression stays inside the configured ramp limits.",
-          details: {
-            max_increase_pct: maxIncreasePct,
-            max_increase_tss: maxIncreaseTss,
+      : rampViolation
+        ? {
+            id: "ramp_rate",
+            status: "fail",
+            message: `Ramp rate exceeds limits at ${rampViolation.week_start_date}.`,
+            details: {
+              max_increase_pct: maxIncreasePct,
+              max_increase_load: maxIncreaseLoad,
+            },
+          }
+        : {
+            id: "ramp_rate",
+            status: "pass",
+            message: "Weekly load progression stays inside the configured ramp limits.",
+            details: {
+              max_increase_pct: maxIncreasePct,
+              max_increase_load: maxIncreaseLoad,
+            },
           },
-        },
   );
 
   const cadenceExpectation = input.expectations?.cadence;
@@ -181,9 +219,15 @@ export function assertCoachingInvariants(input: {
         status: "not_applicable",
         message: "Taper indices fall outside the available weekly load series.",
       });
+    } else if (!hasCompleteLoad(buildWeek) || !hasCompleteLoad(taperWeek)) {
+      checks.push({
+        id: "taper",
+        status: "not_applicable",
+        message: "Taper comparison requires complete weekly Load evidence.",
+      });
     } else {
-      const requiredTss = buildWeek.planned_weekly_tss * (1 - minimumDropPct);
-      const passed = taperWeek.planned_weekly_tss <= requiredTss;
+      const requiredLoad = buildWeek.planned_weekly_load * (1 - minimumDropPct);
+      const passed = taperWeek.planned_weekly_load <= requiredLoad;
       checks.push({
         id: "taper",
         status: passed ? "pass" : "fail",
@@ -193,8 +237,8 @@ export function assertCoachingInvariants(input: {
         details: {
           build_week_index: taperExpectation.build_week_index,
           taper_week_index: taperExpectation.taper_week_index,
-          build_week_tss: round1(buildWeek.planned_weekly_tss),
-          taper_week_tss: round1(taperWeek.planned_weekly_tss),
+          build_week_load: round1(buildWeek.planned_weekly_load),
+          taper_week_load: round1(taperWeek.planned_weekly_load),
           minimum_drop_pct: minimumDropPct,
         },
       });
@@ -218,9 +262,15 @@ export function assertCoachingInvariants(input: {
         status: "not_applicable",
         message: "Recovery indices fall outside the available weekly load series.",
       });
+    } else if (!hasCompleteLoad(goalWeek) || !hasCompleteLoad(recoveryWeek)) {
+      checks.push({
+        id: "recovery",
+        status: "not_applicable",
+        message: "Recovery comparison requires complete weekly Load evidence.",
+      });
     } else {
-      const requiredTss = goalWeek.planned_weekly_tss * (1 - minimumDropPct);
-      const passed = recoveryWeek.planned_weekly_tss <= requiredTss;
+      const requiredLoad = goalWeek.planned_weekly_load * (1 - minimumDropPct);
+      const passed = recoveryWeek.planned_weekly_load <= requiredLoad;
       checks.push({
         id: "recovery",
         status: passed ? "pass" : "fail",
@@ -230,8 +280,8 @@ export function assertCoachingInvariants(input: {
         details: {
           goal_week_index: recoveryExpectation.goal_week_index,
           recovery_week_index: recoveryExpectation.recovery_week_index,
-          goal_week_tss: round1(goalWeek.planned_weekly_tss),
-          recovery_week_tss: round1(recoveryWeek.planned_weekly_tss),
+          goal_week_load: round1(goalWeek.planned_weekly_load),
+          recovery_week_load: round1(recoveryWeek.planned_weekly_load),
           minimum_drop_pct: minimumDropPct,
         },
       });

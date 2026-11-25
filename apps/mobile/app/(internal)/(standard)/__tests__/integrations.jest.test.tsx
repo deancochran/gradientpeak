@@ -1,10 +1,15 @@
 import React from "react";
 
 import { createHost } from "../../../../test/mock-components";
-import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
+import { act, fireEvent, renderNative, screen } from "../../../../test/render-native";
 
 const backMock = jest.fn();
+const pushMock = jest.fn();
 const refetchMock = jest.fn();
+let integrationOverviewErrorMock: Error | null = null;
+let integrationOverviewMock: unknown[] | undefined;
+let integrationOverviewHasCachedDataMock = false;
+let deepLinkHandlerMock: ((event: { url: string }) => void) | null = null;
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -14,14 +19,18 @@ jest.mock("react-native", () => ({
     addEventListener: jest.fn(() => ({ remove: jest.fn() })),
   },
   ScrollView: createHost("ScrollView"),
-  TouchableOpacity: ({ children, onPress, ...props }: any) =>
+  TouchableOpacity: ({
+    children,
+    onPress,
+    ...props
+  }: React.PropsWithChildren<{ onPress?: () => void } & Record<string, unknown>>) =>
     React.createElement("Pressable", { onPress, ...props }, children),
   View: createHost("View"),
 }));
 
 jest.mock("expo-router", () => ({
   __esModule: true,
-  useRouter: () => ({ back: backMock }),
+  useRouter: () => ({ back: backMock, push: pushMock }),
 }));
 
 jest.mock("expo-constants", () => ({
@@ -31,7 +40,10 @@ jest.mock("expo-constants", () => ({
 
 jest.mock("expo-linking", () => ({
   __esModule: true,
-  addEventListener: jest.fn(() => ({ remove: jest.fn() })),
+  addEventListener: jest.fn((_event: string, handler: (event: { url: string }) => void) => {
+    deepLinkHandlerMock = handler;
+    return { remove: jest.fn() };
+  }),
   createURL: jest.fn(() => "gradientpeak-dev://integrations"),
 }));
 
@@ -58,111 +70,162 @@ jest.mock("@/lib/api", () => ({
         list: { invalidate: jest.fn(async () => undefined) },
       },
     }),
-    integrations: {
-      list: {
+    profiles: {
+      get: {
+        useQuery: () => ({ data: { id: "11111111-1111-4111-8111-111111111111" } }),
+      },
+    },
+    athleteIntelligence: {
+      getReadModel: {
         useQuery: () => ({
-          data: [{ provider: "strava" }],
-          refetch: refetchMock,
-          isLoading: false,
+          data: {
+            contractVersion: "athlete-read-model-v1",
+            profileId: "11111111-1111-4111-8111-111111111111",
+            asOf: "2026-08-01T12:00:00.000Z",
+            publishedRevision: 1,
+            algorithmVersion: "athlete-state-projection-v1",
+            publishedState: { publishedAt: "2026-08-01T12:00:00.000Z" },
+            status: {
+              freshness: "fresh",
+              rebuildStatus: "fresh",
+              importStatus: "complete",
+            },
+          },
         }),
       },
+    },
+    integrations: {
       getSyncOverview: {
         useQuery: () => ({
-          data: [
-            {
-              actions: ["disconnect"],
-              activityHistory: {
-                lastError: null,
-                lastFailedAt: null,
-                lastSucceededAt: null,
-                queuedJobId: null,
-                status: "unsupported",
-              },
-              plannedWorkouts: {
-                lastError: null,
-                lastFailedAt: null,
-                lastSucceededAt: null,
-                queuedJobId: null,
-                status: "unsupported",
-              },
-              providerHealth: {
-                lastError: null,
-                status: "connected",
-              },
-              setupData: {
-                lastError: null,
-                lastFailedAt: null,
-                lastSucceededAt: null,
-                status: "unsupported",
-              },
-              connected: true,
-              integrationId: "integration-strava",
-              label: "Strava",
-              provider: "strava",
-            },
-            {
-              actions: ["disconnect", "sync_now"],
-              activityHistory: {
-                lastError: null,
-                lastFailedAt: null,
-                lastSucceededAt: null,
-                queuedJobId: null,
-                status: "idle",
-              },
-              plannedWorkouts: {
-                lastError: null,
-                lastFailedAt: null,
-                lastSucceededAt: null,
-                queuedJobId: null,
-                status: "automatic",
-              },
-              providerHealth: {
-                lastError: null,
-                status: "connected",
-              },
-              setupData: {
-                lastError: null,
-                lastFailedAt: null,
-                lastSucceededAt: "2026-05-17T12:00:00.000Z",
-                status: "refreshed",
-              },
-              connected: true,
-              integrationId: "integration-wahoo",
-              label: "Wahoo",
-              provider: "wahoo",
-            },
-            {
-              actions: ["disconnect"],
-              activityHistory: {
-                lastError: "401 unauthorized",
-                lastFailedAt: "2026-05-17T12:00:00.000Z",
-                lastSucceededAt: null,
-                queuedJobId: null,
-                status: "failed",
-              },
-              plannedWorkouts: {
-                lastError: null,
-                lastFailedAt: null,
-                lastSucceededAt: null,
-                queuedJobId: null,
-                status: "unsupported",
-              },
-              providerHealth: {
-                lastError: "401 unauthorized",
-                status: "needs_reconnect",
-              },
-              setupData: {
-                lastError: null,
-                lastFailedAt: null,
-                lastSucceededAt: null,
-                status: "unsupported",
-              },
-              connected: true,
-              integrationId: "integration-garmin",
-              label: "Garmin Connect",
-              provider: "garmin",
-            },
-          ],
+          data:
+            integrationOverviewErrorMock && !integrationOverviewHasCachedDataMock
+              ? undefined
+              : (integrationOverviewMock ?? [
+                  {
+                    actions: ["disconnect"],
+                    configured: true,
+                    activityHistory: {
+                      lastError: null,
+                      lastFailedAt: null,
+                      lastSucceededAt: null,
+                      queuedJobId: null,
+                      status: "unsupported",
+                      importRun: null,
+                    },
+                    athleteState: { status: "unavailable", revision: null },
+                    plannedActivities: {
+                      lastError: null,
+                      lastFailedAt: null,
+                      lastSucceededAt: null,
+                      queuedJobId: null,
+                      status: "unsupported",
+                    },
+                    providerHealth: {
+                      lastError: null,
+                      status: "connected",
+                    },
+                    setupData: {
+                      lastError: null,
+                      lastFailedAt: null,
+                      lastSucceededAt: null,
+                      status: "unsupported",
+                    },
+                    connected: true,
+                    integrationId: "integration-strava",
+                    label: "Strava",
+                    primaryAction: "disconnect",
+                    provider: "strava",
+                    summary: {
+                      badge: "Auto",
+                      health: "connected",
+                      subtitle: "Connected",
+                      title: "Strava",
+                    },
+                  },
+                  {
+                    actions: ["disconnect", "sync_now"],
+                    configured: true,
+                    activityHistory: {
+                      lastError: null,
+                      lastFailedAt: null,
+                      lastSucceededAt: null,
+                      queuedJobId: null,
+                      status: "idle",
+                      importRun: null,
+                    },
+                    athleteState: { status: "current", revision: 1 },
+                    plannedActivities: {
+                      lastError: null,
+                      lastFailedAt: null,
+                      lastSucceededAt: null,
+                      queuedJobId: null,
+                      status: "automatic",
+                    },
+                    providerHealth: {
+                      lastError: null,
+                      status: "connected",
+                    },
+                    setupData: {
+                      lastError: null,
+                      lastFailedAt: null,
+                      lastSucceededAt: "2026-05-17T12:00:00.000Z",
+                      status: "refreshed",
+                    },
+                    connected: true,
+                    integrationId: "integration-wahoo",
+                    label: "Wahoo",
+                    primaryAction: "disconnect",
+                    provider: "wahoo",
+                    summary: {
+                      badge: "Auto",
+                      health: "connected",
+                      subtitle: "Connected",
+                      title: "Wahoo",
+                    },
+                  },
+                  {
+                    actions: ["disconnect"],
+                    configured: true,
+                    activityHistory: {
+                      lastError: "401 unauthorized",
+                      lastFailedAt: "2026-05-17T12:00:00.000Z",
+                      lastSucceededAt: null,
+                      queuedJobId: null,
+                      status: "failed",
+                      importRun: null,
+                    },
+                    athleteState: { status: "failed_incomplete", revision: 1 },
+                    plannedActivities: {
+                      lastError: null,
+                      lastFailedAt: null,
+                      lastSucceededAt: null,
+                      queuedJobId: null,
+                      status: "unsupported",
+                    },
+                    providerHealth: {
+                      lastError: "401 unauthorized",
+                      status: "needs_reconnect",
+                    },
+                    setupData: {
+                      lastError: null,
+                      lastFailedAt: null,
+                      lastSucceededAt: null,
+                      status: "unsupported",
+                    },
+                    connected: true,
+                    integrationId: "integration-garmin",
+                    label: "Garmin Connect",
+                    primaryAction: "reconnect",
+                    provider: "garmin",
+                    summary: {
+                      badge: "Reconnect",
+                      health: "needs_reconnect",
+                      subtitle: "Sync paused",
+                      title: "Garmin Connect",
+                    },
+                  },
+                ]),
+          error: integrationOverviewErrorMock,
           refetch: refetchMock,
           isLoading: false,
         }),
@@ -183,7 +246,7 @@ jest.mock("@/lib/api", () => ({
             setupRefresh: {
               fieldsFilled: [],
               fieldsKept: ["dob"],
-              fieldsUpdated: ["weight_kg", "ftp"],
+              fieldsUpdated: ["weight_kg"],
               keptExistingValues: true,
               status: "succeeded",
             },
@@ -208,7 +271,8 @@ jest.mock("@/lib/api", () => ({
 
 jest.mock("@repo/ui/components/button", () => ({
   __esModule: true,
-  Button: createHost("Button"),
+  Button: ({ testId, testID, ...props }: Record<string, unknown> & { testId?: string }) =>
+    React.createElement("Button", { ...props, testID: testId ?? testID }),
 }));
 
 jest.mock("@repo/ui/components/icon", () => ({
@@ -226,6 +290,10 @@ jest.mock("lucide-react-native", () => ({
   Check: createHost("Check"),
   ChevronLeft: createHost("ChevronLeft"),
   ChevronRight: createHost("ChevronRight"),
+  AlertCircle: createHost("AlertCircle"),
+  Link: createHost("Link"),
+  RefreshCcw: createHost("RefreshCcw"),
+  Unlink: createHost("Unlink"),
 }));
 
 const IntegrationsScreen = require("../integrations").default;
@@ -233,54 +301,194 @@ const IntegrationsScreen = require("../integrations").default;
 describe("integrations screen", () => {
   beforeEach(() => {
     backMock.mockReset();
+    pushMock.mockReset();
     refetchMock.mockReset();
+    integrationOverviewErrorMock = null;
+    integrationOverviewMock = undefined;
+    integrationOverviewHasCachedDataMock = false;
+    deepLinkHandlerMock = null;
   });
 
-  it("renders provider connections with sync status actions instead of import setup", () => {
-    renderNative(<IntegrationsScreen />);
+  it("renders compact provider cards with one action", async () => {
+    await renderNative(<IntegrationsScreen />);
 
     expect(screen.getByTestId("integration-provider-strava")).toBeTruthy();
-    expect(screen.queryByTestId("integration-refresh-setup-wahoo")).toBeNull();
+    expect(screen.getByTestId("integration-provider-wahoo")).toBeTruthy();
+    expect(screen.getByText("2/3 ready")).toBeTruthy();
+    expect(screen.getAllByText("Auto").length).toBeTruthy();
     expect(screen.getByTestId("integration-sync-now-wahoo")).toBeTruthy();
-    expect(screen.queryByTestId("integration-refresh-setup-strava")).toBeNull();
-    expect(screen.queryByTestId("integration-sync-now-strava")).toBeNull();
-    expect(screen.queryByText("Import FIT Activity")).toBeNull();
-    expect(screen.getByText("Automatic history import")).toBeTruthy();
-    expect(screen.getByText("Setup data: Refreshed safely.")).toBeTruthy();
-    expect(screen.getByText("Planned workouts: Automatic when connected.")).toBeTruthy();
+    expect(screen.getByTestId("integration-disconnect-wahoo")).toBeTruthy();
     expect(screen.getByTestId("integration-reconnect-garmin")).toBeTruthy();
-    expect(screen.queryByTestId("integration-sync-now-garmin")).toBeNull();
   });
 
-  it("shows sync now queued copy", async () => {
-    renderNative(<IntegrationsScreen />);
-
-    fireEvent.press(screen.getByTestId("integration-sync-now-wahoo"));
-
-    await waitFor(() => {
-      expect(
-        screen.getAllByText(
-          "Updated weight and FTP from Wahoo. Kept your existing GradientPeak date of birth because Wahoo differs. Recent history sync has been queued.",
-        ).length,
-      ).toBeTruthy();
+  it("dispatches API-advertised sync and setup refresh actions", async () => {
+    integrationOverviewMock = [
+      {
+        actions: ["disconnect", "sync_now", "refresh_setup_data"],
+        configured: true,
+        connected: true,
+        providerHealth: { lastError: null, status: "connected" },
+        activityHistory: {
+          lastError: null,
+          lastFailedAt: null,
+          lastSucceededAt: null,
+          queuedJobId: null,
+          status: "idle",
+          importRun: null,
+        },
+        plannedActivities: {
+          lastError: null,
+          lastFailedAt: null,
+          lastSucceededAt: null,
+          queuedJobId: null,
+          status: "automatic",
+        },
+        setupData: {
+          lastError: null,
+          lastFailedAt: null,
+          lastSucceededAt: null,
+          status: "idle",
+        },
+        summary: { badge: "Auto", health: "connected", subtitle: "Connected", title: "Wahoo" },
+        label: "Wahoo",
+        provider: "wahoo",
+        primaryAction: "disconnect",
+      },
+    ];
+    await renderNative(<IntegrationsScreen />);
+    await act(async () => {
+      await fireEvent.press(screen.getByTestId("integration-sync-now-wahoo"));
     });
+    await act(async () => {
+      await fireEvent.press(screen.getByTestId("integration-refresh-setup-wahoo"));
+    });
+    expect(screen.getByTestId("integration-sync-now-wahoo")).toBeTruthy();
+    expect(screen.getByTestId("integration-refresh-setup-wahoo")).toBeTruthy();
   });
 
-  it("navigates back from the custom header", () => {
-    renderNative(<IntegrationsScreen />);
+  it("shows the durable disconnect transition without offering a false reconnect", async () => {
+    integrationOverviewMock = [
+      {
+        actions: [],
+        configured: true,
+        activityHistory: {
+          lastError: null,
+          lastFailedAt: null,
+          lastSucceededAt: null,
+          queuedJobId: null,
+          status: "idle",
+          importRun: null,
+        },
+        athleteState: { status: "unavailable", revision: null },
+        plannedActivities: {
+          lastError: null,
+          lastFailedAt: null,
+          lastSucceededAt: null,
+          queuedJobId: null,
+          status: "automatic",
+        },
+        providerHealth: { lastError: null, status: "disconnecting" },
+        setupData: {
+          lastError: null,
+          lastFailedAt: null,
+          lastSucceededAt: null,
+          status: "idle",
+        },
+        connected: false,
+        integrationId: null,
+        label: "Wahoo",
+        primaryAction: null,
+        provider: "wahoo",
+        summary: {
+          badge: "Disconnecting",
+          health: "disconnecting",
+          subtitle: "Revoking provider access",
+          title: "Wahoo",
+        },
+      },
+    ];
 
-    fireEvent.press(screen.getByTestId("back-button"));
+    await renderNative(<IntegrationsScreen />);
+
+    expect(screen.getByText("Disconnecting")).toBeTruthy();
+    expect(screen.getByText("Revoking provider access")).toBeTruthy();
+    expect(screen.queryByTestId("integration-connect-wahoo")).toBeNull();
+    expect(screen.queryByTestId("integration-disconnect-wahoo")).toBeNull();
+  });
+
+  it("navigates back from the custom header", async () => {
+    await renderNative(<IntegrationsScreen />);
+
+    await fireEvent.press(screen.getByTestId("back-button"));
     expect(backMock).toHaveBeenCalled();
   });
 
-  it("explains that local GradientPeak data remains on disconnect", () => {
-    renderNative(<IntegrationsScreen />);
+  it("explains that local GradientPeak data remains on disconnect", async () => {
+    await renderNative(<IntegrationsScreen />);
 
-    fireEvent.press(screen.getByTestId("integration-disconnect-strava"));
+    await fireEvent.press(screen.getByTestId("integration-disconnect-strava"));
+
+    expect(
+      screen.getAllByText("Disconnect Strava? Your GradientPeak data stays. Sync stops.").length,
+    ).toBeTruthy();
+  });
+
+  it("shows the missing-credentials state for a successful empty response", async () => {
+    integrationOverviewMock = [];
+    await renderNative(<IntegrationsScreen />);
+
+    expect(screen.getByText("Server credentials are not configured.")).toBeTruthy();
+    expect(screen.queryByTestId("integration-provider-list-error")).toBeNull();
+  });
+
+  it("shows a retryable query error without enabling unknown providers", async () => {
+    integrationOverviewErrorMock = new Error("network unavailable");
+    await renderNative(<IntegrationsScreen />);
+
+    expect(screen.getByTestId("integration-provider-list-error")).toBeTruthy();
+    expect(screen.queryByTestId("integration-provider-fallback-strava")).toBeNull();
+    expect(screen.queryByTestId("integration-connect-strava")).toBeNull();
+    await fireEvent.press(screen.getByTestId("integration-provider-list-retry"));
+    expect(refetchMock).toHaveBeenCalled();
+  });
+
+  it("keeps only cached configured providers actionable during a refresh error", async () => {
+    integrationOverviewErrorMock = new Error("network unavailable");
+    integrationOverviewHasCachedDataMock = true;
+
+    await renderNative(<IntegrationsScreen />);
+
+    expect(screen.getByTestId("integration-provider-list-error")).toBeTruthy();
+    expect(screen.getByTestId("integration-provider-strava")).toBeTruthy();
+    expect(screen.getByTestId("integration-disconnect-strava")).toBeTruthy();
+    expect(screen.queryByTestId("integration-provider-fallback-strava")).toBeNull();
+  });
+
+  it("shows non-sensitive copy for a provider identity callback failure", async () => {
+    await renderNative(<IntegrationsScreen />);
+
+    await act(() => {
+      deepLinkHandlerMock?.({
+        url: "gradientpeak-dev://integrations?error=provider_identity_failed&error_detail=provider-account-42",
+      });
+    });
+
+    expect(screen.getAllByText("Could not verify the provider account.").length).toBeTruthy();
+    expect(screen.queryByText("provider-account-42")).toBeNull();
+  });
+
+  it("explains how to recover from Wahoo's active-authorization limit", async () => {
+    await renderNative(<IntegrationsScreen />);
+
+    await act(() => {
+      deepLinkHandlerMock?.({
+        url: "gradientpeak-dev://integrations?integration=failed&provider=wahoo&error=wahoo_token_limit_exceeded",
+      });
+    });
 
     expect(
       screen.getAllByText(
-        "Disconnect Strava? Existing GradientPeak activities, files, plans, and metrics stay in your account. Future provider sync will stop until you reconnect.",
+        "Wahoo has too many active GradientPeak authorizations. Revoke GradientPeak in your Wahoo account, then try again.",
       ).length,
     ).toBeTruthy();
   });
