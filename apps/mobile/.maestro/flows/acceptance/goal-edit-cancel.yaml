@@ -1,0 +1,80 @@
+appId: com.deancochran.gradientpeak.dev
+name: Athlete repairs no invalid completion target when canceling a Goal edit
+---
+# Start from the real Calendar route and its selected goal-date ledger entry.
+# The runner creates the authenticated athlete and exact disposable goal record.
+- tapOn:
+    id: tab-button-plan
+- tapOn:
+    id: plan-view-calendar
+- extendedWaitUntil:
+    visible:
+      id: calendar-screen-ready
+    timeout: 30000
+- tapOn:
+    id: calendar-reset-today-entry
+- extendedWaitUntil:
+    notVisible:
+      id: calendar-date-jump-loading
+    timeout: 30000
+- repeat:
+    times: ${MAESTRO_ACCEPTANCE_TARGET_MONTH_DELTA}
+    commands:
+      - tapOn:
+          id: calendar-next-month
+- tapOn:
+    id: calendar-day-select-${MAESTRO_ACCEPTANCE_TARGET_DATE}
+- scrollUntilVisible:
+    element:
+      id: planning-ledger-milestone-${MAESTRO_ACCEPTANCE_GOAL_ID}
+    direction: DOWN
+- tapOn:
+    id: planning-ledger-milestone-${MAESTRO_ACCEPTANCE_GOAL_ID}
+- extendedWaitUntil:
+    visible:
+      id: goal-detail-card
+    timeout: 30000
+- assertVisible: ${MAESTRO_ACCEPTANCE_GOAL_TITLE}
+- takeScreenshot: goal-edit-detail-before-cancel
+- tapOn:
+    id: goal-detail-options-trigger
+- tapOn:
+    id: goal-detail-options-edit
+- extendedWaitUntil:
+    visible:
+      id: goal-edit-screen
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: goal-duration
+    direction: DOWN
+# Make the optional completion duration explicitly invalid: selecting one second
+# initializes the all-zero picker, then selecting zero leaves a repairable draft.
+- tapOn:
+    id: goal-duration
+- tapOn:
+    id: goal-duration-seconds
+- tapOn: "1"
+- tapOn:
+    id: goal-duration-seconds
+- tapOn: "0"
+- tapOn: "Done Duration"
+- assertVisible: "Enter a valid duration."
+- takeScreenshot: goal-edit-invalid-duration
+# Invalid Done deliberately keeps the duration picker open. The first Back
+# cancels only that picker and restores its pre-picker draft; the second Back
+# cancels the Goal edit route without submitting.
+- pressKey: back
+- extendedWaitUntil:
+    notVisible:
+      id: goal-duration-duration-overlay
+    timeout: 30000
+- assertVisible:
+    id: goal-edit-screen
+- pressKey: back
+- extendedWaitUntil:
+    visible:
+      id: goal-detail-card
+    timeout: 30000
+- assertVisible: ${MAESTRO_ACCEPTANCE_GOAL_TITLE}
+- takeScreenshot: goal-edit-cancelled-detail

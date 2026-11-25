@@ -1,12 +1,168 @@
-import { TRPCError } from "@trpc/server";
+import type { DrizzleDbClient } from "@repo/db";
+import { relationalSchema } from "@repo/db/schema";
+import { sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/node-postgres";
 import type { Context } from "./context";
+import { internalServerError } from "./lib/errors/trpc";
+
+export type DrizzleTransactionClient = Parameters<Parameters<DrizzleDbClient["transaction"]>[0]>[0];
+export type DrizzleQueryExecutor = DrizzleDbClient | DrizzleTransactionClient;
+
+type RepeatableReadAccessMode = "read only" | "read write";
+const PROFILE_ADVISORY_LOCK_NAMESPACE = 0;
+const repeatableReadTransactions = new WeakMap<object, RepeatableReadAccessMode>();
+
+function isRootDb(db: DrizzleQueryExecutor): db is DrizzleDbClient {
+  return "$client" in db;
+}
+
+/**
+ * Owns one repeatable-read snapshot at a public read boundary. Nested readers may
+ * reuse only a transaction created by this helper, which prevents an accidental
+ * savepoint or an unknown read-committed parent from weakening snapshot coherence.
+ */
+export async function withRepeatableReadSnapshot<T>(
+  db: DrizzleQueryExecutor,
+  read: (tx: DrizzleTransactionClient) => Promise<T>,
+  options: { accessMode?: RepeatableReadAccessMode } = {},
+): Promise<T> {
+  const accessMode = options.accessMode ?? "read only";
+  if (isRootDb(db)) {
+    return db.transaction(
+      async (tx) => {
+        repeatableReadTransactions.set(tx, accessMode);
+        try {
+          return await read(tx);
+        } finally {
+          repeatableReadTransactions.delete(tx);
+        }
+      },
+      { accessMode, isolationLevel: "repeatable read" },
+    );
+  }
+
+  const parentAccessMode = repeatableReadTransactions.get(db);
+  if (parentAccessMode === undefined) {
+    throw new Error("Existing transaction is not a known repeatable-read snapshot");
+  }
+  if (accessMode === "read write" && parentAccessMode !== "read write") {
+    throw new Error("Read-write snapshot work cannot reuse a read-only parent transaction");
+  }
+  return read(db);
+}
+
+/**
+ * Serializes a profile before opening its repeatable-read snapshot, then takes
+ * the transaction-scoped form of the same lock as the transaction's first
+ * statement. The session lock and transaction must share one connection so
+ * there is no handoff gap where another profile writer can establish a stale
+ * snapshot. The complete callback runs once; this helper never partially
+ * retries application work.
+ */
+export async function withProfileFencedRepeatableReadSnapshot<T>(
+  db: DrizzleDbClient,
+  profileId: string,
+  write: (tx: DrizzleTransactionClient) => Promise<T>,
+  options: { lockNamespace?: 0 | 1 } = {},
+): Promise<T> {
+  const lockNamespace = options.lockNamespace ?? 0;
+  const client = await db.$client.connect();
+  const connectionDb = drizzle({ client, schema: relationalSchema, casing: "snake_case" });
+  let sessionLockHeld = false;
+  let destroyConnection = false;
+  try {
+    await client.query("select pg_advisory_lock(hashtextextended($1, $2))", [
+      profileId,
+      lockNamespace,
+    ]);
+    sessionLockHeld = true;
+    return await connectionDb.transaction(
+      async (tx) => {
+        repeatableReadTransactions.set(tx, "read write");
+        try {
+          await tx.execute(
+            sql`select pg_advisory_xact_lock(hashtextextended(${profileId}, ${lockNamespace}))`,
+          );
+          const released = await client.query<{ released: boolean }>(
+            "select pg_advisory_unlock(hashtextextended($1, $2)) as released",
+            [profileId, lockNamespace],
+          );
+          if (released.rows[0]?.released !== true) {
+            throw new Error("Profile snapshot session fence could not be transferred");
+          }
+          sessionLockHeld = false;
+          return await write(tx);
+        } finally {
+          repeatableReadTransactions.delete(tx);
+        }
+      },
+      { accessMode: "read write", isolationLevel: "repeatable read" },
+    );
+  } finally {
+    if (sessionLockHeld) {
+      try {
+        await client.query("select pg_advisory_unlock(hashtextextended($1, $2))", [
+          profileId,
+          lockNamespace,
+        ]);
+      } catch {
+        destroyConnection = true;
+      }
+    }
+    client.release(destroyConnection);
+  }
+}
+
+/**
+ * Reserves one pool connection and holds the profile advisory lock for the
+ * complete operation. Transactions opened by the callback commit independently
+ * while the session lock remains held, allowing durable evidence to precede an
+ * irreversible external effect without opening a disconnect handoff gap.
+ */
+export async function withProfileAdvisorySessionFence<T>(
+  db: DrizzleDbClient,
+  profileId: string,
+  operation: (connectionDb: Pick<DrizzleDbClient, "transaction">) => Promise<T>,
+): Promise<T> {
+  const client = await db.$client.connect();
+  const connectionDb = drizzle({
+    client,
+    schema: relationalSchema,
+    casing: "snake_case",
+  });
+  let destroyConnection = false;
+  let sessionLockHeld = false;
+  try {
+    try {
+      await client.query("select pg_advisory_lock(hashtextextended($1, $2))", [
+        profileId,
+        PROFILE_ADVISORY_LOCK_NAMESPACE,
+      ]);
+      sessionLockHeld = true;
+    } catch (error) {
+      destroyConnection = true;
+      throw error;
+    }
+    return await operation(connectionDb);
+  } finally {
+    if (sessionLockHeld) {
+      try {
+        const unlocked = await client.query<{ released: boolean }>(
+          "select pg_advisory_unlock(hashtextextended($1, $2)) as released",
+          [profileId, PROFILE_ADVISORY_LOCK_NAMESPACE],
+        );
+        if (unlocked.rows[0]?.released !== true) destroyConnection = true;
+      } catch {
+        destroyConnection = true;
+      }
+    }
+    client.release(destroyConnection);
+  }
+}
 
 export function getRequiredDb(ctx: Context) {
   if (!ctx.db) {
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: "Database client unavailable",
-    });
+    throw internalServerError("Database client unavailable");
   }
 
   return ctx.db;

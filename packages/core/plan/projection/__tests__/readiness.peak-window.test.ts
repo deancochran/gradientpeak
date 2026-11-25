@@ -6,6 +6,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { requireFixtureValue } from "../../../testing/requireFixtureValue";
 import { computeProjectionPointReadinessScores } from "../readiness";
 import {
   createMockGoal,
@@ -14,14 +15,18 @@ import {
   RACE_PRESETS,
 } from "./readiness.test-utils";
 
+function requireScore(scores: number[], index: number): number {
+  return requireFixtureValue(scores[index], `expected readiness score at index ${index}`);
+}
+
 describe("Dynamic Peak Windows", () => {
   it("5K uses shorter window (~10 days)", () => {
     const points = createTestScenario({
       startDate: "2026-03-01",
       durationDays: 30,
-      startingCtl: 50,
-      startingAtl: 48,
-      ctlProgression: "flat",
+      startingLongTermLoad: 50,
+      startingRecentLoad: 48,
+      longTermLoadProgression: "flat",
     });
 
     const fiveKTarget = createRaceTarget(
@@ -62,9 +67,9 @@ describe("Dynamic Peak Windows", () => {
     const points = createTestScenario({
       startDate: "2026-03-01",
       durationDays: 40,
-      startingCtl: 50,
-      startingAtl: 48,
-      ctlProgression: "flat",
+      startingLongTermLoad: 50,
+      startingRecentLoad: 48,
+      longTermLoadProgression: "flat",
     });
 
     const marathonTarget = createRaceTarget(
@@ -97,9 +102,9 @@ describe("Dynamic Peak Windows", () => {
     const points = createTestScenario({
       startDate: "2026-03-01",
       durationDays: 50,
-      startingCtl: 50,
-      startingAtl: 48,
-      ctlProgression: "flat",
+      startingLongTermLoad: 50,
+      startingRecentLoad: 48,
+      longTermLoadProgression: "flat",
     });
 
     const ultraTarget = createRaceTarget(
@@ -134,9 +139,9 @@ describe("Conflict Detection", () => {
     const points = createTestScenario({
       startDate: "2026-03-01",
       durationDays: 20,
-      startingCtl: 65,
-      startingAtl: 60,
-      ctlProgression: "flat",
+      startingLongTermLoad: 65,
+      startingRecentLoad: 60,
+      longTermLoadProgression: "flat",
     });
 
     // Two marathons 3 days apart (within functional recovery ~5 days)
@@ -167,12 +172,12 @@ describe("Conflict Detection", () => {
 
     // Second marathon should show impact of first marathon
     // With conflict detection, it won't be forced to local max
-    expect(scores[marathon2Index]).toBeLessThanOrEqual(scores[marathon1Index]!);
+    expect(scores[marathon2Index]).toBeLessThanOrEqual(requireScore(scores, marathon1Index));
 
     console.log("Conflicting marathons:", {
       marathon1: scores[marathon1Index],
       marathon2: scores[marathon2Index],
-      difference: scores[marathon1Index]! - scores[marathon2Index]!,
+      difference: requireScore(scores, marathon1Index) - requireScore(scores, marathon2Index),
       note: "Marathon 2 should show fatigue, not forced peak",
     });
   });
@@ -181,9 +186,9 @@ describe("Conflict Detection", () => {
     const points = createTestScenario({
       startDate: "2026-03-01",
       durationDays: 30,
-      startingCtl: 50,
-      startingAtl: 48,
-      ctlProgression: "flat",
+      startingLongTermLoad: 50,
+      startingRecentLoad: 48,
+      longTermLoadProgression: "flat",
     });
 
     // Marathon and 5K 10 days apart (outside functional recovery)
@@ -229,9 +234,9 @@ describe("Peak Forcing Behavior", () => {
     const points = createTestScenario({
       startDate: "2026-03-01",
       durationDays: 12,
-      startingCtl: 65,
-      startingAtl: 60,
-      ctlProgression: "flat",
+      startingLongTermLoad: 65,
+      startingRecentLoad: 60,
+      longTermLoadProgression: "flat",
     });
 
     // Back-to-back marathons (1 day apart)
@@ -262,9 +267,9 @@ describe("Peak Forcing Behavior", () => {
 
     // Marathon 2 should show natural fatigue curve, not forced peak
     // With conflict detection, it should be lower
-    expect(scores[marathon2Index]).toBeLessThanOrEqual(scores[marathon1Index]!);
+    expect(scores[marathon2Index]).toBeLessThanOrEqual(requireScore(scores, marathon1Index));
 
-    const difference = scores[marathon1Index]! - scores[marathon2Index]!;
+    const difference = requireScore(scores, marathon1Index) - requireScore(scores, marathon2Index);
 
     console.log("Back-to-back marathons (no peak forcing):", {
       marathon1: scores[marathon1Index],
@@ -278,9 +283,9 @@ describe("Peak Forcing Behavior", () => {
     const points = createTestScenario({
       startDate: "2026-03-01",
       durationDays: 30,
-      startingCtl: 50,
-      startingAtl: 48,
-      ctlProgression: "flat", // Use flat to avoid CTL progression affecting peak
+      startingLongTermLoad: 50,
+      startingRecentLoad: 48,
+      longTermLoadProgression: "flat", // Use flat to avoid LongTermLoad progression affecting peak
     });
 
     // Single isolated marathon
@@ -299,7 +304,7 @@ describe("Peak Forcing Behavior", () => {
     });
 
     const marathonIndex = 19; // Day 20
-    const marathonScore = scores[marathonIndex];
+    const marathonScore = requireScore(scores, marathonIndex);
 
     // Should be a local maximum within its window (or very close to it)
     // Check a smaller window around the goal
@@ -308,7 +313,7 @@ describe("Peak Forcing Behavior", () => {
 
     let higherScoresCount = 0;
     for (let i = windowStart; i <= windowEnd; i++) {
-      if (i !== marathonIndex && scores[i]! > marathonScore!) {
+      if (i !== marathonIndex && requireScore(scores, i) > marathonScore) {
         higherScoresCount++;
       }
     }
@@ -331,9 +336,9 @@ describe("Dynamic Peak Windows - Edge Cases", () => {
     const points = createTestScenario({
       startDate: "2026-03-01",
       durationDays: 20,
-      startingCtl: 50,
-      startingAtl: 48,
-      ctlProgression: "flat",
+      startingLongTermLoad: 50,
+      startingRecentLoad: 48,
+      longTermLoadProgression: "flat",
     });
 
     // Goal without targets
@@ -354,9 +359,9 @@ describe("Dynamic Peak Windows - Edge Cases", () => {
     const points = createTestScenario({
       startDate: "2026-03-01",
       durationDays: 18,
-      startingCtl: 65,
-      startingAtl: 60,
-      ctlProgression: "flat",
+      startingLongTermLoad: 65,
+      startingRecentLoad: 60,
+      longTermLoadProgression: "flat",
     });
 
     // Three marathons in quick succession
@@ -394,9 +399,9 @@ describe("Dynamic Peak Windows - Edge Cases", () => {
 
     // All three should show impact of cumulative fatigue
     // Marathon 2 should be affected by Marathon 1
-    expect(scores[marathon2Index]).toBeLessThanOrEqual(scores[marathon1Index]!);
+    expect(scores[marathon2Index]).toBeLessThanOrEqual(requireScore(scores, marathon1Index));
     // Marathon 3 should be affected by Marathon 2
-    expect(scores[marathon3Index]).toBeLessThanOrEqual(scores[marathon2Index]!);
+    expect(scores[marathon3Index]).toBeLessThanOrEqual(requireScore(scores, marathon2Index));
 
     console.log("Three conflicting marathons:", {
       marathon1: scores[marathon1Index],
@@ -410,9 +415,9 @@ describe("Dynamic Peak Windows - Edge Cases", () => {
     const points = createTestScenario({
       startDate: "2026-03-01",
       durationDays: 20,
-      startingCtl: 50,
-      startingAtl: 48,
-      ctlProgression: "flat",
+      startingLongTermLoad: 50,
+      startingRecentLoad: 48,
+      longTermLoadProgression: "flat",
     });
 
     const marathonTarget = createRaceTarget(
@@ -444,9 +449,9 @@ describe("Peak Window Scaling", () => {
     const points = createTestScenario({
       startDate: "2026-03-01",
       durationDays: 50,
-      startingCtl: 50,
-      startingAtl: 48,
-      ctlProgression: "flat",
+      startingLongTermLoad: 50,
+      startingRecentLoad: 48,
+      longTermLoadProgression: "flat",
     });
 
     // Compare 5K vs Marathon vs Ultra

@@ -1,0 +1,36 @@
+appId: com.deancochran.gradientpeak.dev
+name: Completed athlete signs in visibly before the goal-progress proof
+---
+# The disposable runner provisions this completed athlete; this flow proves the
+# native session through the existing visible sign-in controls only.
+- openLink: "gradientpeak-dev://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8083"
+- extendedWaitUntil:
+    visible:
+      id: sign-in-screen
+    timeout: 90000
+- assertVisible: ${MAESTRO_ACCEPTANCE_RUNTIME_SENTINEL}
+- tapOn:
+    id: email-input
+- eraseText: 200
+- inputText: ${MAESTRO_ACCEPTANCE_EMAIL}
+- tapOn:
+    id: password-input
+- eraseText: 200
+- inputText: ${MAESTRO_ACCEPTANCE_PASSWORD}
+- hideKeyboard
+- tapOn:
+    id: sign-in-button
+- extendedWaitUntil:
+    visible:
+      id: home-screen
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: "Current: 285 W"
+    direction: DOWN
+- assertVisible: ${MAESTRO_ACCEPTANCE_GOAL_TITLE}
+- assertVisible: "Current: 285 W"
+- assertVisible: "Target: 300 W"
+- assertVisible: "Remaining gap: 15 W"
+- assertVisible: "Target date: ${MAESTRO_ACCEPTANCE_TARGET_DATE}"
+- takeScreenshot: goal-progress-home

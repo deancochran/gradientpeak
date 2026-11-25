@@ -3,8 +3,8 @@ import { checkboxFixtures } from "./fixtures";
 import { Checkbox } from "./index.native";
 
 describe("Checkbox native", () => {
-  it("maps normalized test props onto the root control", () => {
-    const { getByLabelText } = renderNative(
+  it("maps normalized test props onto the root control", async () => {
+    const { getByLabelText } = await renderNative(
       <Checkbox {...checkboxFixtures.terms} checked={false} onCheckedChange={() => {}} />,
     );
 

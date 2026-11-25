@@ -1,13 +1,11 @@
-import type { IconProps } from "../icon/shared";
+import type { EmptyStateCardProps } from "../empty-state-card/shared";
 
-export interface ErrorStateCardProps {
-  icon?: IconProps["as"];
+export interface ErrorStateCardProps
+  extends Pick<EmptyStateCardProps, "icon" | "iconSize" | "iconColor" | "compact" | "testID"> {
   title?: string;
-  message: string;
+  message?: string;
   onRetry?: () => void;
   retryLabel?: string;
-  iconSize?: number;
-  iconColor?: string;
   showRetryButton?: boolean;
 }
 
