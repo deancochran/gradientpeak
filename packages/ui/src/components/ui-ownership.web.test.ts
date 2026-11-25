@@ -152,6 +152,8 @@ describe("UI ownership guardrails", () => {
       "planning/goal-progress-presentation.ts",
       "planning/plan-dashboard.tsx",
       "planning/recorded-goal-history.tsx",
+      // Session identity, API scenario previews, and app-owned navigation recovery.
+      "planning/session-scenario-preview.tsx",
       "planning/training-load-chart.tsx",
       "planning/training-load-path.tsx",
       "planning/use-recorded-goal-history.ts",
