@@ -38,7 +38,6 @@ describe("event schedule presentation", () => {
     ],
     ["New York fall-back", "2026-11-01T05:30:45.987Z", "America/New_York", [2026, 10, 1, 1, 30]],
     ["Kolkata", "2026-06-02T16:30:45.987Z", "Asia/Kolkata", [2026, 5, 2, 22, 0]],
-    ["an offsetless parsed instant", "2026-06-02T16:30:45.987", "Asia/Kolkata", [2026, 5, 3, 2, 0]],
   ])("keeps %s as event wall time and drops seconds for native inputs", (_, startsAt, timezone, expected) => {
     const editorDate = eventDateForEditor({ starts_at: startsAt, timezone });
 
@@ -51,6 +50,35 @@ describe("event schedule presentation", () => {
       editorDate.getSeconds(),
       editorDate.getMilliseconds(),
     ]).toEqual([...expected, 0, 0]);
+  });
+
+  it("preserves the host-parsed instant for offsetless values before projecting it into the event zone", () => {
+    const startsAt = "2026-06-02T16:30:45.987";
+    const values = Object.fromEntries(
+      new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Kolkata",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+      })
+        .formatToParts(new Date(startsAt))
+        .filter((part) => part.type !== "literal")
+        .map((part) => [part.type, Number(part.value)]),
+    ) as Record<"year" | "month" | "day" | "hour" | "minute", number>;
+    const editorDate = eventDateForEditor({ starts_at: startsAt, timezone: "Asia/Kolkata" });
+
+    expect([
+      editorDate.getFullYear(),
+      editorDate.getMonth(),
+      editorDate.getDate(),
+      editorDate.getHours(),
+      editorDate.getMinutes(),
+      editorDate.getSeconds(),
+      editorDate.getMilliseconds(),
+    ]).toEqual([values.year, values.month - 1, values.day, values.hour, values.minute, 0, 0]);
   });
 
   it("retains editor fallbacks for all-day, missing/invalid zones, and invalid instants", () => {

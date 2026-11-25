@@ -127,7 +127,6 @@ describe("CalendarEventForm", () => {
     ["New York spring-forward", "2026-03-08T07:30:45.987Z", "America/New_York", "03:30"],
     ["New York fall-back", "2026-11-01T05:30:45.987Z", "America/New_York", "01:30"],
     ["Kolkata", "2026-06-02T16:30:45.987Z", "Asia/Kolkata", "22:00"],
-    ["an offsetless parsed instant", "2026-06-02T16:30:45.987", "Asia/Kolkata", "02:00"],
   ])("uses %s wall time in the browser event editor", (_, startsAt, timezone, expectedTime) => {
     render(
       <CalendarEventForm
@@ -138,6 +137,32 @@ describe("CalendarEventForm", () => {
     );
 
     expect((screen.getByLabelText("Time") as HTMLInputElement).value).toBe(expectedTime);
+  });
+
+  it("preserves the host-parsed instant for offsetless values before projecting it into the event zone", () => {
+    const startsAt = "2026-06-02T16:30:45.987";
+    const values = Object.fromEntries(
+      new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Kolkata",
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+      })
+        .formatToParts(new Date(startsAt))
+        .filter((part) => part.type !== "literal")
+        .map((part) => [part.type, part.value]),
+    ) as Record<"hour" | "minute", string>;
+    render(
+      <CalendarEventForm
+        event={{ ...event, starts_at: startsAt, timezone: "Asia/Kolkata" }}
+        month="2026-10"
+        view="month"
+      />,
+    );
+
+    expect((screen.getByLabelText("Time") as HTMLInputElement).value).toBe(
+      `${values.hour}:${values.minute}`,
+    );
   });
 
   it("keeps missing-zone and invalid-instant time drafts blank", () => {
