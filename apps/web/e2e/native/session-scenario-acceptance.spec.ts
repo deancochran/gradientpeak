@@ -444,6 +444,7 @@ test("native athlete explicitly retries the same scenario request after its comm
         ]);
         runFlow("session-scenario-lost-ack-retry.yaml", [
           "session-scenario-lost-ack-reopened.png",
+          "session-scenario-lost-ack-dispatched.png",
           "session-scenario-lost-ack-recovered.png",
         ]);
       },
