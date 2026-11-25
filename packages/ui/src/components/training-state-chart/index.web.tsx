@@ -227,7 +227,7 @@ function TrainingStateChart({
     >
       <TrainingStateLegend
         metrics={[]}
-        sourceLabels={sourceLabels}
+        {...(sourceLabels === undefined ? {} : { sourceLabels })}
         sources={[...new Set(series.map(({ source }) => source))]}
       />
       {chart}

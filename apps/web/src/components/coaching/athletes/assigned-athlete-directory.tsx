@@ -1,3 +1,4 @@
+import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
 import { Button } from "@repo/ui/components/button";
 import {
   Card,
@@ -15,41 +16,12 @@ import {
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
-type Athlete = {
-  profileId: string;
-  displayName: string | null;
-  username: string | null;
-  metrics?: {
-    status: "available" | "unavailable" | "unshared";
-    freshness?: "fresh" | "stale" | "unavailable";
-  };
-  activities?: {
-    status: "available" | "unavailable" | "unshared";
-    planningTimezone: string | null;
-    rangeStartDate: string | null;
-    rangeEndDate: string | null;
-    qualifier?: "fresh" | "stale" | "partial" | "unavailable";
-    points: Array<{
-      date: string;
-      dailyLoad: number;
-      fitness: number;
-      fatigue: number;
-      form: number;
-      coverageStatus: "complete" | "partial";
-      omittedActivityCount: number;
-    }>;
-  };
-  goals?: {
-    status: "available" | "unavailable" | "unshared";
-    items: Array<{
-      id: string;
-      name: string;
-      targetDate: string;
-      category: string;
-      priority: number;
-    }>;
-  };
-};
+type VisualRoster =
+  inferRouterOutputs<AppRouter>["organizations"]["coachAthletes"]["listVisualRoster"];
+type VisualAthlete = VisualRoster["items"][number];
+// Identity-only callers remain supported; evidence uses the authoritative DTO.
+type Athlete = Pick<VisualAthlete, "profileId" | "displayName" | "username"> &
+  Partial<Pick<VisualAthlete, "metrics" | "activities" | "goals">>;
 type Page = { items: Athlete[]; nextCursor: string | null; hasMore: boolean };
 
 export function AssignedAthleteDirectory({
