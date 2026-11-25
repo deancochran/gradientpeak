@@ -11,6 +11,7 @@ import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
 import {
   activityPlans,
   activityTrainingEffects,
+  chatbotOperationReceipts,
   plannedSessions,
   profileAthleteState,
   profileGoals,
@@ -32,6 +33,7 @@ export type SessionScenarioFixture = {
   sessionId: string;
   sessionCount: number;
   sessionRevision: number;
+  operationReceiptCount: (operationId: string) => Promise<number>;
   stateRevision: number;
   substituteId: string;
   substituteName: string;
@@ -280,6 +282,18 @@ export async function createSessionScenarioFixture(input: {
     sessionId: session.id,
     sessionCount: 2,
     sessionRevision: session.revision,
+    operationReceiptCount: async (operationId) =>
+      (
+        await input.database.db
+          .select({ id: chatbotOperationReceipts.id })
+          .from(chatbotOperationReceipts)
+          .where(
+            and(
+              eq(chatbotOperationReceipts.profile_id, input.actor.profileId),
+              eq(chatbotOperationReceipts.operation_id, operationId),
+            ),
+          )
+      ).length,
     stateRevision: state.published_revision,
     substituteId: substitute.id,
     substituteName: substitute.name,

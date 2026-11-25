@@ -3,7 +3,6 @@ import {
   activityPlanStructureSchema,
   calculateRollingTrainingQuality,
   canonicalActivityCategorySchema,
-  canonicalTrainingPlanStructureSchema,
   createObservationQuantificationBundle,
   createPrescriptionQuantificationBundle,
   createUnavailableActivityPlanPlanningEstimate,
@@ -11,6 +10,7 @@ import {
   getPlannedEstimate,
   loadCoverageSchema,
   loadSeriesIdentitySchema,
+  persistedTrainingPlanStructureSchema,
 } from "@repo/core";
 import {
   addDaysDateOnlyUtc,
@@ -414,7 +414,7 @@ export const homeRouter = createTRPCRouter({
       }
 
       if (plan?.structure) {
-        canonicalTrainingPlanStructureSchema.parse(plan.structure);
+        persistedTrainingPlanStructureSchema.parse(plan.structure);
       }
 
       // --- 2. Calculate Dates ---
