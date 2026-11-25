@@ -95,21 +95,21 @@ export async function acknowledgeDelegatedCompletion(input: {
         // row lock, so a revoke/reassignment between this read and insertion
         // fails closed rather than creating a historical authority claim.
         .innerJoin(
-          organizationMemberships,
-          and(
-            eq(organizationMemberships.organization_id, coachingEngagements.organization_id),
-            eq(organizationMemberships.profile_id, input.actorProfileId),
-            isNull(organizationMemberships.ended_at),
-            isNull(organizationMemberships.suspended_at),
-          ),
-        )
-        .innerJoin(
           coachingAssignments,
           and(
             eq(coachingAssignments.organization_id, coachingEngagements.organization_id),
             eq(coachingAssignments.engagement_id, coachingEngagements.id),
-            eq(coachingAssignments.coach_membership_id, organizationMemberships.id),
             isNull(coachingAssignments.ended_at),
+          ),
+        )
+        .innerJoin(
+          organizationMemberships,
+          and(
+            eq(organizationMemberships.organization_id, coachingAssignments.organization_id),
+            eq(organizationMemberships.id, coachingAssignments.coach_membership_id),
+            eq(organizationMemberships.profile_id, input.actorProfileId),
+            isNull(organizationMemberships.ended_at),
+            isNull(organizationMemberships.suspended_at),
           ),
         )
         .innerJoin(
