@@ -253,12 +253,16 @@ describe("SessionScenarioPreview", () => {
     mocks.apply
       .mockRejectedValueOnce(new Error("lost acknowledgement"))
       .mockResolvedValueOnce({ status: "applied", action: "unchanged" });
-    renderPreview();
+    const { rerender } = renderPreview();
 
     fireEvent.click(screen.getByRole("button", { name: "Apply this scenario" }));
     fireEvent.click(screen.getByRole("button", { name: "Confirm apply" }));
-    fireEvent.click(screen.getByRole("button", { name: "Check or retry this change" }));
     await screen.findByText(/could not confirm whether/i);
+    mocks.previewResult.data = { status: "unavailable", reason: "session_not_scheduled" };
+    rerender(
+      <SessionScenarioPreview activityPlan={activityPlan} session={session} timeZone="UTC" />,
+    );
+    expect(screen.getByRole("button", { name: "Check or retry this change" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Check or retry this change" }));
     await screen.findByText(/Applied: unchanged/i);
     expect(mocks.apply).toHaveBeenCalledTimes(2);
@@ -299,6 +303,28 @@ describe("SessionScenarioPreview", () => {
     expect(screen.getByText(/Unable to save safe recovery/i)).toBeTruthy();
     expect(mocks.apply).not.toHaveBeenCalled();
     setItem.mockRestore();
+  });
+
+  it("persists and submits one frozen operation from a double confirmation", async () => {
+    mocks.previewResult.data = availablePreview();
+    let resolveApply: (value: unknown) => void = () => undefined;
+    mocks.apply.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveApply = resolve;
+        }),
+    );
+    renderPreview();
+    fireEvent.click(screen.getByRole("button", { name: "Apply this scenario" }));
+    const confirm = screen.getByRole("button", { name: "Confirm apply" });
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    await waitFor(() => expect(mocks.apply).toHaveBeenCalledOnce());
+    expect(mocks.apply.mock.calls[0]?.[0]).toMatchObject({
+      expectedPreviewFingerprint: `v1:sha256:${"a".repeat(64)}`,
+      preview: expect.objectContaining({ sessionId: "session-a" }),
+    });
+    resolveApply({ status: "applied", action: "unchanged" });
   });
 
   it("does not settle an old actor's late acknowledgement into a replacement actor", async () => {

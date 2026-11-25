@@ -2,6 +2,16 @@ import { expect, test } from "../fixtures";
 import { expectNoHorizontalOverflow } from "../pages";
 import { createSessionScenarioFixture } from "../support/scenario-fixture";
 
+function applyScenarioRequest(body: unknown) {
+  const candidate = body as { 0?: { json?: unknown } };
+  if (!candidate[0]?.json) throw new Error("Expected a batched apply-scenario request.");
+  return candidate[0].json as {
+    expectedPreviewFingerprint: string;
+    operationId: string;
+    preview: { sessionId: string };
+  };
+}
+
 test("a published bike baseline supports each read-only session scenario without durable writes", async ({
   athleteActor,
   athletePage,
@@ -101,12 +111,13 @@ test("a confirmed scenario applies one selected occurrence and retries a lost ac
   await expect(fixture.snapshot()).resolves.toEqual(before);
 
   await athletePage.getByRole("button", { name: "Apply this scenario" }).click();
-  await athletePage.getByRole("button", { name: "Confirm apply" }).click();
+  const applyRequests: unknown[] = [];
   await athletePage.route("**/api/trpc/plannedSessions.applyScenario?batch=1", async (route) => {
+    applyRequests.push(route.request().postDataJSON());
     await route.fetch();
     await route.abort();
   });
-  await athletePage.getByRole("button", { name: "Check or retry this change" }).click();
+  await athletePage.getByRole("button", { name: "Confirm apply" }).click();
   await expect(
     athletePage.getByText(/could not confirm whether the change was applied/i),
   ).toBeVisible();
@@ -121,6 +132,10 @@ test("a confirmed scenario applies one selected occurrence and retries a lost ac
   await athletePage.screenshot({
     path: testInfo.outputPath("session-scenario-recovery.png"),
   });
+  await athletePage.route("**/api/trpc/plannedSessions.applyScenario?batch=1", async (route) => {
+    applyRequests.push(route.request().postDataJSON());
+    await route.continue();
+  });
   await recovery.click();
   await expect(athletePage.getByText(/Applied: repointed/i)).toBeVisible();
   await athletePage.getByText(/Applied: repointed/i).scrollIntoViewIfNeeded();
@@ -128,6 +143,13 @@ test("a confirmed scenario applies one selected occurrence and retries a lost ac
   await athletePage.screenshot({
     path: testInfo.outputPath("session-scenario-success.png"),
   });
+  expect(applyRequests).toHaveLength(2);
+  expect(applyRequests[1]).toEqual(applyRequests[0]);
+  const request = applyScenarioRequest(applyRequests[0]);
+  expect(request.preview.sessionId).toBe(fixture.sessionId);
+  expect(request.expectedPreviewFingerprint).toMatch(/^v1:sha256:[0-9a-f]{64}$/);
+  await expect(fixture.operationReceiptCount(request.operationId)).resolves.toBe(1);
+  await athletePage.unroute("**/api/trpc/plannedSessions.applyScenario?batch=1");
 
   const [sessions, plans] = await fixture.snapshot();
   const selected = sessions.find((session) => session.id === fixture.sessionId);

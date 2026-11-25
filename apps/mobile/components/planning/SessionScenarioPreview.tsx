@@ -51,6 +51,7 @@ function SessionScenarioPreviewContents({
   const [hydrated, setHydrated] = useState(false);
   const operationRef = useRef<FrozenPlannedSessionScenarioOperation | null>(null);
   const armingRef = useRef(false);
+  const submittingRef = useRef(false);
   const generationRef = useRef(0);
   const { user } = useAuth();
   const actorId = user?.id ?? null;
@@ -172,31 +173,34 @@ function SessionScenarioPreviewContents({
       }
       setConfirming(false);
       setOutcome(null);
+      void submitOperation(next);
     } finally {
       armingRef.current = false;
     }
   };
-  const submitOperation = async () => {
+  const submitOperation = async (operationToSubmit = operation) => {
     if (
-      !operation ||
+      !operationToSubmit ||
       !actorId ||
-      !isCurrentPlannedSessionScenarioOperation(operation, {
+      !isCurrentPlannedSessionScenarioOperation(operationToSubmit, {
         actorId,
         sessionId: session.id,
-      })
+      }) ||
+      submittingRef.current
     )
       return;
+    submittingRef.current = true;
     try {
       const generation = generationRef.current;
       const submittedActor = actorId;
       const isCurrentSubmission = () =>
         generation === generationRef.current &&
         actorRef.current === submittedActor &&
-        isCurrentPlannedSessionScenarioOperation(operation, {
+        isCurrentPlannedSessionScenarioOperation(operationToSubmit, {
           actorId: submittedActor,
           sessionId: session.id,
         });
-      const result = await applyMutation.mutateAsync(operation.request);
+      const result = await applyMutation.mutateAsync(operationToSubmit.request);
       if (!isCurrentSubmission()) return;
       if (result.status === "applied") {
         if (!(await persistOperation(null)) || !isCurrentSubmission()) return;
@@ -231,6 +235,8 @@ function SessionScenarioPreviewContents({
     } catch {
       if (actorRef.current !== actorId) return;
       setOutcome("We could not confirm the result. Check or retry with the same operation.");
+    } finally {
+      submittingRef.current = false;
     }
   };
   return (
@@ -350,16 +356,17 @@ function SessionScenarioPreviewContents({
             >
               <Text>Apply this scenario</Text>
             </Button>
-          ) : (
-            <Button
-              disabled={applyMutation.isPending}
-              onPress={() => void submitOperation()}
-              testID="session-scenario-retry-apply"
-            >
-              <Text>{applyMutation.isPending ? "Applying…" : "Check or retry this change"}</Text>
-            </Button>
-          )}
+          ) : null}
         </View>
+      ) : null}
+      {operation ? (
+        <Button
+          disabled={applyMutation.isPending}
+          onPress={() => void submitOperation()}
+          testID="session-scenario-retry-apply"
+        >
+          <Text>{applyMutation.isPending ? "Applying…" : "Check or retry this change"}</Text>
+        </Button>
       ) : null}
       {confirming && previewQuery.data?.status === "available" ? (
         <View accessibilityRole="alert" className="gap-2 rounded-xl border border-border p-3">

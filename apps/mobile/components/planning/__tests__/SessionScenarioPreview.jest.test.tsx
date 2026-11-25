@@ -256,6 +256,10 @@ describe("SessionScenarioPreview", () => {
 
     await act(async () => resolveWrite());
     await waitFor(() => expect(screen.getByTestId("session-scenario-retry-apply")).toBeTruthy());
+    expect(mocks.apply).toHaveBeenCalledTimes(1);
+    expect(mocks.apply.mock.calls[0]?.[0]).toMatchObject({
+      operationId: "00000000000040008000000000000001",
+    });
   });
 
   it("does not arm actor A's delayed receipt for actor B while retaining A's recoverable receipt", async () => {
@@ -384,8 +388,6 @@ describe("SessionScenarioPreview", () => {
     );
     await act(async () => screen.getByTestId("session-scenario-apply").props.onPress());
     await act(async () => screen.getByTestId("session-scenario-confirm-apply").props.onPress());
-    await waitFor(() => expect(screen.getByTestId("session-scenario-retry-apply")).toBeTruthy());
-    await act(async () => screen.getByTestId("session-scenario-retry-apply").props.onPress());
     await waitFor(() => expect(mocks.invalidations.activityPlans).toHaveBeenCalledTimes(1));
 
     mocks.preview = {

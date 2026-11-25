@@ -74,6 +74,7 @@ function SessionScenarioPreviewContents({
   const [storageUnavailable, setStorageUnavailable] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const operationRef = useRef<FrozenPlannedSessionScenarioOperation | null>(null);
+  const submittingRef = useRef(false);
   const applyButtonRef = useRef<HTMLButtonElement>(null);
   const confirmButtonRef = useRef<HTMLButtonElement>(null);
   const generationRef = useRef(0);
@@ -181,44 +182,44 @@ function SessionScenarioPreviewContents({
       setOutcome("We could not create a safe operation identity. Try again.");
       return;
     }
-    if (
-      !persistOperation(
-        freezePlannedSessionScenarioOperation({
-          actorId,
-          expectedPreviewFingerprint: previewQuery.data.previewFingerprint,
-          operationId: id,
-          preview: input,
-        }),
-      )
-    ) {
+    const next = freezePlannedSessionScenarioOperation({
+      actorId,
+      expectedPreviewFingerprint: previewQuery.data.previewFingerprint,
+      operationId: id,
+      preview: input,
+    });
+    if (!persistOperation(next)) {
       setOutcome("Unable to save safe recovery. Check browser storage and try again.");
       return;
     }
     setConfirmationOpen(false);
     setOutcome(null);
+    void submitOperation(next);
   };
-  const submitOperation = async () => {
+  const submitOperation = async (operationToSubmit = operation) => {
     if (
-      !operation ||
+      !operationToSubmit ||
       !actorId ||
-      !isCurrentPlannedSessionScenarioOperation(operation, {
+      !isCurrentPlannedSessionScenarioOperation(operationToSubmit, {
         actorId,
         sessionId: session.id,
-      })
+      }) ||
+      submittingRef.current
     )
       return;
+    submittingRef.current = true;
     setOutcome(null);
     const generation = generationRef.current;
     const submittedActor = actorId;
     const isCurrentSubmission = () =>
       generation === generationRef.current &&
       actorRef.current === submittedActor &&
-      isCurrentPlannedSessionScenarioOperation(operation, {
+      isCurrentPlannedSessionScenarioOperation(operationToSubmit, {
         actorId: submittedActor,
         sessionId: session.id,
       });
     try {
-      const result = await applyMutation.mutateAsync(operation.request);
+      const result = await applyMutation.mutateAsync(operationToSubmit.request);
       if (!isCurrentSubmission()) return;
       if (result.status === "applied") {
         if (!persistOperation(null) || !isCurrentSubmission()) return;
@@ -257,6 +258,8 @@ function SessionScenarioPreviewContents({
       setOutcome(
         "We could not confirm whether the change was applied. Check or retry using the same operation; do not create a new request.",
       );
+    } finally {
+      submittingRef.current = false;
     }
   };
   const stateUnavailable =
@@ -394,16 +397,17 @@ function SessionScenarioPreviewContents({
             >
               Apply this scenario
             </Button>
-          ) : (
-            <Button
-              disabled={applyMutation.isPending}
-              onClick={() => void submitOperation()}
-              type="button"
-            >
-              {applyMutation.isPending ? "Applying…" : "Check or retry this change"}
-            </Button>
-          )}
+          ) : null}
         </div>
+      ) : null}
+      {operation ? (
+        <Button
+          disabled={applyMutation.isPending}
+          onClick={() => void submitOperation()}
+          type="button"
+        >
+          {applyMutation.isPending ? "Applying…" : "Check or retry this change"}
+        </Button>
       ) : null}
       {confirmationOpen && previewQuery.data?.status === "available" ? (
         <div
