@@ -57,6 +57,10 @@ name: Athlete repairs no invalid completion target when canceling a Goal edit
 - tapOn: "1"
 - tapOn:
     id: goal-duration-seconds
+- scrollUntilVisible:
+    element:
+      text: "0"
+    direction: UP
 - tapOn: "0"
 - tapOn: "Done Duration"
 - assertVisible: "Enter a valid duration."
