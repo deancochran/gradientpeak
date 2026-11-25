@@ -21,12 +21,13 @@
       ]
     },
     {
-      "description": "Chronological threshold evidence retains its timestamps and units.",
+      "description": "Threshold charts retain timestamps and units, with policy gaps and pace kept on separate scales.",
       "testId": "ui-preview-scenario-threshold-history",
       "title": "Threshold history",
       "key": "thresholdHistory",
       "selectors": [
-        "ui-preview-threshold-history"
+        "ui-preview-threshold-bike-power",
+        "ui-preview-threshold-run-pace"
       ]
     },
     {

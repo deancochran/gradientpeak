@@ -27,13 +27,28 @@ const mocks = vi.hoisted(() => ({
     isLoading: false,
     refetch: vi.fn(),
   },
+  thresholdQuery: {
+    data: null as unknown,
+    isError: false,
+    isLoading: false,
+  },
 }));
 
 vi.mock("@tanstack/react-router", () => ({
   useRouter: () => ({ invalidate: mocks.invalidate }),
   createFileRoute: () => (options: object) => ({ ...options }),
-  Link: ({ children, to }: { children: React.ReactNode; to: string }) => (
-    <a href={to}>{children}</a>
+  Link: ({
+    children,
+    search,
+    to,
+  }: {
+    children: React.ReactNode;
+    search?: { date?: string };
+    to: string;
+  }) => (
+    <a data-date={search?.date} href={to}>
+      {children}
+    </a>
   ),
 }));
 vi.mock("../../components/feed/activity-feed", () => ({
@@ -42,13 +57,16 @@ vi.mock("../../components/feed/activity-feed", () => ({
 vi.mock("../../components/protected/search-launcher", () => ({
   SearchLauncher: () => <div>Search</div>,
 }));
+vi.mock("../../components/planning/plan-dashboard", () => ({
+  PlanDashboard: () => <section aria-label="Training workspace">Training workspace</section>,
+}));
 vi.mock("../../components/providers/auth-provider", () => ({
   useAuth: () => ({ user: { email: "athlete@example.test" } }),
 }));
 vi.mock("../../lib/api/client", () => ({
   api: {
     athleteIntelligence: {
-      getThresholdOverview: { useQuery: () => ({ data: null, isLoading: false }) },
+      getThresholdOverview: { useQuery: () => mocks.thresholdQuery },
     },
     home: {
       getDashboard: {
@@ -78,6 +96,7 @@ beforeEach(() => {
     isLoading: false,
     refetch: vi.fn(),
   };
+  mocks.thresholdQuery = { data: null, isError: false, isLoading: false };
 });
 
 afterEach(() => {
@@ -97,6 +116,39 @@ describe("Dashboard schedule", () => {
 
     expect(screen.getByText(/Common Load 64 · Intensity 0\.70/)).toBeTruthy();
     expect(screen.queryByText(/Normalized intensity/i)).toBeNull();
+  });
+
+  it("leads with the connected training workspace and links upcoming work to its date", () => {
+    const DashboardPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<DashboardPage />);
+
+    expect(screen.getByRole("region", { name: "Training workspace" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Endurance swim/ }).getAttribute("data-date")).toBe(
+      "2026-09-08",
+    );
+    expect(screen.queryByText("Current Focus")).toBeNull();
+  });
+
+  it("does not infer a current threshold from the read-model publication state", () => {
+    mocks.thresholdQuery = {
+      data: {
+        current: {
+          thresholds: {
+            bike: { status: "unavailable" },
+            run: { status: "unavailable" },
+            swim: { status: "unavailable" },
+          },
+        },
+        publication: { status: "available" },
+      },
+      isError: false,
+      isLoading: false,
+    };
+    const DashboardPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<DashboardPage />);
+
+    expect(screen.getByText("No current calculated thresholds")).toBeTruthy();
+    expect(screen.getByText("0 current")).toBeTruthy();
   });
 
   it("keeps cached dashboard content visible when a refresh fails", () => {

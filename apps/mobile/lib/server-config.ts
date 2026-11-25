@@ -44,6 +44,25 @@ export function isServerUrlOverrideEnabled() {
   );
 }
 
+/**
+ * A device can reach a development API through localhost, the Android emulator
+ * bridge, or an ADB reverse tunnel even when its external network is reported
+ * offline. Keep this narrower than the general development override: custom
+ * hosted endpoints retain normal offline behavior.
+ */
+export function isLocalDevelopmentApiEndpoint() {
+  if (!isServerUrlOverrideEnabled() || !state.overrideUrl) {
+    return false;
+  }
+
+  try {
+    const { hostname } = new URL(state.apiUrl);
+    return ["127.0.0.1", "localhost", "10.0.2.2"].includes(hostname);
+  } catch {
+    return false;
+  }
+}
+
 function emit() {
   listeners.forEach((listener) => {
     listener();

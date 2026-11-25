@@ -1,15 +1,9 @@
-import { spawnSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { formatDateOnlyInTimeZone } from "@repo/core";
-import {
-  activities,
-  activityPlans,
-  plannedSessions,
-  profiles,
-  thresholdEvidence,
-} from "@repo/db/schema";
+import { activities, plannedSessions, thresholdEvidence } from "@repo/db/schema";
 import { eq } from "drizzle-orm";
 import { expect, test } from "../fixtures";
+import { completeManualNativeAcceptance } from "./current-candidate-support";
 
 type Projection = {
   contractVersion: "plan-tab-projection-v2";
@@ -43,162 +37,8 @@ test("current Android candidate onboards and creates an executable activity plan
   e2eIdentity,
 }, testInfo) => {
   test.setTimeout(600_000);
-  const username = `native_${e2eIdentity.suffix("username", 12)}`;
-  const planName = e2eIdentity.name("Native easy session");
-  const runMaestro = (flow: string, extraEnvironment: Record<string, string> = {}) =>
-    spawnSync(
-      "maestro",
-      [
-        "--udid",
-        "emulator-5554",
-        "test",
-        "--debug-output",
-        testInfo.outputPath("maestro"),
-        `../mobile/.maestro/flows/acceptance/${flow}`,
-      ],
-      {
-        encoding: "utf8",
-        // Cold startup has its own 90s visibility budget; leave room for the
-        // onboarding/home waits and actions without relaxing editor flow bounds.
-        timeout: flow === "profile-onboarding.yaml" ? 240_000 : 150_000,
-        env: {
-          ...process.env,
-          MAESTRO_ACCEPTANCE_EMAIL: actor.email,
-          MAESTRO_ACCEPTANCE_PASSWORD: actor.password,
-          MAESTRO_ACCEPTANCE_USERNAME: username,
-          MAESTRO_ACCEPTANCE_PLAN_NAME: planName,
-          ...extraEnvironment,
-        },
-      },
-    );
-  const runAdb = (...args: string[]) =>
-    spawnSync("adb", ["-s", "emulator-5554", ...args], {
-      encoding: "utf8",
-      timeout: 30_000,
-    });
-  const result = runMaestro("profile-onboarding.yaml");
-  writeFileSync(
-    testInfo.outputPath("maestro.log"),
-    `${result.stdout ?? ""}\n${result.stderr ?? ""}`,
-    { mode: 0o600 },
-  );
-  expect(result.error, "Maestro must execute on the designated emulator").toBeUndefined();
-  expect(result.status, "See the private Maestro output for the failing native action").toBe(0);
-  const [profile] = await e2eDatabase.db
-    .select()
-    .from(profiles)
-    .where(eq(profiles.id, actor.profileId));
-  expect(profile).toMatchObject({
-    full_name: "Native acceptance athlete",
-    username,
-    onboarding_status: "completed",
-  });
-  if (!profile?.planning_timezone)
-    throw new Error("Onboarding must persist a planning timezone before native scheduling");
-  const planResult = runMaestro("create-easy-activity-plan.yaml");
-  writeFileSync(
-    testInfo.outputPath("maestro-create-plan.log"),
-    `${planResult.stdout ?? ""}\n${planResult.stderr ?? ""}`,
-    { mode: 0o600 },
-  );
-  expect(planResult.error, "Maestro must execute the native plan composer").toBeUndefined();
-  expect(planResult.status, "See private Maestro plan-composer output").toBe(0);
-  const plans = await e2eDatabase.db
-    .select({ id: activityPlans.id, name: activityPlans.name, structure: activityPlans.structure })
-    .from(activityPlans)
-    .where(eq(activityPlans.profile_id, actor.profileId));
-  expect(plans).toEqual([
-    expect.objectContaining({
-      id: expect.any(String),
-      name: planName,
-      structure: expect.objectContaining({
-        activity_category: "run",
-        items: [
-          expect.objectContaining({
-            duration: { seconds: 60, type: "time" },
-            targets: [{ type: "rest" }],
-            type: "step",
-          }),
-        ],
-        version: 5,
-      }),
-    }),
-  ]);
-  const [plan] = plans;
-  if (!plan) throw new Error("Native UI did not persist the activity plan");
-  // Completion availability is evaluated against the athlete's authoritative
-  // planning day, which may be different from the runner's UTC date.
-  const today = formatDateOnlyInTimeZone(new Date(), profile.planning_timezone);
-  const scheduleResult = runMaestro("schedule-native-plan.yaml", {
-    MAESTRO_ACCEPTANCE_PLAN_NAME: planName,
-    MAESTRO_ACCEPTANCE_SCHEDULE_DAY: String(Number(today.slice(8, 10))),
-    MAESTRO_ACCEPTANCE_SCHEDULE_MONTH_DELTA: "0",
-    MAESTRO_ACCEPTANCE_SCHEDULE_FROM_LIBRARY: "false",
-  });
-  writeFileSync(
-    testInfo.outputPath("maestro-schedule.log"),
-    `${scheduleResult.stdout ?? ""}\n${scheduleResult.stderr ?? ""}`,
-    { mode: 0o600 },
-  );
-  expect(scheduleResult.error, "Maestro must execute native scheduling").toBeUndefined();
-  expect(scheduleResult.status, "See private Maestro scheduling output").toBe(0);
-  expect(
-    await e2eDatabase.db
-      .select({
-        id: plannedSessions.id,
-        planning_date: plannedSessions.planning_date,
-        profile_id: plannedSessions.profile_id,
-        status: plannedSessions.status,
-      })
-      .from(plannedSessions)
-      .where(eq(plannedSessions.activity_plan_id, plan.id)),
-  ).toEqual([
-    {
-      id: expect.any(String),
-      planning_date: today,
-      profile_id: actor.profileId,
-      status: "scheduled",
-    },
-  ]);
-  expect(
-    await e2eDatabase.db
-      .select({ id: activities.id })
-      .from(activities)
-      .where(eq(activities.profile_id, actor.profileId)),
-  ).toEqual([]);
-  const [manualSession] = await e2eDatabase.db
-    .select()
-    .from(plannedSessions)
-    .where(eq(plannedSessions.profile_id, actor.profileId));
-  if (!manualSession) throw new Error("Native UI-created session is missing");
-  const manualResult = runMaestro("manual-native-session.yaml", {
-    MAESTRO_ACCEPTANCE_PLAN_NAME: planName,
-    MAESTRO_ACCEPTANCE_SESSION_DATE: today,
-    MAESTRO_ACCEPTANCE_SESSION_DAY: String(Number(today.slice(8, 10))),
-  });
-  writeFileSync(
-    testInfo.outputPath("maestro-manual.log"),
-    `${manualResult.stdout ?? ""}\n${manualResult.stderr ?? ""}`,
-    { mode: 0o600 },
-  );
-  expect(manualResult.status, "Native manual completion must succeed").toBe(0);
-  const [completedSession] = await e2eDatabase.db
-    .select()
-    .from(plannedSessions)
-    .where(eq(plannedSessions.id, manualSession.id));
-  expect(completedSession).toMatchObject({
-    status: "completed",
-    completed_activity_id: expect.any(String),
-  });
-  const manualActivities = await e2eDatabase.db
-    .select()
-    .from(activities)
-    .where(eq(activities.profile_id, actor.profileId));
-  expect(manualActivities).toHaveLength(1);
-  expect(manualActivities[0]).toMatchObject({
-    id: completedSession?.completed_activity_id,
-    entry_provenance: "manual",
-  });
+  const { completedSession, manualSession, planName, planningTimezone, runAdb, runMaestro, today } =
+    await completeManualNativeAcceptance({ actor, e2eDatabase, e2eIdentity, testInfo });
   const recordResult = runMaestro("record-run-native.yaml");
   writeFileSync(
     testInfo.outputPath("maestro-record.log"),
@@ -324,13 +164,13 @@ test("current Android candidate onboards and creates an executable activity plan
   await web.goto("/plan");
   const projection = projectionFrom(await (await projectionResponse).json());
   if (!projection) throw new Error("Web training summary response was unavailable");
-  expect(projection.planningTimezone).toBe(profile.planning_timezone);
+  expect(projection.planningTimezone).toBe(planningTimezone);
   expect(projection.today).toBe(today);
   const completed = projection.ledgerItems.filter((item) => item.kind === "completed");
   expect(completed.map((item) => item.id)).toEqual([recordedActivity.id]);
   for (const item of completed)
     expect(item).toMatchObject({
-      date: formatDateOnlyInTimeZone(recordedActivity.started_at, profile.planning_timezone),
+      date: formatDateOnlyInTimeZone(recordedActivity.started_at, planningTimezone),
       load: null,
       loadStatus: "unavailable",
     });

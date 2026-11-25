@@ -205,8 +205,10 @@ function buildActivityPlan(id: string, name: string, activity_category: "bike" |
     },
   };
 }
-function buildCanonicalTrainingPlanStructure() {
+const persistedTrainingPlanId = "22222222-2222-4222-8222-222222222222";
+function buildPersistedTrainingPlanStructure() {
   return {
+    id: persistedTrainingPlanId,
     version: 1 as const,
     plan_preferences: {
       weekly_session_count: null,
@@ -507,7 +509,7 @@ describe("homeRouter", () => {
     vi.clearAllMocks();
     vi.useRealTimers();
   });
-  it("getDashboard returns active plan, weekly summary, schedule, and telemetry", async () => {
+  it("getDashboard accepts a persisted plan and returns its summary, schedule, and telemetry", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
     homeMocks.calculateRollingTrainingQuality.mockReturnValue(0.84);
@@ -629,7 +631,7 @@ describe("homeRouter", () => {
         events: [
           [
             {
-              training_plan_id: "plan-1",
+              training_plan_id: persistedTrainingPlanId,
               starts_at: new Date("2026-04-04T08:00:00.000Z"),
             },
           ],
@@ -735,10 +737,10 @@ describe("homeRouter", () => {
         trainingPlans: [
           [
             {
-              id: "plan-1",
+              id: persistedTrainingPlanId,
               name: "Build Block",
               description: "Spring build",
-              structure: buildCanonicalTrainingPlanStructure(),
+              structure: buildPersistedTrainingPlanStructure(),
             },
           ],
         ],
@@ -773,7 +775,7 @@ describe("homeRouter", () => {
       expect.objectContaining({ request: { startDate: "2026-04-03", endDate: "2026-05-15" } }),
     );
     expect(result.activePlan).toEqual({
-      id: "plan-1",
+      id: persistedTrainingPlanId,
       name: "Build Block",
     });
     expect(result.currentLoadStatus).toBeNull();
@@ -955,6 +957,52 @@ describe("homeRouter", () => {
     expect(result.schedule).toEqual([]);
     expect(result.todaysActivity).toBeNull();
   });
+  it("getDashboard retains support for a scheduled plan stored as a canonical structure", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
+    homeMocks.buildWorkloadEnvelopes.mockReturnValue(unavailableWorkload());
+    // Canonical storage omits the ID; the system-content seed adapter also uses this shape.
+    const { id, ...structure } = buildPersistedTrainingPlanStructure();
+    const name = "Canonical stored plan";
+    const { caller } = createCaller({
+      select: {
+        plannedSessions: [[{ training_plan_id: id }]],
+        trainingPlans: [
+          [
+            {
+              id,
+              name,
+              description: null,
+              structure,
+            },
+          ],
+        ],
+      },
+    });
+    await expect(caller.getDashboard()).resolves.toMatchObject({
+      activePlan: { id, name },
+    });
+  });
+  it.each(["not-a-uuid", null])("rejects a malformed supplied structure ID: %s", async (id) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
+    const { caller } = createCaller({
+      select: {
+        plannedSessions: [[{ training_plan_id: persistedTrainingPlanId }]],
+        trainingPlans: [
+          [
+            {
+              id: persistedTrainingPlanId,
+              name: "Invalid stored plan",
+              description: null,
+              structure: { ...buildPersistedTrainingPlanStructure(), id },
+            },
+          ],
+        ],
+      },
+    });
+    await expect(caller.getDashboard()).rejects.toMatchObject({ code: "INTERNAL_SERVER_ERROR" });
+  });
   it("getDashboard rejects invalid raw SQL plan rows", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
@@ -967,7 +1015,7 @@ describe("homeRouter", () => {
         events: [
           [
             {
-              training_plan_id: "plan-1",
+              training_plan_id: persistedTrainingPlanId,
               starts_at: new Date("2026-04-04T08:00:00.000Z"),
             },
           ],
@@ -975,7 +1023,9 @@ describe("homeRouter", () => {
           [],
         ],
         activities: [[]],
-        trainingPlans: [[{ id: "plan-1", name: null, description: null, structure: {} }]],
+        trainingPlans: [
+          [{ id: persistedTrainingPlanId, name: null, description: null, structure: {} }],
+        ],
       },
     });
     await expect(caller.getDashboard({ days: 2 })).rejects.toMatchObject({
@@ -1033,7 +1083,7 @@ describe("homeRouter", () => {
         events: [
           [
             {
-              training_plan_id: "plan-1",
+              training_plan_id: persistedTrainingPlanId,
               starts_at: new Date("2026-04-04T08:00:00.000Z"),
             },
           ],
@@ -1083,10 +1133,10 @@ describe("homeRouter", () => {
         trainingPlans: [
           [
             {
-              id: "plan-1",
+              id: persistedTrainingPlanId,
               name: "Build Block",
               description: "Spring build",
-              structure: buildCanonicalTrainingPlanStructure(),
+              structure: buildPersistedTrainingPlanStructure(),
             },
           ],
         ],
@@ -1106,16 +1156,23 @@ describe("homeRouter", () => {
     const { caller } = createCaller({
       select: {
         profiles: [[{ dob: null, gender: null }]],
-        events: [[{ training_plan_id: "plan-1", starts_at: new Date("2026-04-04T08:00:00.000Z") }]],
+        events: [
+          [
+            {
+              training_plan_id: persistedTrainingPlanId,
+              starts_at: new Date("2026-04-04T08:00:00.000Z"),
+            },
+          ],
+        ],
         activities: [[]],
         trainingPlans: [
           [
             {
-              id: "plan-1",
+              id: persistedTrainingPlanId,
               name: "Legacy plan",
               description: null,
               structure: {
-                ...buildCanonicalTrainingPlanStructure(),
+                ...buildPersistedTrainingPlanStructure(),
                 periodization: { currentPhase: "build" },
                 periodization_template: { target_ctl: 60 },
                 goal: { targetCTL: 60, targetDate: "2026-04-20" },

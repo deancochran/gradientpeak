@@ -18,7 +18,8 @@ export const uiPreviewContract = {
       title: "Session scenario comparison",
     },
     thresholdHistory: {
-      description: "Chronological threshold evidence retains its timestamps and units.",
+      description:
+        "Threshold charts retain timestamps and units, with policy gaps and pace kept on separate scales.",
       testId: "ui-preview-scenario-threshold-history",
       title: "Threshold history",
     },
@@ -82,7 +83,7 @@ export const uiPreviewFormFields = {
 export const uiPreviewScenarioSelectors = {
   trainingState: ["ui-preview-training-state-chart"],
   sessionScenarioComparison: ["ui-preview-session-scenario-comparison"],
-  thresholdHistory: ["ui-preview-threshold-history"],
+  thresholdHistory: ["ui-preview-threshold-bike-power", "ui-preview-threshold-run-pace"],
   identitySummary: [],
   accountControls: ["profile-card", "auth-email", "settings-save"],
   feedbackStates: [],

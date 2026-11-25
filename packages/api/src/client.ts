@@ -28,6 +28,7 @@ export {
   recordingSummarySubmissionInputSchema,
   recordingUploadedArtifactSchema,
 } from "./contracts/recording-submission";
+export { selectPublishedGoalProgressHistory } from "./goal-progress-client";
 export type { ActivityIngestionClientStatus } from "./ingestion-client";
 export {
   canRetryDirectIngestion,

@@ -121,8 +121,13 @@ function UiPreviewSurface() {
           />
           <ThresholdHistoryChart
             emptyMessage="No threshold history is available."
-            series={uiPreviewFixtures.thresholdHistory}
-            testId="ui-preview-threshold-history"
+            series={uiPreviewFixtures.thresholdHistory.bikePower}
+            testId="ui-preview-threshold-bike-power"
+          />
+          <ThresholdHistoryChart
+            emptyMessage="No threshold history is available."
+            series={uiPreviewFixtures.thresholdHistory.runPace}
+            testId="ui-preview-threshold-run-pace"
           />
         </section>
         <section

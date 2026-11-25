@@ -7,7 +7,7 @@ const meta = {
   component: ThresholdHistoryChart,
   args: {
     emptyMessage: "No calculated threshold values are available.",
-    series: thresholdHistoryFixtures.bikePower,
+    series: thresholdHistoryFixtures.bikePowerWithPolicyGap,
   },
 } satisfies Meta<typeof ThresholdHistoryChart>;
 

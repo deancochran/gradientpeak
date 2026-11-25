@@ -152,6 +152,7 @@ export class SensorsManager {
   private connectionCallbacks: Set<(sensor: ConnectedSensor) => void> = new Set();
   private bleStateCallbacks: Set<(state: string) => void> = new Set();
   private bleStateSubscription?: { remove: () => void } | undefined;
+  private hasReceivedBleStateEvent = false;
   private connectionMonitorTimer?: ReturnType<typeof setInterval> | undefined;
   private readonly DISCONNECT_TIMEOUT_MS = SENSOR_READING_STALE_AFTER_MS;
   private readonly HEALTH_CHECK_INTERVAL_MS = 15000; // 15 seconds (increased from 10s to reduce battery drain)
@@ -232,58 +233,86 @@ export class SensorsManager {
 
   /** Initialize BLE manager */
   private initialize() {
+    // react-native-ble-plx obtains the initial state through an internal
+    // promise when `emitCurrentState` is true, without attaching a rejection
+    // handler. Read it here instead so an unavailable native manager does not
+    // turn a non-Bluetooth screen into an unhandled-rejection overlay.
     this.bleStateSubscription = this.bleManager.onStateChange((state) => {
-      if (this.disposed) return;
-      // Track BLE state for UI
-      this.bleState = state;
-      this.notifyBleStateChange();
-      console.log(`[SensorsManager] BLE state changed: ${state}`);
+      this.hasReceivedBleStateEvent = true;
+      this.handleBleStateChange(state);
+    }, false);
+    void this.readInitialBleState();
+  }
 
-      if (state === "PoweredOn") {
-        console.log("BLE ready");
-        // Attempt to reconnect to persisted sensors when BLE is ready
-        if (
-          this.autoReconnectEnabled &&
-          this.knownSensorRegistry.initialized &&
-          this.knownSensorRegistry.size > 0
-        ) {
-          console.log(
-            `[SensorsManager] BLE powered on, attempting to reconnect ${this.knownSensorRegistry.size} persisted sensors`,
-          );
-          void this.reconnectPersistedSensors();
-        }
-      }
-      if (state === "PoweredOff" || state === "Unauthorized") {
-        const bluetoothError = this.recordServiceError(
-          state === "Unauthorized" ? "permission_error" : "bluetooth_unavailable",
-          state === "Unauthorized"
-            ? "Bluetooth permission unavailable"
-            : "Bluetooth is powered off",
-          {
-            ...(this.trainerState.deviceId === null
-              ? {}
-              : { deviceId: this.trainerState.deviceId }),
-            recoverable: true,
-          },
+  private async readInitialBleState(): Promise<void> {
+    try {
+      const state = await this.bleManager.state();
+      if (!this.disposed && !this.hasReceivedBleStateEvent) this.handleBleStateChange(state);
+    } catch (error) {
+      if (this.disposed || this.hasReceivedBleStateEvent) return;
+
+      this.bleState = "Unavailable";
+      const availabilityError = this.recordServiceError(
+        "bluetooth_unavailable",
+        "Bluetooth status is unavailable. Sensor features will remain unavailable until Bluetooth recovers.",
+        { recoverable: true },
+      );
+      this.updateTrainerState({ lastServiceError: availabilityError });
+      this.notifyBleStateChange();
+      console.warn(
+        "[SensorsManager] Bluetooth availability check failed",
+        error instanceof Error ? error.name : "unknown_error",
+      );
+    }
+  }
+
+  private handleBleStateChange(state: string): void {
+    if (this.disposed) return;
+    // Track BLE state for UI
+    this.bleState = state;
+    this.notifyBleStateChange();
+    console.log(`[SensorsManager] BLE state changed: ${state}`);
+
+    if (state === "PoweredOn") {
+      console.log("BLE ready");
+      // Attempt to reconnect to persisted sensors when BLE is ready
+      if (
+        this.autoReconnectEnabled &&
+        this.knownSensorRegistry.initialized &&
+        this.knownSensorRegistry.size > 0
+      ) {
+        console.log(
+          `[SensorsManager] BLE powered on, attempting to reconnect ${this.knownSensorRegistry.size} persisted sensors`,
         );
-        if (this.trainerState.deviceId) {
-          this.clearControllableTrainer(this.trainerState.deviceId);
-          this.updateTrainerState({
-            connectionState: "disconnected",
-            dataFlowState: "lost",
-            controlState: "control_lost",
-            lastServiceError: bluetoothError,
-          });
-        }
-        console.log(`[SensorsManager] BLE ${state}, disconnecting all sensors`);
-        void this.disconnectAll().catch((error) => {
-          console.warn(
-            "[SensorsManager] Unable to fully disconnect after Bluetooth became unavailable",
-            error instanceof Error ? error.name : "unknown_error",
-          );
+        void this.reconnectPersistedSensors();
+      }
+    }
+    if (state === "PoweredOff" || state === "Unauthorized") {
+      const bluetoothError = this.recordServiceError(
+        state === "Unauthorized" ? "permission_error" : "bluetooth_unavailable",
+        state === "Unauthorized" ? "Bluetooth permission unavailable" : "Bluetooth is powered off",
+        {
+          ...(this.trainerState.deviceId === null ? {} : { deviceId: this.trainerState.deviceId }),
+          recoverable: true,
+        },
+      );
+      if (this.trainerState.deviceId) {
+        this.clearControllableTrainer(this.trainerState.deviceId);
+        this.updateTrainerState({
+          connectionState: "disconnected",
+          dataFlowState: "lost",
+          controlState: "control_lost",
+          lastServiceError: bluetoothError,
         });
       }
-    }, true);
+      console.log(`[SensorsManager] BLE ${state}, disconnecting all sensors`);
+      void this.disconnectAll().catch((error) => {
+        console.warn(
+          "[SensorsManager] Unable to fully disconnect after Bluetooth became unavailable",
+          error instanceof Error ? error.name : "unknown_error",
+        );
+      });
+    }
   }
 
   /**

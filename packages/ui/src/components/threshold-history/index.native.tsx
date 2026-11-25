@@ -7,6 +7,7 @@ import {
   formatThresholdValue,
   type ThresholdHistoryChartProps,
   thresholdMetricLabel,
+  thresholdUnitLabel,
 } from "./shared";
 
 function ThresholdHistoryChart({ emptyMessage, series, testId }: ThresholdHistoryChartProps) {
@@ -23,6 +24,10 @@ function ThresholdHistoryChart({ emptyMessage, series, testId }: ThresholdHistor
       className="gap-2 rounded-xl border border-border bg-card p-3"
       testID={testId}
     >
+      <Text className="text-sm font-medium text-foreground">
+        {thresholdMetricLabel(series.activityCategory, series.metric)} ·{" "}
+        {thresholdUnitLabel(series.unit, series.activityCategory)}
+      </Text>
       <View className="h-24">
         <CartesianChart
           data={data}

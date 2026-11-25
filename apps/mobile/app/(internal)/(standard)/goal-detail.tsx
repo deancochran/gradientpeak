@@ -1,3 +1,4 @@
+import { selectPublishedGoalProgressHistory } from "@repo/api/client";
 import { invalidateGoalQueries } from "@repo/api/react";
 import {
   buildCenteredPlanAnalysisWindow,
@@ -95,10 +96,14 @@ export default function GoalDetailScreen() {
   const goalProgress = progressQuery.data?.result;
   const progressIdentity =
     goalProgress && goalProgress.status !== "unsupported" ? goalProgress.target : null;
+  const thresholdEvidence = selectPublishedGoalProgressHistory(
+    progressQuery.data,
+    thresholdQuery.data,
+  );
   const thresholdTrend = progressIdentity
     ? buildComparableThresholdTrend(
         mergeGoalProgressThresholdEvidence(
-          thresholdQuery.data?.history.items ?? [],
+          thresholdEvidence.history,
           progressQuery.data?.provenance,
         ),
         progressIdentity?.activityCategory ?? null,
@@ -276,9 +281,9 @@ export default function GoalDetailScreen() {
                 Progress charts are not available for this goal type.
               </Text>
             </View>
-          ) : progressQuery.isLoading || thresholdQuery.isLoading ? (
+          ) : progressQuery.isLoading && !goalProgress ? (
             <Text className="text-sm text-muted-foreground">Loading threshold evidence…</Text>
-          ) : progressQuery.isError || thresholdQuery.isError ? (
+          ) : (progressQuery.isError || thresholdQuery.isError) && !goalProgress ? (
             <View className="gap-2">
               <Text className="text-sm text-muted-foreground">
                 Goal progress could not be loaded.
@@ -294,18 +299,54 @@ export default function GoalDetailScreen() {
           ) : !goalProgress ? (
             <Text className="text-sm text-muted-foreground">Goal progress is unavailable.</Text>
           ) : (
-            <PlanProgressInsight
-              planningTimezone={profile?.planning_timezone ?? "UTC"}
-              showGoalSummary
-              deadlineDate={targetDate}
-              onOpenSourceActivity={(activityId) =>
-                router.navigate(ROUTES.ACTIVITIES.DETAIL(activityId) as never)
-              }
-              progress={goalProgress}
-              todayKey={todayKey}
-              trend={thresholdTrend}
-              window={{ end: analysisWindow.endDate, start: analysisWindow.startDate }}
-            />
+            <>
+              {progressQuery.isError || thresholdQuery.isError ? (
+                <View className="gap-1" testID="goal-detail-progress-refresh-warning">
+                  <Text className="text-sm text-muted-foreground">
+                    {progressQuery.isError && thresholdQuery.isError
+                      ? "Could not refresh goal progress or threshold history. Showing the last available compatible evidence."
+                      : progressQuery.isError
+                        ? "Could not refresh goal progress. Showing the last available progress."
+                        : "Could not refresh threshold history. Showing retained compatible history, if available."}
+                  </Text>
+                  <Text
+                    accessibilityRole="button"
+                    className="self-start py-1 font-semibold text-primary"
+                    onPress={() => void refreshGoal()}
+                  >
+                    Retry progress
+                  </Text>
+                </View>
+              ) : null}
+              {thresholdEvidence.publicationMismatch ? (
+                <Text
+                  className="text-sm text-muted-foreground"
+                  testID="goal-detail-history-mismatch"
+                >
+                  Threshold history was updated separately and is not shown with this progress.
+                </Text>
+              ) : null}
+              {thresholdEvidence.historyLimited ? (
+                <Text
+                  className="text-sm text-muted-foreground"
+                  testID="goal-detail-history-limited"
+                >
+                  Threshold history is limited to the most recent measurements.
+                </Text>
+              ) : null}
+              <PlanProgressInsight
+                planningTimezone={profile?.planning_timezone ?? "UTC"}
+                showGoalSummary
+                deadlineDate={targetDate}
+                onOpenSourceActivity={(activityId) =>
+                  router.navigate(ROUTES.ACTIVITIES.DETAIL(activityId) as never)
+                }
+                progress={goalProgress}
+                todayKey={todayKey}
+                trend={thresholdTrend}
+                window={{ end: analysisWindow.endDate, start: analysisWindow.startDate }}
+              />
+            </>
           )}
           {progressIdentity ? (
             <Text
