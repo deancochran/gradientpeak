@@ -21,7 +21,7 @@ function maestroDebugDirectory(testInfo: TestInfo) {
 
 function pngDimensions(path: string) {
   const source = readFileSync(path);
-  expect(source.subarray(0, 8).equals(Buffer.from("\x89PNG\r\n\x1a\n"))).toBe(true);
+  expect(source.subarray(0, 8).equals(Buffer.from("89504e470d0a1a0a", "hex"))).toBe(true);
   expect(source.toString("ascii", 12, 16)).toBe("IHDR");
   return { height: source.readUInt32BE(20), width: source.readUInt32BE(16) };
 }
