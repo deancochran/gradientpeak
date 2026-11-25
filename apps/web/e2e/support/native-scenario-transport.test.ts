@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { once } from "node:events";
+import { EventEmitter, once } from "node:events";
 import { mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer, type RequestListener, type Server } from "node:http";
 import { createConnection } from "node:net";
@@ -10,6 +10,7 @@ import { createDisposableAcceptanceLease } from "./disposable-acceptance-lease";
 import {
   type NativeScenarioTransport,
   startNativeScenarioTransport,
+  stopNativeScenarioTransportChild,
 } from "./native-scenario-transport";
 
 const directories: string[] = [];
@@ -55,8 +56,10 @@ function applyBody(sessionId: string, operationId = "a".repeat(32)) {
   });
 }
 
-function appliedResponse() {
-  return [{ result: { data: { json: { session: { id: sessionId }, status: "applied" } } } }];
+function appliedResponse(returnedSessionId = sessionId) {
+  return [
+    { result: { data: { json: { session: { id: returnedSessionId }, status: "applied" } } } },
+  ];
 }
 
 async function start(sessionId: string, env = environment(), port?: number) {
@@ -197,6 +200,50 @@ describe("native scenario transport", () => {
     ).rejects.toThrow();
   });
 
+  it("forwards an applied envelope for another session without consuming the matching drop", async () => {
+    const port = await upstream((_request, response) => {
+      response.setHeader("content-type", "application/json");
+      response.end(
+        JSON.stringify(
+          calls++ === 0
+            ? appliedResponse("22222222-2222-4222-8222-222222222222")
+            : appliedResponse(),
+        ),
+      );
+    });
+    let calls = 0;
+    const transport = await start(sessionId, environment(), port);
+    const body = applyBody(sessionId);
+    const wrong = await post(
+      transport.origin,
+      "/api/trpc/plannedSessions.applyScenario?batch=1",
+      body,
+    );
+    expect(await wrong.json()).toEqual(appliedResponse("22222222-2222-4222-8222-222222222222"));
+    expect(JSON.parse(readFileSync(transport.observationPath, "utf8")).dropped).toBe(false);
+    await expect(
+      post(transport.origin, "/api/trpc/plannedSessions.applyScenario?batch=1", body),
+    ).rejects.toThrow();
+  });
+
+  it("does not hang when an owned child exits synchronously during escalation", async () => {
+    const child = new EventEmitter() as EventEmitter & {
+      exitCode: number | null;
+      signalCode: NodeJS.Signals | null;
+      kill: (signal?: NodeJS.Signals) => boolean;
+    };
+    child.exitCode = null;
+    child.signalCode = null;
+    child.kill = (signal) => {
+      if (signal === "SIGKILL") {
+        child.signalCode = "SIGKILL";
+        child.emit("exit", null, "SIGKILL");
+      }
+      return true;
+    };
+    await expect(stopNativeScenarioTransportChild(child as never, 1)).resolves.toBeUndefined();
+  });
+
   it("rejects invalid startup input, revokes forwarding after lease loss, and cleans up", async () => {
     const port = await upstream((_request, response) => response.end("ok"));
     const env = environment();
@@ -263,6 +310,7 @@ describe("native scenario transport", () => {
     const transport = await start(sessionId, environment(), port);
     const proxyPort = Number(new URL(transport.origin).port);
     const socket = createConnection({ host: "127.0.0.1", port: proxyPort });
+    socket.on("error", () => {});
     await once(socket, "connect");
     socket.write("POST /other HTTP/1.1\r\nHost: loopback\r\nContent-Length: 100\r\n\r\npartial");
     await expect(transport.stop()).resolves.toBeUndefined();

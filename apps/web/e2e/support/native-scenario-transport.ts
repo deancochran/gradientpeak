@@ -101,7 +101,7 @@ export async function startNativeScenarioTransport({
   return {
     origin: `http://127.0.0.1:${ready.port}`,
     observationPath,
-    stop: () => stopChild(child),
+    stop: () => stopNativeScenarioTransportChild(child),
   };
 }
 
@@ -124,12 +124,18 @@ async function waitForReady(child: ChildProcess): Promise<{ port: number }> {
   return { port: result.port };
 }
 
-async function stopChild(child: ChildProcess) {
-  if (child.exitCode !== null) return;
+export async function stopNativeScenarioTransportChild(child: ChildProcess, timeoutMs = 2_000) {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  // Attach once before either signal: an exit that races SIGKILL must settle
+  // this same promise rather than leaving a second listener waiting forever.
+  const exited = once(child, "exit").then(() => true);
+  const waitForExit = () =>
+    Promise.race([exited, new Promise<false>((done) => setTimeout(() => done(false), timeoutMs))]);
   child.kill("SIGTERM");
-  await Promise.race([once(child, "exit"), new Promise((done) => setTimeout(done, 2_000))]);
-  if (child.exitCode === null) {
-    child.kill("SIGKILL");
-    await once(child, "exit");
-  }
+  if (await waitForExit()) return;
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  child.kill("SIGKILL");
+  if (await waitForExit()) return;
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  throw new Error("Native scenario transport child did not exit after owned shutdown signals.");
 }
