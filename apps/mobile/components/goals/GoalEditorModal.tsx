@@ -173,36 +173,6 @@ function nearlyEqual(left: number | null | undefined, right: number): boolean {
   return typeof left === "number" && Math.abs(left - right) < 0.05;
 }
 
-function hasDraftTarget(draft: GoalEditorDraft): boolean {
-  switch (draft.goalType) {
-    case "race_performance":
-      return (
-        typeof draft.raceDistanceKm === "number" &&
-        draft.raceDistanceKm > 0 &&
-        ((draft.raceTargetMode ?? "time") === "time"
-          ? !!draft.targetDuration?.trim()
-          : !!draft.targetPace?.trim())
-      );
-    case "completion":
-      return (
-        (typeof draft.raceDistanceKm === "number" && draft.raceDistanceKm > 0) ||
-        !!draft.targetDuration?.trim()
-      );
-    case "pace_threshold":
-      return !!draft.targetPace?.trim();
-    case "power_threshold":
-      return typeof draft.targetWatts === "number" && draft.targetWatts > 0;
-    case "hr_threshold":
-      return typeof draft.targetBpm === "number" && draft.targetBpm > 0;
-    case "consistency":
-      return (
-        (typeof draft.consistencySessionsPerWeek === "number" &&
-          draft.consistencySessionsPerWeek > 0) ||
-        (typeof draft.consistencyWeeks === "number" && draft.consistencyWeeks > 0)
-      );
-  }
-}
-
 function getDistanceLabel(goalType: GoalEditorGoalType): string {
   return goalType === "completion" ? "Distance (optional)" : "Race distance";
 }
@@ -345,7 +315,7 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
     const canSubmit =
       draft.title.trim().length > 0 &&
       draft.targetDate.length > 0 &&
-      hasDraftTarget(draft) &&
+      !qualityFeedback.missing.includes("target") &&
       !Object.values(invalidNumericFields).some(Boolean) &&
       !busy;
 
@@ -410,7 +380,7 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
     const confirmReplacement = (replace: () => void) => {
       if (busyRef.current) return;
       const current = form.getValues() as GoalEditorDraft;
-      if (!isDirty && !current.title.trim() && !hasDraftTarget(current)) {
+      if (!isDirty && !current.title.trim() && qualityFeedback.missing.includes("target")) {
         replace();
         return;
       }
