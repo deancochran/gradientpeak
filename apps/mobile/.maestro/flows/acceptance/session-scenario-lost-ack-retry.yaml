@@ -1,0 +1,30 @@
+appId: com.deancochran.gradientpeak.dev
+name: Reopen and explicitly retry a retained scenario operation
+---
+- scrollUntilVisible:
+    element:
+      id: planning-ledger-entry-planned-${MAESTRO_ACCEPTANCE_SESSION_ID}
+    direction: DOWN
+- tapOn:
+    id: planning-ledger-entry-planned-${MAESTRO_ACCEPTANCE_SESSION_ID}
+- extendedWaitUntil:
+    visible:
+      id: planned-session-detail-screen
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: session-scenario-retry-apply
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: session-scenario-lost-ack-reopened
+- assertVisible:
+    id: session-scenario-retry-apply
+- tapOn:
+    id: session-scenario-retry-apply
+- scrollUntilVisible:
+    element:
+      text: "Applied: repointed."
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: session-scenario-lost-ack-recovered
+- assertVisible: "Applied: repointed."

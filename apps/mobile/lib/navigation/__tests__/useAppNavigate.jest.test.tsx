@@ -1,4 +1,5 @@
 import { act, renderHook } from "@testing-library/react-native";
+import type { Href } from "expo-router";
 
 const navigateMock = jest.fn();
 const pushMock = jest.fn();
@@ -22,10 +23,10 @@ describe("useAppNavigate", () => {
 
   it("routes through navigate to reuse existing stack entries", async () => {
     const { useAppNavigate } = await import("../useAppNavigate");
-    const { result } = renderHook(() => useAppNavigate());
+    const { result } = await renderHook(() => useAppNavigate());
 
-    act(() => {
-      result.current("/messages" as any);
+    await act(() => {
+      result.current("/messages" as Href);
     });
 
     expect(navigateMock).toHaveBeenCalledWith("/messages");
@@ -35,10 +36,10 @@ describe("useAppNavigate", () => {
   it("falls back to push when navigate is unavailable", async () => {
     routerState.value = { push: pushMock };
     const { useAppNavigate } = await import("../useAppNavigate");
-    const { result } = renderHook(() => useAppNavigate());
+    const { result } = await renderHook(() => useAppNavigate());
 
-    act(() => {
-      result.current("/messages" as any);
+    await act(() => {
+      result.current("/messages" as Href);
     });
 
     expect(pushMock).toHaveBeenCalledWith("/messages");

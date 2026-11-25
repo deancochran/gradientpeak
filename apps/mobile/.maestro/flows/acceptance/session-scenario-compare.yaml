@@ -1,0 +1,77 @@
+appId: com.deancochran.gradientpeak.dev
+name: Compare and cancel a selected planned-session scenario
+---
+- tapOn:
+    id: tab-button-plan
+- tapOn:
+    id: plan-view-calendar
+- extendedWaitUntil:
+    visible:
+      id: calendar-screen-ready
+    timeout: 30000
+# The retained candidate preserves its last calendar month across disposable
+# runs. Reset it to the device's verified current date before selecting the
+# fixture's tomorrow occurrence.
+- tapOn:
+    id: calendar-reset-today-entry
+# The fixture schedules exactly tomorrow, which is always present in the
+# current Calendar month's 42-day semantic grid, including month boundaries.
+- tapOn:
+    id: calendar-day-select-${MAESTRO_ACCEPTANCE_SESSION_DATE}
+- extendedWaitUntil:
+    visible:
+      id: planning-ledger-screen
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: planning-ledger-entry-planned-${MAESTRO_ACCEPTANCE_SESSION_ID}
+    direction: DOWN
+- tapOn:
+    id: planning-ledger-entry-planned-${MAESTRO_ACCEPTANCE_SESSION_ID}
+- extendedWaitUntil:
+    visible:
+      id: planned-session-detail-screen
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: session-scenario-less
+    direction: DOWN
+- tapOn:
+    id: session-scenario-less
+- tapOn: "Enter an explicit duration"
+- inputText: "1200"
+- hideKeyboard
+- extendedWaitUntil:
+    visible: "Scenario comparison"
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: "Scenario comparison"
+    direction: DOWN
+- assertVisible: "Solid lines show the baseline; dashed lines show the selected alternative. A source with one point is shown as a marker. Both use the same planning horizon and units."
+- takeScreenshot: session-scenario-comparison
+- scrollUntilVisible:
+    element:
+      text: "● Baseline · solid"
+    direction: DOWN
+- assertVisible: "● Baseline · solid"
+- assertVisible: "□ Alternative · dashed"
+- takeScreenshot: session-scenario-comparison-legend
+- scrollUntilVisible:
+    element:
+      id: session-scenario-apply
+    direction: DOWN
+- tapOn:
+    id: session-scenario-apply
+- scrollUntilVisible:
+    element:
+      id: session-scenario-confirm-apply
+    direction: DOWN
+- assertVisible:
+    id: session-scenario-confirm-apply
+- assertVisible: "This affects only the selected ${MAESTRO_ACCEPTANCE_SESSION_DATE} occurrence. A changed activity plan is copied privately; other occurrences and the source plan stay unchanged."
+- takeScreenshot: session-scenario-confirmation
+- tapOn:
+    id: session-scenario-cancel-apply
+- assertVisible:
+    id: session-scenario-apply
