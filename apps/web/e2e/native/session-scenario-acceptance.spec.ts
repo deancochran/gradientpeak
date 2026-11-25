@@ -4,7 +4,10 @@ import { resolve } from "node:path";
 import { activityPlans, plannedSessions } from "@repo/db/schema";
 import { and, eq } from "drizzle-orm";
 import { expect, test } from "../fixtures";
-import { runWithNativeScenarioCleanup } from "../support/native-scenario-cleanup";
+import {
+  requireNativeReverseRestoration,
+  runWithNativeScenarioCleanup,
+} from "../support/native-scenario-cleanup";
 import { startNativeScenarioTransport } from "../support/native-scenario-transport";
 import { createSessionScenarioFixture } from "../support/scenario-fixture";
 
@@ -284,7 +287,6 @@ test("native athlete explicitly retries the same scenario request after its comm
 
   const transport = await startNativeScenarioTransport({ sessionId: fixture.sessionId });
   const transportPort = new URL(transport.origin).port;
-  let restoreResult: ReturnType<typeof runAdb> | undefined;
   await runWithNativeScenarioCleanup(
     async () => {
       expect(
@@ -306,14 +308,11 @@ test("native athlete explicitly retries the same scenario request after its comm
     },
     {
       restoreReverse: () => {
-        restoreResult = runAdb("reverse", "tcp:3100", "tcp:3100");
+        requireNativeReverseRestoration(runAdb("reverse", "tcp:3100", "tcp:3100"));
       },
       stopTransport: () => transport.stop(),
     },
   );
-  if (!restoreResult)
-    throw new Error("Native scenario cleanup did not attempt API reverse restoration.");
-  expect(restoreResult.status, "Must restore the runner-owned API reverse.").toBe(0);
 
   const transportObservation = JSON.parse(readFileSync(transport.observationPath, "utf8")) as {
     dropped: boolean;
