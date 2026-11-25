@@ -963,7 +963,7 @@ describe("activity detail screen", () => {
     expect(screen.getByText("Distance")).toBeTruthy();
     expect(screen.getAllByText("10.4 km").length).toBeGreaterThan(0);
     expect(screen.getByText("Elapsed")).toBeTruthy();
-    expect(screen.getAllByText("52:00").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("52 min").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Load").length).toBeGreaterThan(0);
     expect(screen.getAllByText("67").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Intensity").length).toBeGreaterThan(0);
