@@ -387,6 +387,13 @@ export default function StandardLayout() {
         }}
       />
       <Stack.Screen
+        name="coaching-permissions"
+        options={{
+          title: "Coaching permissions",
+          headerBackTitle: "Me",
+        }}
+      />
+      <Stack.Screen
         name="settings"
         options={{
           title: "Settings",

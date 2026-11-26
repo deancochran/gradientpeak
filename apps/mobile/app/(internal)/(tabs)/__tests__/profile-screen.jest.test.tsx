@@ -321,6 +321,14 @@ describe("ProfileTabScreen", () => {
     expect(navigateToMock).toHaveBeenCalledWith("/my-groups");
   });
 
+  it("opens coaching publication permissions from settings", async () => {
+    await renderNative(<ProfileTabScreen />);
+
+    await fireEvent.press(screen.getByTestId("profile-tab-coaching-permissions"));
+
+    expect(navigateToMock).toHaveBeenCalledWith("/coaching-permissions");
+  });
+
   it("keeps the active user's identity summary on profile settings", async () => {
     await renderNative(<ProfileTabScreen />);
 
