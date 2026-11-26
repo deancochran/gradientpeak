@@ -11,18 +11,14 @@ import {
 describe("profile adapters", () => {
   it("normalizes profile settings views for app forms", () => {
     const normalized = normalizeProfileSettingsView({
-      ftp: 280,
       is_public: null,
-      threshold_hr: 172,
       username: "dean",
       weight_kg: 72.5,
     });
 
     expect(normalized).toEqual({
       avatar_url: null,
-      ftp: 280,
       is_public: false,
-      threshold_hr: 172,
       username: "dean",
       weight_kg: 72.5,
     });
@@ -30,9 +26,7 @@ describe("profile adapters", () => {
 
   it("builds quick-update defaults with safe fallbacks", () => {
     expect(getProfileQuickUpdateDefaults(null)).toEqual({
-      ftp: undefined,
       is_public: false,
-      threshold_hr: undefined,
       username: "",
       weight_kg: undefined,
     });
