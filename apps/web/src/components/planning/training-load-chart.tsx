@@ -1,4 +1,5 @@
 import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
+import { isValidDateOnlyUtc } from "@repo/core/calendar";
 import { useId } from "react";
 
 type PlanTabProjection = inferRouterOutputs<AppRouter>["trainingPlans"]["getPlanTabProjection"];
@@ -196,6 +197,7 @@ export function TrainingLoadChart({
   goalMarkersTruncated = false,
   days,
   selectedDate,
+  today,
 }: {
   fitness: PlanTabProjection["fitness"];
   fitnessHistory: PlanTabProjection["fitnessHistory"];
@@ -203,6 +205,7 @@ export function TrainingLoadChart({
   goalMarkersTruncated?: boolean;
   days: TimelineDay[];
   selectedDate?: string;
+  today?: string;
 }) {
   const descriptionId = useId();
   const summaryId = useId();
@@ -219,11 +222,14 @@ export function TrainingLoadChart({
   );
   const fitnessHistoryAvailable =
     fitnessHistory?.status === "current" || fitnessHistory?.status === "historical";
-  const fitnessHistoryQualifier = fitnessHistory?.verifiedThrough
-    ? ` verified through ${fitnessHistory.verifiedThrough}`
-    : "";
-  const actualFitnessLabel =
-    fitnessHistory?.status === "historical"
+  const canonicalToday = typeof today === "string" && isValidDateOnlyUtc(today) ? today : undefined;
+  const fitnessHistoryQualifier =
+    fitnessHistoryAvailable && fitnessHistory?.verifiedThrough
+      ? ` verified through ${fitnessHistory.verifiedThrough}`
+      : "";
+  const actualFitnessLabel = !fitnessHistoryAvailable
+    ? "Published current model-derived fitness"
+    : fitnessHistory?.status === "historical"
       ? "Historical model-derived fitness"
       : "Model-derived fitness";
   const scheduledFitnessLabel =
@@ -232,22 +238,32 @@ export function TrainingLoadChart({
       : fitnessHistory?.status === "current"
         ? `Planned model-derived fitness (projected from a baseline${fitnessHistoryQualifier})`
         : "Planned model-derived fitness (projected from an unverified baseline)";
-  const actualFitness = fitnessHistoryAvailable
-    ? fitness.actual.map((point) => ({
-        date: point.date,
-        value: point.longTermLoad,
-      }))
-    : [];
+  const actualFitness = (
+    fitnessHistoryAvailable
+      ? canonicalToday
+        ? fitness.actual.filter((point) => point.date <= canonicalToday)
+        : fitness.actual
+      : canonicalToday
+        ? fitness.actual.filter((point) => point.date === canonicalToday)
+        : []
+  ).map((point) => ({
+    date: point.date,
+    value: point.longTermLoad,
+  }));
   const loadSeries: ChartSeries[] = [
     { className: "text-primary", label: "Scheduled / planned Common Load", points: planned },
     { className: "text-emerald-600", label: "Completed Common Load", points: completed },
   ];
   const fitnessSeries: ChartSeries[] = [
-    {
-      className: "text-violet-600",
-      label: `${actualFitnessLabel}${fitnessHistoryQualifier}`,
-      points: actualFitness,
-    },
+    ...(actualFitness.length > 0
+      ? [
+          {
+            className: "text-violet-600",
+            label: `${actualFitnessLabel}${fitnessHistoryQualifier}`,
+            points: actualFitness,
+          },
+        ]
+      : []),
     {
       className: "text-amber-600",
       label: scheduledFitnessLabel,
@@ -295,10 +311,11 @@ export function TrainingLoadChart({
   }
 
   const visibleSeries = allSeries.filter((series) => series.points.length > 0);
-  const fitnessDescription =
-    fitnessHistory?.status !== "current" && fitnessHistory?.status !== "historical"
-      ? "Scheduled and completed Common Load. Planned model-derived fitness uses an unverified baseline."
-      : "Scheduled and completed Common Load with available model-derived fitness.";
+  const fitnessDescription = fitnessHistoryAvailable
+    ? "Scheduled and completed Common Load with available model-derived fitness."
+    : actualFitness.length > 0
+      ? "Scheduled and completed Common Load. Published current model-derived fitness is shown; history is unavailable. Planned model-derived fitness uses an unverified baseline."
+      : "Scheduled and completed Common Load. Planned model-derived fitness uses an unverified baseline.";
   const summary = `${allSeries.map(seriesSummary).join(" ")}${
     selectedDate ? ` Selected day: ${selectedDate}.` : ""
   }${goalSummary}`;

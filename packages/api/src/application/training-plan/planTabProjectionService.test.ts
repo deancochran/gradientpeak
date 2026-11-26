@@ -721,7 +721,10 @@ describe("readPlanTabProjection", () => {
     expect(result.fitness).toEqual({ actual: [], scheduled: [], recommended: [] });
   });
 
-  it("keeps an authoritative zero-valued baseline visible", async () => {
+  it.each([
+    { longTermLoad: 0, recentLoad: 0, loadBalance: 0 },
+    { longTermLoad: 42, recentLoad: 47, loadBalance: -5 },
+  ])("keeps an authoritative published baseline visible without history: %o", async (baseline) => {
     const deps = dependencies();
     const readModel = deps.readModel;
     deps.readModel = vi.fn(async (input) => {
@@ -729,10 +732,8 @@ describe("readPlanTabProjection", () => {
       if (!model.currentBaseline) throw new Error("Expected a baseline fixture");
       return {
         ...model,
-        currentBaseline: {
-          ...model.currentBaseline,
-          baseline: { longTermLoad: 0, recentLoad: 0, loadBalance: 0 },
-        },
+        currentBaseline: { ...model.currentBaseline, baseline },
+        loadHistory: null,
       } as never;
     });
 
@@ -747,9 +748,13 @@ describe("readPlanTabProjection", () => {
       dependencies: deps,
     });
 
-    expect(result.fitness.actual).toEqual([
-      { date: "2026-04-06", longTermLoad: 0, recentLoad: 0, loadBalance: 0 },
-    ]);
+    expect(result.today).toBe("2026-04-06");
+    expect(result.fitness.actual).toEqual([{ date: result.today, ...baseline }]);
+    expect(result.fitnessHistory).toEqual({
+      status: "unavailable",
+      verifiedThrough: null,
+      maturity: null,
+    });
   });
 
   it("returns recorded fitness history before the planned forecast begins", async () => {
