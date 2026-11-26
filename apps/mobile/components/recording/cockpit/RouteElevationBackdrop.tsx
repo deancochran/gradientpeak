@@ -4,6 +4,7 @@ import React from "react";
 import { useColorScheme, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CartesianChart, Line } from "victory-native";
+import { omitUndefined } from "@/lib/omitUndefined";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 
 interface RouteElevationBackdropProps {
@@ -33,8 +34,6 @@ interface RenderedChartPoint {
 interface RouteSnapshot {
   currentDistance: number;
   grade: number;
-  isGpsEnabled: boolean;
-  isOnRoute: boolean;
   profile: Array<{ distance: number; elevation: number }>;
   progress: number;
   routeDistance: number;
@@ -106,8 +105,6 @@ export function RouteElevationProfile({
     [
       snapshot.currentDistance,
       snapshot.grade,
-      snapshot.isGpsEnabled,
-      snapshot.isOnRoute,
       snapshot.profile,
       snapshot.progress,
       snapshot.routeDistance,
@@ -163,7 +160,7 @@ export function RouteElevationProfile({
       };
 
   return (
-    <View className={className} testID="route-profile-card-content">
+    <View {...omitUndefined({ className })} testID="route-profile-card-content">
       {!isCompact && showHeader ? (
         <View className="mb-3 flex-row items-start justify-between gap-4">
           <View className="flex-1">
@@ -346,8 +343,6 @@ function readRouteSnapshot(service: ActivityRecorderService | null): RouteSnapsh
   return {
     currentDistance: Math.max(0, service?.currentRouteDistance ?? 0),
     grade: service?.currentRouteGrade ?? 0,
-    isGpsEnabled: service?.isGpsRecordingEnabled?.() ?? true,
-    isOnRoute: service?.isOnRoute ?? false,
     profile: service?.currentRoute?.elevation_profile ?? [],
     progress: clamp(service?.routeProgress ?? 0, 0, 100),
     routeDistance: Math.max(0, service?.routeDistance ?? 0),
@@ -368,7 +363,6 @@ function buildRouteBackdropViewModel(snapshot: RouteSnapshot): RouteBackdropView
       ? clamp(clampedDistanceMeters / routeDistanceMeters, 0, 1)
       : clamp(snapshot.progress / 100, 0, 1);
   const currentProfilePoint = interpolateProfilePoint(profilePoints, clampedDistanceMeters);
-  const shouldShowPosition = !snapshot.isGpsEnabled || snapshot.isOnRoute;
   const completedProfilePoints = currentProfilePoint
     ? [
         ...profilePoints.filter((point) => point.distanceMeters <= clampedDistanceMeters),
@@ -383,7 +377,7 @@ function buildRouteBackdropViewModel(snapshot: RouteSnapshot): RouteBackdropView
     currentProfilePoint,
     gradeLabel: formatGrade(snapshot.grade),
     isRouteComplete: routeDistanceMeters > 0 && currentDistanceMeters >= routeDistanceMeters,
-    shouldShowPosition,
+    shouldShowPosition: true,
     profilePoints,
     progressLabel:
       routeDistanceMeters > 0
@@ -425,12 +419,15 @@ function interpolateProfilePoint(
   currentDistanceMeters: number,
 ): RouteElevationDatum | null {
   if (profilePoints.length === 0) return null;
+  const [firstPoint] = profilePoints;
+  if (!firstPoint) return null;
 
-  if (currentDistanceMeters <= profilePoints[0]?.distanceMeters) return profilePoints[0]!;
+  if (currentDistanceMeters <= firstPoint.distanceMeters) return firstPoint;
 
   for (let index = 0; index < profilePoints.length - 1; index += 1) {
-    const start = profilePoints[index]!;
-    const end = profilePoints[index + 1]!;
+    const start = profilePoints[index];
+    const end = profilePoints[index + 1];
+    if (!start || !end) continue;
     if (
       currentDistanceMeters >= start.distanceMeters &&
       currentDistanceMeters <= end.distanceMeters
@@ -444,7 +441,7 @@ function interpolateProfilePoint(
     }
   }
 
-  return profilePoints[profilePoints.length - 1]!;
+  return profilePoints.at(-1) ?? null;
 }
 
 function resolveRenderedCurrentPoint(params: {
@@ -467,8 +464,9 @@ function resolveRenderedCurrentPoint(params: {
   }
 
   for (let index = 0; index < sortedPoints.length - 1; index += 1) {
-    const start = sortedPoints[index]!;
-    const end = sortedPoints[index + 1]!;
+    const start = sortedPoints[index];
+    const end = sortedPoints[index + 1];
+    if (!start || !end) continue;
     const startDistance = getRenderedPointDistance(start);
     const endDistance = getRenderedPointDistance(end);
     if (

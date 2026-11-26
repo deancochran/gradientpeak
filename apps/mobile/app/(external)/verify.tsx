@@ -5,7 +5,7 @@ import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { AlertCircle } from "lucide-react-native";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { authClient, getEmailVerificationCallbackUrl } from "@/lib/auth/client";
 import { useAuth } from "@/lib/hooks/useAuth";
@@ -13,10 +13,25 @@ import { useAuth } from "@/lib/hooks/useAuth";
 export default function VerifyScreen() {
   const router = useRouter();
   const { email, source } = useLocalSearchParams<{ email: string; source?: string }>();
-  const { isEmailVerified } = useAuth();
+  const { isEmailVerified, user } = useAuth();
   const [isResending, setIsResending] = useState(false);
   const [resendMessage, setResendMessage] = useState<string | null>(null);
   const isSignUpFollowUp = source === "sign-up";
+  const context = `${user?.id ?? ""}:${user?.email ?? ""}:${email ?? ""}:${source ?? ""}`;
+  const owner = useRef({ context, active: true });
+  if (owner.current.context !== context) owner.current = { context, active: true };
+  const inFlight = useRef<object | null>(null);
+  const renderOwner = owner.current;
+  useEffect(() => {
+    const current = renderOwner;
+    current.active = true;
+    setIsResending(false);
+    setResendMessage(null);
+    inFlight.current = null;
+    return () => {
+      current.active = false;
+    };
+  }, [renderOwner]);
 
   useEffect(() => {
     if (isEmailVerified) {
@@ -25,27 +40,28 @@ export default function VerifyScreen() {
   }, [isEmailVerified, router]);
 
   const onResend = async () => {
-    if (!email) return;
+    if (!email || inFlight.current || owner.current !== renderOwner || !renderOwner.active) return;
+    const current = owner.current;
+    inFlight.current = current;
+    const isCurrent = () => current.active && owner.current === current;
 
     setIsResending(true);
     setResendMessage(null);
     try {
-      const result = await authClient.sendVerificationEmail({
+      await authClient.sendVerificationEmail({
         email,
         callbackURL: getEmailVerificationCallbackUrl(),
       });
-
-      if (result.error) {
-        setResendMessage(result.error.message || "Failed to resend verification email");
-      } else {
-        setResendMessage(
-          "Verification email request accepted. Refresh your inbox or Mailpit and try again in a few seconds.",
-        );
-      }
     } catch {
-      setResendMessage("Failed to resend verification email");
+      // Delivery failures and identity outcomes share the same public acknowledgement.
     } finally {
-      setIsResending(false);
+      if (isCurrent()) {
+        setResendMessage(
+          "If this email can be verified, a verification link will be sent. Check your inbox, or try again shortly.",
+        );
+        setIsResending(false);
+        inFlight.current = null;
+      }
     }
   };
 
@@ -87,7 +103,7 @@ export default function VerifyScreen() {
               <LoadingButton
                 variant="ghost"
                 onPress={onResend}
-                disabled={isResending}
+                disabled={isResending || !email}
                 loading={isResending}
                 loadingLabel="Sending..."
                 loadingTextClassName="text-foreground"
@@ -98,7 +114,10 @@ export default function VerifyScreen() {
               </LoadingButton>
               <Button
                 variant="link"
-                onPress={() => router.replace("/(external)/sign-in")}
+                disabled={isResending}
+                onPress={() => {
+                  if (!inFlight.current) router.replace("/(external)/sign-in");
+                }}
                 className="w-full"
                 testID="back-to-sign-in-button"
               >
@@ -106,10 +125,10 @@ export default function VerifyScreen() {
               </Button>
               {resendMessage && (
                 <Text
-                  className={`text-center text-xs ${
-                    resendMessage.startsWith("Failed") ? "text-destructive" : "text-success"
-                  }`}
+                  className="text-center text-xs text-muted-foreground"
                   testID="resend-message"
+                  accessibilityRole="alert"
+                  accessibilityLiveRegion="polite"
                 >
                   {resendMessage}
                 </Text>

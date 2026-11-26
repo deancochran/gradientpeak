@@ -1,4 +1,8 @@
-import { SYSTEM_TEMPLATES, type SystemTemplate } from "../../samples";
+import {
+  deriveSystemActivityTemplateActivityCategory,
+  SYSTEM_TEMPLATES,
+  type SystemTemplate,
+} from "../../samples";
 import {
   classifySystemActivityTemplate,
   type SystemActivityTemplateArchetype,
@@ -8,24 +12,28 @@ import {
   type SystemActivityTemplateRecoveryCostBand,
   type SystemActivityTemplateTrainingIntent,
 } from "../../samples/system-activity-template-taxonomy";
-import type { ActivityPlanStructureV2 } from "../../schemas/activity_plan_v2";
 import { calculateSystemTemplateDurationSeconds } from "./systemPlanAudit";
 
-export type SystemActivityTemplateDurationBand = "short" | "medium" | "long" | "extra-long";
+export type SystemActivityTemplateDurationBand =
+  | "short"
+  | "medium"
+  | "long"
+  | "extra-long"
+  | "unknown";
 
 export type SystemActivityTemplateLoadBand = "low" | "moderate" | "high" | "very-high";
 
 export interface NormalizedSystemActivityTemplateCatalogEntry {
   template_id: string;
   template_name: string;
-  sport: SystemTemplate["activity_category"];
+  activity_category: ReturnType<typeof deriveSystemActivityTemplateActivityCategory>;
   source_file: string;
   execution_context: SystemActivityTemplateExecutionContext;
   session_archetype: SystemActivityTemplateArchetype;
   training_intent: SystemActivityTemplateTrainingIntent;
   intensity_family: SystemActivityTemplateIntensityFamily;
   progression_level: SystemActivityTemplateProgressionLevel;
-  duration_seconds: number;
+  duration_seconds: number | null;
   duration_band: SystemActivityTemplateDurationBand;
   load_band: SystemActivityTemplateLoadBand;
   recovery_cost_band: SystemActivityTemplateRecoveryCostBand;
@@ -35,8 +43,10 @@ export interface NormalizedSystemActivityTemplateCatalogEntry {
   duplicate_name_count: number;
 }
 
-function mapStepTargetSignature(target: { type: string; intensity: number }): string {
-  return `${target.type}:${Math.round(target.intensity * 10) / 10}`;
+function mapStepTargetSignature(target: { type: string; intensity?: number }): string {
+  return target.intensity === undefined
+    ? target.type
+    : `${target.type}:${Math.round(target.intensity * 10) / 10}`;
 }
 
 function serializeDuration(duration: {
@@ -57,24 +67,25 @@ function serializeDuration(duration: {
   }
 }
 
-function collectWorkSteps(structure: ActivityPlanStructureV2): Array<{
-  interval_name: string;
+function collectWorkSteps(structure: SystemTemplate["structure"]): Array<{
+  repeat_id?: string;
   repetitions: number;
   step_name: string;
   duration: string;
   targets: string[];
 }> {
-  const allSteps = structure.intervals.flatMap((interval) =>
-    interval.steps.map((step) => ({
-      interval_name: interval.name.toLowerCase(),
-      repetitions: interval.repetitions,
-      step_name: step.name.toLowerCase(),
+  const allSteps = structure.items.flatMap((item) =>
+    (item.type === "repeat" ? item.steps : [item]).map((step) => ({
+      ...(item.type === "repeat"
+        ? { repeat_id: item.id, repetitions: item.count }
+        : { repetitions: 1 }),
+      step_name: (step.name ?? "").toLowerCase(),
       duration: serializeDuration(step.duration),
-      targets: (step.targets ?? []).map(mapStepTargetSignature).sort(),
+      targets: step.targets.map(mapStepTargetSignature).sort(),
     })),
   );
   const workSteps = allSteps.filter((step) => {
-    const stepName = `${step.interval_name} ${step.step_name}`;
+    const stepName = step.step_name;
     return !/(warm|cool|recover|easy reset|float recovery)/i.test(stepName);
   });
 
@@ -82,7 +93,7 @@ function collectWorkSteps(structure: ActivityPlanStructureV2): Array<{
 }
 
 export function normalizeActivityTemplateStructureForAudit(
-  structure: ActivityPlanStructureV2,
+  structure: SystemTemplate["structure"],
 ): unknown {
   const rewrite = (node: unknown): unknown => {
     if (Array.isArray(node)) {
@@ -108,17 +119,18 @@ export function normalizeActivityTemplateStructureForAudit(
   return rewrite(structure);
 }
 
-function buildPrimaryWorkSignature(structure: ActivityPlanStructureV2): string {
+function buildPrimaryWorkSignature(structure: SystemTemplate["structure"]): string {
   return JSON.stringify(collectWorkSteps(structure));
 }
 
 function deriveDurationBand(
-  sport: SystemTemplate["activity_category"],
-  durationSeconds: number,
+  activity_category: ReturnType<typeof deriveSystemActivityTemplateActivityCategory>,
+  durationSeconds: number | null,
 ): SystemActivityTemplateDurationBand {
-  const mediumThreshold = sport === "bike" ? 3600 : 2700;
-  const longThreshold = sport === "bike" ? 7200 : 5400;
-  const extraLongThreshold = sport === "bike" ? 10800 : 7200;
+  if (durationSeconds === null) return "unknown";
+  const mediumThreshold = activity_category === "bike" ? 3600 : 2700;
+  const longThreshold = activity_category === "bike" ? 7200 : 5400;
+  const extraLongThreshold = activity_category === "bike" ? 10800 : 7200;
 
   if (durationSeconds >= extraLongThreshold) {
     return "extra-long";
@@ -180,13 +192,14 @@ export function buildSystemActivityTemplateCatalog(
     .map((template) => {
       const taxonomy = classifySystemActivityTemplate(template);
       const durationSeconds = calculateSystemTemplateDurationSeconds(template);
-      const durationBand = deriveDurationBand(template.activity_category, durationSeconds);
+      const activity_category = deriveSystemActivityTemplateActivityCategory(template.structure);
+      const durationBand = deriveDurationBand(activity_category, durationSeconds);
       const normalizedStructure = normalizeActivityTemplateStructureForAudit(template.structure);
 
       return {
         template_id: template.id,
         template_name: template.name,
-        sport: template.activity_category,
+        activity_category,
         source_file: taxonomy.source_file,
         execution_context: taxonomy.execution_context,
         session_archetype: taxonomy.session_archetype,
