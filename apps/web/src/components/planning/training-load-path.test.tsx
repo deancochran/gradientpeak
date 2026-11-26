@@ -194,7 +194,7 @@ describe("TrainingLoadPath", () => {
     ).toBeGreaterThan(0);
   });
 
-  it("withholds unavailable actual fitness while retaining scheduled projection and labels historical series", () => {
+  it("shows only the published current fitness baseline when history is unavailable", () => {
     const projection = {
       contractVersion: "plan-tab-projection-v2" as const,
       asOf: "2026-07-25T12:00:00.000Z",
@@ -251,7 +251,8 @@ describe("TrainingLoadPath", () => {
       fitness: {
         actual: [
           { date: "2026-07-24", longTermLoad: 40, recentLoad: 50, loadBalance: -10 },
-          { date: "2026-07-25", longTermLoad: 42, recentLoad: 52, loadBalance: -10 },
+          { date: "2026-07-25", longTermLoad: 0, recentLoad: 0, loadBalance: 0 },
+          { date: "2026-07-26", longTermLoad: 99, recentLoad: 99, loadBalance: 0 },
         ],
         scheduled: [
           { date: "2026-07-24", longTermLoad: 41, recentLoad: 51, loadBalance: -10 },
@@ -281,7 +282,13 @@ describe("TrainingLoadPath", () => {
       "Planned model-derived fitness (projected from an unverified baseline)",
     );
     expect(within(chart).getAllByText(/unverified baseline/i)).toHaveLength(3);
-    expect(within(chart).queryByText(/^Model-derived fitness/)).toBeNull();
+    expect(within(chart).getByText("Published current model-derived fitness")).toBeTruthy();
+    expect(accessibleDescription(chart)).toMatch(
+      /Published current model-derived fitness: 1 daily value, latest 0 on 2026-07-25/,
+    );
+    expect(chart.querySelectorAll("g.text-violet-600 circle")).toHaveLength(1);
+    expect(accessibleDescription(chart)).not.toMatch(/latest (40|99) on 2026-07-2[46]/);
+    expect(within(chart).queryByText(/verified through/i)).toBeNull();
     expect(
       within(container)
         .getAllByTestId("training-chart-selected-date-marker")
@@ -299,7 +306,71 @@ describe("TrainingLoadPath", () => {
       name: "Daily training chart",
     });
     expect(within(absentHistoryChart).getAllByText(/unverified baseline/i)).toHaveLength(3);
-    expect(within(absentHistoryChart).queryByText(/^Model-derived fitness/)).toBeNull();
+    expect(
+      within(absentHistoryChart).getByText("Published current model-derived fitness"),
+    ).toBeTruthy();
+    expect(accessibleDescription(absentHistoryChart)).toMatch(/latest 0 on 2026-07-25/);
+
+    rerender(
+      <TrainingLoadPath
+        projection={{
+          ...projection,
+          fitnessHistory: {
+            status: "unavailable",
+            verifiedThrough: "2026-07-24",
+            maturity: null,
+          } as never,
+        }}
+        selectedDate="2026-07-24"
+      />,
+    );
+    const unavailableWithQualifierChart = within(container).getByRole("region", {
+      name: "Daily training chart",
+    });
+    expect(within(unavailableWithQualifierChart).queryByText(/verified through/i)).toBeNull();
+    expect(accessibleDescription(unavailableWithQualifierChart)).not.toMatch(/verified through/i);
+
+    rerender(
+      <TrainingLoadPath
+        projection={{
+          ...projection,
+          fitness: {
+            ...projection.fitness,
+            actual: projection.fitness.actual.filter((point) => point.date !== projection.today),
+          },
+        }}
+        selectedDate="2026-07-24"
+      />,
+    );
+    expect(
+      within(within(container).getByRole("region", { name: "Daily training chart" })).queryByText(
+        "Published current model-derived fitness",
+      ),
+    ).toBeNull();
+
+    rerender(
+      <TrainingLoadPath
+        projection={{ ...projection, fitnessHistory: undefined, today: null }}
+        selectedDate="2026-07-24"
+      />,
+    );
+    expect(
+      within(within(container).getByRole("region", { name: "Daily training chart" })).queryByText(
+        "Published current model-derived fitness",
+      ),
+    ).toBeNull();
+
+    rerender(
+      <TrainingLoadPath
+        projection={{ ...projection, fitnessHistory: undefined, today: "2026-99-99" }}
+        selectedDate="2026-07-24"
+      />,
+    );
+    expect(
+      within(within(container).getByRole("region", { name: "Daily training chart" })).queryByText(
+        "Published current model-derived fitness",
+      ),
+    ).toBeNull();
 
     rerender(
       <TrainingLoadPath
@@ -321,6 +392,7 @@ describe("TrainingLoadPath", () => {
         "Historical model-derived fitness verified through 2026-07-23",
       ),
     ).toBeTruthy();
+    expect(accessibleDescription(historicalChart)).not.toMatch(/latest 99 on 2026-07-26/);
     expect(
       within(historicalChart).getByText(
         "Planned model-derived fitness (projected from a historical baseline verified through 2026-07-23)",
@@ -331,6 +403,49 @@ describe("TrainingLoadPath", () => {
         .getAllByTestId("training-chart-selected-date-marker")
         .every((marker) => marker.getAttribute("x1") === "100"),
     ).toBe(true);
+
+    rerender(
+      <TrainingLoadPath
+        projection={{
+          ...projection,
+          today: null,
+          fitnessHistory: {
+            status: "current",
+            verifiedThrough: "2026-07-25",
+            maturity: "mature",
+          },
+        }}
+        selectedDate="2026-07-25"
+      />,
+    );
+    const currentWithoutTodayChart = within(container).getByRole("region", {
+      name: "Daily training chart",
+    });
+    expect(accessibleDescription(currentWithoutTodayChart)).toMatch(
+      /Model-derived fitness verified through 2026-07-25: 3 daily values, latest 99 on 2026-07-26/,
+    );
+
+    rerender(
+      <TrainingLoadPath
+        projection={{
+          ...projection,
+          today: "2026-99-99",
+          fitnessHistory: {
+            status: "historical",
+            verifiedThrough: "2026-07-23",
+            maturity: "establishing_baseline",
+          },
+        }}
+        selectedDate="2026-07-25"
+      />,
+    );
+    expect(
+      accessibleDescription(
+        within(container).getByRole("region", { name: "Daily training chart" }),
+      ),
+    ).toMatch(
+      /Historical model-derived fitness verified through 2026-07-23: 3 daily values, latest 99 on 2026-07-26/,
+    );
   });
 
   it("marks the selected date on the visible chart while keeping date controls keyboard accessible", () => {
