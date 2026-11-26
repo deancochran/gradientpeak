@@ -232,6 +232,7 @@ describe("CoachingPublicationPermissions", () => {
       organizationId: "organization",
     });
     expect(toggle.props.checked).toBe(false);
+    expect(screen.getByTestId("coaching-permission-coach-membership").props.disabled).toBe(true);
     expect(screen.getByText("Updating permission and confirming its current status…")).toBeTruthy();
 
     await act(async () => {
@@ -239,8 +240,8 @@ describe("CoachingPublicationPermissions", () => {
       await Promise.resolve();
     });
     await waitFor(() => expect(query).toHaveBeenCalledTimes(2));
-    expect(screen.getByTestId("coaching-permission-coach-membership").props.disabled).toBe(true);
-    expect(screen.getByTestId("coaching-permission-coach-membership").props.checked).toBe(false);
+    await waitFor(() => expect(screen.getByLabelText("Loading assigned coaches")).toBeTruthy());
+    expect(screen.queryByTestId("coaching-permission-coach-membership")).toBeNull();
 
     await act(async () => {
       refreshed.resolve({ options: [grantedOption] });
