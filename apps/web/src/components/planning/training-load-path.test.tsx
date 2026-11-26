@@ -286,7 +286,11 @@ describe("TrainingLoadPath", () => {
     expect(accessibleDescription(chart)).toMatch(
       /Published current model-derived fitness: 1 daily value, latest 0 on 2026-07-25/,
     );
-    expect(chart.querySelectorAll("g.text-violet-600 circle")).toHaveLength(1);
+    expect(
+      chart.querySelectorAll(
+        '[data-chart-series="published-current-fitness"][data-chart-marker="observed"]',
+      ),
+    ).toHaveLength(1);
     expect(accessibleDescription(chart)).not.toMatch(/latest (40|99) on 2026-07-2[46]/);
     expect(within(chart).queryByText(/verified through/i)).toBeNull();
     expect(
@@ -294,6 +298,40 @@ describe("TrainingLoadPath", () => {
         .getAllByTestId("training-chart-selected-date-marker")
         .every((marker) => marker.getAttribute("x1") === "0"),
     ).toBe(true);
+
+    rerender(
+      <TrainingLoadPath
+        projection={{
+          ...projection,
+          fitness: {
+            ...projection.fitness,
+            scheduled: projection.fitness.scheduled.map((point) =>
+              point.date === "2026-07-25"
+                ? { ...point, longTermLoad: 0, recentLoad: 0, loadBalance: 0 }
+                : point,
+            ),
+          },
+        }}
+        selectedDate="2026-07-24"
+      />,
+    );
+    const coincidentChart = within(container).getByRole("region", {
+      name: "Daily training chart",
+    });
+    const publishedMarker = coincidentChart.querySelector(
+      '[data-chart-series="published-current-fitness"][data-chart-marker="observed"]',
+    );
+    const projectedMarker = coincidentChart.querySelector(
+      '[data-chart-series="planned-fitness"][data-chart-marker="scheduled"][style*="left: 100%"][style*="top: 100%"]',
+    );
+    expect(publishedMarker?.className).toContain("rounded-full");
+    expect(projectedMarker?.className).toContain("rotate-45");
+    expect(publishedMarker?.className).toContain("size-2");
+    expect(projectedMarker?.className).toContain("size-3");
+    expect(publishedMarker?.getAttribute("style")).toContain("left: 100%");
+    expect(projectedMarker?.getAttribute("style")).toContain("left: 100%");
+    expect(publishedMarker?.getAttribute("style")).toContain("top: 100%");
+    expect(projectedMarker?.getAttribute("style")).toContain("top: 100%");
 
     rerender(
       <TrainingLoadPath
@@ -630,7 +668,7 @@ describe("TrainingLoadPath", () => {
         within(container).getByRole("region", { name: "Daily training chart" }),
       ),
     ).toMatch(/unavailable Common Load values.*omitted, not shown as zero/i);
-    expect(container.querySelectorAll("circle").length).toBeGreaterThan(0);
+    expect(container.querySelectorAll("[data-chart-marker]").length).toBeGreaterThan(0);
 
     rerender(
       <TrainingLoadPath

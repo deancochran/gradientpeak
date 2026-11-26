@@ -13,7 +13,9 @@ type ChartPoint = {
 
 type ChartSeries = {
   className: string;
+  id: string;
   label: string;
+  markerKind: "observed" | "scheduled";
   points: ChartPoint[];
   strokeDasharray?: string;
 };
@@ -82,6 +84,11 @@ function ChartPanel({
   const selectedDateX =
     selectedDateIndex >= 0 ? (selectedDateIndex / Math.max(dates.length - 1, 1)) * 100 : null;
   const denominator = Math.max(dates.length - 1, 1);
+  const markerSeries = [...series].sort((left, right) => {
+    const leftOrder = left.markerKind === "scheduled" ? 0 : 1;
+    const rightOrder = right.markerKind === "scheduled" ? 0 : 1;
+    return leftOrder - rightOrder;
+  });
   const goalMarkersByDate = new Map<string, GoalMarker[]>();
   for (const marker of goalMarkers) {
     const markers = goalMarkersByDate.get(marker.targetDate) ?? [];
@@ -92,96 +99,108 @@ function ChartPanel({
   return (
     <div className="space-y-2">
       <p className="text-xs font-medium text-muted-foreground">{title}</p>
-      <svg
-        aria-hidden="true"
-        className="h-32 w-full overflow-visible"
-        preserveAspectRatio="none"
-        viewBox="0 0 100 100"
-      >
-        {series.length > 0 ? (
-          <line
-            className="text-border"
-            stroke="currentColor"
-            strokeWidth="1"
-            x1="0"
-            x2="100"
-            y1="100"
-            y2="100"
-          />
-        ) : null}
-        {selectedDateX !== null ? (
-          <line
-            className="text-primary"
-            data-testid="training-chart-selected-date-marker"
-            stroke="currentColor"
-            strokeDasharray="3 3"
-            strokeWidth="1"
-            x1={selectedDateX}
-            x2={selectedDateX}
-            y1="0"
-            y2="100"
-          />
-        ) : null}
-        {series.map((entry) => {
-          const geometry = buildSeriesGeometry(entry.points, dates, maximum);
-          return (
-            <g className={entry.className} key={entry.label}>
-              {geometry.segments.map((points) => (
-                <polyline
-                  fill="none"
-                  key={points}
-                  points={points}
+      <div className="relative h-32 w-full">
+        <svg
+          aria-hidden="true"
+          className="absolute inset-0 h-full w-full overflow-visible"
+          preserveAspectRatio="none"
+          viewBox="0 0 100 100"
+        >
+          {series.length > 0 ? (
+            <line
+              className="text-border"
+              stroke="currentColor"
+              strokeWidth="1"
+              x1="0"
+              x2="100"
+              y1="100"
+              y2="100"
+            />
+          ) : null}
+          {selectedDateX !== null ? (
+            <line
+              className="text-primary"
+              data-testid="training-chart-selected-date-marker"
+              stroke="currentColor"
+              strokeDasharray="3 3"
+              strokeWidth="1"
+              vectorEffect="non-scaling-stroke"
+              x1={selectedDateX}
+              x2={selectedDateX}
+              y1="0"
+              y2="100"
+            />
+          ) : null}
+          {series.map((entry) => {
+            const geometry = buildSeriesGeometry(entry.points, dates, maximum);
+            return (
+              <g className={entry.className} key={entry.label}>
+                {geometry.segments.map((points) => (
+                  <polyline
+                    fill="none"
+                    key={points}
+                    points={points}
+                    stroke="currentColor"
+                    strokeDasharray={entry.strokeDasharray}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ))}
+              </g>
+            );
+          })}
+          {[...goalMarkersByDate.entries()].map(([date, markers]) => {
+            const dateIndex = dates.indexOf(date);
+            if (dateIndex < 0) return null;
+            const x = (dateIndex / denominator) * 100;
+            return (
+              <g data-goal-marker-count={markers.length} data-goal-marker-date={date} key={date}>
+                <line
+                  className="text-rose-600"
                   stroke="currentColor"
-                  strokeDasharray={entry.strokeDasharray}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
+                  strokeDasharray="2 2"
+                  strokeWidth="1.5"
                   vectorEffect="non-scaling-stroke"
+                  x1={x}
+                  x2={x}
+                  y1="0"
+                  y2="100"
                 />
-              ))}
-              {geometry.markers.map((marker) => (
-                <circle
-                  cx={marker.x}
-                  cy={marker.y}
-                  fill="currentColor"
-                  key={`${marker.x}:${marker.y}`}
-                  r="1.8"
-                />
-              ))}
-            </g>
-          );
+                <circle className="text-rose-600" cx={x} cy="7" fill="currentColor" r="3" />
+                {markers.length > 1 ? (
+                  <text
+                    className="fill-background text-[8px] font-semibold"
+                    textAnchor="middle"
+                    x={x}
+                    y="9.5"
+                  >
+                    {markers.length}
+                  </text>
+                ) : null}
+              </g>
+            );
+          })}
+        </svg>
+        {markerSeries.flatMap((entry) => {
+          const geometry = buildSeriesGeometry(entry.points, dates, maximum);
+          return geometry.markers.map((marker) => (
+            <span
+              aria-hidden="true"
+              className={`absolute z-10 -translate-x-1/2 -translate-y-1/2 ${entry.className} ${
+                entry.markerKind === "observed"
+                  ? "size-2 rounded-full bg-current"
+                  : "size-3 rotate-45 border-2 border-current bg-background"
+              }`}
+              data-chart-marker={entry.markerKind}
+              data-chart-series={entry.id}
+              key={`${entry.id}:${marker.x}:${marker.y}`}
+              style={{ left: `${marker.x}%`, top: `${marker.y}%` }}
+            />
+          ));
         })}
-        {[...goalMarkersByDate.entries()].map(([date, markers]) => {
-          const dateIndex = dates.indexOf(date);
-          if (dateIndex < 0) return null;
-          const x = (dateIndex / denominator) * 100;
-          return (
-            <g data-goal-marker-count={markers.length} data-goal-marker-date={date} key={date}>
-              <line
-                className="text-rose-600"
-                stroke="currentColor"
-                strokeDasharray="2 2"
-                strokeWidth="1.5"
-                x1={x}
-                x2={x}
-                y1="0"
-                y2="100"
-              />
-              <circle className="text-rose-600" cx={x} cy="7" fill="currentColor" r="3" />
-              {markers.length > 1 ? (
-                <text
-                  className="fill-background text-[8px] font-semibold"
-                  textAnchor="middle"
-                  x={x}
-                  y="9.5"
-                >
-                  {markers.length}
-                </text>
-              ) : null}
-            </g>
-          );
-        })}
-      </svg>
+      </div>
       <div className="flex justify-between text-xs text-muted-foreground">
         <span>{dates[0]}</span>
         <span>{dates.at(-1)}</span>
@@ -251,22 +270,38 @@ export function TrainingLoadChart({
     value: point.longTermLoad,
   }));
   const loadSeries: ChartSeries[] = [
-    { className: "text-primary", label: "Scheduled / planned Common Load", points: planned },
-    { className: "text-emerald-600", label: "Completed Common Load", points: completed },
+    {
+      className: "text-primary",
+      id: "scheduled-common-load",
+      label: "Scheduled / planned Common Load",
+      markerKind: "scheduled",
+      points: planned,
+    },
+    {
+      className: "text-emerald-600",
+      id: "completed-common-load",
+      label: "Completed Common Load",
+      markerKind: "observed",
+      points: completed,
+    },
   ];
   const fitnessSeries: ChartSeries[] = [
     ...(actualFitness.length > 0
       ? [
           {
             className: "text-violet-600",
+            id: "published-current-fitness",
             label: `${actualFitnessLabel}${fitnessHistoryQualifier}`,
+            markerKind: "observed" as const,
             points: actualFitness,
           },
         ]
       : []),
     {
       className: "text-amber-600",
+      id: "planned-fitness",
       label: scheduledFitnessLabel,
+      markerKind: "scheduled",
       points: fitness.scheduled.map((point) => ({
         date: point.date,
         value: point.longTermLoad,
@@ -349,7 +384,22 @@ export function TrainingLoadChart({
       <ul aria-label="Chart legend" className="flex list-none flex-wrap gap-x-4 gap-y-2 text-xs">
         {visibleSeries.map((series) => (
           <li className="inline-flex items-center gap-2" key={series.label}>
-            <span aria-hidden="true" className={`h-0.5 w-5 ${series.className} bg-current`} />
+            <span aria-hidden="true" className="relative flex h-3 w-5 items-center">
+              <span
+                className={`h-0.5 w-5 ${series.className} ${
+                  series.strokeDasharray
+                    ? "border-t-2 border-dashed border-current bg-transparent"
+                    : "bg-current"
+                }`}
+              />
+              <span
+                className={`absolute left-1/2 -translate-x-1/2 ${series.className} ${
+                  series.markerKind === "observed"
+                    ? "size-2 rounded-full bg-current"
+                    : "size-3 rotate-45 border-2 border-current bg-background"
+                }`}
+              />
+            </span>
             {series.label}
           </li>
         ))}
