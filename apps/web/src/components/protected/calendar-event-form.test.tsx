@@ -1,0 +1,197 @@
+// @vitest-environment jsdom
+
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { CalendarEventForm } from "./calendar-event-form";
+
+vi.mock("../../lib/use-unsaved-changes-guard", () => ({
+  useUnsavedChangesGuard: () => ({
+    guardedCancel: (fn: () => void) => fn(),
+    markSaveFailed: vi.fn(),
+    markSaved: vi.fn(),
+  }),
+}));
+
+const mocks = vi.hoisted(() => ({ action: vi.fn() }));
+
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children }: { children: React.ReactNode }) => <a href="/calendar">{children}</a>,
+}));
+vi.mock("@tanstack/react-start", () => ({ useServerFn: () => mocks.action }));
+vi.mock("../../lib/planning/server-actions", () => ({
+  updateCalendarEventAction: { url: "/actions/calendar/update" },
+}));
+
+const event = {
+  all_day: false,
+  id: "00000000-0000-4000-8000-000000000001",
+  notes: "Original notes",
+  scheduled_date: "2026-10-26",
+  starts_at: "2026-10-26T09:00:00.000Z",
+  timezone: "UTC",
+  title: "Original title",
+};
+
+afterEach(() => {
+  cleanup();
+  mocks.action.mockReset();
+});
+
+function getForm() {
+  const form = screen.getByRole("button", { name: /save changes|saving/i }).closest("form");
+  if (!(form instanceof HTMLFormElement))
+    throw new Error("Expected the save button to be inside a form.");
+  return form;
+}
+
+describe("CalendarEventForm", () => {
+  it("keeps the edit draft and announces a rejected server submission", async () => {
+    mocks.action.mockRejectedValueOnce(new Error("Update request failed"));
+    render(<CalendarEventForm event={event} month="2026-10" view="month" />);
+
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Updated title" } });
+    fireEvent.change(screen.getByLabelText("Notes"), { target: { value: "Updated notes" } });
+    fireEvent.submit(getForm());
+
+    expect((await screen.findByRole("alert")).textContent).toContain("Update request failed");
+    expect((screen.getByLabelText("Title") as HTMLInputElement).value).toBe("Updated title");
+    expect((screen.getByLabelText("Notes") as HTMLTextAreaElement).value).toBe("Updated notes");
+  });
+
+  it("prevents duplicate edit submissions while the request is pending", async () => {
+    let resolve!: () => void;
+    mocks.action.mockImplementationOnce(
+      () =>
+        new Promise<void>((done) => {
+          resolve = done;
+        }),
+    );
+    render(<CalendarEventForm event={event} month="2026-10" view="month" />);
+    const form = getForm();
+
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+
+    await waitFor(() => expect(mocks.action).toHaveBeenCalledTimes(1));
+    expect((screen.getByRole("button", { name: "Saving..." }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    resolve();
+    await waitFor(() =>
+      expect(
+        (screen.getByRole("button", { name: "Save changes" }) as HTMLButtonElement).disabled,
+      ).toBe(false),
+    );
+  });
+
+  it("blocks date/time changes from expanding to future or series scope and keeps single valid", async () => {
+    const recurringEvent = { ...event, recurrence_rule: "FREQ=WEEKLY;COUNT=4" };
+    render(<CalendarEventForm event={recurringEvent} month="2026-10" view="month" />);
+    const scope = screen.getByLabelText("Apply changes to") as HTMLSelectElement;
+
+    fireEvent.change(screen.getByLabelText("Time"), { target: { value: "10:00" } });
+
+    await waitFor(() => expect(scope.value).toBe("single"));
+    expect(
+      (screen.getByRole("option", { name: /this and future events/i }) as HTMLOptionElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByRole("option", { name: /entire series/i }) as HTMLOptionElement).disabled,
+    ).toBe(true);
+    expect(
+      screen.getByText(/Date, time, and all-day changes apply only to this event/i),
+    ).toBeTruthy();
+
+    fireEvent.change(scope, { target: { value: "future" } });
+    await waitFor(() => expect(scope.value).toBe("single"));
+
+    fireEvent.submit(getForm());
+    await waitFor(() => expect(mocks.action).toHaveBeenCalledTimes(1));
+    const formData = mocks.action.mock.calls[0]?.[0]?.data as FormData;
+    expect(formData.get("scope")).toBe("single");
+  });
+
+  it("does not request an update for an invalid civil date", async () => {
+    render(<CalendarEventForm event={event} month="2026-10" view="month" />);
+    fireEvent.change(screen.getByLabelText("Date"), { target: { value: "not-a-date" } });
+    fireEvent.submit(getForm());
+
+    expect((await screen.findByRole("alert")).textContent).toContain("Enter a valid event date.");
+    expect(mocks.action).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["UTC midnight", "2026-01-15T00:15:45.987Z", "UTC", "00:15"],
+    ["New York spring-forward", "2026-03-08T07:30:45.987Z", "America/New_York", "03:30"],
+    ["New York fall-back", "2026-11-01T05:30:45.987Z", "America/New_York", "01:30"],
+    ["Kolkata", "2026-06-02T16:30:45.987Z", "Asia/Kolkata", "22:00"],
+  ])("uses %s wall time in the browser event editor", (_, startsAt, timezone, expectedTime) => {
+    render(
+      <CalendarEventForm
+        event={{ ...event, starts_at: startsAt, timezone }}
+        month="2026-10"
+        view="month"
+      />,
+    );
+
+    expect((screen.getByLabelText("Time") as HTMLInputElement).value).toBe(expectedTime);
+  });
+
+  it("preserves the host-parsed instant for offsetless values before projecting it into the event zone", () => {
+    const startsAt = "2026-06-02T16:30:45.987";
+    const values = Object.fromEntries(
+      new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Kolkata",
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+      })
+        .formatToParts(new Date(startsAt))
+        .filter((part) => part.type !== "literal")
+        .map((part) => [part.type, part.value]),
+    ) as Record<"hour" | "minute", string>;
+    render(
+      <CalendarEventForm
+        event={{ ...event, starts_at: startsAt, timezone: "Asia/Kolkata" }}
+        month="2026-10"
+        view="month"
+      />,
+    );
+
+    expect((screen.getByLabelText("Time") as HTMLInputElement).value).toBe(
+      `${values.hour}:${values.minute}`,
+    );
+  });
+
+  it("keeps missing-zone and invalid-instant time drafts blank", () => {
+    const { rerender } = render(
+      <CalendarEventForm event={{ ...event, timezone: null }} month="2026-10" view="month" />,
+    );
+
+    expect((screen.getByLabelText("Time") as HTMLInputElement).value).toBe("");
+
+    rerender(
+      <CalendarEventForm
+        event={{ ...event, starts_at: "not-an-instant" }}
+        month="2026-10"
+        view="month"
+      />,
+    );
+
+    expect((screen.getByLabelText("Time") as HTMLInputElement).value).toBe("");
+  });
+
+  it("continues surfacing an invalid event timezone", () => {
+    expect(() =>
+      render(
+        <CalendarEventForm
+          event={{ ...event, timezone: "Not/AZone" }}
+          month="2026-10"
+          view="month"
+        />,
+      ),
+    ).toThrow();
+  });
+});

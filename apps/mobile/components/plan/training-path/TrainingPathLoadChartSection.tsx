@@ -1,30 +1,31 @@
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { HelpCircle, Plus, Settings } from "lucide-react-native";
+import { Info, Plus } from "lucide-react-native";
 import type { ComponentProps, ReactNode } from "react";
-import { memo, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, TouchableOpacity, View } from "react-native";
-import { AppFormModal } from "@/components/shared/AppFormModal";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { DailyTrainingAdjustmentChart } from "./DailyTrainingAdjustmentChart";
+import {
+  formatPlanChartDateLabel,
+  getDailyTrainingAdjustmentPlannedLoad,
+  getDailyTrainingAdjustmentPlannedLoadStatus,
+  hasRenderableDailyTrainingAdjustmentData,
+} from "./dailyTrainingAdjustmentChartPresentation";
 import { TrainingPathChart } from "./TrainingPathChart";
 import { TrainingPathLegend } from "./TrainingPathLegend";
+import {
+  buildSelectedWeekBucket,
+  type TrainingPathSelectedWeekBucket,
+} from "./trainingPathSelectedWeekBucket";
 import type { TrainingPathViewModel } from "./trainingPathTypes";
 
 type ChartEmptyTone = "empty" | "loading" | "unavailable";
-type TrainingPathSelectionMode = "day" | "week";
 type DailyPoint = ComponentProps<typeof DailyTrainingAdjustmentChart>["points"][number];
-type SelectedWeekBucket = {
-  actualOrScheduledLoadTss: number;
-  completedLoadTss: number;
-  plannedLoadTss: number;
-  points: DailyPoint[];
-  targetLoadTss: number;
-  weekEndDate: string;
-  weekStartDate: string;
-};
+type SelectedWeekBucket = TrainingPathSelectedWeekBucket<DailyPoint>;
 
 export type TrainingPathChartSectionContext = {
-  mode: TrainingPathSelectionMode;
+  mode: "day";
   selectedDate: string | null;
   selectedDayPoint: DailyPoint | null;
   selectedWeek: TrainingPathViewModel["weeks"][number] | null;
@@ -32,63 +33,22 @@ export type TrainingPathChartSectionContext = {
   selectedWeekStart: string | null;
 };
 
-function numberValue(value: number | null | undefined) {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
-}
-
-function buildSelectedWeekBucket(input: {
-  points: DailyPoint[];
-  weekEnd: string;
-  weekStart: string;
-}): SelectedWeekBucket | null {
-  const points = input.points.filter(
-    (point) => point.date >= input.weekStart && point.date <= input.weekEnd,
-  );
-  if (points.length === 0) return null;
-  const sum = (selector: (point: DailyPoint) => number | null | undefined) =>
-    points.reduce((total, point) => total + numberValue(selector(point)), 0);
-  return {
-    actualOrScheduledLoadTss: sum((point) => point.actualOrScheduledLoadTss),
-    completedLoadTss: sum((point) => point.completedLoadTss),
-    plannedLoadTss:
-      sum((point) => point.plannedLoadTss) + sum((point) => point.tentativePlannedLoadTss),
-    points,
-    targetLoadTss: sum((point) => point.targetLoadTss),
-    weekEndDate: input.weekEnd,
-    weekStartDate: input.weekStart,
-  };
-}
-
 type TrainingPathLoadChartSectionProps = {
   chartHeight?: number;
-  dailyDensity?: ComponentProps<typeof DailyTrainingAdjustmentChart>["density"];
   dailyPoints?: ComponentProps<typeof DailyTrainingAdjustmentChart>["points"];
   dailyTestID?: string;
-  preferDailyChart?: boolean;
-  renderBelowChart?: (context: TrainingPathChartSectionContext) => ReactNode;
-  selectionMode?: TrainingPathSelectionMode;
-  emptyState?: {
-    body?: string;
-    title: string;
-    tone?: ChartEmptyTone;
-  };
-  model?: TrainingPathViewModel | null;
+  dailyDateLabelFormatter?: ComponentProps<typeof DailyTrainingAdjustmentChart>["formatDateLabel"];
+  emptyState?: { body?: string; title: string; tone?: ChartEmptyTone };
+  goalDates?: readonly string[];
   loading?: boolean;
+  model?: TrainingPathViewModel | null;
   onCreateGoal?: () => void;
   onDisplayedWeekChange?: (weekStart: string) => void;
-  onOpenSettings?: () => void;
-  onScrollInteractionSettled?: () => void;
-  onScrollInteractionStart?: () => void;
-  onScrollNearEnd?: () => void;
-  onScrollNearStart?: () => void;
   onSelectedDateChange?: (date: string) => void;
   onSelectedWeekChange?: (weekStart: string) => void;
+  renderBelowChart?: (context: TrainingPathChartSectionContext) => ReactNode;
   selectedDate?: string | null;
-  showHeader?: boolean;
-  showLegendButton?: boolean;
-  showSelectedPointTray?: boolean;
   testID?: string;
-  title?: string;
 };
 
 const modelEmptyStateCopy: Record<NonNullable<TrainingPathViewModel["emptyState"]>, string> = {
@@ -98,191 +58,203 @@ const modelEmptyStateCopy: Record<NonNullable<TrainingPathViewModel["emptyState"
   noProjection: "Training path is still being calculated.",
 };
 
-const maxDailyChartPoints = 120;
+function positiveValue(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
 
-function getBoundedDailyPoints(points: DailyPoint[] | undefined, selectedDate?: string | null) {
-  if (!points?.length || points.length <= maxDailyChartPoints) return points;
-  const selectedIndex = Math.max(
-    0,
-    points.findIndex((point) => point.date === selectedDate),
+function hasRenderableWeeklyTrainingPathData(model: TrainingPathViewModel | null | undefined) {
+  return (
+    model?.weeks.some(
+      (week) =>
+        week.completedLoadUnavailable === true ||
+        positiveValue(week.effectiveCompletedLoad) ||
+        positiveValue(week.effectiveRemainingLoad) ||
+        (typeof week.fitness === "number" && Number.isFinite(week.fitness)) ||
+        (typeof week.scheduledFitness === "number" && Number.isFinite(week.scheduledFitness)),
+    ) === true
   );
-  const centerIndex = selectedIndex >= 0 ? selectedIndex : 0;
-  const halfWindow = Math.floor(maxDailyChartPoints / 2);
-  const start = Math.max(
-    0,
-    Math.min(centerIndex - halfWindow, points.length - maxDailyChartPoints),
-  );
-  return points.slice(start, start + maxDailyChartPoints);
 }
 
 export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartSection({
   chartHeight = 300,
-  dailyDensity = "standard",
+  dailyDateLabelFormatter,
   dailyPoints,
   dailyTestID = "training-path-daily-adjustment-chart",
   emptyState,
-  model,
+  goalDates,
   loading = false,
+  model,
   onCreateGoal,
   onDisplayedWeekChange,
-  onOpenSettings,
-  onScrollInteractionSettled,
-  onScrollInteractionStart,
-  onScrollNearEnd,
-  onScrollNearStart,
   onSelectedDateChange,
   onSelectedWeekChange,
-  preferDailyChart = true,
   renderBelowChart,
-  selectionMode = "day",
   selectedDate,
-  showHeader = true,
-  showLegendButton = true,
-  showSelectedPointTray = true,
   testID = "training-path-load-chart-section",
-  title = "Daily Training Path",
 }: TrainingPathLoadChartSectionProps) {
+  const [previewSelectedDate, setPreviewSelectedDate] = useState<string | null>(null);
   const [legendOpen, setLegendOpen] = useState(false);
-  const modelEmptyState = loading ? null : (model?.emptyState ?? null);
-  const resolvedEmptyState = modelEmptyState
-    ? { title: modelEmptyStateCopy[modelEmptyState], tone: "empty" as const }
-    : loading
+  const canRenderDailyChart = hasRenderableDailyTrainingAdjustmentData(dailyPoints ?? []);
+  const canRenderWeeklyChart =
+    !!model && !!onSelectedWeekChange && hasRenderableWeeklyTrainingPathData(model);
+  const hasRenderableChart = canRenderDailyChart || canRenderWeeklyChart;
+  const modelEmptyState = loading || hasRenderableChart ? null : (model?.emptyState ?? null);
+  const resolvedEmptyState =
+    loading && !hasRenderableChart
       ? { title: "Loading training path…", tone: "loading" as const }
-      : emptyState;
-  const canRenderDailyChart = preferDailyChart && !!dailyPoints?.length;
-  const canRenderWeeklyChart = !!model && !model.emptyState && !!onSelectedWeekChange;
-  const chartDailyPoints = useMemo(
-    () => getBoundedDailyPoints(dailyPoints, selectedDate ?? model?.todayKey),
-    [dailyPoints, model?.todayKey, selectedDate],
-  );
-  const belowChartContext = useMemo<TrainingPathChartSectionContext>(() => {
-    const selectedDayPoint =
-      dailyPoints?.find((point) => point.date === selectedDate) ?? dailyPoints?.[0] ?? null;
-    const selectedWeek =
-      model?.weeks.find((week) => {
-        if (selectionMode === "week") {
-          return week.isSelected || week.weekStart === model.selectedWeekSummary?.weekStart;
-        }
-        const date = selectedDayPoint?.date ?? selectedDate;
-        return !!date && date >= week.weekStart && date <= week.weekEnd;
-      }) ??
-      model?.weeks.find((week) => week.isSelected) ??
-      null;
-    const selectedWeekStart =
-      selectedWeek?.weekStart ?? model?.selectedWeekSummary?.weekStart ?? null;
-    const selectedWeekBucket = selectedWeek
-      ? buildSelectedWeekBucket({
-          points: dailyPoints ?? [],
-          weekEnd: selectedWeek.weekEnd,
-          weekStart: selectedWeek.weekStart,
-        })
-      : null;
-
-    return {
-      mode: selectionMode,
-      selectedDate: selectedDayPoint?.date ?? selectedDate ?? null,
+      : (emptyState ??
+        (modelEmptyState
+          ? { title: modelEmptyStateCopy[modelEmptyState], tone: "empty" as const }
+          : undefined));
+  const contextSelectedDate = previewSelectedDate ?? selectedDate;
+  const selectedDayPoint =
+    dailyPoints?.find((point) => point.date === contextSelectedDate) ?? dailyPoints?.[0] ?? null;
+  const selectedWeek =
+    model?.weeks.find(
+      (week) =>
+        !!selectedDayPoint &&
+        selectedDayPoint.date >= week.weekStart &&
+        selectedDayPoint.date <= week.weekEnd,
+    ) ??
+    model?.weeks.find((week) => week.isSelected) ??
+    null;
+  const context = useMemo<TrainingPathChartSectionContext>(
+    () => ({
+      mode: "day",
+      selectedDate: selectedDayPoint?.date ?? contextSelectedDate ?? null,
       selectedDayPoint,
       selectedWeek,
-      selectedWeekBucket,
-      selectedWeekStart,
-    };
-  }, [dailyPoints, model, selectedDate, selectionMode]);
+      selectedWeekBucket: selectedWeek
+        ? buildSelectedWeekBucket({
+            points: dailyPoints ?? [],
+            weekEnd: selectedWeek.weekEnd,
+            weekStart: selectedWeek.weekStart,
+          })
+        : null,
+      selectedWeekStart: selectedWeek?.weekStart ?? model?.selectedWeekSummary?.weekStart ?? null,
+    }),
+    [
+      contextSelectedDate,
+      dailyPoints,
+      model?.selectedWeekSummary?.weekStart,
+      selectedDayPoint,
+      selectedWeek,
+    ],
+  );
+
+  useEffect(() => {
+    if (selectedDate !== undefined) setPreviewSelectedDate(null);
+  }, [selectedDate]);
 
   return (
-    <View className="gap-4" testID={testID}>
-      {showHeader ? (
-        <View className="flex-row items-center justify-between gap-2">
-          <View className="min-w-0 flex-1 flex-row items-center gap-1.5">
-            <Text className="text-sm font-semibold text-foreground">{title}</Text>
-            {showLegendButton ? (
-              <TouchableOpacity
-                accessibilityRole="button"
-                accessibilityLabel="Open training path legend"
-                activeOpacity={0.85}
-                className="h-7 w-7 items-center justify-center rounded-full"
-                onPress={() => setLegendOpen(true)}
-                testID="training-path-legend-button"
-              >
-                <Icon as={HelpCircle} size={15} className="text-muted-foreground" />
-              </TouchableOpacity>
-            ) : null}
-          </View>
-          {onOpenSettings ? (
-            <TouchableOpacity
-              accessibilityRole="button"
-              accessibilityLabel="Edit training preferences"
-              activeOpacity={0.85}
-              className="h-9 w-9 items-center justify-center rounded-full border border-border bg-background"
-              onPress={onOpenSettings}
-              testID="training-path-settings-button"
-            >
-              <Icon as={Settings} size={15} className="text-muted-foreground" />
-            </TouchableOpacity>
+    <View className="gap-3" testID={testID}>
+      {resolvedEmptyState ? (
+        <ChartEmptyState
+          {...resolvedEmptyState}
+          minHeight={chartHeight}
+          {...omitUndefined({
+            onCreateGoal: !emptyState && modelEmptyState === "noGoal" ? onCreateGoal : undefined,
+          })}
+          testID="training-path-empty-state"
+        />
+      ) : canRenderDailyChart ? (
+        <DailyTrainingAdjustmentChart
+          {...omitUndefined({ formatDateLabel: dailyDateLabelFormatter, goalDates })}
+          height={chartHeight}
+          points={dailyPoints ?? []}
+          {...omitUndefined({
+            selectedDate: selectedDate ?? model?.todayKey,
+            todayDate: model?.todayKey,
+          })}
+          onPreviewSelectedDateChange={setPreviewSelectedDate}
+          {...omitUndefined({ onSelectedDateChange })}
+          testID={dailyTestID}
+        />
+      ) : canRenderWeeklyChart ? (
+        <TrainingPathChart
+          height={chartHeight}
+          model={model}
+          scrollX
+          {...omitUndefined({ onDisplayedWeekChange })}
+          onSelectedWeekChange={onSelectedWeekChange}
+        />
+      ) : (
+        <ChartEmptyState
+          minHeight={chartHeight}
+          testID="training-path-empty-state"
+          title="Training path is still being calculated."
+        />
+      )}
+      {!resolvedEmptyState && hasRenderableChart ? (
+        <>
+          <TouchableOpacity
+            accessibilityLabel={`${legendOpen ? "Hide" : "Show"} chart legend`}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: legendOpen }}
+            className="min-h-11 self-start flex-row items-center gap-2 rounded-xl border border-border px-3"
+            onPress={() => setLegendOpen((open) => !open)}
+            testID="training-path-legend-button"
+          >
+            <Icon as={Info} className="text-muted-foreground" size={16} />
+            <Text className="text-xs font-semibold text-foreground">Legend</Text>
+          </TouchableOpacity>
+          {legendOpen ? (
+            <TrainingPathLegend mode={canRenderDailyChart ? "daily" : "weekly"} />
           ) : null}
-        </View>
+          {canRenderDailyChart ? <SelectedPeriodSummary point={selectedDayPoint} /> : null}
+        </>
       ) : null}
-
-      <View className="gap-3">
-        {resolvedEmptyState ? (
-          <ChartEmptyState
-            body={resolvedEmptyState.body}
-            minHeight={chartHeight}
-            onCreateGoal={modelEmptyState === "noGoal" ? onCreateGoal : undefined}
-            testID="training-path-empty-state"
-            title={resolvedEmptyState.title}
-            tone={resolvedEmptyState.tone}
-          />
-        ) : canRenderDailyChart ? (
-          <DailyTrainingAdjustmentChart
-            density={dailyDensity}
-            height={chartHeight}
-            points={chartDailyPoints ?? dailyPoints}
-            selectedDate={selectedDate ?? model?.todayKey}
-            showSelectedPointTray={showSelectedPointTray}
-            onSelectedDateChange={onSelectedDateChange}
-            testID={dailyTestID}
-          />
-        ) : canRenderWeeklyChart ? (
-          <TrainingPathChart
-            model={model}
-            range="season"
-            height={chartHeight}
-            scrollX
-            reviewWeeks
-            onScrollNearEnd={onScrollNearEnd}
-            onScrollNearStart={onScrollNearStart}
-            onScrollInteractionSettled={onScrollInteractionSettled}
-            onScrollInteractionStart={onScrollInteractionStart}
-            onDisplayedWeekChange={onDisplayedWeekChange}
-            onSelectedWeekChange={onSelectedWeekChange}
-          />
-        ) : (
-          <ChartEmptyState
-            minHeight={chartHeight}
-            testID="training-path-empty-state"
-            title="Training path is still being calculated."
-            tone="empty"
-          />
-        )}
-      </View>
-
-      {renderBelowChart ? renderBelowChart(belowChartContext) : null}
-
-      {legendOpen ? (
-        <AppFormModal
-          description="How to read the daily training path chart."
-          onClose={() => setLegendOpen(false)}
-          testID="training-path-legend-modal"
-          title="Chart Legend"
-        >
-          <View className="gap-4 rounded-2xl border border-border bg-card p-4">
-            <TrainingPathLegend range="season" />
-          </View>
-        </AppFormModal>
-      ) : null}
+      {renderBelowChart ? renderBelowChart(context) : null}
     </View>
   );
 });
+
+function formatSummaryValue(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+  return value.toLocaleString(undefined, { maximumFractionDigits: 1 });
+}
+
+function SelectedPeriodSummary({ point }: { point: DailyPoint | null }) {
+  if (!point) return null;
+  const planned = getDailyTrainingAdjustmentPlannedLoad(point);
+  const plannedStatus = getDailyTrainingAdjustmentPlannedLoadStatus(point);
+  const facts = [
+    [
+      "Completed load",
+      point.effectiveCompletedLoadStatus === "known_zero"
+        ? "0 · No completed load"
+        : formatSummaryValue(point.effectiveCompletedLoad),
+    ] as const,
+    [
+      "Planned load",
+      plannedStatus === "known_zero"
+        ? "0 · No planned load"
+        : plannedStatus === "unavailable" && planned === null
+          ? "Not available"
+          : formatSummaryValue(planned),
+    ] as const,
+  ];
+  return (
+    <View className="gap-2 border-t border-border px-1 pt-3" testID="training-path-period-summary">
+      <Text accessibilityRole="header" className="text-sm font-semibold text-foreground">
+        Day · {formatPlanChartDateLabel(point.date, "daily")}
+      </Text>
+      <View className="flex-row flex-wrap gap-x-4 gap-y-2">
+        {facts.map(([label, value]) => (
+          <View
+            accessible
+            accessibilityLabel={`${label}: ${value}`}
+            className="min-w-[28%] flex-1"
+            key={label}
+          >
+            <Text className="text-[10px] text-muted-foreground">{label}</Text>
+            <Text className="text-sm font-semibold text-foreground">{value}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
 
 function ChartEmptyState({
   body,
@@ -313,7 +285,7 @@ function ChartEmptyState({
           accessibilityRole="button"
           accessibilityLabel="Create goal"
           activeOpacity={0.85}
-          className="mt-3 flex-row items-center gap-1.5 rounded-full bg-primary px-4 py-2"
+          className="mt-3 min-h-11 flex-row items-center gap-1.5 rounded-full bg-primary px-4 py-2"
           onPress={onCreateGoal}
           testID="plan-add-goal-button"
         >

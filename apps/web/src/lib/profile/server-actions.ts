@@ -7,7 +7,12 @@ import { z } from "zod";
 
 import { buildFlashHref } from "../flash";
 import { createServerActionCaller } from "../server-action-api";
-import { settingsProfileFormSchema } from "./form-schemas";
+import { settingsProfileFormSchema, toProfilePatchInput } from "./form-schemas";
+import {
+  ProfileMediaConflictError,
+  removeProfileMedia,
+  replaceProfileMedia,
+} from "./profile-media";
 
 const storageService = getApiStorageService();
 const PROFILE_AVATAR_BUCKET = "profile-avatars";
@@ -19,6 +24,7 @@ const ALLOWED_AVATAR_MIME_TYPES = [
   "image/webp",
 ] as const;
 const MAX_AVATAR_SIZE_BYTES = 5 * 1024 * 1024;
+const profileImageFieldSchema = z.enum(["avatar_url", "cover_url"]);
 
 function normalizeSettingsProfileInput(data: unknown) {
   const native = data instanceof FormData;
@@ -37,18 +43,12 @@ function normalizeSettingsProfileInput(data: unknown) {
 }
 
 export const updateSettingsProfileAction = createServerFn({ method: "POST" })
-  .inputValidator((data) => normalizeSettingsProfileInput(data))
+  .validator((data) => normalizeSettingsProfileInput(data))
   .handler(async ({ data }) => {
     try {
       const caller = await createServerActionCaller();
 
-      await caller.profiles.update({
-        bio: data.bio?.trim() ? data.bio.trim() : null,
-        is_public: data.is_public,
-        language: data.language?.trim() ? data.language.trim() : null,
-        preferred_units: data.preferred_units,
-        username: data.username.trim() === "" ? null : data.username.trim(),
-      });
+      await caller.profiles.update(toProfilePatchInput(data));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to update profile";
 
@@ -82,13 +82,14 @@ function normalizeAvatarUploadInput(data: unknown) {
     throw new Error("Expected multipart form data");
   }
 
-  const avatar = data.get("avatar");
+  const avatar = data.get("profile_image");
+  const field = profileImageFieldSchema.parse(data.get("field"));
 
   if (!(avatar instanceof File)) {
     throw new Error("Avatar file is required");
   }
 
-  return { _native: true as const, avatar };
+  return { async: data.get("__async") === "true", avatar, field };
 }
 
 function getAvatarFileExtension(fileName: string) {
@@ -101,8 +102,37 @@ function getAvatarFileExtension(fileName: string) {
   return extension;
 }
 
+function getProfileMediaPublicUrl(path: string) {
+  const publicUrlData = storageService.storage.from(PROFILE_AVATAR_BUCKET).getPublicUrl(path).data;
+  return z.object({ publicUrl: z.string().url() }).parse(publicUrlData).publicUrl;
+}
+
+async function removeProfileMediaObject(path: string) {
+  const { error } = await storageService.storage.from(PROFILE_AVATAR_BUCKET).remove([path]);
+
+  if (error) {
+    throw new Error("Failed to remove profile image object");
+  }
+}
+
+async function compareAndSwapProfileMediaField(
+  caller: Awaited<ReturnType<typeof createServerActionCaller>>,
+  field: "avatar_url" | "cover_url",
+  expected: string | null,
+  next: string | null,
+) {
+  try {
+    await caller.profiles.compareAndSwapMedia({ field, expected, next });
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "CONFLICT") {
+      throw new ProfileMediaConflictError();
+    }
+    throw error;
+  }
+}
+
 export const uploadProfileAvatarAction = createServerFn({ method: "POST" })
-  .inputValidator((data) => normalizeAvatarUploadInput(data))
+  .validator((data) => normalizeAvatarUploadInput(data))
   .handler(async ({ data }) => {
     const headers = getRequestHeaders();
     const session = await resolveAuthSessionFromHeaders(headers);
@@ -132,42 +162,115 @@ export const uploadProfileAvatarAction = createServerFn({ method: "POST" })
       });
     }
 
-    await ensureAvatarBucketExists();
-
     const fileExtension = getAvatarFileExtension(data.avatar.name);
-    const filePath = `${session.user.id}/${Date.now()}.${fileExtension}`;
+    const filePath = `${session.user.id}/${data.field.replace("_url", "")}-${Date.now()}.${fileExtension}`;
     const bytes = Buffer.from(await data.avatar.arrayBuffer());
-    const { error } = await storageService.storage
-      .from(PROFILE_AVATAR_BUCKET)
-      .upload(filePath, bytes, {
-        contentType: data.avatar.type,
-        upsert: false,
-      });
 
-    if (error) {
+    try {
+      const caller = await createServerActionCaller();
+      await ensureAvatarBucketExists();
+      await replaceProfileMedia({
+        userId: session.user.id,
+        field: data.field,
+        bucketPublicUrl: getProfileMediaPublicUrl(""),
+        newPath: filePath,
+        loadProfile: () => caller.profiles.get(),
+        upload: async () => {
+          const { error } = await storageService.storage
+            .from(PROFILE_AVATAR_BUCKET)
+            .upload(filePath, bytes, {
+              contentType: data.avatar.type,
+              upsert: false,
+            });
+
+          if (error) {
+            throw new Error("Failed to upload profile image");
+          }
+        },
+        getPublicUrl: () => getProfileMediaPublicUrl(filePath),
+        compareAndSwapProfile: (field, expected, next) =>
+          compareAndSwapProfileMediaField(caller, field, expected, next),
+        removeObject: removeProfileMediaObject,
+      });
+    } catch (error) {
+      if (data.async) {
+        throw new Error(
+          error instanceof ProfileMediaConflictError
+            ? error.message
+            : "Profile image could not be updated. Please try again.",
+        );
+      }
       throw redirect({
-        href: buildFlashHref("/settings", `Failed to upload avatar: ${error.message}`, "error"),
+        href: buildFlashHref(
+          "/settings",
+          error instanceof ProfileMediaConflictError
+            ? error.message
+            : "Profile image could not be updated. Please try again.",
+          "error",
+        ),
         statusCode: 303,
       });
     }
 
-    try {
-      const caller = await createServerActionCaller();
-      const publicUrlData = storageService.storage
-        .from(PROFILE_AVATAR_BUCKET)
-        .getPublicUrl(filePath).data;
-      const publicUrl = z.object({ publicUrl: z.string().url() }).parse(publicUrlData).publicUrl;
-
-      await caller.profiles.update({
-        avatar_url: publicUrl,
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to update avatar";
-      throw redirect({ href: buildFlashHref("/settings", message, "error"), statusCode: 303 });
+    if (data.async) {
+      return { field: data.field, url: getProfileMediaPublicUrl(filePath) };
     }
 
     throw redirect({
-      href: "/settings?flash=Avatar%20updated%20successfully&flashType=success",
+      href: `/settings?flash=${data.field === "avatar_url" ? "Avatar" : "Cover"}%20updated%20successfully&flashType=success`,
+      statusCode: 303,
+    });
+  });
+
+function normalizeRemoveProfileImageInput(data: unknown) {
+  const source = data instanceof FormData ? Object.fromEntries(data.entries()) : data;
+  return {
+    async: data instanceof FormData && data.get("__async") === "true",
+    field: profileImageFieldSchema.parse(z.object({ field: z.unknown() }).parse(source).field),
+  };
+}
+
+export const removeProfileImageAction = createServerFn({ method: "POST" })
+  .validator(normalizeRemoveProfileImageInput)
+  .handler(async ({ data }) => {
+    try {
+      const headers = getRequestHeaders();
+      const session = await resolveAuthSessionFromHeaders(headers);
+
+      if (!session?.user?.id) {
+        throw new Error("Authentication required");
+      }
+
+      const caller = await createServerActionCaller();
+      await removeProfileMedia({
+        userId: session.user.id,
+        field: data.field,
+        bucketPublicUrl: getProfileMediaPublicUrl(""),
+        loadProfile: () => caller.profiles.get(),
+        compareAndSwapProfile: (field, expected, next) =>
+          compareAndSwapProfileMediaField(caller, field, expected, next),
+        removeObject: removeProfileMediaObject,
+      });
+    } catch {
+      if (data.async) {
+        throw new Error("Profile image could not be removed. Please try again.");
+      }
+      throw redirect({
+        href: buildFlashHref(
+          "/settings",
+          "Profile image could not be removed. Please try again.",
+          "error",
+        ),
+        statusCode: 303,
+      });
+    }
+
+    if (data.async) {
+      return { field: data.field };
+    }
+
+    throw redirect({
+      href: `/settings?flash=${data.field === "avatar_url" ? "Avatar" : "Cover"}%20removed&flashType=success`,
       statusCode: 303,
     });
   });
