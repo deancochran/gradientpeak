@@ -1,87 +1,86 @@
 import type {
-  CanonicalSport,
-  ControlMode,
+  CompiledActivityPlanOccurrence,
   CurrentMetricValue as CoreCurrentMetricValue,
+  RecordingSessionLifecycleState as CoreRecorderLifecycleState,
+  RecordingDegradedState as CoreRecordingDegradedState,
+  RecordingRuntimeSourceState as CoreRecordingRuntimeSourceState,
   RecordingSessionArtifact as CoreRecordingSessionArtifact,
   RecordingSessionOverride as CoreRecordingSessionOverride,
+  RecordingSessionOverrideState as CoreRecordingSessionOverrideState,
   RecordingSessionSnapshot as CoreRecordingSessionSnapshot,
-  FtmsAvailableMode,
+  RecordingSourceChangeEvent as CoreRecordingSourceChangeEvent,
   FtmsControlMode,
-  IntervalStepV2,
-  MetricFamily,
-  MetricProvenance,
-  MetricSourceSelection,
+  ProvisionalRecordingMetricsSnapshot,
   PublicActivityMetric,
   PublicActivityMetricDataType,
   RecordingActivityCategory,
   RecordingConfiguration,
   RecordingControlPolicy,
-  RecordingMetricsSnapshot,
-  RecordingServiceActivityPlan,
   RecordingTrainerIntentSource,
   RecordingTrainerMachineType,
 } from "@repo/core";
-import { Activity, Bike, Dumbbell, Footprints, Waves } from "lucide-react-native";
+import type { RecordingActivityPlanInput, RecordingPlanOccurrence } from "./plan";
+
+/** Recorder-owned control state; these values are not FTMS protocol opcodes. */
+export type FtmsControllerMode =
+  | "erg"
+  | "sim"
+  | "resistance"
+  | "speed"
+  | "inclination"
+  | "heart_rate"
+  | "cadence";
+
+export interface FtmsControlEvent {
+  timestamp: number;
+  controlType:
+    | "power_target"
+    | "simulation"
+    | "resistance"
+    | "speed"
+    | "inclination"
+    | "heart_rate"
+    | "cadence";
+  targetValue: number;
+  actualValue?: number;
+  success: boolean;
+  errorMessage?: string;
+}
+
+export type FtmsSafetyLevel = "none" | "confirm" | "strong_confirm" | "blocked";
+
+export interface FtmsAvailableModeRange {
+  min: number;
+  max: number;
+  increment: number;
+  unit: string;
+}
+
+export interface FtmsAvailableMode {
+  id: FtmsControlMode;
+  label: string;
+  enabled: boolean;
+  disabledReason?: string;
+  range?: FtmsAvailableModeRange;
+  safetyLevel: FtmsSafetyLevel;
+}
 
 export interface RecorderProfileRef {
   id: string;
 }
 
-/**
- * @deprecated Use getActivityDisplayName from @repo/core instead
- */
-export const ACTIVITY_NAMES = {
-  outdoor_run: "Run",
-  outdoor_bike: "Bike",
-  indoor_bike_trainer: "Trainer",
-  indoor_treadmill: "Treadmill",
-  indoor_strength: "Strength",
-  indoor_swim: "Swim",
-  other: "Other",
-} as const;
-
-/**
- * Get icon for activity category
- */
-export function getActivityIcon(category: CanonicalSport): any {
-  switch (category) {
-    case "run":
-      return Footprints;
-    case "bike":
-      return Bike;
-    case "strength":
-      return Dumbbell;
-    case "swim":
-      return Waves;
-    case "other":
-      return Activity;
-  }
-}
-
-/**
- * @deprecated Use getActivityIcon instead
- */
-export const ACTIVITY_ICONS = {
-  outdoor_run: Footprints,
-  outdoor_bike: Bike,
-  indoor_bike_trainer: Bike,
-  indoor_treadmill: Footprints,
-  indoor_strength: Dumbbell,
-  indoor_swim: Waves,
-  other: Activity,
-} as const;
 // ================================
 // Sensor Reading Types
 // ================================
 
 /**
- * Canonical SensorReading interface
- * Used across all sensor-related code (BLE, GPS, manual input)
+ * Canonical numeric sensor reading. Coordinate tuples are deliberately excluded
+ * from the in-app recording boundary.
  */
 export interface SensorReading {
-  metric: PublicActivityMetric;
-  dataType: PublicActivityMetricDataType;
-  value: number | [number, number];
+  metric: Exclude<PublicActivityMetric, "latlng">;
+  dataType: Exclude<PublicActivityMetricDataType, "latlng">;
+  value: number;
   timestamp: number;
   metadata?: {
     deviceId?: string;
@@ -90,18 +89,6 @@ export interface SensorReading {
     batteryLevel?: number;
     signalStrength?: number;
   };
-}
-
-/**
- * Location reading from GPS
- */
-export interface LocationReading {
-  latitude: number;
-  longitude: number;
-  altitude?: number;
-  accuracy?: number;
-  heading?: number;
-  timestamp: number;
 }
 
 // ================================
@@ -163,18 +150,15 @@ export interface LiveMetricsState {
 
   // === Environmental ===
   avgTemperature?: number; // celsius
-  maxTemperature?: number; // celsius
 
   // === Calories ===
   calories: number; // kcal
 
   // === Tier 2 - Live Approximations ===
   normalizedPowerEst: number; // watts (estimated)
-  intensityFactorEst: number; // decimal (0.85)
-  trainingStressScoreEst: number; // points
   variabilityIndexEst: number; // ratio
-  efficiencyFactorEst: number; // watts per bpm
-  decouplingEst: number; // percentage
+  efficiencyFactorEst: number; // modality-specific output per bpm
+  decouplingEst: number; // ratio
 
   // === Plan Adherence ===
   adherenceCurrentStep: number; // decimal (0.95)
@@ -188,12 +172,9 @@ export interface ZoneConfig {
 
 // === Profile Information ===
 export interface ProfileMetrics {
-  ftp?: number; // Functional Threshold Power
-  threshold_hr?: number; // Lactate Threshold Heart Rate
-  weight?: number; // kg
-  age?: number; // years
-  threshold_pace?: number; // seconds per km (deprecated: use threshold_pace_seconds_per_km)
-  threshold_pace_seconds_per_km?: number;
+  bikeThresholdWatts?: number;
+  lthrBpm?: number;
+  weightKg?: number;
 }
 
 // === Update Events ===
@@ -242,7 +223,6 @@ export interface MemoryUsageStats {
   totalBufferSize: number; // bytes
   powerBufferSize: number;
   hrBufferSize: number;
-  locationBufferSize: number;
   utilizationPercent: number;
 }
 
@@ -282,8 +262,7 @@ export interface PowerMetrics {
 // === Analysis Metrics ===
 export interface AnalysisMetrics {
   normalizedPower: number;
-  intensityFactor: number;
-  tss: number;
+  provisionalCommonLoad: ProvisionalRecordingMetricsSnapshot["commonLoad"];
   variabilityIndex: number;
   efficiencyFactor: number;
   decoupling: number;
@@ -317,7 +296,6 @@ export interface CadenceMetrics {
 
 export interface EnvironmentalMetrics {
   avgTemperature?: number;
-  maxTemperature?: number;
   currentTemperature?: number;
 }
 
@@ -329,7 +307,6 @@ export interface LiveRecordingStatus {
   movingTime: number;
   isPaused: boolean;
   sensorCount: number;
-  gpsAccuracy?: number;
   batteryOptimized: boolean;
 }
 
@@ -348,9 +325,8 @@ export interface MetricsSummary {
     maxHeartRate: number;
   };
   analysis: {
-    tss: number;
-    intensityFactor: number;
     normalizedPower: number;
+    provisionalCommonLoad: ProvisionalRecordingMetricsSnapshot["commonLoad"];
     adherence: number;
   };
 }
@@ -373,7 +349,7 @@ export interface TierMetrics {
 // === Event Payload Types ===
 export interface RecordingStartedPayload {
   timestamp: number;
-  activityType: string;
+  activityCategory: string;
   profile: ProfileMetrics;
 }
 
@@ -431,68 +407,53 @@ export interface RecordingMetadata {
   gpsRecordingEnabled: boolean;
   profileId: string;
   profile: RecorderProfileRef;
-  eventId?: string;
-  activityPlan?: RecordingServiceActivityPlan;
+  eventId?: string | undefined;
+  activityPlan?: RecordingActivityPlanInput | undefined;
   activityFilePath?: string;
 }
 
-export type RecorderLifecycleState =
-  | "pending"
-  | "ready"
-  | "recording"
-  | "paused"
-  | "finishing"
-  | "finished";
+export type RecorderLifecycleState = CoreRecorderLifecycleState;
 
 export type RecordingSessionSnapshot = CoreRecordingSessionSnapshot;
 export type RecordingSessionOverride = CoreRecordingSessionOverride;
 export type CurrentMetricValue = CoreCurrentMetricValue;
 
-export interface RecordingSourceChangeEvent {
-  metricFamily: MetricFamily;
-  previousSourceId: string | null;
-  nextSourceId: string | null;
-  previousProvenance: MetricProvenance;
-  nextProvenance: MetricProvenance;
-  recordedAt: string;
-}
+export type RecordingSourceChangeEvent = CoreRecordingSourceChangeEvent;
 
-export interface RecordingDegradedState {
-  isDegraded: boolean;
-  metrics: MetricFamily[];
-}
+export type RecordingDegradedState = CoreRecordingDegradedState;
 
-export interface RecordingRuntimeSourceState {
-  selectedSources: MetricSourceSelection[];
-  currentMetrics: Partial<Record<MetricFamily, CurrentMetricValue>>;
-  degradedState: RecordingDegradedState;
-  sourceChanges: RecordingSourceChangeEvent[];
-}
+export type RecordingRuntimeSourceState = CoreRecordingRuntimeSourceState;
 
-export type RecordingSessionArtifact = CoreRecordingSessionArtifact & {
-  runtimeSourceState: RecordingRuntimeSourceState;
-};
+export type RecordingSessionArtifact = CoreRecordingSessionArtifact;
 
-export interface RecordingSessionOverrideState {
-  trainerMode: "auto" | "manual";
-  intensityScale: number;
-  preferredSources: Partial<Record<MetricFamily, string>>;
-  disabledSources: Partial<Record<MetricFamily, string[]>>;
-}
+export type RecordingSessionOverrideState = CoreRecordingSessionOverrideState;
 
 export interface RecordingPlanView {
   hasPlan: boolean;
-  name?: string;
-  description?: string | null;
-  activityType?: RecordingActivityCategory | null;
+  name?: string | undefined;
+  description?: string | null | undefined;
+  activityCategory?: RecordingActivityCategory | null | undefined;
   stepIndex: number;
   stepCount: number;
-  currentStep?: IntervalStepV2;
+  currentStep?: RecordingPlanOccurrence | undefined;
+  nextStep?: RecordingPlanOccurrence | undefined;
+  currentSegment: {
+    id: string;
+    role: CompiledActivityPlanOccurrence["role"];
+    activity_category: RecordingActivityCategory | null;
+  } | null;
+  nextSegment: {
+    id: string;
+    role: CompiledActivityPlanOccurrence["role"];
+    activity_category: RecordingActivityCategory | null;
+  } | null;
   progress: {
     movingTime: number;
     duration: number;
     progress: number;
     requiresManualAdvance: boolean;
+    canAutoAdvance: boolean;
+    canManualAdvance: boolean;
     canAdvance: boolean;
   } | null;
   isLast: boolean;
@@ -515,7 +476,7 @@ export interface RecordingTrainerCommandStatus {
     | "set_incline"
     | "set_heart_rate"
     | "set_cadence";
-  controlMode: ControlMode | null;
+  controlMode: FtmsControllerMode | null;
   outcome:
     | "success"
     | "control_unavailable"
@@ -597,7 +558,7 @@ export interface RecordingTrainerView {
   connectionState: RecordingTrainerConnectionState;
   dataFlowState: RecordingTrainerDataFlowState;
   controlState: RecordingTrainerControlState;
-  currentControlMode: ControlMode | null;
+  currentControlMode: FtmsControllerMode | null;
   selectedMode?: FtmsControlMode | null;
   availableModes?: FtmsAvailableMode[];
   recoveryState: RecordingTrainerRecoveryState;
@@ -632,12 +593,6 @@ export interface CurrentReadings {
   cadence?: number; // rpm
   speed?: number; // m/s
   temperature?: number; // celsius
-  position?: {
-    lat: number;
-    lng: number;
-    altitude?: number; // meters
-    heading?: number; // degrees
-  };
 
   // Track freshness of each reading
   lastUpdated?: {
@@ -646,7 +601,6 @@ export interface CurrentReadings {
     cadence?: number;
     speed?: number;
     temperature?: number;
-    position?: number;
   };
 }
 
@@ -685,12 +639,10 @@ export interface SessionStats {
 
   // Advanced metrics (optional based on data availability)
   normalizedPower?: number;
-  trainingStressScore?: number;
-  intensityFactor?: number;
   variabilityIndex?: number;
   efficiencyFactor?: number;
   aerobicDecoupling?: number;
-  recordingMetrics?: RecordingMetricsSnapshot;
+  provisionalMetrics?: ProvisionalRecordingMetricsSnapshot;
 
   // Elevation metrics
   avgGrade?: number; // percentage
@@ -752,19 +704,26 @@ export interface PlanAdherenceMetrics {
 }
 
 // === Type Guards ===
-export function isLiveMetricsState(obj: any): obj is LiveMetricsState {
+export function isLiveMetricsState(obj: unknown): obj is LiveMetricsState {
   return (
+    obj !== null &&
     typeof obj === "object" &&
+    "elapsedTime" in obj &&
     typeof obj.elapsedTime === "number" &&
+    "distance" in obj &&
     typeof obj.distance === "number"
   );
 }
 
-export function isMetricUpdateEvent(obj: any): obj is MetricUpdateEvent {
+export function isMetricUpdateEvent(obj: unknown): obj is MetricUpdateEvent {
   return (
+    obj !== null &&
     typeof obj === "object" &&
+    "metric" in obj &&
     typeof obj.metric === "string" &&
+    "value" in obj &&
     typeof obj.value === "number" &&
+    "timestamp" in obj &&
     typeof obj.timestamp === "number"
   );
 }

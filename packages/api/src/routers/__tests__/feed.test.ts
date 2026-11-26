@@ -1,12 +1,20 @@
+import {
+  calculateAvailableCommonLoad,
+  createObservationQuantificationBundle,
+  quantifyCompletedActivityObservation,
+} from "@repo/core";
+import { type SQL, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const analysisMocks = vi.hoisted(() => ({
   buildActivityDerivedSummaryMap: vi.fn(),
   createActivityAnalysisStore: vi.fn(() => ({ kind: "activity-analysis-store" })),
+  loadActivitySegmentsByActivityId: vi.fn(),
 }));
 
 vi.mock("../../lib/activity-analysis", () => ({
   buildActivityDerivedSummaryMap: analysisMocks.buildActivityDerivedSummaryMap,
+  loadActivitySegmentsByActivityId: analysisMocks.loadActivitySegmentsByActivityId,
 }));
 
 vi.mock("../../infrastructure/repositories", () => ({
@@ -20,31 +28,142 @@ const OWNER_ID = "22222222-2222-4222-8222-222222222222";
 const ACTIVITY_ID = "33333333-3333-4333-8333-333333333333";
 const ACTIVITY_ID_2 = "44444444-4444-4444-8444-444444444444";
 
+function createOwnedQuantifiedSummary() {
+  const computedAsOf = "2026-04-03T11:00:00.000Z";
+  const commonLoad = calculateAvailableCommonLoad({
+    activity_category: "run",
+    method: "run_pace_threshold",
+    quality: {
+      source: "validated_test",
+      observed_at: "2026-03-01T09:00:00.000Z",
+      confidence: "high",
+      stale: false,
+      estimate: false,
+      calculation_version: "feed-parity-test-v1",
+      evidence_fingerprint: "feed-parity-quality",
+    },
+    thresholdEvidence: {
+      type: "threshold_speed_mps",
+      value: 4.2,
+      unit: "meters_per_second",
+      source: "validated_test",
+      observedAt: "2026-03-01T09:00:00.000Z",
+      validAt: "2026-03-01T09:00:00.000Z",
+      freshness: "current",
+      calculationVersion: "feed-parity-test-v1",
+      sourceFingerprint: "feed-parity-threshold",
+    },
+    evidenceFingerprint: "feed-parity-activity",
+    computedAsOf,
+    estimated: false,
+    contributingDurationSeconds: 1800,
+    intensity: 0.9,
+  });
+  const observation = quantifyCompletedActivityObservation({
+    activityCategory: "run",
+    source: {
+      activityId: ACTIVITY_ID_2,
+      segmentId: `${ACTIVITY_ID_2}-segment`,
+      provider: null,
+      externalId: null,
+      artifactId: null,
+      capability: "unknown",
+      parserVersion: null,
+      decodedContractVersion: null,
+      materializerVersion: null,
+      segmentsRevision: null,
+      segmentRevision: null,
+      summaryVersion: 1,
+      sourceSessionIndex: null,
+      sourceMessageIndex: null,
+      rawType: null,
+      rawSport: null,
+      rawSubSport: null,
+    },
+    timing: {
+      coverage: "complete",
+      source: "unknown",
+      basis: "unknown",
+      startedAt: "2026-04-03T10:30:00.000Z",
+      finishedAt: computedAsOf,
+      elapsedSeconds: 1800,
+      activeSeconds: 1800,
+      movingSeconds: 1750,
+    },
+    distance: { meters: 5000, source: "unknown", basis: "unknown" },
+    intensity: {
+      averageHeartRateBpm: 145,
+      averagePowerWatts: null,
+      averageSpeedMetersPerSecond: 2.78,
+      normalizedSpeedMetersPerSecond: 3.1,
+    },
+    commonLoad,
+  });
+  const observationQuantification = createObservationQuantificationBundle({
+    members: [observation],
+  });
+
+  return {
+    common_load: observationQuantification.summary.commonLoad,
+    computed_as_of: computedAsOf,
+    observationQuantification,
+  };
+}
+
 type DbPlan = {
   execute?: Array<Array<Record<string, unknown>>>;
-  feedLikeRows?: Array<{ entity_id: string }>;
-  activityLikeRows?: Array<{ id: string }>;
+  likeStatsRows?: Array<{ entity_id: string; likes_count: number; has_liked: boolean }>;
 };
 
 function createDbMock(plan: DbPlan = {}) {
-  const executeQueue = [...(plan.execute ?? [])];
+  const [activityRows = [], commentRows = []] = plan.execute ?? [];
 
   return {
-    execute: vi.fn(async () => ({ rows: executeQueue.shift() ?? [] })),
+    execute: vi.fn(async () => ({ rows: [] })),
     select: vi.fn((fields?: Record<string, unknown>) => {
-      if (fields && "entity_id" in fields) {
+      if (fields && "followerId" in fields) {
         return {
           from: vi.fn(() => ({
-            where: vi.fn(() => Promise.resolve(plan.feedLikeRows ?? [])),
+            where: vi.fn((condition: SQL) => sql`select 1 where ${condition}`),
           })),
         };
       }
-
       if (fields && "id" in fields) {
+        const selectedRows = activityRows.map((row) =>
+          Object.fromEntries(Object.keys(fields).map((key) => [key, row[key]])),
+        );
+        return {
+          from: vi.fn(() => ({
+            leftJoin: vi.fn(() => ({
+              where: vi.fn(() => ({
+                orderBy: vi.fn(() => ({ limit: vi.fn(async () => selectedRows) })),
+              })),
+            })),
+          })),
+        };
+      }
+      if (fields && "activity_category" in fields) {
+        const segments = activityRows.flatMap((activity) =>
+          Array.isArray(activity.category_composition)
+            ? activity.category_composition.map((category: unknown) => ({
+                activity_id: activity.id,
+                activity_category: category,
+              }))
+            : [],
+        );
+        return {
+          from: vi.fn(() => ({ where: vi.fn(() => ({ orderBy: vi.fn(async () => segments) })) })),
+        };
+      }
+      if (fields && "entity_id" in fields) {
         return {
           from: vi.fn(() => ({
             where: vi.fn(() => ({
-              limit: vi.fn(() => Promise.resolve(plan.activityLikeRows ?? [])),
+              groupBy: vi.fn(() =>
+                Promise.resolve(
+                  "comments_count" in fields ? commentRows : (plan.likeStatsRows ?? []),
+                ),
+              ),
             })),
           })),
         };
@@ -58,12 +177,12 @@ function createDbMock(plan: DbPlan = {}) {
 function createCaller(plan: DbPlan = {}, userId = VIEWER_ID) {
   const db = createDbMock(plan);
   const caller = feedRouter.createCaller({
-    db: db as any,
+    db: db as never,
     session: { user: { id: userId } },
     headers: new Headers(),
     clientType: "test",
     trpcSource: "vitest",
-  } as any);
+  } as never);
 
   return { caller, db };
 }
@@ -72,6 +191,7 @@ describe("feedRouter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     analysisMocks.buildActivityDerivedSummaryMap.mockResolvedValue(new Map());
+    analysisMocks.loadActivitySegmentsByActivityId.mockResolvedValue(new Map());
   });
 
   it("getFeed maps likes, comments, derived summaries, and pagination metadata", async () => {
@@ -93,23 +213,22 @@ describe("feedRouter", () => {
         id: ACTIVITY_ID,
         profile_id: OWNER_ID,
         name: "Morning Ride",
-        type: "ride",
+        category_composition: ["bike"],
         started_at: firstStartedAt,
         finished_at: new Date("2026-04-03T11:00:00.000Z"),
         distance_meters: 32000,
-        duration_seconds: 3600,
-        moving_seconds: 3500,
+        elapsed_ms: 3_600_000,
+        active_ms: 3_600_000,
+        moving_ms: 3_500_000,
+        timing_coverage: "complete",
         avg_heart_rate: 150,
         max_heart_rate: 178,
         avg_power: 220,
         avg_cadence: 88,
         elevation_gain_meters: "450.25",
         calories: 900,
-        polyline: null,
-        activity_file_path: null,
-        likes_count: 4,
-        is_private: false,
-        created_at: new Date("2026-04-03T11:05:00.000Z"),
+        has_route: false,
+        content_visibility: "public",
         profile_username: "owner",
         profile_avatar_url: "https://example.com/owner.png",
       },
@@ -117,23 +236,22 @@ describe("feedRouter", () => {
         id: ACTIVITY_ID_2,
         profile_id: VIEWER_ID,
         name: "Lunch Run",
-        type: "run",
+        category_composition: ["run"],
         started_at: secondStartedAt,
         finished_at: new Date("2026-04-02T10:30:00.000Z"),
         distance_meters: 5000,
-        duration_seconds: 1800,
-        moving_seconds: 1750,
+        elapsed_ms: 1_800_000,
+        active_ms: 1_800_000,
+        moving_ms: 1_750_000,
+        timing_coverage: "complete",
         avg_heart_rate: 145,
         max_heart_rate: 170,
         avg_power: null,
         avg_cadence: 84,
         elevation_gain_meters: 55,
         calories: 420,
-        polyline: null,
-        activity_file_path: null,
-        likes_count: 1,
-        is_private: false,
-        created_at: new Date("2026-04-02T10:35:00.000Z"),
+        has_route: false,
+        content_visibility: "public",
         profile_username: "viewer",
         profile_avatar_url: null,
       },
@@ -141,31 +259,30 @@ describe("feedRouter", () => {
         id: "55555555-5555-4555-8555-555555555555",
         profile_id: OWNER_ID,
         name: "Older Swim",
-        type: "swim",
+        category_composition: ["swim"],
         started_at: thirdStartedAt,
         finished_at: new Date("2026-04-01T10:20:00.000Z"),
         distance_meters: 1000,
-        duration_seconds: 1200,
-        moving_seconds: 1100,
+        elapsed_ms: 1_200_000,
+        active_ms: 1_200_000,
+        moving_ms: 1_100_000,
+        timing_coverage: "complete",
         avg_heart_rate: null,
         max_heart_rate: null,
         avg_power: null,
         avg_cadence: null,
         elevation_gain_meters: null,
         calories: 200,
-        polyline: null,
-        activity_file_path: null,
-        likes_count: 0,
-        is_private: false,
-        created_at: new Date("2026-04-01T10:25:00.000Z"),
+        has_route: false,
+        content_visibility: "public",
         profile_username: "owner",
         profile_avatar_url: "https://example.com/owner.png",
       },
     ];
 
-    const { caller } = createCaller({
+    const { caller, db } = createCaller({
       execute: [activityRows, [{ entity_id: ACTIVITY_ID, comments_count: 2 }]],
-      feedLikeRows: [{ entity_id: ACTIVITY_ID }],
+      likeStatsRows: [{ entity_id: ACTIVITY_ID, likes_count: 4, has_liked: true }],
     });
 
     const result = await caller.getFeed({ limit: 2 });
@@ -173,52 +290,54 @@ describe("feedRouter", () => {
     expect(result.hasMore).toBe(true);
     expect(result.nextCursor).toBe(`${secondStartedAt.toISOString()}|${ACTIVITY_ID_2}`);
     expect(result.items).toHaveLength(2);
-    expect(result.items[0]).toEqual({
+    expect(result.items[0]).toMatchObject({
+      contractVersion: "activity-display-v1",
       id: ACTIVITY_ID,
-      profile_id: OWNER_ID,
-      name: "Morning Ride",
-      type: "ride",
-      started_at: firstStartedAt.toISOString(),
-      finished_at: "2026-04-03T11:00:00.000Z",
-      distance_meters: 32000,
-      duration_seconds: 3600,
-      moving_seconds: 3500,
-      avg_heart_rate: 150,
-      max_heart_rate: 178,
-      avg_power: 220,
-      avg_cadence: 88,
-      elevation_gain_meters: 450.25,
-      calories: 900,
-      polyline: null,
-      activity_file_path: null,
-      likes_count: 4,
-      comments_count: 2,
-      is_private: false,
-      created_at: "2026-04-03T11:05:00.000Z",
-      profile: {
-        id: OWNER_ID,
-        username: "owner",
-        avatar_url: "https://example.com/owner.png",
-      },
-      has_liked: true,
-      derived: {
-        tss: 82,
-        intensity_factor: 0.91,
-        computed_as_of: "2026-04-03T11:00:00.000Z",
-      },
-      ingestion: null,
+      title: "Morning Ride",
+      engagement: { likes: 4, comments: 2, viewerHasLiked: true },
+      capabilities: expect.objectContaining({ canEdit: false, canDelete: false }),
     });
+    const firstItem = result.items[0];
+    if (!firstItem) throw new Error("Expected the first feed item");
+    expect(Object.keys(firstItem).sort()).toEqual([
+      "activityComposition",
+      "capabilities",
+      "contractVersion",
+      "engagement",
+      "href",
+      "id",
+      "metrics",
+      "notes",
+      "owner",
+      "time",
+      "title",
+      "visibility",
+    ]);
+    for (const sensitiveField of [
+      "polyline",
+      "ingestion",
+      "segments",
+      "derived",
+      "profile_id",
+      "created_at",
+      "avg_heart_rate",
+      "calories",
+    ]) {
+      expect(firstItem).not.toHaveProperty(sensitiveField);
+    }
     expect(analysisMocks.buildActivityDerivedSummaryMap).toHaveBeenCalledWith(
       expect.objectContaining({
         profileId: VIEWER_ID,
-        activities: expect.arrayContaining([
+        activities: [
           expect.objectContaining({
-            id: ACTIVITY_ID,
-            elevation_gain_meters: 450.25,
+            id: ACTIVITY_ID_2,
+            profile_id: VIEWER_ID,
           }),
-        ]),
+        ],
       }),
     );
+    expect(db.execute).not.toHaveBeenCalled();
+    expect(db.select).toHaveBeenCalledTimes(5);
   });
 
   it("getFeed uses a stable composite cursor for activities with matching timestamps", async () => {
@@ -228,23 +347,22 @@ describe("feedRouter", () => {
         id: ACTIVITY_ID_2,
         profile_id: VIEWER_ID,
         name: "Lunch Run",
-        type: "run",
+        category_composition: ["run"],
         started_at: sharedStartedAt,
         finished_at: new Date("2026-04-03T10:30:00.000Z"),
         distance_meters: 5000,
-        duration_seconds: 1800,
-        moving_seconds: 1750,
+        elapsed_ms: 1_800_000,
+        active_ms: 1_800_000,
+        moving_ms: 1_750_000,
+        timing_coverage: "complete",
         avg_heart_rate: 145,
         max_heart_rate: 170,
         avg_power: null,
         avg_cadence: 84,
         elevation_gain_meters: 55,
         calories: 420,
-        polyline: null,
-        activity_file_path: null,
-        likes_count: 1,
-        is_private: false,
-        created_at: new Date("2026-04-03T10:35:00.000Z"),
+        has_route: false,
+        content_visibility: "public",
         profile_username: "viewer",
         profile_avatar_url: null,
       },
@@ -252,23 +370,22 @@ describe("feedRouter", () => {
         id: ACTIVITY_ID,
         profile_id: OWNER_ID,
         name: "Morning Ride",
-        type: "ride",
+        category_composition: ["bike"],
         started_at: sharedStartedAt,
         finished_at: new Date("2026-04-03T11:00:00.000Z"),
         distance_meters: 32000,
-        duration_seconds: 3600,
-        moving_seconds: 3500,
+        elapsed_ms: 3_600_000,
+        active_ms: 3_600_000,
+        moving_ms: 3_500_000,
+        timing_coverage: "complete",
         avg_heart_rate: 150,
         max_heart_rate: 178,
         avg_power: 220,
         avg_cadence: 88,
         elevation_gain_meters: 450,
         calories: 900,
-        polyline: null,
-        activity_file_path: null,
-        likes_count: 4,
-        is_private: false,
-        created_at: new Date("2026-04-03T11:05:00.000Z"),
+        has_route: false,
+        content_visibility: "public",
         profile_username: "owner",
         profile_avatar_url: "https://example.com/owner.png",
       },
@@ -284,6 +401,52 @@ describe("feedRouter", () => {
     expect(result.items[0]?.id).toBe(ACTIVITY_ID_2);
   });
 
+  it("getFeed preserves the same quantification as My Activities for an owned activity", async () => {
+    const derived = createOwnedQuantifiedSummary();
+    analysisMocks.buildActivityDerivedSummaryMap.mockResolvedValue(
+      new Map([[ACTIVITY_ID_2, derived]]),
+    );
+    const activity = {
+      id: ACTIVITY_ID_2,
+      profile_id: VIEWER_ID,
+      name: "Lunch Run",
+      category_composition: ["run"],
+      started_at: new Date("2026-04-03T10:30:00.000Z"),
+      finished_at: new Date("2026-04-03T11:00:00.000Z"),
+      distance_meters: 5000,
+      elapsed_ms: 1_800_000,
+      active_ms: 1_800_000,
+      moving_ms: 1_750_000,
+      timing_coverage: "complete",
+      avg_heart_rate: 145,
+      max_heart_rate: 170,
+      avg_power: null,
+      avg_cadence: 84,
+      elevation_gain_meters: 55,
+      calories: 420,
+      has_route: false,
+      content_visibility: "public",
+      profile_username: "viewer",
+      profile_avatar_url: null,
+    };
+    const { caller } = createCaller({ execute: [[activity], []] });
+
+    const result = await caller.getFeed({ limit: 1 });
+    const expectedCommonLoad = derived.observationQuantification.summary.commonLoad;
+    if (expectedCommonLoad.status === "unavailable") {
+      throw new Error("Expected available common load");
+    }
+
+    expect(result.items[0]?.metrics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "common_load",
+          value: expectedCommonLoad.load,
+        }),
+      ]),
+    );
+  });
+
   it("getFeed rejects malformed SQL activity rows", async () => {
     const { caller } = createCaller({
       execute: [
@@ -292,23 +455,22 @@ describe("feedRouter", () => {
             id: "not-a-uuid",
             profile_id: OWNER_ID,
             name: "Broken Ride",
-            type: "ride",
+            category_composition: ["bike"],
             started_at: new Date("2026-04-03T10:00:00.000Z"),
             finished_at: new Date("2026-04-03T11:00:00.000Z"),
             distance_meters: 32000,
-            duration_seconds: 3600,
-            moving_seconds: 3500,
+            elapsed_ms: 3_600_000,
+            active_ms: 3_600_000,
+            moving_ms: 3_500_000,
+            timing_coverage: "complete",
             avg_heart_rate: 150,
             max_heart_rate: 178,
             avg_power: 220,
             avg_cadence: 88,
             elevation_gain_meters: "450.25",
             calories: 900,
-            polyline: null,
-            activity_file_path: null,
-            likes_count: 4,
-            is_private: false,
-            created_at: new Date("2026-04-03T11:05:00.000Z"),
+            has_route: false,
+            content_visibility: "public",
             profile_username: "owner",
             profile_avatar_url: "https://example.com/owner.png",
           },
@@ -322,7 +484,7 @@ describe("feedRouter", () => {
     });
   });
 
-  it("getFeed rejects malformed derived summaries at the DTO boundary", async () => {
+  it("getFeed keeps the canonical feed available when an owned derived summary is malformed", async () => {
     analysisMocks.buildActivityDerivedSummaryMap.mockResolvedValue(
       new Map([[ACTIVITY_ID, { tss: 82, intensity_factor: 0.91, computed_as_of: 123 }]]),
     );
@@ -332,286 +494,51 @@ describe("feedRouter", () => {
         [
           {
             id: ACTIVITY_ID,
-            profile_id: OWNER_ID,
+            profile_id: VIEWER_ID,
             name: "Morning Ride",
-            type: "ride",
+            category_composition: ["bike"],
             started_at: new Date("2026-04-03T10:00:00.000Z"),
             finished_at: new Date("2026-04-03T11:00:00.000Z"),
             distance_meters: 32000,
-            duration_seconds: 3600,
-            moving_seconds: 3500,
+            elapsed_ms: 3_600_000,
+            active_ms: 3_600_000,
+            moving_ms: 3_500_000,
+            timing_coverage: "complete",
             avg_heart_rate: 150,
             max_heart_rate: 178,
             avg_power: 220,
             avg_cadence: 88,
             elevation_gain_meters: 450,
             calories: 900,
-            polyline: null,
-            activity_file_path: null,
-            likes_count: 4,
-            is_private: false,
-            created_at: new Date("2026-04-03T11:05:00.000Z"),
-            profile_username: "owner",
+            has_route: false,
+            content_visibility: "public",
+            profile_username: "viewer",
             profile_avatar_url: "https://example.com/owner.png",
           },
         ],
         [],
       ],
-      feedLikeRows: [{ entity_id: ACTIVITY_ID }],
+      likeStatsRows: [{ entity_id: ACTIVITY_ID, likes_count: 4, has_liked: true }],
     });
 
-    await expect(caller.getFeed({ limit: 1 })).rejects.toMatchObject({
-      code: "INTERNAL_SERVER_ERROR",
-      message: "Failed to fetch feed",
-    });
-  });
-
-  it("getActivity returns detail data including likes and ordered comments", async () => {
-    const startedAt = new Date("2026-04-03T10:00:00.000Z");
-
-    const { caller } = createCaller({
-      execute: [
-        [
-          {
-            id: ACTIVITY_ID,
-            profile_id: OWNER_ID,
-            name: "Morning Ride",
-            type: "ride",
-            notes: "Strong effort",
-            started_at: startedAt,
-            finished_at: new Date("2026-04-03T11:00:00.000Z"),
-            distance_meters: 32000,
-            duration_seconds: 3600,
-            moving_seconds: 3500,
-            avg_heart_rate: 150,
-            max_heart_rate: 178,
-            avg_power: 220,
-            max_power: 510,
-            avg_cadence: 88,
-            max_cadence: 105,
-            normalized_power: 240,
-            elevation_gain_meters: 450,
-            elevation_loss_meters: "445.75",
-            calories: 900,
-            polyline: null,
-            activity_file_path: null,
-            map_bounds: null,
-            likes_count: 4,
-            is_private: false,
-            created_at: new Date("2026-04-03T11:05:00.000Z"),
-            profile_username: "owner",
-            profile_avatar_url: "https://example.com/owner.png",
-            viewer_follows_owner: false,
-          },
-        ],
-        [
-          {
-            id: "66666666-6666-4666-8666-666666666666",
-            content: "Nice work!",
-            created_at: new Date("2026-04-03T12:00:00.000Z"),
-            profile_id: VIEWER_ID,
-            profile_username: "viewer",
-            profile_avatar_url: null,
-          },
-        ],
+    await expect(caller.getFeed({ limit: 1 })).resolves.toMatchObject({
+      items: [
+        expect.objectContaining({
+          id: ACTIVITY_ID,
+          metrics: expect.arrayContaining([
+            expect.objectContaining({
+              key: "common_load",
+              status: "unavailable",
+              reason: "quantification_unavailable",
+            }),
+            expect.objectContaining({
+              key: "normalized_intensity",
+              status: "unavailable",
+              reason: "quantification_unavailable",
+            }),
+          ]),
+        }),
       ],
-      activityLikeRows: [{ id: "77777777-7777-4777-8777-777777777777" }],
-    });
-
-    const result = await caller.getActivity({ activityId: ACTIVITY_ID });
-
-    expect(result).toEqual({
-      id: ACTIVITY_ID,
-      profile_id: OWNER_ID,
-      name: "Morning Ride",
-      type: "ride",
-      notes: "Strong effort",
-      started_at: startedAt.toISOString(),
-      finished_at: "2026-04-03T11:00:00.000Z",
-      distance_meters: 32000,
-      duration_seconds: 3600,
-      moving_seconds: 3500,
-      avg_heart_rate: 150,
-      max_heart_rate: 178,
-      avg_power: 220,
-      max_power: 510,
-      avg_cadence: 88,
-      max_cadence: 105,
-      normalized_power: 240,
-      elevation_gain_meters: 450,
-      elevation_loss_meters: 445.75,
-      calories: 900,
-      polyline: null,
-      activity_file_path: null,
-      map_bounds: null,
-      likes_count: 4,
-      is_private: false,
-      created_at: "2026-04-03T11:05:00.000Z",
-      profile: {
-        id: OWNER_ID,
-        username: "owner",
-        avatar_url: "https://example.com/owner.png",
-      },
-      has_liked: true,
-      comments_count: 1,
-      comments: [
-        {
-          id: "66666666-6666-4666-8666-666666666666",
-          content: "Nice work!",
-          created_at: "2026-04-03T12:00:00.000Z",
-          profile: {
-            id: VIEWER_ID,
-            username: "viewer",
-            avatar_url: null,
-          },
-        },
-      ],
-    });
-  });
-
-  it("getActivity rejects private activities for non-followers", async () => {
-    const { caller } = createCaller({
-      execute: [
-        [
-          {
-            id: ACTIVITY_ID,
-            profile_id: OWNER_ID,
-            name: "Private Ride",
-            type: "ride",
-            notes: null,
-            started_at: new Date("2026-04-03T10:00:00.000Z"),
-            finished_at: new Date("2026-04-03T11:00:00.000Z"),
-            distance_meters: 32000,
-            duration_seconds: 3600,
-            moving_seconds: 3500,
-            avg_heart_rate: null,
-            max_heart_rate: null,
-            avg_power: null,
-            max_power: null,
-            avg_cadence: null,
-            max_cadence: null,
-            normalized_power: null,
-            elevation_gain_meters: null,
-            elevation_loss_meters: null,
-            calories: null,
-            polyline: null,
-            activity_file_path: null,
-            map_bounds: null,
-            likes_count: 0,
-            is_private: true,
-            created_at: new Date("2026-04-03T11:05:00.000Z"),
-            profile_username: "owner",
-            profile_avatar_url: null,
-            viewer_follows_owner: false,
-          },
-        ],
-      ],
-    });
-
-    await expect(caller.getActivity({ activityId: ACTIVITY_ID })).rejects.toMatchObject({
-      code: "FORBIDDEN",
-      message: "You don't have permission to view this activity",
-    });
-  });
-
-  it("getActivity rejects private activities for followers", async () => {
-    const { caller } = createCaller({
-      execute: [
-        [
-          {
-            id: ACTIVITY_ID,
-            profile_id: OWNER_ID,
-            name: "Private Ride",
-            type: "ride",
-            notes: null,
-            started_at: new Date("2026-04-03T10:00:00.000Z"),
-            finished_at: new Date("2026-04-03T11:00:00.000Z"),
-            distance_meters: 32000,
-            duration_seconds: 3600,
-            moving_seconds: 3500,
-            avg_heart_rate: null,
-            max_heart_rate: null,
-            avg_power: null,
-            max_power: null,
-            avg_cadence: null,
-            max_cadence: null,
-            normalized_power: null,
-            elevation_gain_meters: null,
-            elevation_loss_meters: null,
-            calories: null,
-            polyline: null,
-            activity_file_path: null,
-            map_bounds: null,
-            likes_count: 0,
-            is_private: true,
-            created_at: new Date("2026-04-03T11:05:00.000Z"),
-            profile_username: "owner",
-            profile_avatar_url: null,
-            viewer_follows_owner: true,
-          },
-        ],
-      ],
-    });
-
-    await expect(caller.getActivity({ activityId: ACTIVITY_ID })).rejects.toMatchObject({
-      code: "FORBIDDEN",
-      message: "You don't have permission to view this activity",
-    });
-  });
-
-  it("getActivity rejects malformed SQL comment rows", async () => {
-    const { caller } = createCaller({
-      execute: [
-        [
-          {
-            id: ACTIVITY_ID,
-            profile_id: OWNER_ID,
-            name: "Morning Ride",
-            type: "ride",
-            notes: null,
-            started_at: new Date("2026-04-03T10:00:00.000Z"),
-            finished_at: new Date("2026-04-03T11:00:00.000Z"),
-            distance_meters: 32000,
-            duration_seconds: 3600,
-            moving_seconds: 3500,
-            avg_heart_rate: 150,
-            max_heart_rate: 178,
-            avg_power: 220,
-            max_power: 510,
-            avg_cadence: 88,
-            max_cadence: 105,
-            normalized_power: 240,
-            elevation_gain_meters: 450,
-            elevation_loss_meters: 445,
-            calories: 900,
-            polyline: null,
-            activity_file_path: null,
-            map_bounds: null,
-            likes_count: 4,
-            is_private: false,
-            created_at: new Date("2026-04-03T11:05:00.000Z"),
-            profile_username: "owner",
-            profile_avatar_url: "https://example.com/owner.png",
-            viewer_follows_owner: false,
-          },
-        ],
-        [
-          {
-            id: "bad-comment-id",
-            content: "Nice work!",
-            created_at: new Date("2026-04-03T12:00:00.000Z"),
-            profile_id: VIEWER_ID,
-            profile_username: "viewer",
-            profile_avatar_url: null,
-          },
-        ],
-      ],
-      activityLikeRows: [{ id: "77777777-7777-4777-8777-777777777777" }],
-    });
-
-    await expect(caller.getActivity({ activityId: ACTIVITY_ID })).rejects.toMatchObject({
-      code: "INTERNAL_SERVER_ERROR",
-      message: "Failed to fetch activity",
     });
   });
 });
