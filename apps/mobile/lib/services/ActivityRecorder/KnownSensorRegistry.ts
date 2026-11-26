@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { omitUndefined } from "@/lib/omitUndefined";
 
 const PERSISTED_SENSORS_KEY = "@sensors:persisted_devices";
 
@@ -89,17 +90,20 @@ export class KnownSensorRegistry {
   }
 
   async add(sensor: KnownSensorInput): Promise<void> {
-    this.sensors.set(sensor.id, {
-      id: sensor.id,
-      name: sensor.name,
-      lastConnected: Date.now(),
-      services: sensor.services,
-      characteristics: Array.from(sensor.characteristics.keys()),
-      batteryLevel: sensor.batteryLevel,
-      isTrainer: sensor.isTrainer,
-      isControllable: sensor.isControllable,
-      autoConnectSuppressed: false,
-    });
+    this.sensors.set(
+      sensor.id,
+      omitUndefined({
+        id: sensor.id,
+        name: sensor.name,
+        lastConnected: Date.now(),
+        services: sensor.services,
+        characteristics: Array.from(sensor.characteristics.keys()),
+        batteryLevel: sensor.batteryLevel,
+        isTrainer: sensor.isTrainer,
+        isControllable: sensor.isControllable,
+        autoConnectSuppressed: false,
+      }),
+    );
     this.autoReconnectSuppressedSensorIds.delete(sensor.id);
     await this.save();
   }

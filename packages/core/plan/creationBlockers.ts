@@ -20,8 +20,8 @@ export interface ValidationGoalLike {
 
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const SUPPRESSED_OBSERVATION_CODES = new Set<string>([
-  "required_tss_ramp_exceeds_cap",
-  "required_ctl_ramp_exceeds_cap",
+  "required_load_ramp_exceeds_cap",
+  "required_longTermLoad_ramp_exceeds_cap",
 ]);
 
 export function getMinimumGoalGapDays(goals: ValidationGoalLike[]): number | undefined {
