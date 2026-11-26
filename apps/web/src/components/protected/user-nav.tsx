@@ -1,3 +1,4 @@
+import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Button } from "@repo/ui/components/button";
 import {
   DropdownMenu,
@@ -9,11 +10,26 @@ import {
   DropdownMenuTrigger,
 } from "@repo/ui/components/dropdown-menu";
 import { Link } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
-import { Bell, Home, LogOut, MessageSquare, Settings, UserRound, Users } from "lucide-react";
-import { useState } from "react";
+import {
+  Bell,
+  Building2,
+  CalendarDays,
+  ClipboardList,
+  Home,
+  LogOut,
+  MessageSquare,
+  Plug,
+  Settings,
+  Target,
+  UserRound,
+  Users,
+} from "lucide-react";
+import { useRef, useState } from "react";
 
+import { api } from "../../lib/api/client";
 import { signOutAction } from "../../lib/auth/server-actions";
+import { contractEpochFormInputProps } from "../../lib/contract-epoch";
+import { useFormServerFn } from "../../lib/use-form-server-fn";
 import { useAuth } from "../providers/auth-provider";
 
 function getInitials(email: string | null | undefined) {
@@ -23,29 +39,62 @@ function getInitials(email: string | null | undefined) {
 
 export function UserNav() {
   const { user } = useAuth();
-  const signOut = useServerFn(signOutAction);
+  return <AccountUserNav key={user?.id ?? "anonymous"} />;
+}
+
+function AccountUserNav() {
+  const { user } = useAuth();
+  const { data: profile } = api.profiles.get.useQuery(undefined, {
+    enabled: Boolean(user?.id),
+  });
+  const signOut = useFormServerFn(signOutAction, () => undefined, user?.id);
   const [isPending, setIsPending] = useState(false);
+  const pendingRef = useRef(false);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
   const displayName = user?.email ?? "User";
   type AccountLink = {
     icon: typeof Home;
     label: string;
-    to: "/" | "/coaching" | "/messages" | "/notifications" | "/settings";
+    to:
+      | "/"
+      | "/activity-plans"
+      | "/goals"
+      | "/groups"
+      | "/integrations"
+      | "/messages"
+      | "/notifications"
+      | "/organizations"
+      | "/calendar"
+      | "/training-plans"
+      | "/settings";
   };
   const accountLinks: AccountLink[] = [
     { to: "/", label: "Dashboard", icon: Home },
-    { to: "/coaching", label: "Coaching", icon: Users },
+    { to: "/organizations", label: "Coaching organizations", icon: Building2 },
     { to: "/messages", label: "Messages", icon: MessageSquare },
     { to: "/notifications", label: "Notifications", icon: Bell },
+    { to: "/activity-plans", label: "Activity plans", icon: ClipboardList },
+    { to: "/training-plans", label: "Training plans", icon: ClipboardList },
+    { to: "/calendar", label: "Calendar", icon: CalendarDays },
+    { to: "/goals", label: "Goals", icon: Target },
+    { to: "/groups", label: "Groups", icon: Users },
+    { to: "/integrations", label: "Integrations", icon: Plug },
     { to: "/settings", label: "Settings", icon: Settings },
   ];
 
-  const handleSignOut = async () => {
+  const handleSignOut = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (pendingRef.current) return;
+    void new FormData(event.currentTarget);
+    pendingRef.current = true;
     setIsPending(true);
+    setSignOutError(null);
     try {
       await signOut();
-    } catch (error) {
-      console.error("Logout failed:", error);
+    } catch {
+      setSignOutError("Could not sign out. Please try again.");
     } finally {
+      pendingRef.current = false;
       setIsPending(false);
     }
   };
@@ -59,9 +108,12 @@ export function UserNav() {
           aria-label="Open user menu"
           title="Open user menu"
         >
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-semibold">
-            {getInitials(user?.email)}
-          </div>
+          <Avatar className="h-8 w-8">
+            {profile?.avatar_url ? (
+              <AvatarImage alt="Your profile" src={profile.avatar_url} />
+            ) : null}
+            <AvatarFallback>{getInitials(profile?.username ?? user?.email)}</AvatarFallback>
+          </Avatar>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56" align="end" forceMount>
@@ -96,19 +148,30 @@ export function UserNav() {
           ))}
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem asChild disabled={isPending} className="cursor-pointer">
+        <DropdownMenuItem
+          asChild
+          disabled={isPending}
+          onSelect={(event) => event.preventDefault()}
+          className="cursor-pointer"
+        >
           <form
             action={signOutAction.url}
             method="post"
-            onSubmit={handleSignOut}
+            onSubmit={(event) => void handleSignOut(event)}
             className="w-full"
           >
+            <input {...contractEpochFormInputProps} />
             <button type="submit" className="flex w-full items-center gap-2" disabled={isPending}>
               <LogOut className="h-4 w-4" />
               <span>{isPending ? "Logging out..." : "Log out"}</span>
             </button>
           </form>
         </DropdownMenuItem>
+        {signOutError ? (
+          <p className="px-2 text-sm text-destructive" role="alert">
+            {signOutError}
+          </p>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );

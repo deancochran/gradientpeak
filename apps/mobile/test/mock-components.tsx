@@ -1,4 +1,5 @@
 import React from "react";
+import { type Control, type FieldValues, useController } from "react-hook-form";
 
 export type HostProps = Record<string, unknown> & { children?: React.ReactNode };
 
@@ -20,7 +21,7 @@ export type MockFormTextFieldProps<TValues extends Record<string, string>> = {
   name: keyof TValues & string;
   placeholder?: string;
   testId?: string;
-};
+} & Record<string, unknown>;
 
 export type ZodFormSubmitProps<TValues extends Record<string, string>> = {
   form: {
@@ -35,9 +36,19 @@ export function clearRecord(record: Record<string, unknown>) {
   }
 }
 
+function renderHostChildren(type: string, children: React.ReactNode) {
+  if (type === "Text") return children;
+
+  return React.Children.map(children, (child) =>
+    typeof child === "string" || typeof child === "number"
+      ? React.createElement("Text", null, String(child))
+      : child,
+  );
+}
+
 export function createHostComponent(type: string) {
   return function HostComponent({ children, ...props }: HostProps) {
-    return React.createElement(type, props, children);
+    return React.createElement(type, props, renderHostChildren(type, children));
   };
 }
 
@@ -60,7 +71,7 @@ export function createPressableHost(type = "Pressable") {
         onPress: disabled ? undefined : onPress,
         testID: testID ?? testId,
       },
-      children,
+      renderHostChildren(type, children),
     );
   };
 }
@@ -69,7 +80,7 @@ export const createButtonComponent = createPressableHost;
 
 export function createStackComponent() {
   function Stack({ children, ...props }: HostProps) {
-    return React.createElement("Stack", props, children);
+    return React.createElement("Stack", props, renderHostChildren("Stack", children));
   }
 
   Stack.Screen = function StackScreen({
@@ -81,7 +92,7 @@ export function createStackComponent() {
     return React.createElement(
       "StackScreen",
       { ...props, name, options, testID: name ? `stack-screen-${name}` : undefined },
-      children,
+      renderHostChildren("StackScreen", children),
     );
   };
 
@@ -94,11 +105,13 @@ export function createFormTextField<TValues extends Record<string, string>>() {
     name,
     placeholder,
     testId,
+    ...inputProps
   }: MockFormTextFieldProps<TValues>) {
     return React.createElement(
       React.Fragment,
       null,
       React.createElement("TextInput", {
+        ...inputProps,
         onChangeText: (nextValue: string) => control.setValue(name, nextValue),
         placeholder,
         testID: testId ?? name,
@@ -110,19 +123,69 @@ export function createFormTextField<TValues extends Record<string, string>>() {
 }
 
 export function createFormComponentMocks() {
+  type ControlledFieldProps = Record<string, unknown> & {
+    control: Control<FieldValues>;
+    name: string;
+    testId?: string;
+  };
+
+  const createControlledField = (type: string) =>
+    function ControlledField({ control, name, testId, ...props }: ControlledFieldProps) {
+      const { field } = useController({ control, name });
+
+      return React.createElement(type, {
+        ...props,
+        id: testId,
+        name,
+        onChange: field.onChange,
+        onChangeText: field.onChange,
+        onValueChange: field.onChange,
+        testID: testId,
+        value: field.value,
+      });
+    };
+
+  function FormPercentSliderField({
+    control,
+    name,
+    testId,
+    valueMode = "percent",
+    ...props
+  }: ControlledFieldProps & { valueMode?: "fraction" | "percent" }) {
+    const { field } = useController({ control, name });
+    const formValue =
+      typeof field.value === "number" && Number.isFinite(field.value) ? field.value : 0;
+
+    return React.createElement("FormPercentSliderField", {
+      ...props,
+      id: testId,
+      name,
+      onChange: (displayPercent: number) => {
+        field.onChange(
+          valueMode === "fraction" ? Number((displayPercent / 100).toFixed(4)) : displayPercent,
+        );
+      },
+      testID: testId,
+      value: valueMode === "fraction" ? formValue * 100 : formValue,
+      valueMode,
+    });
+  }
+
   return {
     __esModule: true,
     Form: ({ children }: { children?: React.ReactNode }) => children,
-    FormBoundedNumberField: createHost("FormBoundedNumberField"),
-    FormDateInputField: createHost("FormDateInputField"),
+    FormBoundedNumberField: createControlledField("FormBoundedNumberField"),
+    FormDateInputField: createControlledField("FormDateInputField"),
     FormField: createHost("FormField"),
-    FormIntegerStepperField: createHost("FormIntegerStepperField"),
-    FormNumberField: createHost("FormNumberField"),
-    FormSegmentedSelectField: createHost("FormSegmentedSelectField"),
-    FormSelectField: createHost("FormSelectField"),
-    FormSwitchField: createHost("FormSwitchField"),
-    FormTextField: createHost("FormTextField"),
-    FormTextareaField: createHost("FormTextareaField"),
-    FormTimeInputField: createHost("FormTimeInputField"),
+    FormIntegerStepperField: createControlledField("FormIntegerStepperField"),
+    FormNumberField: createControlledField("FormNumberField"),
+    FormPercentSliderField,
+    FormSegmentedSelectField: createControlledField("FormSegmentedSelectField"),
+    FormSelectField: createControlledField("FormSelectField"),
+    FormSwitchField: createControlledField("FormSwitchField"),
+    FormTextField: createControlledField("FormTextField"),
+    FormTextareaField: createControlledField("FormTextareaField"),
+    FormTimeInputField: createControlledField("FormTimeInputField"),
+    FormTimezoneField: createControlledField("FormTimezoneField"),
   };
 }

@@ -1,7 +1,20 @@
-import type { IntensityTargetV2, PlanStepV2 } from "./activity_plan_v2";
+import { getIntensityZone, getIntensityZoneColor } from "../constants/zones";
+import type { ActivityTarget, ActivityTargetType } from "../targets";
+
+type TargetBearingStep = { targets?: readonly ActivityTarget[] };
+
+/** Converts persisted/UI speed targets in km/h to runtime/export m/s. */
+export function activityPlanSpeedKphToMetersPerSecond(speedKph: number): number {
+  return speedKph / 3.6;
+}
+
+/** Converts runtime/import m/s to persisted/UI speed targets in km/h. */
+export function activityPlanSpeedMetersPerSecondToKph(speedMetersPerSecond: number): number {
+  return speedMetersPerSecond * 3.6;
+}
 
 // ==============================
-// TARGET HELPER UTILITIES V2
+// TARGET HELPER UTILITIES
 // Runtime evaluation with dynamic tolerances
 // ==============================
 
@@ -9,42 +22,42 @@ import type { IntensityTargetV2, PlanStepV2 } from "./activity_plan_v2";
  * Target builder helpers for fluent API
  */
 export const Target = {
-  ftp: (intensity: number): IntensityTargetV2 => ({
+  ftp: (intensity: number): ActivityTarget => ({
     type: "%FTP",
     intensity,
   }),
 
-  maxHR: (intensity: number): IntensityTargetV2 => ({
+  maxHR: (intensity: number): ActivityTarget => ({
     type: "%MaxHR",
     intensity,
   }),
 
-  thresholdHR: (intensity: number): IntensityTargetV2 => ({
+  thresholdHR: (intensity: number): ActivityTarget => ({
     type: "%ThresholdHR",
     intensity,
   }),
 
-  watts: (intensity: number): IntensityTargetV2 => ({
+  watts: (intensity: number): ActivityTarget => ({
     type: "watts",
     intensity,
   }),
 
-  bpm: (intensity: number): IntensityTargetV2 => ({
+  bpm: (intensity: number): ActivityTarget => ({
     type: "bpm",
     intensity,
   }),
 
-  speed: (intensity: number): IntensityTargetV2 => ({
+  speed: (intensity: number): ActivityTarget => ({
     type: "speed",
     intensity,
   }),
 
-  cadence: (intensity: number): IntensityTargetV2 => ({
+  cadence: (intensity: number): ActivityTarget => ({
     type: "cadence",
     intensity,
   }),
 
-  rpe: (intensity: number): IntensityTargetV2 => ({
+  rpe: (intensity: number): ActivityTarget => ({
     type: "RPE",
     intensity,
   }),
@@ -53,14 +66,14 @@ export const Target = {
 /**
  * Get primary target from step
  */
-export function getPrimaryTarget(step: PlanStepV2): IntensityTargetV2 | undefined {
+export function getPrimaryTarget(step: TargetBearingStep): ActivityTarget | undefined {
   return step.targets?.[0];
 }
 
 /**
  * Check if step has a specific target type
  */
-export function hasTargetType(step: PlanStepV2, type: IntensityTargetV2["type"]): boolean {
+export function hasTargetType(step: TargetBearingStep, type: ActivityTargetType): boolean {
   return step.targets?.some((t) => t.type === type) ?? false;
 }
 
@@ -68,9 +81,9 @@ export function hasTargetType(step: PlanStepV2, type: IntensityTargetV2["type"])
  * Get target by type from step
  */
 export function getTargetByType(
-  step: PlanStepV2,
-  type: IntensityTargetV2["type"],
-): IntensityTargetV2 | undefined {
+  step: TargetBearingStep,
+  type: ActivityTargetType,
+): ActivityTarget | undefined {
   return step.targets?.find((t) => t.type === type);
 }
 
@@ -81,24 +94,28 @@ export function getTargetByType(
  * NOTE: This is evaluated at runtime during recording.
  * Tolerances adapt to actual performance, handling GPS drift, pace changes, and pauses.
  */
-export function isInTargetRange(value: number, target: IntensityTargetV2): boolean {
+export function isInTargetRange(value: number, target: ActivityTarget): boolean {
+  const runtimeIntensity = getRuntimeTargetIntensity(target);
+
   // Default tolerance: ±5% for percentage-based, ±5 absolute for others
   let tolerance: number;
 
   switch (target.type) {
+    case "rest":
+      return false;
     case "%FTP":
     case "%MaxHR":
     case "%ThresholdHR":
       tolerance = 5; // ±5% points (e.g., 90% ±5 = 85-95%)
       break;
     case "watts":
-      tolerance = target.intensity * 0.05; // ±5% of watts
+      tolerance = runtimeIntensity * 0.05; // ±5% of watts
       break;
     case "bpm":
       tolerance = 5; // ±5 bpm
       break;
     case "speed":
-      tolerance = target.intensity * 0.05; // ±5% of speed
+      tolerance = runtimeIntensity * 0.05; // ±5% of speed in m/s
       break;
     case "cadence":
       tolerance = 5; // ±5 rpm
@@ -108,30 +125,33 @@ export function isInTargetRange(value: number, target: IntensityTargetV2): boole
       break;
   }
 
-  return value >= target.intensity - tolerance && value <= target.intensity + tolerance;
+  return value >= runtimeIntensity - tolerance && value <= runtimeIntensity + tolerance;
 }
 
 /**
  * Get target range with tolerance
  * Returns [min, max] values based on dynamic tolerance
  */
-export function getTargetRange(target: IntensityTargetV2): [number, number] {
+export function getTargetRange(target: ActivityTarget): [number, number] {
+  const runtimeIntensity = getRuntimeTargetIntensity(target);
   let tolerance: number;
 
   switch (target.type) {
+    case "rest":
+      throw new Error("Rest has no numeric target range.");
     case "%FTP":
     case "%MaxHR":
     case "%ThresholdHR":
       tolerance = 5;
       break;
     case "watts":
-      tolerance = target.intensity * 0.05;
+      tolerance = runtimeIntensity * 0.05;
       break;
     case "bpm":
       tolerance = 5;
       break;
     case "speed":
-      tolerance = target.intensity * 0.05;
+      tolerance = runtimeIntensity * 0.05;
       break;
     case "cadence":
       tolerance = 5;
@@ -141,14 +161,24 @@ export function getTargetRange(target: IntensityTargetV2): [number, number] {
       break;
   }
 
-  return [target.intensity - tolerance, target.intensity + tolerance];
+  return [runtimeIntensity - tolerance, runtimeIntensity + tolerance];
+}
+
+/** Returns a target intensity in the units used by live metrics and exports. */
+export function getRuntimeTargetIntensity(target: ActivityTarget): number {
+  if (target.type === "rest") throw new Error("Rest has no numeric target intensity.");
+  return target.type === "speed"
+    ? activityPlanSpeedKphToMetersPerSecond(target.intensity)
+    : target.intensity;
 }
 
 /**
  * Get unit for target type
  */
-export function getTargetUnit(target: IntensityTargetV2): string {
+export function getTargetUnit(target: ActivityTarget): string {
   switch (target.type) {
+    case "rest":
+      return "rest";
     case "%FTP":
     case "%MaxHR":
     case "%ThresholdHR":
@@ -169,8 +199,10 @@ export function getTargetUnit(target: IntensityTargetV2): string {
 /**
  * Get display name for target type
  */
-export function getTargetDisplayName(type: IntensityTargetV2["type"]): string {
+export function getTargetDisplayName(type: ActivityTargetType): string {
   switch (type) {
+    case "rest":
+      return "Rest";
     case "%FTP":
       return "Power (FTP)";
     case "%MaxHR":
@@ -193,8 +225,10 @@ export function getTargetDisplayName(type: IntensityTargetV2["type"]): string {
 /**
  * Format target value for display
  */
-export function formatTargetValue(target: IntensityTargetV2): string {
+export function formatTargetValue(target: ActivityTarget): string {
   switch (target.type) {
+    case "rest":
+      return "Rest";
     case "%FTP":
     case "%MaxHR":
     case "%ThresholdHR":
@@ -204,7 +238,7 @@ export function formatTargetValue(target: IntensityTargetV2): string {
     case "bpm":
       return `${Math.round(target.intensity)} bpm`;
     case "speed":
-      return `${target.intensity.toFixed(1)} m/s`;
+      return `${target.intensity.toFixed(1)} km/h`;
     case "cadence":
       return `${Math.round(target.intensity)} rpm`;
     case "RPE":
@@ -217,12 +251,16 @@ export function formatTargetValue(target: IntensityTargetV2): string {
  */
 export function getTargetGuidance(
   current: number,
-  target: IntensityTargetV2,
+  target: ActivityTarget,
 ): {
   status: "below" | "within" | "above";
   message: string;
 } {
+  if (target.type === "rest") {
+    return { status: "within", message: "Rest period; no intensity target." };
+  }
   const inRange = isInTargetRange(current, target);
+  const runtimeIntensity = getRuntimeTargetIntensity(target);
 
   if (inRange) {
     return {
@@ -231,55 +269,60 @@ export function getTargetGuidance(
     };
   }
 
-  if (current < target.intensity) {
-    const difference = Math.abs(target.intensity - current);
+  if (current < runtimeIntensity) {
+    const difference = Math.abs(runtimeIntensity - current);
     return {
       status: "below",
       message: `Increase by ${Math.round(difference)}${getTargetUnit(target)}`,
     };
   }
 
-  const difference = Math.abs(current - target.intensity);
+  const difference = Math.abs(current - runtimeIntensity);
   return {
     status: "above",
     message: `Decrease by ${Math.round(difference)}${getTargetUnit(target)}`,
   };
 }
 
-/**
- * Convert percentage-based targets to absolute values using profile
- */
-export function convertTargetToAbsolute(
-  target: IntensityTargetV2,
-  profile: { ftp?: number; threshold_hr?: number },
-): { intensity: number; unit: string; label: string } | null {
+export function formatIntensityTarget(target: ActivityTarget): string {
+  switch (target.type) {
+    case "rest":
+      return "Rest";
+    case "%FTP":
+      return `${Math.round(target.intensity)}% FTP`;
+    case "%MaxHR":
+      return `${Math.round(target.intensity)}% MaxHR`;
+    case "%ThresholdHR":
+      return `${Math.round(target.intensity)}% ThresholdHR`;
+    case "watts":
+      return `${Math.round(target.intensity)}W`;
+    case "bpm":
+      return `${Math.round(target.intensity)} bpm`;
+    case "speed":
+      return `${target.intensity.toFixed(1)} km/h`;
+    case "cadence":
+      return `${Math.round(target.intensity)} rpm`;
+    case "RPE":
+      return `RPE ${target.intensity}/10`;
+  }
+}
+
+export function getStepIntensityColor(step: TargetBearingStep): string {
+  const target = step.targets?.[0];
+  if (!target) return "#94a3b8";
+
   switch (target.type) {
     case "%FTP":
-      if (profile.ftp) {
-        return {
-          intensity: Math.round((target.intensity / 100) * profile.ftp),
-          unit: "W",
-          label: "Power",
-        };
-      }
-      return null;
-
+    case "%MaxHR":
     case "%ThresholdHR":
-      if (profile.threshold_hr) {
-        return {
-          intensity: Math.round((target.intensity / 100) * profile.threshold_hr),
-          unit: "bpm",
-          label: "Heart Rate",
-        };
-      }
-      return null;
-
+      return getIntensityZoneColor(getIntensityZone(target.intensity));
+    case "RPE":
+      return getIntensityZoneColor(getIntensityZone(target.intensity * 10));
     default:
-      // Already absolute
-      return {
-        intensity: target.intensity,
-        unit: getTargetUnit(target),
-        label: getTargetDisplayName(target.type),
-      };
+      return getIntensityZoneColor("RECOVERY");
   }
+}
+
+export function formatStepTargets(step: TargetBearingStep): string {
+  return step.targets?.length ? step.targets.map(formatIntensityTarget).join(" + ") : "No targets";
 }
