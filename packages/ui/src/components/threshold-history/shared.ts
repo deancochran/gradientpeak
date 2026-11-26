@@ -7,6 +7,7 @@ export type {
   ThresholdActivityCategory,
   ThresholdMetric,
 } from "@repo/core/performance-calibration";
+export { mergeThresholdHistoryPages } from "@repo/core/performance-calibration";
 export type ThresholdUnit = "watts" | "meters_per_second" | "bpm";
 
 /** A presentation-safe subset of the threshold overview transport contract. */
@@ -108,23 +109,6 @@ export function groupThresholdHistory(
       ),
     }))
     .sort((left, right) => left.id.localeCompare(right.id));
-}
-
-export function mergeThresholdHistoryPages(
-  ...pages: readonly (readonly ThresholdHistoryPoint[])[]
-): readonly ThresholdHistoryPoint[] {
-  const unique = new Map<string, ThresholdHistoryPoint>();
-  for (const page of pages) {
-    // The newest page is authoritative when pagination overlaps at its boundary.
-    for (const point of page) {
-      if (!unique.has(point.thresholdId)) unique.set(point.thresholdId, point);
-    }
-  }
-  return [...unique.values()].sort(
-    (left, right) =>
-      Date.parse(right.effectiveAt) - Date.parse(left.effectiveAt) ||
-      right.thresholdId.localeCompare(left.thresholdId),
-  );
 }
 
 /** Preserves elapsed-time x positions and uses nulls to prevent false continuity. */

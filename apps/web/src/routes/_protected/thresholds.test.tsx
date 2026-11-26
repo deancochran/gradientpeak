@@ -16,7 +16,7 @@ vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: object) => ({ ...options }),
   Link: ({ children }: { children: React.ReactNode }) => <a href="/activity">{children}</a>,
 }));
-vi.mock("../../lib/api/client", () => ({
+vi.mock("@repo/api/react", () => ({
   api: {
     athleteIntelligence: {
       getThresholdOverview: {

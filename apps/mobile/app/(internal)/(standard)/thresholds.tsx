@@ -1,26 +1,18 @@
-import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
+import { useThresholdHistory } from "@repo/api/threshold-history";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
-import type { ThresholdHistoryPoint } from "@repo/ui/components/threshold-history";
 import {
   formatThresholdDate,
   formatThresholdValue,
   groupThresholdHistory,
-  mergeThresholdHistoryPages,
   ThresholdHistoryChart,
   thresholdMetricLabel,
 } from "@repo/ui/components/threshold-history";
 import { useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
 import { ScrollView, TouchableOpacity, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { ErrorState, LoadingState } from "@/components/shared/ScreenState";
-import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
-
-type HistoryCursor = NonNullable<
-  inferRouterOutputs<AppRouter>["athleteIntelligence"]["getThresholdOverview"]["history"]["nextCursor"]
->;
 
 function readable(value: string) {
   return value.replaceAll("_", " ");
@@ -28,58 +20,15 @@ function readable(value: string) {
 
 function ThresholdOverviewScreen() {
   const router = useRouter();
-  const overviewQuery = api.athleteIntelligence.getThresholdOverview.useQuery({
-    historyLimit: 100,
-  });
-  const overview = overviewQuery.data;
-  const sourceKey = `${overview?.publication?.publishedRevision ?? "none"}:${overview?.publication?.computedAt ?? "none"}`;
-  const previousSourceKey = useRef(sourceKey);
-  const [olderItems, setOlderItems] = useState<readonly ThresholdHistoryPoint[]>([]);
-  const [hasAcceptedOlderPage, setHasAcceptedOlderPage] = useState(false);
-  const [olderNextCursor, setOlderNextCursor] = useState<HistoryCursor | null>(null);
-  const [requestedCursor, setRequestedCursor] = useState<HistoryCursor | null>(null);
-  const [requestSourceKey, setRequestSourceKey] = useState<string | null>(null);
-  const olderQuery = api.athleteIntelligence.getThresholdOverview.useQuery(
-    { historyLimit: 100, ...(requestedCursor ? { historyCursor: requestedCursor } : {}) },
-    { enabled: requestedCursor !== null },
-  );
-  useEffect(() => {
-    if (previousSourceKey.current === sourceKey) return;
-    previousSourceKey.current = sourceKey;
-    setOlderItems([]);
-    setHasAcceptedOlderPage(false);
-    setOlderNextCursor(null);
-    setRequestedCursor(null);
-    setRequestSourceKey(null);
-  }, [sourceKey]);
-  useEffect(() => {
-    if (!requestedCursor || !olderQuery.data || requestSourceKey !== sourceKey) return;
-    const responseSourceKey = `${olderQuery.data.publication?.publishedRevision ?? "none"}:${olderQuery.data.publication?.computedAt ?? "none"}`;
-    if (responseSourceKey !== requestSourceKey) {
-      setOlderItems([]);
-      setHasAcceptedOlderPage(false);
-      setOlderNextCursor(null);
-      setRequestedCursor(null);
-      setRequestSourceKey(null);
-      void overviewQuery.refetch();
-      return;
-    }
-    setOlderItems((items) => mergeThresholdHistoryPages(items, olderQuery.data.history.items));
-    setHasAcceptedOlderPage(true);
-    setOlderNextCursor(olderQuery.data.history.nextCursor);
-    setRequestedCursor(null);
-  }, [olderQuery.data, overviewQuery.refetch, requestSourceKey, requestedCursor, sourceKey]);
-  const historyItems = overview
-    ? mergeThresholdHistoryPages(overview.history.items, olderItems)
-    : [];
-  const nextHistoryCursor = hasAcceptedOlderPage
-    ? olderNextCursor
-    : (overview?.history.nextCursor ?? null);
-  const loadEarlier = () => {
-    if (!nextHistoryCursor) return;
-    setRequestSourceKey(sourceKey);
-    setRequestedCursor(nextHistoryCursor);
-  };
+  const {
+    historyItems,
+    loadEarlier,
+    nextHistoryCursor,
+    olderQuery,
+    overview,
+    overviewQuery,
+    requestedCursor,
+  } = useThresholdHistory();
 
   return (
     <ScrollView
