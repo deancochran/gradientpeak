@@ -2,10 +2,12 @@ import type { UpdateEventOccurrenceInput, UpdateOneOffGroupEventInput } from "@r
 import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useRef } from "react";
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
+import { useRef, useState } from "react";
+import { Alert, View } from "react-native";
 import { GroupEventForm, type GroupEventFormHandle, GroupListSkeleton } from "@/components/groups";
+import { FormScreen } from "@/components/shared/FormScreen";
 import { useGroupEventActions, useGroupEventDetailViewModel } from "@/lib/groups";
+import { useDirtyNavigationGuard } from "@/lib/hooks/useDirtyNavigationGuard";
 
 function singleParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -21,6 +23,11 @@ export default function GroupEventEditRoute() {
   const formRef = useRef<GroupEventFormHandle>(null);
   const isSubmitting =
     actions.updateMutation.isPending || actions.updateEventOccurrenceMutation.isPending;
+  const [isDirty, setIsDirty] = useState(false);
+  const { allowNavigationAfterSuccess } = useDirtyNavigationGuard({
+    isDirty,
+    isPending: isSubmitting,
+  });
 
   if (detailVm.isLoading) return <GroupListSkeleton count={3} />;
 
@@ -37,12 +44,21 @@ export default function GroupEventEditRoute() {
     );
   }
 
+  if (event.is_recurring_series) {
+    return (
+      <View className="flex-1 items-center justify-center bg-background p-6">
+        <Text className="text-center text-lg font-semibold text-foreground">
+          Series editing is unavailable
+        </Text>
+        <Text className="mt-2 text-center text-sm text-muted-foreground">
+          Edit an individual occurrence instead.
+        </Text>
+      </View>
+    );
+  }
+
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      className="flex-1 bg-background"
-      keyboardVerticalOffset={80}
-    >
+    <FormScreen>
       <Stack.Screen
         options={{
           headerRight: () => (
@@ -60,38 +76,41 @@ export default function GroupEventEditRoute() {
           ),
         }}
       />
-      <ScrollView contentContainerClassName="gap-5 p-4 pb-8" keyboardShouldPersistTaps="handled">
-        <GroupEventForm
-          ref={formRef}
-          event={event}
-          groupId={event.group_id}
-          isSubmitting={isSubmitting}
-          onSubmit={async (values) => {
-            try {
-              const result = event.is_recurring_occurrence
-                ? await actions.updateEventOccurrence({
-                    ...(values as UpdateEventOccurrenceInput),
-                    groupEventId: event.id,
-                  })
-                : await actions.updateEvent({
-                    ...(values as UpdateOneOffGroupEventInput),
-                    groupEventId: event.id,
-                  });
-              router.replace({
-                pathname: "/group-event-detail",
-                params: { groupEventId: result.event.id },
-              });
-            } catch (error) {
-              Alert.alert(
-                "Unable to update event",
-                error instanceof Error ? error.message : "Please try again.",
-              );
+      <GroupEventForm
+        ref={formRef}
+        event={event}
+        groupId={event.group_id}
+        isSubmitting={isSubmitting}
+        onDirtyChange={setIsDirty}
+        onSubmit={async (values) => {
+          try {
+            const result = event.is_recurring_occurrence
+              ? await actions.updateEventOccurrence({
+                  ...(values as UpdateEventOccurrenceInput),
+                  groupEventId: event.id,
+                })
+              : await actions.updateEvent({
+                  ...(values as UpdateOneOffGroupEventInput),
+                  groupEventId: event.id,
+                });
+            allowNavigationAfterSuccess();
+            if (result.event === undefined) {
+              throw new Error("Event update completed without an event to open.");
             }
-          }}
-          showFooterActions={false}
-          submitLabel="Save event"
-        />
-      </ScrollView>
-    </KeyboardAvoidingView>
+            router.replace({
+              pathname: "/group-event-detail",
+              params: { groupEventId: result.event.id },
+            });
+          } catch (error) {
+            Alert.alert(
+              "Unable to update event",
+              error instanceof Error ? error.message : "Please try again.",
+            );
+          }
+        }}
+        showFooterActions={false}
+        submitLabel="Save event"
+      />
+    </FormScreen>
   );
 }

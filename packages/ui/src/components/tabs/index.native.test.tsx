@@ -1,8 +1,11 @@
 import * as React from "react";
+import { Text } from "react-native";
+
+type TabMockProps = React.PropsWithChildren<{ value?: string } & Record<string, unknown>>;
 
 jest.mock("@rn-primitives/slot", () => {
   return {
-    Text: (props: any) => React.createElement("Slot.Text", props, props.children),
+    Text: (props: TabMockProps) => React.createElement("Slot.Text", props, props.children),
   };
 });
 
@@ -11,11 +14,11 @@ jest.mock("@rn-primitives/tabs", () => {
     value: undefined as string | undefined,
   });
   const createHost = (type: string) =>
-    function Host(props: any) {
+    function Host(props: TabMockProps) {
       return React.createElement(type, props, props.children);
     };
 
-  function Root(props: any) {
+  function Root(props: TabMockProps) {
     return React.createElement(
       valueContext.Provider,
       {
@@ -27,7 +30,7 @@ jest.mock("@rn-primitives/tabs", () => {
     );
   }
 
-  function Content(props: any) {
+  function Content(props: TabMockProps) {
     const context = React.useContext(valueContext);
     if (props.value !== context.value) {
       return null;
@@ -50,27 +53,24 @@ import { tabsFixtures } from "./fixtures";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./index.native";
 
 describe("Tabs native", () => {
-  it("maps normalized test props for root, trigger, and active content", () => {
+  it("maps normalized test props for root, trigger, and active content", async () => {
     const fixture = tabsFixtures.settings;
 
-    const { getByTestId } = renderNative(
+    const { getByTestId, getByText } = await renderNative(
       <Tabs onValueChange={() => {}} testId={fixture.rootTestId} value={fixture.values.profile}>
         <TabsList testId={fixture.listTestId}>
           <TabsTrigger testId={fixture.triggers.profile.testId} value={fixture.values.profile}>
-            {fixture.triggers.profile.label}
+            <Text>{fixture.triggers.profile.label}</Text>
           </TabsTrigger>
         </TabsList>
         <TabsContent testId={fixture.contentTestIds.profile} value={fixture.values.profile}>
-          {fixture.content.profile}
+          <Text>{fixture.content.profile}</Text>
         </TabsContent>
       </Tabs>,
     );
 
-    const trigger = getByTestId(fixture.triggers.profile.testId);
-    const content = getByTestId(fixture.contentTestIds.profile);
-
     expect(getByTestId(fixture.rootTestId)).toBeTruthy();
-    expect(trigger.props.children).toBe(fixture.triggers.profile.label);
-    expect(content.props.children).toBe(fixture.content.profile);
+    expect(getByText(fixture.triggers.profile.label)).toBeTruthy();
+    expect(getByText(fixture.content.profile)).toBeTruthy();
   });
 });

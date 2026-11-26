@@ -1,6 +1,7 @@
 import type { ReactElement } from "react";
 import { ResourceList } from "@/components/shared/ResourceList";
 import type { GroupEventListItem } from "@/lib/groups";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { GroupEventCard } from "./GroupEventCards";
 import { GroupEventEmptyState, GroupEventListSkeleton } from "./GroupEventStates";
 
@@ -37,7 +38,7 @@ export function GroupEventList({
 }: GroupEventListProps) {
   return (
     <ResourceList
-      contentContainerClassName={contentContainerClassName}
+      {...omitUndefined({ contentContainerClassName })}
       data={events}
       emptyComponent={emptyComponent ?? <GroupEventEmptyState />}
       errorDescription="Pull to refresh or try again later."
@@ -49,12 +50,11 @@ export function GroupEventList({
       keyExtractor={(item) => item.id}
       loadingComponent={<GroupEventListSkeleton />}
       loadingMoreLabel="Loading more events..."
-      ListHeaderComponent={ListHeaderComponent}
-      onLoadMore={onLoadMore}
-      onRefresh={onRefresh}
+      {...omitUndefined({ ListHeaderComponent })}
+      {...omitUndefined({ onLoadMore, onRefresh })}
       refreshing={refreshing}
       renderItem={(event) => (
-        <GroupEventCard event={event} onGroupPress={onGroupPress} onPress={onEventPress} />
+        <GroupEventCard {...omitUndefined({ event, onGroupPress, onPress: onEventPress })} />
       )}
       testID="group-event-list"
     />
