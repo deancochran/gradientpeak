@@ -1,4 +1,3 @@
-import { buildDailyLoadByDateSeries, replayCommonLoadFitnessByDate } from "@repo/core/load";
 import { isCanonicalDateKey } from "@/lib/calendar/dateMath";
 import { omitUndefined } from "@/lib/omitUndefined";
 import {
@@ -245,57 +244,10 @@ function scheduledFitnessByWeek(points: TrainingPathFitnessPoint[], todayKey: st
 }
 
 function actualFitnessByWeek(points: TrainingPathFitnessPoint[], todayKey: string) {
-  const byWeek = latestFitnessByWeek(points);
-  const todayPoint = resolveTodayFitnessState(points, todayKey);
-  if (todayPoint) {
-    byWeek.set(getWeekStartDateKey(todayKey), todayPoint);
-  }
-  return byWeek;
-}
-
-function latestFitnessAtOrBefore(points: TrainingPathFitnessPoint[], date: string) {
-  if (!isCanonicalDateKey(date)) return null;
-  return (
-    points
-      .filter(
-        (point) =>
-          isCanonicalDateKey(point.date) &&
-          point.date <= date &&
-          typeof point.longTermLoad === "number",
-      )
-      .sort((left, right) => right.date.localeCompare(left.date))[0] ?? null
+  if (!isCanonicalDateKey(todayKey)) return latestFitnessByWeek(points);
+  return latestFitnessByWeek(
+    points.filter((point) => isCanonicalDateKey(point.date) && point.date <= todayKey),
   );
-}
-
-function resolveTodayFitnessState(points: TrainingPathFitnessPoint[], todayKey: string) {
-  const currentFitness = latestFitnessAtOrBefore(points, todayKey);
-  if (!currentFitness) return null;
-  if (currentFitness.date === todayKey) return currentFitness;
-
-  const replayed = replayCommonLoadFitnessByDate({
-    dailyLoad: buildDailyLoadByDateSeries({
-      startDate: addDays(currentFitness.date, 1),
-      endDate: todayKey,
-      loadByDate: new Map<string, number>(),
-    }),
-    initialRecentLoad: currentFitness.recentLoad ?? currentFitness.longTermLoad,
-    initialLongTermLoad: currentFitness.longTermLoad,
-  });
-  const todayFitness = replayed.at(-1);
-
-  return todayFitness
-    ? {
-        date: todayKey,
-        longTermLoad: Math.round(todayFitness.longTermLoad * 10) / 10,
-        recentLoad: Math.round(todayFitness.recentLoad * 10) / 10,
-        loadBalance: Math.round(todayFitness.loadBalance * 10) / 10,
-      }
-    : {
-        date: todayKey,
-        longTermLoad: currentFitness.longTermLoad,
-        recentLoad: currentFitness.recentLoad ?? null,
-        loadBalance: currentFitness.loadBalance ?? null,
-      };
 }
 
 export function buildTrainingPathGoalMarkers(

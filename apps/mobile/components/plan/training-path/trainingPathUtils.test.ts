@@ -54,7 +54,7 @@ describe("trainingPathUtils", () => {
       completedLoad: 75,
       plannedLoad: 120,
       targetLoad: 150,
-      fitness: 40,
+      fitness: 42,
       targetFitness: 45,
     });
   });
@@ -240,7 +240,7 @@ describe("trainingPathUtils", () => {
       todayKey: "2026-05-20",
     });
 
-    expect(model.weeks.find((week) => week.weekStart === "2026-05-18")?.fitness).toBe(40);
+    expect(model.weeks.find((week) => week.weekStart === "2026-05-18")?.fitness).toBe(42);
     expect(model.weeks.find((week) => week.weekStart === "2026-05-25")?.fitness).toBeNull();
   });
 
@@ -380,8 +380,171 @@ describe("trainingPathUtils", () => {
     });
 
     const currentWeek = model.weeks.find((week) => week.weekStart === "2026-05-18");
-    expect(currentWeek?.fitness).toBe(40);
+    expect(currentWeek?.fitness).toBe(42);
     expect(currentWeek?.scheduledFitness).toBeNull();
+  });
+
+  it("retains dated historical fitness without fabricating a current-week state", () => {
+    const model = buildTrainingPathViewModel({
+      timeline: [
+        {
+          date: "2026-04-06",
+          completed_observation_state: "known_zero",
+          completed_common_load: 0,
+          scheduled_common_load: 0,
+        },
+        {
+          date: "2026-04-07",
+          completed_observation_state: "unavailable",
+          completed_common_load: null,
+          scheduled_common_load: null,
+        },
+      ],
+      fitnessHistory: [{ date: "2026-04-05", longTermLoad: 39, recentLoad: 45, loadBalance: -6 }],
+      projectedFitness: [{ date: "2026-04-06", longTermLoad: 99, recentLoad: 88, loadBalance: 11 }],
+      goalMarkers: [],
+      range: "all",
+      selectedWeekStart: "2026-04-06",
+      weekWindow: { start: "2026-03-30", end: "2026-04-12" },
+      todayKey: "2026-04-06",
+    });
+
+    expect(model.weeks.find((week) => week.weekStart === "2026-03-30")).toMatchObject({
+      fitness: 39,
+      fatigue: 45,
+      form: -6,
+      riskZone: "moderate",
+    });
+    expect(model.weeks.find((week) => week.weekStart === "2026-04-06")).toMatchObject({
+      fitness: null,
+      fatigue: null,
+      form: null,
+      riskZone: null,
+      scheduledFitness: 99,
+    });
+    expect(model.selectedWeekSummary).toMatchObject({
+      weekStart: "2026-04-06",
+      fitness: null,
+      fatigue: null,
+      form: null,
+    });
+  });
+
+  it.each([
+    { label: "zero", value: 0, recentLoad: 0, loadBalance: 0 },
+    { label: "nonzero", value: 42.4, recentLoad: 51.6, loadBalance: -9.2 },
+  ])("preserves an authoritative current-day $label fitness baseline", ({
+    value,
+    recentLoad,
+    loadBalance,
+  }) => {
+    const model = buildTrainingPathViewModel({
+      timeline: [
+        {
+          date: "2026-05-20",
+          completed_observation_state: "known_zero",
+          completed_common_load: 0,
+        },
+      ],
+      fitnessHistory: [
+        { date: "2026-05-18", longTermLoad: 42, recentLoad: 42, loadBalance: 0 },
+        { date: "2026-05-20", longTermLoad: value, recentLoad, loadBalance },
+      ],
+      goalMarkers: [],
+      range: "all",
+      todayKey: "2026-05-20",
+    });
+
+    expect(model.weeks.find((week) => week.weekStart === "2026-05-18")).toMatchObject({
+      fitness: Math.round(value),
+      fatigue: Math.round(recentLoad),
+      form: loadBalance,
+      riskZone: resolveTrainingPathRiskZone(loadBalance),
+    });
+    expect(model.selectedWeekSummary).toMatchObject({
+      fitness: Math.round(value),
+      fatigue: Math.round(recentLoad),
+      form: loadBalance,
+    });
+  });
+
+  it.each([
+    { label: "zero", value: 0, recentLoad: 0, loadBalance: 0 },
+    { label: "nonzero", value: 42.4, recentLoad: 51.6, loadBalance: -9.2 },
+  ])("prefers an authoritative current-day $label baseline over a future same-week point", ({
+    value,
+    recentLoad,
+    loadBalance,
+  }) => {
+    const model = buildTrainingPathViewModel({
+      fitnessHistory: [
+        { date: "2026-05-18", longTermLoad: 38, recentLoad: 41, loadBalance: -3 },
+        { date: "2026-05-20", longTermLoad: value, recentLoad, loadBalance },
+        { date: "2026-05-21", longTermLoad: 99, recentLoad: 88, loadBalance: 11 },
+      ],
+      goalMarkers: [],
+      range: "all",
+      todayKey: "2026-05-20",
+    });
+
+    expect(model.weeks.find((week) => week.weekStart === "2026-05-18")).toMatchObject({
+      fitness: Math.round(value),
+      fatigue: Math.round(recentLoad),
+      form: loadBalance,
+      riskZone: resolveTrainingPathRiskZone(loadBalance),
+    });
+    expect(model.selectedWeekSummary).toMatchObject({
+      fitness: Math.round(value),
+      fatigue: Math.round(recentLoad),
+      form: loadBalance,
+    });
+  });
+
+  it("keeps older actual evidence while excluding future actual points from current and future weeks", () => {
+    const model = buildTrainingPathViewModel({
+      fitnessHistory: [
+        { date: "2026-05-18", longTermLoad: 42, recentLoad: 47, loadBalance: -5 },
+        { date: "2026-05-21", longTermLoad: 99, recentLoad: 88, loadBalance: 11 },
+        { date: "2026-05-25", longTermLoad: 100, recentLoad: 89, loadBalance: 11 },
+      ],
+      projectedFitness: [{ date: "2026-05-25", longTermLoad: 55, recentLoad: 60, loadBalance: -5 }],
+      goalMarkers: [],
+      range: "all",
+      todayKey: "2026-05-20",
+    });
+
+    expect(model.weeks.find((week) => week.weekStart === "2026-05-18")).toMatchObject({
+      fitness: 42,
+      fatigue: 47,
+      form: -5,
+    });
+    expect(model.weeks.find((week) => week.weekStart === "2026-05-25")).toMatchObject({
+      fitness: null,
+      fatigue: null,
+      form: null,
+      scheduledFitness: 55,
+    });
+  });
+
+  it("leaves a current week without an actual state when only future actual points exist", () => {
+    const model = buildTrainingPathViewModel({
+      fitnessHistory: [{ date: "2026-05-21", longTermLoad: 99, recentLoad: 88, loadBalance: 11 }],
+      goalMarkers: [],
+      range: "all",
+      todayKey: "2026-05-20",
+    });
+
+    expect(model.weeks.find((week) => week.weekStart === "2026-05-18")).toMatchObject({
+      fitness: null,
+      fatigue: null,
+      form: null,
+      riskZone: null,
+    });
+    expect(model.selectedWeekSummary).toMatchObject({
+      fitness: null,
+      fatigue: null,
+      form: null,
+    });
   });
 
   it.each([
