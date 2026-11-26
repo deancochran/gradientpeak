@@ -1,0 +1,21 @@
+appId: com.deancochran.gradientpeak.dev
+name: Athlete sees the selected Home scheduled session before entering an independent plan-edit journey
+---
+# This is intentionally narrower than athlete-visual-workspace.yaml: that
+# established flow still owns the selected-session detail and Back round trip.
+# The plan-edit acceptance needs only the real selected Home state before it
+# enters the profile library through visible controls.
+- tapOn:
+    id: tab-button-home
+- extendedWaitUntil:
+    visible:
+      id: home-training-workspace
+    timeout: 30000
+- assertVisible: "Set your next objective"
+- extendedWaitUntil:
+    visible:
+      id: plan-selected-day
+    timeout: 30000
+- assertVisible:
+    id: plan-selected-day-planned-activity-card-${MAESTRO_ACCEPTANCE_SESSION_ID}
+- takeScreenshot: athlete-workspace-selected-session
