@@ -1,28 +1,14 @@
+import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
 import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
-import { api } from "@/lib/api";
+import { isActorBoundRequestError, withActorBoundApiClient } from "@/lib/api/actor-bound-client";
 import { useAuthStore } from "@/lib/stores/auth-store";
 
-type PermissionOption = {
-  coach: { membershipId: string; name: string };
-  currentGrant: { id: string } | null;
-  organization: { id: string; name: string };
-};
-
-function hasNotFoundCode(error: unknown) {
-  if (typeof error !== "object" || error === null || !("data" in error)) return false;
-  const data = error.data;
-  return typeof data === "object" && data !== null && "code" in data && data.code === "NOT_FOUND";
-}
-
-function failureMessage(error: unknown) {
-  return hasNotFoundCode(error)
-    ? "The permission changed elsewhere. Reloading its current status."
-    : "We could not update this permission. Check your connection and try again.";
-}
+type PermissionOption =
+  inferRouterOutputs<AppRouter>["coachingPublication"]["permissionOptions"]["options"][number];
 
 /**
  * Athlete-owned publication permission. It intentionally does not represent
@@ -30,43 +16,68 @@ function failureMessage(error: unknown) {
  */
 export function CoachingPublicationPermissions() {
   const actorId = useAuthStore((state) => state.user?.id ?? null);
-  const utils = api.useUtils();
+  const sessionId = useAuthStore((state) => state.session?.sessionId ?? null);
   const mounted = useRef(true);
   const pendingMembershipIdRef = useRef<string | null>(null);
-  const owner = useRef({ actorId, generation: 0 });
-  if (owner.current.actorId !== actorId) {
-    owner.current = { actorId, generation: owner.current.generation + 1 };
+  const owner = useRef({ actorId, generation: 0, sessionId });
+  if (owner.current.actorId !== actorId || owner.current.sessionId !== sessionId) {
+    owner.current = { actorId, generation: owner.current.generation + 1, sessionId };
     pendingMembershipIdRef.current = null;
   }
-  const ownerKey = `${actorId ?? "anonymous"}:${owner.current.generation}`;
+  const ownerKey = `${actorId ?? "anonymous"}:${sessionId ?? "no-session"}:${owner.current.generation}`;
   const isCurrentOwner = () =>
     mounted.current &&
     owner.current.actorId === actorId &&
-    ownerKey === `${actorId ?? "anonymous"}:${owner.current.generation}`;
+    owner.current.sessionId === sessionId &&
+    ownerKey ===
+      `${actorId ?? "anonymous"}:${sessionId ?? "no-session"}:${owner.current.generation}`;
   const [_pendingMembershipId, setPendingMembershipId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
     };
   }, []);
+  useEffect(() => {
+    if (ownerKey) {
+      setError(null);
+      setNotice(null);
+    }
+  }, [ownerKey]);
 
   const optionsQuery = useQuery({
     enabled: actorId !== null,
-    queryFn: ({ signal }) =>
-      utils.client.coachingPublication.permissionOptions.query(undefined, { signal }),
-    queryKey: ["coaching-publication-permission-options", actorId, owner.current.generation],
+    queryFn: ({ signal }) => {
+      if (!actorId) throw new Error("No signed-in account is available.");
+      return withActorBoundApiClient(actorId, (client) =>
+        client.coachingPublication.permissionOptions.query(undefined, { signal }),
+      );
+    },
+    queryKey: [
+      "coaching-publication-permission-options",
+      actorId,
+      sessionId,
+      owner.current.generation,
+    ],
     refetchOnMount: "always",
     retry: false,
   });
 
   async function refreshCurrentStatus() {
     const refreshed = await optionsQuery.refetch();
-    if (refreshed.error || !refreshed.data) return false;
-    return true;
+    return refreshed.error || !refreshed.data ? null : refreshed.data;
+  }
+
+  async function retryCurrentStatus() {
+    setError(null);
+    setNotice(null);
+    try {
+      await refreshCurrentStatus();
+    } catch {
+      // The query state renders the unavailable/retry state.
+    }
   }
 
   async function setPermission(option: PermissionOption, enabled: boolean) {
@@ -97,34 +108,64 @@ export function CoachingPublicationPermissions() {
         return;
       }
       if (enabled) {
-        await utils.client.coachingPublication.grant.mutate({
-          coachMembershipId: option.coach.membershipId,
-          organizationId: option.organization.id,
-        });
+        await withActorBoundApiClient(actorId, (client) =>
+          client.coachingPublication.grant.mutate({
+            coachMembershipId: option.coach.membershipId,
+            organizationId: option.organization.id,
+          }),
+        );
       } else if (option.currentGrant) {
-        await utils.client.coachingPublication.revoke.mutate({ grantId: option.currentGrant.id });
+        const grantId = option.currentGrant.id;
+        await withActorBoundApiClient(actorId, (client) =>
+          client.coachingPublication.revoke.mutate({ grantId }),
+        );
       }
       mutationSucceeded = true;
     } catch (caught) {
       mutationError = caught;
     } finally {
-      if (isCurrentOwner() && requestOwnerKey === ownerKey) {
+      if (isActorBoundRequestError(mutationError)) {
+        if (isCurrentOwner() && requestOwnerKey === ownerKey) {
+          pendingMembershipIdRef.current = null;
+          setPendingMembershipId(null);
+        }
+      } else if (isCurrentOwner() && requestOwnerKey === ownerKey) {
         try {
           const refreshed = await refreshCurrentStatus();
-          if (isCurrentOwner() && requestOwnerKey === ownerKey && !refreshed) {
-            if (mutationSucceeded) {
+          if (refreshed === null) {
+            if (isCurrentOwner() && requestOwnerKey === ownerKey && mutationSucceeded) {
               setNotice(
                 "Saved, but the current status is unavailable. Retry only reloads the status.",
               );
-            } else {
+            } else if (isCurrentOwner() && requestOwnerKey === ownerKey) {
               setError(
                 "The update may have been saved, but its current status is unavailable. Retry only reloads the status.",
               );
             }
-          } else if (isCurrentOwner() && requestOwnerKey === ownerKey && mutationSucceeded) {
-            setNotice("Current permission status updated.");
           } else if (isCurrentOwner() && requestOwnerKey === ownerKey) {
-            setError(failureMessage(mutationError));
+            const current = refreshed.options.find(
+              (candidate) =>
+                candidate.coach.membershipId === option.coach.membershipId &&
+                candidate.organization.id === option.organization.id,
+            );
+            const confirmed = current !== undefined && (current.currentGrant !== null) === enabled;
+            if (confirmed) {
+              setNotice(
+                mutationSucceeded
+                  ? enabled
+                    ? "Current status confirms this permission is on."
+                    : "Current status confirms this permission is off."
+                  : enabled
+                    ? "The update receipt was uncertain, but current status confirms this permission is on."
+                    : "The update receipt was uncertain, but current status confirms this permission is off.",
+              );
+            } else {
+              setError(
+                mutationSucceeded
+                  ? "Saved, but the current status did not confirm this permission change."
+                  : "The update was not confirmed; the current status is shown.",
+              );
+            }
           }
         } catch {
           if (isCurrentOwner() && requestOwnerKey === ownerKey) {
@@ -150,7 +191,7 @@ export function CoachingPublicationPermissions() {
     <View className="flex-1 bg-background" testID="coaching-publication-permissions">
       <ScrollView contentContainerClassName="gap-5 p-6 pb-10">
         <View className="gap-2">
-          <Text className="text-xl font-semibold text-foreground">Coaching permissions</Text>
+          <Text className="text-xl font-semibold text-foreground">Activity-plan publishing</Text>
           <Text className="text-sm leading-5 text-muted-foreground">
             Allow an assigned coach to add a copy of their activity plan to your schedule. This
             permission does not grant general plan editing or read-only coaching access. Other
@@ -158,6 +199,11 @@ export function CoachingPublicationPermissions() {
           </Text>
         </View>
 
+        {pendingMembershipIdRef.current !== null ? (
+          <Text accessibilityLiveRegion="polite" className="text-sm text-muted-foreground">
+            Updating permission and confirming its current status…
+          </Text>
+        ) : null}
         {optionsQuery.isLoading || optionsQuery.isFetching ? (
           <View
             accessibilityLabel="Loading assigned coaches"
@@ -176,7 +222,7 @@ export function CoachingPublicationPermissions() {
               accessibilityLabel="Retry loading coaching permissions"
               accessibilityRole="button"
               className="min-h-11 justify-center self-start rounded-lg border border-border px-3"
-              onPress={() => void refreshCurrentStatus()}
+              onPress={() => void retryCurrentStatus()}
               testID="coaching-permissions-retry"
             >
               <Text className="text-sm font-medium text-foreground">Retry</Text>
