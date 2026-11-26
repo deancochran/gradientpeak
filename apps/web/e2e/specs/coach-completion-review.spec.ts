@@ -6,6 +6,9 @@ import {
   coachingAssignments,
   coachingCompletionReviews,
   coachingEngagements,
+  conversationParticipants,
+  conversations,
+  messages,
   organizationMembershipRoleGrants,
   organizationMemberships,
   plannedSessions,
@@ -298,6 +301,91 @@ test("coach reviews linked completion evidence and returns to the same athlete w
   ).toBeVisible();
   await page.getByRole("link", { name: "Close" }).click();
   await expect(page.getByRole("link", { name: "Return to athlete workspace" })).toBeVisible();
+  await page.getByRole("link", { name: "Return to athlete workspace" }).click();
+  await expect(page).toHaveURL(
+    new RegExp(`/organizations/${organizationId}/athletes/${athleteActor.profileId}$`),
+  );
+  await expect(completedActivities.getByRole("listitem")).toHaveCount(1);
+
+  const contextualMessage = e2eIdentity.name("Coach completion review message");
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.getByRole("link", { name: "Message athlete" }).click();
+  await expect(page.getByRole("heading", { name: "New message" })).toBeVisible();
+  await waitForAppHydration(page);
+  await expect(
+    page.getByRole("button", { name: `Remove @${athleteActor.username} from recipients` }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Start conversation", exact: true }).click();
+  await expect(page.getByPlaceholder("Type a message...")).toBeVisible();
+  const activeConversation = page
+    .getByText(`@${athleteActor.username}`, { exact: true })
+    .locator("..")
+    .locator("..")
+    .locator("..")
+    .locator("..");
+  await expect(
+    activeConversation.getByText(`@${athleteActor.username}`, { exact: true }),
+  ).toBeVisible();
+  await page.getByPlaceholder("Type a message...").fill(contextualMessage);
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await expect(page.getByPlaceholder("Type a message...")).toHaveValue("");
+  await expect(activeConversation.getByText(contextualMessage, { exact: true })).toBeVisible();
+
+  for (const viewport of [
+    { width: 1440, height: 1000 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect(page.getByRole("link", { name: "Return to athlete workspace" })).toBeVisible();
+    await expect(
+      activeConversation.getByText(`@${athleteActor.username}`, { exact: true }),
+    ).toBeVisible();
+    await expect(activeConversation.getByText(contextualMessage, { exact: true })).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+    const path = testInfo.outputPath(`coach-completion-review-message-${viewport.width}.png`);
+    await page.screenshot({ fullPage: true, path, scale: "css" });
+    await testInfo.attach(`coach-completion-review-message-${viewport.width}`, {
+      contentType: "image/png",
+      path,
+    });
+  }
+
+  const persistedMessages = await e2eDatabase.db
+    .select({
+      content: messages.content,
+      conversationId: messages.conversation_id,
+      senderId: messages.sender_id,
+    })
+    .from(messages)
+    .where(eq(messages.content, contextualMessage));
+  expect(persistedMessages).toHaveLength(1);
+  const [persistedMessage] = persistedMessages;
+  if (!persistedMessage) throw new Error("Missing persisted contextual message");
+  expect(persistedMessage).toEqual({
+    content: contextualMessage,
+    conversationId: expect.any(String),
+    senderId: coachActor.profileId,
+  });
+  expect(new URL(page.url()).searchParams.get("conversationId")).toBe(
+    persistedMessage.conversationId,
+  );
+  await expect(
+    e2eDatabase.db
+      .select({ id: conversations.id, isGroup: conversations.is_group })
+      .from(conversations)
+      .where(eq(conversations.id, persistedMessage.conversationId)),
+  ).resolves.toEqual([{ id: persistedMessage.conversationId, isGroup: false }]);
+  const persistedParticipantIds = (
+    await e2eDatabase.db
+      .select({ userId: conversationParticipants.user_id })
+      .from(conversationParticipants)
+      .where(eq(conversationParticipants.conversation_id, persistedMessage.conversationId))
+  )
+    .map(({ userId }) => userId)
+    .sort();
+  expect(persistedParticipantIds).toEqual([athleteActor.profileId, coachActor.profileId].sort());
+
   await page.getByRole("link", { name: "Return to athlete workspace" }).click();
   await expect(page).toHaveURL(
     new RegExp(`/organizations/${organizationId}/athletes/${athleteActor.profileId}$`),
