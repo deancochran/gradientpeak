@@ -1,7 +1,7 @@
 export type GoalReadinessTrajectoryPointInput = {
   date: string;
   state_readiness?: number | null;
-  predicted_fitness_ctl?: number | null;
+  predicted_fitness_longTermLoad?: number | null;
 };
 
 export type GoalReadinessTrajectoryPoint = {
@@ -78,7 +78,10 @@ export function buildGoalReadinessTrajectory({
     return [];
   }
 
-  const firstPoint = visiblePoints[0]!;
+  const firstPoint = visiblePoints.at(0);
+  if (!firstPoint) {
+    return [];
+  }
   const firstReadiness =
     typeof currentGoalReadiness === "number" && Number.isFinite(currentGoalReadiness)
       ? currentGoalReadiness
@@ -98,24 +101,34 @@ export function buildGoalReadinessTrajectory({
   const firstMs = dateMs(firstPoint.date);
   const goalMs = Math.max(firstMs, dateMs(goalTargetDate));
   const totalDuration = Math.max(1, goalMs - firstMs);
-  const ctlValues = visiblePoints
-    .map((point) => point.predicted_fitness_ctl)
+  const longTermLoadValues = visiblePoints
+    .map((point) => point.predicted_fitness_longTermLoad)
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
-  const startCtl = ctlValues[0] ?? null;
-  const peakCtl = ctlValues.length > 0 ? Math.max(...ctlValues) : null;
+  const startLongTermLoad = longTermLoadValues[0] ?? null;
+  const peakLongTermLoad = longTermLoadValues.length > 0 ? Math.max(...longTermLoadValues) : null;
 
   return visiblePoints.map((point) => {
     const timeProgress = clamp((dateMs(point.date) - firstMs) / totalDuration, 0, 1);
-    const ctlProgress =
-      startCtl !== null && peakCtl !== null && peakCtl > startCtl
-        ? clamp(((point.predicted_fitness_ctl ?? startCtl) - startCtl) / (peakCtl - startCtl), 0, 1)
+    const longTermLoadProgress =
+      startLongTermLoad !== null &&
+      peakLongTermLoad !== null &&
+      peakLongTermLoad > startLongTermLoad
+        ? clamp(
+            ((point.predicted_fitness_longTermLoad ?? startLongTermLoad) - startLongTermLoad) /
+              (peakLongTermLoad - startLongTermLoad),
+            0,
+            1,
+          )
         : timeProgress;
     const stateProgress =
       typeof point.state_readiness === "number" && Number.isFinite(point.state_readiness)
         ? clamp((point.state_readiness - start) / Math.max(1, target - start), 0, 1)
         : timeProgress;
     const progress = smoothstep(
-      Math.max(timeProgress * 0.55 + ctlProgress * 0.35 + stateProgress * 0.1, timeProgress),
+      Math.max(
+        timeProgress * 0.55 + longTermLoadProgress * 0.35 + stateProgress * 0.1,
+        timeProgress,
+      ),
     );
     const readiness = round1(start + (target - start) * progress);
 
