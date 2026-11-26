@@ -2,10 +2,10 @@ import { fireEvent, renderNative } from "../../test/render-native";
 import { SettingItem, SettingsGroup } from "./index.native";
 
 describe("SettingsGroup native", () => {
-  it("renders setting items and forwards actions", () => {
+  it("renders setting items and forwards actions", async () => {
     const onValueChange = jest.fn();
 
-    const { getByTestId, getByText } = renderNative(
+    const { getByTestId, getByText } = await renderNative(
       <SettingsGroup title="Account" testID="account-section">
         <SettingItem
           type="toggle"
@@ -18,7 +18,7 @@ describe("SettingsGroup native", () => {
     );
 
     expect(getByText("Account")).toBeTruthy();
-    fireEvent(getByTestId("private-account-switch"), "onCheckedChange", true);
+    await fireEvent(getByTestId("private-account-switch"), "onCheckedChange", true);
     expect(onValueChange).toHaveBeenCalledWith(true);
   });
 });

@@ -1,66 +1,69 @@
-import { Card, CardContent } from "@repo/ui/components/card";
-import { Input } from "@repo/ui/components/input";
+import { Form, FormTextareaField, FormTextField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
+import type { UseFormReturn } from "react-hook-form";
 import { View } from "react-native";
-import { ActivityCategorySelector } from "@/components/activity-plan/workout/ActivityCategorySelector";
+import { ActivityCategorySelector } from "@/components/activity-plan/activity/ActivityCategorySelector";
+
+export type ActivityPlanBasicsFormData = {
+  readonly __activityPlanBasicsForm?: never;
+  name: string;
+  description: string;
+};
 
 type ActivityPlanBasicsSectionProps = {
   activityCategory: string;
-  description: string;
-  errors: Record<string, string>;
-  name: string;
-  onChangeActivityCategory: (category: string) => void;
-  onChangeDescription: (value: string) => void;
-  onChangeName: (value: string) => void;
+  activityCategoryError?: string;
+  form: UseFormReturn<ActivityPlanBasicsFormData>;
+  onChangeActivityCategory: (activity_category: string) => void;
+  disabled?: boolean;
 };
 
 export function ActivityPlanBasicsSection({
   activityCategory,
-  description,
-  errors,
-  name,
+  activityCategoryError,
+  form,
   onChangeActivityCategory,
-  onChangeDescription,
-  onChangeName,
+  disabled = false,
 }: ActivityPlanBasicsSectionProps) {
   return (
-    <Card>
-      <CardContent className="gap-3 p-3">
-        <View className="flex-row gap-3">
+    <Form {...form}>
+      <View className="gap-3">
+        <View className="flex-row flex-wrap items-end gap-3" testID="activity-plan-name-row">
+          <View className="min-w-0 flex-1">
+            <FormTextField
+              disabled={disabled}
+              control={form.control}
+              label="Plan name"
+              name="name"
+              placeholder="Plan name"
+              required
+            />
+          </View>
           <ActivityCategorySelector
+            disabled={disabled}
             value={activityCategory}
             onChange={onChangeActivityCategory}
             compact
+            accessibilityLabel="Plan activity category"
+            accessibilityHint="Changes the activity category for this activity plan"
           />
-          <View className="flex-1">
-            <View className="gap-2">
-              <Text className="text-sm font-medium text-foreground">Plan name</Text>
-              <Input
-                accessibilityLabel="Plan name"
-                onChangeText={onChangeName}
-                placeholder="Plan name"
-                value={name}
-              />
-            </View>
-          </View>
         </View>
-
-        {errors.name ? <Text className="text-xs text-destructive">{errors.name}</Text> : null}
-
-        {errors.activity_category ? (
-          <Text className="text-xs text-destructive">{errors.activity_category}</Text>
+        {activityCategoryError ? (
+          <Text accessibilityRole="alert" className="text-xs text-destructive">
+            {activityCategoryError}
+          </Text>
         ) : null}
-
-        <View className="gap-2">
-          <Text className="text-sm font-medium text-foreground">Description</Text>
-          <Input
-            accessibilityLabel="Description"
-            onChangeText={onChangeDescription}
-            placeholder="What is this session for?"
-            value={description}
-          />
-        </View>
-      </CardContent>
-    </Card>
+        <FormTextareaField
+          disabled={disabled}
+          className="min-h-12"
+          control={form.control}
+          label="Description"
+          maxLength={3000}
+          name="description"
+          numberOfLines={2}
+          placeholder="What is this session for?"
+        />
+      </View>
+    </Form>
   );
 }

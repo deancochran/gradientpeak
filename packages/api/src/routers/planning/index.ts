@@ -1,10 +1,5 @@
 export { activityPlansRouter } from "../activity-plans";
-export { eventsRouter } from "../events";
+export { calendarRouter, eventsRouter } from "../events";
 export { goalsRouter } from "../goals";
-export {
-  deriveProfileAwareCreationContext,
-  trainingPlansAnalyticsRouter,
-  trainingPlansCreationRouter,
-  trainingPlansCrudRouter,
-  trainingPlansRouter,
-} from "./training-plans";
+export { plannedSessionsRouter } from "../planned-sessions";
+export { trainingPlansRouter } from "./training-plans";

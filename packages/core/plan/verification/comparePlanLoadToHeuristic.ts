@@ -1,32 +1,36 @@
 import type { DeterministicProjectionPayload } from "../projection/engine";
-import type { AggregatedWeeklyPlannedLoad } from "./aggregateWeeklyPlannedLoad";
+import type {
+  AggregatedWeeklyPlannedLoad,
+  WeeklyLoadAggregationStatus,
+} from "./aggregateWeeklyPlannedLoad";
 
 export type HeuristicComparisonToleranceClass = "tight" | "moderate" | "flexible";
 
 export interface HeuristicComparisonToleranceConfig {
-  weekly_absolute_tss_floor: number;
+  weekly_absolute_load_floor: number;
   weekly_relative_pct: number;
-  block_absolute_tss_floor: number;
+  block_absolute_load_floor: number;
   block_relative_pct: number;
 }
 
 export interface HeuristicComparisonTarget {
   recommended_weekly_load?: number | null;
-  recommended_baseline_tss_range?: { min: number; max: number } | null;
+  recommended_baseline_load_range?: { min: number; max: number } | null;
   microcycles?: Array<{
     week_start_date?: string;
-    planned_weekly_tss: number;
+    planned_weekly_load: number | null;
   }>;
 }
 
 export interface PlanToHeuristicWeekComparison {
   week_index: number;
   week_start_date: string;
-  plan_tss: number | null;
-  heuristic_tss: number | null;
-  absolute_error_tss: number | null;
+  plan_load: number | null;
+  plan_load_status: WeeklyLoadAggregationStatus;
+  heuristic_load: number | null;
+  absolute_error_load: number | null;
   relative_error_pct: number | null;
-  weekly_tolerance_tss: number | null;
+  weekly_tolerance_load: number | null;
   within_tolerance: boolean | null;
 }
 
@@ -35,22 +39,22 @@ export interface PlanToHeuristicBlockComparison {
   end_week_index: number;
   start_week_date: string;
   end_week_date: string;
-  plan_tss: number;
-  heuristic_tss: number;
-  absolute_error_tss: number;
+  plan_load: number;
+  heuristic_load: number;
+  absolute_error_load: number;
   relative_error_pct: number;
-  block_tolerance_tss: number;
+  block_tolerance_load: number;
   within_tolerance: boolean;
 }
 
 export interface ComparePlanLoadToHeuristicResult {
   tolerance: HeuristicComparisonToleranceConfig;
   compared_week_count: number;
-  average_plan_weekly_tss: number;
-  average_heuristic_weekly_tss: number;
-  average_absolute_weekly_error_tss: number;
-  mean_relative_weekly_error_pct: number;
-  recommended_weekly_load_error_tss: number | null;
+  average_plan_weekly_load: number | null;
+  average_heuristic_weekly_load: number | null;
+  average_absolute_weekly_error_load: number | null;
+  mean_relative_weekly_error_pct: number | null;
+  recommended_weekly_load_error_load: number | null;
   average_within_baseline_range: boolean | null;
   per_week: PlanToHeuristicWeekComparison[];
   rolling_blocks: PlanToHeuristicBlockComparison[];
@@ -61,21 +65,21 @@ const TOLERANCE_BY_CLASS: Record<
   HeuristicComparisonToleranceConfig
 > = {
   tight: {
-    weekly_absolute_tss_floor: 20,
+    weekly_absolute_load_floor: 20,
     weekly_relative_pct: 0.08,
-    block_absolute_tss_floor: 32,
+    block_absolute_load_floor: 32,
     block_relative_pct: 0.08,
   },
   moderate: {
-    weekly_absolute_tss_floor: 25,
+    weekly_absolute_load_floor: 25,
     weekly_relative_pct: 0.12,
-    block_absolute_tss_floor: 40,
+    block_absolute_load_floor: 40,
     block_relative_pct: 0.1,
   },
   flexible: {
-    weekly_absolute_tss_floor: 30,
+    weekly_absolute_load_floor: 30,
     weekly_relative_pct: 0.15,
-    block_absolute_tss_floor: 48,
+    block_absolute_load_floor: 48,
     block_relative_pct: 0.12,
   },
 };
@@ -105,29 +109,38 @@ function normalizeHeuristicTarget(
       projectionLike.dose_recommendation?.recommended_weekly_load ??
       targetLike.recommended_weekly_load ??
       null,
-    recommended_baseline_tss_range: targetLike.recommended_baseline_tss_range ?? null,
-    microcycles: heuristic.microcycles?.map((microcycle) => ({
-      week_start_date: microcycle.week_start_date,
-      planned_weekly_tss: microcycle.planned_weekly_tss,
-    })),
+    recommended_baseline_load_range: targetLike.recommended_baseline_load_range ?? null,
+    ...(heuristic.microcycles === undefined
+      ? {}
+      : {
+          microcycles: heuristic.microcycles.map((microcycle) => ({
+            ...(microcycle.week_start_date === undefined
+              ? {}
+              : { week_start_date: microcycle.week_start_date }),
+            planned_weekly_load: microcycle.planned_weekly_load,
+          })),
+        }),
   };
 }
 
 function getWeeklyTolerance(
-  heuristicTss: number,
+  heuristicLoad: number,
   tolerance: HeuristicComparisonToleranceConfig,
 ): number {
   return Math.max(
-    tolerance.weekly_absolute_tss_floor,
-    heuristicTss * tolerance.weekly_relative_pct,
+    tolerance.weekly_absolute_load_floor,
+    heuristicLoad * tolerance.weekly_relative_pct,
   );
 }
 
 function getBlockTolerance(
-  heuristicTss: number,
+  heuristicLoad: number,
   tolerance: HeuristicComparisonToleranceConfig,
 ): number {
-  return Math.max(tolerance.block_absolute_tss_floor, heuristicTss * tolerance.block_relative_pct);
+  return Math.max(
+    tolerance.block_absolute_load_floor,
+    heuristicLoad * tolerance.block_relative_pct,
+  );
 }
 
 /**
@@ -152,10 +165,9 @@ export function comparePlanLoadToHeuristic(input: {
       ? normalizedHeuristic.microcycles
       : input.planWeeks.map((week) => ({
           week_start_date: week.week_start_date,
-          planned_weekly_tss: normalizedHeuristic.recommended_weekly_load ?? 0,
+          planned_weekly_load: normalizedHeuristic.recommended_weekly_load ?? null,
         }));
 
-  const pairCount = Math.min(input.planWeeks.length, heuristicWeeks.length);
   const perWeek = Array.from(
     { length: Math.max(input.planWeeks.length, heuristicWeeks.length) },
     (_, index) => {
@@ -166,33 +178,60 @@ export function comparePlanLoadToHeuristic(input: {
         return {
           week_index: index,
           week_start_date: planWeek?.week_start_date ?? heuristicWeek?.week_start_date ?? "",
-          plan_tss: planWeek?.planned_weekly_tss ?? null,
-          heuristic_tss: heuristicWeek?.planned_weekly_tss ?? null,
-          absolute_error_tss: null,
+          plan_load: planWeek?.planned_weekly_load ?? null,
+          plan_load_status:
+            planWeek?.planned_weekly_load_status ??
+            (planWeek?.planned_weekly_load === null || planWeek === undefined
+              ? "unavailable"
+              : "complete"),
+          heuristic_load: heuristicWeek?.planned_weekly_load ?? null,
+          absolute_error_load: null,
           relative_error_pct: null,
-          weekly_tolerance_tss: null,
+          weekly_tolerance_load: null,
           within_tolerance: null,
         } satisfies PlanToHeuristicWeekComparison;
       }
 
-      const absoluteErrorTss = Math.abs(
-        planWeek.planned_weekly_tss - heuristicWeek.planned_weekly_tss,
+      const planLoadStatus =
+        planWeek.planned_weekly_load_status ??
+        (planWeek.planned_weekly_load === null ? "unavailable" : "complete");
+      if (
+        planWeek.planned_weekly_load === null ||
+        planLoadStatus !== "complete" ||
+        heuristicWeek.planned_weekly_load === null
+      ) {
+        return {
+          week_index: index,
+          week_start_date: planWeek.week_start_date,
+          plan_load: planWeek.planned_weekly_load,
+          plan_load_status: planLoadStatus,
+          heuristic_load: heuristicWeek.planned_weekly_load,
+          absolute_error_load: null,
+          relative_error_pct: null,
+          weekly_tolerance_load: null,
+          within_tolerance: null,
+        } satisfies PlanToHeuristicWeekComparison;
+      }
+
+      const absoluteErrorLoad = Math.abs(
+        planWeek.planned_weekly_load - heuristicWeek.planned_weekly_load,
       );
-      const weeklyToleranceTss = getWeeklyTolerance(heuristicWeek.planned_weekly_tss, tolerance);
+      const weeklyToleranceLoad = getWeeklyTolerance(heuristicWeek.planned_weekly_load, tolerance);
       const relativeErrorPct =
-        heuristicWeek.planned_weekly_tss <= 0
+        heuristicWeek.planned_weekly_load <= 0
           ? 0
-          : (absoluteErrorTss / heuristicWeek.planned_weekly_tss) * 100;
+          : (absoluteErrorLoad / heuristicWeek.planned_weekly_load) * 100;
 
       return {
         week_index: index,
         week_start_date: planWeek.week_start_date,
-        plan_tss: planWeek.planned_weekly_tss,
-        heuristic_tss: heuristicWeek.planned_weekly_tss,
-        absolute_error_tss: round1(absoluteErrorTss),
+        plan_load: planWeek.planned_weekly_load,
+        plan_load_status: planLoadStatus,
+        heuristic_load: heuristicWeek.planned_weekly_load,
+        absolute_error_load: round1(absoluteErrorLoad),
         relative_error_pct: round1(relativeErrorPct),
-        weekly_tolerance_tss: round1(weeklyToleranceTss),
-        within_tolerance: absoluteErrorTss <= weeklyToleranceTss,
+        weekly_tolerance_load: round1(weeklyToleranceLoad),
+        within_tolerance: absoluteErrorLoad <= weeklyToleranceLoad,
       } satisfies PlanToHeuristicWeekComparison;
     },
   );
@@ -201,73 +240,88 @@ export function comparePlanLoadToHeuristic(input: {
     (
       week,
     ): week is PlanToHeuristicWeekComparison & {
-      plan_tss: number;
-      heuristic_tss: number;
-      absolute_error_tss: number;
+      plan_load: number;
+      plan_load_status: "complete";
+      heuristic_load: number;
+      absolute_error_load: number;
       relative_error_pct: number;
-      weekly_tolerance_tss: number;
+      weekly_tolerance_load: number;
       within_tolerance: boolean;
-    } => week.plan_tss !== null && week.heuristic_tss !== null,
+    } =>
+      week.plan_load_status === "complete" &&
+      week.plan_load !== null &&
+      week.heuristic_load !== null &&
+      week.absolute_error_load !== null &&
+      week.relative_error_pct !== null &&
+      week.weekly_tolerance_load !== null &&
+      week.within_tolerance !== null,
   );
+  const pairCount = pairedWeeks.length;
 
   const rollingBlocks: PlanToHeuristicBlockComparison[] = [];
   for (let startIndex = 0; startIndex + 4 <= pairedWeeks.length; startIndex += 1) {
     const window = pairedWeeks.slice(startIndex, startIndex + 4);
-    const planTss = window.reduce((sum, week) => sum + week.plan_tss, 0);
-    const heuristicTss = window.reduce((sum, week) => sum + week.heuristic_tss, 0);
-    const absoluteErrorTss = Math.abs(planTss - heuristicTss);
-    const relativeErrorPct = heuristicTss <= 0 ? 0 : (absoluteErrorTss / heuristicTss) * 100;
-    const blockToleranceTss = getBlockTolerance(heuristicTss, tolerance);
+    const firstWeek = window[0];
+    const lastWeek = window[3];
+    if (!firstWeek || !lastWeek) continue;
+    const planLoad = window.reduce((sum, week) => sum + week.plan_load, 0);
+    const heuristicLoad = window.reduce((sum, week) => sum + week.heuristic_load, 0);
+    const absoluteErrorLoad = Math.abs(planLoad - heuristicLoad);
+    const relativeErrorPct = heuristicLoad <= 0 ? 0 : (absoluteErrorLoad / heuristicLoad) * 100;
+    const blockToleranceLoad = getBlockTolerance(heuristicLoad, tolerance);
 
     rollingBlocks.push({
-      start_week_index: window[0]!.week_index,
-      end_week_index: window[3]!.week_index,
-      start_week_date: window[0]!.week_start_date,
-      end_week_date: window[3]!.week_start_date,
-      plan_tss: round1(planTss),
-      heuristic_tss: round1(heuristicTss),
-      absolute_error_tss: round1(absoluteErrorTss),
+      start_week_index: firstWeek.week_index,
+      end_week_index: lastWeek.week_index,
+      start_week_date: firstWeek.week_start_date,
+      end_week_date: lastWeek.week_start_date,
+      plan_load: round1(planLoad),
+      heuristic_load: round1(heuristicLoad),
+      absolute_error_load: round1(absoluteErrorLoad),
       relative_error_pct: round1(relativeErrorPct),
-      block_tolerance_tss: round1(blockToleranceTss),
-      within_tolerance: absoluteErrorTss <= blockToleranceTss,
+      block_tolerance_load: round1(blockToleranceLoad),
+      within_tolerance: absoluteErrorLoad <= blockToleranceLoad,
     });
   }
 
-  const averagePlanWeeklyTss =
+  const averagePlanWeeklyLoad =
     pairCount === 0
-      ? 0
-      : round1(pairedWeeks.reduce((sum, week) => sum + week.plan_tss, 0) / pairCount);
-  const averageHeuristicWeeklyTss =
+      ? null
+      : round1(pairedWeeks.reduce((sum, week) => sum + week.plan_load, 0) / pairCount);
+  const averageHeuristicWeeklyLoad =
     pairCount === 0
-      ? 0
-      : round1(pairedWeeks.reduce((sum, week) => sum + week.heuristic_tss, 0) / pairCount);
-  const averageAbsoluteWeeklyErrorTss =
+      ? null
+      : round1(pairedWeeks.reduce((sum, week) => sum + week.heuristic_load, 0) / pairCount);
+  const averageAbsoluteWeeklyErrorLoad =
     pairCount === 0
-      ? 0
-      : round1(pairedWeeks.reduce((sum, week) => sum + week.absolute_error_tss, 0) / pairCount);
+      ? null
+      : round1(pairedWeeks.reduce((sum, week) => sum + week.absolute_error_load, 0) / pairCount);
   const meanRelativeWeeklyErrorPct =
     pairCount === 0
-      ? 0
+      ? null
       : round1(pairedWeeks.reduce((sum, week) => sum + week.relative_error_pct, 0) / pairCount);
 
   const recommendedWeeklyLoad = normalizedHeuristic.recommended_weekly_load;
-  const recommendedWeeklyLoadErrorTss =
-    recommendedWeeklyLoad === null || recommendedWeeklyLoad === undefined
+  const recommendedWeeklyLoadErrorLoad =
+    recommendedWeeklyLoad === null ||
+    recommendedWeeklyLoad === undefined ||
+    averagePlanWeeklyLoad === null
       ? null
-      : round1(Math.abs(averagePlanWeeklyTss - recommendedWeeklyLoad));
-  const baselineRange = normalizedHeuristic.recommended_baseline_tss_range;
+      : round1(Math.abs(averagePlanWeeklyLoad - recommendedWeeklyLoad));
+  const baselineRange = normalizedHeuristic.recommended_baseline_load_range;
 
   return {
     tolerance,
     compared_week_count: pairCount,
-    average_plan_weekly_tss: averagePlanWeeklyTss,
-    average_heuristic_weekly_tss: averageHeuristicWeeklyTss,
-    average_absolute_weekly_error_tss: averageAbsoluteWeeklyErrorTss,
+    average_plan_weekly_load: averagePlanWeeklyLoad,
+    average_heuristic_weekly_load: averageHeuristicWeeklyLoad,
+    average_absolute_weekly_error_load: averageAbsoluteWeeklyErrorLoad,
     mean_relative_weekly_error_pct: meanRelativeWeeklyErrorPct,
-    recommended_weekly_load_error_tss: recommendedWeeklyLoadErrorTss,
-    average_within_baseline_range: baselineRange
-      ? averagePlanWeeklyTss >= baselineRange.min && averagePlanWeeklyTss <= baselineRange.max
-      : null,
+    recommended_weekly_load_error_load: recommendedWeeklyLoadErrorLoad,
+    average_within_baseline_range:
+      baselineRange && averagePlanWeeklyLoad !== null
+        ? averagePlanWeeklyLoad >= baselineRange.min && averagePlanWeeklyLoad <= baselineRange.max
+        : null,
     per_week: perWeek,
     rolling_blocks: rollingBlocks,
   };
