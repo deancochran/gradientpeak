@@ -1,6 +1,7 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Button } from "@repo/ui/components/button";
-import { Input } from "@repo/ui/components/input";
+import { SearchField } from "@repo/ui/components/search-field";
+import { Tabs, TabsList, TabsTrigger } from "@repo/ui/components/tabs";
 import { Text } from "@repo/ui/components/text";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { useState } from "react";
@@ -17,6 +18,8 @@ import { api } from "@/lib/api";
 import { useGroupDetailViewModel, useGroupInviteActions } from "@/lib/groups";
 import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
+import { omitUndefined } from "@/lib/omitUndefined";
+import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
 
 function singleParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -48,38 +51,36 @@ function RequestsTabMenu({
   if (tabs.length <= 1) return null;
 
   return (
-    <View
-      accessibilityRole="tablist"
-      className="flex-row rounded-2xl border border-border bg-muted/40 p-1"
-    >
-      {tabs.map((tab) => {
-        const isActive = activeTab === tab.key;
-        return (
-          <Pressable
-            accessibilityRole="tab"
-            accessibilityState={{ selected: isActive }}
-            className={
-              isActive
-                ? "flex-1 rounded-xl bg-background px-3 py-2 shadow-sm"
-                : "flex-1 rounded-xl px-3 py-2"
-            }
-            key={tab.key}
-            onPress={() => onTabChange(tab.key)}
-            testID={`group-requests-tab-${tab.key}`}
-          >
-            <Text
+    <Tabs onValueChange={(tab) => onTabChange(tab as GroupRequestsTab)} value={activeTab}>
+      <TabsList className="flex-row rounded-2xl border border-border bg-muted/40 p-1">
+        {tabs.map((tab) => {
+          const isActive = activeTab === tab.key;
+          return (
+            <TabsTrigger
+              accessibilityState={{ selected: isActive }}
               className={
                 isActive
-                  ? "text-center text-sm font-semibold text-foreground"
-                  : "text-center text-sm font-semibold text-muted-foreground"
+                  ? "flex-1 rounded-xl bg-background px-3 py-2 shadow-sm"
+                  : "flex-1 rounded-xl px-3 py-2"
               }
+              key={tab.key}
+              testId={`group-requests-tab-${tab.key}`}
+              value={tab.key}
             >
-              {tab.label}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </View>
+              <Text
+                className={
+                  isActive
+                    ? "text-center text-sm font-semibold text-foreground"
+                    : "text-center text-sm font-semibold text-muted-foreground"
+                }
+              >
+                {tab.label}
+              </Text>
+            </TabsTrigger>
+          );
+        })}
+      </TabsList>
+    </Tabs>
   );
 }
 
@@ -94,6 +95,7 @@ function ProfileInviteRow({
 }) {
   const navigateTo = useAppNavigate();
   const displayName = profile.username?.trim() || "Athlete";
+  const avatarUri = profile.avatar_url ? getReachableSupabaseStorageUrl(profile.avatar_url) : null;
   return (
     <Pressable
       accessibilityRole="button"
@@ -111,12 +113,12 @@ function ProfileInviteRow({
           className="flex-row min-w-0 flex-1 items-center gap-3"
           onPress={(event) => {
             event.stopPropagation();
-            navigateTo(`/user/${profile.id}` as any);
+            navigateTo(`/user/${profile.id}`);
           }}
           testID={`group-invite-profile-link-${profile.id}`}
         >
           <Avatar alt={displayName} className="h-10 w-10">
-            {profile.avatar_url ? <AvatarImage source={{ uri: profile.avatar_url }} /> : null}
+            {avatarUri ? <AvatarImage key={avatarUri} source={{ uri: avatarUri }} /> : null}
             <AvatarFallback>
               <Text className="text-sm font-semibold text-muted-foreground">
                 {displayName.charAt(0).toUpperCase()}
@@ -266,10 +268,14 @@ export default function GroupRequestsScreen() {
         title="Invite"
       >
         <View className="gap-3">
-          <Input
-            autoCapitalize="none"
-            onChangeText={setProfileSearch}
+          <SearchField
+            accessibilityLabel="Search athletes to invite"
+            clearTestId="group-requests-invite-search-clear"
+            loading={profileSearchQuery.isFetching}
+            loadingLabel="Searching athletes"
+            onValueChange={setProfileSearch}
             placeholder="Search by username"
+            testId="group-requests-invite-search-input"
             value={profileSearch}
           />
           {selectedProfiles.length > 0 ? (
@@ -335,7 +341,7 @@ export default function GroupRequestsScreen() {
   return (
     <>
       <Stack.Screen
-        options={{
+        options={omitUndefined({
           headerRight: canInvite
             ? () => (
                 <Button
@@ -348,7 +354,7 @@ export default function GroupRequestsScreen() {
               )
             : undefined,
           title: "Manage",
-        }}
+        })}
       />
       <ScrollView className="flex-1 bg-background" contentContainerClassName="gap-5 p-4 pb-8">
         <Text className="text-2xl font-semibold text-foreground">
