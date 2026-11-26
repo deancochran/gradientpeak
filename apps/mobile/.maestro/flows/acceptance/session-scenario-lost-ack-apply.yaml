@@ -1,0 +1,26 @@
+appId: com.deancochran.gradientpeak.dev
+name: Retain a committed scenario operation when its apply acknowledgement is lost
+---
+- tapOn:
+    id: session-scenario-apply
+- scrollUntilVisible:
+    element:
+      id: session-scenario-confirm-apply
+    direction: DOWN
+- tapOn:
+    id: session-scenario-confirm-apply
+- scrollUntilVisible:
+    element:
+      text: "We could not confirm the result. Check or retry with the same operation."
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: session-scenario-lost-ack-uncertain
+- assertVisible: "We could not confirm the result. Check or retry with the same operation."
+- assertVisible:
+    id: session-scenario-retry-apply
+- pressKey: back
+- extendedWaitUntil:
+    visible:
+      id: planning-ledger-screen
+    timeout: 30000
+- takeScreenshot: session-scenario-lost-ack-returned-ledger

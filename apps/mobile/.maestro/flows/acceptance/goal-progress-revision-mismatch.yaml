@@ -1,0 +1,21 @@
+appId: com.deancochran.gradientpeak.dev
+name: New progress with replayed incompatible history is disclosed without a transport error
+---
+- swipe:
+    from:
+      id: goal-detail-card
+    direction: DOWN
+- extendedWaitUntil:
+    visible:
+      id: goal-detail-history-mismatch
+    timeout: 30000
+- assertVisible: "Threshold history was updated separately and is not shown with this progress."
+- assertNotVisible:
+    id: goal-detail-progress-refresh-warning
+- assertVisible: ${MAESTRO_ACCEPTANCE_NEW_CURRENT_ACCESSIBILITY_LABEL}
+- assertVisible: ${MAESTRO_ACCEPTANCE_NEW_TARGET_ACCESSIBILITY_LABEL}
+- assertVisible: ${MAESTRO_ACCEPTANCE_NEW_GAP_ACCESSIBILITY_LABEL}
+- assertVisible: "A performance trend requires two or more comparable threshold assessments."
+- assertNotVisible:
+    id: plan-progress-evidence-tray
+- takeScreenshot: goal-progress-revision-mismatch

@@ -1,0 +1,6 @@
+{
+  "name": "@repo/core",
+  "exports": {
+    ".": "./value.ts"
+  }
+}

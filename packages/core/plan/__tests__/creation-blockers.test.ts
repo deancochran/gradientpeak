@@ -19,9 +19,9 @@ describe("creation blockers", () => {
     recommended_actions: [],
     blockers: [
       {
-        code: "required_tss_ramp_exceeds_cap",
+        code: "required_load_ramp_exceeds_cap",
         message: "Required weekly load exceeds cap",
-        field_paths: ["maxWeeklyTssRampPct"],
+        field_paths: ["maxWeeklyLoadRampPct"],
       },
       {
         code: "new_blocker",
@@ -36,7 +36,7 @@ describe("creation blockers", () => {
     const issues = getTopBlockingIssues({
       conflictItems: [
         {
-          code: "required_tss_ramp_exceeds_cap",
+          code: "required_load_ramp_exceeds_cap",
           severity: "blocking",
           message: "Required weekly load exceeds cap",
           suggestions: ["Lower target ramp"],

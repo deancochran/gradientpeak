@@ -2,23 +2,23 @@ import type { DecompressedStream } from "@/lib/utils/streamDecompression";
 import { StreamChart } from "./StreamChart";
 
 interface MultiMetricChartProps {
-  activityType: "run" | "bike" | "swim" | "strength" | "other";
+  activityCategory: "run" | "bike" | "swim" | "strength" | "other";
   streams: Map<string, DecompressedStream>;
   title?: string;
   height?: number;
 }
 
 /**
- * Intelligently displays multiple metrics based on activity type
+ * Intelligently displays multiple metrics based on activity category
  * Automatically selects relevant metrics and colors
  */
 export function MultiMetricChart({
-  activityType,
+  activityCategory,
   streams,
   title,
   height = 300,
 }: MultiMetricChartProps) {
-  // Define metric configurations for each activity type
+  // Define metric configurations for each activity category
   const getMetricConfig = () => {
     const configs: {
       [key: string]: Array<{
@@ -118,17 +118,15 @@ export function MultiMetricChart({
       ],
     };
 
-    return configs[activityType] || configs.other;
+    return configs[activityCategory] ?? configs.other ?? [];
   };
 
   // Filter to only include metrics that have data
   const metricsConfig = getMetricConfig();
-  const availableMetrics = metricsConfig
-    .filter((config) => streams.has(config.type))
-    .map((config) => ({
-      ...config,
-      stream: streams.get(config.type)!,
-    }));
+  const availableMetrics = metricsConfig.flatMap((config) => {
+    const stream = streams.get(config.type);
+    return stream ? [{ ...config, stream }] : [];
+  });
 
   if (availableMetrics.length === 0) {
     return null;
