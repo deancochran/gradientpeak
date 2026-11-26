@@ -4,6 +4,7 @@ import {
   type PlanAnalysisWindowPeriod,
   shiftPlanAnalysisWindow,
 } from "@repo/core";
+import { formatGoalThresholdValue } from "@repo/ui/lib/goal-progress-presentation";
 import type { DailyTrainingAdjustmentPoint } from "./DailyTrainingAdjustmentChart";
 import { addDays, getWeekStartDateKey } from "./trainingPathUtils";
 
@@ -231,21 +232,11 @@ export function buildGoalSignalFreshnessLabel(input: {
   return computedAt ? `Goal signals computed ${computedAt}` : "Goal signals are current";
 }
 
-function formatPace(seconds: number) {
-  const roundedSeconds = Math.round(seconds);
-  const minutes = Math.floor(roundedSeconds / 60);
-  return `${minutes}:${String(roundedSeconds % 60).padStart(2, "0")}`;
-}
-
 export function formatPlanThresholdValue(
   category: PlanThresholdHistoryPoint["activityCategory"],
   value: number,
 ) {
-  if (category === "bike") return `${Math.round(value)} W`;
-  if (value <= 0) return "—";
-  return category === "run"
-    ? `${formatPace(1000 / value)} /km`
-    : `${formatPace(100 / value)} /100m`;
+  return formatGoalThresholdValue(category, value);
 }
 
 export function findCurrentTrainingPoint(

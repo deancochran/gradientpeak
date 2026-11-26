@@ -186,6 +186,31 @@ it("keeps unrelated activity categories out of the goal chart and includes the d
   expect(formatThreshold(1, "swim")).toBe("1:40 /100m");
 });
 
+function legacyFormatThreshold(value: number, category: "bike" | "run" | "swim") {
+  if (category === "bike") return `${Math.round(value)} W`;
+  if (value <= 0) return "—";
+  const seconds = Math.round((category === "run" ? 1000 : 100) / value);
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")} /${category === "run" ? "km" : "100m"}`;
+}
+
+it.each([
+  ["bike", 0],
+  ["bike", 285.5],
+  ["bike", 999.5],
+  ["run", 1000],
+  ["run", 1000 / 59.4],
+  ["run", 1000 / 59.5],
+  ["swim", 1],
+  ["swim", 100 / 59.5],
+  ["run", 0],
+  ["swim", -1],
+  ["bike", Number.NaN],
+  ["run", Number.POSITIVE_INFINITY],
+  ["swim", Number.NaN],
+] as const)("preserves the threshold formatter's legacy output for %s", (category, value) => {
+  expect(formatThreshold(value, category)).toBe(legacyFormatThreshold(value, category));
+});
+
 it("shows honest unsupported and empty states", () => {
   const { rerender } = render(
     <GoalProgressChart

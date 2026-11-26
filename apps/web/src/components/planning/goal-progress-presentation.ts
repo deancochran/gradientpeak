@@ -5,6 +5,7 @@ import {
 } from "@repo/api/client";
 import { formatDateOnlyInTimeZone } from "@repo/core/calendar";
 import { buildChartSegments, getPaddedChartDomain } from "@repo/ui/lib/chart";
+import { formatGoalThresholdValue } from "@repo/ui/lib/goal-progress-presentation";
 
 export {
   formatGoalGap,
@@ -48,10 +49,7 @@ export function goalPlanningDate(instant: Date, timezone: string | null) {
 }
 
 export function formatThreshold(value: number, category: "bike" | "run" | "swim") {
-  if (category === "bike") return `${Math.round(value)} W`;
-  if (value <= 0) return "—";
-  const seconds = Math.round((category === "run" ? 1000 : 100) / value);
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")} /${category === "run" ? "km" : "100m"}`;
+  return formatGoalThresholdValue(category, value);
 }
 
 export function buildGoalProgressPlot(data: GoalProgress, history: ThresholdHistory) {
