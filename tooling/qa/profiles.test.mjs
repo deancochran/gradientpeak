@@ -122,16 +122,34 @@ test("CI owns full validation while Git hooks stay lightweight", async () => {
   assert.match(manifest.scripts.test, /test:parity/);
   assert.doesNotMatch(lefthook, /^pre-push:/m);
   assert.match(lefthook, /\{staged_files\}/);
-  assert.match(workflow, /run: pnpm test/);
   const staticJob = workflow.split("  static:")[1]?.split("  runtime-db:")[0];
   assert.ok(staticJob);
-  const staticTestsStep = /- name: Tests\s+env:\s+TURBO_CONCURRENCY: "1"\s+run: pnpm test[ \t]*\n/;
+  const staticTestsStep =
+    /- name: Tests\s+env:\s+TURBO_CONCURRENCY: "1"\s+run: \/usr\/bin\/time --verbose pnpm test[ \t]*\n/;
   assert.match(staticJob, staticTestsStep);
   assert.doesNotMatch(
-    staticJob.replace("run: pnpm test", "run: pnpm test:workspaces"),
+    staticJob.replace(
+      "run: /usr/bin/time --verbose pnpm test",
+      "run: /usr/bin/time --verbose pnpm test:workspaces",
+    ),
+    staticTestsStep,
+  );
+  assert.doesNotMatch(
+    staticJob.replace(
+      "run: /usr/bin/time --verbose pnpm test",
+      "run: /usr/bin/time --verbose pnpm test -- --additional-argument",
+    ),
     staticTestsStep,
   );
   assert.doesNotMatch(staticJob, /self-host:|test:live-db|db:verify/);
+  assert.match(staticJob, /availableParallelism/);
+  assert.match(staticJob, /cpuCount: os\.cpus\(\)\.length/);
+  assert.match(staticJob, /freeMemory: os\.freemem\(\)/);
+  assert.match(staticJob, /totalMemory: os\.totalmem\(\)/);
+  assert.match(staticJob, /cpu\.max cpuset\.cpus\.effective memory\.max cpu\.stat memory\.events/);
+  assert.match(staticJob, /run: \/usr\/bin\/time --verbose pnpm test\s*\n/);
+  assert.doesNotMatch(staticJob, /run: .*pnpm test.*(?:\||tee)/);
+  assert.match(staticJob, /Report static test resource counters after test\s+if: always\(\)/);
   const database = workflow.split("  runtime-db:")[1]?.split("  runtime-web:")[0];
   assert.ok(database);
   assert.match(
