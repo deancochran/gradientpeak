@@ -11,7 +11,6 @@ export interface RecordingActionModel {
 export function buildRecordingActionModels(
   actions: RecordingQuickAction[],
   context: {
-    onGpsPress: () => void;
     onOpenActivity: () => void;
     onOpenFtms: () => void;
     onOpenPlan: () => void;
@@ -38,20 +37,6 @@ function resolveRecordingAction(
         id: action,
         label: disabled ? "Activity locked" : "Activity",
         onPress: context.onOpenActivity,
-      };
-    }
-    case "gps": {
-      const disabled = contract ? !contract.editing.canEditGps : false;
-      return {
-        disabled,
-        hint: disabled ? "GPS mode is locked after recording starts." : "Adjust GPS capture.",
-        id: action,
-        label: disabled
-          ? "GPS locked"
-          : contract?.guidance.routeMode === "live_navigation"
-            ? "GPS on"
-            : "GPS",
-        onPress: context.onGpsPress,
       };
     }
     case "plan": {

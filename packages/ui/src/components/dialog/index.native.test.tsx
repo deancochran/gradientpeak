@@ -1,3 +1,4 @@
+import { Text } from "react-native";
 import { renderNative } from "../../test/render-native";
 import {
   Dialog,
@@ -8,13 +9,19 @@ import {
 } from "./index.native";
 
 describe("Dialog native", () => {
-  it("renders trigger text and dialog content", () => {
-    const { getByTestId } = renderNative(
+  it("renders trigger text and dialog content", async () => {
+    const { getByTestId } = await renderNative(
       <Dialog open>
-        <DialogTrigger testID="plan-details-trigger">Open plan details</DialogTrigger>
+        <DialogTrigger testID="plan-details-trigger">
+          <Text>Open plan details</Text>
+        </DialogTrigger>
         <DialogContent testID="plan-details-content">
-          <DialogTitle testID="plan-details-title">Plan details</DialogTitle>
-          <DialogDescription>Review the upcoming block before saving.</DialogDescription>
+          <DialogTitle testID="plan-details-title">
+            <Text>Plan details</Text>
+          </DialogTitle>
+          <DialogDescription>
+            <Text>Review the upcoming block before saving.</Text>
+          </DialogDescription>
         </DialogContent>
       </Dialog>,
     );

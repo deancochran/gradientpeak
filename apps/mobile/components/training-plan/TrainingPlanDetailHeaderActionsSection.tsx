@@ -1,57 +1,95 @@
+import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
+import type { TrainingPlanPlannedSchedulePreview as TrainingPlanPlannedSchedulePreviewModel } from "@repo/core";
+import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { useMemo } from "react";
+import { MessageCircle, Share2 } from "lucide-react-native";
+import { useMemo, useState } from "react";
 import { View } from "react-native";
 import {
+  ResourceCardActionButton,
   ResourceLikeButton,
   ResourceOwnerActionRow,
 } from "@/components/shared/ResourceCardPrimitives";
-import { TrainingPlanPeriodizationPreview } from "@/components/shared/TrainingPlanPeriodizationPreview";
+import { TrainingPlanPlannedPreview } from "@/components/shared/TrainingPlanPlannedPreview";
 import { markEstimated } from "@/lib/estimatedMetrics";
-import {
-  deriveTrainingPlanSummaryMetrics,
-  deriveTrainingPlanVisual,
-} from "@/lib/trainingPlanVisual";
+import { deriveTrainingPlanSummaryMetrics } from "@/lib/trainingPlanVisual";
 import { TrainingPlanSummaryHeader } from "./TrainingPlanSummaryHeader";
 
 interface TrainingPlanDetailHeaderActionsSectionProps {
-  handleToggleLike: () => void;
-  isCurrentScheduledPlan?: boolean;
+  handleToggleLike: () => void | Promise<void>;
+  handleShare: () => void | Promise<void>;
+  shareDisabled?: boolean;
+  isScheduledPlan?: boolean;
   isLiked: boolean;
   likesCount: number;
+  commentCount: number;
+  onCommentsPress: () => void;
   overview?: {
-    linkedWorkouts: number;
+    linkedActivities: number;
     microcycles: number;
     plannedTime: string;
-    plannedTss: number;
-    routeBacked: number;
+    plannedLoad: number;
     sessions: number;
   };
-  plan: any;
+  plan: TrainingPlanDetailHeaderPlan;
 }
+
+type TrainingPlanDetailOutput = inferRouterOutputs<AppRouter>["trainingPlans"]["get"];
+
+type TrainingPlanDetailHeaderPlan = Omit<
+  Pick<
+    TrainingPlanDetailOutput,
+    "created_at" | "description" | "id" | "name" | "owner" | "structure"
+  >,
+  "created_at" | "description" | "id" | "owner" | "structure"
+> & {
+  created_at: string | Date;
+  description?: TrainingPlanDetailOutput["description"];
+  id?: string;
+  owner?: TrainingPlanDetailOutput["owner"];
+  plannedSchedulePreview?: TrainingPlanPlannedSchedulePreviewModel | null;
+  structure?: TrainingPlanDetailOutput["structure"];
+};
 
 export function TrainingPlanDetailHeaderActionsSection({
   handleToggleLike,
-  isCurrentScheduledPlan = false,
+  handleShare,
+  shareDisabled = false,
+  isScheduledPlan = false,
   isLiked,
   likesCount,
+  commentCount,
+  onCommentsPress,
   overview,
   plan,
 }: TrainingPlanDetailHeaderActionsSectionProps) {
   const summaryMetrics = useMemo(() => deriveTrainingPlanSummaryMetrics(plan), [plan]);
-  const visualModel = useMemo(() => deriveTrainingPlanVisual(plan), [plan]);
+  const [likePending, setLikePending] = useState(false);
+
+  const handleLikePress = async () => {
+    if (likePending) return;
+    setLikePending(true);
+    try {
+      await handleToggleLike();
+    } finally {
+      setLikePending(false);
+    }
+  };
 
   return (
     <View className="gap-4 rounded-3xl border border-border bg-card p-4">
       <ResourceOwnerActionRow
         actions={
-          <ResourceLikeButton
-            isLiked={isLiked}
-            likeCount={likesCount}
-            onPress={handleToggleLike}
-            testID="training-plan-like-button"
-          />
+          <ResourceCardActionButton
+            accessibilityLabel="Share training plan"
+            disabled={shareDisabled}
+            onPress={() => void handleShare()}
+            testID="training-plan-share-button"
+          >
+            <Icon as={Share2} size={20} className="text-foreground" />
+          </ResourceCardActionButton>
         }
-        categoryLabel={isCurrentScheduledPlan ? "Current scheduled plan" : "Template"}
+        categoryLabel={isScheduledPlan ? "Scheduled program" : "Program template"}
         fallbackLabel="GradientPeak"
         owner={plan?.owner ?? null}
         timestamp={plan.created_at}
@@ -59,12 +97,14 @@ export function TrainingPlanDetailHeaderActionsSection({
 
       <TrainingPlanSummaryHeader
         title={plan.name}
-        description={plan.description || undefined}
-        isActive={isCurrentScheduledPlan}
-        activeLabel="Current scheduled plan"
-        inactiveLabel="Template"
-        createdAt={plan.created_at}
-        showStatusDot={isCurrentScheduledPlan}
+        {...(plan.description ? { description: plan.description } : {})}
+        isActive={isScheduledPlan}
+        activeLabel="Scheduled"
+        inactiveLabel="Program template"
+        createdAt={
+          plan.created_at instanceof Date ? plan.created_at.toISOString() : plan.created_at
+        }
+        showStatusDot={isScheduledPlan}
         formatStartedDate={(date) =>
           date.toLocaleDateString("en-US", {
             month: "short",
@@ -75,10 +115,32 @@ export function TrainingPlanDetailHeaderActionsSection({
         showMeta={false}
       />
 
-      {isCurrentScheduledPlan ? (
+      <View className="flex-row items-center gap-2">
+        <ResourceLikeButton
+          disabled={likePending}
+          isLiked={isLiked}
+          likeCount={likesCount}
+          onPress={() => void handleLikePress()}
+          testID="training-plan-like-button"
+        />
+        <ResourceCardActionButton
+          accessibilityLabel={`Comments, ${commentCount}`}
+          onPress={onCommentsPress}
+          testID="training-plan-comments-button"
+        >
+          <View className="flex-row items-center rounded-full bg-muted px-2.5 py-1.5">
+            <Icon as={MessageCircle} size={14} className="text-muted-foreground" />
+            <Text className="ml-1 text-xs font-medium text-muted-foreground">
+              {commentCount > 0 ? commentCount : "Comments"}
+            </Text>
+          </View>
+        </ResourceCardActionButton>
+      </View>
+
+      {isScheduledPlan ? (
         <View className="rounded-2xl border border-primary/20 bg-primary/5 px-3 py-3">
           <Text className="text-sm font-medium text-foreground">
-            This is your currently scheduled plan.
+            This program has future sessions on your calendar.
           </Text>
           <Text className="mt-1 text-sm text-muted-foreground">
             Removing the scheduled set keeps completed sessions in history.
@@ -90,15 +152,22 @@ export function TrainingPlanDetailHeaderActionsSection({
         <View className="flex-row justify-between gap-2">
           <SummaryMetricCard label="Duration" value={summaryMetrics.durationLabel} compact />
           <SummaryMetricCard label="Sessions" value={summaryMetrics.sessionsLabel} compact />
-          <SummaryMetricCard label="Sport" value={summaryMetrics.sportLabel} compact />
+          <SummaryMetricCard
+            label="Activity category"
+            value={summaryMetrics.activityCategoryLabel}
+            compact
+          />
           <SummaryMetricCard label="Level" value={summaryMetrics.experienceLabel} compact />
         </View>
       </View>
 
-      <View className="gap-2">
-        <Text className="text-sm font-medium text-foreground">Plan snapshot</Text>
-        <TrainingPlanPeriodizationPreview model={visualModel} />
-      </View>
+      <TrainingPlanPlannedPreview
+        planId={typeof plan.id === "string" ? plan.id : "detail"}
+        {...(plan.plannedSchedulePreview !== undefined
+          ? { preview: plan.plannedSchedulePreview }
+          : {})}
+        structure={plan.structure}
+      />
 
       {overview ? (
         <View className="gap-2">
@@ -106,11 +175,10 @@ export function TrainingPlanDetailHeaderActionsSection({
           <View className="flex-row flex-wrap gap-2">
             <SummaryMetricCard label="Microcycles" value={`${overview.microcycles}`} />
             <SummaryMetricCard label="Sessions" value={`${overview.sessions}`} />
-            <SummaryMetricCard label="Linked activities" value={`${overview.linkedWorkouts}`} />
-            <SummaryMetricCard label="Route-backed activities" value={`${overview.routeBacked}`} />
+            <SummaryMetricCard label="Linked activities" value={`${overview.linkedActivities}`} />
             <SummaryMetricCard
-              label="Planned TSS"
-              value={markEstimated(`${overview.plannedTss}`) ?? "0"}
+              label="Planned Load"
+              value={markEstimated(`${overview.plannedLoad}`) ?? "0"}
             />
             <SummaryMetricCard label="Planned time" value={overview.plannedTime} />
           </View>

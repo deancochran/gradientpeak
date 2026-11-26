@@ -1,0 +1,62 @@
+appId: com.deancochran.gradientpeak.dev
+name: Athlete retains metadata while canceling an invalid provisional activity-plan step
+---
+# The shared runner has already shown the real selected Home session. Re-enter
+# the owned plan through the visible profile library rather than an ID deep link.
+- tapOn:
+    id: app-header-avatar-button
+- extendedWaitUntil:
+    visible:
+      id: profile-tab-activity-plans-button
+    timeout: 30000
+- tapOn:
+    id: profile-tab-activity-plans-button
+- extendedWaitUntil:
+    visible: ${MAESTRO_ACCEPTANCE_PLAN_NAME}
+    timeout: 30000
+- tapOn: ${MAESTRO_ACCEPTANCE_PLAN_NAME}
+- extendedWaitUntil:
+    visible:
+      id: activity-plan-options-trigger
+    timeout: 30000
+- takeScreenshot: activity-plan-edit-before
+- tapOn:
+    id: activity-plan-options-trigger
+- tapOn:
+    id: activity-plan-options-edit
+- extendedWaitUntil:
+    visible: "Plan name"
+    timeout: 30000
+# eraseText backspaces from the current cursor. Select the semantic native
+# field's whole value first so the generated title replaces it exactly rather
+# than preserving a suffix after the cursor.
+- longPressOn: "Plan name"
+- tapOn: "Select all"
+- eraseText: 1
+- inputText: ${MAESTRO_ACCEPTANCE_EDITED_PLAN_NAME}
+- hideKeyboard
+- tapOn: "Description"
+- inputText: ${MAESTRO_ACCEPTANCE_TRANSIENT_DESCRIPTION}
+- hideKeyboard
+- tapOn:
+    id: activity-plan-add-step
+- extendedWaitUntil:
+    visible:
+      id: step-editor-modal
+    timeout: 30000
+# The provisional step has no completion type/value. Its own semantic save
+# must retain the editor and show the actual repair guidance.
+- tapOn:
+    id: step-editor-save-button
+- assertVisible: "Choose a completion type and value before saving."
+- assertVisible:
+    id: step-editor-modal
+- takeScreenshot: activity-plan-edit-invalid-step
+# Explicit Cancel removes only the new provisional step. The metadata draft is
+# still local and visible; no durable write is attempted by this flow.
+- tapOn: "Cancel"
+- extendedWaitUntil:
+    visible: ${MAESTRO_ACCEPTANCE_EDITED_PLAN_NAME}
+    timeout: 30000
+- assertVisible: ${MAESTRO_ACCEPTANCE_TRANSIENT_DESCRIPTION}
+- takeScreenshot: activity-plan-edit-metadata-recovered

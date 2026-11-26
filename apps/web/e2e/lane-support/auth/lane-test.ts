@@ -1,0 +1,207 @@
+import { type ChildProcess, spawn } from "node:child_process";
+import { rm } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import type { BrowserContextOptions } from "@playwright/test";
+import { expect, test as sharedTest } from "../../fixtures";
+import { localE2EDatabaseUrl } from "../../support/database";
+import { createE2EExecutionIdentity } from "../../support/identity";
+import {
+  AuthArtifactRegistry,
+  activatePlaywrightAuthArtifactRegistry,
+  cleanupAuthArtifacts,
+} from "./artifact-registry";
+
+export type LaneServer = { baseURL: string; clientIp: string; process: ChildProcess };
+type LaneProcess = Omit<LaneServer, "clientIp">;
+type AuthLaneFixtures = { authArtifactRegistry: AuthArtifactRegistry; laneServer: LaneServer };
+type AuthLaneWorkerFixtures = { laneProcess: LaneProcess };
+
+export function authLaneContextOptions(
+  laneServer: LaneServer,
+  options: BrowserContextOptions = {},
+): BrowserContextOptions {
+  return {
+    ...options,
+    baseURL: laneServer.baseURL,
+    extraHTTPHeaders: {
+      ...options.extraHTTPHeaders,
+      "x-forwarded-for": laneServer.clientIp,
+    },
+  };
+}
+
+export function authLaneRequestHeaders(
+  laneServer: LaneServer,
+  headers: Record<string, string> = {},
+) {
+  return {
+    ...headers,
+    "x-forwarded-for": laneServer.clientIp,
+  };
+}
+
+async function waitUntilReady(baseURL: string, child: ChildProcess) {
+  const deadline = Date.now() + 30_000;
+  let output = "";
+  child.stdout?.on("data", (chunk) => {
+    output = `${output}${String(chunk)}`.slice(-4000);
+  });
+  child.stderr?.on("data", (chunk) => {
+    output = `${output}${String(chunk)}`.slice(-4000);
+  });
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null) throw new Error(`Auth lane server exited with ${child.exitCode}`);
+    try {
+      const response = await fetch(`${baseURL}/auth/login`);
+      if (response.ok) return;
+    } catch {
+      // Vite has not opened the socket yet.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`Timed out starting the auth lane server: ${output}`);
+}
+
+async function stopLaneServer(child: ChildProcess) {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  const signal = (value: NodeJS.Signals) => {
+    if (process.platform !== "win32" && child.pid) {
+      try {
+        process.kill(-child.pid, value);
+        return;
+      } catch {
+        // Fall back to signaling the direct child.
+      }
+    }
+    child.kill(value);
+  };
+  const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+  signal("SIGTERM");
+  await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 5_000))]);
+  if (child.exitCode === null && child.signalCode === null) {
+    signal("SIGKILL");
+    await exited;
+  }
+}
+
+export const test = sharedTest.extend<AuthLaneFixtures, AuthLaneWorkerFixtures>({
+  authArtifactRegistry: [
+    async ({ laneServer: _laneServer }, use, testInfo) => {
+      const registry = new AuthArtifactRegistry();
+      const deactivateRegistry = activatePlaywrightAuthArtifactRegistry(registry);
+      let primaryError: unknown;
+      try {
+        await use(registry);
+      } catch (error) {
+        primaryError = error;
+      } finally {
+        deactivateRegistry();
+      }
+
+      try {
+        await cleanupAuthArtifacts(registry.drain());
+      } catch (cleanupError) {
+        if (primaryError !== undefined || testInfo.status !== "passed") {
+          const description =
+            cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+          testInfo.annotations.push({ type: "auth-cleanup-error", description });
+          await testInfo
+            .attach("auth-cleanup-error.txt", {
+              body: Buffer.from(
+                cleanupError instanceof Error
+                  ? cleanupError.stack || cleanupError.message
+                  : String(cleanupError),
+              ),
+              contentType: "text/plain",
+            })
+            .catch(() => undefined);
+        } else {
+          throw cleanupError;
+        }
+      }
+
+      if (primaryError !== undefined) throw primaryError;
+    },
+    { auto: true },
+  ],
+  laneServer: async ({ laneProcess }, use, testInfo) => {
+    const digest = createE2EExecutionIdentity(testInfo).suffix("auth-lane-client-ip", 6);
+    const octet = (index: number) =>
+      (Number.parseInt(digest.slice(index, index + 2), 16) % 254) + 1;
+    await use({
+      ...laneProcess,
+      clientIp: `127.${octet(0)}.${octet(2)}.${octet(4)}`,
+    });
+  },
+  laneProcess: [
+    // biome-ignore lint/correctness/noEmptyPattern: Playwright fixture callbacks require object destructuring.
+    async ({}, use, workerInfo) => {
+      const port = 32_000 + (process.pid % 1_000) * 10 + workerInfo.workerIndex;
+      const baseURL = `http://127.0.0.1:${port}`;
+      const capturePath = `/tmp/gradientpeak-auth-mail-${process.pid}-${workerInfo.workerIndex}.jsonl`;
+      const viteCacheDir = `/tmp/gradientpeak-auth-vite-${process.pid}-${workerInfo.workerIndex}`;
+      const secret = "gradientpeak-playwright-lane-secret-that-is-long-and-test-only";
+      const childEnv = { ...process.env };
+      delete childEnv.PORT;
+      await rm(capturePath, { force: true });
+      await rm(viteCacheDir, { force: true, recursive: true });
+      process.env.AUTH_EMAIL_CAPTURE_PATH = capturePath;
+      process.env.BETTER_AUTH_SECRET = secret;
+      const child = spawn(
+        "pnpm",
+        ["exec", "vite", "dev", "--host", "127.0.0.1", "--port", String(port), "--strictPort"],
+        {
+          cwd: fileURLToPath(new URL("../../..", import.meta.url)),
+          detached: process.platform !== "win32",
+          env: {
+            ...childEnv,
+            NODE_ENV: "test",
+            AUTH_EMAIL_MODE: "capture",
+            AUTH_EMAIL_CAPTURE_PATH: capturePath,
+            BETTER_AUTH_SECRET: secret,
+            // Better Auth generates action links from APP_URL. Keep those links
+            // on this worker's isolated Vite server rather than inheriting a
+            // developer tunnel or another long-running web server.
+            APP_URL: baseURL,
+            // Every auth lane runs its own Vite server. Sharing Vite's default
+            // dependency cache with Playwright's main server can invalidate
+            // optimized modules while this page is hydrating.
+            VITE_CACHE_DIR: viteCacheDir,
+            NODE_OPTIONS: [process.env.NODE_OPTIONS, "--preserve-symlinks"]
+              .filter(Boolean)
+              .join(" "),
+            DATABASE_URL: localE2EDatabaseUrl(),
+          },
+          stdio: "pipe",
+        },
+      );
+      try {
+        await waitUntilReady(baseURL, child);
+        await use({ baseURL, process: child });
+      } finally {
+        await stopLaneServer(child);
+        await rm(capturePath, { force: true });
+        await rm(viteCacheDir, { force: true, recursive: true });
+      }
+    },
+    { scope: "worker", auto: true, timeout: 120_000 },
+  ],
+  page: async ({ authArtifactRegistry: _registry, browser, laneServer }, use, testInfo) => {
+    const projectUse = testInfo.project.use as {
+      viewport?: { width: number; height: number } | null;
+    };
+    const context = await browser.newContext(
+      authLaneContextOptions(laneServer, {
+        viewport: projectUse.viewport ?? { width: 1280, height: 720 },
+      }),
+    );
+    const page = await context.newPage();
+    try {
+      await use(page);
+    } finally {
+      await context.close();
+    }
+  },
+});
+
+export { expect };

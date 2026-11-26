@@ -6,7 +6,6 @@
  * from anywhere in the app without requiring an active recording context.
  */
 
-import * as Location from "expo-location";
 import { PermissionsAndroid, Platform } from "react-native";
 
 export type PermissionStatus = {
@@ -14,12 +13,10 @@ export type PermissionStatus = {
   canAskAgain: boolean;
 };
 
-export type PermissionType = "bluetooth" | "location" | "location-background";
+export type PermissionType = "bluetooth";
 
 export type AllPermissionsStatus = {
   bluetooth: PermissionStatus | null;
-  location: PermissionStatus | null;
-  locationBackground: PermissionStatus | null;
 };
 
 class StandalonePermissionsManager {
@@ -48,17 +45,7 @@ class StandalonePermissionsManager {
 
     console.log("[PermissionsManager] Checking permissions (cache miss or expired)");
 
-    const [bluetooth, location, locationBackground] = await Promise.all([
-      this.checkBluetoothPermission(),
-      this.checkLocationPermission(),
-      this.checkBackgroundLocationPermission(),
-    ]);
-
-    const status = {
-      bluetooth,
-      location,
-      locationBackground,
-    };
+    const status = { bluetooth: await this.checkBluetoothPermission() };
 
     // Update cache
     this.cache = {
@@ -87,17 +74,12 @@ class StandalonePermissionsManager {
   async areAllPermissionsGranted(): Promise<boolean> {
     const permissions = await this.checkAllPermissions();
 
-    const allGranted =
-      permissions.bluetooth?.granted === true &&
-      permissions.location?.granted === true &&
-      permissions.locationBackground?.granted === true;
+    const allGranted = permissions.bluetooth?.granted === true;
 
     // Only log if not all granted (to reduce noise)
     if (!allGranted) {
       console.log("[PermissionsManager] areAllPermissionsGranted check:", {
         bluetooth: permissions.bluetooth?.granted,
-        location: permissions.location?.granted,
-        locationBackground: permissions.locationBackground?.granted,
         allGranted,
       });
     }
@@ -105,25 +87,10 @@ class StandalonePermissionsManager {
     return allGranted;
   }
 
-  async areRecordingPermissionsGranted(gpsRequired: boolean): Promise<boolean> {
-    const permissions = await this.checkAllPermissions();
-    const granted =
-      permissions.bluetooth?.granted === true &&
-      (!gpsRequired ||
-        (permissions.location?.granted === true &&
-          permissions.locationBackground?.granted === true));
-
-    if (!granted) {
-      console.log("[PermissionsManager] areRecordingPermissionsGranted check:", {
-        bluetooth: permissions.bluetooth?.granted,
-        gpsRequired,
-        location: permissions.location?.granted,
-        locationBackground: permissions.locationBackground?.granted,
-        granted,
-      });
-    }
-
-    return granted;
+  async areRecordingPermissionsGranted(): Promise<boolean> {
+    // Timer/manual recording has no operating-system permission prerequisite.
+    // Bluetooth authorization is requested only when a user opens sensor setup.
+    return true;
   }
 
   /**
@@ -164,15 +131,9 @@ class StandalonePermissionsManager {
             canAskAgain: !granted, // Can ask if not already granted
           };
         } else {
-          // Older Android versions
-          const result = await PermissionsAndroid.check(
-            PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-          );
-
-          return {
-            granted: result,
-            canAskAgain: true, // Older versions typically allow re-asking
-          };
+          // Android 11 and older couple BLE scanning to location authorization.
+          // GradientPeak's location-free policy deliberately does not request it.
+          return { granted: false, canAskAgain: false };
         }
       } else if (Platform.OS === "ios") {
         // iOS handles Bluetooth permissions automatically
@@ -192,66 +153,6 @@ class StandalonePermissionsManager {
   }
 
   /**
-   * Check location permission status
-   */
-  private async checkLocationPermission(): Promise<PermissionStatus | null> {
-    if (Platform.OS === "web") return null;
-
-    try {
-      const { status, canAskAgain } = await Location.getForegroundPermissionsAsync();
-
-      const granted = status === "granted";
-
-      // Only log if not granted
-      if (!granted) {
-        console.log("[PermissionsManager] Location check:", {
-          status,
-          granted,
-          canAskAgain,
-        });
-      }
-
-      return {
-        granted,
-        canAskAgain: canAskAgain ?? status !== "denied",
-      };
-    } catch (error) {
-      console.error("[PermissionsManager] Error checking location permission:", error);
-      return null;
-    }
-  }
-
-  /**
-   * Check background location permission status
-   */
-  private async checkBackgroundLocationPermission(): Promise<PermissionStatus | null> {
-    if (Platform.OS === "web") return null;
-
-    try {
-      const { status, canAskAgain } = await Location.getBackgroundPermissionsAsync();
-
-      const granted = status === "granted";
-
-      // Only log if not granted
-      if (!granted) {
-        console.log("[PermissionsManager] Background location check:", {
-          status,
-          granted,
-          canAskAgain,
-        });
-      }
-
-      return {
-        granted,
-        canAskAgain: canAskAgain ?? status !== "denied",
-      };
-    } catch (error) {
-      console.error("[PermissionsManager] Error checking background location permission:", error);
-      return null;
-    }
-  }
-
-  /**
    * Request a specific permission
    */
   async requestPermission(type: PermissionType): Promise<boolean> {
@@ -262,12 +163,6 @@ class StandalonePermissionsManager {
     switch (type) {
       case "bluetooth":
         result = await this.requestBluetoothPermission();
-        break;
-      case "location":
-        result = await this.requestLocationPermission();
-        break;
-      case "location-background":
-        result = await this.requestBackgroundLocationPermission();
         break;
       default:
         result = false;
@@ -302,19 +197,8 @@ class StandalonePermissionsManager {
             (permission) => results[permission] === PermissionsAndroid.RESULTS.GRANTED,
           );
         } else {
-          // Older Android versions need location permission for BLE
-          const result = await PermissionsAndroid.request(
-            PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-            {
-              title: "Location Permission",
-              message: "This app needs location access to scan for Bluetooth devices",
-              buttonNeutral: "Ask Me Later",
-              buttonNegative: "Cancel",
-              buttonPositive: "OK",
-            },
-          );
-
-          return result === PermissionsAndroid.RESULTS.GRANTED;
+          // Do not turn location authorization into a recording or sensor prerequisite.
+          return false;
         }
       } else if (Platform.OS === "ios") {
         // iOS handles Bluetooth permissions automatically
@@ -325,44 +209,6 @@ class StandalonePermissionsManager {
       return false;
     } catch (error) {
       console.error("Error requesting Bluetooth permission:", error);
-      return false;
-    }
-  }
-
-  /**
-   * Request location permission
-   */
-  private async requestLocationPermission(): Promise<boolean> {
-    if (Platform.OS === "web") return false;
-
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      return status === "granted";
-    } catch (error) {
-      console.error("Error requesting location permission:", error);
-      return false;
-    }
-  }
-
-  /**
-   * Request background location permission
-   */
-  private async requestBackgroundLocationPermission(): Promise<boolean> {
-    if (Platform.OS === "web") return false;
-
-    try {
-      // First check if foreground permission is granted
-      const { status: foregroundStatus } = await Location.getForegroundPermissionsAsync();
-
-      if (foregroundStatus !== "granted") {
-        console.warn("Cannot request background location without foreground permission");
-        return false;
-      }
-
-      const { status } = await Location.requestBackgroundPermissionsAsync();
-      return status === "granted";
-    } catch (error) {
-      console.error("Error requesting background location permission:", error);
       return false;
     }
   }
@@ -380,8 +226,8 @@ export async function areAllPermissionsGranted(): Promise<boolean> {
   return permissionsChecker.areAllPermissionsGranted();
 }
 
-export async function areRecordingPermissionsGranted(gpsRequired: boolean): Promise<boolean> {
-  return permissionsChecker.areRecordingPermissionsGranted(gpsRequired);
+export async function areRecordingPermissionsGranted(): Promise<boolean> {
+  return permissionsChecker.areRecordingPermissionsGranted();
 }
 
 export async function requestPermission(type: PermissionType): Promise<boolean> {
