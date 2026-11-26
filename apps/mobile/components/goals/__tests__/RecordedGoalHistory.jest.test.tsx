@@ -8,7 +8,7 @@ import { renderNative, screen } from "../../../test/render-native";
 const queryMock = jest.fn();
 const fetchNextPage = jest.fn();
 const refetch = jest.fn();
-jest.mock("@/lib/api", () => ({
+jest.mock("@repo/api/react", () => ({
   api: {
     activities: { listPaginated: { useInfiniteQuery: (...args: unknown[]) => queryMock(...args) } },
   },

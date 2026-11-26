@@ -85,6 +85,10 @@
       "types": "./src/react.ts",
       "default": "./src/react.ts"
     },
+    "./recorded-goal-history": {
+      "types": "./src/recorded-goal-history.ts",
+      "default": "./src/recorded-goal-history.ts"
+    },
     "./server": {
       "types": "./src/server.ts",
       "default": "./src/server.ts"

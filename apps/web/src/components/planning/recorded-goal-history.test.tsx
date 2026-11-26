@@ -8,7 +8,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { RecordedGoalHistory } from "./recorded-goal-history";
 
 const mocks = vi.hoisted(() => ({ query: vi.fn(), next: vi.fn(), retry: vi.fn() }));
-vi.mock("../../lib/api/client", () => ({
+vi.mock("@repo/api/react", () => ({
   api: { activities: { listPaginated: { useInfiniteQuery: mocks.query } } },
 }));
 vi.mock("@tanstack/react-router", () => ({
