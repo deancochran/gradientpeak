@@ -100,6 +100,31 @@ describe("StepEditorFields screen form", () => {
       });
     });
   });
+  it("keeps one target selector and remover while changing between rest and numeric targets", async () => {
+    await renderNative(
+      <StepEditorFields
+        activityCategory="bike"
+        onDirtyChange={() => undefined}
+        step={{ ...step, targets: [{ type: "rest" }] }}
+      />,
+    );
+    expect(screen.getAllByLabelText("Target type")).toHaveLength(1);
+    expect(screen.getAllByLabelText("Remove target 1")).toHaveLength(1);
+    expect(screen.queryByLabelText("Target value")).toBeNull();
+
+    await fireEvent.press(screen.getByLabelText("Target type"));
+    const picker = screen.getByTestId("Target type-picker");
+    await fireEvent(picker, "valueChange", "bpm");
+    expect(screen.getAllByLabelText("Target type")).toHaveLength(1);
+    expect(screen.getAllByLabelText("Remove target 1")).toHaveLength(1);
+    expect(screen.getByLabelText("Target value")).toBeTruthy();
+
+    await fireEvent.press(screen.getByLabelText("Target type"));
+    await fireEvent(screen.getByTestId("Target type-picker"), "valueChange", "rest");
+    expect(screen.getAllByLabelText("Target type")).toHaveLength(1);
+    expect(screen.getAllByLabelText("Remove target 1")).toHaveLength(1);
+    expect(screen.queryByLabelText("Target value")).toBeNull();
+  });
   it.each([
     { type: "distance" as const, meters: 800 },
     { type: "repetitions" as const, count: 8 },
