@@ -200,18 +200,38 @@ function MessagesPage() {
   const recipientSearchStatusId = useId();
   const lastMarkedConversationRef = useRef<string | null>(null);
   const sendInFlightRef = useRef(false);
+  const sendAttemptRef = useRef(0);
+  const draftRevisionRef = useRef(0);
+  const messageOperationRef = useRef<{
+    actorId: string;
+    content: string;
+    conversationId: string;
+    operationId: string;
+  } | null>(null);
+  const messageContextRef = useRef({
+    actorId: null as string | null,
+    conversationId: null as string | null,
+    epoch: 0,
+  });
   const form = useForm<MessageComposerValues>({
     resolver: zodResolver(messageComposerSchema),
     defaultValues: {
       content: "",
     },
   });
-  const sendMessageMutation = api.messaging.sendMessage.useMutation({
-    onSuccess: async (_message, variables) => {
-      await invalidateConversationQueries(utils, variables.conversation_id);
-      if (form.getValues("content") === variables.content) form.reset({ content: "" });
-    },
-  });
+  const sendMessageMutation = api.messaging.sendMessage.useMutation();
+  const actorId = user?.id ?? null;
+  if (
+    messageContextRef.current.actorId !== actorId ||
+    messageContextRef.current.conversationId !== selectedId
+  ) {
+    messageContextRef.current = {
+      actorId,
+      conversationId: selectedId,
+      epoch: messageContextRef.current.epoch + 1,
+    };
+    messageOperationRef.current = null;
+  }
 
   useEffect(() => {
     form.reset({ content: "" });
@@ -254,21 +274,57 @@ function MessagesPage() {
   }, [composeQuery]);
 
   const handleSend = form.handleSubmit(async (values) => {
-    if (!selectedId || sendInFlightRef.current) {
+    if (!selectedId || !actorId || sendInFlightRef.current) {
       return;
     }
 
+    const rawDraft = form.getValues("content");
+    const attempt = sendAttemptRef.current + 1;
+    const contextEpoch = messageContextRef.current.epoch;
+    const draftRevision = draftRevisionRef.current;
+    sendAttemptRef.current = attempt;
     sendInFlightRef.current = true;
     setSendError(null);
+    const priorOperation = messageOperationRef.current;
+    const operation =
+      priorOperation &&
+      priorOperation.actorId === actorId &&
+      priorOperation.conversationId === selectedId &&
+      priorOperation.content === values.content
+        ? priorOperation
+        : {
+            actorId,
+            conversationId: selectedId,
+            content: values.content,
+            operationId: crypto.randomUUID(),
+          };
+    messageOperationRef.current = operation;
+    const isCurrentUi = () =>
+      sendAttemptRef.current === attempt &&
+      messageContextRef.current.epoch === contextEpoch &&
+      draftRevisionRef.current === draftRevision &&
+      form.getValues("content") === rawDraft;
+    const isCurrentAttempt = () => messageOperationRef.current === operation && isCurrentUi();
     try {
       await sendMessageMutation.mutateAsync({
-        content: values.content,
-        conversation_id: selectedId,
+        content: operation.content,
+        conversation_id: operation.conversationId,
+        operation_id: operation.operationId,
       });
+      const shouldReset = isCurrentAttempt();
+      if (messageOperationRef.current === operation) messageOperationRef.current = null;
+      try {
+        await invalidateConversationQueries(utils, operation.conversationId);
+      } catch {
+        // The durable send succeeded; a cache refresh failure is not a send failure.
+      }
+      if (shouldReset && isCurrentUi()) form.reset({ content: "" });
     } catch (error) {
-      setSendError(error instanceof Error ? error.message : "Unable to send message");
+      if (isCurrentAttempt()) {
+        setSendError(error instanceof Error ? error.message : "Unable to send message");
+      }
     } finally {
-      sendInFlightRef.current = false;
+      if (sendAttemptRef.current === attempt) sendInFlightRef.current = false;
     }
   });
 
@@ -866,6 +922,11 @@ function MessagesPage() {
                                 aria-label="Message"
                                 disabled={sendMessageMutation.isPending}
                                 placeholder="Type a message..."
+                                onChange={(event) => {
+                                  draftRevisionRef.current += 1;
+                                  messageOperationRef.current = null;
+                                  field.onChange(event);
+                                }}
                                 onKeyDown={(event) => {
                                   if (event.key === "Enter" && !event.shiftKey) {
                                     event.preventDefault();
