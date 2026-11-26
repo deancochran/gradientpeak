@@ -1,14 +1,37 @@
-import React, { act } from "react";
-import { z } from "zod";
-
-import { createHost } from "../../test/mock-components";
-import { fireEvent, renderNative, screen } from "../../test/render-native";
+import React from "react";
+import type { TestInstance as ReactTestInstance } from "test-renderer";
+import { createActivityPlanDetail } from "../../test/activity-plan-projection-fixture";
+import { createHost, type HostProps } from "../../test/mock-components";
+import { act, fireEvent, renderNative, screen, waitFor } from "../../test/render-native";
 
 const alertMock = jest.fn();
-const createMutateMock = jest.fn();
+const createMutateAsyncMock = jest.fn();
 const updateMutateMock = jest.fn();
+const setErrorMock = jest.fn();
+const clearErrorsMock = jest.fn();
+const refreshScheduleWithCallbacksMock = jest.fn();
+const activityPlanId = "11111111-1111-4111-8111-111111111111";
 
-let existingActivityData: any = null;
+type ExistingActivityData = {
+  id: string;
+  scheduled_date: string;
+  starts_at: string;
+  all_day: boolean;
+  notes: string;
+  series_id?: string;
+  occurrence_key?: string;
+  recurrence_rule?: string;
+  activity_plan_id?: string | null;
+  activityPlanSummary: ReturnType<typeof createActivityPlanDetail> | null;
+};
+
+let existingActivityData: ExistingActivityData | null = null;
+let profileId: string | null = "22222222-2222-4222-8222-222222222222";
+let planDetails: ReturnType<typeof createActivityPlanDetail> | null = createActivityPlanDetail({
+  id: "plan-1",
+  name: "Tempo Builder",
+  description: "Progressive tempo session with structured intervals.",
+});
 
 jest.mock("@tanstack/react-query", () => ({
   __esModule: true,
@@ -19,7 +42,7 @@ jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
   Alert: { alert: alertMock },
-  Modal: ({ visible, children, ...props }: any) =>
+  Modal: ({ visible, children, ...props }: HostProps & { visible?: boolean }) =>
     visible ? React.createElement("Modal", props, children) : null,
 }));
 
@@ -28,49 +51,38 @@ jest.mock("@react-native-community/datetimepicker", () => ({
   default: createHost("DateTimePicker"),
 }));
 
-jest.mock("@repo/core", () => ({
-  __esModule: true,
-  plannedActivityScheduleFormSchema: z.object({
-    activity_plan_id: z.string().optional(),
-    scheduled_date: z.string().optional(),
-    notes: z.string().nullable().optional(),
-    training_plan_id: z.string().nullable().optional(),
-    recurrence: z.any().optional(),
-  }),
-}));
-
 jest.mock("@repo/ui/hooks", () => {
   const React = require("react");
+  const hooks = jest.requireActual("@repo/ui/hooks");
 
   return {
     __esModule: true,
-    useZodForm: ({ defaultValues }: any) => {
-      const initialDefaultsRef = React.useRef(defaultValues);
-      const [values, setValues] = React.useState(initialDefaultsRef.current);
-      const valuesRef = React.useRef(values);
+    ...hooks,
+    useZodForm: (...args: Parameters<typeof hooks.useZodForm>) => {
+      const form = hooks.useZodForm(...args);
+      const isInstrumented = React.useRef(false);
 
-      valuesRef.current = values;
+      if (!isInstrumented.current) {
+        const originalSetError = form.setError;
+        const originalClearErrors = form.clearErrors;
 
-      return React.useMemo(
-        () => ({
-          control: {},
-          getValues: () => valuesRef.current,
-          reset: () => setValues(initialDefaultsRef.current),
-          setValue: (name: string, value: unknown) =>
-            setValues((current: Record<string, unknown>) => ({ ...current, [name]: value })),
-          watch: (name: string) => valuesRef.current[name],
-        }),
-        [],
-      );
+        form.setError = (...setErrorArgs: Parameters<typeof originalSetError>) => {
+          setErrorMock(...setErrorArgs);
+          return originalSetError(...setErrorArgs);
+        };
+        form.clearErrors = (...clearErrorArgs: Parameters<typeof originalClearErrors>) => {
+          clearErrorsMock(...clearErrorArgs);
+          return originalClearErrors(...clearErrorArgs);
+        };
+        isInstrumented.current = true;
+      }
+
+      return form;
     },
-    useZodFormSubmit: ({ form, onSubmit }: any) => ({
-      isSubmitting: false,
-      handleSubmit: () => onSubmit(form.getValues()),
-    }),
   };
 });
 
-jest.mock("@/components/activity-plan/workout/TimelineChart", () => ({
+jest.mock("@/components/activity-plan/activity/TimelineChart", () => ({
   __esModule: true,
   TimelineChart: createHost("TimelineChart"),
 }));
@@ -85,14 +97,13 @@ jest.mock("@/components/shared/ActivityPlanCard", () => ({
   ActivityPlanCard: createHost("ActivityPlanCard"),
 }));
 
-jest.mock("../training-plan/modals/components/ConstraintValidator", () => ({
-  __esModule: true,
-  ConstraintValidator: () => React.createElement("Text", {}, "Constraint Validation"),
-}));
-
 jest.mock("@/components/shared/AppFormModal", () => ({
   __esModule: true,
-  AppFormModal: ({ children, footerContent, ...props }: any) =>
+  AppFormModal: ({
+    children,
+    footerContent,
+    ...props
+  }: HostProps & { footerContent?: React.ReactNode }) =>
     React.createElement("AppFormModal", props, children, footerContent),
   AppConfirmModal: createHost("AppConfirmModal"),
 }));
@@ -106,10 +117,10 @@ jest.mock("@repo/ui/components/card", () => ({
 jest.mock("@repo/ui/components/form", () => ({
   __esModule: true,
   Form: createHost("Form"),
-  FormDateInputField: ({ testId, ...props }: any) =>
+  FormDateInputField: ({ testId, ...props }: HostProps & { testId?: string }) =>
     React.createElement("FormDateInputField", { testID: testId, ...props }, props.children),
   FormSwitchField: createHost("FormSwitchField"),
-  FormTimeInputField: ({ testId, ...props }: any) =>
+  FormTimeInputField: ({ testId, ...props }: HostProps & { testId?: string }) =>
     React.createElement("FormTimeInputField", { testID: testId, ...props }, props.children),
   FormTextareaField: createHost("FormTextareaField"),
 }));
@@ -138,7 +149,13 @@ jest.mock("lucide-react-native", () => ({
 
 jest.mock("@/lib/scheduling/refreshScheduleViews", () => ({
   __esModule: true,
-  refreshScheduleViews: jest.fn(async () => undefined),
+  refreshScheduleWithCallbacks: refreshScheduleWithCallbacksMock,
+}));
+
+jest.mock("@/lib/stores/auth-store", () => ({
+  __esModule: true,
+  useAuthStore: (selector: (state: { profile: { id: string } | null }) => unknown) =>
+    selector({ profile: profileId ? { id: profileId } : null }),
 }));
 
 jest.mock("@/lib/api", () => ({
@@ -146,36 +163,24 @@ jest.mock("@/lib/api", () => ({
   api: {
     events: {
       getById: { useQuery: () => ({ data: existingActivityData, isLoading: false }) },
-      validateConstraints: {
-        useQuery: () => ({
-          data: {
-            canSchedule: false,
-            hasWarnings: false,
-            constraints: {
-              weeklyTSS: { status: "violated", current: 200, withNew: 320, limit: 280 },
-              activitiesPerWeek: { status: "ok", current: 3, withNew: 4, limit: 5 },
-              consecutiveDays: { status: "warning", current: 2, withNew: 3, limit: 3 },
-              restDays: { status: "warning", current: 1, withNew: 0, minimum: 1 },
-            },
-          },
-          isLoading: false,
+      create: { useMutation: () => ({ isPending: false, error: null, mutateAsync: jest.fn() }) },
+      update: { useMutation: () => ({ isPending: false, error: null, mutate: updateMutateMock }) },
+    },
+    plannedSessions: {
+      create: {
+        useMutation: () => ({
+          isPending: false,
           error: null,
+          mutateAsync: createMutateAsyncMock,
         }),
       },
-      create: { useMutation: () => ({ isPending: false, error: null, mutate: createMutateMock }) },
-      update: { useMutation: () => ({ isPending: false, error: null, mutate: updateMutateMock }) },
     },
     activityPlans: {
       getById: {
         useQuery: () => ({
           data: {
-            id: "plan-1",
-            name: "Tempo Builder",
-            description: "Progressive tempo session with structured intervals.",
-            activity_category: "outdoor_run",
-            estimated_duration: 3600,
-            estimated_tss: 72,
-            structure: { intervals: [{ id: "step-1" }] },
+            detail: planDetails,
+            edit: null,
           },
           isLoading: false,
         }),
@@ -194,203 +199,221 @@ const { ScheduleActivityModal } = require("../ScheduleActivityModal");
 describe("ScheduleActivityModal", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    createMutateAsyncMock.mockResolvedValue(undefined);
+    refreshScheduleWithCallbacksMock.mockResolvedValue(undefined);
     existingActivityData = null;
+    profileId = "22222222-2222-4222-8222-222222222222";
+    planDetails = createActivityPlanDetail({
+      id: "plan-1",
+      name: "Tempo Builder",
+      description: "Progressive tempo session with structured intervals.",
+    });
   });
 
-  it("shows the activity preview immediately and keeps constraints collapsed by default", () => {
-    const rendered = renderNative(
-      <ScheduleActivityModal
-        visible
-        onClose={jest.fn()}
-        activityPlanId="plan-1"
-        trainingPlanId="training-plan-1"
-      />,
+  it("shows the selected activity preview", async () => {
+    const rendered = await renderNative(
+      <ScheduleActivityModal visible onClose={jest.fn()} activityPlanId={activityPlanId} />,
     );
 
-    expect(screen.getByTestId("schedule-constraints-toggle")).toBeTruthy();
     expect(screen.getByTestId("schedule-preview-details")).toBeTruthy();
-    expect(screen.queryByTestId("schedule-constraints-details")).toBeNull();
-    expect((rendered as any).UNSAFE_getByType("ActivityPlanCard").props.variant).toBe("compact");
+    expect(
+      rendered.container.queryAll(
+        (node: ReactTestInstance) => String(node.type) === "ActivityPlanCard",
+      )[0]?.props.variant,
+    ).toBe("compact");
   });
 
-  it("reveals constraint details only when the disclosure control is used", () => {
-    renderNative(
+  it("submits a date-key-only planned activity", async () => {
+    const onClose = jest.fn();
+    await renderNative(
       <ScheduleActivityModal
         visible
-        onClose={jest.fn()}
-        activityPlanId="plan-1"
-        trainingPlanId="training-plan-1"
-      />,
-    );
-
-    fireEvent.press(screen.getByTestId("schedule-constraints-toggle"));
-
-    expect(screen.getByTestId("schedule-preview-details")).toBeTruthy();
-    expect(screen.getByTestId("schedule-constraints-details")).toBeTruthy();
-    expect(screen.getByText("Constraint Validation")).toBeTruthy();
-  });
-
-  it("submits bounded weekly recurrence when scheduling a planned activity", () => {
-    renderNative(
-      <ScheduleActivityModal
-        visible
-        onClose={jest.fn()}
-        activityPlanId="plan-1"
+        onClose={onClose}
+        activityPlanId={activityPlanId}
         preselectedDate="2026-06-02"
       />,
     );
 
-    fireEvent.press(screen.getByTestId("schedule-repeat-weekly-toggle"));
-    fireEvent.press(screen.getByTestId("schedule-submit-button"));
+    await fireEvent.press(screen.getByTestId("schedule-submit-button"));
 
-    expect(createMutateMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        activity_plan_id: "plan-1",
-        scheduled_date: "2026-06-02",
-        recurrence: {
-          rule: "FREQ=WEEKLY;INTERVAL=1;COUNT=4;BYDAY=TU",
-          timezone: "UTC",
-        },
-      }),
-    );
+    await waitFor(() => {
+      expect(createMutateAsyncMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          profileId: "22222222-2222-4222-8222-222222222222",
+          session: expect.objectContaining({
+            activityPlanId,
+            planningDate: "2026-06-02",
+            source: expect.objectContaining({ kind: "direct" }),
+          }),
+        }),
+      );
+    });
+    expect(clearErrorsMock).toHaveBeenCalledWith("root");
+    const clearOrder = clearErrorsMock.mock.invocationCallOrder[0];
+    const mutationOrder = createMutateAsyncMock.mock.invocationCallOrder[0];
+    expect(clearOrder).toBeDefined();
+    expect(mutationOrder).toBeDefined();
+    if (clearOrder === undefined || mutationOrder === undefined) {
+      throw new Error("Expected root-error clearing and mutation invocation");
+    }
+    expect(clearOrder).toBeLessThan(mutationOrder);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(refreshScheduleWithCallbacksMock).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps weekly recurrence counts within supported bounds", () => {
-    renderNative(
-      <ScheduleActivityModal
-        visible
-        onClose={jest.fn()}
-        activityPlanId="plan-1"
-        preselectedDate="2026-06-02"
-      />,
+  it("refreshes and closes only after the mutation resolves", async () => {
+    let resolveMutation: (() => void) | undefined;
+    createMutateAsyncMock.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveMutation = resolve;
+        }),
     );
+    const onClose = jest.fn();
 
-    fireEvent.press(screen.getByTestId("schedule-repeat-weekly-toggle"));
-
-    for (let index = 0; index < 60; index++) {
-      fireEvent.press(screen.getByTestId("schedule-repeat-count-increment"));
-    }
+    await renderNative(
+      <ScheduleActivityModal visible onClose={onClose} activityPlanId={activityPlanId} />,
+    );
 
     fireEvent.press(screen.getByTestId("schedule-submit-button"));
+    await waitFor(() => expect(createMutateAsyncMock).toHaveBeenCalledTimes(1));
 
-    expect(createMutateMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        recurrence: {
-          rule: "FREQ=WEEKLY;INTERVAL=1;COUNT=52;BYDAY=TU",
-          timezone: "UTC",
-        },
-      }),
-    );
+    expect(onClose).not.toHaveBeenCalled();
+    expect(refreshScheduleWithCallbacksMock).not.toHaveBeenCalled();
 
-    createMutateMock.mockClear();
+    resolveMutation?.();
 
-    for (let index = 0; index < 60; index++) {
-      fireEvent.press(screen.getByTestId("schedule-repeat-count-decrement"));
-    }
-
-    fireEvent.press(screen.getByTestId("schedule-submit-button"));
-
-    expect(createMutateMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        recurrence: {
-          rule: "FREQ=WEEKLY;INTERVAL=1;COUNT=2;BYDAY=TU",
-          timezone: "UTC",
-        },
-      }),
-    );
+    await waitFor(() => {
+      expect(refreshScheduleWithCallbacksMock).toHaveBeenCalledTimes(1);
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
   });
 
-  it("submits edits for an existing planned event", () => {
+  it("keeps the modal open and maps server field errors after a rejected submission", async () => {
+    createMutateAsyncMock.mockRejectedValue({
+      data: { zodError: { fieldErrors: { scheduledDate: ["Choose a later date"] } } },
+    });
+    const onClose = jest.fn();
+
+    await renderNative(
+      <ScheduleActivityModal visible onClose={onClose} activityPlanId={activityPlanId} />,
+    );
+    await fireEvent.press(screen.getByTestId("schedule-submit-button"));
+
+    await waitFor(() =>
+      expect(setErrorMock).toHaveBeenCalledWith(
+        "scheduledDate",
+        expect.objectContaining({ message: "Choose a later date" }),
+      ),
+    );
+    expect(onClose).not.toHaveBeenCalled();
+    expect(refreshScheduleWithCallbacksMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the modal open and shows the fallback root error for an empty error property", async () => {
+    createMutateAsyncMock.mockRejectedValue({ error: "" });
+    const onClose = jest.fn();
+
+    await renderNative(
+      <ScheduleActivityModal visible onClose={onClose} activityPlanId={activityPlanId} />,
+    );
+    await fireEvent.press(screen.getByTestId("schedule-submit-button"));
+
+    await waitFor(() =>
+      expect(screen.getByText("Failed to schedule activity. Please try again.")).toBeTruthy(),
+    );
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["profile", () => (profileId = null), "Profile is still loading"],
+    [
+      "non-executable plan",
+      () =>
+        (planDetails = createActivityPlanDetail({
+          capabilities: {
+            canLike: true,
+            canEdit: true,
+            canDelete: true,
+            canDuplicate: true,
+            canSchedule: false,
+            canRecord: true,
+          },
+        })),
+      "Only executable single-activity-category plans can be scheduled.",
+    ],
+  ])("keeps %s guards from mutating and preserves their error copy", async (_name, arrange, copy) => {
+    arrange();
+
+    await renderNative(
+      <ScheduleActivityModal visible onClose={jest.fn()} activityPlanId={activityPlanId} />,
+    );
+
+    const submitButton = screen.queryByTestId("schedule-submit-button");
+    if (submitButton) {
+      await fireEvent.press(submitButton);
+      await waitFor(() => expect(screen.getAllByText(copy).length).toBeGreaterThan(0));
+    } else {
+      expect(screen.getAllByText(copy).length).toBeGreaterThan(0);
+    }
+    expect(createMutateAsyncMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the unavailable-plan guard from mutating and retains its root error copy", async () => {
+    planDetails = null;
+    await renderNative(
+      <ScheduleActivityModal visible onClose={jest.fn()} activityPlanId={activityPlanId} />,
+    );
+
+    const onPress = screen.getByTestId("schedule-submit-button").props.onPress;
+    if (typeof onPress !== "function") {
+      throw new Error("Expected unavailable-plan submit callback");
+    }
+    await act(async () => {
+      await onPress();
+    });
+
+    expect(setErrorMock).toHaveBeenCalledWith(
+      "root",
+      expect.objectContaining({ message: "Activity plan is unavailable" }),
+    );
+    expect(createMutateAsyncMock).not.toHaveBeenCalled();
+  });
+
+  it("shows existing executable events as read-only", async () => {
     existingActivityData = {
       id: "event-1",
       scheduled_date: "2026-03-23",
       starts_at: "2026-03-23T09:00:00.000Z",
       all_day: false,
       notes: "Bring gels",
-      activity_plan: {
-        id: "plan-1",
-      },
+      activityPlanSummary: createActivityPlanDetail(),
     };
 
-    renderNative(<ScheduleActivityModal visible onClose={jest.fn()} eventId="event-1" />);
+    await renderNative(<ScheduleActivityModal visible onClose={jest.fn()} eventId="event-1" />);
 
-    expect(screen.getByTestId("scheduled-date-button")).toBeTruthy();
-    expect(screen.getByTestId("scheduled-time-button")).toBeTruthy();
-
-    const buttons = (screen as any).UNSAFE_getAllByType("Button");
-
-    act(() => {
-      buttons[buttons.length - 1].props.onPress();
-    });
-
-    expect(updateMutateMock).toHaveBeenCalledWith({
-      id: "event-1",
-      scope: "single",
-      patch: expect.objectContaining({
-        activity_plan_id: "plan-1",
-        all_day: false,
-        notes: "Bring gels",
-        timezone: "UTC",
-        starts_at: expect.stringMatching(/^2026-03-23T/),
-      }),
-    });
-  });
-
-  it("requires a scope choice before editing a recurring occurrence", () => {
-    existingActivityData = {
-      id: "event-1",
-      scheduled_date: "2026-03-23",
-      starts_at: "2026-03-23T09:00:00.000Z",
-      all_day: false,
-      notes: "Bring gels",
-      series_id: "series-1",
-      occurrence_key: "2026-03-23",
-      activity_plan: {
-        id: "plan-1",
-      },
-    };
-
-    renderNative(<ScheduleActivityModal visible onClose={jest.fn()} eventId="event-1" />);
-
-    expect(screen.getByTestId("schedule-submit-button").props["disabled"]).toBe(true);
+    expect(screen.getByText("This event is read-only on mobile")).toBeTruthy();
+    expect(screen.queryByTestId("schedule-submit-button")).toBeNull();
     expect(updateMutateMock).not.toHaveBeenCalled();
-
-    fireEvent.press(screen.getByTestId("schedule-edit-scope-future"));
-    fireEvent.press(screen.getByTestId("schedule-submit-button"));
-
-    expect(updateMutateMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: "event-1",
-        scope: "future",
-      }),
-    );
   });
 
-  it("uses a provided edit scope without prompting for recurring occurrences", () => {
+  it("does not expose update controls or mutate for a top-level plan ID with a null relation", async () => {
     existingActivityData = {
       id: "event-1",
       scheduled_date: "2026-03-23",
       starts_at: "2026-03-23T09:00:00.000Z",
       all_day: false,
       notes: "Bring gels",
-      recurrence_rule: "FREQ=WEEKLY;INTERVAL=1;COUNT=4;BYDAY=MO",
-      activity_plan: {
-        id: "plan-1",
-      },
+      activity_plan_id: "plan-1",
+      activityPlanSummary: null,
     };
 
-    renderNative(
-      <ScheduleActivityModal visible onClose={jest.fn()} eventId="event-1" editScope="series" />,
-    );
+    await renderNative(<ScheduleActivityModal visible onClose={jest.fn()} eventId="event-1" />);
 
-    fireEvent.press(screen.getByTestId("schedule-submit-button"));
-
+    expect(screen.getByText("This event is read-only on mobile")).toBeTruthy();
+    expect(screen.queryByTestId("schedule-submit-button")).toBeNull();
+    expect(screen.queryByTestId("scheduled-date-button")).toBeNull();
     expect(screen.queryByTestId("schedule-edit-scope-single")).toBeNull();
-    expect(updateMutateMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: "event-1",
-        scope: "series",
-      }),
-    );
+    expect(updateMutateMock).not.toHaveBeenCalled();
   });
 });

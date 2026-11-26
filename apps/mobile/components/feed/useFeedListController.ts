@@ -37,6 +37,7 @@ export function useFeedListController() {
     isFetchingNextPage: feedQuery.isFetchingNextPage,
     isLoading: feedQuery.isLoading,
     isLoadingError: feedQuery.isLoadingError,
+    isRetrying: feedQuery.isRefetching,
     refreshing,
   };
 }

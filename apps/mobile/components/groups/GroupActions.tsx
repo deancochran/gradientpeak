@@ -80,14 +80,30 @@ export function GroupAdminActionRail({
         Admin tools
       </Text>
       <View className="flex-row flex-wrap gap-2">
-        {viewer.canEditGroup ? <RailButton label="Edit" onPress={onEdit} /> : null}
-        {viewer.canInvite ? <RailButton label="Invite" onPress={onInvite} /> : null}
-        {viewer.canManageMembers ? <RailButton label="Members" onPress={onManageMembers} /> : null}
+        {viewer.canEditGroup ? (
+          <RailButton label="Edit" {...(onEdit === undefined ? {} : { onPress: onEdit })} />
+        ) : null}
+        {viewer.canInvite ? (
+          <RailButton label="Invite" {...(onInvite === undefined ? {} : { onPress: onInvite })} />
+        ) : null}
+        {viewer.canManageMembers ? (
+          <RailButton
+            label="Members"
+            {...(onManageMembers === undefined ? {} : { onPress: onManageMembers })}
+          />
+        ) : null}
         {viewer.canManageJoinRequests ? (
-          <RailButton label="Requests" onPress={onManageJoinRequests} />
+          <RailButton
+            label="Requests"
+            {...(onManageJoinRequests === undefined ? {} : { onPress: onManageJoinRequests })}
+          />
         ) : null}
         {viewer.canDeleteGroup ? (
-          <RailButton destructive label="Delete" onPress={onDelete} />
+          <RailButton
+            destructive
+            label="Delete"
+            {...(onDelete === undefined ? {} : { onPress: onDelete })}
+          />
         ) : null}
       </View>
     </View>

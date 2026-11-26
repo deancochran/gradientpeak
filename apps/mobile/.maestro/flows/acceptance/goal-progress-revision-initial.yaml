@@ -1,0 +1,53 @@
+appId: com.deancochran.gradientpeak.dev
+name: Capture the canonical pre-publication Goal Detail response
+---
+- openLink: "gradientpeak-dev://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8083"
+- extendedWaitUntil:
+    visible:
+      id: sign-in-screen
+    timeout: 90000
+- assertVisible: ${MAESTRO_ACCEPTANCE_RUNTIME_SENTINEL}
+- tapOn:
+    id: email-input
+- eraseText: 200
+- inputText: ${MAESTRO_ACCEPTANCE_EMAIL}
+- tapOn:
+    id: password-input
+- eraseText: 200
+- inputText: ${MAESTRO_ACCEPTANCE_PASSWORD}
+- hideKeyboard
+- tapOn:
+    id: sign-in-button
+- extendedWaitUntil:
+    visible:
+      id: plan-selected-goal
+    timeout: 30000
+- tapOn:
+    id: tab-button-plan
+- tapOn:
+    id: plan-view-calendar
+- extendedWaitUntil:
+    visible:
+      id: calendar-screen-ready
+    timeout: 30000
+- tapOn:
+    id: calendar-reset-today-entry
+- repeat:
+    times: ${MAESTRO_ACCEPTANCE_TARGET_MONTH_DELTA}
+    commands:
+      - tapOn:
+          id: calendar-next-month
+- tapOn:
+    id: calendar-day-select-${MAESTRO_ACCEPTANCE_TARGET_DATE}
+- scrollUntilVisible:
+    element:
+      id: planning-ledger-milestone-${MAESTRO_ACCEPTANCE_GOAL_ID}
+    direction: DOWN
+- tapOn:
+    id: planning-ledger-milestone-${MAESTRO_ACCEPTANCE_GOAL_ID}
+- extendedWaitUntil:
+    visible:
+      id: goal-detail-progress
+    timeout: 30000
+- assertVisible: ${MAESTRO_ACCEPTANCE_GOAL_TITLE}
+- takeScreenshot: goal-progress-revision-initial
