@@ -76,6 +76,8 @@ jobs:
         run: pnpm knip
 
       - name: Tests
+        env:
+          TURBO_CONCURRENCY: "1"
         run: pnpm test
 
       - name: Production build

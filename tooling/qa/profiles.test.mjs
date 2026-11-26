@@ -125,6 +125,12 @@ test("CI owns full validation while Git hooks stay lightweight", async () => {
   assert.match(workflow, /run: pnpm test/);
   const staticJob = workflow.split("  static:")[1]?.split("  runtime-db:")[0];
   assert.ok(staticJob);
+  const staticTestsStep = /- name: Tests\s+env:\s+TURBO_CONCURRENCY: "1"\s+run: pnpm test[ \t]*\n/;
+  assert.match(staticJob, staticTestsStep);
+  assert.doesNotMatch(
+    staticJob.replace("run: pnpm test", "run: pnpm test:workspaces"),
+    staticTestsStep,
+  );
   assert.doesNotMatch(staticJob, /self-host:|test:live-db|db:verify/);
   const database = workflow.split("  runtime-db:")[1]?.split("  runtime-web:")[0];
   assert.ok(database);
