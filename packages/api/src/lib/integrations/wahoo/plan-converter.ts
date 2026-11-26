@@ -1,30 +1,39 @@
 /**
  * Wahoo Plan Converter
- * Converts GradientPeak ActivityPlanStructureV2 to Wahoo's plan.json format
+ * Converts compiled GradientPeak activity-plan semantics to Wahoo's plan.json format
  */
 
 import type {
-  ActivityPlanStructureV2,
+  ActivityPlanDuration,
+  ActivityPlanProviderProjection,
+  ActivityPlanStructure,
+  ActivityPlanTarget,
   ActivityTargetCategory,
-  DurationV2,
-  IntensityTargetV2,
-  IntervalStepV2,
-  IntervalV2,
+  CompiledActivityStepOccurrence,
+  ProviderProjectionDisposition,
+  ProviderProjectionSemantic,
 } from "@repo/core";
-import { isTargetTypePermittedForActivity, sortTargetsByActivityPreference } from "@repo/core";
-import type { ActivityType } from "./activity-type-utils";
+import {
+  activityPlanSpeedKphToMetersPerSecond,
+  compileActivityPlan,
+  getActivityPlanProviderProjection,
+  isTargetTypePermittedForActivity,
+  selectActivityPlanProviderTarget,
+} from "@repo/core";
+import { z } from "zod";
+import type { WahooActivityType } from "./activity-type-utils";
 import { toWahooTypes } from "./activity-type-utils";
 
 export interface WahooPlanJson {
   header: {
     name: string;
     version: string;
-    description?: string;
+    description?: string | undefined;
     workout_type_family: number; // 0 = bike, 1 = run
     workout_type_location: number; // 0 = indoor, 1 = outdoor
-    ftp?: number;
-    max_hr?: number;
-    threshold_hr?: number;
+    ftp?: number | undefined;
+    max_hr?: number | undefined;
+    threshold_hr?: number | undefined;
   };
   intervals: WahooInterval[];
 }
@@ -34,15 +43,15 @@ export interface WahooInterval {
   exit_trigger_type: "time" | "distance" | "repeat";
   exit_trigger_value: number;
   intensity_type: "wu" | "active" | "tempo" | "lt" | "cd" | "recover" | "rest";
-  targets?: WahooTarget[];
-  intervals?: WahooInterval[]; // For repeats
+  targets?: WahooTarget[] | undefined;
+  intervals?: WahooInterval[] | undefined; // For repeats
 }
 
 export interface WahooTarget {
   type: "ftp" | "watts" | "hr" | "threshold_hr" | "max_hr" | "speed" | "rpm";
-  low?: number;
-  high?: number;
-  value?: number;
+  low?: number | undefined;
+  high?: number | undefined;
+  value?: number | undefined;
 }
 
 export type WahooPlanContractValidation = {
@@ -50,8 +59,85 @@ export type WahooPlanContractValidation = {
   valid: boolean;
 };
 
+export type WahooCompatibilityIssueCode =
+  | "invalid_plan"
+  | "missing_metric"
+  | "unsupported_target"
+  | "unsupported_sport"
+  | "unsupported_segment";
+
+export type WahooCompatibilityIssue = {
+  code: WahooCompatibilityIssueCode;
+  disposition?: ProviderProjectionDisposition;
+  message: string;
+  path?: (string | number)[];
+  reasonCode?: string;
+  semantic?: ProviderProjectionSemantic;
+  targetProjection?: "retained" | "dropped";
+  targetType?: ActivityPlanTarget["type"];
+};
+
+export type WahooCompatibilityResult = {
+  compatible: boolean;
+  disposition: ProviderProjectionDisposition;
+  findings: WahooCompatibilityIssue[];
+  issues: WahooCompatibilityIssue[];
+  projection: ActivityPlanProviderProjection;
+  warnings: string[];
+};
+
+export type WahooProjectionSnapshot = {
+  /** Canonical V5 occurrence identity is retained alongside provider intervals for replay/audit. */
+  occurrenceIds: string[];
+  plan: WahooPlanJson;
+};
+
+const wahooTargetSchema: z.ZodType<WahooTarget> = z
+  .object({
+    type: z.enum(["ftp", "watts", "hr", "threshold_hr", "max_hr", "speed", "rpm"]),
+    low: z.number().finite().optional(),
+    high: z.number().finite().optional(),
+    value: z.number().finite().optional(),
+  })
+  .strict();
+
+const wahooIntervalSchema: z.ZodType<WahooInterval> = z.lazy(() =>
+  z
+    .object({
+      name: z.string(),
+      exit_trigger_type: z.enum(["time", "distance", "repeat"]),
+      exit_trigger_value: z.number().finite(),
+      intensity_type: z.enum(["wu", "active", "tempo", "lt", "cd", "recover", "rest"]),
+      targets: z.array(wahooTargetSchema).optional(),
+      intervals: z.array(wahooIntervalSchema).optional(),
+    })
+    .strict(),
+);
+
+const wahooPlanJsonSchema: z.ZodType<WahooPlanJson> = z
+  .object({
+    header: z
+      .object({
+        name: z.string(),
+        version: z.string(),
+        description: z.string().optional(),
+        workout_type_family: z.number().int(),
+        workout_type_location: z.number().int(),
+        ftp: z.number().finite().positive().optional(),
+        max_hr: z.number().finite().positive().optional(),
+        threshold_hr: z.number().finite().positive().optional(),
+      })
+      .strict(),
+    intervals: z.array(wahooIntervalSchema),
+  })
+  .strict();
+
+export const wahooProjectionSnapshotSchema: z.ZodType<WahooProjectionSnapshot> = z
+  .object({ occurrenceIds: z.array(z.string().min(1)), plan: wahooPlanJsonSchema })
+  .strict();
+
 export interface ConvertOptions {
-  activityType: ActivityType;
+  activityType: WahooActivityType;
   hasRoute?: boolean;
   name: string;
   description?: string;
@@ -60,100 +146,95 @@ export interface ConvertOptions {
   threshold_hr?: number;
 }
 
-/**
- * Calculate total workout duration in seconds from structure
- */
-export function calculateWorkoutDuration(structure: ActivityPlanStructureV2): number {
-  if (!structure.intervals || structure.intervals.length === 0) {
-    return 0;
+export class WahooPlanConversionError extends Error {
+  constructor(
+    readonly code: "unsupported_duration" | "unsupported_segment",
+    message: string,
+  ) {
+    super(message);
+    this.name = "WahooPlanConversionError";
   }
-
-  let totalSeconds = 0;
-
-  for (const interval of structure.intervals) {
-    const intervalDuration = calculateIntervalDuration(interval);
-    totalSeconds += intervalDuration * interval.repetitions;
-  }
-
-  return totalSeconds;
 }
 
-/**
- * Calculate duration of a single interval in seconds
+function compileWahooOccurrences(
+  structure: ActivityPlanStructure,
+): CompiledActivityStepOccurrence[] {
+  return compileActivityPlan(structure).occurrences.map((occurrence) => {
+    if (occurrence.role !== "activity") {
+      throw new WahooPlanConversionError(
+        "unsupported_segment",
+        "Wahoo cannot preserve rest boundaries.",
+      );
+    }
+    convertDuration(occurrence.duration);
+    return occurrence;
+  });
+}
+
+/** Exact authored seconds, or null when any distance completion makes the total unknown.
+ * A speed target is not an exact completion time. Unsupported completion types throw.
  */
-function calculateIntervalDuration(interval: IntervalV2): number {
+export function calculateWorkoutDuration(structure: ActivityPlanStructure): number | null {
   let seconds = 0;
-
-  for (const step of interval.steps) {
-    seconds += parseDuration(step.duration);
+  let unknown = false;
+  for (const occurrence of compileWahooOccurrences(structure)) {
+    if (occurrence.targets.length === 0) {
+      throw new WahooPlanConversionError(
+        "unsupported_segment",
+        "Wahoo cannot calculate an activity-plan duration for a step without a target.",
+      );
+    }
+    if (occurrence.duration.type === "time") seconds += occurrence.duration.seconds;
+    else unknown = true;
   }
-
-  return seconds;
-}
-
-/**
- * Parse duration to seconds
- */
-function parseDuration(duration: DurationV2): number {
-  if (duration.type === "time") {
-    return duration.seconds;
-  } else if (duration.type === "distance") {
-    // For distance-based steps, estimate ~4 seconds per 100m (reasonable pace)
-    // This is a rough estimate - ideally we'd use pace/speed from user profile
-    return Math.ceil((duration.meters / 100) * 4);
-  } else if (duration.type === "untilFinished") {
-    // Open-ended steps, estimate 60 seconds as fallback
-    return 60;
-  } else if (duration.type === "repetitions") {
-    // Repetitions should be expanded before reaching here, but estimate 10 seconds per rep
-    return duration.count * 10;
-  }
-  return 0;
+  return unknown ? null : seconds;
 }
 
 /**
  * Convert GradientPeak activity plan to Wahoo plan.json format
  */
 export function convertToWahooPlan(
-  structure: ActivityPlanStructureV2,
+  structure: ActivityPlanStructure,
   options: ConvertOptions,
 ): WahooPlanJson {
   const activityTypeMapping = toWahooTypes(options.activityType, {
-    hasRoute: options.hasRoute,
+    ...(options.hasRoute !== undefined ? { hasRoute: options.hasRoute } : {}),
   });
 
   if (!activityTypeMapping) {
     throw new Error(
-      `Activity type '${options.activityType}' is not supported by Wahoo. Only cycling and running activities can be synced.`,
+      `Activity category '${options.activityType}' is not supported by Wahoo. Only cycling and running activities can be synced.`,
     );
   }
 
   const { workout_type_family, workout_type_location } = activityTypeMapping;
+  const activityOccurrences = compileWahooOccurrences(structure);
   const requiresFtpHeader = Boolean(
-    structure.intervals?.some((interval) =>
-      interval.steps.some((step) =>
-        step.targets?.some(
-          (target) =>
-            options.activityType !== "run" && (target.type === "%FTP" || target.type === "RPE"),
-        ),
-      ),
-    ),
+    options.activityType !== "run" &&
+      activityOccurrences.some((occurrence) => {
+        const selectedTarget = selectWahooTarget(occurrence.targets, options);
+        return selectedTarget?.type === "%FTP";
+      }),
   );
   const requiresMaxHrHeader = Boolean(
-    options.max_hr &&
-      structure.intervals?.some((interval) =>
-        interval.steps.some((step) =>
-          step.targets?.some(
-            (target) =>
-              target.type === "%MaxHR" ||
-              (options.activityType === "run" &&
-                target.type === "%ThresholdHR" &&
-                !options.threshold_hr) ||
-              (options.activityType === "run" && target.type === "RPE"),
-          ),
-        ),
-      ),
+    activityOccurrences.some(
+      (occurrence) => selectWahooTarget(occurrence.targets, options)?.type === "%MaxHR",
+    ),
   );
+  const requiresThresholdHrHeader = Boolean(
+    activityOccurrences.some(
+      (occurrence) => selectWahooTarget(occurrence.targets, options)?.type === "%ThresholdHR",
+    ),
+  );
+  const hasValidFtp = isFinitePositive(options.ftp);
+  const hasValidMaxHr = isFinitePositive(options.max_hr);
+  const hasValidThresholdHr = isFinitePositive(options.threshold_hr);
+
+  if (requiresFtpHeader && !hasValidFtp) {
+    throw new Error(
+      "A positive FTP is required to sync a Wahoo workout resource with FTP-relative targets.",
+    );
+  }
 
   const plan: WahooPlanJson = {
     header: {
@@ -166,160 +247,154 @@ export function convertToWahooPlan(
     intervals: [],
   };
 
-  // Add FTP and threshold HR if available (needed for percentage-based targets)
-  if (options.ftp || requiresFtpHeader) {
-    plan.header.ftp = options.ftp ?? 1;
+  // Include only anchors consumed by the selected provider-visible targets.
+  if (hasValidFtp && requiresFtpHeader && options.ftp !== undefined) {
+    plan.header = { ...plan.header, ftp: options.ftp };
   }
-  if (options.max_hr && requiresMaxHrHeader) {
-    plan.header.max_hr = options.max_hr;
+  if (hasValidMaxHr && requiresMaxHrHeader && options.max_hr !== undefined) {
+    plan.header = { ...plan.header, max_hr: options.max_hr };
   }
-  if (options.threshold_hr) {
-    plan.header.threshold_hr = options.threshold_hr;
+  if (hasValidThresholdHr && requiresThresholdHrHeader && options.threshold_hr !== undefined) {
+    plan.header = { ...plan.header, threshold_hr: options.threshold_hr };
   }
 
-  // Convert V2 intervals to Wahoo intervals
-  if (structure.intervals && structure.intervals.length > 0) {
-    const intervals = convertIntervals(structure.intervals, options);
-    plan.intervals = intervals;
-  }
+  const stepNames = new Map(
+    structure.items.flatMap((item) =>
+      item.type === "step"
+        ? [[item.id, item.name] as const]
+        : item.steps.map((step) => [step.id, step.name] as const),
+    ),
+  );
+  plan.intervals = activityOccurrences.map((occurrence) =>
+    convertOccurrence(occurrence, stepNames.get(occurrence.stepId) ?? "Step", options),
+  );
 
   assertValidWahooPlan(plan);
 
   return plan;
 }
 
-/**
- * Convert V2 intervals to Wahoo intervals
- */
-function convertIntervals(intervals: IntervalV2[], options: ConvertOptions): WahooInterval[] {
-  const wahooIntervals: WahooInterval[] = [];
-
-  for (const interval of intervals) {
-    const repeatCount = interval.repetitions;
-
-    if (repeatCount > 1) {
-      // This is a repetition - create a Wahoo repeat interval
-      const repeatInterval: WahooInterval = {
-        name: interval.name,
-        exit_trigger_type: "repeat",
-        exit_trigger_value: repeatCount - 1, // Wahoo repeats AFTER first execution
-        intensity_type: "active",
-        intervals: [],
-      };
-
-      // Add all steps in the interval as the pattern
-      for (const step of interval.steps) {
-        repeatInterval.intervals?.push(convertStep(step, options));
-      }
-
-      wahooIntervals.push(repeatInterval);
-    } else {
-      // Single repetition - add steps directly
-      for (const step of interval.steps) {
-        wahooIntervals.push(convertStep(step, options));
-      }
-    }
-  }
-
-  return wahooIntervals;
-}
-
-// Re-export from activity-type-utils for backwards compatibility
-export { isWahooSupported as isActivityTypeSupportedByWahoo } from "./activity-type-utils";
-
-/**
- * Convert a single V2 step to Wahoo interval
- */
-function convertStep(step: IntervalStepV2, options: ConvertOptions): WahooInterval {
+/** Converts one compiled occurrence exactly once; repeats are already expanded by Core. */
+function convertOccurrence(
+  occurrence: CompiledActivityStepOccurrence,
+  name: string,
+  options: ConvertOptions,
+): WahooInterval {
+  const { type, value } = convertDuration(occurrence.duration);
   const interval: WahooInterval = {
-    name: step.name || "Step",
-    exit_trigger_type: "time",
-    exit_trigger_value: 300, // Default 5 minutes
+    name,
+    exit_trigger_type: type,
+    exit_trigger_value: value,
     intensity_type: "active",
   };
 
-  // Convert duration
-  const { type, value } = convertDuration(step.duration);
-  interval.exit_trigger_type = type;
-  interval.exit_trigger_value = value;
-
-  // Convert intensity type (estimate from targets)
-  const target = selectWahooTarget(step.targets ?? [], options);
-
-  if (target) {
-    interval.intensity_type = inferIntensityType(target);
+  const targets = occurrence.targets;
+  if (targets.length === 0) {
+    throw new Error(
+      `Step "${interval.name}" cannot be synced to Wahoo without a target. Wahoo's plan contract requires every step to contain a target.`,
+    );
   }
 
-  // Convert targets (Wahoo only shows first target on device)
-  interval.targets = [
-    target ? convertTarget(target, options) : getDefaultTarget(options.activityType),
-  ];
+  const target = selectWahooTarget(targets, options);
+  const incompatibilities = targets
+    .map((candidate) => {
+      const incompatibility = getTargetIncompatibility(candidate, options);
+      return incompatibility &&
+        (incompatibility.code === "unsupported_target" || candidate === target)
+        ? incompatibility.message
+        : null;
+    })
+    .filter((reason): reason is string => reason !== null);
+  if (incompatibilities.length > 0) {
+    throw new Error(
+      `Step "${interval.name}" cannot be synced to Wahoo: ${incompatibilities.join("; ")}`,
+    );
+  }
+
+  // Wahoo displays one target. Preserve the existing activity preference when every
+  // explicit target is representable, rather than hiding an unresolved secondary target.
+  if (!target) {
+    throw new Error(`Step "${interval.name}" has no Wahoo-compatible target.`);
+  }
+
+  interval.intensity_type = inferIntensityType(target);
+  interval.targets = [convertTarget(target, options)];
 
   return interval;
 }
 
-function getDefaultTarget(activityType: ActivityType): WahooTarget {
-  if (activityType === "run") {
-    return { type: "speed", low: 0.5, high: 8 };
-  }
-
-  return { type: "watts", low: 1, high: 2_000 };
+function isFinitePositive(value: number | null | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
-function canConvertTarget(target: IntensityTargetV2, options: ConvertOptions): boolean {
+function getTargetIncompatibility(
+  target: ActivityPlanTarget,
+  options: ConvertOptions,
+): WahooCompatibilityIssue | null {
   if (
     !isTargetTypePermittedForActivity({
       activityCategory: options.activityType as ActivityTargetCategory,
       targetType: target.type,
     })
   ) {
-    return false;
+    return {
+      code: "unsupported_target",
+      message: `${target.type} targets are not supported for Wahoo activity category '${options.activityType}'`,
+    };
   }
 
-  if (target.type === "%ThresholdHR" && !options.threshold_hr) {
-    return options.activityType === "run" && Boolean(options.max_hr);
+  switch (target.type) {
+    case "RPE":
+      return {
+        code: "unsupported_target",
+        message:
+          "RPE targets are not supported by Wahoo; add a provider-supported physiological target",
+      };
+    case "%FTP":
+      return isFinitePositive(options.ftp)
+        ? null
+        : {
+            code: "missing_metric",
+            message: "%FTP targets require a finite positive FTP in the athlete profile",
+          };
+    case "%ThresholdHR":
+      return isFinitePositive(options.threshold_hr)
+        ? null
+        : {
+            code: "missing_metric",
+            message:
+              "%ThresholdHR targets require a finite positive threshold heart rate in the athlete profile",
+          };
+    case "%MaxHR":
+      return isFinitePositive(options.max_hr)
+        ? null
+        : {
+            code: "missing_metric",
+            message:
+              "%MaxHR targets require a finite positive maximum heart rate in the athlete profile",
+          };
+    default:
+      return null;
   }
-  if (target.type === "%MaxHR" && !options.max_hr) return false;
-
-  if (options.activityType === "run" && (target.type === "%FTP" || target.type === "RPE")) {
-    return Boolean(options.max_hr);
-  }
-
-  return true;
-}
-
-function getTargetPriority(target: IntensityTargetV2, options: ConvertOptions): number {
-  if (options.activityType === "run") {
-    if (target.type === "speed") return 0;
-    if (target.type === "bpm") return 1;
-    if (target.type === "%ThresholdHR" || target.type === "%MaxHR") return 2;
-    if (target.type === "%FTP" || target.type === "RPE") return 3;
-    if (target.type === "watts") return 4;
-    if (target.type === "cadence") return 4;
-  }
-
-  return 3;
 }
 
 function selectWahooTarget(
-  targets: IntensityTargetV2[],
+  targets: readonly ActivityPlanTarget[],
   options: ConvertOptions,
-): IntensityTargetV2 | null {
-  const supportedTargets = targets.filter((target) => canConvertTarget(target, options));
-  if (supportedTargets.length === 0) return null;
-
-  return sortTargetsByActivityPreference({
-    activityCategory: options.activityType as ActivityTargetCategory,
-    targets: supportedTargets,
-  }).sort(
-    (left, right) => getTargetPriority(left, options) - getTargetPriority(right, options),
-  )[0]!;
+): ActivityPlanTarget | null {
+  return (
+    selectActivityPlanProviderTarget({
+      activityCategory: options.activityType as ActivityTargetCategory,
+      provider: "wahoo",
+      targets,
+    })?.target ?? null
+  );
 }
 
 /**
- * Convert GradientPeak V2 duration to Wahoo format
+ * Preserve supported completion units; never invent a clock-time substitute.
  */
-function convertDuration(duration: DurationV2): {
+function convertDuration(duration: ActivityPlanDuration): {
   type: "time" | "distance";
   value: number;
 } {
@@ -333,32 +408,34 @@ function convertDuration(duration: DurationV2): {
       return { type: "distance", value: duration.meters };
 
     case "repetitions":
-      // Wahoo doesn't support reps as duration, use time estimate
-      return { type: "time", value: duration.count * 30 }; // 30 seconds per rep
-
     case "untilFinished":
-      return { type: "time", value: 300 }; // Default 5 minutes
-
+      throw new WahooPlanConversionError(
+        "unsupported_duration",
+        `${duration.type} completion cannot be converted to Wahoo without changing activity semantics.`,
+      );
     default:
-      return { type: "time", value: 300 };
+      throw new WahooPlanConversionError(
+        "unsupported_duration",
+        "Unsupported Wahoo completion type.",
+      );
   }
 }
 
 /**
  * Convert GradientPeak V2 intensity target to Wahoo target
  */
-function convertTarget(target: IntensityTargetV2, options: ConvertOptions): WahooTarget {
+function convertTarget(target: ActivityPlanTarget, options: ConvertOptions): WahooTarget {
+  const incompatibility = getTargetIncompatibility(target, options);
+  if (incompatibility) {
+    throw new Error(`Cannot convert ${target.type} target to Wahoo: ${incompatibility.message}`);
+  }
+
   switch (target.type) {
     case "%FTP": {
-      if (options.activityType === "run" && options.max_hr) {
-        return relativeMaxHrTarget(target.intensity / 100);
-      }
-
-      // Convert percentage to decimal (e.g., 85% -> 0.85)
       const value = target.intensity / 100;
       return {
         type: "ftp",
-        low: value * 0.95, // 5% tolerance
+        low: value * 0.95,
         high: value * 1.05,
       };
     }
@@ -380,12 +457,7 @@ function convertTarget(target: IntensityTargetV2, options: ConvertOptions): Waho
     }
 
     case "%ThresholdHR": {
-      // Convert percentage to decimal
       const value = target.intensity / 100;
-      if (options.activityType === "run" && !options.threshold_hr && options.max_hr) {
-        return relativeMaxHrTarget(value);
-      }
-
       return {
         type: "threshold_hr",
         low: value * 0.95,
@@ -398,12 +470,11 @@ function convertTarget(target: IntensityTargetV2, options: ConvertOptions): Waho
     }
 
     case "speed": {
-      // Convert km/h to m/s for Wahoo
-      const metersPerSecond = target.intensity / 3.6;
+      const speedMetersPerSecond = activityPlanSpeedKphToMetersPerSecond(target.intensity);
       return {
         type: "speed",
-        low: metersPerSecond * 0.95,
-        high: metersPerSecond * 1.05,
+        low: speedMetersPerSecond * 0.95,
+        high: speedMetersPerSecond * 1.05,
       };
     }
 
@@ -415,27 +486,12 @@ function convertTarget(target: IntensityTargetV2, options: ConvertOptions): Waho
       };
     }
 
-    case "RPE": {
-      // Wahoo doesn't support RPE; estimate as a relative intensity target.
-      const relativeIntensity = (target.intensity / 10) * 0.5 + 0.5;
-      if (options.activityType === "run" && options.max_hr) {
-        return relativeMaxHrTarget(relativeIntensity);
-      }
-
-      return {
-        type: "ftp",
-        low: relativeIntensity * 0.95,
-        high: relativeIntensity * 1.05,
-      };
-    }
-
-    default:
-      // Fallback to moderate intensity
-      return {
-        type: "ftp",
-        low: 0.65,
-        high: 0.75,
-      };
+    case "RPE":
+      throw new Error("Cannot convert RPE target to Wahoo: RPE targets are not supported by Wahoo");
+    case "rest":
+      throw new Error(
+        "Cannot convert rest target to Wahoo: rest targets are not supported by Wahoo",
+      );
   }
 }
 
@@ -450,7 +506,7 @@ function relativeMaxHrTarget(value: number): WahooTarget {
 /**
  * Infer Wahoo intensity type from target intensity
  */
-function inferIntensityType(target: IntensityTargetV2): WahooInterval["intensity_type"] {
+function inferIntensityType(target: ActivityPlanTarget): WahooInterval["intensity_type"] {
   switch (target.type) {
     case "%FTP":
     case "watts": {
@@ -477,61 +533,108 @@ function inferIntensityType(target: IntensityTargetV2): WahooInterval["intensity
 
 /**
  * Validate that the plan structure is compatible with Wahoo
- * Note: This assumes activity type has already been validated with isActivityTypeSupportedByWahoo
+ * Note: This assumes the Wahoo activity type has already been validated with isWahooSupported
  */
-export function validateWahooCompatibility(structure: ActivityPlanStructureV2): {
-  compatible: boolean;
-  warnings: string[];
-} {
-  const warnings: string[] = [];
-
-  // Check if structure is empty (no intervals)
-  if (!structure.intervals || structure.intervals.length === 0) {
-    warnings.push("Workout has no intervals. Wahoo requires at least one interval.");
-    return { compatible: false, warnings };
-  }
-
-  // Calculate total steps (expand intervals × repetitions)
-  let totalSteps = 0;
-  for (const interval of structure.intervals) {
-    totalSteps += interval.steps.length * interval.repetitions;
-  }
-
-  if (totalSteps > 100) {
-    warnings.push(
-      `Workout has ${totalSteps} steps. Wahoo may have issues with very long workouts.`,
-    );
-  }
-
-  // Check for features Wahoo doesn't support well
-  for (const interval of structure.intervals) {
-    for (const step of interval.steps) {
-      // Multiple targets
-      if (step.targets && step.targets.length > 1) {
-        warnings.push(
-          `Step "${step.name}" has multiple targets. Wahoo devices only show the first target.`,
-        );
-      }
-
-      // RPE targets
-      if (step.targets?.some((t: IntensityTargetV2) => t.type === "RPE")) {
-        warnings.push(
-          `Step "${step.name}" uses RPE targets. These will be converted to approximate FTP percentages.`,
-        );
-      }
-
-      // Repetition-based duration
-      if (step.duration.type === "repetitions") {
-        warnings.push(
-          `Step "${step.name}" uses repetitions as duration. This will be converted to time estimate.`,
-        );
-      }
+export function validateWahooCompatibility(
+  structure: ActivityPlanStructure,
+  options: ConvertOptions,
+): WahooCompatibilityResult {
+  const projection = getActivityPlanProviderProjection({
+    anchors: {
+      ...(options.ftp !== undefined ? { ftpWatts: options.ftp } : {}),
+      ...(options.max_hr !== undefined ? { maxHeartRateBpm: options.max_hr } : {}),
+      ...(options.threshold_hr !== undefined
+        ? { thresholdHeartRateBpm: options.threshold_hr }
+        : {}),
+    },
+    provider: "wahoo",
+    structure,
+  });
+  const findings: WahooCompatibilityIssue[] = projection.findings.map((finding) => ({
+    code:
+      finding.reasonCode === "missing_target_anchor"
+        ? "missing_metric"
+        : finding.reasonCode === "unsupported_sport"
+          ? "unsupported_sport"
+          : finding.reasonCode === "unsupported_boundary"
+            ? "unsupported_segment"
+            : finding.reasonCode === "unsupported_target" ||
+                finding.reasonCode === "unsupported_duration"
+              ? "unsupported_target"
+              : "invalid_plan",
+    disposition: finding.disposition,
+    message: finding.message,
+    path: finding.path,
+    reasonCode: finding.reasonCode,
+    semantic: finding.semantic,
+    ...(finding.targetProjection !== undefined
+      ? { targetProjection: finding.targetProjection }
+      : {}),
+    ...(finding.targetType !== undefined ? { targetType: finding.targetType } : {}),
+  }));
+  const compiled = compileActivityPlan(structure);
+  const stepPaths = new Map(
+    structure.items.flatMap((item, itemIndex) =>
+      item.type === "step"
+        ? [[item.id, ["structure", "items", itemIndex] as (string | number)[]] as const]
+        : item.steps.map(
+            (step, stepIndex) =>
+              [
+                step.id,
+                ["structure", "items", itemIndex, "steps", stepIndex] as (string | number)[],
+              ] as const,
+          ),
+    ),
+  );
+  for (const occurrence of compiled.occurrences) {
+    if (occurrence.targets.length === 0) {
+      findings.push({
+        code: "unsupported_target",
+        disposition: "unsupported",
+        message: "Wahoo requires every exported step to contain a target.",
+        path: stepPaths.get(occurrence.stepId) ?? ["structure", "items"],
+        reasonCode: "untargeted_step",
+        semantic: "provider",
+      });
     }
   }
+  if (compiled.occurrences.length > 100) {
+    findings.push({
+      code: "invalid_plan",
+      disposition: "unsupported",
+      message: `Activity plan has ${compiled.occurrences.length} compiled occurrences; Wahoo supports at most 100.`,
+      path: ["structure", "items"],
+      reasonCode: "provider_occurrence_limit_exceeded",
+      semantic: "provider",
+    });
+  }
+  const issues = findings.filter((finding) => finding.disposition === "unsupported");
+  const warnings = findings
+    .filter((finding) => finding.disposition === "degraded")
+    .map((finding) => finding.message);
+  const disposition: ProviderProjectionDisposition =
+    issues.length > 0 ? "unsupported" : warnings.length > 0 ? "degraded" : "compatible";
 
   return {
-    compatible: warnings.length === 0 || totalSteps <= 100,
+    compatible: issues.length === 0,
+    disposition,
+    findings,
+    issues,
+    projection,
     warnings,
+  };
+}
+
+/** Canonical hash input for enqueue, worker race checks, and persisted provider metadata. */
+export function getWahooProjectionSnapshot(
+  structure: ActivityPlanStructure,
+  options: ConvertOptions,
+): WahooProjectionSnapshot {
+  return {
+    occurrenceIds: compileActivityPlan(structure).occurrences.map(
+      (occurrence) => occurrence.occurrenceId,
+    ),
+    plan: convertToWahooPlan(structure, options),
   };
 }
 

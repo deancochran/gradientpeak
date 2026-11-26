@@ -13,26 +13,37 @@
  */
 
 import {
-  createRecordingMetricsAccumulator,
-  GLOBAL_DEFAULTS,
-  type PerformanceMetrics,
+  type AthletePerformanceTargetFacts,
+  athletePerformanceTargetFactsSchema,
+  createProvisionalRecordingMetricsAccumulator,
+  DEFAULT_HEART_RATE_MAX_GAP_SECONDS,
+  getAvailablePerformanceTargetValue,
+  getHrZoneUpperBoundsFromLthr,
+  getPowerZoneUpperBoundsFromFtp,
+  type ProvisionalRecordingMetricsAccumulator,
+  type ProvisionalRecordingMetricsSnapshot,
   type RecordingActivityCategory,
-  type RecordingMetricsAccumulator,
   type RecordingMetricsConfig,
-  type RecordingMetricsSnapshot,
 } from "@repo/core";
+import {
+  selectAerobicDecouplingValue,
+  selectCyclingNormalizedPowerWatts,
+  selectEfficiencyFactorValue,
+} from "@repo/core/calculations";
 import { EventEmitter } from "expo";
-import { MOVEMENT_THRESHOLDS, RECORDING_CONFIG } from "./config";
-import { DataBuffer, type LatLngBufferedReading } from "./DataBuffer";
+import { DEFAULT_RECORDING_WEIGHT_KG, MOVEMENT_THRESHOLDS, RECORDING_CONFIG } from "./config";
+import { DataBuffer } from "./DataBuffer";
+import { createRecordingStreamJournalAdapter } from "./recordingEvidenceJournal";
+import { canonicalRecordingEvidenceUris } from "./recordingEvidencePaths";
 import {
   convertToSimplifiedMetrics,
   getSensorModel,
   type SimplifiedMetrics,
 } from "./SimplifiedMetrics";
-import { StreamBuffer } from "./StreamBuffer";
+import { type DurableStreamReplay, StreamBuffer } from "./StreamBuffer";
 import type {
+  CurrentReadings,
   LiveMetricsState,
-  LocationReading,
   ProfileMetrics,
   RecorderProfileRef,
   SensorReading,
@@ -41,24 +52,27 @@ import type {
 } from "./types";
 
 // Define event types for LiveMetricsManager
+type EventArguments = Parameters<typeof console.log>;
+
 interface LiveMetricsEvents {
   statsUpdate: (data: { stats: SessionStats; timestamp: number }) => void;
-  sensorUpdate: (data: { readings: any; timestamp: number }) => void;
+  sensorUpdate: (data: { readings: CurrentReadings; timestamp: number }) => void;
   metricsUpdated: (data: { profile: ProfileMetrics; zones: ZoneConfig }) => void;
   persistenceError: (error: unknown) => void;
-  [key: string]: (...args: any[]) => void; // Index signature for EventsMap
+  [key: string]: (...args: EventArguments) => void;
 }
 
 export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   private profile: ProfileMetrics;
   private zones: ZoneConfig;
   private metrics: LiveMetricsState;
-  private recordingMetricsAccumulator: RecordingMetricsAccumulator;
-  private recordingMetricsSnapshot: RecordingMetricsSnapshot;
+  private provisionalMetricsAccumulator: ProvisionalRecordingMetricsAccumulator;
+  private provisionalMetricsSnapshot: ProvisionalRecordingMetricsSnapshot;
+  private stagedPerformanceTargets: AthletePerformanceTargetFacts | null = null;
+  private activePerformanceTargets: AthletePerformanceTargetFacts | null = null;
+  private recordingSessionId: string | null = null;
   private isActive = false;
-  private gpsRecordingEnabled = true;
-  private gpsSpeedFallbackEnabled = true;
-  private activityCategory?: RecordingActivityCategory; // Track activity type for calorie calculation
+  private activityCategory?: RecordingActivityCategory; // Track activity category for calorie calculation
 
   // === Core Components ===
   private buffer: DataBuffer; // 60-second rolling window for calculations
@@ -80,7 +94,6 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   private startTime?: number;
   private pauseStartTime?: number;
   private totalPauseTime = 0;
-  private lastLocation?: LocationReading;
 
   // === Cumulative Metrics (not in buffer) ===
   private totalDistance = 0;
@@ -91,7 +104,6 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   private maxPower = 0;
   private maxHeartRate = 0;
   private maxCadence = 0;
-  private maxTemperature = 0;
 
   // === Virtual Distance (for indoor activities) ===
   private lastPowerUpdate?: number; // Timestamp of last power reading
@@ -101,16 +113,15 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   private zoneStartTime?: number;
   private currentHrZone?: number;
   private currentPowerZone?: number;
-  private hrZoneTimes = [0, 0, 0, 0, 0]; // 5 zones
-  private powerZoneTimes = [0, 0, 0, 0, 0, 0, 0]; // 7 zones
+  private hrZoneTimes: [number, number, number, number, number] = [0, 0, 0, 0, 0]; // 5 zones
+  private powerZoneTimes: [number, number, number, number, number, number, number] = [
+    0, 0, 0, 0, 0, 0, 0,
+  ]; // 7 zones
 
   constructor(
     profile: RecorderProfileRef,
     metrics?: {
-      ftp?: number;
-      thresholdHr?: number;
       weightKg?: number;
-      thresholdPaceSecondsPerKm?: number;
     },
   ) {
     super();
@@ -119,32 +130,31 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     this.profile = this.extractProfileMetrics(profile, metrics);
     this.zones = this.calculateZones(this.profile);
     this.metrics = this.createInitialMetrics();
-    this.recordingMetricsAccumulator = createRecordingMetricsAccumulator(
+    this.provisionalMetricsAccumulator = createProvisionalRecordingMetricsAccumulator(
       this.buildRecordingMetricsConfig(),
     );
-    this.recordingMetricsSnapshot = this.recordingMetricsAccumulator.getSnapshot();
+    this.provisionalMetricsSnapshot = this.provisionalMetricsAccumulator.getSnapshot();
     this.buffer = new DataBuffer(RECORDING_CONFIG.BUFFER_WINDOW_SECONDS);
     this.streamBuffer = new StreamBuffer();
 
     console.log("[LiveMetricsManager] Initialized with profile:", {
-      ftp: this.profile.ftp,
-      threshold_hr: this.profile.threshold_hr,
-      weight: this.profile.weight,
-      threshold_pace: this.profile.threshold_pace_seconds_per_km,
+      bikeThresholdWatts: this.profile.bikeThresholdWatts,
+      lthrBpm: this.profile.lthrBpm,
+      weightKg: this.profile.weightKg,
     });
   }
 
   // ==================== PUBLIC API ====================
 
-  public setGpsRecordingEnabled(enabled: boolean): void {
-    this.gpsRecordingEnabled = enabled;
-  }
-
-  public setGpsSpeedFallbackEnabled(enabled: boolean): void {
-    if (enabled && !this.gpsSpeedFallbackEnabled) {
-      this.buffer.clearMetric("speed");
-    }
-    this.gpsSpeedFallbackEnabled = enabled;
+  /** Must run before recording starts; foreground streams never discover a global active session. */
+  public bindEvidenceSession(sessionId: string, profileId: string): void {
+    if (this.isActive) throw new Error("Cannot rebind recording evidence while active");
+    this.recordingSessionId = sessionId;
+    this.streamBuffer = new StreamBuffer(
+      canonicalRecordingEvidenceUris(sessionId).streamDirectoryUri,
+      createRecordingStreamJournalAdapter({ sessionId, profileId }),
+    );
+    this.resetRecordingMetricsAccumulator();
   }
 
   public clearBufferedSensorMetric(metric: SensorReading["metric"]): void {
@@ -157,32 +167,48 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
    */
   public setActivityCategory(category: RecordingActivityCategory): void {
     this.activityCategory = category;
-    this.resetRecordingMetricsAccumulator();
+    this.applyPerformanceTargetProfile(
+      this.isActive ? this.activePerformanceTargets : this.stagedPerformanceTargets,
+    );
+    this.zones = this.calculateZones(this.profile);
+    if (!this.isActive) this.resetRecordingMetricsAccumulator();
     console.log("[LiveMetricsManager] Activity category set to:", category);
   }
 
   /**
    * Update performance metrics reactively
-   * Re-calculates zones and updates profile values used for IF/TSS.
+   * Updates non-target recording profile values.
    */
-  public updateMetrics(metrics: Partial<PerformanceMetrics>): void {
-    if (metrics.ftp !== undefined) this.profile.ftp = metrics.ftp;
-    if (metrics.thresholdHr !== undefined) this.profile.threshold_hr = metrics.thresholdHr;
-    if (metrics.weightKg !== undefined) this.profile.weight = metrics.weightKg;
-    if (metrics.thresholdPaceSecondsPerKm !== undefined)
-      this.profile.threshold_pace_seconds_per_km = metrics.thresholdPaceSecondsPerKm;
-
-    // Re-calculate zones
-    this.zones = this.calculateZones(this.profile);
+  public updateMetrics(metrics: { weightKg?: number }): void {
+    if (metrics.weightKg !== undefined) this.profile.weightKg = metrics.weightKg;
 
     this.emit("metricsUpdated", { profile: this.profile, zones: this.zones });
 
     console.log("[LiveMetricsManager] Metrics updated:", {
-      ftp: this.profile.ftp,
-      threshold_hr: this.profile.threshold_hr,
-      weight: this.profile.weight,
-      threshold_pace: this.profile.threshold_pace_seconds_per_km,
+      bikeThresholdWatts: this.profile.bikeThresholdWatts,
+      lthrBpm: this.profile.lthrBpm,
+      weightKg: this.profile.weightKg,
     });
+  }
+
+  /** Stages validated target facts while an active session retains its captured facts. */
+  public updatePerformanceTargets(snapshot: AthletePerformanceTargetFacts | null): void {
+    this.stagedPerformanceTargets =
+      snapshot === null ? null : athletePerformanceTargetFactsSchema.parse(snapshot);
+    this.applyPerformanceTargetProfile(
+      this.isActive ? this.activePerformanceTargets : this.stagedPerformanceTargets,
+    );
+    this.zones = this.calculateZones(this.profile);
+    if (this.zones.hrZones.length === 0) {
+      delete this.currentHrZone;
+      delete this.metrics.currentHeartRateZone;
+    }
+    if (this.zones.powerZones.length === 0) {
+      delete this.currentPowerZone;
+      delete this.metrics.currentPowerZone;
+    }
+    if (!this.isActive) this.resetRecordingMetricsAccumulator();
+    this.emit("metricsUpdated", { profile: this.profile, zones: this.zones });
   }
 
   /**
@@ -192,6 +218,12 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     // Initialize StreamBuffer storage directory
     await this.streamBuffer.initialize();
 
+    this.activePerformanceTargets =
+      this.stagedPerformanceTargets === null
+        ? null
+        : athletePerformanceTargetFactsSchema.parse(this.stagedPerformanceTargets);
+    this.applyPerformanceTargetProfile(this.activePerformanceTargets);
+    this.zones = this.calculateZones(this.profile);
     this.resetLiveSessionState();
     this.isActive = true;
     this.startTime = Date.now();
@@ -207,16 +239,65 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
 
     // Start 60-second persistence timer
     this.persistenceTimer = setInterval(() => {
-      this.persistAndCleanup();
+      void this.persistAndCleanup();
     }, RECORDING_CONFIG.PERSISTENCE_INTERVAL);
 
     console.log("[LiveMetricsManager] Started recording");
+  }
+
+  /** Rehydrates durable samples while staged as paused, without rewriting replayed chunks. */
+  public async stageRecoveredRecording(input: {
+    sessionId: string;
+    streamBuffer: StreamBuffer;
+    replay: DurableStreamReplay;
+    startedAt: number;
+    accumulatedPauseMs: number;
+    recoveryPausedAt: number;
+    elapsedSeconds: number;
+    movingSeconds: number;
+  }): Promise<void> {
+    this.stopTimers();
+    this.recordingSessionId = input.sessionId;
+    this.activePerformanceTargets =
+      this.stagedPerformanceTargets === null
+        ? null
+        : athletePerformanceTargetFactsSchema.parse(this.stagedPerformanceTargets);
+    this.applyPerformanceTargetProfile(this.activePerformanceTargets);
+    this.zones = this.calculateZones(this.profile);
+    this.streamBuffer = input.streamBuffer;
+    await this.streamBuffer.initialize();
+    this.resetLiveSessionState();
+    this.startTime = input.startedAt;
+    this.metrics.startedAt = input.startedAt;
+    this.metrics.elapsedTime = Math.floor(input.elapsedSeconds);
+    this.metrics.movingTime = Math.floor(input.movingSeconds);
+    this.totalPauseTime = input.accumulatedPauseMs;
+    this.pauseStartTime = input.recoveryPausedAt;
+    this.isActive = false;
+
+    for (const reading of input.replay.sensorReadings) this.ingestSensorData({ ...reading });
+    const latestDistance = input.replay.sensorReadings
+      .filter((reading) => reading.metric === "distance" && typeof reading.value === "number")
+      .at(-1);
+    if (latestDistance && typeof latestDistance.value === "number") {
+      this.totalDistance = latestDistance.value;
+    }
+    this.provisionalMetricsAccumulator.restoreObservations({
+      elapsedSeconds: input.elapsedSeconds,
+      movingSeconds: input.movingSeconds,
+      distanceMeters: this.totalDistance,
+      observedAtMs: input.recoveryPausedAt,
+    });
+    this.provisionalMetricsSnapshot = this.provisionalMetricsAccumulator.getSnapshot();
+    delete this.cachedStats;
+    this.calculateAndEmitMetrics();
   }
 
   /**
    * Pause recording - stop timers but keep data
    */
   public pauseRecording(): void {
+    this.addRecordingMetricsSample(Date.now());
     this.isActive = false;
     this.pauseStartTime = Date.now();
 
@@ -229,16 +310,18 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   /**
    * Resume recording - restart timers
    */
-  public resumeRecording(): void {
+  public resumeRecording(options: { preserveHistory?: boolean } = {}): void {
+    const resumedAt = Date.now();
+    this.addRecordingMetricsSample(resumedAt);
     if (this.pauseStartTime) {
-      this.totalPauseTime += Date.now() - this.pauseStartTime;
-      this.pauseStartTime = undefined;
+      this.totalPauseTime += resumedAt - this.pauseStartTime;
+      delete this.pauseStartTime;
     }
-    this.buffer.clear();
-    this.cachedStats = undefined;
+    if (!options.preserveHistory) this.buffer.clear();
+    delete this.cachedStats;
     this.lastStatsEmit = 0;
     this.isActive = true;
-    this.zoneStartTime = Date.now();
+    this.zoneStartTime = resumedAt;
 
     // Restart timers when resuming
     this.updateTimer = setInterval(() => {
@@ -246,7 +329,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     }, RECORDING_CONFIG.UPDATE_INTERVAL);
 
     this.persistenceTimer = setInterval(() => {
-      this.persistAndCleanup();
+      void this.persistAndCleanup();
     }, RECORDING_CONFIG.PERSISTENCE_INTERVAL);
 
     console.log("[LiveMetricsManager] Resumed");
@@ -278,141 +361,36 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
    */
   public ingestSensorData(reading: SensorReading): void {
     const timestamp = reading.timestamp || Date.now();
-
-    // Add to buffer for real-time calculations (always, for display)
-    // Type narrowing: check if numeric or tuple
-    if (typeof reading.value === "number") {
-      // Validate sensor data using sensor models
-      const model = getSensorModel(reading.metric);
-      if (model) {
-        const validated = model.validate(reading.value);
-        if (validated === null) {
-          // Invalid reading, skip it
-          return;
-        }
-        // Use validated value
-        reading.value = validated;
-      }
-
-      // Numeric reading (power, HR, cadence, etc.)
-      this.buffer.add({
-        metric: reading.metric,
-        value: reading.value,
-        timestamp,
-      });
-
-      // Update max values only when recording is active
-      if (this.isActive) {
-        this.updateMaxValues(reading.metric, reading.value);
-      }
-
-      // Calculate virtual distance when GPS recording is disabled
-      if (
-        this.isActive &&
-        !this.gpsRecordingEnabled &&
-        reading.metric === "power" &&
-        typeof reading.value === "number"
-      ) {
-        this.updateVirtualDistance(reading.value, timestamp);
-      }
-
-      // Batch sensor updates for UI (max 10Hz)
-      this.pendingSensorUpdates.set(reading.metric, reading.value);
-
-      if (!this.sensorUpdateTimer) {
-        this.sensorUpdateTimer = setTimeout(() => {
-          this.flushSensorUpdates();
-          this.sensorUpdateTimer = undefined;
-        }, 100); // 100ms = 10Hz max update rate
-      }
-    } else {
-      // Tuple reading (latlng)
-      this.buffer.add({
-        metric: reading.metric,
-        value: reading.value as [number, number],
-        timestamp,
-      });
-    }
-
-    // Add to streamBuffer for eventual persistence (only when active)
-    if (this.isActive) {
-      this.streamBuffer.add(reading);
-    }
-  }
-
-  /**
-   * Ingest location data
-   */
-  public ingestLocationData(
-    location: LocationReading,
-    options: { updateDistance?: boolean } = {},
-  ): void {
-    const updateDistance = options.updateDistance ?? true;
-    const isReliableLocation = this.isLocationReliable(location);
-    // Keep current position tied to reliable fixes so FIT/location artifacts do not drift on bad GPS.
-    const previousLocation = this.lastLocation;
-    if (isReliableLocation) {
-      this.lastLocation = location;
-    }
-
-    // Add to streamBuffer for persistence (only when active)
-    if (this.isActive && isReliableLocation) {
-      this.streamBuffer.addLocation(location);
-    }
-
-    // Add lat/lng to buffer for route tracking (always, for display)
-    if (isReliableLocation) {
-      this.buffer.add({
-        metric: "latlng",
-        value: [location.latitude, location.longitude],
-        timestamp: location.timestamp,
-      });
-    }
-
-    // Emit sensor update immediately so UI reflects GPS acquisition
-    this.emit("sensorUpdate", {
-      readings: this.getCurrentReadings(),
-      timestamp: Date.now(),
-    });
-
-    // Calculate distance if we have a previous location (only when active)
-    // Skip GPS distance when GPS recording is disabled
+    const untrusted = reading as { dataType?: string; metric?: string; value?: unknown };
     if (
-      this.isActive &&
-      previousLocation &&
-      this.gpsRecordingEnabled &&
-      updateDistance &&
-      isReliableLocation
+      untrusted.metric === "latlng" ||
+      untrusted.dataType === "latlng" ||
+      typeof untrusted.value !== "number"
     ) {
-      const distance = this.calculateDistance(previousLocation, location);
-
-      // Filter GPS noise
-      if (distance > MOVEMENT_THRESHOLDS.DISTANCE_MIN_DELTA_M && distance < 1000) {
-        this.totalDistance += distance;
-
-        // Calculate speed
-        const timeDelta = (location.timestamp - previousLocation.timestamp) / 1000; // seconds
-        if (timeDelta > 0) {
-          const speed = distance / timeDelta; // m/s
-          this.maxSpeed = Math.max(this.maxSpeed, speed);
-          this.updateTerrainIntensity(previousLocation, location, distance, timeDelta);
-        }
-      }
+      throw new Error("coordinate-metric-ingestion-forbidden");
     }
 
-    // Track elevation (always, for display)
-    if (location.altitude !== undefined) {
-      this.buffer.add({
-        metric: "altitude",
-        value: location.altitude,
-        timestamp: location.timestamp,
-      });
-
-      // Update elevation metrics only when active
-      if (this.isActive) {
-        this.updateElevation(location.altitude);
-      }
+    const model = getSensorModel(reading.metric);
+    if (model) {
+      const validated = model.validate(reading.value);
+      if (validated === null) return;
+      reading.value = validated;
     }
+
+    this.buffer.add({ metric: reading.metric, value: reading.value, timestamp });
+    if (this.isActive) {
+      this.updateMaxValues(reading.metric, reading.value);
+      if (reading.metric === "power") this.updateVirtualDistance(reading.value, timestamp);
+      if (reading.metric === "altitude") this.updateElevation(reading.value);
+    }
+    this.pendingSensorUpdates.set(reading.metric, reading.value);
+    if (!this.sensorUpdateTimer) {
+      this.sensorUpdateTimer = setTimeout(() => {
+        this.flushSensorUpdates();
+        delete this.sensorUpdateTimer;
+      }, 100);
+    }
+    if (this.isActive) this.streamBuffer.add(reading);
   }
 
   /**
@@ -422,8 +400,8 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     return { ...this.metrics };
   }
 
-  public getRecordingMetricsSnapshot(): RecordingMetricsSnapshot {
-    return this.recordingMetricsSnapshot;
+  public getProvisionalMetricsSnapshot(): ProvisionalRecordingMetricsSnapshot {
+    return this.provisionalMetricsSnapshot;
   }
 
   /**
@@ -441,7 +419,13 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     const currentReadings = this.getCurrentReadings();
     const hasEnoughData = this.hasEnoughDataForAdvancedMetrics();
 
-    return convertToSimplifiedMetrics(this.metrics, currentReadings, hasEnoughData, this.profile);
+    return convertToSimplifiedMetrics(
+      this.metrics,
+      currentReadings,
+      hasEnoughData,
+      this.provisionalMetricsSnapshot,
+      this.profile,
+    );
   }
 
   /**
@@ -454,41 +438,37 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   /**
    * Get current sensor readings with freshness tracking
    */
-  public getCurrentReadings() {
-    const readings: any = {
-      heartRate: this.buffer.getLatest("heartrate"),
-      power: this.buffer.getLatest("power"),
-      cadence: this.buffer.getLatest("cadence"),
-      speed: this.calculateCurrentSpeed(),
-      temperature: this.buffer.getLatest("temperature"),
+  public getCurrentReadings(): CurrentReadings & {
+    lastUpdated: NonNullable<CurrentReadings["lastUpdated"]>;
+  } {
+    const heartRate = this.buffer.getLatest("heartrate");
+    const power = this.buffer.getLatest("power");
+    const cadence = this.buffer.getLatest("cadence");
+    const speed = this.calculateCurrentSpeed();
+    const temperature = this.buffer.getLatest("temperature");
+    const readings: CurrentReadings = {
+      ...(heartRate === undefined ? {} : { heartRate }),
+      ...(power === undefined ? {} : { power }),
+      ...(cadence === undefined ? {} : { cadence }),
+      ...(speed === undefined ? {} : { speed }),
+      ...(temperature === undefined ? {} : { temperature }),
     };
 
-    // Add position if available
-    if (this.lastLocation) {
-      readings.position = {
-        lat: this.lastLocation.latitude,
-        lng: this.lastLocation.longitude,
-        altitude: this.lastLocation.altitude,
-        heading: this.lastLocation.heading,
-      };
-    }
-
     // Track freshness
-    readings.lastUpdated = {};
+    const lastUpdated: NonNullable<CurrentReadings["lastUpdated"]> = {};
+    readings.lastUpdated = lastUpdated;
     const metrics = ["heartrate", "power", "cadence", "speed", "temperature"];
     for (const metric of metrics) {
       const reading = this.buffer.getLatestReading(metric);
       if (reading) {
         const key = metric === "heartrate" ? "heartRate" : metric;
-        readings.lastUpdated[key] = reading.timestamp;
+        lastUpdated[key as keyof typeof lastUpdated] = reading.timestamp;
       }
     }
 
-    if (this.lastLocation) {
-      readings.lastUpdated.position = this.lastLocation.timestamp;
-    }
-
-    return readings;
+    return readings as CurrentReadings & {
+      lastUpdated: NonNullable<CurrentReadings["lastUpdated"]>;
+    };
   }
 
   /**
@@ -497,6 +477,15 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   public getSessionStats(): SessionStats {
     const elapsed = this.getElapsedTime();
     const moving = this.getMovingTime();
+    const normalizedPower = selectCyclingNormalizedPowerWatts(
+      this.provisionalMetricsSnapshot.normalizedPowerResult,
+    );
+    const efficiencyFactor = selectEfficiencyFactorValue(
+      this.provisionalMetricsSnapshot.efficiencyFactorResult,
+    );
+    const aerobicDecoupling = selectAerobicDecouplingValue(
+      this.provisionalMetricsSnapshot.aerobicDecouplingResult,
+    );
 
     return {
       // Timing
@@ -516,7 +505,9 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       avgPower: this.metrics.avgPower,
       avgSpeed: this.metrics.avgSpeed,
       avgCadence: this.metrics.avgCadence,
-      avgTemperature: this.metrics.avgTemperature,
+      ...(this.metrics.avgTemperature === undefined
+        ? {}
+        : { avgTemperature: this.metrics.avgTemperature }),
 
       // Maximums
       maxHeartRate: this.maxHeartRate,
@@ -556,23 +547,13 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       }),
 
       // Advanced metrics from the exact core accumulator.
-      ...(this.recordingMetricsSnapshot.normalizedPowerWatts !== null && {
-        normalizedPower: this.recordingMetricsSnapshot.normalizedPowerWatts,
+      ...(normalizedPower === null ? {} : { normalizedPower }),
+      ...(this.provisionalMetricsSnapshot.variabilityIndex !== null && {
+        variabilityIndex: this.provisionalMetricsSnapshot.variabilityIndex,
       }),
-      ...(this.recordingMetricsSnapshot.trainingStressScore !== null && {
-        trainingStressScore: this.recordingMetricsSnapshot.trainingStressScore,
-      }),
-      ...(this.recordingMetricsSnapshot.intensityFactor !== null && {
-        intensityFactor: this.recordingMetricsSnapshot.intensityFactor,
-      }),
-      ...(this.recordingMetricsSnapshot.variabilityIndex !== null && {
-        variabilityIndex: this.recordingMetricsSnapshot.variabilityIndex,
-      }),
-      ...(this.recordingMetricsSnapshot.efficiencyFactor !== null && {
-        efficiencyFactor: this.recordingMetricsSnapshot.efficiencyFactor,
-      }),
-      aerobicDecoupling: this.metrics.decouplingEst,
-      recordingMetrics: this.recordingMetricsSnapshot,
+      ...(efficiencyFactor === null ? {} : { efficiencyFactor }),
+      ...(aerobicDecoupling === null ? {} : { aerobicDecoupling }),
+      provisionalMetrics: this.provisionalMetricsSnapshot,
 
       // Plan adherence
       planAdherence: this.metrics.adherenceCurrentStep,
@@ -586,6 +567,10 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     this.stopTimers();
     this.buffer.clear();
     this.streamBuffer.clear();
+    this.activePerformanceTargets = null;
+    this.stagedPerformanceTargets = null;
+    this.recordingSessionId = null;
+    this.applyPerformanceTargetProfile(null);
     this.resetRecordingMetricsAccumulator();
 
     // Remove all listeners for each event type
@@ -644,8 +629,8 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       this.updateCadenceMetrics();
       this.updateTemperatureMetrics();
       this.updateCalories();
-      this.updateTier2Metrics();
-      this.applyRecordingMetricsSnapshot();
+      this.updatePowerHeartRateRatio();
+      this.applyProvisionalMetricsSnapshot();
 
       // Cache stats
       this.cachedStats = this.getSessionStats();
@@ -686,35 +671,12 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     this.pendingSensorUpdates.clear();
   }
 
-  /**
-   * Calculate current speed from buffer or recent GPS data
-   * Returns speed in m/s
-   *
-   * Priority: Sensor Speed > GPS Speed (if available) > Indoor estimation from power
-   */
+  /** Sensor speed takes priority, with an indoor power estimate as fallback. */
   private calculateCurrentSpeed(): number | undefined {
-    // First try to get speed from power meter or sensor (trainer)
     const sensorSpeed = this.buffer.getLatest("speed");
-    if (sensorSpeed !== undefined) {
-      return sensorSpeed;
-    }
+    if (sensorSpeed !== undefined) return sensorSpeed;
 
-    // Fallback to GPS speed calculation when GPS recording is enabled
-    // This ensures we always have speed/pace data even without sensors
-    if (this.gpsRecordingEnabled && this.gpsSpeedFallbackEnabled && this.lastLocation) {
-      // Calculate speed from recent GPS positions
-      const gpsSpeed = this.calculateGPSSpeed();
-      if (gpsSpeed !== undefined) {
-        // Update max speed from GPS when recording is active
-        if (this.isActive) {
-          this.maxSpeed = Math.max(this.maxSpeed, gpsSpeed);
-        }
-        return gpsSpeed;
-      }
-    }
-
-    // When GPS recording is disabled, calculate from power if available
-    if (!this.gpsRecordingEnabled && this.lastPowerValue > 0) {
+    if (this.lastPowerValue > 0) {
       // Estimate speed from power using the same physics model
       const powerWatts = this.lastPowerValue;
       const CRR = 0.005;
@@ -722,7 +684,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       const AIR_DENSITY = 1.225;
       const DRIVETRAIN_LOSS = 0.03;
       const effectivePower = powerWatts * (1 - DRIVETRAIN_LOSS);
-      const riderWeightKg = this.profile.weight || GLOBAL_DEFAULTS.weightKg;
+      const riderWeightKg = this.profile.weightKg || DEFAULT_RECORDING_WEIGHT_KG;
 
       const bikeWeightKg = 8;
       const totalMassKg = riderWeightKg + bikeWeightKg;
@@ -744,119 +706,6 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     }
 
     return undefined;
-  }
-
-  private isLocationReliable(location: LocationReading): boolean {
-    return (
-      location.accuracy === undefined ||
-      location.accuracy <= MOVEMENT_THRESHOLDS.GPS_ACCURACY_THRESHOLD_M
-    );
-  }
-
-  /**
-   * Calculate instantaneous speed from recent GPS positions
-   * Uses the last 3-5 seconds of GPS data to smooth out GPS noise
-   * Returns speed in m/s, or undefined if insufficient data
-   */
-  private calculateGPSSpeed(): number | undefined {
-    if (!this.lastLocation) return undefined;
-
-    // Get recent location readings (last 5 seconds)
-    const recentReadings = this.buffer.getRecentReadings("latlng", 5);
-
-    // Need at least 2 points to calculate speed
-    if (recentReadings.length < 2) {
-      return undefined;
-    }
-
-    // Calculate speed using last 3 seconds of movement
-    // This smooths GPS noise while being responsive
-    const cutoffTime = Date.now() - 3000; // 3 seconds ago
-    const recentPoints = recentReadings.filter(
-      (r) => r.timestamp >= cutoffTime,
-    ) as LatLngBufferedReading[];
-
-    if (recentPoints.length < 2) {
-      // Fall back to using all recent points if not enough in last 3s
-      if (recentReadings.length >= 2) {
-        return this.computeSpeedFromPoints(recentReadings as LatLngBufferedReading[]);
-      }
-      return undefined;
-    }
-
-    return this.computeSpeedFromPoints(recentPoints);
-  }
-
-  /**
-   * Compute speed from a series of GPS points
-   * Returns speed in m/s
-   */
-  private computeSpeedFromPoints(
-    points: Array<{ value: [number, number]; timestamp: number }>,
-  ): number | undefined {
-    if (points.length < 2) return undefined;
-
-    // Calculate total distance and time between first and last point
-    let totalDistance = 0;
-
-    for (let i = 1; i < points.length; i++) {
-      const [lat1, lon1] = points[i - 1].value;
-      const [lat2, lon2] = points[i].value;
-
-      const distance = this.calculateDistanceFromCoords(lat1, lon1, lat2, lon2);
-
-      // Filter out unreasonable jumps (GPS noise/errors)
-      // Max reasonable speed: 20 m/s (72 km/h) for cycling
-      const timeDelta = (points[i].timestamp - points[i - 1].timestamp) / 1000;
-      if (timeDelta > 0) {
-        const segmentSpeed = distance / timeDelta;
-        if (segmentSpeed < 20) {
-          totalDistance += distance;
-        }
-      }
-    }
-
-    // Calculate time span
-    const totalTime = (points[points.length - 1].timestamp - points[0].timestamp) / 1000;
-
-    // Avoid division by zero and require reasonable time span
-    if (totalTime < 0.5) {
-      return undefined;
-    }
-
-    // Calculate average speed (m/s)
-    const speed = totalDistance / totalTime;
-
-    // Filter out unreasonable speeds
-    if (speed < 0 || speed > 20) {
-      return undefined;
-    }
-
-    return speed;
-  }
-
-  /**
-   * Calculate distance between two GPS coordinates using Haversine formula
-   * Returns distance in meters
-   */
-  private calculateDistanceFromCoords(
-    lat1: number,
-    lon1: number,
-    lat2: number,
-    lon2: number,
-  ): number {
-    const R = 6371e3; // Earth's radius in meters
-    const φ1 = (lat1 * Math.PI) / 180;
-    const φ2 = (lat2 * Math.PI) / 180;
-    const Δφ = ((lat2 - lat1) * Math.PI) / 180;
-    const Δλ = ((lon2 - lon1) * Math.PI) / 180;
-
-    const a =
-      Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-    return R * c;
   }
 
   /**
@@ -897,7 +746,6 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       const status = this.streamBuffer.getBufferStatus();
       console.log("[LiveMetricsManager] Persisted and cleaned up:", {
         readingsWritten: status.readingCount,
-        locationsWritten: status.locationCount,
         bufferStats: this.buffer.getStats(),
       });
     } catch (error) {
@@ -912,15 +760,15 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   private stopTimers(): void {
     if (this.updateTimer) {
       clearInterval(this.updateTimer);
-      this.updateTimer = undefined;
+      delete this.updateTimer;
     }
     if (this.persistenceTimer) {
       clearInterval(this.persistenceTimer);
-      this.persistenceTimer = undefined;
+      delete this.persistenceTimer;
     }
     if (this.sensorUpdateTimer) {
       clearTimeout(this.sensorUpdateTimer);
-      this.sensorUpdateTimer = undefined;
+      delete this.sensorUpdateTimer;
     }
   }
 
@@ -968,7 +816,9 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
 
       // Calculate total work (joules)
       // For each second, work = power * 1 second
-      this.totalWork += powerValues[powerValues.length - 1]; // Latest power reading
+      const latestPower = powerValues.at(-1);
+      if (latestPower === undefined) return;
+      this.totalWork += latestPower; // Latest power reading
       this.metrics.totalWork = Math.round(this.totalWork);
     }
   }
@@ -984,9 +834,9 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       this.metrics.maxHeartRate = this.maxHeartRate;
 
       // Calculate % of threshold HR
-      if (this.profile.threshold_hr) {
+      if (this.profile.lthrBpm) {
         const latestHr = this.buffer.getLatest("heartrate") || 0;
-        this.metrics.maxHrPctThreshold = (latestHr / this.profile.threshold_hr) * 100;
+        this.metrics.maxHrPctThreshold = (latestHr / this.profile.lthrBpm) * 100;
       }
     }
   }
@@ -1011,7 +861,6 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
 
     if (tempValues.length > 0) {
       this.metrics.avgTemperature = Math.round(this.buffer.getAverage("temperature") * 10) / 10;
-      this.metrics.maxTemperature = Math.round(this.maxTemperature * 10) / 10;
     }
   }
 
@@ -1028,26 +877,29 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     const currentHr = this.buffer.getLatest("heartrate");
     if (currentHr !== undefined) {
       const hrZone = this.getHeartRateZone(currentHr);
-
-      if (this.currentHrZone !== undefined && timeDelta < 60000) {
-        this.hrZoneTimes[this.currentHrZone] += timeDelta;
+      if (hrZone !== undefined) {
+        if (this.currentHrZone !== undefined && timeDelta < 60000) {
+          const elapsed = this.hrZoneTimes[this.currentHrZone];
+          if (elapsed !== undefined) this.hrZoneTimes[this.currentHrZone] = elapsed + timeDelta;
+        }
+        this.currentHrZone = hrZone;
+        this.metrics.currentHeartRateZone = hrZone + 1;
       }
-
-      this.currentHrZone = hrZone;
-      this.metrics.currentHeartRateZone = hrZone + 1;
     }
 
     // Update Power zone time
     const currentPower = this.buffer.getLatest("power");
     if (currentPower !== undefined) {
       const powerZone = this.getPowerZone(currentPower);
-
-      if (this.currentPowerZone !== undefined && timeDelta < 60000) {
-        this.powerZoneTimes[this.currentPowerZone] += timeDelta;
+      if (powerZone !== undefined) {
+        if (this.currentPowerZone !== undefined && timeDelta < 60000) {
+          const elapsed = this.powerZoneTimes[this.currentPowerZone];
+          if (elapsed !== undefined)
+            this.powerZoneTimes[this.currentPowerZone] = elapsed + timeDelta;
+        }
+        this.currentPowerZone = powerZone;
+        this.metrics.currentPowerZone = powerZone + 1;
       }
-
-      this.currentPowerZone = powerZone;
-      this.metrics.currentPowerZone = powerZone + 1;
     }
 
     // Update metrics (convert to seconds)
@@ -1079,7 +931,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     }
 
     const hours = this.metrics.movingTime / 3600;
-    const weight = this.profile.weight || GLOBAL_DEFAULTS.weightKg;
+    const weight = this.profile.weightKg || DEFAULT_RECORDING_WEIGHT_KG;
 
     // TIER 1: Power + Heart Rate (most accurate)
     if (this.metrics.avgPower > 0 && this.metrics.avgHeartRate > 0) {
@@ -1087,8 +939,8 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       const powerCalories = (this.metrics.avgPower * this.metrics.movingTime * 0.239) / 1000;
 
       // HR efficiency factor: adjust based on HR intensity
-      const hrEfficiency = this.profile.threshold_hr
-        ? Math.min(1.15, 0.85 + (this.metrics.avgHeartRate / this.profile.threshold_hr) * 0.3)
+      const hrEfficiency = this.profile.lthrBpm
+        ? Math.min(1.15, 0.85 + (this.metrics.avgHeartRate / this.profile.lthrBpm) * 0.3)
         : 1.0;
 
       this.metrics.calories = Math.round(powerCalories * hrEfficiency);
@@ -1104,10 +956,8 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       return;
     }
 
-    // TIER 3: Heart Rate + Activity Type
+    // TIER 3: Heart Rate + Activity Category
     if (this.metrics.avgHeartRate > 0 && this.activityCategory) {
-      const _age = this.profile.age || 35;
-
       // Activity-specific MET multipliers (at moderate intensity)
       const activityMETs: Record<string, number> = {
         run: 9.0, // Running at moderate pace
@@ -1124,8 +974,8 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
 
       // Adjust MET based on HR intensity
       let intensityMultiplier = 1.0;
-      if (this.profile.threshold_hr) {
-        const hrPercent = (this.metrics.avgHeartRate / this.profile.threshold_hr) * 100;
+      if (this.profile.lthrBpm) {
+        const hrPercent = (this.metrics.avgHeartRate / this.profile.lthrBpm) * 100;
         if (hrPercent < 70)
           intensityMultiplier = 0.7; // Easy
         else if (hrPercent < 85)
@@ -1142,25 +992,11 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       return;
     }
 
-    // TIER 4: Heart Rate only (no activity type)
-    if (this.metrics.avgHeartRate > 0) {
-      const age = this.profile.age || 35;
-
-      // Simplified HR-based formula (gender-neutral approximation)
-      // Based on ACSM equation
-      this.metrics.calories = Math.round(
-        ((0.6309 * this.metrics.avgHeartRate + 0.1988 * weight + 0.2017 * age) / 4.184) *
-          hours *
-          60,
-      );
-      return;
-    }
-
-    // TIER 5: Distance + Activity Type
+    // TIER 4: Distance + Activity Category
     if (this.totalDistance > 0 && this.activityCategory) {
       const distanceKm = this.totalDistance / 1000;
 
-      // Calories per km by activity type
+      // Calories per km by activity category
       const caloriesPerKm: Record<string, number> = {
         run: weight * 1.0, // ~1 kcal/kg/km
         walk: weight * 0.5, // ~0.5 kcal/kg/km
@@ -1175,7 +1011,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       return;
     }
 
-    // TIER 6: Time + Activity Type fallback
+    // TIER 5: Time + Activity Category fallback
     if (this.activityCategory) {
       // Use moderate MET values as fallback
       const fallbackMETs: Record<string, number> = {
@@ -1194,85 +1030,44 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       return;
     }
 
-    // TIER 7: Basic fallback (time only, assume moderate activity)
+    // TIER 6: Basic fallback (time only, assume moderate activity)
     // 5 METs = moderate activity
     this.metrics.calories = Math.round(5.0 * weight * hours);
   }
 
-  /**
-   * Update Tier 2 metrics (approximations)
-   */
-  private updateTier2Metrics(): void {
-    // Normalized Power (simplified 30-second rolling average)
-    const recentPower = this.buffer.getRecent("power", 30);
-    if (recentPower.length > 0) {
-      // Simplified NP calculation (true NP requires 30s rolling avg of power^4)
-      const avgRecent = recentPower.reduce((sum, p) => sum + p, 0) / recentPower.length;
-      this.metrics.normalizedPowerEst = Math.round(avgRecent * 1.05); // Rough approximation
-    }
-
-    // Intensity Factor (IF = NP / FTP)
-    if (this.profile.ftp && this.metrics.normalizedPowerEst > 0) {
-      this.metrics.intensityFactorEst = this.metrics.normalizedPowerEst / this.profile.ftp;
-    }
-
-    // Training Stress Score (TSS = (duration * NP * IF) / (FTP * 3600) * 100)
-    if (this.profile.ftp && this.metrics.normalizedPowerEst > 0 && this.metrics.movingTime > 0) {
-      const hours = this.metrics.movingTime / 3600;
-      this.metrics.trainingStressScoreEst = Math.round(
-        (hours * this.metrics.normalizedPowerEst * this.metrics.intensityFactorEst) /
-          (this.profile.ftp * 36),
-      );
-    }
-
-    // Variability Index (VI = NP / Average Power)
-    if (this.metrics.avgPower > 0 && this.metrics.normalizedPowerEst > 0) {
-      this.metrics.variabilityIndexEst = this.metrics.normalizedPowerEst / this.metrics.avgPower;
-    }
-
-    // Efficiency Factor (EF = NP / Average HR)
-    if (this.metrics.avgHeartRate > 0 && this.metrics.normalizedPowerEst > 0) {
-      this.metrics.efficiencyFactorEst =
-        this.metrics.normalizedPowerEst / this.metrics.avgHeartRate;
-    }
-
+  private updatePowerHeartRateRatio(): void {
     // Power to HR ratio
     if (this.metrics.avgHeartRate > 0 && this.metrics.avgPower > 0) {
       this.metrics.powerHeartRateRatio = this.metrics.avgPower / this.metrics.avgHeartRate;
     }
-
-    // Decoupling (placeholder - requires more complex calculation)
-    this.metrics.decouplingEst = 0;
   }
 
   private buildRecordingMetricsConfig(): RecordingMetricsConfig {
     return {
       activityCategory: this.activityCategory ?? "other",
-      ftpWatts: this.profile.ftp ?? null,
-      thresholdHeartRateBpm: this.profile.threshold_hr ?? null,
-      thresholdPaceSecondsPerKm: this.profile.threshold_pace_seconds_per_km ?? null,
+      performanceTargets: this.activePerformanceTargets ?? this.stagedPerformanceTargets,
+      recordingSessionId: this.recordingSessionId,
       timeBasis: "moving",
     };
   }
 
   private resetRecordingMetricsAccumulator(): void {
-    this.recordingMetricsAccumulator = createRecordingMetricsAccumulator(
+    this.provisionalMetricsAccumulator = createProvisionalRecordingMetricsAccumulator(
       this.buildRecordingMetricsConfig(),
     );
-    this.recordingMetricsSnapshot = this.recordingMetricsAccumulator.getSnapshot();
+    this.provisionalMetricsSnapshot = this.provisionalMetricsAccumulator.getSnapshot();
   }
 
   private resetLiveSessionState(): void {
     this.buffer.clear();
     this.metrics = this.createInitialMetrics();
-    this.cachedStats = undefined;
+    delete this.cachedStats;
     this.lastStatsEmit = 0;
     this.lastAdvancedMetricsSampleAt = 0;
     this.advancedMetricsDisabledUntil = 0;
-    this.startTime = undefined;
-    this.pauseStartTime = undefined;
+    delete this.startTime;
+    delete this.pauseStartTime;
     this.totalPauseTime = 0;
-    this.lastLocation = undefined;
     this.totalDistance = 0;
     this.totalWork = 0;
     this.totalAscent = 0;
@@ -1281,12 +1076,11 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     this.maxPower = 0;
     this.maxHeartRate = 0;
     this.maxCadence = 0;
-    this.maxTemperature = 0;
-    this.lastPowerUpdate = undefined;
+    delete this.lastPowerUpdate;
     this.lastPowerValue = 0;
-    this.zoneStartTime = undefined;
-    this.currentHrZone = undefined;
-    this.currentPowerZone = undefined;
+    delete this.zoneStartTime;
+    delete this.currentHrZone;
+    delete this.currentPowerZone;
     this.hrZoneTimes = [0, 0, 0, 0, 0];
     this.powerZoneTimes = [0, 0, 0, 0, 0, 0, 0];
     this.resetRecordingMetricsAccumulator();
@@ -1302,21 +1096,35 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   }
 
   private addRecordingMetricsSample(timestampMs: number): void {
-    this.recordingMetricsAccumulator.addSample({
+    this.provisionalMetricsAccumulator.addSample({
       timestampMs,
       moving: this.isActive,
       powerWatts: this.buffer.getLatest("power") ?? null,
-      heartRateBpm: this.buffer.getLatest("heartrate") ?? null,
+      heartRateBpm: this.freshHeartRateAt(timestampMs),
       cadenceRpm: this.buffer.getLatest("cadence") ?? null,
       speedMps: this.buffer.getLatest("speed") ?? null,
       distanceMeters: this.totalDistance,
-      altitudeMeters: this.lastLocation?.altitude ?? null,
+      altitudeMeters: this.buffer.getLatest("altitude") ?? null,
     });
-    this.recordingMetricsSnapshot = this.recordingMetricsAccumulator.getSnapshot();
+    this.provisionalMetricsSnapshot = this.provisionalMetricsAccumulator.getSnapshot();
   }
 
-  private applyRecordingMetricsSnapshot(): void {
-    const snapshot = this.recordingMetricsSnapshot;
+  private freshHeartRateAt(timestampMs: number): number | null {
+    const reading = this.buffer.getLatestReading("heartrate");
+    if (
+      reading === undefined ||
+      typeof reading.value !== "number" ||
+      !Number.isFinite(reading.timestamp) ||
+      reading.timestamp > timestampMs ||
+      timestampMs - reading.timestamp > DEFAULT_HEART_RATE_MAX_GAP_SECONDS * 1_000
+    ) {
+      return null;
+    }
+    return reading.value;
+  }
+
+  private applyProvisionalMetricsSnapshot(): void {
+    const snapshot = this.provisionalMetricsSnapshot;
 
     if (snapshot.averagePowerWatts !== null) {
       this.metrics.avgPower = Math.round(snapshot.averagePowerWatts);
@@ -1328,21 +1136,17 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     if (snapshot.averageHeartRateBpm !== null) {
       this.metrics.avgHeartRate = Math.round(snapshot.averageHeartRateBpm);
     }
-    if (snapshot.normalizedPowerWatts !== null) {
-      this.metrics.normalizedPowerEst = snapshot.normalizedPowerWatts;
-    }
-    if (snapshot.intensityFactor !== null) {
-      this.metrics.intensityFactorEst = snapshot.intensityFactor;
-    }
-    if (snapshot.trainingStressScore !== null) {
-      this.metrics.trainingStressScoreEst = snapshot.trainingStressScore;
+    const normalizedPower = selectCyclingNormalizedPowerWatts(snapshot.normalizedPowerResult);
+    if (normalizedPower !== null) {
+      this.metrics.normalizedPowerEst = normalizedPower;
     }
     if (snapshot.variabilityIndex !== null) {
       this.metrics.variabilityIndexEst = snapshot.variabilityIndex;
     }
-    if (snapshot.efficiencyFactor !== null) {
-      this.metrics.efficiencyFactorEst = snapshot.efficiencyFactor;
-    }
+    this.metrics.efficiencyFactorEst =
+      selectEfficiencyFactorValue(snapshot.efficiencyFactorResult) ?? 0;
+    this.metrics.decouplingEst =
+      selectAerobicDecouplingValue(snapshot.aerobicDecouplingResult) ?? 0;
   }
 
   /**
@@ -1357,7 +1161,8 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     const smoothed = recentAltitudes.reduce((sum, a) => sum + a, 0) / recentAltitudes.length;
 
     // Calculate change (with noise threshold)
-    const previous = recentAltitudes[recentAltitudes.length - 2];
+    const previous = recentAltitudes.at(-2);
+    if (previous === undefined) return;
     const delta = smoothed - previous;
 
     if (Math.abs(delta) > MOVEMENT_THRESHOLDS.ELEVATION_NOISE_THRESHOLD_M) {
@@ -1370,38 +1175,6 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
 
     this.metrics.totalAscent = Math.round(this.totalAscent);
     this.metrics.totalDescent = Math.round(this.totalDescent);
-  }
-
-  private updateTerrainIntensity(
-    previousLocation: LocationReading,
-    location: LocationReading,
-    distanceMeters: number,
-    seconds: number,
-  ): void {
-    if (
-      previousLocation.altitude === undefined ||
-      location.altitude === undefined ||
-      distanceMeters <= 0 ||
-      seconds <= 0
-    ) {
-      return;
-    }
-
-    const altitudeDelta = location.altitude - previousLocation.altitude;
-    const grade = clamp((altitudeDelta / distanceMeters) * 100, -30, 30);
-    const speedMps = distanceMeters / seconds;
-    const gradeAdjustedSpeed = speedMps * (minettiCost(grade / 100) / minettiCost(0));
-
-    this.metrics.currentGrade = grade;
-    this.metrics.verticalSpeedMetersPerHour = (altitudeDelta / seconds) * 3600;
-
-    if (Number.isFinite(gradeAdjustedSpeed) && gradeAdjustedSpeed > 0) {
-      this.metrics.gradeAdjustedPaceSecondsPerKm = 1000 / gradeAdjustedSpeed;
-    }
-
-    if (this.totalDistance > 0) {
-      this.metrics.avgGrade = ((this.totalAscent - this.totalDescent) / this.totalDistance) * 100;
-    }
   }
 
   /**
@@ -1420,9 +1193,6 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
         break;
       case "cadence":
         this.maxCadence = Math.max(this.maxCadence, value);
-        break;
-      case "temperature":
-        this.maxTemperature = Math.max(this.maxTemperature, value);
         break;
     }
   }
@@ -1482,7 +1252,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     const effectivePower = powerWatts * (1 - DRIVETRAIN_LOSS);
 
     // Get rider weight from profile (default 75kg if not set)
-    const riderWeightKg = this.profile.weight || 75;
+    const riderWeightKg = this.profile.weightKg || DEFAULT_RECORDING_WEIGHT_KG;
     const bikeWeightKg = 8; // Typical bike weight
     const totalMassKg = riderWeightKg + bikeWeightKg;
 
@@ -1520,30 +1290,14 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   }
 
   /**
-   * Calculate distance between two locations (Haversine formula)
-   */
-  private calculateDistance(loc1: LocationReading, loc2: LocationReading): number {
-    const R = 6371e3; // Earth radius in meters
-    const φ1 = (loc1.latitude * Math.PI) / 180;
-    const φ2 = (loc2.latitude * Math.PI) / 180;
-    const Δφ = ((loc2.latitude - loc1.latitude) * Math.PI) / 180;
-    const Δλ = ((loc2.longitude - loc1.longitude) * Math.PI) / 180;
-
-    const a =
-      Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-    return R * c;
-  }
-
-  /**
    * Get heart rate zone (0-4)
    */
-  private getHeartRateZone(hr: number): number {
+  private getHeartRateZone(hr: number): number | undefined {
     const thresholds = this.zones.hrZones;
+    if (thresholds.length === 0) return undefined;
     for (let i = 0; i < thresholds.length; i++) {
-      if (hr < thresholds[i]) return i;
+      const threshold = thresholds[i];
+      if (threshold !== undefined && hr < threshold) return i;
     }
     return thresholds.length - 1;
   }
@@ -1551,12 +1305,31 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   /**
    * Get power zone (0-6)
    */
-  private getPowerZone(power: number): number {
+  private getPowerZone(power: number): number | undefined {
     const thresholds = this.zones.powerZones;
+    if (thresholds.length === 0) return undefined;
     for (let i = 0; i < thresholds.length; i++) {
-      if (power < thresholds[i]) return i;
+      const threshold = thresholds[i];
+      if (threshold !== undefined && power < threshold) return i;
     }
     return thresholds.length - 1;
+  }
+
+  private applyPerformanceTargetProfile(snapshot: AthletePerformanceTargetFacts | null): void {
+    delete this.profile.bikeThresholdWatts;
+    delete this.profile.lthrBpm;
+    if (snapshot === null) return;
+
+    const category = this.activityCategory;
+    if (category === "bike") {
+      const bikeThresholdWatts = getAvailablePerformanceTargetValue(snapshot.thresholds.bike);
+      if (bikeThresholdWatts !== null) this.profile.bikeThresholdWatts = bikeThresholdWatts;
+    }
+    if (category === "bike" || category === "run" || category === "swim") {
+      const lthr = snapshot.heartRate[category].lthr;
+      const lthrBpm = lthr.status === "available" ? lthr.valueBpm : null;
+      if (lthrBpm !== null) this.profile.lthrBpm = lthrBpm;
+    }
   }
 
   /**
@@ -1565,18 +1338,11 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   private extractProfileMetrics(
     _profile: RecorderProfileRef,
     metrics?: {
-      ftp?: number;
-      thresholdHr?: number;
       weightKg?: number;
-      thresholdPaceSecondsPerKm?: number;
     },
   ): ProfileMetrics {
     return {
-      ftp: metrics?.ftp ?? undefined,
-      threshold_hr: metrics?.thresholdHr ?? undefined,
-      weight: metrics?.weightKg ?? undefined,
-      threshold_pace_seconds_per_km: metrics?.thresholdPaceSecondsPerKm ?? undefined,
-      age: undefined, // Age calculation from DOB would go here if needed
+      ...(metrics?.weightKg === undefined ? {} : { weightKg: metrics.weightKg }),
     };
   }
 
@@ -1584,30 +1350,12 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
    * Calculate zone thresholds
    */
   private calculateZones(profile: ProfileMetrics): ZoneConfig {
-    const threshold_hr = profile.threshold_hr || GLOBAL_DEFAULTS.thresholdHr;
-    const ftp = profile.ftp || GLOBAL_DEFAULTS.ftp;
-
-    // TODO: Add pace zones if needed in ZoneConfig
     return {
-      // 5-zone HR model
-      hrZones: [
-        Math.round(threshold_hr * 0.68), // Zone 1: <68%
-        Math.round(threshold_hr * 0.83), // Zone 2: 68-82%
-        Math.round(threshold_hr * 0.94), // Zone 3: 83-94%
-        Math.round(threshold_hr * 1.05), // Zone 4: 94-105%
-        Infinity, // Zone 5: >105%
-      ],
-
-      // 7-zone power model
-      powerZones: [
-        Math.round(ftp * 0.55), // Zone 1: <55%
-        Math.round(ftp * 0.75), // Zone 2: 55-74%
-        Math.round(ftp * 0.9), // Zone 3: 75-89%
-        Math.round(ftp * 1.05), // Zone 4: 90-104%
-        Math.round(ftp * 1.2), // Zone 5: 105-119%
-        Math.round(ftp * 1.5), // Zone 6: 120-149%
-        Infinity, // Zone 7: >150%
-      ],
+      hrZones: profile.lthrBpm === undefined ? [] : getHrZoneUpperBoundsFromLthr(profile.lthrBpm),
+      powerZones:
+        profile.bikeThresholdWatts === undefined
+          ? []
+          : getPowerZoneUpperBoundsFromFtp(profile.bikeThresholdWatts),
     };
   }
 
@@ -1647,30 +1395,12 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       avgCadence: 0,
       maxCadence: 0,
       avgTemperature: 0,
-      maxTemperature: 0,
       calories: 0,
       normalizedPowerEst: 0,
-      intensityFactorEst: 0,
-      trainingStressScoreEst: 0,
       variabilityIndexEst: 0,
       efficiencyFactorEst: 0,
       decouplingEst: 0,
       adherenceCurrentStep: 0,
     };
   }
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
-function minettiCost(grade: number): number {
-  return (
-    155.4 * grade ** 5 -
-    30.4 * grade ** 4 -
-    43.3 * grade ** 3 +
-    46.3 * grade ** 2 +
-    19.5 * grade +
-    3.6
-  );
 }
