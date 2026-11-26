@@ -26,7 +26,11 @@ const mobileTests = {
     "apps/mobile/app/(internal)/record/__tests__/capability-p0-record-lifecycle.jest.test.tsx",
   "routes.manage":
     "apps/mobile/app/(internal)/(standard)/__tests__/capability-p1-routes.jest.test.tsx",
-  "settings.manage": "apps/mobile/app/(internal)/(standard)/__tests__/settings.jest.test.tsx",
+  "settings.manage": [
+    "apps/mobile/app/(internal)/(standard)/__tests__/settings.jest.test.tsx",
+    "apps/mobile/app/(internal)/(standard)/__tests__/coaching-permissions.jest.test.tsx",
+    "apps/mobile/components/coaching/CoachingPublicationPermissions.jest.test.tsx",
+  ],
   "social.profile":
     "apps/mobile/app/(internal)/(standard)/__tests__/capability-p2-social.jest.test.tsx",
   "thresholds.view": "apps/mobile/app/(internal)/(standard)/__tests__/thresholds.jest.test.tsx",
@@ -317,7 +321,10 @@ const definitions = [
     title: "Manage account settings",
     outcome: "A person can open and manage account settings.",
     steps: ["open", "manage"],
-    matches: (_platform, source) => source.includes("settings"),
+    matches: (platform, source) =>
+      source.includes("settings") ||
+      (platform === "mobile" &&
+        source === "apps/mobile/app/(internal)/(standard)/coaching-permissions.tsx"),
   },
 ];
 
@@ -366,15 +373,11 @@ function evidence(id, platform, steps, sources) {
         })),
     sources,
     status: "active",
-    tests: test
-      ? [
-          {
-            ...(platform === "web" ? { identity: test.identity } : {}),
-            kind: platform === "web" ? "playwright" : "jest",
-            path: typeof test === "string" ? test : test.path,
-          },
-        ]
-      : [],
+    tests: (test ? (Array.isArray(test) ? test : [test]) : []).map((reference) => ({
+      ...(platform === "web" ? { identity: reference.identity } : {}),
+      kind: platform === "web" ? "playwright" : "jest",
+      path: typeof reference === "string" ? reference : reference.path,
+    })),
   };
 }
 
