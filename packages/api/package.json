@@ -89,6 +89,10 @@
       "types": "./src/recorded-goal-history.ts",
       "default": "./src/recorded-goal-history.ts"
     },
+    "./threshold-history": {
+      "types": "./src/threshold-history.ts",
+      "default": "./src/threshold-history.ts"
+    },
     "./server": {
       "types": "./src/server.ts",
       "default": "./src/server.ts"

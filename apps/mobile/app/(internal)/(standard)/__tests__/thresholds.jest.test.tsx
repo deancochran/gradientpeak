@@ -35,7 +35,7 @@ jest.mock("@/components/shared/ScreenState", () => ({
   ErrorState: createHost("ErrorState"),
   LoadingState: createHost("LoadingState"),
 }));
-jest.mock("@/lib/api", () => ({
+jest.mock("@repo/api/react", () => ({
   api: {
     athleteIntelligence: {
       getThresholdOverview: { useQuery: (...args: unknown[]) => useQuery(...args) },
