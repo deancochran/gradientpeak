@@ -2,16 +2,17 @@ import type { TestProps } from "../../lib/test-props";
 
 export interface TimeInputProps extends TestProps {
   label: string;
-  value?: string;
+  /** Undefined is the controlled empty time value. */
+  value?: string | undefined;
   onChange: (value: string | undefined) => void;
-  disabled?: boolean;
-  name?: string;
-  helperText?: string;
-  error?: string;
-  required?: boolean;
-  placeholder?: string;
-  clearable?: boolean;
-  accessibilityHint?: string;
-  pickerPresentation?: "inline" | "modal";
-  is24Hour?: boolean;
+  disabled?: boolean | undefined;
+  name?: string | undefined;
+  helperText?: string | undefined;
+  error?: string | undefined;
+  required?: boolean | undefined;
+  placeholder?: string | undefined;
+  clearable?: boolean | undefined;
+  accessibilityHint?: string | undefined;
+  pickerPresentation?: "inline" | "modal" | undefined;
+  is24Hour?: boolean | undefined;
 }

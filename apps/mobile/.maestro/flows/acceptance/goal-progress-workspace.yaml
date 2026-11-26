@@ -1,0 +1,81 @@
+appId: com.deancochran.gradientpeak.dev
+name: Completed athlete follows published threshold evidence from selected Plan day to source and back
+---
+# The runner has already confirmed the canonical database read models share one
+# non-null publication revision before this device flow begins.
+- tapOn:
+    id: tab-button-plan
+- extendedWaitUntil:
+    visible:
+      id: plan-selected-goal
+    timeout: 30000
+- assertVisible: ${MAESTRO_ACCEPTANCE_GOAL_TITLE}
+- assertVisible: "Target date: ${MAESTRO_ACCEPTANCE_TARGET_DATE}"
+- assertVisible: "Current: 285 W"
+- assertVisible: "Target: 300 W"
+- assertVisible: "Remaining gap: 15 W"
+- takeScreenshot: goal-progress-plan-context
+- tapOn:
+    id: plan-view-calendar
+- extendedWaitUntil:
+    visible:
+      id: calendar-screen-ready
+    timeout: 30000
+# Reset the persisted Calendar selection to the same device-local date read by
+# the runner before deriving the bounded month offset to the UTC target.
+- tapOn:
+    id: calendar-reset-today-entry
+- extendedWaitUntil:
+    notVisible:
+      id: calendar-date-jump-loading
+    timeout: 30000
+- extendedWaitUntil:
+    visible:
+      id: calendar-day-select-${MAESTRO_ACCEPTANCE_DEVICE_TODAY_DATE}
+    timeout: 30000
+- repeat:
+    times: ${MAESTRO_ACCEPTANCE_TARGET_MONTH_DELTA}
+    commands:
+      - tapOn:
+          id: calendar-next-month
+- tapOn:
+    id: calendar-day-select-${MAESTRO_ACCEPTANCE_TARGET_DATE}
+- scrollUntilVisible:
+    element:
+      id: planning-ledger-milestone-${MAESTRO_ACCEPTANCE_GOAL_ID}
+    direction: DOWN
+- assertVisible: ${MAESTRO_ACCEPTANCE_GOAL_TITLE}
+- takeScreenshot: goal-progress-plan-selected-date
+- tapOn:
+    id: planning-ledger-milestone-${MAESTRO_ACCEPTANCE_GOAL_ID}
+- extendedWaitUntil:
+    visible:
+      id: goal-detail-progress
+    timeout: 30000
+- assertVisible: "Current: 285 W"
+- assertVisible: "Target: 300 W"
+- assertVisible: "Remaining gap: 15 W"
+- takeScreenshot: goal-progress-goal-context
+- scrollUntilVisible:
+    element:
+      id: plan-progress-source-${MAESTRO_ACCEPTANCE_SOURCE_ACTIVITY_ID}
+    direction: DOWN
+- assertVisible: ${MAESTRO_ACCEPTANCE_SOURCE_ACTIVITY_NAME}
+- takeScreenshot: goal-progress-source-context
+- tapOn:
+    id: plan-progress-source-${MAESTRO_ACCEPTANCE_SOURCE_ACTIVITY_ID}
+- extendedWaitUntil:
+    visible:
+      id: activity-detail-screen
+    timeout: 30000
+- assertVisible: ${MAESTRO_ACCEPTANCE_SOURCE_ACTIVITY_NAME}
+- pressKey: back
+- extendedWaitUntil:
+    visible:
+      id: goal-detail-progress
+    timeout: 30000
+- pressKey: back
+- extendedWaitUntil:
+    visible:
+      id: planning-ledger-milestone-${MAESTRO_ACCEPTANCE_GOAL_ID}
+    timeout: 30000

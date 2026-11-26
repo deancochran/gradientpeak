@@ -1,0 +1,1307 @@
+import type {
+  ActivityPlanDraftItem,
+  ActivityPlanDraftRepeat,
+  ActivityPlanDraftStep,
+  ActivityPlanDraftStructure,
+  ActivityPlanDuration,
+  ActivityPlanStructure,
+  ActivityPlanTrainingIntent,
+  ActivityTargetType,
+  CanonicalActivityCategory,
+} from "@repo/core";
+import {
+  activityPlanDraftMetrics,
+  activityPlanDraftStructureSchema,
+  activityPlanStepNoteSchema,
+  createActivityPlanStepDuration,
+  createUnavailableAthletePerformanceTargetFacts,
+  getActivityPlanStepDurationAmount,
+  getActivityPlanStepTargetEditorPolicy,
+  getActivityPlanStepTargetInputPolicy,
+  normalizeActivityPlanAuthoringStructure,
+  resolveActivityPlanDraft,
+} from "@repo/core";
+import { getPermissibleActivityPlanDurationTypes } from "@repo/core/activity-plan";
+import {
+  activityTargetAuthoringUnitLabels,
+  activityTargetDefinitionByType,
+  getActivityTargetCadenceUnitLabel,
+  getPermissibleTargetTypes,
+} from "@repo/core/targets";
+import { parseNumericInput } from "@repo/core/utils/numeric-ux-policy";
+import { Button } from "@repo/ui/components/button";
+import { Card, CardContent } from "@repo/ui/components/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@repo/ui/components/dropdown-menu";
+import { Input } from "@repo/ui/components/input";
+import { Textarea } from "@repo/ui/components/textarea";
+import { ChevronDown, Ellipsis, GripVertical, Plus, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  createActivityPlanRepeat,
+  createActivityPlanStep,
+  createActivityPlanStructure,
+  duplicateDraftItem,
+  insertDraftItem,
+  moveDraftItem,
+  removeDraftItem,
+  ungroupDraftRepeat,
+  updateActivityPlanRepeat,
+  updateActivityPlanStep,
+} from "../../lib/activity-plan-authoring";
+import { ActivityPlanEstimateRow } from "./activity-plan-estimates";
+import { formatActivityPlanDuration } from "./activity-plan-structure-presentation";
+import { ActivityPlanTimelineChart } from "./activity-plan-timeline-chart";
+
+const categories = ["run", "bike", "swim", "strength", "other"] as const;
+const visibilityOptions = ["private", "followers", "public"] as const;
+type RawDrafts = Record<string, string>;
+
+export type ActivityPlanAuthoringValues = {
+  description: string | null;
+  gps_recording_enabled: boolean;
+  name: string;
+  notes: null;
+  structure: ActivityPlanStructure;
+  training_intent?: ActivityPlanTrainingIntent;
+  content_visibility: (typeof visibilityOptions)[number];
+};
+type Props = {
+  initial?: {
+    description?: string | null;
+    gps_recording_enabled?: boolean;
+    name: string;
+    notes?: string | null;
+    structure: unknown;
+    training_intent?: ActivityPlanTrainingIntent;
+    content_visibility?: string | null;
+  };
+  mode: "create" | "edit";
+  onCancel: () => void;
+  onSave: (values: ActivityPlanAuthoringValues) => Promise<void> | void;
+  onSaved?: () => Promise<void> | void;
+  pending?: boolean;
+};
+
+function key(stepId: string, targetIndex?: number) {
+  return `${stepId}:${targetIndex ?? "quantity"}`;
+}
+function completionTypeKey(stepId: string) {
+  return `${stepId}:completion-type`;
+}
+function targetDraftKey(stepId: string, targetIndex: number) {
+  return key(stepId, targetIndex);
+}
+function removeTargetDraft(drafts: RawDrafts, stepId: string, targetIndex: number) {
+  const next: RawDrafts = {};
+  const prefix = `${stepId}:`;
+  for (const [draftKey, value] of Object.entries(drafts)) {
+    if (!draftKey.startsWith(prefix)) {
+      next[draftKey] = value;
+      continue;
+    }
+    const index = Number(draftKey.slice(prefix.length));
+    if (!Number.isInteger(index) || index < 0) next[draftKey] = value;
+    else if (index < targetIndex) next[draftKey] = value;
+    else if (index > targetIndex) next[targetDraftKey(stepId, index - 1)] = value;
+  }
+  return next;
+}
+function removeStepDrafts(drafts: RawDrafts, stepId: string) {
+  return Object.fromEntries(
+    Object.entries(drafts).filter(([draftKey]) => !draftKey.startsWith(`${stepId}:`)),
+  );
+}
+function removeRepeatDrafts(drafts: RawDrafts, repeat: ActivityPlanDraftRepeat) {
+  return repeat.steps.reduce((next, step) => removeStepDrafts(next, step.id), drafts);
+}
+function numericError(raw: string) {
+  const value = parseNumericInput(raw, {
+    min: 1,
+    max: Number.MAX_SAFE_INTEGER,
+    precision: "integer",
+  });
+  return value.status === "valid"
+    ? null
+    : value.status === "empty"
+      ? "A value is required."
+      : "Enter a positive whole number.";
+}
+function targetError(type: ActivityTargetType, raw: string) {
+  if (type === "rest") return null;
+  const result = parseNumericInput(raw, getActivityPlanStepTargetInputPolicy(type));
+  if (result.status !== "valid")
+    return result.status === "empty" ? "A value is required." : "Enter a valid target value.";
+  return type === "RPE" && !Number.isInteger(result.value * 2)
+    ? "RPE must use whole or half-point increments."
+    : null;
+}
+
+function targetTypeLabel(type: ActivityTargetType, category: CanonicalActivityCategory | null) {
+  if (type === "cadence")
+    return `Cadence · ${getActivityTargetCadenceUnitLabel(category ?? "bike")}`;
+  if (type === "%ThresholdHR") return "Heart rate · Threshold HR %";
+  if (type === "%MaxHR") return "Heart rate · Max HR %";
+  if (type === "%FTP") return "Power · FTP %";
+  if (type === "watts") return "Power · watts";
+  if (type === "bpm") return "Heart rate · bpm";
+  if (type === "speed") return category === "run" ? "Pace" : "Speed · km/h";
+  return type;
+}
+
+/** Local draft state is permissive; only Core's resolver yields the strict saved V5 structure. */
+export function ActivityPlanComposer({
+  initial,
+  mode,
+  onCancel,
+  onSave,
+  onSaved,
+  pending = false,
+}: Props) {
+  // Saved legacy structures can be structurally sound while failing current
+  // authoring requirements (for example, a targetless step). Load those into
+  // the repairable draft UI; the strict resolver remains the save boundary.
+  const initialDraft = initial
+    ? activityPlanDraftStructureSchema.safeParse(initial.structure)
+    : null;
+  const initialStructure = initialDraft?.success ? initialDraft.data : null;
+  const initialResolution = initialStructure ? resolveActivityPlanDraft(initialStructure) : null;
+  // The creation title is an editable default, never a display-only placeholder.
+  const [name, setName] = useState(initial?.name ?? "New plan");
+  const [description, setDescription] = useState(initial?.description ?? initial?.notes ?? "");
+  const [visibility, setVisibility] = useState<ActivityPlanAuthoringValues["content_visibility"]>(
+    initial?.content_visibility === "public" || initial?.content_visibility === "followers"
+      ? initial.content_visibility
+      : "private",
+  );
+  const [gpsEnabled, setGpsEnabled] = useState(initial?.gps_recording_enabled ?? true);
+  const [structure, setStructureState] = useState<ActivityPlanDraftStructure>(
+    initialStructure ?? createActivityPlanStructure(),
+  );
+  const [drafts, setDrafts] = useState<RawDrafts>({});
+  const [activeStepId, setActiveStepId] = useState<string | null>(
+    initialStructure?.items.flatMap((item) => (item.type === "step" ? [item] : item.steps))[0]
+      ?.id ?? null,
+  );
+  const [requestedCategory, setRequestedCategory] = useState<CanonicalActivityCategory | null>(
+    null,
+  );
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const structureRef = useRef(structure);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const setStructure: React.Dispatch<React.SetStateAction<ActivityPlanDraftStructure>> = (
+    action,
+  ) => {
+    try {
+      const next = typeof action === "function" ? action(structureRef.current) : action;
+      structureRef.current = next;
+      setStructureState(next);
+      setError(null);
+    } catch (failure) {
+      setError(
+        failure instanceof Error
+          ? failure.message
+          : "This activity plan change could not be applied.",
+      );
+    }
+  };
+  const dropAt = (repeatId: string | undefined, index: number) => {
+    if (!draggingId) return;
+    const sourceId = draggingId;
+    setDraggingId(null);
+    setStructure((current) => {
+      const rootIndex = current.items.findIndex((item) => item.id === sourceId);
+      const parentIndex = current.items.findIndex(
+        (item) => item.type === "repeat" && item.steps.some((step) => step.id === sourceId),
+      );
+      const parent = current.items[parentIndex];
+      let destination = index;
+      if (!repeatId && rootIndex >= 0 && rootIndex < index) destination--;
+      if (parent?.type === "repeat") {
+        const childIndex = parent.steps.findIndex((step) => step.id === sourceId);
+        if (repeatId === parent.id && childIndex < index) destination--;
+        if (!repeatId && parent.steps.length === 1 && parentIndex < index) destination--;
+      }
+      return moveDraftItem(current, sourceId, {
+        ...(repeatId ? { repeatId } : {}),
+        index: destination,
+      });
+    });
+  };
+  const [postSaveError, setPostSaveError] = useState<string | null>(null);
+  const [lastResolved, setLastResolved] = useState<ActivityPlanStructure | null>(
+    initialResolution?.status === "valid" ? initialResolution.structure : null,
+  );
+  const inFlight = useRef(false);
+  const persisted = useRef(false);
+  const alive = useRef(true);
+  const session = useRef(0);
+  const formRef = useRef<HTMLFormElement>(null);
+  const facts = useMemo(
+    () => createUnavailableAthletePerformanceTargetFacts(new Date().toISOString()),
+    [],
+  );
+  const resolution = useMemo(() => resolveActivityPlanDraft(structure), [structure]);
+  useEffect(() => {
+    if (resolution.status === "valid") setLastResolved(resolution.structure);
+  }, [resolution]);
+  useEffect(() => {
+    // React Strict Mode probes setup/cleanup once; the current mount must become live again.
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      session.current += 1;
+    };
+  }, []);
+  const metrics = useMemo(
+    () =>
+      activityPlanDraftMetrics(
+        resolution.status === "valid" ? resolution.structure : lastResolved,
+        facts,
+      ),
+    [facts, lastResolved, resolution],
+  );
+  const steps = structure.items.flatMap((item) => (item.type === "step" ? [item] : item.steps));
+  const rawErrors = useMemo(
+    () => [
+      ...structure.items.flatMap((item) =>
+        item.type === "repeat" &&
+        parseNumericInput(drafts[`${item.id}:count`] ?? String(item.count), {
+          min: 2,
+          max: 50,
+          precision: "integer",
+        }).status !== "valid"
+          ? ["Repeat count must be a whole number between 2 and 50."]
+          : [],
+      ),
+      ...steps.flatMap((step) => [
+        ...(step.duration === null
+          ? ["Choose a completion condition."]
+          : step.duration.type !== "untilFinished" &&
+              numericError(
+                drafts[key(step.id)] ?? String(getActivityPlanStepDurationAmount(step.duration)),
+              )
+            ? ["Completion quantity needs repair."]
+            : []),
+        ...step.targets.flatMap((target, index) =>
+          target.type !== "rest" &&
+          (target.intensity === null ||
+            targetError(target.type, drafts[key(step.id, index)] ?? String(target.intensity)))
+            ? ["Target needs repair."]
+            : [],
+        ),
+      ]),
+    ],
+    [drafts, steps, structure.items],
+  );
+  const valid = resolution.status === "valid" && rawErrors.length === 0;
+  const busy = pending || saving;
+  useEffect(() => {
+    if (submitAttempted && !valid)
+      formRef.current?.querySelector<HTMLElement>("[aria-invalid=true]")?.focus();
+  }, [submitAttempted, valid]);
+  const updateStep = (
+    stepId: string,
+    update: (step: ActivityPlanDraftStep) => ActivityPlanDraftStep,
+  ) => setStructure((current) => updateActivityPlanStep(current, stepId, update));
+  const changeCategory = (next: CanonicalActivityCategory) => {
+    if (next === structure.activity_category) return;
+    const incompatible = structure.items.some((item) =>
+      (item.type === "step" ? [item] : item.steps).some(
+        (step) =>
+          (step.duration &&
+            step.duration.type !== "untilFinished" &&
+            !getPermissibleActivityPlanDurationTypes(next).includes(step.duration.type)) ||
+          step.targets.some((target) => !getPermissibleTargetTypes(next).includes(target.type)),
+      ),
+    );
+    if (incompatible) setRequestedCategory(next);
+    else setStructure((current) => ({ ...current, activity_category: next }));
+  };
+  const save = async () => {
+    if (inFlight.current || busy) return;
+    setSubmitAttempted(true);
+    if (persisted.current || !name.trim() || !valid || resolution.status !== "valid") return;
+    inFlight.current = true;
+    setSaving(true);
+    setError(null);
+    setPostSaveError(null);
+    const currentSession = session.current;
+    try {
+      const normalized = normalizeActivityPlanAuthoringStructure(resolution.structure);
+      if (!normalized.success) {
+        setError(normalized.message);
+        return;
+      }
+      await onSave({
+        name: name.trim(),
+        description: description.trim() || null,
+        notes: null,
+        structure: normalized.structure,
+        gps_recording_enabled: gpsEnabled,
+        content_visibility: visibility,
+        ...(initial?.training_intent ? { training_intent: initial.training_intent } : {}),
+      });
+      if (!alive.current || session.current !== currentSession) return;
+      // Persistence is durable once onSave resolves. Retry only the post-save effect.
+      persisted.current = true;
+      try {
+        await onSaved?.();
+      } catch (cause) {
+        if (alive.current && session.current === currentSession)
+          setPostSaveError(
+            cause instanceof Error ? cause.message : "Saved, but navigation could not continue.",
+          );
+      }
+    } catch (cause) {
+      if (alive.current && session.current === currentSession)
+        setError(cause instanceof Error ? cause.message : "Activity plan could not be saved.");
+    } finally {
+      inFlight.current = false;
+      if (alive.current && session.current === currentSession) setSaving(false);
+    }
+  };
+  const retryNavigation = async () => {
+    if (inFlight.current || !persisted.current) return;
+    inFlight.current = true;
+    setSaving(true);
+    setPostSaveError(null);
+    const currentSession = session.current;
+    try {
+      await onSaved?.();
+    } catch (cause) {
+      if (alive.current && session.current === currentSession)
+        setPostSaveError(
+          cause instanceof Error ? cause.message : "Saved, but navigation could not continue.",
+        );
+    } finally {
+      inFlight.current = false;
+      if (alive.current && session.current === currentSession) setSaving(false);
+    }
+  };
+  if (initial && !initialStructure)
+    return (
+      <Card>
+        <CardContent className="space-y-3 pt-6">
+          <p>This plan has an unsupported activity structure. It was not changed.</p>
+          <Button type="button" onClick={onCancel}>
+            Back to plan
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  return (
+    <form
+      className="space-y-6"
+      data-testid="activity-plan-composer"
+      ref={formRef}
+      onSubmit={(event) => {
+        event.preventDefault();
+        void save();
+      }}
+    >
+      <fieldset className="space-y-5 border-0 p-0" disabled={busy || persisted.current}>
+        <section className="space-y-3 rounded-2xl border bg-card p-4" aria-label="Plan details">
+          <label className="block text-sm font-medium" htmlFor="activity-plan-name">
+            Plan name
+          </label>
+          <Input
+            id="activity-plan-name"
+            required
+            maxLength={255}
+            aria-invalid={submitAttempted && !name.trim()}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+          {submitAttempted && !name.trim() ? (
+            <p className="text-sm text-destructive">Enter a plan name before saving.</p>
+          ) : null}
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="sr-only" htmlFor="activity-plan-category">
+              Activity category
+            </label>
+            <select
+              id="activity-plan-category"
+              className="h-9 rounded-full border bg-secondary px-3 text-sm font-medium"
+              value={structure.activity_category ?? ""}
+              onChange={(event) => {
+                if (event.target.value)
+                  changeCategory(event.target.value as CanonicalActivityCategory);
+              }}
+            >
+              <option value="">Choose an activity</option>
+              {categories.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+          </div>
+          <label className="block text-sm font-medium" htmlFor="activity-plan-description">
+            Description (optional)
+          </label>
+          <Textarea
+            id="activity-plan-description"
+            maxLength={3000}
+            placeholder="Describe the activity plan"
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+          />
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="text-sm" htmlFor="activity-plan-visibility">
+              Visibility
+            </label>
+            <select
+              id="activity-plan-visibility"
+              className="h-9 rounded border bg-background px-2"
+              value={visibility}
+              onChange={(event) =>
+                setVisibility(
+                  event.target.value as ActivityPlanAuthoringValues["content_visibility"],
+                )
+              }
+            >
+              {visibilityOptions.map((option) => (
+                <option key={option}>{option}</option>
+              ))}
+            </select>
+            <label className="text-sm" htmlFor="activity-plan-gps">
+              <input
+                id="activity-plan-gps"
+                type="checkbox"
+                checked={gpsEnabled}
+                onChange={(event) => setGpsEnabled(event.target.checked)}
+              />{" "}
+              GPS recording enabled
+            </label>
+          </div>
+        </section>
+        {requestedCategory ? (
+          <div role="alert" className="space-y-2 rounded border border-destructive/40 p-3 text-sm">
+            <p>
+              Some completion conditions or targets are not available for {requestedCategory}. Keep
+              them and repair each item before saving?
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                setStructure((current) => ({ ...current, activity_category: requestedCategory }));
+                setRequestedCategory(null);
+              }}
+            >
+              Keep and repair
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => setRequestedCategory(null)}
+            >
+              Cancel
+            </Button>
+          </div>
+        ) : null}
+        <section aria-label="Activity plan composition" className="space-y-4">
+          <ActivityPlanEstimateRow metrics={metrics} />
+          {structure.activity_category ? (
+            <ActivityPlanTimelineChart
+              compact
+              height={40}
+              label="Plan timeline"
+              presentation={null}
+              structure={lastResolved ?? undefined}
+              testIDPrefix="activity-plan-draft-timeline"
+            />
+          ) : null}
+          <ol aria-label="Activity plan structure" className="space-y-3">
+            {structure.items.map((item, index) => (
+              <ItemEditor
+                key={item.id}
+                item={item}
+                index={index}
+                category={structure.activity_category}
+                activeStepId={activeStepId}
+                drafts={drafts}
+                setDrafts={setDrafts}
+                onActiveStepChange={setActiveStepId}
+                onStructureChange={setStructure}
+                onStepChange={updateStep}
+                allItems={structure.items}
+                draggingId={draggingId}
+                onDraggingChange={setDraggingId}
+                onDropAt={dropAt}
+                canDuplicate={rawErrors.length === 0}
+              />
+            ))}
+            {draggingId ? (
+              <li>
+                <DropTarget
+                  label="Drop at end of activity plan"
+                  onDrop={() => dropAt(undefined, structure.items.length)}
+                />
+              </li>
+            ) : null}
+          </ol>
+          {structure.items.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Choose an activity, then add a step or repeat.
+            </p>
+          ) : null}
+          <div className="sticky bottom-0 z-10 flex gap-2 border-t bg-background py-3">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!structure.activity_category}
+              onClick={() => {
+                const step = createActivityPlanStep();
+                setStructure((current) =>
+                  insertDraftItem(current, step, { index: current.items.length }),
+                );
+                setActiveStepId(step.id);
+              }}
+            >
+              <Plus className="h-4 w-4" /> Add step
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!structure.activity_category}
+              onClick={() =>
+                setStructure((current) =>
+                  insertDraftItem(current, createActivityPlanRepeat(), {
+                    index: current.items.length,
+                  }),
+                )
+              }
+            >
+              <Plus className="h-4 w-4" /> Add repeat
+            </Button>
+          </div>
+        </section>
+        {!valid && submitAttempted ? (
+          <div
+            role="alert"
+            className="rounded border border-destructive/40 p-3 text-sm text-destructive"
+          >
+            {resolution.status === "invalid"
+              ? resolution.issues.map((issue) => <p key={issue}>{issue}</p>)
+              : null}
+            {[...new Set(rawErrors)].map((message) => (
+              <p key={message}>{message}</p>
+            ))}
+          </div>
+        ) : null}
+        {error ? (
+          <div role="alert" className="text-sm text-destructive">
+            {error}
+          </div>
+        ) : null}
+      </fieldset>
+      {postSaveError ? (
+        <div role="alert" className="text-sm text-destructive">
+          {postSaveError}{" "}
+          <Button type="button" size="sm" disabled={saving} onClick={() => void retryNavigation()}>
+            Retry navigation
+          </Button>
+        </div>
+      ) : null}
+      <div className="flex justify-end gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
+            session.current += 1;
+            setSaving(false);
+            setError(null);
+            setPostSaveError(null);
+            onCancel();
+          }}
+        >
+          Cancel
+        </Button>
+        <Button type="submit" disabled={busy || persisted.current || !name.trim() || !valid}>
+          {saving ? "Saving..." : mode === "edit" ? "Save changes" : "Create plan"}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function ItemEditor({
+  item,
+  index,
+  category,
+  activeStepId,
+  drafts,
+  setDrafts,
+  onActiveStepChange,
+  onStructureChange,
+  onStepChange,
+  allItems,
+  draggingId,
+  onDraggingChange,
+  onDropAt,
+  canDuplicate,
+}: {
+  item: ActivityPlanDraftItem;
+  index: number;
+  category: CanonicalActivityCategory | null;
+  activeStepId: string | null;
+  drafts: RawDrafts;
+  setDrafts: React.Dispatch<React.SetStateAction<RawDrafts>>;
+  onActiveStepChange: (id: string | null) => void;
+  onStructureChange: React.Dispatch<React.SetStateAction<ActivityPlanDraftStructure>>;
+  onStepChange: (
+    id: string,
+    update: (step: ActivityPlanDraftStep) => ActivityPlanDraftStep,
+  ) => void;
+  allItems: ActivityPlanDraftItem[];
+  draggingId: string | null;
+  onDraggingChange: (id: string | null) => void;
+  onDropAt: (repeatId: string | undefined, index: number) => void;
+  canDuplicate: boolean;
+}) {
+  const isRepeat = item.type === "repeat";
+  const itemSteps = isRepeat ? item.steps : [item];
+  const [expanded, setExpanded] = useState(true);
+  const move = (id: string, repeatId: string | undefined, targetIndex: number) =>
+    onStructureChange((current) =>
+      moveDraftItem(current, id, { ...(repeatId ? { repeatId } : {}), index: targetIndex }),
+    );
+  return (
+    <li className="rounded-xl border bg-card p-3" data-testid={`activity-plan-item-${index}`}>
+      {draggingId ? (
+        <DropTarget
+          label={`Drop before item ${index + 1}`}
+          onDrop={() => onDropAt(undefined, index)}
+        />
+      ) : null}
+      {isRepeat ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            aria-expanded={expanded}
+            aria-label={`${expanded ? "Collapse" : "Expand"} repeat ${index + 1}`}
+            className="h-11 w-11 shrink-0"
+            onClick={() => setExpanded((current) => !current)}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <ChevronDown
+              className={`h-4 w-4 transition-transform ${expanded ? "" : "-rotate-90"}`}
+            />
+          </Button>
+          <h3 className="min-w-0 flex-1 font-semibold">{item.count}× repeat</h3>
+          <label
+            className="flex min-h-11 items-center gap-2 text-sm"
+            htmlFor={`repeat-count-${item.id}`}
+          >
+            <span className="sr-only">Repeat count</span>
+            <Input
+              id={`repeat-count-${item.id}`}
+              aria-label="Repeat count"
+              className="h-11 w-16"
+              type="text"
+              inputMode="numeric"
+              value={drafts[`${item.id}:count`] ?? String(item.count)}
+              aria-invalid={
+                parseNumericInput(drafts[`${item.id}:count`] ?? String(item.count), {
+                  min: 2,
+                  max: 50,
+                  precision: "integer",
+                }).status !== "valid"
+              }
+              onChange={(event) => {
+                const raw = event.target.value;
+                setDrafts((current) => ({ ...current, [`${item.id}:count`]: raw }));
+                const parsed = parseNumericInput(raw, { min: 2, max: 50, precision: "integer" });
+                if (parsed.status === "valid")
+                  onStructureChange((current) =>
+                    updateActivityPlanRepeat(current, item.id, (repeat) => ({
+                      ...repeat,
+                      count: parsed.value,
+                    })),
+                  );
+              }}
+            />
+            <span aria-hidden="true">×</span>
+          </label>
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-11 w-11 cursor-grab"
+              size="icon"
+              draggable
+              aria-label={`Drag repeat ${index + 1}`}
+              onDragStart={(event) => {
+                event.dataTransfer.setData("text/plain", item.id);
+                event.dataTransfer.effectAllowed = "move";
+                onDraggingChange(item.id);
+              }}
+              onDragEnd={() => onDraggingChange(null)}
+            >
+              <GripVertical className="h-4 w-4" />
+            </Button>
+            <OutlineOverflowMenu label={`repeat ${index + 1}`}>
+              <DropdownMenuItem onSelect={() => move(item.id, undefined, index - 1)}>
+                Move earlier
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => move(item.id, undefined, index + 1)}>
+                Move later
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={!canDuplicate}
+                onSelect={() =>
+                  onStructureChange((current) => duplicateDraftItem(current, item.id))
+                }
+              >
+                Duplicate
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={!canDuplicate}
+                onSelect={() =>
+                  onStructureChange((current) => ungroupDraftRepeat(current, item.id))
+                }
+              >
+                Ungroup
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-destructive"
+                onSelect={() => {
+                  if (
+                    item.steps.length > 0 &&
+                    !window.confirm(
+                      "Delete this repeat and all its steps? Use Ungroup to keep the full sequence.",
+                    )
+                  )
+                    return;
+                  setDrafts((current) => removeRepeatDrafts(current, item));
+                  onStructureChange((current) => removeDraftItem(current, item.id));
+                }}
+              >
+                Delete
+              </DropdownMenuItem>
+            </OutlineOverflowMenu>
+          </div>
+        </div>
+      ) : null}
+      {isRepeat &&
+      parseNumericInput(drafts[`${item.id}:count`] ?? String(item.count), {
+        min: 2,
+        max: 50,
+        precision: "integer",
+      }).status !== "valid" ? (
+        <span role="alert">Enter a whole repeat count from 2 to 50.</span>
+      ) : null}
+      <ol
+        aria-label={isRepeat ? `Repeat ${index + 1} steps` : `Step ${index + 1}`}
+        className={isRepeat ? "mt-3 space-y-2 border-l-2 border-border pl-3" : "space-y-2"}
+        hidden={isRepeat && !expanded}
+      >
+        {itemSteps.map((step, stepIndex) => (
+          <li
+            key={step.id}
+            id={`activity-plan-step-${step.id}`}
+            className="min-h-16 rounded-xl bg-secondary/50 px-3 py-2"
+          >
+            {draggingId && isRepeat ? (
+              <DropTarget
+                label={`Drop before step ${stepIndex + 1} in repeat ${index + 1}`}
+                onDrop={() => onDropAt(item.id, stepIndex)}
+              />
+            ) : null}
+            <div className="flex items-center gap-2">
+              <button
+                className="min-h-11 min-w-0 flex-1 text-left"
+                type="button"
+                aria-controls={`step-editor-${step.id}`}
+                aria-expanded={activeStepId === step.id}
+                aria-label={`${activeStepId === step.id ? "Close editor for" : "Edit"} ${step.name || `step ${isRepeat ? stepIndex + 1 : index + 1}`}`}
+                onClick={() => onActiveStepChange(activeStepId === step.id ? null : step.id)}
+              >
+                <span>{step.name || `Step ${isRepeat ? stepIndex + 1 : index + 1}`}</span>
+                <p className="text-sm text-muted-foreground">
+                  {step.duration ? formatActivityPlanDuration(step.duration) : "Set duration"}
+                  {step.targets.length
+                    ? ` · ${step.targets.map((target) => (target.type === "rest" ? "Rest" : `${target.intensity ?? "Set"} ${target.type === "cadence" ? getActivityTargetCadenceUnitLabel(category ?? "bike") : activityTargetAuthoringUnitLabels[activityTargetDefinitionByType[target.type].unit]}`)).join(", ")}`
+                    : ""}
+                </p>
+              </button>
+              <StepActions
+                index={isRepeat ? stepIndex : index}
+                onDelete={() => {
+                  setDrafts((current) => removeStepDrafts(current, step.id));
+                  onStructureChange((current) => removeDraftItem(current, step.id));
+                }}
+                onDuplicate={() =>
+                  onStructureChange((current) => duplicateDraftItem(current, step.id))
+                }
+                canDuplicate={canDuplicate}
+                onMove={(offset) =>
+                  move(
+                    step.id,
+                    isRepeat ? item.id : undefined,
+                    (isRepeat ? stepIndex : index) + offset,
+                  )
+                }
+                destinations={[
+                  {
+                    label: "Move to end of activity plan",
+                    onSelect: () =>
+                      move(
+                        step.id,
+                        undefined,
+                        allItems.length - (isRepeat && item.steps.length > 1 ? 0 : 1),
+                      ),
+                  },
+                  ...allItems.flatMap((candidate, repeatIndex) =>
+                    candidate.type === "repeat" && (!isRepeat || candidate.id !== item.id)
+                      ? [
+                          {
+                            label: `Move to repeat ${repeatIndex + 1}`,
+                            onSelect: () => move(step.id, candidate.id, candidate.steps.length),
+                          },
+                        ]
+                      : [],
+                  ),
+                ]}
+                onDragStart={(event) => {
+                  event.dataTransfer.setData("text/plain", step.id);
+                  event.dataTransfer.effectAllowed = "move";
+                  onDraggingChange(step.id);
+                }}
+                onDragEnd={() => onDraggingChange(null)}
+              />
+            </div>
+            {activeStepId === step.id ? (
+              <StepEditor
+                step={step}
+                category={category}
+                drafts={drafts}
+                setDrafts={setDrafts}
+                onChange={(update) => onStepChange(step.id, update)}
+              />
+            ) : null}
+          </li>
+        ))}
+      </ol>
+      {draggingId && isRepeat ? (
+        <DropTarget
+          label={`Drop at end of repeat ${index + 1}`}
+          onDrop={() => onDropAt(item.id, item.steps.length)}
+        />
+      ) : null}
+      {isRepeat ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="mt-3"
+          onClick={() => {
+            const step = createActivityPlanStep();
+            onStructureChange((current) =>
+              insertDraftItem(current, step, { repeatId: item.id, index: item.steps.length }),
+            );
+            onActiveStepChange(step.id);
+          }}
+        >
+          <Plus className="h-4 w-4" /> Add step
+        </Button>
+      ) : null}
+    </li>
+  );
+}
+
+function StepActions({
+  index,
+  onDelete,
+  onDuplicate,
+  onMove,
+  onDragStart,
+  onDragEnd,
+  canDuplicate,
+  destinations,
+}: {
+  index: number;
+  onDelete: () => void;
+  onDuplicate: () => void;
+  onMove: (offset: -1 | 1) => void;
+  onDragStart: (event: React.DragEvent<HTMLButtonElement>) => void;
+  onDragEnd: () => void;
+  canDuplicate: boolean;
+  destinations: { label: string; onSelect: () => void }[];
+}) {
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      <Button
+        aria-label={`Drag step ${index + 1}`}
+        className="h-11 w-11 cursor-grab"
+        draggable
+        onDragEnd={onDragEnd}
+        onDragStart={onDragStart}
+        onKeyDown={(event) => {
+          if (event.altKey && event.key === "ArrowUp") {
+            event.preventDefault();
+            onMove(-1);
+          }
+          if (event.altKey && event.key === "ArrowDown") {
+            event.preventDefault();
+            onMove(1);
+          }
+        }}
+        size="icon"
+        type="button"
+        variant="ghost"
+      >
+        <GripVertical className="h-4 w-4" />
+      </Button>
+      <OutlineOverflowMenu label={`step ${index + 1}`}>
+        <DropdownMenuItem onSelect={() => onMove(-1)}>Move earlier</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onMove(1)}>Move later</DropdownMenuItem>
+        {destinations.map((destination) => (
+          <DropdownMenuItem key={destination.label} onSelect={destination.onSelect}>
+            {destination.label}
+          </DropdownMenuItem>
+        ))}
+        <DropdownMenuItem disabled={!canDuplicate} onSelect={onDuplicate}>
+          Duplicate
+        </DropdownMenuItem>
+        <DropdownMenuItem className="text-destructive" onSelect={onDelete}>
+          Delete
+        </DropdownMenuItem>
+      </OutlineOverflowMenu>
+    </div>
+  );
+}
+
+function OutlineOverflowMenu({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          aria-label={`More actions for ${label}`}
+          className="h-11 w-11"
+          size="icon"
+          type="button"
+          variant="ghost"
+        >
+          <Ellipsis className="h-5 w-5" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">{children}</DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function DropTarget({ label, onDrop }: { label: string; onDrop: () => void }) {
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      className="my-2 w-full border-dashed"
+      aria-label={label}
+      onDragOver={(event) => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onDrop();
+      }}
+      onClick={onDrop}
+    >
+      {label}
+    </Button>
+  );
+}
+
+function StepEditor({
+  step,
+  category,
+  drafts,
+  setDrafts,
+  onChange,
+}: {
+  step: ActivityPlanDraftStep;
+  category: CanonicalActivityCategory | null;
+  drafts: RawDrafts;
+  setDrafts: React.Dispatch<React.SetStateAction<RawDrafts>>;
+  onChange: (update: (step: ActivityPlanDraftStep) => ActivityPlanDraftStep) => void;
+}) {
+  const [notePasteError, setNotePasteError] = useState<string | null>(null);
+  const noteValidation = activityPlanStepNoteSchema.safeParse(step.instructions);
+  const noteError =
+    notePasteError ?? (noteValidation.success ? null : noteValidation.error.issues[0]?.message);
+  const durations = category ? getPermissibleActivityPlanDurationTypes(category) : [];
+  const targets = category ? getPermissibleTargetTypes(category) : [];
+  const quantityKey = key(step.id);
+  const selectedDurationType = step.duration?.type ?? drafts[completionTypeKey(step.id)] ?? "";
+  const hasRestTarget = step.targets.some((target) => target.type === "rest");
+  const targetPolicy = getActivityPlanStepTargetEditorPolicy({
+    activityCategory: category,
+    durationType: (selectedDurationType as ActivityPlanDuration["type"] | "") || null,
+  });
+  const { restAllowed: restAvailable, selectableTargetTypes: selectableTargets } = targetPolicy;
+  const targetOptions = (currentType: ActivityTargetType) => [
+    ...(currentType === "rest" && !selectableTargets.includes("rest")
+      ? [{ value: "rest" as const, label: "rest (available for timed steps)", disabled: true }]
+      : []),
+    ...selectableTargets.map((type) => ({
+      value: type,
+      label: targetTypeLabel(type, category),
+      disabled: false,
+    })),
+  ];
+  const durationUnavailable =
+    selectedDurationType !== "" &&
+    !durations.includes(
+      selectedDurationType as Exclude<ActivityPlanDuration["type"], "untilFinished">,
+    );
+  const durationErrorId = `step-completion-error-${step.id}`;
+  const quantityRaw = step.duration
+    ? (drafts[quantityKey] ?? String(getActivityPlanStepDurationAmount(step.duration)))
+    : "";
+  return (
+    <fieldset id={`step-editor-${step.id}`} className="mt-3 space-y-3 border-t pt-3">
+      <legend className="sr-only">Edit step</legend>
+      <label className="flex flex-wrap items-center gap-3 text-sm" htmlFor={`step-name-${step.id}`}>
+        <span className="min-w-24">Name (optional)</span>
+        <Input
+          id={`step-name-${step.id}`}
+          className="min-w-40 flex-1"
+          placeholder="Step name"
+          value={step.name ?? ""}
+          onChange={(event) =>
+            onChange((item) => ({ ...item, name: event.target.value || undefined }))
+          }
+        />
+      </label>
+      <div className="flex flex-wrap items-center gap-3 text-sm">
+        <label className="min-w-24" htmlFor={`step-instructions-${step.id}`}>
+          Instructions (optional)
+        </label>
+        <Input
+          id={`step-instructions-${step.id}`}
+          className="min-w-40 flex-1"
+          value={step.instructions ?? ""}
+          placeholder="Cue"
+          aria-invalid={Boolean(noteError)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.preventDefault();
+          }}
+          onPaste={(event) => {
+            const pasted = activityPlanStepNoteSchema.safeParse(
+              event.clipboardData.getData("text"),
+            );
+            if (!pasted.success) {
+              event.preventDefault();
+              setNotePasteError(
+                pasted.error.issues[0]?.message ?? "Paste a short single-line cue.",
+              );
+            }
+          }}
+          onChange={(event) => {
+            setNotePasteError(null);
+            onChange((item) => ({ ...item, instructions: event.target.value || undefined }));
+          }}
+        />
+        {noteError ? <span role="alert">{noteError}</span> : null}
+      </div>
+      <div className="flex flex-wrap items-end gap-3" data-testid={`step-duration-row-${step.id}`}>
+        <label className="min-w-32 flex-1 text-sm" htmlFor={`step-completion-${step.id}`}>
+          <span className="sr-only">Completion</span>
+          <select
+            id={`step-completion-${step.id}`}
+            className="mt-1 h-10 w-full rounded border bg-background px-2"
+            aria-describedby={durationUnavailable ? durationErrorId : undefined}
+            aria-invalid={durationUnavailable}
+            value={selectedDurationType}
+            onChange={(event) => {
+              const type = event.target.value as ActivityPlanDuration["type"] | "";
+              if (hasRestTarget && type !== "time") return;
+              setDrafts((current) => ({ ...current, [completionTypeKey(step.id)]: type }));
+              onChange((item) => ({
+                ...item,
+                duration: type === "untilFinished" ? createActivityPlanStepDuration(type, 1) : null,
+              }));
+            }}
+          >
+            <option value="">Choose completion</option>
+            {durationUnavailable ? (
+              <option value={selectedDurationType}>
+                {selectedDurationType} (not available for {category})
+              </option>
+            ) : null}
+            {durations.map((type) => (
+              <option key={type} value={type} disabled={hasRestTarget && type !== "time"}>
+                {type}
+              </option>
+            ))}
+          </select>
+          {durationUnavailable ? (
+            <p id={durationErrorId} className="mt-1 text-sm text-destructive">
+              This completion condition is not available for {category}. Choose an available
+              condition.
+            </p>
+          ) : null}
+        </label>
+        {selectedDurationType && selectedDurationType !== "untilFinished" ? (
+          <label className="min-w-28 flex-1 text-sm" htmlFor={`step-quantity-${step.id}`}>
+            <span className="sr-only">Quantity</span>
+            <Input
+              id={`step-quantity-${step.id}`}
+              type="text"
+              inputMode="numeric"
+              value={quantityRaw}
+              aria-invalid={Boolean(quantityRaw && numericError(quantityRaw))}
+              onChange={(event) => {
+                const raw = event.target.value;
+                setDrafts((current) => ({ ...current, [quantityKey]: raw }));
+                const parsed = parseNumericInput(raw, { min: 1, precision: "integer" });
+                if (parsed.status === "valid")
+                  onChange((item) => ({
+                    ...item,
+                    duration: createActivityPlanStepDuration(
+                      selectedDurationType as Exclude<
+                        ActivityPlanDuration["type"],
+                        "untilFinished"
+                      >,
+                      parsed.value,
+                    ),
+                  }));
+              }}
+            />
+          </label>
+        ) : null}
+      </div>
+      <div className="space-y-2">
+        <span className="text-sm font-medium">Targets</span>
+        {step.targets.map((target, index) => {
+          const targetKey = targetDraftKey(step.id, index);
+          const raw =
+            drafts[targetKey] ??
+            (target.type === "rest" || target.intensity === null ? "" : String(target.intensity));
+          const definition = activityTargetDefinitionByType[target.type];
+          return (
+            <div className="flex flex-wrap items-center gap-2" key={targetKey}>
+              <select
+                aria-label={`Target type ${index + 1}`}
+                className="h-10 rounded border bg-background px-2"
+                value={target.type}
+                onChange={(event) => {
+                  const type = event.target.value as ActivityTargetType;
+                  if (type === "rest" && !restAvailable) return;
+                  onChange((item) =>
+                    type === "rest"
+                      ? {
+                          ...item,
+                          targets: [{ type: "rest" }],
+                        }
+                      : {
+                          ...item,
+                          targets: item.targets.map((value, itemIndex) =>
+                            itemIndex === index ? { type, intensity: null } : value,
+                          ),
+                        },
+                  );
+                }}
+              >
+                {!targets.includes(target.type) ? (
+                  <option value={target.type}>
+                    {target.type} (not available for {category})
+                  </option>
+                ) : null}
+                {targetOptions(target.type).map((option) => (
+                  <option key={option.value} value={option.value} disabled={option.disabled}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              {target.type === "rest" ? null : (
+                <Input
+                  aria-label={`Target intensity ${index + 1}`}
+                  className="max-w-40"
+                  type="text"
+                  inputMode="decimal"
+                  value={raw}
+                  aria-invalid={Boolean(raw && targetError(target.type, raw))}
+                  onChange={(event) => {
+                    const next = event.target.value;
+                    setDrafts((current) => ({ ...current, [targetKey]: next }));
+                    const inputPolicy = getActivityPlanStepTargetInputPolicy(target.type);
+                    const parsed = parseNumericInput(next, {
+                      ...inputPolicy,
+                      min: inputPolicy.commitMinimum,
+                    });
+                    if (parsed.status === "valid")
+                      onChange((item) => ({
+                        ...item,
+                        targets: item.targets.map((value, itemIndex) =>
+                          itemIndex === index ? { ...value, intensity: parsed.value } : value,
+                        ),
+                      }));
+                  }}
+                />
+              )}
+              {target.type === "rest" ? null : (
+                <span className="text-sm text-muted-foreground">
+                  {target.type === "cadence"
+                    ? getActivityTargetCadenceUnitLabel(category ?? "bike")
+                    : activityTargetAuthoringUnitLabels[definition.unit]}
+                </span>
+              )}
+              <Button
+                type="button"
+                variant="ghost"
+                aria-label="Delete target"
+                onClick={() => {
+                  setDrafts((current) => removeTargetDraft(current, step.id, index));
+                  onChange((item) => ({
+                    ...item,
+                    targets: item.targets.filter((_, itemIndex) => itemIndex !== index),
+                  }));
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          );
+        })}
+        {step.targets.length < targetPolicy.maximumTargets &&
+        !step.targets.some((target) => target.type === "rest") ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            disabled={!category}
+            onClick={() => {
+              const type = selectableTargets[0];
+              if (type)
+                onChange((item) => ({
+                  ...item,
+                  targets:
+                    item.targets.length >= targetPolicy.maximumTargets
+                      ? item.targets
+                      : [
+                          ...item.targets,
+                          type === "rest" ? { type: "rest" as const } : { type, intensity: null },
+                        ],
+                }));
+            }}
+          >
+            Add target
+          </Button>
+        ) : null}
+      </div>
+    </fieldset>
+  );
+}

@@ -36,10 +36,13 @@ type SqlQueryLike = {
 };
 
 type QueryBuilder = {
+  for?: ReturnType<typeof vi.fn>;
   from?: ReturnType<typeof vi.fn>;
+  groupBy?: ReturnType<typeof vi.fn>;
   innerJoin?: ReturnType<typeof vi.fn>;
   leftJoin?: ReturnType<typeof vi.fn>;
   limit?: ReturnType<typeof vi.fn>;
+  offset?: ReturnType<typeof vi.fn>;
   orderBy?: ReturnType<typeof vi.fn>;
   returning?: ReturnType<typeof vi.fn>;
   set?: ReturnType<typeof vi.fn>;
@@ -196,9 +199,14 @@ function extractSqlText(query: unknown): string {
 
 function inferTableFromSql(query: unknown): string {
   const text = extractSqlText(query);
+  if (
+    text.includes('select schedule_batch_id as "schedulebatchid"') &&
+    text.includes("training_plan_id")
+  ) {
+    return "training_plan_schedule_replays";
+  }
   const tables = [
     "training_plans",
-    "profile_training_settings",
     "profile_goals",
     "activity_plans",
     "activity_efforts",
@@ -238,7 +246,10 @@ export function createQueryMapDbMock(queryMap: QueryMap = {}) {
         leftJoin: vi.fn(() => builder),
         where: vi.fn(() => builder),
         orderBy: vi.fn(() => builder),
+        groupBy: vi.fn(() => builder),
         limit: vi.fn(() => builder),
+        offset: vi.fn(() => builder),
+        for: vi.fn(() => builder),
       },
       () => {
         callLog.push({ table: tableName, operation: "select" });

@@ -65,8 +65,11 @@ export function calculateTrainingEffect(
     let duration = 1;
     if (nextTimestamp !== undefined && currentTimestamp !== undefined) {
       duration = nextTimestamp - currentTimestamp;
-    } else if (i > 0 && currentTimestamp !== undefined && timestamps[i - 1] !== undefined) {
-      duration = currentTimestamp - timestamps[i - 1]!;
+    } else {
+      const previousTimestamp = timestamps[i - 1];
+      if (i > 0 && currentTimestamp !== undefined && previousTimestamp !== undefined) {
+        duration = currentTimestamp - previousTimestamp;
+      }
     }
 
     if (hr < zones.z1.max) timeInZones.z1 += duration;
