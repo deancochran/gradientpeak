@@ -30,4 +30,35 @@ describe("web/mobile capability inventory", () => {
       "implemented",
     );
   });
+
+  it("classifies athlete permission settings without claiming native coaching workspaces or runtime proof", async () => {
+    const records = await buildParityRegistry(root);
+    const route = "apps/mobile/app/(internal)/(standard)/coaching-permissions.tsx";
+    const settings = records.find((record) => record.id === "settings.manage");
+    expect(settings?.mobile.sources).toContain(route);
+    expect(settings?.mobile.tests).toEqual([
+      {
+        kind: "jest",
+        path: "apps/mobile/app/(internal)/(standard)/__tests__/settings.jest.test.tsx",
+      },
+      {
+        kind: "jest",
+        path: "apps/mobile/app/(internal)/(standard)/__tests__/coaching-permissions.jest.test.tsx",
+      },
+      {
+        kind: "jest",
+        path: "apps/mobile/components/coaching/CoachingPublicationPermissions.jest.test.tsx",
+      },
+    ]);
+    expect(settings?.mobile.evidenceStrength).toBe("screen/component");
+    expect(settings?.mobile.missingSteps).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: "proof" })]),
+    );
+    expect(
+      records.filter((record) => record.mobile.sources.includes(route)).map(({ id }) => id),
+    ).toEqual(["settings.manage"]);
+    const workspace = records.find((record) => record.id === "coaching.workspace");
+    expect(workspace?.policy).toBe("web_only");
+    expect(workspace?.mobile.implementation).toBe("intentional_absence");
+  });
 });
