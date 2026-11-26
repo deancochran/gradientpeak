@@ -1,4 +1,8 @@
-import { calculateATL, calculateCTL, calculateTSB } from "../load/progression";
+import {
+  calculateLoadBalance,
+  calculateLongTermLoad,
+  calculateRecentLoad,
+} from "../load/progression";
 import { computeProjectionPointReadinessScores } from "./projection/readiness";
 
 export type ForecastConfidence = "high" | "medium" | "low";
@@ -16,11 +20,11 @@ export type ForecastConfidenceReasonCode =
 export type ReadinessForecastBaseline = {
   start_date: string;
   today: string;
-  initial_ctl: number;
-  initial_atl: number;
+  initial_longTermLoad: number;
+  initial_recentLoad: number;
   initial_readiness: number;
-  today_ctl?: number;
-  today_atl?: number;
+  today_longTermLoad?: number;
+  today_recentLoad?: number;
   today_readiness?: number;
   source: "history" | "fallback" | "profile_estimate";
   confidence: ForecastConfidence;
@@ -111,7 +115,7 @@ export type ReadinessForecastGoalInput = {
 
 export type ReadinessDailyLoadInput = {
   date: string;
-  tss: number;
+  load: number;
 };
 
 export type ScheduledReadinessDailyLoadInput = ReadinessDailyLoadInput & {
@@ -133,7 +137,7 @@ export type BuildReadinessForecastTimelineInput = {
 export type ReadinessScheduleAdjustmentSimulation = {
   adjustment: {
     date: string;
-    tss_delta: number;
+    load_delta: number;
     resulting_scheduled_load: number;
   };
   comparison_date: string;
@@ -146,14 +150,14 @@ export type ReadinessScheduleAdjustmentSimulation = {
 };
 
 type ModelState = {
-  ctl: number;
-  atl: number;
+  longTermLoad: number;
+  recentLoad: number;
   readiness: number | null;
 };
 
 type SimulatedPoint = ReadinessSeriesPoint & {
-  ctl: number;
-  atl: number;
+  longTermLoad: number;
+  recentLoad: number;
 };
 
 const CONFIDENCE_REASON_ORDER: ForecastConfidenceReasonCode[] = [
@@ -215,7 +219,7 @@ function uncertaintyMargin(confidence?: ForecastConfidence): number {
 function loadByDate(loads: ReadinessDailyLoadInput[]): Map<string, number> {
   const map = new Map<string, number>();
   for (const load of [...loads].sort((left, right) => left.date.localeCompare(right.date))) {
-    map.set(load.date, (map.get(load.date) ?? 0) + clampNonNegative(load.tss));
+    map.set(load.date, (map.get(load.date) ?? 0) + clampNonNegative(load.load));
   }
   return map;
 }
@@ -239,43 +243,46 @@ function scheduledConfidenceByDate(
 function simulatePoints(input: {
   dates: string[];
   loadsByDate: Map<string, number>;
-  initialCtl: number;
-  initialAtl: number;
+  initialLongTermLoad: number;
+  initialRecentLoad: number;
   provenance: ReadinessSeriesPoint["provenance"];
   confidenceByDate?: Map<string, ForecastConfidence>;
 }): SimulatedPoint[] {
-  let ctl = input.initialCtl;
-  let atl = input.initialAtl;
+  let longTermLoad = input.initialLongTermLoad;
+  let recentLoad = input.initialRecentLoad;
   const modelPoints = input.dates.map((date) => {
     const load = input.loadsByDate.get(date) ?? 0;
-    ctl = calculateCTL(ctl, load);
-    atl = calculateATL(atl, load);
+    longTermLoad = calculateLongTermLoad(longTermLoad, load);
+    recentLoad = calculateRecentLoad(recentLoad, load);
     return {
       date,
       load,
-      ctl,
-      atl,
-      tsb: calculateTSB(ctl, atl),
+      longTermLoad,
+      recentLoad,
+      loadBalance: calculateLoadBalance(longTermLoad, recentLoad),
     };
   });
   const readinessScores = computeProjectionPointReadinessScores({
     points: modelPoints.map((point) => ({
       date: point.date,
-      predicted_fitness_ctl: point.ctl,
-      predicted_fatigue_atl: point.atl,
-      predicted_form_tsb: point.tsb,
+      predicted_fitness_longTermLoad: point.longTermLoad,
+      predicted_fatigue_recentLoad: point.recentLoad,
+      predicted_form_loadBalance: point.loadBalance,
     })),
   });
 
-  return modelPoints.map((point, index) => ({
-    date: point.date,
-    readiness: readinessScores[index] ?? null,
-    load: round1(point.load),
-    confidence: input.confidenceByDate?.get(point.date),
-    provenance: input.provenance,
-    ctl: point.ctl,
-    atl: point.atl,
-  }));
+  return modelPoints.map((point, index) => {
+    const confidence = input.confidenceByDate?.get(point.date);
+    return {
+      date: point.date,
+      readiness: readinessScores[index] ?? null,
+      load: round1(point.load),
+      ...(confidence === undefined ? {} : { confidence }),
+      provenance: input.provenance,
+      longTermLoad: point.longTermLoad,
+      recentLoad: point.recentLoad,
+    };
+  });
 }
 
 function withUncertaintyRange(
@@ -302,8 +309,8 @@ export function simulateReadinessSeries(input: {
   label: ReadinessSeries["label"];
   startDate: string;
   endDate: string;
-  initialCtl: number;
-  initialAtl: number;
+  initialLongTermLoad: number;
+  initialRecentLoad: number;
   dailyLoad: ScheduledReadinessDailyLoadInput[];
   provenance: ReadinessSeriesPoint["provenance"];
 }): ReadinessSeries {
@@ -311,8 +318,8 @@ export function simulateReadinessSeries(input: {
   const points = simulatePoints({
     dates,
     loadsByDate: loadByDate(input.dailyLoad),
-    initialCtl: input.initialCtl,
-    initialAtl: input.initialAtl,
+    initialLongTermLoad: input.initialLongTermLoad,
+    initialRecentLoad: input.initialRecentLoad,
     provenance: input.provenance,
     confidenceByDate: scheduledConfidenceByDate(input.dailyLoad),
   });
@@ -320,7 +327,9 @@ export function simulateReadinessSeries(input: {
   return {
     id: input.id,
     label: input.label,
-    points: points.map(({ ctl: _ctl, atl: _atl, ...point }) => point),
+    points: points.map(
+      ({ longTermLoad: _longTermLoad, recentLoad: _recentLoad, ...point }) => point,
+    ),
   };
 }
 
@@ -332,16 +341,16 @@ function deriveTodayState(input: BuildReadinessForecastTimelineInput): {
     const points = simulatePoints({
       dates: enumerateDates(input.startDate, input.today),
       loadsByDate: loadByDate(input.actualDailyLoad),
-      initialCtl: input.baseline.initial_ctl,
-      initialAtl: input.baseline.initial_atl,
+      initialLongTermLoad: input.baseline.initial_longTermLoad,
+      initialRecentLoad: input.baseline.initial_recentLoad,
       provenance: "completed_activity",
     });
     const todayPoint = points[points.length - 1];
     if (todayPoint) {
       return {
         state: {
-          ctl: todayPoint.ctl,
-          atl: todayPoint.atl,
+          longTermLoad: todayPoint.longTermLoad,
+          recentLoad: todayPoint.recentLoad,
           readiness: todayPoint.readiness,
         },
         usedFallback: false,
@@ -351,8 +360,8 @@ function deriveTodayState(input: BuildReadinessForecastTimelineInput): {
 
   return {
     state: {
-      ctl: input.baseline.today_ctl ?? input.baseline.initial_ctl,
-      atl: input.baseline.today_atl ?? input.baseline.initial_atl,
+      longTermLoad: input.baseline.today_longTermLoad ?? input.baseline.initial_longTermLoad,
+      recentLoad: input.baseline.today_recentLoad ?? input.baseline.initial_recentLoad,
       readiness: input.baseline.today_readiness ?? input.baseline.initial_readiness,
     },
     usedFallback: true,
@@ -586,8 +595,8 @@ function buildActualSeries(input: BuildReadinessForecastTimelineInput): Readines
     label: "Actual",
     startDate: input.startDate,
     endDate: input.today < input.endDate ? input.today : input.endDate,
-    initialCtl: input.baseline.initial_ctl,
-    initialAtl: input.baseline.initial_atl,
+    initialLongTermLoad: input.baseline.initial_longTermLoad,
+    initialRecentLoad: input.baseline.initial_recentLoad,
     dailyLoad: input.actualDailyLoad,
     provenance: "completed_activity",
   });
@@ -599,17 +608,13 @@ function buildReanchoredSeries(input: {
   startDate: string;
   endDate: string;
   today: string;
-  initialCtl: number;
-  initialAtl: number;
+  initialLongTermLoad: number;
+  initialRecentLoad: number;
   todayState: ModelState;
   dailyLoad: ScheduledReadinessDailyLoadInput[];
   provenance: ReadinessSeriesPoint["provenance"];
   historicalStartDate?: string;
 }): ReadinessSeries {
-  if (input.dailyLoad.length === 0) {
-    return { id: input.id, label: input.label, points: [] };
-  }
-
   const historicalEndDate = input.today < input.endDate ? input.today : input.endDate;
   const historicalStartDate = input.historicalStartDate ?? input.startDate;
   const historicalDates =
@@ -624,16 +629,16 @@ function buildReanchoredSeries(input: {
   const historicalPoints = simulatePoints({
     dates: historicalDates,
     loadsByDate: loads,
-    initialCtl: input.initialCtl,
-    initialAtl: input.initialAtl,
+    initialLongTermLoad: input.initialLongTermLoad,
+    initialRecentLoad: input.initialRecentLoad,
     provenance: input.provenance,
     confidenceByDate,
   });
   const futurePoints = simulatePoints({
     dates: futureDates,
     loadsByDate: loads,
-    initialCtl: input.todayState.ctl,
-    initialAtl: input.todayState.atl,
+    initialLongTermLoad: input.todayState.longTermLoad,
+    initialRecentLoad: input.todayState.recentLoad,
     provenance: input.provenance,
     confidenceByDate,
   });
@@ -646,7 +651,7 @@ function buildReanchoredSeries(input: {
         (point) =>
           input.dailyLoad.some((load) => load.date <= input.today) || point.date > input.today,
       )
-      .map(({ ctl: _ctl, atl: _atl, ...point }) => point),
+      .map(({ longTermLoad: _longTermLoad, recentLoad: _recentLoad, ...point }) => point),
   };
 }
 
@@ -666,8 +671,8 @@ export function buildReadinessForecastTimeline(
     startDate: input.startDate,
     endDate: input.endDate,
     today: input.today,
-    initialCtl: input.baseline.initial_ctl,
-    initialAtl: input.baseline.initial_atl,
+    initialLongTermLoad: input.baseline.initial_longTermLoad,
+    initialRecentLoad: input.baseline.initial_recentLoad,
     todayState: todayState.state,
     dailyLoad: input.scheduledDailyLoad,
     provenance: scheduledProvenance,
@@ -678,8 +683,8 @@ export function buildReadinessForecastTimeline(
     startDate: input.startDate,
     endDate: input.endDate,
     today: input.today,
-    initialCtl: input.baseline.initial_ctl,
-    initialAtl: input.baseline.initial_atl,
+    initialLongTermLoad: input.baseline.initial_longTermLoad,
+    initialRecentLoad: input.baseline.initial_recentLoad,
     todayState: todayState.state,
     dailyLoad: input.recommendedDailyLoad,
     provenance: "recommendation_engine",
@@ -694,8 +699,6 @@ export function buildReadinessForecastTimeline(
     ...(input.confidenceReasonCodes ?? []),
     todayState.usedFallback ? "projection_fallback_baseline" : undefined,
     input.actualDailyLoad.length === 0 ? "missing_recent_history" : undefined,
-    input.scheduledDailyLoad.length === 0 ? "scheduled_path_unavailable" : undefined,
-    input.recommendedDailyLoad.length === 0 ? "recommended_path_unavailable" : undefined,
     input.scheduledDailyLoad.some((load) => load.confidence === "low")
       ? "missing_scheduled_intensity"
       : undefined,
@@ -739,28 +742,33 @@ export function buildReadinessForecastTimeline(
 function applyScheduleAdjustment(input: {
   scheduledDailyLoad: ScheduledReadinessDailyLoadInput[];
   date: string;
-  tssDelta: number;
+  loadDelta: number;
 }): ScheduledReadinessDailyLoadInput[] {
   const byDate = new Map<string, ScheduledReadinessDailyLoadInput>();
   for (const load of input.scheduledDailyLoad) {
     const existing = byDate.get(load.date);
+    const confidence = existing?.confidence ?? load.confidence;
     byDate.set(load.date, {
       date: load.date,
-      tss: (existing?.tss ?? 0) + clampNonNegative(load.tss),
-      confidence:
-        existing?.confidence && load.confidence
-          ? confidenceRank(existing.confidence) < confidenceRank(load.confidence)
-            ? existing.confidence
-            : load.confidence
-          : (existing?.confidence ?? load.confidence),
+      load: (existing?.load ?? 0) + clampNonNegative(load.load),
+      ...(confidence === undefined
+        ? {}
+        : {
+            confidence:
+              existing?.confidence && load.confidence
+                ? confidenceRank(existing.confidence) < confidenceRank(load.confidence)
+                  ? existing.confidence
+                  : load.confidence
+                : confidence,
+          }),
     });
   }
 
   const current = byDate.get(input.date);
-  const nextTss = Math.max(0, (current?.tss ?? 0) + input.tssDelta);
+  const nextLoad = Math.max(0, (current?.load ?? 0) + input.loadDelta);
   byDate.set(input.date, {
     date: input.date,
-    tss: round1(nextTss),
+    load: round1(nextLoad),
     confidence: current?.confidence ?? "medium",
   });
 
@@ -777,14 +785,14 @@ function resolveSimulationComparisonDate(forecast: ReadinessForecastTimeline): s
 export function simulateReadinessScheduleAdjustment(input: {
   forecastInput: BuildReadinessForecastTimelineInput;
   date: string;
-  tssDelta: number;
+  loadDelta: number;
   comparisonDate?: string;
 }): ReadinessScheduleAdjustmentSimulation {
   const baseForecast = buildReadinessForecastTimeline(input.forecastInput);
   const adjustedScheduledDailyLoad = applyScheduleAdjustment({
     scheduledDailyLoad: input.forecastInput.scheduledDailyLoad,
     date: input.date,
-    tssDelta: input.tssDelta,
+    loadDelta: input.loadDelta,
   });
   const simulatedForecast = buildReadinessForecastTimeline({
     ...input.forecastInput,
@@ -801,7 +809,7 @@ export function simulateReadinessScheduleAdjustment(input: {
   return {
     adjustment: {
       date: input.date,
-      tss_delta: round1(input.tssDelta),
+      load_delta: round1(input.loadDelta),
       resulting_scheduled_load: round1(simulatedLoad),
     },
     comparison_date: comparisonDate,

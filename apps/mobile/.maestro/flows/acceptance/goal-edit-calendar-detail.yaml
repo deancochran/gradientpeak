@@ -1,0 +1,38 @@
+appId: com.deancochran.gradientpeak.dev
+name: Athlete opens a canonical Goal Detail from its selected Calendar date
+---
+# Start from the real Calendar route and its selected goal-date ledger entry.
+# The runner creates the authenticated athlete and exact disposable goal record.
+- tapOn:
+    id: tab-button-plan
+- tapOn:
+    id: plan-view-calendar
+- extendedWaitUntil:
+    visible:
+      id: calendar-screen-ready
+    timeout: 30000
+- tapOn:
+    id: calendar-reset-today-entry
+- extendedWaitUntil:
+    notVisible:
+      id: calendar-date-jump-loading
+    timeout: 30000
+- repeat:
+    times: ${MAESTRO_ACCEPTANCE_TARGET_MONTH_DELTA}
+    commands:
+      - tapOn:
+          id: calendar-next-month
+- tapOn:
+    id: calendar-day-select-${MAESTRO_ACCEPTANCE_TARGET_DATE}
+- scrollUntilVisible:
+    element:
+      id: planning-ledger-milestone-${MAESTRO_ACCEPTANCE_GOAL_ID}
+    direction: DOWN
+- tapOn:
+    id: planning-ledger-milestone-${MAESTRO_ACCEPTANCE_GOAL_ID}
+- extendedWaitUntil:
+    visible:
+      id: goal-detail-card
+    timeout: 30000
+- assertVisible: ${MAESTRO_ACCEPTANCE_GOAL_TITLE}
+- takeScreenshot: goal-edit-detail-before-save

@@ -1,55 +1,40 @@
+import type { eventCreateSchema } from "@repo/core";
 import { format } from "date-fns";
+import type { z } from "zod";
 import {
   buildCreateStartsAt,
   buildRecurrenceFromFrequency,
   type EventRecurrenceFrequency,
 } from "@/components/event/EventEditorCard";
+import { buildScheduledInstant } from "@/lib/calendar/eventSchedule";
 
 export type CreateEventMode = "custom" | "planned";
 
 export type CreateEventDraft =
   | {
       mode: "custom";
+      eventType: "custom" | "race_target";
       title: string;
       startsAt: Date;
       allDay: boolean;
+      scheduledDate: string;
+      timezone: string | null;
       recurrenceFrequency: EventRecurrenceFrequency;
       recurrenceEndDate: string | null;
       notes: string;
+      routeId: string | null;
+      routeName: string | null;
     }
   | {
       mode: "planned";
       activityPlanId: string | null;
       activityPlanName: string | null;
+      routeId: string | null;
+      routeName: string | null;
       scheduledDate: string;
-      recurrenceFrequency: EventRecurrenceFrequency;
-      recurrenceEndDate: string | null;
       title: string;
       notes: string;
     };
-
-export type CreateEventInput = {
-  activity_plan_id?: string;
-  all_day: boolean;
-  event_type: CreateEventMode;
-  lifecycle: { status: "scheduled" };
-  notes: string | null;
-  read_only: false;
-  recurrence?: NonNullable<ReturnType<typeof buildRecurrenceFromFrequency>>;
-  scheduled_date?: string;
-  starts_at?: string;
-  timezone: string;
-  title: string;
-  training_plan_id?: string;
-};
-
-export function toDateOnly(value: Date) {
-  return format(value, "yyyy-MM-dd");
-}
-
-export function buildAllDayStartIso(value: Date) {
-  return `${toDateOnly(value)}T00:00:00.000Z`;
-}
 
 export function createDefaultEventDraft(input: {
   createDate?: string;
@@ -66,9 +51,9 @@ export function createDefaultEventDraft(input: {
       mode: "planned",
       activityPlanId: null,
       activityPlanName: null,
+      routeId: null,
+      routeName: null,
       scheduledDate: format(startsAt, "yyyy-MM-dd"),
-      recurrenceFrequency: "none",
-      recurrenceEndDate: null,
       title,
       notes,
     };
@@ -76,50 +61,78 @@ export function createDefaultEventDraft(input: {
 
   return {
     mode: "custom",
+    eventType: "custom",
     title,
     startsAt,
+    scheduledDate: format(startsAt, "yyyy-MM-dd"),
+    timezone: null,
     allDay: false,
     recurrenceFrequency: "none",
     recurrenceEndDate: null,
     notes,
+    routeId: null,
+    routeName: null,
   };
 }
 
-export function buildCreateEventInput(
-  draft: CreateEventDraft,
-  input: { trainingPlanId?: string } = {},
-): CreateEventInput {
+export function buildCreateEventInput(draft: CreateEventDraft): z.input<typeof eventCreateSchema> {
   const notes = draft.notes.trim() ? draft.notes.trim() : null;
-  const base = {
-    lifecycle: { status: "scheduled" as const },
-    notes,
-    read_only: false as const,
-    timezone: "UTC",
-  };
+
+  if (draft.mode === "planned") {
+    throw new Error("Executable sessions must be created through plannedSessions.create.");
+  }
+  if (!draft.timezone) {
+    throw new Error("Choose the event time zone before saving.");
+  }
+
   const recurrence = buildRecurrenceFromFrequency(
     draft.recurrenceFrequency,
     draft.recurrenceEndDate,
+    draft.timezone,
   );
 
-  if (draft.mode === "planned") {
-    return {
-      ...base,
-      event_type: "planned",
-      activity_plan_id: draft.activityPlanId ?? undefined,
-      all_day: true,
-      ...(recurrence ? { recurrence } : {}),
-      scheduled_date: draft.scheduledDate,
-      title: draft.title.trim() || draft.activityPlanName?.trim() || "Planned Activity",
-      training_plan_id: input.trainingPlanId,
-    };
-  }
-
   return {
-    ...base,
-    event_type: "custom",
+    notes,
+    timezone: draft.timezone,
+    event_type: draft.eventType,
+    route_id: draft.routeId,
     all_day: draft.allDay,
-    starts_at: draft.allDay ? buildAllDayStartIso(draft.startsAt) : draft.startsAt.toISOString(),
+    scheduled_date: draft.scheduledDate,
+    starts_at: draft.allDay
+      ? `${draft.scheduledDate}T00:00:00.000Z`
+      : buildScheduledInstant(draft.scheduledDate, draft.startsAt, draft.timezone),
     title: draft.title.trim(),
     ...(recurrence ? { recurrence } : {}),
   };
+}
+
+export function buildUpdatePatch(draft: CreateEventDraft) {
+  const notes = draft.notes.trim() ? draft.notes.trim() : null;
+
+  if (draft.mode === "planned") {
+    throw new Error("Executable sessions must be changed through plannedSessions mutations.");
+  }
+  if (!draft.timezone) {
+    throw new Error("Choose the event time zone before saving.");
+  }
+
+  return {
+    all_day: draft.allDay,
+    notes,
+    route_id: draft.routeId,
+    scheduled_date: draft.scheduledDate,
+    starts_at: draft.allDay
+      ? `${draft.scheduledDate}T00:00:00.000Z`
+      : buildScheduledInstant(draft.scheduledDate, draft.startsAt, draft.timezone),
+    timezone: draft.timezone,
+    title: draft.title.trim(),
+  };
+}
+
+export function removeActivityPlanFromDraft(draft: CreateEventDraft): CreateEventDraft {
+  if (draft.mode !== "planned") return draft;
+  if (draft.routeId) {
+    return { ...draft, activityPlanId: null, activityPlanName: null };
+  }
+  return draft;
 }

@@ -1,9 +1,10 @@
+import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
-import { Input } from "@repo/ui/components/input";
+import { SearchField } from "@repo/ui/components/search-field";
 import { Text } from "@repo/ui/components/text";
-import { Search, SlidersHorizontal, X } from "lucide-react-native";
+import { SlidersHorizontal } from "lucide-react-native";
 import type React from "react";
-import { TouchableOpacity, View } from "react-native";
+import { View } from "react-native";
 
 interface IndexSearchBarProps {
   value: string;
@@ -26,45 +27,32 @@ export function IndexSearchBar({
 }: IndexSearchBarProps) {
   return (
     <View className="border-b border-border bg-background px-4 pb-3 pt-3">
-      <View className="relative rounded-2xl border border-border bg-card">
-        <View className="absolute left-3 top-1/2 z-10 -translate-y-1/2">
-          <Icon as={Search} size={18} className="text-muted-foreground" />
+      <View className="flex-row items-center rounded-2xl border border-border bg-card pr-2">
+        <View className="flex-1">
+          <SearchField
+            accessibilityLabel={placeholder}
+            className="h-12 border-0 bg-transparent"
+            clearTestId={`${testIDPrefix}-search-clear`}
+            maxLength={80}
+            placeholder={placeholder}
+            testId={`${testIDPrefix}-search-input`}
+            value={value}
+            onValueChange={(nextValue) =>
+              nextValue.length === 0 ? onClear() : onChangeText(nextValue)
+            }
+          />
         </View>
-        <Input
-          placeholder={placeholder}
-          value={value}
-          onChangeText={onChangeText}
-          autoCapitalize="none"
-          autoCorrect={false}
-          returnKeyType="search"
-          maxLength={80}
-          className="h-12 border-0 bg-transparent"
-          style={{ paddingLeft: 40, paddingRight: 96 }}
-          testID={`${testIDPrefix}-search-input`}
-        />
-        {value.length > 0 ? (
-          <TouchableOpacity
-            className="absolute top-1/2 -translate-y-1/2"
-            style={{ right: 52 }}
-            onPress={onClear}
-            activeOpacity={0.8}
-            testID={`${testIDPrefix}-search-clear`}
-            accessibilityRole="button"
-            accessibilityLabel="Clear search"
-          >
-            <Icon as={X} size={18} className="text-muted-foreground" />
-          </TouchableOpacity>
-        ) : null}
-        <TouchableOpacity
-          className={`absolute right-2 top-1/2 h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border ${
+        <Button
+          accessibilityLabel="Open filters"
+          accessibilityState={{ selected: hasActiveFilters }}
+          className={`rounded-full border ${
             hasActiveFilters ? "border-primary bg-primary" : "border-border bg-background"
           }`}
           onPress={onFilterPress}
-          activeOpacity={0.85}
-          testID={`${testIDPrefix}-filter-button`}
-          accessibilityRole="button"
-          accessibilityLabel="Open filters"
-          accessibilityState={{ selected: hasActiveFilters }}
+          role="button"
+          size="icon"
+          testId={`${testIDPrefix}-filter-button`}
+          variant="ghost"
         >
           <Icon
             as={SlidersHorizontal}
@@ -77,7 +65,7 @@ export function IndexSearchBar({
               testID={`${testIDPrefix}-filter-button-dot`}
             />
           ) : null}
-        </TouchableOpacity>
+        </Button>
       </View>
     </View>
   );
@@ -95,11 +83,13 @@ export function FilterChip({
   testID?: string;
 }) {
   return (
-    <TouchableOpacity
+    <Button
+      accessibilityLabel={label}
+      accessibilityState={{ selected: isActive }}
       onPress={onPress}
-      activeOpacity={0.8}
-      testID={testID}
-      className={`rounded-full border px-3 py-2 ${
+      {...(testID ? { testId: testID } : {})}
+      variant="outline"
+      className={`min-h-12 rounded-full border px-3 ${
         isActive ? "border-primary bg-primary/10" : "border-border bg-background"
       }`}
     >
@@ -108,7 +98,7 @@ export function FilterChip({
       >
         {label}
       </Text>
-    </TouchableOpacity>
+    </Button>
   );
 }
 
@@ -123,11 +113,13 @@ export function FilterSection({ title, children }: { title: string; children: Re
 
 export function IndexResultsSummary({
   count,
+  countKind = "total",
   singularLabel,
   pluralLabel,
   testID,
 }: {
   count: number;
+  countKind?: "loaded" | "total";
   singularLabel: string;
   pluralLabel?: string;
   testID?: string;
@@ -140,6 +132,7 @@ export function IndexResultsSummary({
     <View className="rounded-2xl border border-border bg-muted/20 px-4 py-3" testID={testID}>
       <Text className="text-sm text-muted-foreground">
         {count} {count === 1 ? singularLabel : (pluralLabel ?? `${singularLabel}s`)}
+        {countKind === "loaded" ? " loaded" : ""}
       </Text>
     </View>
   );

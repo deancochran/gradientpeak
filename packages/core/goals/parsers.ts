@@ -1,4 +1,5 @@
 import type { CanonicalGoalActivityCategory } from "../schemas";
+import { secondsPerKilometerToMetersPerSecond } from "../units";
 import { parseHmsToSeconds, parseMmSsToSeconds } from "../utils/fitness-inputs";
 
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -24,7 +25,7 @@ export function parseGoalDurationSeconds(value: string | undefined): number | nu
 export function parseGoalPaceSpeed(value: string | undefined): number | null {
   const paceSeconds = parseMmSsToSeconds(value);
   if (!paceSeconds || paceSeconds <= 0) return null;
-  return 1000 / paceSeconds;
+  return secondsPerKilometerToMetersPerSecond(paceSeconds);
 }
 
 export function normalizeGoalActivityCategory(
