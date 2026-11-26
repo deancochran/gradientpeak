@@ -5,6 +5,7 @@ import { Platform, type StyleProp, StyleSheet, Text, View, type ViewStyle } from
 import { FadeIn } from "react-native-reanimated";
 import { FullWindowOverlay as RNFullWindowOverlay } from "react-native-screens";
 import { cn } from "../../lib/cn";
+import { omitUndefined } from "../../lib/omit-undefined";
 import { Icon } from "./icon";
 import { NativeOnlyAnimatedView } from "./native-only-animated-view";
 import { TextClassContext } from "./text";
@@ -94,11 +95,11 @@ function DropdownMenuContent({
   portalHost?: string;
 }) {
   return (
-    <DropdownMenuPrimitive.Portal hostName={portalHost}>
+    <DropdownMenuPrimitive.Portal {...omitUndefined({ hostName: portalHost })}>
       <FullWindowOverlay>
         <DropdownMenuPrimitive.Overlay
           style={overlayStyle ? [StyleSheet.absoluteFill, overlayStyle] : StyleSheet.absoluteFill}
-          className={overlayClassName}
+          {...omitUndefined({ className: overlayClassName })}
         >
           <NativeOnlyAnimatedView entering={FadeIn}>
             <TextClassContext.Provider value="text-popover-foreground">
