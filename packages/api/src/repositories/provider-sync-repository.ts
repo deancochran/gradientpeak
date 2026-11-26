@@ -1,151 +1,97 @@
-import type { DrizzleDbClient } from "@repo/db";
+import type { PersistentIntegrationSourceId, ProviderDisconnectOutcome } from "@repo/core";
+import type { DrizzleTransactionClient } from "../db";
 
 export type ProviderSyncJobStatus = "queued" | "running" | "completed" | "failed" | "dead_lettered";
 
-export type ProviderSyncJobRecord = {
-  attempt: number;
-  dedupeKey: string | null;
-  id: string;
-  integrationId: string;
-  internalResourceId: string | null;
-  jobType: string;
-  lastError: string | null;
-  maxAttempts: number;
-  operation: string | null;
-  payload: unknown;
-  payloadHash: string | null;
-  profileId: string;
-  provider: "wahoo" | "strava" | "trainingpeaks" | "garmin" | "zwift";
-  resourceKind: "event" | "activity_plan" | "activity_route" | "activity" | null;
-  runAt: string;
-  status: ProviderSyncJobStatus;
-  supersedesJobId: string | null;
-  syncLaneKey: string | null;
-};
-
-export type ProviderSyncStateRecord = {
-  consecutiveFailures: number;
-  cursor: string | null;
-  highWatermark: string | null;
-  id: string;
-  integrationId: string;
-  lastError: string | null;
-  lastSyncFailedAt: string | null;
-  lastSyncStartedAt: string | null;
-  lastSyncSucceededAt: string | null;
-  metadata: unknown;
-  nextSyncAt: string | null;
-  provider: "wahoo" | "strava" | "trainingpeaks" | "garmin" | "zwift";
-  publishHorizonDays: number | null;
-  resource: string;
-  syncMode: string;
-};
-
-export type ProviderWebhookReceiptRecord = {
-  createdAt?: string | null;
-  eventType: string;
-  id: string;
-  integrationId: string | null;
-  jobId?: string | null;
-  lastError?: string | null;
-  payload: unknown;
-  processingStatus?: string;
-  provider: "wahoo" | "strava" | "trainingpeaks" | "garmin" | "zwift";
-  providerAccountId: string | null;
-  providerEventId: string | null;
-  receivedAt?: string | null;
-};
-
-export interface ProviderSyncRepository {
-  claimDueJobs(input: {
-    jobTypes?: string[];
-    limit: number;
-    now: string;
-    workerId: string;
-    lockExpiresAt: string;
-    provider?: "wahoo";
-  }): Promise<ProviderSyncJobRecord[]>;
-  enqueueJob(input: {
+export type EnqueueProviderSyncJobInput<TProvider extends string = PersistentIntegrationSourceId> =
+  {
     dedupeKey?: string;
     integrationId: string;
+    integrationGeneration?: number;
+    importRunId?: string;
     internalResourceId?: string;
     jobType: string;
     maxAttempts?: number;
     operation?: string;
     payload: unknown;
     payloadHash?: string;
+    priority?: number;
     profileId: string;
-    provider: "wahoo";
-    resourceKind?: "event" | "activity_plan" | "activity_route" | "activity";
+    provider: TProvider;
+    resourceKind?:
+      | "event"
+      | "planned_session"
+      | "activity_plan"
+      | "activity_route"
+      | "group_event_route_delivery"
+      | "activity";
     runAt: string;
     supersedesJobId?: string;
     syncLaneKey?: string;
-  }): Promise<{ id: string; status: ProviderSyncJobStatus }>;
-  markJobFailed(input: {
-    id: string;
-    lastError: string;
-    nextRunAt?: string;
-    status: Extract<ProviderSyncJobStatus, "queued" | "failed" | "dead_lettered">;
-    workerId?: string;
-  }): Promise<void>;
-  markJobSucceeded(id: string, workerId?: string): Promise<void>;
-  markWebhookReceiptProcessed(input: {
-    id: string;
-    lastError?: string;
-    status: "failed" | "processed";
-  }): Promise<void>;
-  storeWebhookReceipt(input: {
-    eventType: string;
-    integrationId?: string;
-    objectId?: string;
-    objectType?: string;
-    payload: unknown;
-    payloadHash?: string;
-    provider: "wahoo";
-    providerAccountId?: string;
-    providerEventId?: string;
-  }): Promise<{ id: string; inserted: boolean }>;
-  setWebhookReceiptJob(input: { id: string; jobId: string }): Promise<void>;
-  getWebhookReceipt(id: string): Promise<ProviderWebhookReceiptRecord | null>;
-  listJobs(input: {
-    limit: number;
-    profileId?: string;
-    provider?: "wahoo" | "garmin";
-    statuses?: ProviderSyncJobStatus[];
-  }): Promise<ProviderSyncJobRecord[]>;
-  listSyncStateByIntegrationIds(integrationIds: string[]): Promise<ProviderSyncStateRecord[]>;
-  listWebhookReceipts(input: {
-    limit: number;
-    provider?: "wahoo" | "garmin";
-    statuses?: string[];
-  }): Promise<ProviderWebhookReceiptRecord[]>;
-  retryJob(id: string): Promise<boolean>;
-  retryWebhookReceipt(id: string): Promise<boolean>;
-  touchSyncState(input: {
-    integrationId: string;
-    metadata?: Record<string, unknown>;
-    nextSyncAt?: string;
-    provider: "wahoo";
-    publishHorizonDays?: number;
-    resource: string;
-    syncMode: string;
-  }): Promise<void>;
-  updateSyncStateAfterFailure(input: {
-    integrationId: string;
-    lastError: string;
-    nextSyncAt?: string;
-    provider: "wahoo";
-    resource: string;
-  }): Promise<void>;
-  updateSyncStateAfterRun(input: {
-    integrationId: string;
-    nextSyncAt?: string;
-    provider: "wahoo";
-    resource: string;
-    succeeded: boolean;
-  }): Promise<void>;
+  };
+
+export interface ProviderSyncJobQueue<
+  TProvider extends string = PersistentIntegrationSourceId,
+  TStatus extends string = ProviderSyncJobStatus,
+> {
+  enqueueJob(
+    input: EnqueueProviderSyncJobInput<TProvider>,
+  ): Promise<{ id: string; status: TStatus }>;
+  enqueueJobInTransaction(
+    tx: DrizzleTransactionClient,
+    input: EnqueueProviderSyncJobInput<TProvider>,
+  ): Promise<{ id: string; status: TStatus }>;
 }
 
-export interface CreateProviderSyncRepositoryOptions {
-  db: DrizzleDbClient;
+/** Shared stale-work fence used before credentials, provider I/O, or local finalization. */
+export interface ProviderIntegrationGenerationFenceRepository {
+  isIntegrationGenerationActive?(input: {
+    generation: number;
+    integrationId: string;
+    profileId: string;
+  }): Promise<boolean>;
+}
+
+export type ProviderDisconnectAttemptResult =
+  | { accessToken: string; disposition: "ready" }
+  | { disposition: "invalid" }
+  | { disposition: "superseded" };
+
+/** Persistence lifecycle only; remote revocation remains an adapter-owned protocol operation. */
+export interface ProviderDisconnectLifecycleRepository<TProvider extends string> {
+  requestProviderDisconnect(input: { profileId: string; provider: TProvider }): Promise<{
+    generation: number | null;
+    integrationId: string | null;
+    jobId: string | null;
+    status: "disconnected" | "pending" | "not_found";
+  }>;
+  beginProviderDisconnectAttempt(input: {
+    generation: number;
+    integrationId: string;
+    jobId: string;
+    provider: TProvider;
+    workerId: string;
+  }): Promise<ProviderDisconnectAttemptResult | null>;
+  finalizeProviderDisconnect(input: {
+    generation: number;
+    integrationId: string;
+    jobId: string;
+    outcome: ProviderDisconnectOutcome;
+    provider: TProvider;
+    workerId: string;
+  }): Promise<boolean>;
+}
+
+/** Local cleanup after the provider has already revoked authorization and notified the app. */
+export interface ProviderDeauthorizationLifecycleRepository<TProvider extends string> {
+  applyProviderDeauthorization(input: {
+    expectedIntegrationGeneration: number;
+    integrationId: string;
+    jobId: string;
+    ownerExternalId: string;
+    profileId: string;
+    provider: TProvider;
+    receiptId: string;
+    workerId: string;
+  }): Promise<boolean>;
 }

@@ -7,10 +7,29 @@ const navigateMock = jest.fn();
 const pushMock = jest.fn();
 const markReadMutateMock = jest.fn();
 
+const notification = {
+  actor_id: "profile-1",
+  created_at: "2026-01-01T00:00:00.000Z",
+  entity_id: "conversation-1",
+  id: "notification-1",
+  read_at: null as string | null,
+  type: "new_message",
+  user_id: "user-1",
+};
+let notificationsData = [notification];
+type FlatListMockProps = Record<string, unknown> & {
+  data: unknown[];
+  renderItem: (info: { item: unknown }) => React.ReactNode;
+  ListEmptyComponent?: React.ReactNode;
+};
+type PressableMockProps = React.PropsWithChildren<
+  { onPress?: () => void } & Record<string, unknown>
+>;
+
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: {
-    Screen: ({ options }: any) =>
+    Screen: ({ options }: { options?: { headerRight?: () => React.ReactNode } }) =>
       React.createElement(
         "StackScreen",
         { options },
@@ -23,13 +42,13 @@ jest.mock("expo-router", () => ({
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
-  FlatList: ({ data, renderItem, ListEmptyComponent, ...props }: any) =>
+  FlatList: ({ data, renderItem, ListEmptyComponent, ...props }: FlatListMockProps) =>
     React.createElement(
       "FlatList",
       props,
-      data.length > 0 ? data.map((item: any) => renderItem({ item })) : ListEmptyComponent,
+      data.length > 0 ? data.map((item) => renderItem({ item })) : ListEmptyComponent,
     ),
-  Pressable: ({ children, onPress, ...props }: any) =>
+  Pressable: ({ children, onPress, ...props }: PressableMockProps) =>
     React.createElement("Pressable", { onPress, ...props }, children),
   View: mockCreateHost("View"),
 }));
@@ -40,7 +59,7 @@ jest.mock("@repo/ui/components/badge", () => ({
 }));
 jest.mock("@repo/ui/components/button", () => ({
   __esModule: true,
-  Button: ({ children, onPress, ...props }: any) =>
+  Button: ({ children, onPress, ...props }: PressableMockProps) =>
     React.createElement("Pressable", { onPress, ...props }, children),
 }));
 jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: mockCreateHost("Text") }));
@@ -56,23 +75,6 @@ jest.mock("lucide-react-native", () => ({
   UserPlus: mockCreateHost("UserPlus"),
 }));
 
-jest.mock("@repo/core", () => ({
-  __esModule: true,
-  getNotificationViewModel: (notification: any) => ({
-    actorId: notification.actor_id,
-    createdAt: notification.created_at,
-    description: notification.description,
-    id: notification.id,
-    isUnread: notification.is_unread,
-    requiresFollowRequestAction: false,
-    title: notification.title,
-    type: notification.type,
-  }),
-  getUnreadNotificationIds: (notifications: any[]) =>
-    notifications.filter((item) => item.is_unread).map((item) => item.id),
-  normalizeNotificationListItem: (notification: any) => notification,
-}));
-
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
@@ -82,16 +84,7 @@ jest.mock("@/lib/api", () => ({
     notifications: {
       getRecent: {
         useQuery: () => ({
-          data: [
-            {
-              id: "notification-1",
-              type: "new_message",
-              title: "New message",
-              description: "Coach sent you a message",
-              created_at: "2026-01-01T00:00:00.000Z",
-              is_unread: true,
-            },
-          ],
+          data: notificationsData,
           isLoading: false,
         }),
       },
@@ -117,23 +110,37 @@ describe("notifications screen", () => {
     navigateMock.mockReset();
     pushMock.mockReset();
     markReadMutateMock.mockReset();
+    notificationsData = [notification];
   });
 
-  it("navigates to the messages hub for message notifications", () => {
-    renderNative(<NotificationsScreen />);
+  it("navigates to the messages hub for message notifications", async () => {
+    await renderNative(<NotificationsScreen />);
 
-    fireEvent.press(screen.getByTestId("notification-item-notification-1"));
+    await fireEvent.press(screen.getByTestId("notification-item-notification-1"));
 
     expect(markReadMutateMock).toHaveBeenCalledWith({ notification_ids: ["notification-1"] });
     expect(navigateMock).toHaveBeenCalledWith("/messages");
     expect(pushMock).not.toHaveBeenCalled();
   });
 
-  it("marks all notifications as read from the direct header action", () => {
-    renderNative(<NotificationsScreen />);
+  it("marks all notifications as read from the direct header action", async () => {
+    await renderNative(<NotificationsScreen />);
 
-    fireEvent.press(screen.getByTestId("notifications-read-all-trigger"));
+    await fireEvent.press(screen.getByTestId("notifications-read-all-trigger"));
 
     expect(markReadMutateMock).toHaveBeenCalledWith({ notification_ids: ["notification-1"] });
+  });
+
+  it("filters the inbox to unread notifications", async () => {
+    notificationsData = [
+      notification,
+      { ...notification, id: "notification-2", read_at: "2026-01-01T01:00:00.000Z" },
+    ];
+    await renderNative(<NotificationsScreen />);
+
+    await fireEvent.press(screen.getByTestId("notifications-unread-filter"));
+
+    expect(screen.getByTestId("notification-item-notification-1")).toBeTruthy();
+    expect(screen.queryByTestId("notification-item-notification-2")).toBeNull();
   });
 });

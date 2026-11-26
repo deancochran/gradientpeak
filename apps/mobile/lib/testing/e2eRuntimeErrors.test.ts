@@ -5,7 +5,7 @@ describe("e2eRuntimeErrors", () => {
   it("classifies near-timeout aborted tRPC queries as failures", () => {
     expect(
       classifyE2ERuntimeMessage(
-        'ERROR << query #24 events.list {"elapsedMs": 32359, "result": [TRPCClientError: Aborted]}',
+        'ERROR << query #24 calendar.range {"elapsedMs": 32359, "result": [TRPCClientError: Aborted]}',
       ),
     ).toBe("timeout_abort");
   });
@@ -13,7 +13,7 @@ describe("e2eRuntimeErrors", () => {
   it("ignores fast aborted tRPC queries that look like navigation cancellation", () => {
     expect(
       classifyE2ERuntimeMessage(
-        'ERROR << query #24 events.list {"elapsedMs": 512, "result": [TRPCClientError: Aborted]}',
+        'ERROR << query #24 calendar.range {"elapsedMs": 512, "result": [TRPCClientError: Aborted]}',
       ),
     ).toBeNull();
   });

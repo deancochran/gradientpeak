@@ -1,8 +1,7 @@
 import { keepPreviousData, skipToken } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useProfileGoals } from "@/lib/hooks/useProfileGoals";
-import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
-import { getTrainingPlanStructureActivityPlanIds } from "./mappers";
+import { getTrainingPlanStructureActivityPlanIds } from "./canonical-draft";
 import type { UseTrainingPlanCreationServiceOptions } from "./service-types";
 
 const ACTIVITY_PLAN_PICKER_PAGE_SIZE = 25;
@@ -10,30 +9,12 @@ const ACTIVITY_PLAN_PICKER_PAGE_SIZE = 25;
 export function useTrainingPlanCreationQueries({
   activityPlanPicker,
   mode = "create",
-  onCreated,
-  onCreateError,
-  onUpdated,
-  onUpdateError,
   planId,
 }: UseTrainingPlanCreationServiceOptions) {
-  const utils = api.useUtils();
   const isEditMode = mode === "edit" && !!planId;
   const shouldLoadCreateContext = mode === "create";
 
-  const profileQuery = api.profiles.get.useQuery(undefined, {
-    enabled: shouldLoadCreateContext,
-  });
-  const profileMetricsQuery = api.profileMetrics.list.useQuery(
-    { limit: 50 },
-    { enabled: shouldLoadCreateContext },
-  );
-  const activityEffortsQuery = api.activityEfforts.getForProfile.useQuery(undefined, {
-    enabled: shouldLoadCreateContext,
-  });
-  const currentTrainingStatusQuery = api.trainingPlans.getCurrentStatus.useQuery(undefined, {
-    enabled: shouldLoadCreateContext,
-    refetchOnWindowFocus: false,
-  });
+  const profileQuery = api.profiles.get.useQuery();
   const profileGoalsQuery = useProfileGoals({
     enabled: shouldLoadCreateContext,
     loadAllPages: true,
@@ -43,7 +24,6 @@ export function useTrainingPlanCreationQueries({
   const activityPlansQuery = api.activityPlans.list.useInfiniteQuery(
     {
       ownerScope: "discoverable",
-      includeEstimation: true,
       search: activityPlanPicker?.searchQuery.trim() || undefined,
       activityCategories: activityPlanPicker?.activityCategoryFilter
         ? [activityPlanPicker.activityCategoryFilter]
@@ -61,6 +41,21 @@ export function useTrainingPlanCreationQueries({
     refetchOnWindowFocus: false,
     retry: false,
   });
+  const projectionProfileId = profileQuery.data?.id;
+  const publishedStateQuery = api.athleteIntelligence.getReadModel.useQuery(
+    projectionProfileId
+      ? {
+          profileId: projectionProfileId,
+          sections: {
+            publishedState: true,
+            status: true,
+            currentBaseline: { includePlanningContext: true },
+          },
+        }
+      : skipToken,
+    { enabled: Boolean(projectionProfileId), refetchOnWindowFocus: false },
+  );
+  const creationContextQuery = publishedStateQuery;
   const editPlanActivityPlanIds = getTrainingPlanStructureActivityPlanIds(
     editPlanQuery.data?.structure,
   );
@@ -71,65 +66,17 @@ export function useTrainingPlanCreationQueries({
     },
   );
 
-  const createPlanMutation = useReliableMutation(api.trainingPlans.create, {
-    invalidate: [utils.trainingPlans],
-    silent: true,
-    onSuccess: (createdPlan) => {
-      onCreated?.(createdPlan);
-    },
-    onError: (error) => {
-      onCreateError?.(error);
-    },
-  });
-  const updatePlanMutation = useReliableMutation(api.trainingPlans.update, {
-    invalidate: [utils.trainingPlans],
-    silent: true,
-    onSuccess: (updatedPlan) => {
-      onUpdated?.(updatedPlan);
-    },
-    onError: (error) => {
-      onUpdateError?.(error);
-    },
-  });
-  const createFromCreationConfigMutation = useReliableMutation(
-    api.trainingPlans.createFromCreationConfig,
-    {
-      invalidate: [utils.trainingPlans],
-      silent: true,
-      onSuccess: (createdPlan) => {
-        onCreated?.(createdPlan);
-      },
-      onError: (error) => {
-        onCreateError?.(error);
-      },
-    },
-  );
-  const updateFromCreationConfigMutation = useReliableMutation(
-    api.trainingPlans.updateFromCreationConfig,
-    {
-      invalidate: [utils.trainingPlans],
-      silent: true,
-      onSuccess: (updatedPlan) => {
-        onUpdated?.(updatedPlan);
-      },
-      onError: (error) => {
-        onUpdateError?.(error);
-      },
-    },
-  );
-
+  // The service owns refresh after an acknowledged write, keeping RPC rejection
+  // distinct from a cache-refresh failure after a successful commit.
+  const commitPlanMutation = api.trainingPlans.commit.useMutation({ retry: false });
   return {
     profileQuery,
-    profileMetricsQuery,
-    activityEffortsQuery,
-    currentTrainingStatusQuery,
+    creationContextQuery,
     profileGoalsQuery,
     activityPlansQuery,
     editPlanQuery,
     linkedActivityPlansQuery,
-    createPlanMutation,
-    updatePlanMutation,
-    createFromCreationConfigMutation,
-    updateFromCreationConfigMutation,
+    publishedStateQuery,
+    commitPlanMutation,
   };
 }
