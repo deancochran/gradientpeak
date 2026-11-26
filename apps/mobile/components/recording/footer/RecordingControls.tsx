@@ -33,12 +33,13 @@ export function RecordingControls({
   onResume,
   onLap,
   onFinish,
-  onDiscard,
 }: RecordingControlsProps) {
   // Not started: Show full-width Start button
   if (recordingState === "not_started") {
     return (
       <Pressable
+        accessibilityLabel="Start recording"
+        accessibilityRole="button"
         onPress={onStart}
         testID="recording-start-button"
         className="h-14 bg-green-600 rounded-lg items-center justify-center active:opacity-80"
@@ -53,6 +54,8 @@ export function RecordingControls({
     return (
       <View className="flex-row gap-3">
         <Pressable
+          accessibilityLabel="Pause recording"
+          accessibilityRole="button"
           onPress={onPause}
           testID="recording-pause-button"
           className="flex-1 h-12 bg-yellow-600 rounded-lg items-center justify-center active:opacity-80"
@@ -61,6 +64,8 @@ export function RecordingControls({
         </Pressable>
 
         <Pressable
+          accessibilityLabel="Record lap"
+          accessibilityRole="button"
           onPress={onLap}
           testID="recording-lap-button"
           className="flex-1 h-12 bg-blue-600 rounded-lg items-center justify-center active:opacity-80"
@@ -76,6 +81,8 @@ export function RecordingControls({
     return (
       <View className="flex-row gap-3">
         <Pressable
+          accessibilityLabel="Resume recording"
+          accessibilityRole="button"
           onPress={onResume}
           testID="recording-resume-button"
           className="flex-1 h-12 bg-green-600 rounded-lg items-center justify-center active:opacity-80"
@@ -84,6 +91,8 @@ export function RecordingControls({
         </Pressable>
 
         <Pressable
+          accessibilityLabel="Finish recording"
+          accessibilityRole="button"
           onPress={onFinish}
           testID="recording-finish-button"
           className="flex-1 h-12 bg-red-600 rounded-lg items-center justify-center active:opacity-80"

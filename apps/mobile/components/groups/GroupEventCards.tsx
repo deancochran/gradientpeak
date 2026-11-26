@@ -1,10 +1,10 @@
+import { resolveGroupEventRsvpStatus } from "@repo/core/groups";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
-import { format } from "date-fns";
 import { CalendarDays, MapPin } from "lucide-react-native";
 import { type GestureResponderEvent, Pressable, TouchableOpacity, View } from "react-native";
-import type { CurrentGroupEventPlan, GroupEventListItem } from "@/lib/groups";
+import type { GroupEventListItem } from "@/lib/groups";
 import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
 
 type GroupEventOwner = NonNullable<GroupEventListItem["group"]>;
@@ -18,19 +18,32 @@ type GroupEventCardProps = {
 };
 
 export function formatGroupEventDateRange(
-  event: Pick<GroupEventListItem, "ends_at" | "starts_at">,
+  event: Pick<GroupEventListItem, "ends_at" | "starts_at" | "timezone">,
 ) {
   const startsAt = new Date(event.starts_at);
   const endsAt = event.ends_at ? new Date(event.ends_at) : null;
   if (Number.isNaN(startsAt.getTime())) return "Date unavailable";
 
-  const startLabel = format(startsAt, "EEE, MMM d · h:mm a");
+  const timezone = event.timezone || "UTC";
+  const startLabel = new Intl.DateTimeFormat("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: timezone,
+  }).format(startsAt);
   if (!endsAt || Number.isNaN(endsAt.getTime())) return startLabel;
 
-  return `${startLabel} - ${format(endsAt, "h:mm a")}`;
+  const endLabel = new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: timezone,
+  }).format(endsAt);
+  return `${startLabel} - ${endLabel}`;
 }
 
-export function formatAcceptedRsvpCount(count: number) {
+export function formatGoingCount(count: number) {
   return `${count} going`;
 }
 
@@ -106,20 +119,26 @@ export function GroupEventCard({
   testID,
   variant = "default",
 }: GroupEventCardProps) {
+  const effectiveRsvpStatus = resolveGroupEventRsvpStatus({
+    occurrenceStatus: event.viewerRsvp?.status,
+    seriesStatus: event.viewerSeriesRsvp?.status,
+  });
   const status = event.cancelled_at
     ? "Cancelled"
-    : event.viewerRsvp?.status === "accepted"
-      ? "Going"
-      : event.viewerRsvp?.status === "declined"
-        ? "Declined"
-        : "Tentative";
+    : effectiveRsvpStatus === "declined"
+      ? "Declined"
+      : "Going";
 
   return (
     <TouchableOpacity
+      accessibilityLabel={
+        onPress ? `Open group event ${event.title || "Untitled event"}` : undefined
+      }
+      accessibilityRole={onPress ? "button" : undefined}
       activeOpacity={0.85}
       disabled={!onPress}
       onPress={() => onPress?.(event)}
-      testID={testID}
+      testID={testID ?? `group-event-card-${event.id}`}
     >
       <View
         className={
@@ -130,7 +149,12 @@ export function GroupEventCard({
       >
         <View className="flex-row items-start justify-between gap-3">
           <View className="min-w-0 flex-1">
-            {event.group ? <GroupEventOwnerRow group={event.group} onPress={onGroupPress} /> : null}
+            {event.group ? (
+              <GroupEventOwnerRow
+                group={event.group}
+                {...(onGroupPress !== undefined ? { onPress: onGroupPress } : {})}
+              />
+            ) : null}
           </View>
           <View
             className={
@@ -180,7 +204,7 @@ export function GroupEventCard({
         ) : null}
 
         <Text className="text-xs font-medium text-muted-foreground">
-          {formatAcceptedRsvpCount(event.acceptedRsvpCount)}
+          {formatGoingCount(event.acceptedRsvpCount)}
         </Text>
 
         {event.description && variant !== "compact" ? (
@@ -189,11 +213,8 @@ export function GroupEventCard({
           </Text>
         ) : null}
 
-        {event.activityPlanOptions.length > 0 ? (
-          <Text className="text-xs font-medium text-muted-foreground">
-            {event.activityPlanOptions.length} activity plan option
-            {event.activityPlanOptions.length === 1 ? "" : "s"}
-          </Text>
+        {event.activity_plan_id ? (
+          <Text className="text-xs font-medium text-muted-foreground">Activity plan</Text>
         ) : null}
       </View>
     </TouchableOpacity>
@@ -218,40 +239,5 @@ export function GroupEventPreviewHeader({
         </Button>
       ) : null}
     </View>
-  );
-}
-
-export function CurrentGroupEventPlanCard({
-  event,
-  onGroupPress,
-  onPress,
-}: {
-  event: CurrentGroupEventPlan;
-  onGroupPress?: (group: GroupEventOwner) => void;
-  onPress?: (event: CurrentGroupEventPlan) => void;
-}) {
-  const optionCount = event.activityPlanOptions.length;
-  const hasActivityPlanOptions = optionCount > 0;
-
-  return (
-    <TouchableOpacity activeOpacity={0.85} disabled={!onPress} onPress={() => onPress?.(event)}>
-      <View
-        className={`gap-2 rounded-2xl border p-4 ${hasActivityPlanOptions ? "border-primary/30 bg-primary/5" : "border-border bg-card"}`}
-      >
-        {event.group ? <GroupEventOwnerRow group={event.group} onPress={onGroupPress} /> : null}
-        <Text className="text-xs font-semibold uppercase tracking-wide text-primary">
-          {hasActivityPlanOptions ? "Current / next plan" : "Current / next event"}
-        </Text>
-        <Text className="text-base font-semibold text-foreground" numberOfLines={2}>
-          {event.title}
-        </Text>
-        <Text className="text-xs text-muted-foreground">{formatGroupEventDateRange(event)}</Text>
-        {optionCount > 0 ? (
-          <Text className="text-xs text-muted-foreground">
-            {optionCount} plan option{optionCount === 1 ? "" : "s"}
-          </Text>
-        ) : null}
-      </View>
-    </TouchableOpacity>
   );
 }

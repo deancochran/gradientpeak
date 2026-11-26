@@ -2,8 +2,8 @@ import { renderNative } from "../../test/render-native";
 import { Separator } from "./index.native";
 
 describe("Separator native", () => {
-  it("maps normalized test props onto the separator root", () => {
-    const { getByLabelText } = renderNative(
+  it("maps normalized test props onto the separator root", async () => {
+    const { getByLabelText } = await renderNative(
       <Separator
         accessibilityLabel="Section divider"
         decorative={false}

@@ -26,6 +26,7 @@ export function MessagesButton() {
           composeQuery: undefined,
           composeRecipients: [],
           conversationId: undefined,
+          returnTo: undefined,
           flash: undefined,
           flashType: undefined,
         }}

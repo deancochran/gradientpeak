@@ -8,8 +8,7 @@ export function RouteProgressInsightCard({ mode, service, stats }: InsightCardPr
   const recordedDistanceMeters = stats.distance ?? 0;
   const routeDistanceMeters = service?.routeDistance ?? 0;
   const routeProgress = service?.routeProgress ?? 0;
-  const gpsEnabled = service?.isGpsRecordingEnabled?.() ?? true;
-  const routePositionActive = !gpsEnabled || (service?.isOnRoute ?? false);
+  const routePositionActive = true;
   const routeName = service?.currentRoute?.name ?? "Attached route";
   const rawCurrentRouteDistanceMeters = routePositionActive
     ? (service?.currentRouteDistance ?? recordedDistanceMeters)
@@ -30,7 +29,7 @@ export function RouteProgressInsightCard({ mode, service, stats }: InsightCardPr
     routeDistanceMeters > 0 ? `${Math.round(clamp(routeProgress, 0, 100))}%` : "--";
   const grade = service?.currentRouteGrade ?? 0;
   const gradeLabel = routePositionActive ? formatGrade(grade) : "--";
-  const showProgressIndicator = !gpsEnabled && routeDistanceMeters > 0;
+  const showProgressIndicator = routeDistanceMeters > 0;
 
   if (mode === "compact") {
     return (

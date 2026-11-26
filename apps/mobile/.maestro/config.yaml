@@ -1,0 +1,3 @@
+# Optional local smoke only. Run it against an already installed development build.
+flows:
+  - flows/smoke/app-launch.yaml

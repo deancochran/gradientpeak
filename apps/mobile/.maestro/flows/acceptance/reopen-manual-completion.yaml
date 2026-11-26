@@ -1,0 +1,70 @@
+appId: com.deancochran.gradientpeak.dev
+name: Reopen the exact manual completion from its selected Calendar day
+---
+# The manual-completion flow leaves the app on its planned-session detail route.
+# Return through the ledger to the tab shell before reopening from Calendar.
+- pressKey: back
+- extendedWaitUntil:
+    visible:
+      id: planning-ledger-screen
+    timeout: 30000
+- pressKey: back
+- extendedWaitUntil:
+    visible:
+      id: tab-button-plan
+    timeout: 30000
+- tapOn:
+    id: tab-button-plan
+- tapOn:
+    id: plan-view-calendar
+- extendedWaitUntil:
+    visible:
+      id: calendar-screen-ready
+    timeout: 30000
+# The completion belongs to the onboarded athlete's Today. Reset a retained
+# Calendar selection before confirming the exact fixture date through the
+# native picker.
+- tapOn:
+    id: calendar-reset-today-entry
+- extendedWaitUntil:
+    notVisible:
+      id: calendar-date-jump-loading
+    timeout: 30000
+- assertVisible:
+    id: calendar-day-select-${MAESTRO_ACCEPTANCE_SESSION_DATE}
+- tapOn:
+    id: calendar-date-jump-entry
+- tapOn: ${MAESTRO_ACCEPTANCE_SESSION_DAY}
+- tapOn: "OK"
+- extendedWaitUntil:
+    notVisible:
+      id: calendar-date-jump-loading
+    timeout: 30000
+- tapOn:
+    id: calendar-day-select-${MAESTRO_ACCEPTANCE_SESSION_DATE}
+- extendedWaitUntil:
+    visible:
+      id: planning-ledger-screen
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: planning-ledger-training-state
+    direction: DOWN
+- assertVisible: "Seven-day training state"
+- assertVisible: "Training state is unavailable for this period."
+- assertVisible: "—"
+- assertVisible: "Unavailable"
+- takeScreenshot: planning-ledger-no-evidence-training-state
+- scrollUntilVisible:
+    element:
+      id: planning-ledger-entry-completed-${MAESTRO_ACCEPTANCE_COMPLETED_ACTIVITY_ID}
+    direction: DOWN
+- assertVisible:
+    id: planning-ledger-entry-completed-${MAESTRO_ACCEPTANCE_COMPLETED_ACTIVITY_ID}
+- takeScreenshot: planned-session-calendar-reopen
+- tapOn:
+    id: planning-ledger-entry-completed-${MAESTRO_ACCEPTANCE_COMPLETED_ACTIVITY_ID}
+- extendedWaitUntil:
+    visible:
+      id: activity-detail-screen
+    timeout: 30000

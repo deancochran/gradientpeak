@@ -3,7 +3,9 @@ import { clampMpcCandidateAction, resolveMpcSolveBounds } from "./constraints";
 import { buildDeterministicCandidateLattice } from "./lattice";
 import { type MpcTieBreakCandidate, type MpcTieBreakField, pickBestMpcCandidate } from "./tiebreak";
 
-export interface DeterministicMpcEvaluationResult {
+type DefaultDiagnosticsPayload = Record<string, number | string | boolean | null>;
+
+export interface DeterministicMpcEvaluationResult<DiagnosticsPayload = DefaultDiagnosticsPayload> {
   objective_score: number;
   safety_penalty?: number;
   tracking_error?: number;
@@ -11,10 +13,10 @@ export interface DeterministicMpcEvaluationResult {
   churn_penalty?: number;
   primary_goal_date?: string;
   primary_goal_id?: string;
-  diagnostics_payload?: Record<string, number | string | boolean | null>;
+  diagnostics_payload?: DiagnosticsPayload;
 }
 
-export interface DeterministicMpcSolverInput {
+export interface DeterministicMpcSolverInput<DiagnosticsPayload = DefaultDiagnosticsPayload> {
   optimization_profile: OptimizationProfile;
   previous_action: number;
   action_bounds: {
@@ -27,11 +29,12 @@ export interface DeterministicMpcSolverInput {
   evaluate_candidate: (input: {
     candidate_value: number;
     horizon_weeks: number;
-  }) => DeterministicMpcEvaluationResult;
+  }) => DeterministicMpcEvaluationResult<DiagnosticsPayload>;
 }
 
-export interface DeterministicMpcEvaluatedCandidate extends MpcTieBreakCandidate {
-  diagnostics_payload?: Record<string, number | string | boolean | null>;
+export interface DeterministicMpcEvaluatedCandidate<DiagnosticsPayload = DefaultDiagnosticsPayload>
+  extends MpcTieBreakCandidate {
+  diagnostics_payload?: DiagnosticsPayload;
 }
 
 export interface DeterministicMpcSolverDiagnostics {
@@ -45,10 +48,10 @@ export interface DeterministicMpcSolverDiagnostics {
   tie_break_order: readonly MpcTieBreakField[];
 }
 
-export interface DeterministicMpcSolverResult {
+export interface DeterministicMpcSolverResult<DiagnosticsPayload = DefaultDiagnosticsPayload> {
   selected_candidate: number;
   selected_objective_score: number;
-  candidates: DeterministicMpcEvaluatedCandidate[];
+  candidates: DeterministicMpcEvaluatedCandidate<DiagnosticsPayload>[];
   diagnostics: DeterministicMpcSolverDiagnostics;
 }
 
@@ -66,9 +69,9 @@ function optionalProperty<Key extends string, Value>(
 /**
  * Solves a single deterministic bounded MPC action selection step.
  */
-export function solveDeterministicBoundedMpc(
-  input: DeterministicMpcSolverInput,
-): DeterministicMpcSolverResult {
+export function solveDeterministicBoundedMpc<DiagnosticsPayload = DefaultDiagnosticsPayload>(
+  input: DeterministicMpcSolverInput<DiagnosticsPayload>,
+): DeterministicMpcSolverResult<DiagnosticsPayload> {
   const bounds = resolveMpcSolveBounds({
     optimization_profile: input.optimization_profile,
     ...optionalProperty("requested_horizon_weeks", input.requested_horizon_weeks),
@@ -89,8 +92,8 @@ export function solveDeterministicBoundedMpc(
     ...optionalProperty("precision", input.precision),
   });
 
-  const evaluatedCandidates: DeterministicMpcEvaluatedCandidate[] = generatedCandidates.map(
-    (candidateValue) => {
+  const evaluatedCandidates: DeterministicMpcEvaluatedCandidate<DiagnosticsPayload>[] =
+    generatedCandidates.map((candidateValue) => {
       const evaluation = input.evaluate_candidate({
         candidate_value: candidateValue,
         horizon_weeks: bounds.horizon_weeks,
@@ -111,8 +114,7 @@ export function solveDeterministicBoundedMpc(
         ...optionalProperty("primary_goal_id", evaluation.primary_goal_id),
         ...optionalProperty("diagnostics_payload", evaluation.diagnostics_payload),
       };
-    },
-  );
+    });
 
   const best = pickBestMpcCandidate(evaluatedCandidates);
 
