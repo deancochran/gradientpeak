@@ -1,3 +1,5 @@
+import { writeFile } from "node:fs/promises";
+import type { Locator, Page } from "@playwright/test";
 import {
   activities,
   activitySegments,
@@ -26,6 +28,98 @@ function addUtcDays(dateOnly: string, days: number) {
   const date = new Date(`${dateOnly}T00:00:00.000Z`);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+async function inspectMessageLayout(page: Page, returnLink: Locator, activeConversation: Locator) {
+  const [navigation, conversation] = await Promise.all([
+    returnLink.evaluate((link) => {
+      const rect = (element: Element | null) => {
+        if (!element) return null;
+        const { bottom, height, left, right, top, width, x, y } = element.getBoundingClientRect();
+        return { bottom, height, left, right, top, width, x, y };
+      };
+      const navigationRow = link.parentElement;
+      const outer = navigationRow?.parentElement ?? null;
+      const header = document.querySelector("header.sticky");
+      const linkRect = rect(link);
+      const hitPointCoordinates: Array<[number, number]> =
+        linkRect === null
+          ? []
+          : [
+              [linkRect.left + 1, linkRect.top + 1],
+              [linkRect.right - 1, linkRect.top + 1],
+              [linkRect.left + linkRect.width / 2, linkRect.top + linkRect.height / 2],
+              [linkRect.left + 1, linkRect.bottom - 1],
+              [linkRect.right - 1, linkRect.bottom - 1],
+            ];
+      const hitPoints = hitPointCoordinates.map(([x, y]) => ({
+        x,
+        y,
+        targetsLink: link.contains(document.elementFromPoint(x, y)),
+      }));
+      const scrollAncestors = [];
+      let ancestor = link.parentElement;
+      while (ancestor) {
+        const style = window.getComputedStyle(ancestor);
+        scrollAncestors.push({
+          className: ancestor.className,
+          clientHeight: ancestor.clientHeight,
+          overflowX: style.overflowX,
+          overflowY: style.overflowY,
+          rect: rect(ancestor),
+          scrollHeight: ancestor.scrollHeight,
+          scrollTop: ancestor.scrollTop,
+          tagName: ancestor.tagName,
+        });
+        ancestor = ancestor.parentElement;
+      }
+      return {
+        header: rect(header),
+        hitPoints,
+        link: linkRect,
+        navigationRow: rect(navigationRow),
+        outer: rect(outer),
+        pageScrollY: window.scrollY,
+        scrollAncestors,
+      };
+    }),
+    activeConversation.evaluate((panel) => ({
+      clientHeight: panel.clientHeight,
+      rect: (() => {
+        const { bottom, height, left, right, top, width, x, y } = panel.getBoundingClientRect();
+        return { bottom, height, left, right, top, width, x, y };
+      })(),
+      scrollHeight: panel.scrollHeight,
+      scrollTop: panel.scrollTop,
+    })),
+  ]);
+  const composer = await page.getByPlaceholder("Type a message...").evaluate((input) => {
+    const { bottom, height, left, right, top, width, x, y } = input.getBoundingClientRect();
+    const rect = { bottom, height, left, right, top, width, x, y };
+    const edgeInset = Math.min(4, rect.width / 4, rect.height / 4);
+    const hitPointCoordinates: Array<[number, number]> = [
+      [rect.left + edgeInset, rect.top + edgeInset],
+      [rect.right - edgeInset, rect.top + edgeInset],
+      [rect.left + rect.width / 2, rect.top + rect.height / 2],
+      [rect.left + edgeInset, rect.bottom - edgeInset],
+      [rect.right - edgeInset, rect.bottom - edgeInset],
+    ];
+    return {
+      hitPoints: hitPointCoordinates.map(([x, y]) => ({
+        x,
+        y,
+        targetsInput: input.contains(document.elementFromPoint(x, y)),
+      })),
+      rect,
+    };
+  });
+  const send = await page
+    .getByRole("button", { name: "Send message", exact: true })
+    .evaluate((button) => {
+      const { bottom, height, left, right, top, width, x, y } = button.getBoundingClientRect();
+      return { bottom, height, left, right, top, width, x, y };
+    });
+  return { composer, conversation, navigation, send, viewport: page.viewportSize() };
 }
 
 test("coach reviews linked completion evidence and returns to the same athlete workspace", async ({
@@ -326,9 +420,28 @@ test("coach reviews linked completion evidence and returns to the same athlete w
   await expect(
     activeConversation.getByText(`@${athleteActor.username}`, { exact: true }),
   ).toBeVisible();
-  await page.getByPlaceholder("Type a message...").fill(contextualMessage);
+  const returnLink = page.getByRole("link", { name: "Return to athlete workspace" });
+  const layoutGeometry: Array<{
+    phase: string;
+    snapshot: Awaited<ReturnType<typeof inspectMessageLayout>>;
+  }> = [];
+  for (const viewport of [
+    { width: 1440, height: 1000 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    layoutGeometry.push({
+      phase: "before-send-window-scroll-top",
+      snapshot: await inspectMessageLayout(page, returnLink, activeConversation),
+    });
+  }
+
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const composer = page.getByPlaceholder("Type a message...");
+  await composer.fill(contextualMessage);
   await page.getByRole("button", { name: "Send message", exact: true }).click();
-  await expect(page.getByPlaceholder("Type a message...")).toHaveValue("");
+  await expect(composer).toHaveValue("");
   await expect(activeConversation.getByText(contextualMessage, { exact: true })).toBeVisible();
 
   for (const viewport of [
@@ -336,8 +449,21 @@ test("coach reviews linked completion evidence and returns to the same athlete w
     { width: 390, height: 844 },
   ]) {
     await page.setViewportSize(viewport);
+    layoutGeometry.push({
+      phase: "after-send",
+      snapshot: await inspectMessageLayout(page, returnLink, activeConversation),
+    });
+    await composer.focus();
+    layoutGeometry.push({
+      phase: "after-composer-focus",
+      snapshot: await inspectMessageLayout(page, returnLink, activeConversation),
+    });
     await page.evaluate(() => window.scrollTo(0, 0));
-    await expect(page.getByRole("link", { name: "Return to athlete workspace" })).toBeVisible();
+    layoutGeometry.push({
+      phase: "after-focus-window-scroll-top",
+      snapshot: await inspectMessageLayout(page, returnLink, activeConversation),
+    });
+    await expect(returnLink).toBeVisible();
     await expect(
       activeConversation.getByText(`@${athleteActor.username}`, { exact: true }),
     ).toBeVisible();
@@ -349,6 +475,39 @@ test("coach reviews linked completion evidence and returns to the same athlete w
       contentType: "image/png",
       path,
     });
+  }
+  const geometryPath = testInfo.outputPath("coach-completion-review-message-layout-geometry.json");
+  const geometryJson = JSON.stringify(layoutGeometry, null, 2);
+  await writeFile(geometryPath, geometryJson);
+  await testInfo.attach("coach-completion-review-message-layout-geometry", {
+    path: geometryPath,
+    contentType: "application/json",
+  });
+  for (const { snapshot } of layoutGeometry.filter(
+    ({ phase }) => phase === "after-focus-window-scroll-top",
+  )) {
+    expect(snapshot.navigation.link).not.toBeNull();
+    expect(snapshot.navigation.outer).not.toBeNull();
+    if (!snapshot.navigation.link || !snapshot.navigation.outer) continue;
+    expect(snapshot.navigation.link.top).toBeGreaterThanOrEqual(
+      snapshot.navigation.header?.bottom ?? 0,
+    );
+    expect(snapshot.navigation.link.bottom).toBeLessThanOrEqual(snapshot.navigation.outer.bottom);
+    expect(snapshot.navigation.hitPoints.every(({ targetsLink }) => targetsLink)).toBe(true);
+    expect(snapshot.conversation.rect.top).toBeGreaterThanOrEqual(snapshot.navigation.outer.top);
+    expect(snapshot.conversation.rect.bottom).toBeLessThanOrEqual(snapshot.navigation.outer.bottom);
+    expect(snapshot.conversation.clientHeight).toBeGreaterThan(snapshot.composer.rect.height);
+    for (const rect of [snapshot.composer.rect, snapshot.send]) {
+      expect(rect.top).toBeGreaterThanOrEqual(snapshot.conversation.rect.top);
+      expect(rect.bottom).toBeLessThanOrEqual(snapshot.conversation.rect.bottom);
+      expect(rect.top).toBeGreaterThanOrEqual(snapshot.navigation.outer.top);
+      expect(rect.bottom).toBeLessThanOrEqual(snapshot.navigation.outer.bottom);
+      expect(rect.left).toBeGreaterThanOrEqual(0);
+      expect(rect.right).toBeLessThanOrEqual((snapshot.viewport?.width ?? 0) + 1);
+      expect(rect.top).toBeGreaterThanOrEqual(0);
+      expect(rect.bottom).toBeLessThanOrEqual((snapshot.viewport?.height ?? 0) + 1);
+    }
+    expect(snapshot.composer.hitPoints.every(({ targetsInput }) => targetsInput)).toBe(true);
   }
 
   const persistedMessages = await e2eDatabase.db
