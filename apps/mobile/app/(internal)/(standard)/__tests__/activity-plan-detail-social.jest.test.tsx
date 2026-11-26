@@ -1,5 +1,6 @@
-import { act, waitFor } from "@testing-library/react-native";
+import { act } from "@testing-library/react-native";
 import React from "react";
+import { createActivityPlanSummary } from "../../../../test/activity-plan-projection-fixture";
 import { createHost } from "../../../../test/mock-components";
 import { renderNative, screen } from "../../../../test/render-native";
 
@@ -9,6 +10,9 @@ const alertMock = jest.fn();
 const toggleLikeMutateMock = jest.fn();
 const addCommentMutateMock = jest.fn();
 const refetchCommentsMock = jest.fn();
+const openEntityCommentsMock = jest.fn();
+let planError: Error | null = null;
+const refetchPlanMock = jest.fn();
 
 type HostProps = {
   children?: React.ReactNode;
@@ -18,14 +22,6 @@ type HostProps = {
 
 type AddCommentMutationOptions = {
   onSuccess?: () => void;
-};
-
-type TestNode = {
-  props?: { children?: React.ReactNode; onChangeText?: (value: string) => void };
-};
-
-type UnsafeTypeQuery = {
-  UNSAFE_getAllByType: (type: string) => TestNode[];
 };
 
 jest.mock("@tanstack/react-query", () => ({
@@ -61,7 +57,7 @@ jest.mock("react-native-maps", () => ({
   PROVIDER_DEFAULT: "default",
 }));
 
-jest.mock("@/components/activity-plan/workout/TimelineChart", () => ({
+jest.mock("@/components/activity-plan/activity/TimelineChart", () => ({
   __esModule: true,
   TimelineChart: createHost("TimelineChart"),
 }));
@@ -116,6 +112,11 @@ jest.mock("@/lib/navigation/useAppNavigate", () => ({
   useAppNavigate: () => routerMock.push,
 }));
 
+jest.mock("@/components/social/EntityCommentsSheetProvider", () => ({
+  __esModule: true,
+  useEntityCommentsSheet: () => ({ openEntityComments: openEntityCommentsMock }),
+}));
+
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
@@ -133,10 +134,20 @@ jest.mock("@/lib/api", () => ({
       trainingPlans: { invalidate: jest.fn() },
     }),
     activityPlans: {
-      getById: { useQuery: () => ({ data: null, isLoading: false }) },
+      getById: {
+        useQuery: () => ({
+          data: null,
+          isLoading: false,
+          error: planError,
+          refetch: refetchPlanMock,
+        }),
+      },
       duplicate: { useMutation: () => ({ mutate: jest.fn(), isPending: false }) },
       delete: { useMutation: () => ({ mutate: jest.fn(), isPending: false }) },
       update: { useMutation: () => ({ mutate: jest.fn(), isPending: false }) },
+    },
+    athleteIntelligence: {
+      getReadModel: { useQuery: () => ({ data: null }) },
     },
     events: {
       getById: { useQuery: () => ({ data: null, error: null, isLoading: false }) },
@@ -189,9 +200,8 @@ jest.mock("@/lib/api", () => ({
 jest.mock("@/lib/utils/durationConversion", () => ({ __esModule: true, getDurationMs: () => 0 }));
 jest.mock("@repo/core", () => ({
   __esModule: true,
-  buildEstimationContext: () => ({}),
+  ...jest.requireActual("@repo/core"),
   decodePolyline: () => null,
-  estimateActivity: () => null,
   formatDurationSec: (seconds: number) => `${seconds}s`,
   getStepIntensityColor: () => "#000000",
 }));
@@ -226,7 +236,7 @@ const getTextContent = (children: React.ReactNode): string => {
 
 const getAllByTypeOrEmpty = (type: string) => {
   try {
-    return (screen as unknown as UnsafeTypeQuery).UNSAFE_getAllByType(type);
+    return screen.container.queryAll((node) => node.type === type);
   } catch {
     return [];
   }
@@ -242,6 +252,8 @@ describe("activity plan detail social orchestration", () => {
     refetchCommentsMock.mockReset();
     alertMock.mockReset();
     nativeAlertMock.mockReset();
+    planError = null;
+    refetchPlanMock.mockReset();
     routerMock.back.mockReset();
     routerMock.push.mockReset();
     routerMock.replace.mockReset();
@@ -250,20 +262,27 @@ describe("activity plan detail social orchestration", () => {
     });
   });
 
-  it("toggles like through the social mutation", () => {
-    localSearchParamsMock.template = JSON.stringify({
-      id: "11111111-1111-1111-1111-111111111111",
-      name: "Tempo Builder",
-      activity_category: "run",
-      profile_id: "profile-1",
-      structure: { intervals: [] },
-      has_liked: false,
-      likes_count: 0,
-    });
+  it("shows a retryable query failure instead of an absent plan", async () => {
+    localSearchParamsMock.planId = "11111111-1111-4111-8111-111111111111";
+    planError = new Error("Offline");
+    await renderNative(<ActivityPlanDetail />);
+    expect(screen.getByText("Activity plan could not be loaded.")).toBeTruthy();
+    expect(screen.queryByText("Activity plan not found")).toBeNull();
+    await act(() => _findButton((label) => label === "Retry plan")?.props.onPress());
+    expect(refetchPlanMock).toHaveBeenCalledTimes(1);
+  });
 
-    renderNative(<ActivityPlanDetail />);
+  it("toggles like through the social mutation", async () => {
+    localSearchParamsMock.template = JSON.stringify(
+      createActivityPlanSummary({
+        id: "11111111-1111-1111-1111-111111111111",
+        name: "Tempo Builder",
+      }),
+    );
 
-    act(() => {
+    await renderNative(<ActivityPlanDetail />);
+
+    await act(() => {
       screen.getByTestId("activity-plan-like-button").props.onPress();
     });
 
@@ -273,52 +292,23 @@ describe("activity plan detail social orchestration", () => {
     });
   });
 
-  it("shows an alert instead of liking an unsaved template", () => {
-    localSearchParamsMock.template = JSON.stringify({
-      name: "Draft Template",
-      activity_category: "run",
-      profile_id: "profile-1",
-      structure: { intervals: [] },
+  it("opens the shared comments sheet for the activity plan", async () => {
+    localSearchParamsMock.template = JSON.stringify(
+      createActivityPlanSummary({
+        id: "11111111-1111-1111-1111-111111111111",
+        name: "Tempo Builder",
+      }),
+    );
+
+    await renderNative(<ActivityPlanDetail />);
+
+    await act(() => {
+      screen.getByTestId("activity-plan-comments-button").props.onPress();
     });
 
-    renderNative(<ActivityPlanDetail />);
-
-    act(() => {
-      screen.getByTestId("activity-plan-like-button").props.onPress();
-    });
-
-    expect(nativeAlertMock).toHaveBeenCalledWith("Error", "Cannot like this item - invalid ID");
-    expect(toggleLikeMutateMock).not.toHaveBeenCalled();
-  });
-
-  it("adds a trimmed comment and clears via success flow", async () => {
-    localSearchParamsMock.template = JSON.stringify({
-      id: "11111111-1111-1111-1111-111111111111",
-      name: "Tempo Builder",
-      activity_category: "run",
-      profile_id: "profile-1",
-      structure: { intervals: [] },
-    });
-
-    renderNative(<ActivityPlanDetail />);
-
-    const textarea = getAllByTypeOrEmpty("Textarea")[0];
-    act(() => {
-      textarea?.props?.onChangeText?.("  Great work  ");
-    });
-
-    await act(async () => {
-      screen.getByTestId("activity-plan-add-comment-button").props.onPress();
-      await Promise.resolve();
-    });
-
-    expect(addCommentMutateMock).toHaveBeenCalledWith({
-      entity_id: "11111111-1111-1111-1111-111111111111",
-      entity_type: "activity_plan",
-      content: "Great work",
-    });
-    await waitFor(() => {
-      expect(refetchCommentsMock).toHaveBeenCalled();
+    expect(openEntityCommentsMock).toHaveBeenCalledWith({
+      entityId: "11111111-1111-1111-1111-111111111111",
+      entityType: "activity_plan",
     });
   });
 });

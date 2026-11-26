@@ -46,11 +46,12 @@ export default function GroupMembersScreen() {
   };
 
   const updateMemberRole = (member: GroupMember, role: Exclude<GroupMembershipRole, "owner">) => {
-    if (!detailVm.groupId) return;
+    const currentGroupId = detailVm.groupId;
+    if (!currentGroupId) return;
     void runMemberAction(
       () =>
         memberActions.updateMemberRole({
-          groupId: detailVm.groupId!,
+          groupId: currentGroupId,
           profileId: member.profile.id,
           role,
         }),
@@ -59,7 +60,8 @@ export default function GroupMembersScreen() {
   };
 
   const removeMember = (member: GroupMember) => {
-    if (!detailVm.groupId) return;
+    const currentGroupId = detailVm.groupId;
+    if (!currentGroupId) return;
     Alert.alert(
       "Remove member",
       `Remove ${member.profile.username ?? "this athlete"} from the group?`,
@@ -72,7 +74,7 @@ export default function GroupMembersScreen() {
             void runMemberAction(
               () =>
                 memberActions.removeMember({
-                  groupId: detailVm.groupId!,
+                  groupId: currentGroupId,
                   profileId: member.profile.id,
                 }),
               "Unable to remove member",
@@ -84,7 +86,8 @@ export default function GroupMembersScreen() {
   };
 
   const transferOwnership = (member: GroupMember) => {
-    if (!detailVm.groupId) return;
+    const currentGroupId = detailVm.groupId;
+    if (!currentGroupId) return;
     Alert.alert(
       "Transfer ownership",
       `Make ${member.profile.username ?? "this athlete"} the owner of this group? You will become an admin.`,
@@ -97,7 +100,7 @@ export default function GroupMembersScreen() {
             void runMemberAction(
               () =>
                 memberActions.transferOwnership({
-                  groupId: detailVm.groupId!,
+                  groupId: currentGroupId,
                   targetProfileId: member.profile.id,
                   previousOwnerRole: "admin",
                 }),
