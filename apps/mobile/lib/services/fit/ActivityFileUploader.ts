@@ -46,6 +46,36 @@ export interface UploadState {
   attempts: number;
 }
 
+type StorageUploadFailureCategory =
+  | "asset_already_exists"
+  | "empty_body"
+  | "invalid_signed_upload"
+  | "mime_type_rejected"
+  | "storage_rejected";
+
+async function storageUploadFailureCategory(
+  response: Response,
+): Promise<StorageUploadFailureCategory> {
+  // Storage responses can be useful for distinguishing an idempotency conflict
+  // from an invalid body. Do not log them directly because a proxy may reflect
+  // request details. Only expose this small, reviewed set of categories.
+  try {
+    const payload = (await response.clone().json()) as { code?: unknown; message?: unknown };
+    const detail = [payload.code, payload.message]
+      .filter((value): value is string => typeof value === "string")
+      .join(" ")
+      .toLowerCase();
+    if (/asset already exists/.test(detail)) return "asset_already_exists";
+    if (/empty.*(?:body|content)|(?:body|content).*empty/.test(detail)) return "empty_body";
+    if (/invalid.*(?:jwt|token|signature)|(?:jwt|token|signature).*invalid/.test(detail))
+      return "invalid_signed_upload";
+    if (/mime|content.?type/.test(detail)) return "mime_type_rejected";
+  } catch {
+    // The HTTP status below remains the safe diagnostic when Storage returns no JSON error.
+  }
+  return "storage_rejected";
+}
+
 export class ActivityFileUploader {
   private config: UploadConfig;
   private uploadState: UploadState;
@@ -101,6 +131,11 @@ export class ActivityFileUploader {
           // Use PUT for signed URLs (standard for S3/Supabase signed uploads)
           const result = await this.performUpload(signedUrl, filePath, "PUT", {
             "Content-Type": "application/octet-stream",
+            // The server creates these URLs with upsert enabled. Preserve that
+            // contract for a retry after Storage accepted bytes but the client
+            // lost its response; otherwise Storage returns 400 Asset Already
+            // Exists and the durable submission cannot converge.
+            "x-upsert": "true",
             // No Authorization header needed for signed URLs (it's in the query params)
           });
 
@@ -157,10 +192,20 @@ export class ActivityFileUploader {
       const response = await expoFetch(url, {
         method: method,
         headers: headers,
-        body: file,
+        // expo/fetch derives Content-Type from a File body and overwrites the
+        // explicit header above. Its File implementation already materializes
+        // an in-memory byte array, so send that array directly to preserve the
+        // signed staging contract without an additional copy.
+        body: await file.bytes(),
       });
 
       if (!response.ok) {
+        // Do not include the signed URL or response body: both can carry a
+        // capability token. The status is sufficient to classify the durable
+        // queue outcome and diagnose the storage boundary.
+        console.warn(
+          `[ActivityFileUploader] Upload response status ${response.status} category ${await storageUploadFailureCategory(response)}`,
+        );
         throw new Error(`Upload failed with status ${response.status}`);
       }
 
@@ -198,7 +243,6 @@ export class ActivityFileUploader {
   async cancelUpload(): Promise<void> {
     this.uploadState.isUploading = false;
     this.uploadState.progress = null;
-    console.log("[ActivityFileUploader] Upload cancelled");
   }
 
   /**

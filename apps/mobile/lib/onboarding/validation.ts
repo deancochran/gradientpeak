@@ -1,11 +1,16 @@
+import { completeOnboardingSchema } from "@repo/core";
 import type { OnboardingData } from "@/components/onboarding/types";
 
+export const ONBOARDING_SOCIAL_SELECTION_LIMIT = 8;
+
 export function isValidOnboardingUsername(username: string): boolean {
-  return /^[a-zA-Z0-9_]{3,30}$/.test(username.trim());
+  return completeOnboardingSchema.shape.username.safeParse(username).success;
 }
 
 export function isValidIdentity(data: OnboardingData): boolean {
-  return data.full_name.trim().length > 0 && isValidOnboardingUsername(data.username);
+  return completeOnboardingSchema
+    .pick({ full_name: true, username: true })
+    .safeParse({ full_name: data.full_name, username: data.username }).success;
 }
 
 export function isValidDateString(value: string | null): boolean {

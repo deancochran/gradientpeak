@@ -8,6 +8,7 @@ import { useForm } from "react-hook-form";
 import { getForgotPasswordFormError } from "../lib/auth/form-errors";
 import { type ForgotPasswordFormValues, forgotPasswordFormSchema } from "../lib/auth/form-schemas";
 import { requestPasswordResetAction } from "../lib/auth/server-actions";
+import { contractEpochFormInputProps } from "../lib/contract-epoch";
 import { AuthCardShell } from "./auth-card-shell";
 
 type ForgotPasswordFormProps = React.ComponentPropsWithoutRef<"div"> & {};
@@ -49,6 +50,7 @@ export function ForgotPasswordForm({ className, ...props }: ForgotPasswordFormPr
             method="post"
             onSubmit={handleForgotPassword}
           >
+            <input {...contractEpochFormInputProps} />
             <div className="flex flex-col gap-6">
               <FormTextField
                 autoComplete="email"
@@ -61,7 +63,9 @@ export function ForgotPasswordForm({ className, ...props }: ForgotPasswordFormPr
               />
 
               {form.formState.errors.root ? (
-                <p className="text-destructive text-sm">{form.formState.errors.root.message}</p>
+                <p className="text-destructive text-sm" role="alert">
+                  {form.formState.errors.root.message}
+                </p>
               ) : null}
 
               <LoadingButton

@@ -5,11 +5,9 @@ export function redactProfileListFields<T extends Record<string, unknown>>(profi
     dob: null,
     email: null,
     full_name: null,
-    ftp: null,
     gender: null,
     language: null,
     preferred_units: null,
-    threshold_hr: null,
     weight_kg: null,
   } as T;
 }
@@ -18,6 +16,7 @@ export function redactPrivateProfileDetailFields<T extends Record<string, unknow
   return {
     ...profile,
     bio: null,
+    full_name: null,
     gender: null,
     followers_count: null,
     following_count: null,
