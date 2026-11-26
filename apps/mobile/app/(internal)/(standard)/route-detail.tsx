@@ -1,28 +1,35 @@
-import { Text } from "@repo/ui/components/text";
+import { Icon } from "@repo/ui/components/icon";
+import { format } from "date-fns";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { Share2 } from "lucide-react-native";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, InteractionManager, View } from "react-native";
+import { Alert, Share } from "react-native";
 import { ElevationProfileChart } from "@/components/activity/charts/ElevationProfileChart";
 import {
   DetailDeleteConfirmModal,
   DetailOverflowMenu,
   DetailScaffold,
 } from "@/components/shared/detail";
+import { ResourceCardActionButton } from "@/components/shared/ResourceCardPrimitives";
 import { RouteCard } from "@/components/shared/RouteCard";
-import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
+import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
+import { useEntityCommentsSheet } from "@/components/social/EntityCommentsSheetProvider";
 import { api } from "@/lib/api";
-import { useRecordingLifecycle } from "@/lib/hooks/useActivityRecorder";
+import { ROUTES } from "@/lib/constants/routes";
+import { useSessionView } from "@/lib/hooks/useActivityRecorder";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useEntityCommentsController } from "@/lib/hooks/useEntityCommentsController";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { useResourceLike } from "@/lib/hooks/useResourceLike";
 import { returnToRecordScreen } from "@/lib/navigation/recordingNavigation";
-import { useOptionalSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
+import { omitUndefined } from "@/lib/omitUndefined";
+import { useOptionalActivityRecorderService } from "@/lib/providers/ActivityRecorderProvider";
 import {
   handleRecordingObjectAction,
   type RecordingObjectActionCandidate,
   resolveRecordingObjectAction,
 } from "@/lib/recording/recordingObjectActions";
+import { getPublicShareUrl } from "@/lib/share/public-share-url";
 import type { DecompressedStream } from "@/lib/utils/streamDecompression";
 
 type RouteCoordinate = { latitude: number; longitude: number; altitude?: number };
@@ -60,7 +67,10 @@ function buildRouteStreams(
 
   elevatedCoordinates.forEach((point, index) => {
     if (index > 0) {
-      cumulativeDistance += calculateCoordinateDistance(elevatedCoordinates[index - 1]!, point);
+      const previousPoint = elevatedCoordinates[index - 1];
+      if (previousPoint) {
+        cumulativeDistance += calculateCoordinateDistance(previousPoint, point);
+      }
     }
 
     distanceValues.push(cumulativeDistance);
@@ -92,8 +102,9 @@ export default function RouteDetailScreen() {
   const router = useRouter();
   const utils = api.useUtils();
   const { user } = useAuth();
-  const recorderService = useOptionalSharedActivityRecorder();
-  const recordingLifecycle = useRecordingLifecycle(recorderService);
+  const recorderService = useOptionalActivityRecorderService();
+  const sessionView = useSessionView(recorderService);
+  const recordingLifecycle = recorderService?.recordingLifecycle ?? (sessionView ? "idle" : "idle");
   const [shouldLoadGeometry, setShouldLoadGeometry] = useState(false);
 
   const { data: route, isLoading } = api.routes.get.useQuery(
@@ -102,35 +113,45 @@ export default function RouteDetailScreen() {
   );
   const { data: routeFull, isFetching: isFetchingRouteFull } = api.routes.loadFull.useQuery(
     { id: routeId },
-    { enabled: routeId.length > 0 && shouldLoadGeometry },
+    {
+      enabled: routeId.length > 0 && route?.storage_state === "ready" && shouldLoadGeometry,
+    },
   );
 
   useEffect(() => {
     setShouldLoadGeometry(false);
-    if (!routeId) {
+    if (!routeId || route?.storage_state !== "ready") {
       return;
     }
 
-    const task = InteractionManager.runAfterInteractions(() => {
+    const idleCallback = requestIdleCallback(() => {
       setShouldLoadGeometry(true);
     });
 
-    return () => task.cancel();
-  }, [routeId]);
-
-  const deleteMutation = useReliableMutation(api.routes.delete, {
-    invalidate: [utils.routes],
-    success: "Route deleted successfully",
-    onSuccess: () => router.back(),
-  });
+    return () => cancelIdleCallback(idleCallback);
+  }, [route?.storage_state, routeId]);
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const comments = useEntityCommentsController({ entityId: route?.id, entityType: "route" });
+
+  const deleteMutation = useReliableMutation(api.routes.delete, {
+    onSuccess: () => {
+      void utils.routes.get.reset({ id: routeId });
+      router.back();
+      void utils.routes.get.invalidate({ id: routeId });
+    },
+    onError: async () => {
+      setShowDeleteConfirm(false);
+      await utils.routes.get.invalidate({ id: routeId });
+    },
+  });
+
+  const comments = useEntityCommentsController({ entityId: route?.id ?? "", entityType: "route" });
+  const entityCommentsSheet = useEntityCommentsSheet();
   const routeLike = useResourceLike({
     entityId: route?.id ?? "",
     entityType: "route",
-    initialCount: route?.likes_count,
-    initialLiked: route?.has_liked,
+    ...(route?.likes_count === undefined ? {} : { initialCount: route.likes_count }),
+    ...(route?.has_liked === undefined ? {} : { initialLiked: route.has_liked }),
   });
 
   const handleToggleLike = () => {
@@ -145,20 +166,23 @@ export default function RouteDetailScreen() {
   };
 
   const isOwner = !!user?.id && user.id === route?.profile_id;
+  const isDeletionPending = route?.storage_state === "deletion_pending";
 
   const elevationStreams = useMemo(
-    () => buildRouteStreams(routeFull?.coordinates),
+    () => buildRouteStreams(routeFull?.coordinates?.map((coordinate) => omitUndefined(coordinate))),
     [routeFull?.coordinates],
   );
 
   const recordingCandidate = useMemo<RecordingObjectActionCandidate | null>(() => {
-    if (!route?.id) return null;
+    if (!route?.id || route.storage_state !== "ready") return null;
     return {
       objectKind: "route",
       objectId: route.id,
       label: route.name,
       category: (route as { activity_category?: string | null }).activity_category,
-      canReadGeometry: routeFull ? Boolean(routeFull.coordinates?.length) : undefined,
+      ...(routeFull === undefined
+        ? {}
+        : { canReadGeometry: Boolean(routeFull.coordinates?.length) }),
     };
   }, [route, routeFull]);
 
@@ -186,7 +210,56 @@ export default function RouteDetailScreen() {
     setShowDeleteConfirm(true);
   };
 
+  const handleAttachToCalendarEvent = () => {
+    if (!route) return;
+    router.navigate({
+      pathname: "/event-detail",
+      params: {
+        date: format(new Date(), "yyyy-MM-dd"),
+        mode: "create",
+        routeId: route.id,
+        routeName: route.name,
+      },
+    });
+  };
+
+  const canShare = route?.storage_state === "ready";
+
+  const handleShare = async () => {
+    if (!route) return;
+    if (!canShare) return;
+    if (!route.is_public) {
+      Alert.alert(
+        "Not public",
+        "Only public routes have a share link. Make this route public first.",
+      );
+      return;
+    }
+    const url = getPublicShareUrl(`/share/routes/${route.id}`);
+    try {
+      await Share.share({ message: url, url });
+    } catch {
+      Alert.alert("Share failed", "Could not open the share sheet. Please try again.");
+    }
+  };
+
   const renderOptionsMenu = () => {
+    if (isDeletionPending) {
+      return isOwner ? (
+        <DetailOverflowMenu
+          actions={[
+            {
+              label: "Retry Route Deletion",
+              onPress: handleDelete,
+              testID: "route-detail-options-delete",
+              variant: "destructive" as const,
+            },
+          ]}
+          testID="route-detail-options-trigger"
+        />
+      ) : null;
+    }
+
     return (
       <DetailOverflowMenu
         actions={[
@@ -196,8 +269,18 @@ export default function RouteDetailScreen() {
             onPress: handleRecordingAction,
             testID: "route-detail-options-recording",
           },
+          {
+            label: "Add to Calendar",
+            onPress: handleAttachToCalendarEvent,
+            testID: "route-detail-options-attach-calendar-event",
+          },
           ...(isOwner
             ? [
+                {
+                  label: "Edit Route",
+                  onPress: () => router.navigate(ROUTES.ROUTES.EDIT(route.id) as never),
+                  testID: "route-detail-options-edit",
+                },
                 {
                   label: "Delete Route",
                   onPress: handleDelete,
@@ -249,16 +332,51 @@ export default function RouteDetailScreen() {
       screenTestID="route-detail-screen"
     >
       <RouteCard
-        route={route}
-        routeFull={routeFull}
+        {...omitUndefined({
+          headerAccessory: canShare ? (
+            <ResourceCardActionButton
+              accessibilityLabel="Share route"
+              onPress={() => void handleShare()}
+              testID="route-detail-share-button"
+            >
+              <Icon as={Share2} size={20} className="text-foreground" />
+            </ResourceCardActionButton>
+          ) : undefined,
+        })}
+        route={omitUndefined(route)}
+        {...omitUndefined({
+          routeFull:
+            isDeletionPending || routeFull === undefined
+              ? undefined
+              : omitUndefined({
+                  coordinates: routeFull.coordinates?.map((coordinate) =>
+                    omitUndefined(coordinate),
+                  ),
+                }),
+        })}
         isLiked={routeLike.isLiked}
         likeCount={routeLike.likeCount}
         likePending={routeLike.isPending}
+        commentCount={comments.commentCount}
+        onCommentPress={() => {
+          if (!isDeletionPending && route?.id) {
+            entityCommentsSheet?.openEntityComments({ entityId: route.id, entityType: "route" });
+          }
+        }}
         onLikePress={handleToggleLike}
-        variant="detail"
+        showLike={!isDeletionPending}
+        variant={isDeletionPending ? "list" : "detail"}
       />
 
-      {elevationStreams ? (
+      {isDeletionPending ? (
+        <EmptyState
+          actionLabel="Retry deletion"
+          description="The route file could not be removed yet. Retry deletion to finish removing this route."
+          onAction={handleDelete}
+          testID="route-detail-deletion-pending"
+          title="Route deletion pending"
+        />
+      ) : elevationStreams ? (
         <ElevationProfileChart
           elevationStream={elevationStreams.elevationStream}
           distanceStream={elevationStreams.distanceStream}
@@ -267,31 +385,13 @@ export default function RouteDetailScreen() {
           showHeader={false}
         />
       ) : !shouldLoadGeometry || isFetchingRouteFull ? (
-        <View className="items-center gap-3 rounded-2xl border border-border bg-muted/20 px-4 py-6">
-          <ActivityIndicator size="small" className="text-primary" />
-          <Text className="text-sm text-muted-foreground">Loading route geometry...</Text>
-        </View>
+        <LoadingState message="Loading route geometry..." />
       ) : (
-        <View className="items-center gap-2 rounded-2xl border border-border bg-muted/20 px-4 py-6">
-          <Text className="text-sm font-medium text-foreground">No elevation profile</Text>
-          <Text className="text-center text-sm text-muted-foreground">
-            This route does not have enough elevation data to draw a profile.
-          </Text>
-        </View>
+        <EmptyState
+          description="This route does not have enough elevation data to draw a profile."
+          title="No elevation profile"
+        />
       )}
-
-      <EntityCommentsSection
-        addCommentPending={comments.addCommentPending}
-        commentCount={comments.commentCount}
-        comments={comments.comments}
-        hasMoreComments={comments.hasMoreComments}
-        isLoadingMoreComments={comments.isLoadingMoreComments}
-        newComment={comments.newComment}
-        onAddComment={comments.handleAddComment}
-        onChangeNewComment={comments.setNewComment}
-        onLoadMoreComments={comments.loadMoreComments}
-        testIDPrefix="route-detail"
-      />
     </DetailScaffold>
   );
 }

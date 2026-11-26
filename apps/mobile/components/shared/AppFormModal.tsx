@@ -1,5 +1,6 @@
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { X } from "lucide-react-native";
 import type React from "react";
@@ -7,13 +8,18 @@ import {
   KeyboardAvoidingView,
   Modal,
   Platform,
-  Pressable,
   ScrollView,
   type ScrollViewProps,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { omitUndefined } from "@/lib/omitUndefined";
 
 interface AppFormModalProps {
+  /** Full-screen editors opt in; other forms retain their sheet presentation. */
+  presentationStyle?: "pageSheet" | "fullScreen";
+  /** Opt in when this caller has a single compact header primary action. */
+  actionPlacement?: "footer" | "header";
   children: React.ReactNode;
   description?: string;
   dismissDisabled?: boolean;
@@ -28,6 +34,8 @@ interface AppFormModalProps {
 }
 
 export function AppFormModal({
+  presentationStyle = "pageSheet",
+  actionPlacement = "footer",
   children,
   description,
   dismissDisabled = false,
@@ -40,6 +48,11 @@ export function AppFormModal({
   tertiaryAction,
   title,
 }: AppFormModalProps) {
+  const { bottom: bottomSafeAreaInset, top: topSafeAreaInset } = useSafeAreaInsets();
+  const { contentContainerStyle, ...resolvedScrollProps } = scrollProps ?? {};
+  const footerPaddingBottom = 16 + bottomSafeAreaInset;
+  const hasFooterActions =
+    actionPlacement === "footer" && (primaryAction || secondaryAction || tertiaryAction);
   const handleClose = () => {
     if (dismissDisabled) {
       return;
@@ -49,43 +62,115 @@ export function AppFormModal({
   };
 
   return (
-    <Modal animationType="slide" presentationStyle="pageSheet" visible onRequestClose={handleClose}>
+    <Modal
+      accessibilityViewIsModal
+      animationType="slide"
+      presentationStyle={presentationStyle}
+      visible
+      onRequestClose={handleClose}
+    >
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         className="flex-1 bg-background"
         testID={testID}
+        style={presentationStyle === "fullScreen" ? { paddingTop: topSafeAreaInset } : undefined}
       >
         <View className="flex-1 bg-background">
-          <View className="flex-row items-start justify-between border-b border-border px-4 py-4">
-            <View className="flex-1 pr-3">
-              <Text className="text-xl font-semibold text-foreground">{title}</Text>
-              {description ? (
-                <Text className="mt-1 text-sm text-muted-foreground">{description}</Text>
-              ) : null}
-            </View>
-            <Pressable
-              disabled={dismissDisabled}
-              onPress={handleClose}
-              className="rounded-full bg-muted p-2"
-              hitSlop={12}
-            >
-              <Icon as={X} size={20} className="text-muted-foreground" />
-            </Pressable>
+          <View className="border-b border-border">
+            {actionPlacement === "header" ? (
+              <>
+                <View className="flex-row items-center px-4 py-2">
+                  <Button
+                    accessibilityLabel={`Close ${title}`}
+                    accessibilityState={{ disabled: dismissDisabled }}
+                    className="min-h-12 min-w-12 rounded-full bg-muted"
+                    disabled={dismissDisabled}
+                    onPress={handleClose}
+                    role="button"
+                    size="icon"
+                    testId={`${testID ?? "app-form-modal"}-close`}
+                    variant="ghost"
+                  >
+                    <Icon as={X} size={20} className="text-muted-foreground" />
+                  </Button>
+                  <View className="flex-1 px-2">
+                    <Text
+                      accessibilityRole="header"
+                      className="text-center text-xl font-semibold text-foreground"
+                      numberOfLines={1}
+                    >
+                      {title}
+                    </Text>
+                  </View>
+                  <View className="min-w-12 items-end">{primaryAction}</View>
+                </View>
+                {description ? (
+                  <Text className="px-4 pb-3 text-sm text-muted-foreground">{description}</Text>
+                ) : null}
+              </>
+            ) : (
+              <View className="flex-row items-start justify-between px-4 py-4">
+                <View className="flex-1 pr-3">
+                  <Text
+                    accessibilityRole="header"
+                    className="text-xl font-semibold text-foreground"
+                  >
+                    {title}
+                  </Text>
+                  {description ? (
+                    <Text className="mt-1 text-sm text-muted-foreground">{description}</Text>
+                  ) : null}
+                </View>
+                <Button
+                  accessibilityLabel={`Close ${title}`}
+                  accessibilityState={{ disabled: dismissDisabled }}
+                  className="min-h-12 min-w-12 rounded-full bg-muted"
+                  disabled={dismissDisabled}
+                  onPress={handleClose}
+                  role="button"
+                  size="icon"
+                  testId={`${testID ?? "app-form-modal"}-close`}
+                  variant="ghost"
+                >
+                  <Icon as={X} size={20} className="text-muted-foreground" />
+                </Button>
+              </View>
+            )}
           </View>
 
           <ScrollView
             className="flex-1"
             contentContainerClassName="p-4 gap-4"
+            contentContainerStyle={[
+              {
+                // ScrollView does not consistently receive NativeWind's content-container
+                // utilities on native. Keep the modal's single content inset here so every
+                // caller gets the same readable edge spacing.
+                paddingHorizontal: 16,
+                paddingTop: 16,
+                paddingBottom: footerContent || hasFooterActions ? 16 : footerPaddingBottom,
+                rowGap: 16,
+              },
+              contentContainerStyle,
+            ]}
             keyboardShouldPersistTaps="handled"
-            {...scrollProps}
+            {...resolvedScrollProps}
           >
             {children}
           </ScrollView>
 
           {footerContent ? (
-            <View className="border-t border-border bg-background px-4 py-4">{footerContent}</View>
-          ) : primaryAction || secondaryAction || tertiaryAction ? (
-            <View className="border-t border-border bg-background px-4 py-4">
+            <View
+              className="border-t border-border bg-background px-4 pt-4"
+              style={{ paddingBottom: footerPaddingBottom }}
+            >
+              {footerContent}
+            </View>
+          ) : hasFooterActions ? (
+            <View
+              className="border-t border-border bg-background px-4 pt-4"
+              style={{ paddingBottom: footerPaddingBottom }}
+            >
               <View className="gap-3">
                 {tertiaryAction ? <View>{tertiaryAction}</View> : null}
                 <View className="flex-row gap-3">
@@ -124,22 +209,27 @@ function renderConfirmButton(action: AppConfirmAction, fill = false) {
   const variant = action.variant === "destructive" ? "default" : (action.variant ?? "default");
   const textClassName =
     action.variant === "destructive"
-      ? "text-destructive-foreground font-semibold"
+      ? "text-destructive-surface-foreground font-semibold"
       : fill
         ? "text-primary-foreground font-semibold"
         : "text-foreground font-medium";
-  const buttonClassName = action.variant === "destructive" ? "bg-destructive" : undefined;
+  const buttonClassName = action.variant === "destructive" ? "bg-destructive-surface" : undefined;
 
   return (
-    <Button
-      className={buttonClassName}
-      disabled={action.disabled || action.loading}
+    <LoadingButton
+      {...omitUndefined({
+        className: buttonClassName,
+        disabled: action.disabled,
+        loading: action.loading,
+        testId: action.testID,
+      })}
+      loadingLabel={`${action.label}...`}
+      loadingTextClassName={textClassName}
       onPress={action.onPress}
-      testID={action.testID}
       variant={variant === "default" && !fill ? "outline" : variant}
     >
-      <Text className={textClassName}>{action.loading ? `${action.label}...` : action.label}</Text>
-    </Button>
+      <Text className={textClassName}>{action.label}</Text>
+    </LoadingButton>
   );
 }
 
@@ -154,13 +244,15 @@ export function AppConfirmModal({
 }: AppConfirmModalProps) {
   return (
     <AppFormModal
+      {...omitUndefined({
+        testID,
+        tertiaryAction: tertiaryAction ? renderConfirmButton(tertiaryAction) : undefined,
+        secondaryAction: secondaryAction ? renderConfirmButton(secondaryAction) : undefined,
+      })}
       description={description}
       onClose={onClose}
-      testID={testID}
       title={title}
-      tertiaryAction={tertiaryAction ? renderConfirmButton(tertiaryAction) : undefined}
       primaryAction={renderConfirmButton(primaryAction, true)}
-      secondaryAction={secondaryAction ? renderConfirmButton(secondaryAction) : undefined}
     >
       <View className="gap-3 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-4">
         <Text className="text-sm leading-5 text-muted-foreground">{description}</Text>

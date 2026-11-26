@@ -1,6 +1,15 @@
 import { Card, CardContent, CardHeader } from "../card/index.web";
 import type { ChartSkeletonProps, ListSkeletonProps } from "./shared";
 
+const CHART_AXIS_SKELETON_KEYS = ["start", "quarter", "midpoint", "end"] as const;
+const PROFILE_FIELD_SKELETON_KEYS = [
+  "profile-name",
+  "profile-email",
+  "profile-plan",
+  "profile-status",
+] as const;
+const TREND_SKELETON_KEYS = ["current", "previous"] as const;
+
 function Skeleton({ className, style }: { className?: string; style?: React.CSSProperties }) {
   return <div className={className} style={style} />;
 }
@@ -31,6 +40,17 @@ function ListItemSkeleton() {
       </div>
       <Skeleton className="h-8 w-8 animate-pulse rounded bg-accent" />
     </div>
+  );
+}
+
+function ListSkeletonItems({ count }: { count: number }) {
+  if (count <= 0) return null;
+
+  return (
+    <>
+      <ListItemSkeleton />
+      <ListSkeletonItems count={count - 1} />
+    </>
   );
 }
 
@@ -69,8 +89,8 @@ function ChartSkeleton({ height = 250 }: ChartSkeletonProps) {
       <CardContent>
         <Skeleton className="w-full animate-pulse rounded-lg bg-accent" style={{ height }} />
         <div className="mt-4 flex flex-row justify-between">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <Skeleton key={index} className="h-3 w-16 animate-pulse rounded-md bg-accent" />
+          {CHART_AXIS_SKELETON_KEYS.map((key) => (
+            <Skeleton key={key} className="h-3 w-16 animate-pulse rounded-md bg-accent" />
           ))}
         </div>
       </CardContent>
@@ -104,8 +124,8 @@ function ProfileSkeleton() {
       </CardHeader>
       <CardContent className="gap-4">
         <div className="space-y-3">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <Skeleton key={index} className="h-12 w-full animate-pulse rounded-lg bg-accent" />
+          {PROFILE_FIELD_SKELETON_KEYS.map((key) => (
+            <Skeleton key={key} className="h-12 w-full animate-pulse rounded-lg bg-accent" />
           ))}
         </div>
       </CardContent>
@@ -123,8 +143,8 @@ function TrendsOverviewSkeleton() {
           <Skeleton className="h-6 w-40 animate-pulse rounded-md bg-accent" />
         </CardHeader>
         <CardContent className="space-y-3">
-          {Array.from({ length: 2 }).map((_, index) => (
-            <div key={index}>
+          {TREND_SKELETON_KEYS.map((key) => (
+            <div key={key}>
               <div className="flex flex-row items-center justify-between">
                 <div className="flex-1 space-y-1">
                   <Skeleton className="h-4 w-32 animate-pulse rounded-md bg-accent" />
@@ -164,9 +184,7 @@ function PlanCalendarSkeleton() {
 function ListSkeleton({ count = 5 }: ListSkeletonProps) {
   return (
     <div className="space-y-3">
-      {Array.from({ length: count }).map((_, i) => (
-        <ListItemSkeleton key={i} />
-      ))}
+      <ListSkeletonItems count={count} />
     </div>
   );
 }
