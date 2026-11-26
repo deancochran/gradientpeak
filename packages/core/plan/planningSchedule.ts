@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { dateOnlySchema } from "../schemas/date-only";
 
-export const dateOnlySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+export { dateOnlySchema } from "../schemas/date-only";
 
 export const planningScheduleSchema = z
   .object({

@@ -1,6 +1,29 @@
-import { encodePolyline, type StandardActivity, simplifyCoordinates } from "@repo/core";
+import {
+  type ContentVisibility,
+  encodePolyline,
+  type StandardActivity,
+  simplifyCoordinates,
+} from "@repo/core";
 
 export type ImportedActivityProvider = "wahoo";
+
+export type ImportedActivityRequiredMetric = "distanceMeters" | "durationSeconds";
+export type ImportedActivityMetricRejectionReason = "invalid_source" | "missing_source";
+
+/** Required persisted metrics fail closed instead of turning unavailable evidence into zero. */
+export class ImportedActivityMetricResolutionError extends Error {
+  readonly metric: ImportedActivityRequiredMetric;
+  readonly reason: ImportedActivityMetricRejectionReason;
+
+  constructor(
+    metric: ImportedActivityRequiredMetric,
+    reason: ImportedActivityMetricRejectionReason,
+  ) {
+    super(`Imported activity ${metric} has ${reason.replace("_", " ")}`);
+    this.metric = metric;
+    this.reason = reason;
+  }
+}
 
 export type ImportedActivityCreateInput = {
   activityFilePath: string;
@@ -17,7 +40,10 @@ export type ImportedActivityCreateInput = {
   externalId: string;
   finishedAt: string;
   integrationId: string;
-  movingSeconds: number;
+  integrationGeneration: number;
+  contentVisibility: ContentVisibility;
+  /** Provider-reported active duration; this is not inferred moving time. */
+  providerActiveDurationSeconds: number | null;
   name: string;
   normalizedPower: number | null;
   polyline: string | null;
@@ -44,12 +70,13 @@ export type BuildImportedActivityInput = {
     distanceMeters?: number | string | null;
     durationSeconds?: number | string | null;
     elevationGainMeters?: number | string | null;
-    movingSeconds?: number | string | null;
+    providerActiveDurationSeconds?: number | string | null;
     normalizedPower?: number | string | null;
     providerUpdatedAt?: string | null;
     startedAt: string;
   };
   integrationId: string;
+  integrationGeneration: number;
   parsedActivity: StandardActivity | null;
   profileId: string;
   provider: ImportedActivityProvider;
@@ -57,14 +84,40 @@ export type BuildImportedActivityInput = {
   type: string;
 };
 
+/** Selects one finite, nonnegative source for every required imported-activity metric. */
+export function resolveImportedActivityRequiredMetrics(input: {
+  fileDistanceMeters: number | undefined;
+  fileDurationSeconds: number | undefined;
+  providerDistanceMeters: number | string | null | undefined;
+  providerDurationSeconds: number | string | null | undefined;
+}): { distanceMeters: number; durationSeconds: number } {
+  return {
+    distanceMeters: resolveRequiredMetric({
+      metric: "distanceMeters",
+      fileValue: input.fileDistanceMeters,
+      providerValue: input.providerDistanceMeters,
+    }),
+    durationSeconds: resolveRequiredMetric({
+      metric: "durationSeconds",
+      fileValue: input.fileDurationSeconds,
+      providerValue: input.providerDurationSeconds,
+    }),
+  };
+}
+
 export function buildImportedActivityCreateInput(
   input: BuildImportedActivityInput,
 ): ImportedActivityCreateInput {
   const startedAt =
     input.parsedActivity?.metadata.startTime.toISOString() ?? input.fallback.startedAt;
-  const durationSeconds = toInteger(
-    input.parsedActivity?.summary.totalTime ?? input.fallback.durationSeconds,
-  );
+  const resolvedMetrics = resolveImportedActivityRequiredMetrics({
+    fileDistanceMeters: input.parsedActivity?.summary.totalDistance,
+    fileDurationSeconds: input.parsedActivity?.summary.totalTime,
+    providerDistanceMeters: input.fallback.distanceMeters,
+    providerDurationSeconds: input.fallback.durationSeconds,
+  });
+  const durationSeconds = Math.round(resolvedMetrics.durationSeconds);
+  const distanceMeters = Math.round(resolvedMetrics.distanceMeters);
 
   return {
     activityFilePath: input.activityFile.path,
@@ -81,9 +134,7 @@ export function buildImportedActivityCreateInput(
       input.parsedActivity?.summary.avgSpeed ?? input.fallback.avgSpeedMps,
     ),
     calories: toNullableInteger(input.parsedActivity?.summary.calories ?? input.fallback.calories),
-    distanceMeters: toInteger(
-      input.parsedActivity?.summary.totalDistance ?? input.fallback.distanceMeters,
-    ),
+    distanceMeters,
     durationSeconds,
     elevationGainMeters: toNullableInteger(
       input.parsedActivity?.summary.totalAscent ?? input.fallback.elevationGainMeters,
@@ -91,8 +142,10 @@ export function buildImportedActivityCreateInput(
     externalId: input.externalId,
     finishedAt: new Date(new Date(startedAt).getTime() + durationSeconds * 1000).toISOString(),
     integrationId: input.integrationId,
-    movingSeconds: toInteger(
-      input.parsedActivity?.summary.totalTime ?? input.fallback.movingSeconds,
+    integrationGeneration: input.integrationGeneration,
+    contentVisibility: "private",
+    providerActiveDurationSeconds: toPositiveFiniteNumber(
+      input.fallback.providerActiveDurationSeconds,
     ),
     name: input.title,
     normalizedPower: toNullableNumber(input.fallback.normalizedPower),
@@ -106,20 +159,26 @@ export function buildImportedActivityCreateInput(
 }
 
 function buildActivityPolyline(parsedActivity: StandardActivity | null): string | null {
-  const coordinates = (parsedActivity?.records ?? [])
-    .filter(
-      (record) =>
-        typeof record.positionLat === "number" &&
-        typeof record.positionLong === "number" &&
-        Math.abs(record.positionLat) <= 90 &&
-        Math.abs(record.positionLong) <= 180 &&
-        !(record.positionLat === 0 && record.positionLong === 0),
-    )
-    .map((record) => ({
-      latitude: record.positionLat!,
-      longitude: record.positionLong!,
-      altitude: record.altitude,
-    }));
+  const coordinates = (parsedActivity?.records ?? []).flatMap((record) => {
+    const latitude = record.positionLat;
+    const longitude = record.positionLong;
+    if (
+      typeof latitude !== "number" ||
+      typeof longitude !== "number" ||
+      Math.abs(latitude) > 90 ||
+      Math.abs(longitude) > 180 ||
+      (latitude === 0 && longitude === 0)
+    ) {
+      return [];
+    }
+    return [
+      {
+        latitude,
+        longitude,
+        ...(record.altitude === undefined ? {} : { altitude: record.altitude }),
+      },
+    ];
+  });
 
   if (coordinates.length < 2) {
     return null;
@@ -133,11 +192,6 @@ function buildActivityPolyline(parsedActivity: StandardActivity | null): string 
   }
 }
 
-function toNumber(value: number | string | null | undefined): number {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
 function toNullableNumber(value: number | string | null | undefined): number | null {
   if (value === null || value === undefined || value === "") {
     return null;
@@ -147,11 +201,45 @@ function toNullableNumber(value: number | string | null | undefined): number | n
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function toInteger(value: number | string | null | undefined): number {
-  return Math.round(toNumber(value));
-}
-
 function toNullableInteger(value: number | string | null | undefined): number | null {
   const parsed = toNullableNumber(value);
   return parsed === null ? null : Math.round(parsed);
+}
+
+function toPositiveFiniteNumber(value: number | string | null | undefined): number | null {
+  const parsed = toNullableNumber(value);
+  return parsed !== null && parsed > 0 ? parsed : null;
+}
+
+type MetricSourceResolution =
+  | { status: "available"; value: number }
+  | { status: "unavailable"; reason: ImportedActivityMetricRejectionReason };
+
+function resolveMetricSource(value: number | string | null | undefined): MetricSourceResolution {
+  if (value === null || value === undefined || (typeof value === "string" && value.trim() === "")) {
+    return { status: "unavailable", reason: "missing_source" };
+  }
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) && parsed >= 0
+    ? { status: "available", value: parsed }
+    : { status: "unavailable", reason: "invalid_source" };
+}
+
+function resolveRequiredMetric(input: {
+  metric: ImportedActivityRequiredMetric;
+  fileValue: number | undefined;
+  providerValue: number | string | null | undefined;
+}): number {
+  const file = resolveMetricSource(input.fileValue);
+  if (file.status === "available") return file.value;
+
+  const provider = resolveMetricSource(input.providerValue);
+  if (provider.status === "available") return provider.value;
+
+  throw new ImportedActivityMetricResolutionError(
+    input.metric,
+    file.reason === "invalid_source" || provider.reason === "invalid_source"
+      ? "invalid_source"
+      : "missing_source",
+  );
 }

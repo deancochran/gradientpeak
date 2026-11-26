@@ -1,0 +1,74 @@
+import type {
+  ALL_SAMPLE_PLANS,
+  SystemActivityTemplateDefinition,
+  VersionedSystemContentDefinition,
+} from "@repo/core";
+import {
+  activityPlanAuthoringContentSchema,
+  activityPlanSemanticHash,
+} from "@repo/core/activity-plan";
+import { canonicalTrainingPlanStructureSchema } from "@repo/core/schemas";
+import { structureHash } from "./canonical-json";
+
+export type SystemTrainingPlanDefinition = VersionedSystemContentDefinition<
+  (typeof ALL_SAMPLE_PLANS)[number]
+>;
+
+export function persistedTrainingPlanStructure(template: (typeof ALL_SAMPLE_PLANS)[number]) {
+  const { id: _id, ...structure } = template.structure;
+  return canonicalTrainingPlanStructureSchema.parse(structure);
+}
+
+export function materializeSystemActivityTemplateSeedValues(
+  definition: SystemActivityTemplateDefinition,
+) {
+  const template = definition.content;
+  if (!template.id) throw new Error(`System activity template ${definition.key} is missing an ID`);
+  const trainingIntent = template.training_intent ?? "general_maintenance";
+  const validated = activityPlanAuthoringContentSchema.parse({
+    structure: template.structure,
+    intent: { training_intent: trainingIntent },
+  });
+  const structure = validated.structure;
+  return {
+    id: template.id,
+    profile_id: null,
+    is_system_template: true,
+    content_visibility: "public" as const,
+    system_content_key: definition.key,
+    system_content_version: definition.version,
+    system_content_hash: definition.contentHash,
+    name: template.name,
+    description: template.description,
+    structure,
+    structure_hash: structureHash(structure),
+    semantic_hash: activityPlanSemanticHash({
+      structure,
+      trainingIntent,
+    }),
+    gps_recording_enabled: template.gps_recording_enabled ?? true,
+    notes: template.notes ?? null,
+    training_intent: trainingIntent,
+  };
+}
+
+export function materializeSystemTrainingPlanSeedValues(definition: SystemTrainingPlanDefinition) {
+  const template = definition.content;
+  if (!template.id) throw new Error(`System training plan ${definition.key} is missing an ID`);
+  const structure = persistedTrainingPlanStructure(template);
+  return {
+    id: template.id,
+    profile_id: null,
+    is_system_template: true,
+    content_visibility: "public" as const,
+    system_content_key: definition.key,
+    system_content_version: definition.version,
+    system_content_hash: definition.contentHash,
+    name: template.name,
+    description: template.description ?? null,
+    structure,
+    structure_hash: structureHash(structure),
+    sessions_per_week_target: template.sessions_per_week_target,
+    duration_hours: template.duration_hours ?? null,
+  };
+}

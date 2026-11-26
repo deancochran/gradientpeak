@@ -1,9 +1,9 @@
+import { isSameDay } from "@repo/core";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { format } from "date-fns";
 import { ChevronLeft, ChevronRight } from "lucide-react-native";
 import { TouchableOpacity, View } from "react-native";
-import { isSameDay } from "@/lib/utils/plan/dateGrouping";
 
 interface DayStatus {
   completed: boolean;
@@ -49,7 +49,7 @@ export function WeekStrip({
 
             return (
               <TouchableOpacity
-                key={index}
+                key={date.toISOString()}
                 onPress={() => onSelectDay(index)}
                 className="items-center"
                 activeOpacity={0.7}
@@ -84,7 +84,7 @@ export function WeekStrip({
 
                 {/* Status Dot */}
                 <View className="h-2 w-2">
-                  {dayStatus.count > 0 ? (
+                  {dayStatus !== undefined && dayStatus.count > 0 ? (
                     dayStatus.completed ? (
                       // Checkmark dot (filled green)
                       <View className="w-2 h-2 rounded-full bg-green-500" />

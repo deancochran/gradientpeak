@@ -1,22 +1,28 @@
 /**
  * Wahoo API Client
- * Handles communication with Wahoo's API for plans and workouts
+ * Handles communication with Wahoo's API for Wahoo plan and workout resources
  */
 
-import type { ActivityType } from "./activity-type-utils";
+import { logger } from "../../logger";
+import type { WahooActivityType } from "./activity-type-utils";
+import { WahooAuthorizationResetRequiredError, WahooReconnectRequiredError } from "./credentials";
+import { isWahooTokenLimitRejection } from "./oauth-errors";
 
 const WAHOO_API_BASE = "https://api.wahooligan.com";
+const WAHOO_DISCONNECT_TIMEOUT_MS = 5_000;
+const WAHOO_REQUEST_TIMEOUT_MS = 15_000;
 
 export interface WahooClientConfig {
   accessToken: string;
   refreshToken?: string;
+  requestTimeoutMs?: number;
 }
 
 export interface WahooPlanData {
-  structure: Record<string, any>;
+  structure: unknown;
   name: string;
   description: string;
-  activityType: ActivityType;
+  activityType: WahooActivityType;
   externalId: string; // Your activity_plan_id (from activity_plans table)
 }
 
@@ -25,18 +31,18 @@ export interface WahooWorkoutData {
   name: string;
   scheduledDate: string; // ISO date string
   externalId: string; // Your event_id (from events table)
-  routeId?: number; // Optional route_id to attach to workout
+  routeId?: number; // Optional route_id to attach to the Wahoo workout resource
   workoutTypeId: number; // Required: Wahoo workout type ID
-  durationMinutes: number; // Required: Duration in minutes
+  durationMinutes?: number | undefined; // Optional: omit when exact duration is unavailable
 }
 
 export interface WahooRouteData {
-  file: string; // Base64 encoded GPX file
+  file: string; // Data URI containing the encoded route file
   filename: string;
   externalId: string;
   providerUpdatedAt: string;
   name: string;
-  description?: string;
+  description?: string | null;
   workoutTypeFamilyId: number;
   startLat: number;
   startLng: number;
@@ -48,6 +54,86 @@ export interface WahooRouteData {
 export interface WahooApiError extends Error {
   status?: number;
   code?: string;
+}
+
+export type WahooIntegrationFailure =
+  | {
+      kind:
+        | "authorization"
+        | "import_unavailable"
+        | "invalid_provider_response"
+        | "network_unavailable"
+        | "provider_unavailable"
+        | "rate_limited"
+        | "request_rejected"
+        | "request_timeout";
+      scope: "job";
+    }
+  | {
+      kind: "activity_invalid" | "activity_missing" | "activity_unsupported";
+      scope: "activity";
+    };
+
+/** Closed failure classification shared by Wahoo transport and activity processing. */
+export class WahooIntegrationError extends Error implements WahooApiError {
+  readonly code?: string;
+  readonly status?: number;
+
+  constructor(
+    readonly failure: WahooIntegrationFailure,
+    details: { code?: string; status?: number } = {},
+  ) {
+    super(`Wahoo ${failure.scope} failure: ${failure.kind}`);
+    this.name = "WahooIntegrationError";
+    if (details.code !== undefined) this.code = details.code;
+    if (details.status !== undefined) this.status = details.status;
+  }
+}
+
+export function isWahooActivityItemError(error: unknown): error is WahooIntegrationError {
+  return error instanceof WahooIntegrationError && error.failure.scope === "activity";
+}
+
+function boundedRequestTimeoutMs(value: number | undefined): number {
+  if (value === undefined) return WAHOO_REQUEST_TIMEOUT_MS;
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error("Wahoo request timeout must be a positive finite number");
+  }
+  return Math.max(1, Math.floor(value));
+}
+
+function createBoundedRequestSignal(upstream: AbortSignal | null | undefined, timeoutMs: number) {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timeoutError = new WahooIntegrationError({ kind: "request_timeout", scope: "job" });
+  const abortFromUpstream = () => controller.abort(upstream?.reason);
+
+  if (upstream?.aborted) controller.abort(upstream.reason);
+  else upstream?.addEventListener("abort", abortFromUpstream, { once: true });
+
+  const timeout = controller.signal.aborted
+    ? undefined
+    : setTimeout(() => {
+        timedOut = true;
+        controller.abort(timeoutError);
+      }, timeoutMs);
+
+  return {
+    dispose() {
+      if (timeout) clearTimeout(timeout);
+      upstream?.removeEventListener("abort", abortFromUpstream);
+    },
+    isTimedOut: () => timedOut,
+    signal: controller.signal,
+    timeoutError,
+  };
+}
+
+function jobHttpFailure(status: number): WahooIntegrationFailure {
+  if (status === 401 || status === 403) return { kind: "authorization", scope: "job" };
+  if (status === 429) return { kind: "rate_limited", scope: "job" };
+  if (status >= 500) return { kind: "provider_unavailable", scope: "job" };
+  return { kind: "request_rejected", scope: "job" };
 }
 
 // Wahoo API Response Types (based on official API documentation)
@@ -83,15 +169,20 @@ export interface WahooWorkout {
   id: number;
   name: string;
   starts: string; // ISO8601
-  minutes: number;
+  minutes?: number | null;
   workout_type_id: number;
-  plan_id: number;
+  plan_id: number | null;
   plan_ids: number[];
   workout_token: string;
   workout_summary?: WahooWorkoutSummary | null;
   created_at: string;
   updated_at: string;
 }
+
+export type WahooWorkoutTokenLookup = {
+  complete: boolean;
+  workout: WahooWorkout | null;
+};
 
 export interface WahooWorkoutSummary {
   id: number;
@@ -103,8 +194,8 @@ export interface WahooWorkoutSummary {
   cadence_avg: number;
   calories_accum: number;
   distance_accum: number;
-  duration_active_accum: number;
-  duration_total_accum: number;
+  duration_active_accum: number | string;
+  duration_total_accum: number | string;
   heart_rate_avg: number;
   power_avg: number;
   power_bike_np_last: number;
@@ -124,19 +215,48 @@ export interface WahooWorkoutSummary {
   edited: boolean;
 }
 
+function isValidWahooWorkout(value: unknown): value is WahooWorkout {
+  if (!value || typeof value !== "object") return false;
+  const workout = value as Record<string, unknown>;
+  return (
+    Number.isSafeInteger(workout.id) &&
+    typeof workout.name === "string" &&
+    typeof workout.starts === "string" &&
+    (workout.minutes === undefined ||
+      workout.minutes === null ||
+      Number.isFinite(workout.minutes)) &&
+    Number.isSafeInteger(workout.workout_type_id) &&
+    typeof workout.workout_token === "string" &&
+    typeof workout.created_at === "string" &&
+    typeof workout.updated_at === "string"
+  );
+}
+
+function assertWahooDurationMinutes(value: number | undefined) {
+  if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
+    throw new Error("Wahoo duration minutes must be a nonnegative integer or omitted.");
+  }
+}
+
+function isValidWahooPlan(value: unknown): value is WahooPlan {
+  if (!value || typeof value !== "object") return false;
+  const plan = value as Record<string, unknown>;
+  return (
+    Number.isSafeInteger(plan.id) &&
+    typeof plan.name === "string" &&
+    typeof plan.external_id === "string" &&
+    typeof plan.provider_updated_at === "string" &&
+    typeof plan.deleted === "boolean"
+  );
+}
+
 export type WahooWorkoutSummaryListInput = {
   endDate: string;
   page?: number;
   perPage?: number;
+  signal?: AbortSignal;
   startDate: string;
 };
-
-export interface WahooPowerZones {
-  ftp?: number | null;
-  critical_power?: number | null;
-  zones?: unknown;
-  updated_at?: string | null;
-}
 
 export interface WahooTokenRefreshResult {
   accessToken: string;
@@ -165,23 +285,61 @@ export interface WahooRoute {
   created_at: string;
 }
 
-// Re-export supportsRoutes from activity-type-utils for backwards compatibility
-export { supportsRoutes } from "./activity-type-utils";
+function isValidWahooRoute(value: unknown): value is WahooRoute {
+  if (!value || typeof value !== "object") return false;
+  const route = value as Record<string, unknown>;
+  return (
+    Number.isSafeInteger(route.id) &&
+    typeof route.name === "string" &&
+    typeof route.external_id === "string" &&
+    typeof route.provider_updated_at === "string" &&
+    typeof route.deleted === "boolean" &&
+    Number.isFinite(route.start_lat) &&
+    Number.isFinite(route.start_lng) &&
+    Number.isFinite(route.distance) &&
+    Number.isFinite(route.ascent) &&
+    typeof route.updated_at === "string" &&
+    typeof route.created_at === "string"
+  );
+}
+
+function getWahooRouteFormData(routeData: WahooRouteData, includeExternalId: boolean): string {
+  const formData = new URLSearchParams();
+  formData.append("route[file]", routeData.file);
+  formData.append("route[filename]", routeData.filename);
+  if (includeExternalId) formData.append("route[external_id]", routeData.externalId);
+  formData.append("route[provider_updated_at]", routeData.providerUpdatedAt);
+  formData.append("route[name]", routeData.name);
+  if (routeData.description !== undefined) {
+    formData.append("route[description]", routeData.description ?? "");
+  }
+  formData.append("route[workout_type_family_id]", routeData.workoutTypeFamilyId.toString());
+  formData.append("route[start_lat]", routeData.startLat.toString());
+  formData.append("route[start_lng]", routeData.startLng.toString());
+  formData.append("route[distance]", routeData.distance.toString());
+  formData.append("route[ascent]", routeData.ascent.toString());
+  if (routeData.descent !== undefined) {
+    formData.append("route[descent]", routeData.descent.toString());
+  }
+  return formData.toString();
+}
 
 export class WahooClient {
   private accessToken: string;
   private refreshToken?: string;
+  private readonly requestTimeoutMs: number;
 
   constructor(config: WahooClientConfig) {
     this.accessToken = config.accessToken;
-    this.refreshToken = config.refreshToken;
+    if (config.refreshToken !== undefined) this.refreshToken = config.refreshToken;
+    this.requestTimeoutMs = boundedRequestTimeoutMs(config.requestTimeoutMs);
   }
 
   /**
    * Create a plan in Wahoo's library
    * Plans are immutable templates - create once and use immediately
    */
-  async createPlan(planData: WahooPlanData): Promise<WahooPlan> {
+  async createPlan(planData: WahooPlanData, signal?: AbortSignal): Promise<WahooPlan> {
     // Convert plan structure to Wahoo's format (will be done by converter)
     const planJson = planData.structure;
 
@@ -197,76 +355,93 @@ export class WahooClient {
     const response = await this.makeRequest<WahooPlan>("/v1/plans", {
       method: "POST",
       body: formData,
+      ...(signal ? { signal } : {}),
     });
 
+    if (!isValidWahooPlan(response)) throw new Error("Invalid Wahoo plan response");
     return response;
   }
 
-  async getPlans(externalId?: string): Promise<WahooPlan[]> {
+  async getPlans(externalId?: string, signal?: AbortSignal): Promise<WahooPlan[]> {
     const params = externalId ? `?external_id=${encodeURIComponent(externalId)}` : "";
-    return await this.makeRequest<WahooPlan[]>(`/v1/plans${params}`, {
+    const plans = await this.makeRequest<unknown>(`/v1/plans${params}`, {
       method: "GET",
+      ...(signal ? { signal } : {}),
     });
+    if (!Array.isArray(plans) || plans.some((plan) => !isValidWahooPlan(plan))) {
+      throw new Error("Invalid Wahoo plans response");
+    }
+    return plans;
   }
 
-  async deletePlan(planId: string | number): Promise<{ success: boolean }> {
+  async deletePlan(planId: string | number, signal?: AbortSignal): Promise<{ success: boolean }> {
     await this.makeRequest(`/v1/plans/${planId}`, {
       method: "DELETE",
+      ...(signal ? { signal } : {}),
     });
 
     return { success: true };
   }
 
   /**
-   * Create a workout (calendar entry) that references a plan
+   * Create a Wahoo workout calendar entry that references a plan
    * Store the returned workout_id - this is what you track
    * @returns Full WahooWorkout object (with id, name, starts, etc.)
    */
-  async createWorkout(workoutData: WahooWorkoutData): Promise<WahooWorkout> {
-    const body: any = {
-      workout: {
-        name: workoutData.name,
-        starts: workoutData.scheduledDate,
-        external_id: workoutData.externalId,
-        workout_token: workoutData.externalId, // Use externalId as token for tracking
-        workout_type_id: workoutData.workoutTypeId,
-        minutes: workoutData.durationMinutes,
-      },
+  async createWorkout(workoutData: WahooWorkoutData, signal?: AbortSignal): Promise<WahooWorkout> {
+    assertWahooDurationMinutes(workoutData.durationMinutes);
+    const workout: {
+      external_id: string;
+      minutes?: number;
+      name: string;
+      plan_id?: number;
+      route_id?: number;
+      starts: string;
+      workout_token: string;
+      workout_type_id: number;
+    } = {
+      name: workoutData.name,
+      starts: workoutData.scheduledDate,
+      external_id: workoutData.externalId,
+      workout_token: workoutData.externalId,
+      workout_type_id: workoutData.workoutTypeId,
+      ...(workoutData.durationMinutes !== undefined
+        ? { minutes: workoutData.durationMinutes }
+        : {}),
     };
 
-    if (workoutData.planId) {
-      body.workout.plan_id = workoutData.planId;
+    if (workoutData.planId !== undefined) {
+      workout.plan_id = workoutData.planId;
     }
 
-    // Add route_id if provided
-    if (workoutData.routeId) {
-      body.workout.route_id = workoutData.routeId;
+    if (workoutData.routeId !== undefined) {
+      workout.route_id = workoutData.routeId;
     }
 
-    console.log("[Wahoo API] Creating workout with payload:", body);
+    logger.info("Wahoo API request", { operation: "create_workout", provider: "wahoo" });
 
     const response = await this.makeRequest<WahooWorkout>("/v1/workouts", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ workout }),
+      ...(signal ? { signal } : {}),
     });
 
-    console.log("[Wahoo API] Workout created:", {
-      id: response.id,
-      name: response.name,
-      starts: response.starts,
-      workout_type_id: response.workout_type_id,
-      plan_id: response.plan_id,
+    logger.info("Wahoo API request completed", {
+      operation: "create_workout",
+      outcome: "success",
+      provider: "wahoo",
     });
 
+    if (!isValidWahooWorkout(response)) throw new Error("Invalid Wahoo workout response");
     return response;
   }
 
   /**
-   * Update a workout (metadata only: name, date)
-   * Use this when user changes workout name or scheduled date
+   * Update a Wahoo workout calendar entry (name, date, plan binding, known duration)
+   * Use this when the user changes its name or scheduled date
    */
   async updateWorkout(
     workoutId: string,
@@ -274,98 +449,203 @@ export class WahooClient {
       name?: string;
       scheduledDate?: string;
       planId?: number;
+      durationMinutes?: number | undefined;
     },
+    signal?: AbortSignal,
   ): Promise<{ success: boolean }> {
-    const body: Record<string, any> = { workout: {} };
+    assertWahooDurationMinutes(updates.durationMinutes);
+    const workout: { name?: string; plan_id?: number; starts?: string; minutes?: number } = {};
 
-    if (updates.name) body.workout.name = updates.name;
-    if (updates.scheduledDate) body.workout.starts = updates.scheduledDate;
-    if (updates.planId) body.workout.plan_id = updates.planId;
+    if (updates.name) workout.name = updates.name;
+    if (updates.scheduledDate) workout.starts = updates.scheduledDate;
+    if (updates.planId !== undefined) workout.plan_id = updates.planId;
+    if (updates.durationMinutes !== undefined) workout.minutes = updates.durationMinutes;
 
     await this.makeRequest(`/v1/workouts/${workoutId}`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ workout }),
+      ...(signal ? { signal } : {}),
     });
 
     return { success: true };
   }
 
   /**
-   * Delete a workout from Wahoo's calendar
+   * Delete a Wahoo workout calendar entry
    * Note: This does NOT delete the plan from the library
    */
-  async deleteWorkout(workoutId: string): Promise<{ success: boolean }> {
+  async deleteWorkout(workoutId: string, signal?: AbortSignal): Promise<{ success: boolean }> {
     await this.makeRequest(`/v1/workouts/${workoutId}`, {
       method: "DELETE",
+      ...(signal ? { signal } : {}),
     });
 
     return { success: true };
   }
 
   /**
-   * Get workout details (for debugging/verification)
+   * Get Wahoo workout details (for debugging/verification)
    */
-  async getWorkout(workoutId: string): Promise<WahooWorkout> {
-    return await this.makeRequest<WahooWorkout>(`/v1/workouts/${workoutId}`, {
+  async getWorkout(workoutId: string, signal?: AbortSignal): Promise<WahooWorkout> {
+    const workout = await this.makeRequest<unknown>(`/v1/workouts/${workoutId}`, {
       method: "GET",
+      ...(signal ? { signal } : {}),
     });
+    if (!isValidWahooWorkout(workout)) throw new Error("Invalid Wahoo workout response");
+    return workout;
+  }
+
+  /**
+   * Wahoo has no token filter or idempotent planned-activity resource create. Scan a deliberately
+   * bounded page set and make incompleteness explicit so callers never create
+   * after an inconclusive reconciliation read.
+   */
+  async findWorkoutByToken(input: {
+    token: string;
+    signal?: AbortSignal;
+    maxPages?: number;
+    perPage?: number;
+  }): Promise<WahooWorkoutTokenLookup> {
+    const maxPages = Math.min(Math.max(1, Math.floor(input.maxPages ?? 4)), 10);
+    const perPage = Math.min(Math.max(1, Math.floor(input.perPage ?? 50)), 100);
+    let matchedWorkout: WahooWorkout | null = null;
+    for (let page = 1; page <= maxPages; page += 1) {
+      const response = await this.makeRequest<{
+        page?: unknown;
+        total?: unknown;
+        workouts?: unknown;
+      }>(`/v1/workouts?page=${page}&per_page=${perPage}`, {
+        method: "GET",
+        ...(input.signal ? { signal: input.signal } : {}),
+      });
+      if (
+        !Array.isArray(response.workouts) ||
+        !Number.isSafeInteger(response.page) ||
+        !Number.isSafeInteger(response.total) ||
+        response.page !== page ||
+        (response.total as number) < 0
+      ) {
+        throw new Error("Invalid Wahoo workouts response");
+      }
+      for (const workout of response.workouts) {
+        if (!isValidWahooWorkout(workout)) throw new Error("Invalid Wahoo workout response");
+        if (workout.workout_token !== input.token) continue;
+        if (matchedWorkout && matchedWorkout.id !== workout.id) {
+          throw new Error(
+            "Multiple Wahoo planned-activity resources matched the planned activity token",
+          );
+        }
+        matchedWorkout = workout;
+      }
+      if (page * perPage >= (response.total as number)) {
+        return { complete: true, workout: matchedWorkout };
+      }
+    }
+    return { complete: false, workout: matchedWorkout };
   }
 
   /**
    * Fetch user profile (to get external_user_id during OAuth)
    */
-  async getUserProfile(): Promise<WahooUser> {
+  async getUserProfile(signal?: AbortSignal): Promise<WahooUser> {
     return await this.makeRequest<WahooUser>("/v1/user", {
       method: "GET",
+      ...(signal ? { signal } : {}),
     });
   }
 
   /**
-   * Fetch Wahoo power zones for onboarding FTP enrichment.
+   * Fetch a completed Wahoo workout summary (for webhook processing)
    */
-  async getPowerZones(): Promise<WahooPowerZones> {
-    return await this.makeRequest<WahooPowerZones>("/v1/power_zones", {
-      method: "GET",
-    });
-  }
-
-  /**
-   * Fetch completed workout summary (for webhook processing)
-   */
-  async getWorkoutSummary(workoutSummaryId: string): Promise<WahooWorkoutSummary> {
-    return await this.makeRequest<WahooWorkoutSummary>(
+  async getWorkoutSummary(
+    workoutSummaryId: string,
+    signal?: AbortSignal,
+  ): Promise<WahooWorkoutSummary> {
+    const summary = await this.makeRequest<unknown>(
       `/v1/workouts/${workoutSummaryId}/workout_summary`,
       {
         method: "GET",
+        ...(signal ? { signal } : {}),
       },
+      { activityResponse: true },
     );
+    if (
+      !summary ||
+      typeof summary !== "object" ||
+      !Number.isSafeInteger((summary as { id?: unknown }).id)
+    ) {
+      throw new WahooIntegrationError({ kind: "activity_invalid", scope: "activity" });
+    }
+    return summary as WahooWorkoutSummary;
   }
 
   /**
-   * Fetch completed workout summaries for a bounded history window.
+   * Fetch completed Wahoo workout summaries for a bounded history window.
    */
-  async listWorkoutSummaries(input: WahooWorkoutSummaryListInput): Promise<WahooWorkoutSummary[]> {
+  async listWorkoutSummaries(input: WahooWorkoutSummaryListInput): Promise<{
+    page: number;
+    reachedStartBoundary: boolean;
+    sourceCount: number;
+    summaries: WahooWorkoutSummary[];
+    total: number | null;
+  }> {
     const params = new URLSearchParams({
       page: String(input.page ?? 1),
-      per_page: String(input.perPage ?? 50),
+      per_page: String(input.perPage ?? 30),
     });
-    const response = await this.makeRequest<{ workouts?: WahooWorkout[] }>(
-      `/v1/workouts?${params.toString()}`,
-      {
-        method: "GET",
-      },
-    );
+    const response = await this.makeRequest<{
+      page?: unknown;
+      total?: unknown;
+      workouts?: unknown;
+    }>(`/v1/workouts?${params.toString()}`, {
+      method: "GET",
+      ...(input.signal ? { signal: input.signal } : {}),
+    });
 
     const start = new Date(input.startDate).getTime();
     const end = new Date(input.endDate).getTime();
 
-    return (response.workouts ?? [])
+    if (!Array.isArray(response.workouts)) throw new Error("Invalid Wahoo workouts response");
+    if (
+      typeof response.page !== "number" ||
+      !Number.isSafeInteger(response.page) ||
+      response.page < 1
+    ) {
+      throw new Error("Invalid Wahoo workouts page response");
+    }
+    if (
+      typeof response.total !== "number" ||
+      !Number.isSafeInteger(response.total) ||
+      response.total < 0
+    ) {
+      throw new Error("Invalid Wahoo workouts total response");
+    }
+    const page = response.page;
+    const total = response.total;
+    const workouts = response.workouts as WahooWorkout[];
+    const rawStarts = workouts.map((workout) => Date.parse(workout.starts));
+    // Wahoo documents this endpoint as always newest-first by `starts`. Enforce that
+    // provider contract so a start-boundary stop cannot silently omit recent pages.
+    let priorValidStart = Number.POSITIVE_INFINITY;
+    for (const starts of rawStarts) {
+      if (!Number.isFinite(starts)) continue;
+      if (starts > priorValidStart) {
+        throw new Error("Wahoo workouts response was not newest-first");
+      }
+      priorValidStart = starts;
+    }
+    const reachedStartBoundary = rawStarts.some(
+      (starts) => Number.isFinite(starts) && starts < start,
+    );
+    const summaries = workouts
       .filter((workout) => {
         const starts = new Date(workout.starts).getTime();
-        return Number.isFinite(starts) && starts >= start && starts <= end;
+        // Preserve malformed summary timestamps for item-level diagnostics instead of
+        // turning one provider activity into a page/account failure.
+        return !Number.isFinite(starts) || (starts >= start && starts <= end);
       })
       .flatMap((workout) => {
         if (!workout.workout_summary) return [];
@@ -382,92 +662,121 @@ export class WahooClient {
           },
         ];
       });
+    return { page, reachedStartBoundary, sourceCount: workouts.length, summaries, total };
   }
 
   /**
    * Create a route in Wahoo's library
-   * Routes contain GPS data and can be attached to workouts
+   * Routes contain GPS data and can be attached to Wahoo workout resources
    */
-  async createRoute(routeData: WahooRouteData): Promise<WahooRoute> {
-    const formData = new URLSearchParams();
-    formData.append("route[file]", routeData.file);
-    formData.append("route[filename]", routeData.filename);
-    formData.append("route[external_id]", routeData.externalId);
-    formData.append("route[provider_updated_at]", routeData.providerUpdatedAt);
-    formData.append("route[name]", routeData.name);
-    if (routeData.description) {
-      formData.append("route[description]", routeData.description);
-    }
-    formData.append("route[workout_type_family_id]", routeData.workoutTypeFamilyId.toString());
-    formData.append("route[start_lat]", routeData.startLat.toString());
-    formData.append("route[start_lng]", routeData.startLng.toString());
-    formData.append("route[distance]", routeData.distance.toString());
-    formData.append("route[ascent]", routeData.ascent.toString());
-    if (routeData.descent !== undefined) {
-      formData.append("route[descent]", routeData.descent.toString());
-    }
-
-    const response = await this.makeRequest<WahooRoute>("/v1/routes", {
+  async createRoute(routeData: WahooRouteData, signal?: AbortSignal): Promise<WahooRoute> {
+    const response = await this.makeRequest<unknown>("/v1/routes", {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
       },
-      body: formData.toString(),
+      body: getWahooRouteFormData(routeData, true),
+      ...(signal ? { signal } : {}),
     });
+    if (!isValidWahooRoute(response)) throw new Error("Wahoo route response was invalid");
+    return response;
+  }
 
+  async updateRoute(
+    routeId: string,
+    routeData: WahooRouteData,
+    signal?: AbortSignal,
+  ): Promise<WahooRoute> {
+    const response = await this.makeRequest<unknown>(`/v1/routes/${routeId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: getWahooRouteFormData(routeData, false),
+      ...(signal ? { signal } : {}),
+    });
+    if (!isValidWahooRoute(response)) throw new Error("Wahoo route response was invalid");
     return response;
   }
 
   /**
    * Get a route by ID
    */
-  async getRoute(routeId: string): Promise<WahooRoute> {
-    return await this.makeRequest<WahooRoute>(`/v1/routes/${routeId}`, {
+  async getRoute(routeId: string, signal?: AbortSignal): Promise<WahooRoute> {
+    const response = await this.makeRequest<unknown>(`/v1/routes/${routeId}`, {
       method: "GET",
+      ...(signal ? { signal } : {}),
     });
+    if (!isValidWahooRoute(response)) throw new Error("Wahoo route response was invalid");
+    return response;
   }
 
   /**
    * Get all routes, optionally filtered by external_id
    */
-  async getRoutes(externalId?: string): Promise<WahooRoute[]> {
+  async getRoutes(externalId?: string, signal?: AbortSignal): Promise<WahooRoute[]> {
     const params = externalId ? `?external_id=${encodeURIComponent(externalId)}` : "";
-    return await this.makeRequest<WahooRoute[]>(`/v1/routes${params}`, {
+    const response = await this.makeRequest<unknown>(`/v1/routes${params}`, {
       method: "GET",
+      ...(signal ? { signal } : {}),
     });
+    if (!Array.isArray(response) || !response.every(isValidWahooRoute)) {
+      throw new Error("Wahoo route list response was invalid");
+    }
+    return response;
   }
 
   /**
    * Delete a route from Wahoo's library
    */
-  async deleteRoute(routeId: string): Promise<{ success: boolean }> {
+  async deleteRoute(routeId: string, signal?: AbortSignal): Promise<{ success: boolean }> {
     await this.makeRequest(`/v1/routes/${routeId}`, {
       method: "DELETE",
+      ...(signal ? { signal } : {}),
     });
 
+    return { success: true };
+  }
+
+  /** Revoke the bearer grant. Wahoo documents this as DELETE /v1/permissions. */
+  async disconnect(): Promise<{ success: boolean }> {
+    await this.makeRequest(
+      "/v1/permissions",
+      { method: "DELETE" },
+      { requestTimeoutMs: WAHOO_DISCONNECT_TIMEOUT_MS },
+    );
     return { success: true };
   }
 
   /**
    * Make authenticated request to Wahoo API with error handling
    */
-  private async makeRequest<T = any>(endpoint: string, options: RequestInit): Promise<T> {
+  private async makeRequest<T = unknown>(
+    endpoint: string,
+    options: RequestInit,
+    context: { activityResponse?: boolean; requestTimeoutMs?: number } = {},
+  ): Promise<T> {
     const url = `${WAHOO_API_BASE}${endpoint}`;
-
     const headers = {
       Authorization: `Bearer ${this.accessToken}`,
       ...options.headers,
     };
+    const bounded = createBoundedRequestSignal(
+      options.signal,
+      boundedRequestTimeoutMs(context.requestTimeoutMs ?? this.requestTimeoutMs),
+    );
+    let responseReceived = false;
 
     try {
       const response = await fetch(url, {
         ...options,
         headers,
+        signal: bounded.signal,
       });
+      responseReceived = true;
+      bounded.signal.throwIfAborted();
 
       // Handle different response types
       if (!response.ok) {
-        const error = await this.handleErrorResponse(response);
+        const error = await this.handleErrorResponse(response, context.activityResponse === true);
         throw error;
       }
 
@@ -476,55 +785,83 @@ export class WahooClient {
         return { success: true } as T;
       }
 
-      const data = await response.json();
-      return data;
-    } catch (error) {
-      if (error instanceof Error && "status" in error) {
-        throw error; // Re-throw our custom errors
+      let data: unknown;
+      try {
+        data = await response.json();
+      } catch {
+        throw new WahooIntegrationError(
+          context.activityResponse
+            ? { kind: "activity_invalid", scope: "activity" }
+            : { kind: "invalid_provider_response", scope: "job" },
+        );
       }
-      // Network or other errors
-      const apiError: WahooApiError = new Error(
-        `Wahoo API request failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-      );
-      throw apiError;
+      bounded.signal.throwIfAborted();
+      return data as T;
+    } catch (error) {
+      if (
+        error instanceof WahooIntegrationError ||
+        error instanceof WahooReconnectRequiredError ||
+        error instanceof WahooAuthorizationResetRequiredError
+      ) {
+        throw error;
+      }
+      if (options.signal?.aborted) throw options.signal.reason ?? error;
+      if (bounded.isTimedOut()) throw bounded.timeoutError;
+      if (responseReceived) {
+        throw new WahooIntegrationError(
+          context.activityResponse
+            ? { kind: "activity_invalid", scope: "activity" }
+            : { kind: "invalid_provider_response", scope: "job" },
+        );
+      }
+      throw new WahooIntegrationError({ kind: "network_unavailable", scope: "job" });
+    } finally {
+      bounded.dispose();
     }
   }
 
   /**
    * Handle API error responses
    */
-  private async handleErrorResponse(response: Response): Promise<WahooApiError> {
-    let errorMessage = `Wahoo API error: ${response.status} ${response.statusText}`;
+  private async handleErrorResponse(
+    response: Response,
+    activityResponse: boolean,
+  ): Promise<WahooApiError> {
     let errorCode = `HTTP_${response.status}`;
 
     try {
-      const errorData = await response.json();
-      console.error("[Wahoo API] Error response:", errorData);
-      if (errorData.error) {
-        errorMessage = errorData.error;
-      }
-      if (errorData.error_description) {
-        errorMessage += `: ${errorData.error_description}`;
-      }
-      if (errorData.code) {
+      const errorData = (await response.json()) as { code?: unknown };
+      if (typeof errorData.code === "string") {
         errorCode = errorData.code;
       }
     } catch {
-      // Response wasn't JSON, use default message
-      console.error("[Wahoo API] Non-JSON error response:", response.statusText);
+      // Response wasn't JSON; retain the status-based details.
     }
 
-    const error: WahooApiError = new Error(errorMessage);
-    error.status = response.status;
-    error.code = errorCode;
+    if (response.status === 401) {
+      return new WahooReconnectRequiredError();
+    }
 
-    console.error("[Wahoo API] Final error:", {
-      message: errorMessage,
-      code: errorCode,
+    logger.warn("Wahoo API request failed", {
+      operation: "request",
+      outcome: "failure",
+      provider: "wahoo",
       status: response.status,
     });
 
-    return error;
+    const activityScoped = activityResponse && [400, 404, 410, 422].includes(response.status);
+    return new WahooIntegrationError(
+      activityScoped
+        ? {
+            kind:
+              response.status === 404 || response.status === 410
+                ? "activity_missing"
+                : "activity_invalid",
+            scope: "activity",
+          }
+        : jobHttpFailure(response.status),
+      { code: errorCode, status: response.status },
+    );
   }
 
   /**
@@ -564,44 +901,113 @@ export class WahooClient {
 
 export async function refreshWahooAccessToken(
   refreshToken: string,
+  signal?: AbortSignal,
+  requestTimeoutMs = WAHOO_REQUEST_TIMEOUT_MS,
 ): Promise<WahooTokenRefreshResult> {
-  const response = await fetch(`${WAHOO_API_BASE}/oauth/token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "refresh_token",
-      refresh_token: refreshToken,
-      client_id: process.env.WAHOO_CLIENT_ID!,
-      client_secret: process.env.WAHOO_CLIENT_SECRET!,
-    }).toString(),
-  });
+  const clientId = process.env.WAHOO_CLIENT_ID;
+  const clientSecret = process.env.WAHOO_CLIENT_SECRET;
+  if (!clientId || !clientSecret) throw new Error("Wahoo OAuth configuration is incomplete");
+  const bounded = createBoundedRequestSignal(signal, boundedRequestTimeoutMs(requestTimeoutMs));
+  let responseReceived = false;
+  try {
+    const response = await fetch(`${WAHOO_API_BASE}/oauth/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+        client_id: clientId,
+        client_secret: clientSecret,
+      }).toString(),
+      signal: bounded.signal,
+    });
+    responseReceived = true;
+    bounded.signal.throwIfAborted();
 
-  if (!response.ok) {
-    throw new Error("Failed to refresh Wahoo access token");
+    if (!response.ok) {
+      let errorCode = `HTTP_${response.status}`;
+      let errorDescription: string | undefined;
+      try {
+        const errorData = (await response.json()) as {
+          error?: unknown;
+          error_description?: unknown;
+        };
+        if (typeof errorData.error === "string") errorCode = errorData.error;
+        if (typeof errorData.error_description === "string") {
+          errorDescription = errorData.error_description;
+        }
+      } catch {
+        // Retain status-based details without exposing the response body.
+      }
+      bounded.signal.throwIfAborted();
+
+      if (isWahooTokenLimitRejection(errorCode, errorDescription)) {
+        throw new WahooAuthorizationResetRequiredError();
+      }
+      if (response.status === 401 || errorCode.toLowerCase() === "invalid_grant") {
+        throw new WahooReconnectRequiredError();
+      }
+      throw new WahooIntegrationError(jobHttpFailure(response.status), {
+        code: errorCode,
+        status: response.status,
+      });
+    }
+
+    let data: {
+      access_token?: unknown;
+      refresh_token?: unknown;
+      expires_in?: unknown;
+    };
+    try {
+      data = (await response.json()) as typeof data;
+    } catch {
+      throw new WahooIntegrationError({ kind: "invalid_provider_response", scope: "job" });
+    }
+    bounded.signal.throwIfAborted();
+    if (typeof data.access_token !== "string" || data.access_token.length === 0) {
+      throw new WahooIntegrationError({ kind: "invalid_provider_response", scope: "job" });
+    }
+
+    const expiresIn =
+      typeof data.expires_in === "number"
+        ? data.expires_in
+        : typeof data.expires_in === "string" && /^\d+$/.test(data.expires_in)
+          ? Number(data.expires_in)
+          : null;
+
+    return {
+      accessToken: data.access_token,
+      expiresAt: expiresIn ? new Date(Date.now() + expiresIn * 1000).toISOString() : null,
+      refreshToken: typeof data.refresh_token === "string" ? data.refresh_token : refreshToken,
+    };
+  } catch (error) {
+    if (
+      error instanceof WahooIntegrationError ||
+      error instanceof WahooReconnectRequiredError ||
+      error instanceof WahooAuthorizationResetRequiredError
+    ) {
+      throw error;
+    }
+    if (signal?.aborted) throw signal.reason ?? error;
+    if (bounded.isTimedOut()) throw bounded.timeoutError;
+    if (responseReceived) {
+      throw new WahooIntegrationError({ kind: "invalid_provider_response", scope: "job" });
+    }
+    throw new WahooIntegrationError({ kind: "network_unavailable", scope: "job" });
+  } finally {
+    bounded.dispose();
   }
+}
 
-  const data = (await response.json()) as {
-    access_token?: unknown;
-    refresh_token?: unknown;
-    expires_in?: unknown;
-  };
-
-  if (typeof data.access_token !== "string" || data.access_token.length === 0) {
-    throw new Error("Wahoo token refresh response did not include an access token");
-  }
-
-  const expiresIn =
-    typeof data.expires_in === "number"
-      ? data.expires_in
-      : typeof data.expires_in === "string" && /^\d+$/.test(data.expires_in)
-        ? Number(data.expires_in)
-        : null;
-
-  return {
-    accessToken: data.access_token,
-    expiresAt: expiresIn ? new Date(Date.now() + expiresIn * 1000).toISOString() : null,
-    refreshToken: typeof data.refresh_token === "string" ? data.refresh_token : refreshToken,
-  };
+/**
+ * Wahoo revokes the previous access token only after the refreshed token completes an
+ * authenticated API request; refreshing alone or downloading a CDN file does not count.
+ */
+export async function activateWahooAccessToken(
+  accessToken: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  await new WahooClient({ accessToken }).getUserProfile(signal);
 }
 
 /**
