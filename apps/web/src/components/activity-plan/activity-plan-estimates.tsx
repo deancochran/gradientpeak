@@ -2,22 +2,18 @@ import { ACTIVITY_PLAN_METRIC_PROVENANCE_LABELS, type SemanticMetric } from "@re
 import { ResourceMetricsRow } from "@repo/ui/components/resource-presentation";
 import { formatActivityPlanHeadlineMetric } from "@repo/ui/lib/activity-plan-metric-presentation";
 
-const estimateOrder = ["distance", "elapsed_duration", "common_load"] as const;
-
-const estimateLabels: Record<(typeof estimateOrder)[number], string> = {
-  distance: "Distance",
-  elapsed_duration: "Duration",
-  common_load: "Load",
-};
+const estimateDefinitions = [
+  { key: "distance", label: "Distance" },
+  { key: "elapsed_duration", label: "Duration" },
+  { key: "common_load", label: "Load" },
+  { key: "objective_intensity", label: "Intensity" },
+] as const;
 
 function unavailableEstimateDescription(metric: SemanticMetric) {
   return `${metric.label}: ${metric.reason?.replaceAll("_", " ") ?? "Unknown"}`;
 }
 
-function formatHeadline(
-  metric: SemanticMetric,
-  key: (typeof estimateOrder)[number] | "objective_intensity",
-) {
+function formatHeadline(metric: SemanticMetric, key: (typeof estimateDefinitions)[number]["key"]) {
   const formatted = formatActivityPlanHeadlineMetric(metric, key);
   if (formatted !== "—" || metric.value !== 0) return formatted;
   if (key === "distance") return "0 m";
@@ -28,40 +24,22 @@ function formatHeadline(
 
 export function getActivityPlanEstimateItems(metrics: readonly SemanticMetric[]) {
   const byKey = new Map(metrics.map((metric) => [metric.key, metric]));
-  const baseItems = estimateOrder.flatMap((key) => {
+  return estimateDefinitions.flatMap(({ key, label }) => {
     const metric = byKey.get(key);
     // Headline metrics are evidence, not placeholders: include available zeroes, omit unknowns.
     if (metric?.status !== "available") return [];
-    const value = formatHeadline(metric, key);
     return [
       {
         key,
-        label: estimateLabels[key],
+        label,
         provenanceLabel:
           metric.provenance == null
             ? "Unavailable"
             : ACTIVITY_PLAN_METRIC_PROVENANCE_LABELS[metric.provenance],
-        value,
+        value: formatHeadline(metric, key),
       },
     ];
   });
-  const intensity = byKey.get("objective_intensity");
-  return [
-    ...baseItems,
-    ...(intensity?.status === "available"
-      ? [
-          {
-            key: "objective_intensity",
-            label: "Intensity",
-            provenanceLabel:
-              intensity.provenance == null
-                ? "Unavailable"
-                : ACTIVITY_PLAN_METRIC_PROVENANCE_LABELS[intensity.provenance],
-            value: formatHeadline(intensity, "objective_intensity"),
-          },
-        ]
-      : []),
-  ];
 }
 
 export function ActivityPlanEstimateRow({
