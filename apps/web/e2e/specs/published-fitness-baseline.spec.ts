@@ -6,6 +6,12 @@ import { withPlanningPathFixture } from "../planning/data";
 type Projection = {
   fitness: {
     actual: Array<{ date: string; loadBalance: number; longTermLoad: number; recentLoad: number }>;
+    scheduled: Array<{
+      date: string;
+      loadBalance: number;
+      longTermLoad: number;
+      recentLoad: number;
+    }>;
   };
   fitnessHistory?: { maturity: null; status: "unavailable"; verifiedThrough: null };
   today: unknown;
@@ -36,6 +42,24 @@ async function publishedSummary(chart: import("@playwright/test").Locator) {
       )
       .at(0);
   });
+}
+
+async function expectCoincidentFitnessMarkers(chart: import("@playwright/test").Locator) {
+  const publishedMarker = chart.locator(
+    '[data-chart-series="published-current-fitness"][data-chart-marker="observed"]',
+  );
+  const projectedMarker = chart.locator(
+    '[data-chart-series="planned-fitness"][data-chart-marker="scheduled"]',
+  );
+  await expect(publishedMarker).toHaveCount(1);
+  await expect(projectedMarker).toHaveCount(1);
+  await expect(publishedMarker).toHaveClass(/rounded-full/);
+  await expect(projectedMarker).toHaveClass(/rotate-45/);
+  await expect(publishedMarker).toHaveClass(/size-2/);
+  await expect(projectedMarker).toHaveClass(/size-3/);
+  expect(await publishedMarker.evaluate((marker) => marker.getAttribute("style"))).toBe(
+    await projectedMarker.evaluate((marker) => marker.getAttribute("style")),
+  );
 }
 
 test("plan chart shows only the controlled published current baseline when history is unavailable", async ({
@@ -75,6 +99,17 @@ test("plan chart shows only the controlled published current baseline when histo
             },
             { date: "2099-01-01", longTermLoad: 99, recentLoad: 99, loadBalance: 0 },
           ];
+    projection.fitness.scheduled =
+      phase === "missing"
+        ? []
+        : [
+            {
+              date: today,
+              longTermLoad: phase === "zero" ? 0 : 42,
+              recentLoad: phase === "zero" ? 0 : 47,
+              loadBalance: phase === "zero" ? 0 : -5,
+            },
+          ];
     await route.fulfill({
       response: upstream,
       body: `${chunks.map((chunk) => JSON.stringify(chunk)).join("\n")}\n`,
@@ -97,6 +132,7 @@ test("plan chart shows only the controlled published current baseline when histo
       expect(await publishedSummary(chart)).toBe(
         `Published current model-derived fitness: 1 daily value, latest 0 on ${capturedToday}.`,
       );
+      await expectCoincidentFitnessMarkers(chart);
       await expect(chart).not.toContainText("2020-01-01");
       await expect(chart).not.toContainText("2099-01-01");
       await expect(chart).not.toContainText(/verified through/i);
@@ -105,12 +141,20 @@ test("plan chart shows only the controlled published current baseline when histo
         fullPage: true,
         path: testInfo.outputPath("published-current-baseline-zero-desktop.png"),
       });
+      await testInfo.attach("published-current-baseline-zero-desktop", {
+        contentType: "image/png",
+        path: testInfo.outputPath("published-current-baseline-zero-desktop.png"),
+      });
 
       await athletePage.setViewportSize({ width: 390, height: 844 });
       await expect(chart).toBeVisible();
       await expectNoHorizontalOverflow(athletePage);
       await athletePage.screenshot({
         fullPage: true,
+        path: testInfo.outputPath("published-current-baseline-zero-mobile.png"),
+      });
+      await testInfo.attach("published-current-baseline-zero-mobile", {
+        contentType: "image/png",
         path: testInfo.outputPath("published-current-baseline-zero-mobile.png"),
       });
 
@@ -133,8 +177,25 @@ test("plan chart shows only the controlled published current baseline when histo
       expect(await publishedSummary(chart)).toBe(
         `Published current model-derived fitness: 1 daily value, latest 42 on ${capturedToday}.`,
       );
+      await expectCoincidentFitnessMarkers(chart);
+      await athletePage.setViewportSize({ width: 1440, height: 1000 });
+      await expect(chart).toBeVisible();
       await athletePage.screenshot({
         fullPage: true,
+        path: testInfo.outputPath("published-current-baseline-nonzero-desktop.png"),
+      });
+      await testInfo.attach("published-current-baseline-nonzero-desktop", {
+        contentType: "image/png",
+        path: testInfo.outputPath("published-current-baseline-nonzero-desktop.png"),
+      });
+      await athletePage.setViewportSize({ width: 390, height: 844 });
+      await expect(chart).toBeVisible();
+      await athletePage.screenshot({
+        fullPage: true,
+        path: testInfo.outputPath("published-current-baseline-nonzero-mobile.png"),
+      });
+      await testInfo.attach("published-current-baseline-nonzero-mobile", {
+        contentType: "image/png",
         path: testInfo.outputPath("published-current-baseline-nonzero-mobile.png"),
       });
 
