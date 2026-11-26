@@ -1,6 +1,10 @@
 import type { ThresholdGoalProgressResult } from "@repo/core";
 import { describe, expect, it } from "vitest";
-import { formatGoalGap, formatGoalTimeLeft } from "./goal-progress-presentation";
+import {
+  formatGoalGap,
+  formatGoalThresholdValue,
+  formatGoalTimeLeft,
+} from "./goal-progress-presentation";
 
 function progress(
   category: "bike" | "run" | "swim",
@@ -46,6 +50,24 @@ function progress(
 }
 
 describe("goal progress presentation", () => {
+  it.each([
+    ["bike", 0, "0 W"],
+    ["bike", 285.5, "286 W"],
+    ["bike", 999.5, "1000 W"],
+    ["run", 1000, "0:01 /km"],
+    ["run", 1000 / 59.4, "0:59 /km"],
+    ["run", 1000 / 59.5, "1:00 /km"],
+    ["swim", 1, "1:40 /100m"],
+    ["swim", 100 / 59.5, "1:00 /100m"],
+    ["run", 0, "—"],
+    ["swim", -1, "—"],
+    ["bike", Number.NaN, "NaN W"],
+    ["run", Number.POSITIVE_INFINITY, "0:00 /km"],
+    ["swim", Number.NaN, "NaN:NaN /100m"],
+  ] as const)("formats threshold values", (category, value, expected) => {
+    expect(formatGoalThresholdValue(category, value)).toBe(expected);
+  });
+
   it.each([
     [progress("bike", "watts", 10), "10 W"],
     [progress("run", "meters_per_second", 0.5), "28 s/km"],

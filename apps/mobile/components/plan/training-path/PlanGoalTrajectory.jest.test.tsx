@@ -1,7 +1,7 @@
 import { fireEvent } from "@testing-library/react-native";
 import { createHost } from "../../../test/mock-components";
 import { renderNative, screen } from "../../../test/render-native";
-import type { PlanGoalProgressResult } from "./planDashboardPresentation";
+import { formatPlanThresholdValue, type PlanGoalProgressResult } from "./planDashboardPresentation";
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -49,6 +49,33 @@ const bikeProgress = {
     unit: "watts",
   },
 } satisfies PlanGoalProgressResult;
+
+function legacyFormatPlanThresholdValue(category: "bike" | "run" | "swim", value: number) {
+  if (category === "bike") return `${Math.round(value)} W`;
+  if (value <= 0) return "—";
+  const seconds = Math.round((category === "run" ? 1000 : 100) / value);
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")} /${category === "run" ? "km" : "100m"}`;
+}
+
+it.each([
+  ["bike", 0],
+  ["bike", 285.5],
+  ["bike", 999.5],
+  ["run", 1000],
+  ["run", 1000 / 59.4],
+  ["run", 1000 / 59.5],
+  ["swim", 1],
+  ["swim", 100 / 59.5],
+  ["run", 0],
+  ["swim", -1],
+  ["bike", Number.NaN],
+  ["run", Number.POSITIVE_INFINITY],
+  ["swim", Number.NaN],
+] as const)("preserves the threshold formatter's legacy output for %s", (category, value) => {
+  expect(formatPlanThresholdValue(category, value)).toBe(
+    legacyFormatPlanThresholdValue(category, value),
+  );
+});
 
 it("renders a trajectory-first priority summary with matching decision accessibility", async () => {
   const onOpenGoal = jest.fn();
