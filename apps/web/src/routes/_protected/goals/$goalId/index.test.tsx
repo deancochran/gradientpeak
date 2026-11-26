@@ -9,6 +9,42 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   search: {} as Record<string, unknown>,
 }));
+const api = vi.hoisted(() => ({
+  activities: {
+    listPaginated: {
+      useInfiniteQuery: () => ({
+        data: { pages: [{ items: [], total: 0, hasMore: false }] },
+        isFetching: false,
+        isError: false,
+        fetchNextPage: vi.fn(),
+        refetch: vi.fn(),
+      }),
+    },
+  },
+  profiles: { get: { useQuery: () => ({ data: { planning_timezone: "America/Los_Angeles" } }) } },
+  goals: {
+    getById: { useQuery: () => ({ data: mocks.goal, isLoading: false, isError: false }) },
+  },
+  athleteIntelligence: {
+    getGoalAssessment: {
+      useQuery: () => ({ data: undefined, isLoading: false, isError: false }),
+    },
+    getGoalProgress: {
+      useQuery: () => ({
+        data: {
+          result: { status: "unsupported", reason: "non_threshold_goal", goalId: "goal-1" },
+          provenance: null,
+          publication: null,
+        },
+        isLoading: false,
+        isError: false,
+      }),
+    },
+    getThresholdOverview: {
+      useQuery: () => ({ data: undefined, isLoading: false, isError: false }),
+    },
+  },
+}));
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: object) => ({
     options,
@@ -27,44 +63,8 @@ vi.mock("../../../../components/route-flash-toast", () => ({
     </button>
   ),
 }));
-vi.mock("../../../../lib/api/client", () => ({
-  api: {
-    activities: {
-      listPaginated: {
-        useInfiniteQuery: () => ({
-          data: { pages: [{ items: [], total: 0, hasMore: false }] },
-          isFetching: false,
-          isError: false,
-          fetchNextPage: vi.fn(),
-          refetch: vi.fn(),
-        }),
-      },
-    },
-    profiles: { get: { useQuery: () => ({ data: { planning_timezone: "America/Los_Angeles" } }) } },
-    goals: {
-      getById: { useQuery: () => ({ data: mocks.goal, isLoading: false, isError: false }) },
-    },
-    athleteIntelligence: {
-      getGoalAssessment: {
-        useQuery: () => ({ data: undefined, isLoading: false, isError: false }),
-      },
-      getGoalProgress: {
-        useQuery: () => ({
-          data: {
-            result: { status: "unsupported", reason: "non_threshold_goal", goalId: "goal-1" },
-            provenance: null,
-            publication: null,
-          },
-          isLoading: false,
-          isError: false,
-        }),
-      },
-      getThresholdOverview: {
-        useQuery: () => ({ data: undefined, isLoading: false, isError: false }),
-      },
-    },
-  },
-}));
+vi.mock("../../../../lib/api/client", () => ({ api }));
+vi.mock("@repo/api/react", () => ({ api }));
 afterEach(() => {
   cleanup();
   mocks.navigate.mockReset();
