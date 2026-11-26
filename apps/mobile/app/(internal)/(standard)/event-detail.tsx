@@ -1,4 +1,5 @@
 import { usePlannedSessionMutations } from "@repo/api/react";
+import { formatDateOnlyInTimeZone } from "@repo/core/calendar";
 import { Button } from "@repo/ui/components/button";
 import {
   Form,
@@ -686,18 +687,7 @@ export default function EventDetailScreen() {
       );
     }
     const timezone = profileQuery.data?.planning_timezone ?? null;
-    const today = timezone
-      ? new Intl.DateTimeFormat("en-CA", {
-          timeZone: timezone,
-          year: "numeric",
-          month: "2-digit",
-          day: "2-digit",
-        })
-          .formatToParts(new Date())
-          .filter((part) => part.type !== "literal")
-          .map((part) => part.value)
-          .join("-")
-      : null;
+    const today = timezone ? formatDateOnlyInTimeZone(new Date(), timezone) : null;
     const available =
       session.lifecycle.status === "scheduled" && today !== null && session.planningDate <= today;
     const editThisSessionOnly = async () => {

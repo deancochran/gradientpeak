@@ -1,4 +1,5 @@
 import { usePlannedSessionMutations } from "@repo/api/react";
+import { formatDateOnlyInTimeZone } from "@repo/core/calendar";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -234,7 +235,7 @@ function EventDetailPage() {
       );
     }
     const planningTimezone = profileQuery.data?.planning_timezone ?? null;
-    const today = planningTimezone ? getDateKeyInTimeZone(planningTimezone) : null;
+    const today = planningTimezone ? formatDateOnlyInTimeZone(new Date(), planningTimezone) : null;
     const canComplete =
       plannedSession.lifecycle.status === "scheduled" &&
       today !== null &&
@@ -1056,19 +1057,6 @@ function DetailRow({
       )}
     </div>
   );
-}
-
-function getDateKeyInTimeZone(timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    day: "2-digit",
-    month: "2-digit",
-    timeZone,
-    year: "numeric",
-  }).formatToParts(new Date());
-  const values = Object.fromEntries(
-    parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]),
-  );
-  return `${values.year}-${values.month}-${values.day}`;
 }
 
 function formatCandidateActivity(candidate: {
