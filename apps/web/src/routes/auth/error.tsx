@@ -1,5 +1,6 @@
+import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/auth/error")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -9,8 +10,6 @@ export const Route = createFileRoute("/auth/error")({
 });
 
 function AuthErrorPage() {
-  const params = Route.useSearch();
-
   return (
     <div className="flex min-h-[70vh] items-center justify-center py-6 md:py-10">
       <div className="w-full max-w-sm">
@@ -19,12 +18,18 @@ function AuthErrorPage() {
             <CardHeader>
               <CardTitle className="text-2xl">Sorry, something went wrong.</CardTitle>
             </CardHeader>
-            <CardContent>
-              {params.error ? (
-                <p className="text-sm text-muted-foreground">Code error: {params.error}</p>
-              ) : (
-                <p className="text-sm text-muted-foreground">An unspecified error occurred.</p>
-              )}
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                We could not complete that sign-in request. Please try again.
+              </p>
+              <Button asChild className="w-full">
+                <Link
+                  to="/auth/login"
+                  search={{ flash: undefined, flashType: undefined, redirect: undefined }}
+                >
+                  Back to Sign In
+                </Link>
+              </Button>
             </CardContent>
           </Card>
         </div>

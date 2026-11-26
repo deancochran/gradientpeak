@@ -16,7 +16,7 @@ export interface IntensityColorConfig {
 }
 
 /**
- * Activity type color configurations
+ * Activity category color configurations
  */
 export const ACTIVITY_COLORS: Record<string, ActivityColorConfig> = {
   outdoor_run: {
@@ -88,11 +88,13 @@ export const INTENSITY_COLORS: Record<string, IntensityColorConfig> = {
 };
 
 /**
- * Get color configuration for an activity type
+ * Get color configuration for an activity category
  */
 export function getActivityColor(type: string | undefined): ActivityColorConfig {
-  if (!type) return ACTIVITY_COLORS.other;
-  return ACTIVITY_COLORS[type] || ACTIVITY_COLORS.other;
+  const defaultColor = ACTIVITY_COLORS.other;
+  if (defaultColor === undefined) throw new Error("Activity color configuration is incomplete");
+  if (!type) return defaultColor;
+  return ACTIVITY_COLORS[type] ?? defaultColor;
 }
 
 /**
@@ -114,23 +116,23 @@ export function getIntensityColor(intensity: string | undefined): IntensityColor
 }
 
 /**
- * Get background class for activity type (for icons, cards, etc.)
+ * Get background class for an activity category (for icons, cards, etc.)
  */
 export function getActivityBgClass(type: string | undefined): string {
   return getActivityColor(type).bg;
 }
 
 /**
- * Get text class for activity type
+ * Get text class for an activity category
  */
 export function getActivityTextClass(type: string | undefined): string {
   return getActivityColor(type).text;
 }
 
 /**
- * Get formatted activity type name
+ * Get formatted activity category name
  */
-export function getActivityTypeName(type: string | undefined): string {
+export function getActivityCategoryName(type: string | undefined): string {
   if (!type) return "Other";
   return getActivityColor(type).name;
 }

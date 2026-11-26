@@ -1,5 +1,31 @@
 import { describe, expect, it } from "vitest";
-import { computeAcwr, computeMonotony, computeTrimp, getSparseHistoryStatus } from "../workload";
+import type { LoadDayObservation, LoadSeries } from "../../load/load-series";
+import {
+  computeAcwr,
+  computeExternalWorkKj,
+  computeMonotony,
+  computeTrimp,
+  getSparseHistoryStatus,
+} from "../workload";
+
+const identity = {
+  activity_category: "all",
+  family: "common_load" as const,
+  method: "normalized_power",
+  version: "1",
+  sourceDefinition: "first_party:ftp-250",
+};
+
+function series(values: number[]): LoadSeries {
+  return {
+    identity,
+    observations: values.map((value, index): LoadDayObservation => {
+      const date = new Date(Date.UTC(2026, 0, index + 1)).toISOString().slice(0, 10);
+      if (value === 0) return { date, state: "known_zero", value: 0 };
+      return { date, state: "observed", value };
+    }),
+  };
+}
 
 describe("workload", () => {
   describe("getSparseHistoryStatus", () => {
@@ -37,19 +63,30 @@ describe("workload", () => {
       expect(result.requiredDays).toBe(7);
     });
 
-    it("falls back to power proxy when hr quality is below threshold", () => {
+    it("abstains from TRIMP when heart-rate coverage is low quality", () => {
       const result = computeTrimp({
         coverageDays: 10,
         durationSeconds: 1800,
-        avgPowerWatts: 200,
         hrSampleCount: 5,
         hrCoverageRatio: 0.5,
       });
 
-      expect(result.source).toBe("power_proxy");
-      expect(result.value).toBe(360);
+      expect(result.source).toBeUndefined();
+      expect(result.value).toBeNull();
       expect(result.status).toBe("provisional");
       expect(result.reasonCode).toBe("hr_quality_low");
+    });
+
+    it("calculates power-derived external work separately from TRIMP", () => {
+      const result = computeExternalWorkKj({
+        coverageDays: 10,
+        durationSeconds: 1800,
+        avgPowerWatts: 200,
+      });
+
+      expect(result.source).toBe("power");
+      expect(result.value).toBe(360);
+      expect(result.status).toBe("provisional");
     });
 
     it("returns null without valid hr or power proxy inputs", () => {
@@ -69,7 +106,7 @@ describe("workload", () => {
   describe("computeAcwr", () => {
     it("computes acute/chronic workload ratio", () => {
       const dailyLoads = Array(21).fill(50).concat(Array(7).fill(100));
-      const result = computeAcwr(dailyLoads, 28);
+      const result = computeAcwr(series(dailyLoads));
 
       expect(result.status).toBe("stable");
       expect(result.requiredDays).toBe(28);
@@ -77,26 +114,27 @@ describe("workload", () => {
     });
 
     it("returns null when chronic load is zero", () => {
-      const result = computeAcwr(Array(28).fill(0), 12);
+      const result = computeAcwr(series(Array(28).fill(0)));
 
       expect(result.value).toBeNull();
       expect(result.reasonCode).toBe("chronic_load_zero");
-      expect(result.status).toBe("provisional");
+      expect(result.status).toBe("stable");
     });
   });
 
   describe("computeMonotony", () => {
     it("computes monotony using 7-day mean and standard deviation", () => {
-      const result = computeMonotony([10, 20, 30, 40, 50, 60, 70], 28);
+      const result = computeMonotony(series([10, 20, 30, 40, 50, 60, 70]));
 
-      expect(result.status).toBe("stable");
+      expect(result.status).toBe("provisional");
       expect(result.requiredDays).toBe(7);
       expect(result.value).not.toBeNull();
-      expect(result.value!).toBeGreaterThan(0);
+      if (result.value === null) throw new Error("Expected a monotony value for variable load");
+      expect(result.value).toBeGreaterThan(0);
     });
 
     it("returns null for zero-variance data to avoid infinity", () => {
-      const result = computeMonotony(Array(7).fill(42), 7);
+      const result = computeMonotony(series(Array(7).fill(42)));
 
       expect(result.value).toBeNull();
       expect(result.reasonCode).toBe("zero_variance");

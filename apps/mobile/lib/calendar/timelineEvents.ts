@@ -1,25 +1,23 @@
 import type { ProfileGoal } from "@repo/core";
 import { toDateKey } from "@/lib/calendar/dateMath";
+import { isAuthoritativeCompletedCalendarEvent } from "@/lib/calendar/eventPresentation";
 import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
-import { isActivityCompleted } from "@/lib/utils/plan/dateGrouping";
 
 export type TimelineEventType =
   | "planned_activity"
   | "completed_activity"
   | "goal"
   | "race"
-  | "custom"
-  | "imported"
-  | "rest_day";
+  | "custom";
 
 export type TimelineEventStatus =
   | "planned"
   | "completed"
-  | "missed"
+  | "unverified"
+  | "cancelled"
   | "skipped"
   | "rescheduled"
-  | "scheduled"
-  | "read_only";
+  | "scheduled";
 
 export type TimelineEventSourceType = "calendar_event" | "profile_goal";
 
@@ -71,7 +69,7 @@ function isPastDate(dateKey: string, todayKey: string): boolean {
 
 function classifyCalendarEventType(event: CalendarEvent): TimelineEventType {
   if (event.event_type === "planned") {
-    return isActivityCompleted(event) ? "completed_activity" : "planned_activity";
+    return isAuthoritativeCompletedCalendarEvent(event) ? "completed_activity" : "planned_activity";
   }
 
   if (event.event_type === "race_target") {
@@ -82,11 +80,7 @@ function classifyCalendarEventType(event: CalendarEvent): TimelineEventType {
     return "custom";
   }
 
-  if (event.event_type === "rest_day") {
-    return "rest_day";
-  }
-
-  return "imported";
+  return "custom";
 }
 
 function getTimelineColor(type: TimelineEventType): string {
@@ -98,8 +92,6 @@ function getTimelineColor(type: TimelineEventType): string {
     case "goal":
     case "race":
       return "violet";
-    case "rest_day":
-      return "slate";
     default:
       return "blue";
   }
@@ -120,6 +112,10 @@ function getCalendarEventStatus({
     return "completed";
   }
 
+  if (event.status === "cancelled") {
+    return "cancelled";
+  }
+
   if (event.status === "skipped") {
     return "skipped";
   }
@@ -129,11 +125,7 @@ function getCalendarEventStatus({
   }
 
   if (type === "planned_activity" && isPastDate(dateKey, todayKey)) {
-    return "missed";
-  }
-
-  if (type === "imported") {
-    return "read_only";
+    return "unverified";
   }
 
   return type === "planned_activity" ? "planned" : "scheduled";
@@ -146,10 +138,6 @@ function getCalendarEventTitle(event: CalendarEvent, type: TimelineEventType): s
 
   if (type === "race") {
     return event.title ?? "Race target";
-  }
-
-  if (type === "rest_day") {
-    return event.title ?? "Rest day";
   }
 
   return event.title ?? "Timeline event";

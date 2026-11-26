@@ -1,0 +1,35 @@
+appId: com.deancochran.gradientpeak.dev
+name: Athlete returns from a selected Home training session without losing the selected day
+---
+# This athlete has no authored goal in the disposable setup. The truthful empty
+# goal state must remain visible while the scheduled-day action remains usable.
+- tapOn:
+    id: tab-button-home
+- extendedWaitUntil:
+    visible:
+      id: home-training-workspace
+    timeout: 30000
+- assertVisible: "Set your next objective"
+- extendedWaitUntil:
+    visible:
+      id: plan-selected-day
+    timeout: 30000
+- assertVisible:
+    id: plan-selected-day-planned-activity-card-${MAESTRO_ACCEPTANCE_SESSION_ID}
+- takeScreenshot: athlete-workspace-selected-session
+- tapOn:
+    id: plan-selected-day-planned-activity-card-${MAESTRO_ACCEPTANCE_SESSION_ID}
+- extendedWaitUntil:
+    visible:
+      id: planned-session-detail-screen
+    timeout: 30000
+- assertVisible: "Planned for ${MAESTRO_ACCEPTANCE_SESSION_DATE}"
+- pressKey: back
+- extendedWaitUntil:
+    visible:
+      id: home-training-workspace
+    timeout: 30000
+# The same scheduled session proves that the Home-selected day remains available
+# after returning from the existing session action surface.
+- assertVisible:
+    id: plan-selected-day-planned-activity-card-${MAESTRO_ACCEPTANCE_SESSION_ID}

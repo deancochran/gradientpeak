@@ -1,10 +1,13 @@
 import { Avatar, AvatarFallback } from "@repo/ui/components/avatar";
 import { Input } from "@repo/ui/components/input";
+import { SearchField } from "@repo/ui/components/search-field";
 import { Text } from "@repo/ui/components/text";
 import { Stack } from "expo-router";
 import { useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
+import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
+import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 function getInitials(name: string) {
@@ -23,30 +26,31 @@ export default function NewMessageScreen() {
   const [selectedRecipients, setSelectedRecipients] = useState<
     Array<{ id: string; username: string | null; is_public: boolean | null }>
   >([]);
-  const trimmedQuery = query.trim();
+  const trimmedQuery = useDebouncedValue(query.trim(), 300);
 
-  const { data, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } =
+  const { data, isLoading, isFetching, hasNextPage, isFetchingNextPage, fetchNextPage } =
     api.social.searchUsers.useInfiniteQuery(
       {
         query: trimmedQuery || undefined,
         limit: 20,
       },
       {
-        getNextPageParam: (lastPage: any) => lastPage.nextCursor,
+        getNextPageParam: (lastPage) => lastPage.nextCursor,
       },
     );
   const getOrCreateDMMutation = api.messaging.getOrCreateDM.useMutation();
   const createConversationMutation = api.messaging.createConversation.useMutation({
     onSuccess: (conversation) => {
-      navigateTo(`/messages/${conversation.id}` as any);
+      navigateTo(`/messages/${conversation.id}`);
     },
   });
 
-  const users = data?.pages.flatMap((page: any) => page.users) ?? [];
+  const users = data?.pages.flatMap((page) => page.users) ?? [];
   const suggestedUsers = users.filter(
     (user) => !selectedRecipients.some((recipient) => recipient.id === user.id),
   );
   const isSubmitting = getOrCreateDMMutation.isPending || createConversationMutation.isPending;
+  const submitError = getOrCreateDMMutation.error ?? createConversationMutation.error;
 
   const toggleRecipient = (user: {
     id: string;
@@ -68,11 +72,17 @@ export default function NewMessageScreen() {
     }
 
     if (selectedRecipients.length === 1) {
-      const conversation = await getOrCreateDMMutation.mutateAsync({
-        target_user_id: selectedRecipients[0].id,
-      });
+      const recipient = selectedRecipients.at(0);
+      if (recipient === undefined) return;
+      try {
+        const conversation = await getOrCreateDMMutation.mutateAsync({
+          target_user_id: recipient.id,
+        });
 
-      navigateTo(`/messages/${conversation.id}` as any);
+        navigateTo(`/messages/${conversation.id}`);
+      } catch {
+        // The mutation error remains rendered below; avoid an unhandled header-action rejection.
+      }
       return;
     }
 
@@ -127,6 +137,7 @@ export default function NewMessageScreen() {
                       <Pressable
                         key={recipient.id}
                         onPress={() => toggleRecipient(recipient)}
+                        accessibilityLabel={`Remove @${recipient.username ?? "user"} from recipients`}
                         className="rounded-full bg-primary/10 px-2.5 py-1"
                         testID={`messages-new-selected-${recipient.id}`}
                       >
@@ -138,11 +149,15 @@ export default function NewMessageScreen() {
                   </View>
                 ) : null}
 
-                <Input
+                <SearchField
+                  accessibilityLabel="Search recipients"
+                  clearTestId="messages-new-search-clear"
+                  loading={isFetching && !isFetchingNextPage}
+                  loadingLabel="Loading people"
                   value={query}
-                  onChangeText={setQuery}
+                  onValueChange={setQuery}
                   placeholder="Type a name"
-                  className="border-0 bg-transparent px-0 py-0 text-base"
+                  className="border-0 bg-transparent py-0 text-base"
                   testId="messages-new-search-input"
                 />
               </View>
@@ -153,7 +168,7 @@ export default function NewMessageScreen() {
             <View className="border-t border-border" testID="messages-new-suggestions">
               {isLoading ? (
                 <View className="items-center justify-center py-8">
-                  <ActivityIndicator />
+                  <LoadingState message="Loading people..." />
                 </View>
               ) : suggestedUsers.length > 0 ? (
                 <>
@@ -171,7 +186,9 @@ export default function NewMessageScreen() {
                     >
                       <Avatar alt={item.username ?? "User"} className="h-10 w-10">
                         <AvatarFallback>
-                          <Text>{getInitials(item.username ?? "User")}</Text>
+                          <Text className="text-sm font-semibold text-foreground">
+                            {getInitials(item.username ?? "User")}
+                          </Text>
                         </AvatarFallback>
                       </Avatar>
                       <View className="flex-1 gap-1">
@@ -199,7 +216,7 @@ export default function NewMessageScreen() {
                 </>
               ) : (
                 <View className="items-center justify-center py-8">
-                  <Text className="text-sm text-muted-foreground">No users match that search.</Text>
+                  <EmptyState title="No users match that search." />
                 </View>
               )}
             </View>
@@ -210,11 +227,24 @@ export default function NewMessageScreen() {
           <View className="rounded-3xl border border-border bg-card p-4">
             <Text className="mb-2 text-sm font-medium text-muted-foreground">Group Name</Text>
             <Input
+              accessibilityLabel="Group name"
               value={groupName}
               onChangeText={setGroupName}
               placeholder="Optional group name"
               testId="messages-new-group-name-input"
             />
+          </View>
+        ) : null}
+
+        {submitError ? (
+          <View
+            accessibilityLiveRegion="polite"
+            accessibilityRole="alert"
+            className="rounded-2xl border border-destructive/30 bg-destructive/10 p-3"
+          >
+            <Text className="text-sm font-medium text-destructive">
+              {submitError.message || "Unable to start this conversation."}
+            </Text>
           </View>
         ) : null}
       </ScrollView>
