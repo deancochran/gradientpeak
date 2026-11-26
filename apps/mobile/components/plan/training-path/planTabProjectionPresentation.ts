@@ -11,7 +11,7 @@ export type MobilePlanTabProjection =
 function historicalFitnessNotice(projection: MobilePlanTabProjection | undefined): string | null {
   const freshness = projection?.fitnessHistory;
   if (freshness?.status === "unavailable") {
-    return "Fitness, fatigue, and form use the available baseline and assume zero on days where no Load can be established. Incomplete Load bars remain marked unavailable.";
+    return "Verified fitness history is unavailable. Missing or incomplete Load is not treated as zero.";
   }
   if (!freshness?.verifiedThrough) return null;
   const verifiedThrough = new Intl.DateTimeFormat("en-US", {
@@ -27,7 +27,7 @@ function historicalFitnessNotice(projection: MobilePlanTabProjection | undefined
         ? " The baseline is mature."
         : "";
   return freshness.status === "historical"
-    ? `Fitness, fatigue, and form are based on verified history through ${verifiedThrough}, then assume zero on days where no Load can be established.${maturity}`
+    ? `Historical fitness, fatigue, and form are verified through ${verifiedThrough}. Missing or incomplete Load is not treated as zero.${maturity}`
     : `Fitness, fatigue, and form are verified through ${verifiedThrough}.${maturity}`;
 }
 

@@ -286,9 +286,86 @@ describe("usePlanTrainingPathData", () => {
     });
 
     expect(result.trainingPath.fitnessHistoryNotice).toBe(
-      "Fitness, fatigue, and form are based on verified history through Apr 5, 2026, then assume zero on days where no Load can be established. The baseline is still establishing.",
+      "Historical fitness, fatigue, and form are verified through Apr 5, 2026. Missing or incomplete Load is not treated as zero. The baseline is still establishing.",
     );
-    expect(result.trainingPath.weeks.some((week) => week.fitness === 39)).toBe(true);
+    expect(result.trainingPath.weeks.find((week) => week.weekStart === "2026-03-30")).toMatchObject(
+      {
+        fitness: 39,
+        fatigue: 46,
+        form: -7,
+      },
+    );
+    expect(result.trainingPath.weeks.find((week) => week.weekStart === "2026-04-06")).toMatchObject(
+      {
+        fitness: null,
+        fatigue: null,
+        form: null,
+      },
+    );
+  });
+
+  it.each([
+    {
+      label: "unavailable history with a zero baseline",
+      fitnessHistory: { status: "unavailable" },
+      value: 0,
+      expectedNotice:
+        "Verified fitness history is unavailable. Missing or incomplete Load is not treated as zero.",
+    },
+    {
+      label: "unavailable history with a nonzero baseline",
+      fitnessHistory: { status: "unavailable" },
+      value: 40,
+      expectedNotice:
+        "Verified fitness history is unavailable. Missing or incomplete Load is not treated as zero.",
+    },
+    {
+      label: "missing history metadata with a nonzero baseline",
+      fitnessHistory: undefined,
+      value: 40,
+      expectedNotice: null,
+    },
+  ])("preserves a published current baseline for $label", ({
+    fitnessHistory,
+    value,
+    expectedNotice,
+  }) => {
+    const result = buildPlanTabProjectionPresentation({
+      projection: {
+        ...projection,
+        fitness: {
+          ...projection.fitness,
+          actual: [
+            {
+              date: "2026-04-06",
+              longTermLoad: value,
+              recentLoad: value,
+              loadBalance: 0,
+            },
+          ],
+        },
+        ...(fitnessHistory ? { fitnessHistory } : {}),
+      } as unknown as MobilePlanTabProjection,
+      selectedWeekStart: "2026-04-06",
+      weekWindow: { start: "2026-03-30", end: "2026-04-12" },
+      todayKey: "2026-04-06",
+    });
+
+    expect(
+      result.dailyTrainingPathPoints.find((point) => point.date === "2026-04-06"),
+    ).toMatchObject({
+      fitnessCtl: value,
+      actualFatigueAtl: value,
+      formTsb: 0,
+    });
+    expect(result.trainingPath.weeks.find((week) => week.weekStart === "2026-04-06")).toMatchObject(
+      {
+        fitness: value,
+        fatigue: value,
+        form: 0,
+      },
+    );
+    expect(result.trainingPath.fitnessHistoryNotice).toBe(expectedNotice);
   });
 
   it("derives unavailable and partial completed presentation from completed Load status", () => {
